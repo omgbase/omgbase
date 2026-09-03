@@ -2,8 +2,10 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
 import type { RawBlock } from "../core/parse/types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
-import type { IdResolver, DispositionRow } from "../core/ingest.js";
+import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
 import { mintId } from "../core/ids.js";
+import { extractFromBlock, extractFromFrontmatter } from "../graph/extract.js";
+import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
 import { sha256, normalizeVisibleText } from "../core/hash.js";
 import { reconcileDocument, type ResurrectionCandidate } from "../reconcile/reconcile.js";
 import { flatten, type FlatSource } from "../reconcile/flatten.js";
@@ -121,7 +123,54 @@ export function makeReconcilingResolver(
       matcherV: d.matcherV,
       detail: d.detail,
     }));
-    return { assigned, dispositions, deleted: result.deleted, consumedPool: result.consumedPool };
+
+    // Edge extraction: walk the id-assigned tree, extract per block, resolve
+    // targets to node ids. Runs inside the ingest commit transaction.
+    const extractEdges = (thisDocId: string, frontmatter: Record<string, unknown>): ResolvedEdgeRow[] => {
+      const out: ResolvedEdgeRow[] = [];
+      const walk = (blocks: TreeInputBlock[]): void => {
+        for (const b of blocks) {
+          for (const e of extractFromBlock(b.blockId, b.type, b.raw)) {
+            out.push(resolveEdge(db, repoId, thisDocId, e));
+          }
+          if (b.children.length > 0) walk(b.children);
+        }
+      };
+      walk(assigned);
+      for (const e of extractFromFrontmatter(frontmatter)) out.push(resolveEdge(db, repoId, thisDocId, e));
+      return out;
+    };
+
+    return { assigned, dispositions, deleted: result.deleted, consumedPool: result.consumedPool, extractEdges };
+  };
+}
+
+// Resolve an extracted edge's target to a node id (external mint, doc path or
+// phantom). Block-anchor targets resolve to a document node in v1 (block-ref
+// resolution requires the anchor index; the anchor is preserved on the edge).
+function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType<typeof extractFromBlock>[number]): ResolvedEdgeRow {
+  let dstNode: string;
+  let dstKind = e.dstKind;
+  if (e.dstKind === "external") {
+    dstNode = resolveExternal(db, repoId, e.target);
+  } else if (e.target === "") {
+    // pure fragment (#H / ^ref) → self document
+    dstNode = srcDoc;
+    dstKind = "document";
+  } else {
+    const resolved = resolveDocPath(db, repoId, e.target);
+    dstNode = resolved.id;
+    dstKind = "document";
+  }
+  return {
+    srcDoc,
+    srcBlock: e.srcBlock,
+    srcField: e.srcField,
+    predicate: e.predicate,
+    dstKind,
+    dstNode,
+    anchor: e.anchor,
+    provenance: e.provenance,
   };
 }
 

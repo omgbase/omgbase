@@ -7,6 +7,7 @@ import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
+import { maintainEdges } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock } from "./parse/types.js";
 
@@ -27,13 +28,34 @@ export interface DispositionRow {
   detail: Record<string, unknown>;
 }
 
+// A resolved edge to persist (05 §2). Kept structural so core does not depend
+// on the graph module's extractor.
+export interface ResolvedEdgeRow {
+  srcDoc: string;
+  srcBlock: string | null;
+  srcField: string | null;
+  predicate: string;
+  dstKind: "document" | "block" | "external" | "collection";
+  dstNode: string;
+  anchor: string | null;
+  provenance: "link" | "frontmatter" | "inline_field";
+}
+
 // Given the parsed content blocks (frontmatter stripped) and the existing
 // doc id (null if new), return an id-assigned tree plus dispositions + deleted
-// old ids. Default resolver mints fresh ids (re-mint path).
+// old ids. Default resolver mints fresh ids (re-mint path). Optionally returns
+// extractEdges: a callback run after ids are assigned + doc id is known, so the
+// caller (sync/) can produce resolved edges for this revision.
 export type IdResolver = (
   rest: RawBlock[],
   docId: string | null,
-) => { assigned: TreeInputBlock[]; dispositions: DispositionRow[]; deleted: string[]; consumedPool?: string[] };
+) => {
+  assigned: TreeInputBlock[];
+  dispositions: DispositionRow[];
+  deleted: string[];
+  consumedPool?: string[];
+  extractEdges?: (docId: string, frontmatter: Record<string, unknown>) => ResolvedEdgeRow[];
+};
 
 export interface IngestResult {
   docId: string;
@@ -148,10 +170,11 @@ export function ingestFile(
       db.prepare("UPDATE documents SET frontmatter = ? WHERE doc_id = ?").run(frontmatterJson, docId);
     }
 
-    // Assign block ids: reconciling resolver (carry from prior revision) if
-    // supplied, else fresh mint. New docs always mint.
-    const resolved = opts.resolveIds && !isNew
-      ? opts.resolveIds(rest, docId)
+    // Assign block ids via the resolver when supplied (it reconciles against
+    // the prior revision — for a new doc that's an empty old tree, so all blocks
+    // mint — and also drives edge extraction). Without a resolver, fresh-mint.
+    const resolved = opts.resolveIds
+      ? opts.resolveIds(rest, isNew ? null : docId)
       : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
     const assigned = resolved.assigned;
     const rootTreeHex = writeBlockTree(db, assigned);
@@ -197,6 +220,13 @@ export function ingestFile(
     }
     ftsIndexDoc(db, docId);
     rebuildSections(db, docId);
+
+    // Edge extraction + interval maintenance (05 §2), if the resolver supplies
+    // an extractor. Runs in this commit transaction.
+    if (resolved.extractEdges) {
+      const extracted = resolved.extractEdges(docId, JSON.parse(frontmatterJson) as Record<string, unknown>);
+      maintainEdges(db, repoId, docId, commit.commitId, extracted);
+    }
 
     // Persist dispositions + block-history projection. With a resolver, use the
     // real reconciliation dispositions; otherwise record every block as inserted.
