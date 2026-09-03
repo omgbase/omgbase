@@ -1,0 +1,3 @@
+﻿# Doc with BOM
+
+Body.
