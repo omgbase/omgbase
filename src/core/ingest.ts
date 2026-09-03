@@ -6,6 +6,8 @@ import { sha256, normalizeVisibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
+import { rebuildSections } from "./store/sections.js";
+import { parse as parseYaml } from "yaml";
 import type { RawBlock } from "./parse/types.js";
 
 // Ingest path (07 task 1.4): parse → mint → commit. Stage 1 re-mints every
@@ -26,6 +28,21 @@ function extractFrontmatter(blocks: RawBlock[]): { fmBlock: RawBlock | null; res
     return { fmBlock: blocks[0]!, rest: blocks.slice(1) };
   }
   return { fmBlock: null, rest: blocks };
+}
+
+// Parse a frontmatter block's raw (incl. --- fences) into a JSON-safe object.
+// Malformed YAML yields {} — frontmatter is queryable metadata, not load-bearing.
+function parseFrontmatter(fmBlock: RawBlock | null): Record<string, unknown> {
+  if (!fmBlock) return {};
+  const body = fmBlock.raw.replace(/^---\r?\n/, "").replace(/\r?\n?---\s*$/, "");
+  try {
+    const parsed = parseYaml(body) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 // Flatten the id-assigned tree into current-state block rows (02 §3 blocks).
@@ -93,11 +110,12 @@ export function ingestFile(
 
     // Frontmatter is stored as a blob + parsed JSON view on the document, not a block.
     const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
+    const frontmatterJson = JSON.stringify(parseFrontmatter(fmBlock));
 
     const assigned = assignIds(rest);
     const rootTreeHex = writeBlockTree(db, assigned);
 
-    // Upsert the document row.
+    // Upsert the document row (refresh frontmatter JSON view each ingest).
     let doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ?").get(repoId, path) as
       | { doc_id: string }
       | undefined;
@@ -105,8 +123,10 @@ export function ingestFile(
     if (!doc) {
       db.prepare(
         "INSERT INTO documents (doc_id, repo_id, path, frontmatter) VALUES (?, ?, ?, ?)",
-      ).run(docId, repoId, path, "{}");
+      ).run(docId, repoId, path, frontmatterJson);
       doc = { doc_id: docId };
+    } else {
+      db.prepare("UPDATE documents SET frontmatter = ? WHERE doc_id = ?").run(frontmatterJson, docId);
     }
 
     const commit = newCommit(db, { repoId, ts, origin });
@@ -138,6 +158,12 @@ export function ingestFile(
       insert.run({ ...r, repoId, docId, createdCommit: commit.commitId });
     }
     ftsIndexDoc(db, docId);
+    rebuildSections(db, docId);
+
+    // Block-history projection (02 §4): Stage-1 re-mint records every block as
+    // inserted at this commit. Replaced by real dispositions in Stage 2.
+    const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, 'inserted')");
+    for (const r of rows) bc.run(r.blockId, commit.commitId);
 
     // Update document current pointers + convergence hash.
     const fileHash = sha256(content);
