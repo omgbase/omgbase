@@ -5,6 +5,7 @@ import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type Tree
 import { sha256, normalizeVisibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
+import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import type { RawBlock } from "./parse/types.js";
 
 // Ingest path (07 task 1.4): parse → mint → commit. Stage 1 re-mints every
@@ -120,6 +121,8 @@ export function ingestFile(
     });
 
     // Refresh current-state blocks (Stage 1 re-mint: clear + repopulate).
+    // FTS is external-content: delete old index rows before dropping blocks.
+    ftsDeleteDoc(db, docId);
     db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
     const rows: BlockRow[] = [];
     flatten(assigned, null, 0, "/", rows);
@@ -134,6 +137,7 @@ export function ingestFile(
     for (const r of rows) {
       insert.run({ ...r, repoId, docId, createdCommit: commit.commitId });
     }
+    ftsIndexDoc(db, docId);
 
     // Update document current pointers + convergence hash.
     const fileHash = sha256(content);
