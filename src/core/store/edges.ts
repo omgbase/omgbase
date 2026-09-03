@@ -58,6 +58,18 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
   rebuildDocEdges(db, srcDoc);
 }
 
+// When a document is (re)created at a path, adopt any open phantom edges that
+// pointed at that path so backlinks re-point to the real node (05 §2). Rebuilds
+// the affected source docs' rollups.
+export function adoptPhantoms(db: Database, path: string, realDocId: string): void {
+  const canonical = path.replace(/^\//, "");
+  const phantom = `phantom:${canonical}`;
+  const affected = db.prepare("SELECT DISTINCT src_doc FROM edges WHERE dst_node = ? AND to_commit IS NULL").all(phantom) as { src_doc: string }[];
+  if (affected.length === 0) return;
+  db.prepare("UPDATE edges SET dst_node = ? WHERE dst_node = ? AND to_commit IS NULL").run(realDocId, phantom);
+  for (const a of affected) rebuildDocEdges(db, a.src_doc);
+}
+
 /** Recompute the doc_edges rollup for one document from its open edges. */
 export function rebuildDocEdges(db: Database, srcDoc: string): void {
   db.prepare("DELETE FROM doc_edges WHERE src_doc = ?").run(srcDoc);

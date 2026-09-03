@@ -7,7 +7,7 @@ import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
-import { maintainEdges } from "./store/edges.js";
+import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock } from "./parse/types.js";
 
@@ -166,6 +166,8 @@ export function ingestFile(
         "INSERT INTO documents (doc_id, repo_id, path, frontmatter) VALUES (?, ?, ?, ?)",
       ).run(docId, repoId, path, frontmatterJson);
       doc = { doc_id: docId };
+      // Adopt phantom edges that pointed at this path so backlinks re-point.
+      adoptPhantoms(db, path, docId);
     } else {
       db.prepare("UPDATE documents SET frontmatter = ? WHERE doc_id = ?").run(frontmatterJson, docId);
     }
