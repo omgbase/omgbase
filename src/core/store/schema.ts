@@ -1,0 +1,202 @@
+// Full DDL — 02-data-model §3 (durable) + §4 (derived). SQLite dialect.
+// Kept as one string so migrations and rebuild-index can apply it verbatim.
+// No dialect-specific SQL leaks above the store module (02 §8).
+
+export const SCHEMA_VERSION = 1;
+
+export const DDL = /* sql */ `
+-- ---- durable tables (02 §3) --------------------------------------------------
+CREATE TABLE IF NOT EXISTS repos (
+  repo_id   TEXT PRIMARY KEY,
+  slug      TEXT NOT NULL UNIQUE,
+  root_path TEXT NOT NULL,
+  settings  TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS documents (
+  doc_id         TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  path           TEXT NOT NULL,
+  frontmatter    TEXT NOT NULL DEFAULT '{}',
+  current_rev    TEXT,
+  file_hash      BLOB,
+  conflicted     INTEGER NOT NULL DEFAULT 0,
+  deleted_commit TEXT,
+  UNIQUE (repo_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
+  doc_id         TEXT NOT NULL REFERENCES documents(doc_id),
+  parent_block   TEXT,
+  order_key      TEXT NOT NULL,
+  ordinal        INTEGER NOT NULL,
+  depth          INTEGER NOT NULL,
+  ancestor_path  TEXT NOT NULL,
+  type           TEXT NOT NULL,
+  attrs          TEXT NOT NULL DEFAULT '{}',
+  text           TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  created_commit TEXT NOT NULL,
+  deleted_commit TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_type     ON blocks(repo_id, type)                   WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_blocks_rawhash  ON blocks(raw_hash);
+CREATE INDEX IF NOT EXISTS idx_blocks_ancestor ON blocks(doc_id, ancestor_path);
+
+CREATE TABLE IF NOT EXISTS blobs (
+  hash  BLOB PRIMARY KEY,
+  bytes BLOB NOT NULL,
+  size  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tree_nodes (
+  hash    BLOB PRIMARY KEY,
+  entries TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS revisions (
+  rev_id           TEXT PRIMARY KEY,
+  doc_id           TEXT NOT NULL REFERENCES documents(doc_id),
+  seq              INTEGER NOT NULL,
+  root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
+  frontmatter_blob BLOB REFERENCES blobs(hash),
+  rendered_hash    BLOB NOT NULL,
+  path             TEXT NOT NULL,
+  commit_id        TEXT NOT NULL REFERENCES commits(commit_id),
+  UNIQUE (doc_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS commits (
+  commit_id     TEXT PRIMARY KEY,
+  repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
+  seq           INTEGER NOT NULL,
+  ts            TEXT NOT NULL,
+  origin        TEXT NOT NULL CHECK (origin IN ('api','observed','import','projection')),
+  actor         TEXT,
+  reason        TEXT,
+  checkpoint_id TEXT,
+  ops           TEXT,
+  UNIQUE (repo_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS dispositions (
+  commit_id  TEXT NOT NULL REFERENCES commits(commit_id),
+  block_id   TEXT NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN
+             ('same','edited','moved','edited_moved','inserted','deleted',
+              'split_from','merged_into','copied_from','resurrected','bulk_rewrite')),
+  confidence REAL,
+  reason     TEXT,
+  matcher_v  TEXT,
+  detail     TEXT NOT NULL DEFAULT '{}',
+  PRIMARY KEY (commit_id, block_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS edges (
+  edge_id     TEXT PRIMARY KEY,
+  repo_id     TEXT NOT NULL,
+  src_doc     TEXT NOT NULL,
+  src_block   TEXT,
+  src_field   TEXT,
+  predicate   TEXT NOT NULL,
+  dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external','collection')),
+  dst_node    TEXT NOT NULL,
+  anchor      TEXT,
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected')),
+  via_node    TEXT,
+  from_commit TEXT NOT NULL,
+  to_commit   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_edges_src      ON edges(src_doc, predicate) WHERE to_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_dst      ON edges(dst_node, predicate) WHERE to_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_edges_temporal ON edges(from_commit, to_commit);
+
+CREATE TABLE IF NOT EXISTS external_nodes (
+  node_id TEXT PRIMARY KEY,
+  repo_id TEXT NOT NULL,
+  uri     TEXT NOT NULL,
+  title   TEXT,
+  UNIQUE (repo_id, uri)
+);
+
+CREATE TABLE IF NOT EXISTS collections (
+  node_id TEXT PRIMARY KEY,
+  repo_id TEXT NOT NULL,
+  name    TEXT NOT NULL,
+  spec    TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+  id       TEXT PRIMARY KEY,
+  repo_id  TEXT NOT NULL,
+  ts       TEXT NOT NULL,
+  files    TEXT NOT NULL,
+  git_head TEXT
+);
+
+CREATE TABLE IF NOT EXISTS resurrection_pool (
+  block_id       TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  raw_hash       BLOB NOT NULL,
+  norm_hash      BLOB NOT NULL,
+  type           TEXT NOT NULL,
+  deleted_commit TEXT NOT NULL,
+  expires_ts     TEXT NOT NULL
+);
+
+-- ---- derived tables (02 §4; rebuildable) ------------------------------------
+CREATE TABLE IF NOT EXISTS sections (
+  heading_block TEXT NOT NULL,
+  doc_id        TEXT NOT NULL,
+  level         INTEGER NOT NULL,
+  first_ordinal INTEGER NOT NULL,
+  last_ordinal  INTEGER NOT NULL,
+  PRIMARY KEY (doc_id, heading_block)
+);
+
+CREATE TABLE IF NOT EXISTS doc_edges (
+  src_doc   TEXT NOT NULL,
+  predicate TEXT NOT NULL,
+  dst_node  TEXT NOT NULL,
+  dst_kind  TEXT NOT NULL,
+  count     INTEGER NOT NULL,
+  samples   TEXT NOT NULL,
+  PRIMARY KEY (src_doc, predicate, dst_node)
+);
+
+CREATE TABLE IF NOT EXISTS block_changes (
+  block_id  TEXT NOT NULL,
+  commit_id TEXT NOT NULL,
+  kind      TEXT NOT NULL,
+  PRIMARY KEY (block_id, commit_id, kind)
+);
+
+CREATE TABLE IF NOT EXISTS inferred_edges (
+  src_node    TEXT NOT NULL,
+  dst_node    TEXT NOT NULL,
+  predicate   TEXT NOT NULL,
+  method      TEXT NOT NULL,
+  score       REAL NOT NULL,
+  model_v     TEXT NOT NULL,
+  computed_at TEXT NOT NULL,
+  PRIMARY KEY (src_node, dst_node, predicate, method)
+);
+
+CREATE TABLE IF NOT EXISTS embeddings (
+  content_hash BLOB NOT NULL,
+  ctx_hash     BLOB NOT NULL,
+  model        TEXT NOT NULL,
+  dim          INTEGER NOT NULL,
+  vec          BLOB NOT NULL,
+  PRIMARY KEY (content_hash, ctx_hash, model)
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
+  text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
+);
+`;
