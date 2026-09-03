@@ -40,6 +40,11 @@ export interface RawBlock {
   children: RawBlock[];
   /** Trailing inter-block trivia attached to this block (03 §2.3). */
   trivia: string;
+  /**
+   * Set by mutation ops: this block's `raw` is op-supplied markdown and must be
+   * serialized (03 §2.2) rather than spliced verbatim. Absent/false = untouched.
+   */
+  dirty?: boolean;
   /** Authored ^block-ref anchors (Stage 4). */
   anchors: string[];
   /** Extracted outgoing links for edge extraction (Stage 4). */
