@@ -6,6 +6,7 @@ import { mintId } from "../core/ids.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
+import { sweepResurrectionPool } from "../core/store/gc.js";
 
 // Checkpoint processing (01 §6, 03 §8). A checkpoint is one debounced batch of
 // filesystem changes. For each changed file: if the on-disk hash already equals
@@ -91,6 +92,9 @@ export function processCheckpoint(
   store.db
     .prepare("INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?, ?, ?, ?, ?)")
     .run(checkpointId, repoId, ts, JSON.stringify(fileEntries), opts.gitHead ?? null);
+
+  // Lazy resurrection-pool expiry sweep at checkpoint time (02 §7).
+  sweepResurrectionPool(store, ts);
 
   return { checkpointId, ingested, suppressed, deleted, conflicted };
 }
