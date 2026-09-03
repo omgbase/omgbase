@@ -67,7 +67,8 @@ function computeBoosts(store: Store, docId: string, blockId: string, terms: stri
 
   // epistemic layer
   const layer = String(fm.layer ?? "");
-  if (layer in LAYER_BOOST && LAYER_BOOST[layer] !== 1.0) boosts.layer = LAYER_BOOST[layer];
+  const layerBoost = LAYER_BOOST[layer];
+  if (layerBoost !== undefined && layerBoost !== 1.0) boosts.layer = layerBoost;
 
   return boosts;
 }
@@ -111,7 +112,11 @@ export function hybridSearch(store: Store, input: HybridInput): HybridHit[] {
     const boosts = computeBoosts(store, m.doc_id, blockId, terms);
     const evidence: HybridHit["evidence"] = { rrf, boosts };
     if (fr !== undefined) evidence.ftsRank = fr;
-    if (vr !== undefined) { evidence.vectorRank = vr; evidence.cosine = cosineByBlock.get(blockId); }
+    if (vr !== undefined) {
+      evidence.vectorRank = vr;
+      const cos = cosineByBlock.get(blockId);
+      if (cos !== undefined) evidence.cosine = cos;
+    }
     hits.push({ blockId, docId: m.doc_id, path: m.path, score: applyBoosts(rrf, boosts), evidence });
   }
 
