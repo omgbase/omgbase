@@ -52,17 +52,36 @@ export function rawHashHex(raw: string): string {
 }
 
 // Render the doc by splice (03 §2.2): leading trivia, optional frontmatter, then
-// each block's raw (verbatim or dirty) + trivia. Container children are rendered
-// inside their parent's raw only when the parent is dirty; otherwise the
-// parent's retained raw already contains them (top-level tiling, Stage-0 model).
+// each top-level block + trivia. A block whose subtree contains no dirty node
+// emits its retained raw verbatim. When a descendant is dirty, the block is
+// re-rendered from its children (indented to their container) so nested edits
+// — e.g. a task checkbox toggle inside a list — surface without disturbing
+// untouched siblings.
 export function renderDoc(doc: MutDoc): string {
   const out: string[] = [doc.leadingTrivia];
   if (doc.frontmatterRaw !== null) out.push(doc.frontmatterRaw);
   for (const b of doc.children) {
-    out.push(b.raw);
+    out.push(renderBlock(b, 0));
     out.push(b.trivia);
   }
   return out.join("");
+}
+
+function hasDirtyDescendant(b: MutBlock): boolean {
+  if (b.dirty) return true;
+  return b.children.some(hasDirtyDescendant);
+}
+
+// Render one block. Leaf or fully-clean subtree ⇒ retained raw. Otherwise
+// rebuild from children (used for containers with a dirty descendant).
+function renderBlock(b: MutBlock, depth: number): string {
+  if (b.children.length === 0 || !hasDirtyDescendant(b)) return b.raw;
+  // Container with a dirty descendant: re-emit children indented under it.
+  // The container's own marker line (e.g. a list has no own text) is empty;
+  // list items carry their marker in child raw already. We join child raws
+  // with single newlines, indenting nested levels by two spaces.
+  const indent = "  ".repeat(depth);
+  return b.children.map((c) => indent + renderBlock(c, depth + 1).replace(/\n/g, "\n" + indent)).join("\n");
 }
 
 /** Ordered ids of a parent's direct children (for parent_children_hash CAS). */
