@@ -4,6 +4,7 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { mintId } from "../core/ids.js";
 import { ingestFile } from "../core/ingest.js";
+import { makeReconcilingResolver } from "./reconciling-ingest.js";
 
 // Checkpoint processing (01 §6, 03 §8). A checkpoint is one debounced batch of
 // filesystem changes. For each changed file: if the on-disk hash already equals
@@ -66,7 +67,7 @@ export function processCheckpoint(
       continue;
     }
 
-    ingestFile(store, repoId, change.path, content, { ts });
+    ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
     ingested.push(change.path);
     fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
   }

@@ -10,9 +10,30 @@ import { rebuildSections } from "./store/sections.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock } from "./parse/types.js";
 
-// Ingest path (07 task 1.4): parse → mint → commit. Stage 1 re-mints every
-// ingest (no identity threading yet — explicitly temporary, replaced in Stage 2
-// by reconciliation). Convergence invariant checked: file_hash == rendered_hash.
+// Ingest path (07 task 1.4): parse → assign ids → commit. By default every
+// ingest re-mints (no identity threading). A caller (sync/) may supply an
+// IdResolver that carries ids from the previous revision via reconciliation and
+// returns dispositions to persist. Convergence invariant checked:
+// file_hash == rendered_hash.
+
+// A disposition row to persist (mirrors 02 §3 dispositions; kept structural so
+// core does not depend on the reconcile module's types).
+export interface DispositionRow {
+  blockId: string;
+  kind: string;
+  confidence: number | null;
+  reason: string | null;
+  matcherV: string | null;
+  detail: Record<string, unknown>;
+}
+
+// Given the parsed content blocks (frontmatter stripped) and the existing
+// doc id (null if new), return an id-assigned tree plus dispositions + deleted
+// old ids. Default resolver mints fresh ids (re-mint path).
+export type IdResolver = (
+  rest: RawBlock[],
+  docId: string | null,
+) => { assigned: TreeInputBlock[]; dispositions: DispositionRow[]; deleted: string[]; consumedPool?: string[] };
 
 export interface IngestResult {
   docId: string;
@@ -99,7 +120,7 @@ export function ingestFile(
   repoId: string,
   path: string,
   content: string,
-  opts: { ts?: string; origin?: "observed" | "import" } = {},
+  opts: { ts?: string; origin?: "observed" | "import"; resolveIds?: IdResolver } = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
@@ -112,14 +133,12 @@ export function ingestFile(
     const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
     const frontmatterJson = JSON.stringify(parseFrontmatter(fmBlock));
 
-    const assigned = assignIds(rest);
-    const rootTreeHex = writeBlockTree(db, assigned);
-
     // Upsert the document row (refresh frontmatter JSON view each ingest).
     let doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ?").get(repoId, path) as
       | { doc_id: string }
       | undefined;
     const docId = doc?.doc_id ?? mintId("d");
+    const isNew = !doc;
     if (!doc) {
       db.prepare(
         "INSERT INTO documents (doc_id, repo_id, path, frontmatter) VALUES (?, ?, ?, ?)",
@@ -128,6 +147,14 @@ export function ingestFile(
     } else {
       db.prepare("UPDATE documents SET frontmatter = ? WHERE doc_id = ?").run(frontmatterJson, docId);
     }
+
+    // Assign block ids: reconciling resolver (carry from prior revision) if
+    // supplied, else fresh mint. New docs always mint.
+    const resolved = opts.resolveIds && !isNew
+      ? opts.resolveIds(rest, docId)
+      : { assigned: assignIds(rest), dispositions: [] as DispositionRow[], deleted: [] as string[] };
+    const assigned = resolved.assigned;
+    const rootTreeHex = writeBlockTree(db, assigned);
 
     const commit = newCommit(db, { repoId, ts, origin });
     const renderedHash = sha256(content);
@@ -140,7 +167,18 @@ export function ingestFile(
       commitId: commit.commitId,
     });
 
-    // Refresh current-state blocks (Stage 1 re-mint: clear + repopulate).
+    // Snapshot deleted blocks into the resurrection pool BEFORE dropping the
+    // doc's rows (the ingest rebuilds current-state blocks wholesale).
+    if (resolved.deleted.length > 0) {
+      const expires = new Date(Date.parse(ts) + 30 * 24 * 3600 * 1000).toISOString();
+      const pool = db.prepare(
+        `INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
+         SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?, ? FROM blocks WHERE block_id = ? AND doc_id = ?`,
+      );
+      for (const id of resolved.deleted) pool.run(commit.commitId, expires, id, docId);
+    }
+
+    // Refresh current-state blocks (clear + repopulate with carried/minted ids).
     // FTS is external-content: delete old index rows before dropping blocks.
     ftsDeleteDoc(db, docId);
     db.prepare("DELETE FROM blocks WHERE doc_id = ?").run(docId);
@@ -160,10 +198,27 @@ export function ingestFile(
     ftsIndexDoc(db, docId);
     rebuildSections(db, docId);
 
-    // Block-history projection (02 §4): Stage-1 re-mint records every block as
-    // inserted at this commit. Replaced by real dispositions in Stage 2.
-    const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, 'inserted')");
-    for (const r of rows) bc.run(r.blockId, commit.commitId);
+    // Persist dispositions + block-history projection. With a resolver, use the
+    // real reconciliation dispositions; otherwise record every block as inserted.
+    const dispositions: DispositionRow[] =
+      resolved.dispositions.length > 0 || opts.resolveIds
+        ? resolved.dispositions
+        : rows.map((r) => ({ blockId: r.blockId, kind: "inserted", confidence: null, reason: null, matcherV: null, detail: {} }));
+
+    const insDisp = db.prepare(
+      `INSERT OR IGNORE INTO dispositions (commit_id, block_id, kind, confidence, reason, matcher_v, detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const bc = db.prepare("INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?, ?, ?)");
+    for (const d of dispositions) {
+      insDisp.run(commit.commitId, d.blockId, d.kind, d.confidence, d.reason, d.matcherV, JSON.stringify(d.detail));
+      bc.run(d.blockId, commit.commitId, d.kind);
+    }
+
+    // Consumed pool rows (resurrected) are removed.
+    for (const id of resolved.consumedPool ?? []) {
+      db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?").run(id);
+    }
 
     // Update document current pointers + convergence hash.
     const fileHash = sha256(content);
