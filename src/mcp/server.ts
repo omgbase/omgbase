@@ -8,15 +8,26 @@ import { query as runQuery } from "../search/query.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
+import { apply, type Op } from "../mutate/apply.js";
+import { MutationError } from "../mutate/tree.js";
+import { tasksComplete, sectionsAppend, linksRetarget } from "../mutate/macros.js";
+import { graphTraverse, graphPath } from "../graph/traverse.js";
+import { historyNode, diffBlocks, changesSince } from "../graph/history.js";
+import { resolve as resolveThing } from "../search/resolve.js";
+import { reposStatus, syncStatus } from "../sync/admin.js";
 
-// MCP server skeleton (06-mcp-api; 07 task 1.9). Read tools wired to the Stage-1
-// engine: docs_outline, nodes_get, nodes_get_many, query, text_search. Error
-// mapping to stable codes; every list result carries truncated + cursor.
+// MCP server (06-mcp-api). The full tool surface wired to the engine: read
+// (docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
+// + macros), graph (traverse, path), history (history_node, diff,
+// changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
+// on lists; stable error-code mapping.
 
 export interface ServerContext {
   store: Store;
   /** default repo for calls that omit one (single-repo v1 convenience). */
   repoId: string;
+  /** working-tree root, required for mutation tools that write files. */
+  rootPath?: string;
 }
 
 function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
@@ -24,12 +35,11 @@ function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
 }
 
 function fail(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
-  const body =
-    err instanceof EngineError
-      ? err.body()
-      : err instanceof FilterInvalid
-        ? { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false }
-        : { error: "repo_not_found", message: String(err), retriable: false };
+  let body: unknown;
+  if (err instanceof EngineError) body = err.body();
+  else if (err instanceof FilterInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false };
+  else if (err instanceof MutationError) body = { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
+  else body = { error: "repo_not_found", message: String(err), retriable: false };
   return { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
 }
 
@@ -167,6 +177,208 @@ export function buildServer(ctx: ServerContext): McpServer {
       } catch (e) {
         return fail(e);
       }
+    },
+  );
+
+  server.registerTool(
+    "resolve",
+    {
+      description: "Hybrid search specialized for 'the id of the thing I mean'. Returns ranked {id, locator, preview, evidence}. Prefer the returned ids in follow-up calls.",
+      inputSchema: { query: z.string(), limit: z.number().int().optional() },
+    },
+    async (args) => {
+      try {
+        return ok(resolveThing(store, { repoId, query: args.query, ...(args.limit !== undefined ? { limit: args.limit } : {}) }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "apply",
+    {
+      description:
+        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. Conflicts carry current truth — retry from the error, don't re-read.",
+      inputSchema: {
+        ops: z.array(z.any()),
+        reason: z.string().optional(),
+        dry_run: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const res = apply(store, {
+          repoId, rootPath: ctx.rootPath,
+          ops: args.ops as Op[],
+          origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
+          ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
+        });
+        return ok(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "tasks_complete",
+    {
+      description: "Macro: mark the given task blocks checked. Expands to update(attrs:{checked:true}) per block; the expansion is applied via the same changeset machinery.",
+      inputSchema: { blocks: z.array(z.string()) },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const ops = tasksComplete(store, args.blocks);
+        return ok(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "sections_append",
+    {
+      description: "Macro: append markdown at the end of a heading's section range. Expands to a single insert op.",
+      inputSchema: { heading: z.string(), markdown: z.string() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const ops = sectionsAppend(args.heading, args.markdown);
+        return ok(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "links_retarget",
+    {
+      description: "Macro: rewrite a link/reference destination across all blocks that contain it. ALWAYS call with dry_run:true first to preview the hits, then dry_run:false to apply.",
+      inputSchema: { from_target: z.string(), to_target: z.string(), dry_run: z.boolean().optional() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { ops, hits } = linksRetarget(store, repoId, args.from_target, args.to_target);
+        if (args.dry_run !== false) return ok({ hits, applied: false });
+        const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
+        return ok({ hits, applied: true, ...res });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "graph_traverse",
+    {
+      description: "Frontier-expand the authored edge graph from seed node ids. direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. Returns nodes, edges, truncated.",
+      inputSchema: {
+        from: z.array(z.string()),
+        via: z.array(z.string()).optional(),
+        direction: z.enum(["out", "in", "both"]).optional(),
+        depth: z.number().int().optional(),
+        as_of: z.number().int().nullable().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        return ok(graphTraverse(store, {
+          from: args.from,
+          ...(args.via ? { via: args.via } : {}),
+          ...(args.direction ? { direction: args.direction } : {}),
+          ...(args.depth !== undefined ? { depth: args.depth } : {}),
+          ...(args.as_of !== undefined ? { asOf: args.as_of } : {}),
+        }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "graph_path",
+    {
+      description: "Up to k shortest paths between two node ids via BFS over authored edges. max_len ≤ 8, k ≤ 5.",
+      inputSchema: { from: z.string(), to: z.string(), via: z.array(z.string()).optional(), max_len: z.number().int().optional(), k: z.number().int().optional() },
+    },
+    async (args) => {
+      try {
+        return ok(graphPath(store, { from: args.from, to: args.to, ...(args.via ? { via: args.via } : {}), ...(args.max_len !== undefined ? { maxLen: args.max_len } : {}), ...(args.k !== undefined ? { k: args.k } : {}) }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "history_node",
+    {
+      description: "A block's biography: the commits that touched it with disposition kind/confidence/reason, newest first.",
+      inputSchema: { id: z.string(), limit: z.number().int().optional() },
+    },
+    async (args) => {
+      try {
+        return ok(historyNode(store, args.id, args.limit !== undefined ? { limit: args.limit } : {}));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "diff",
+    {
+      description: "Block-grain diff between two revisions of a document: added/removed/changed blocks.",
+      inputSchema: { doc: z.string(), from_rev: z.string(), to_rev: z.string() },
+    },
+    async (args) => {
+      try {
+        return ok(diffBlocks(store, args.doc, args.from_rev, args.to_rev));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "changes_since",
+    {
+      description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Poll with your last cursor to cheaply re-orient after time away.",
+      inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional() },
+    },
+    async (args) => {
+      try {
+        return ok(changesSince(store, repoId, {
+          ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+          ...(args.origin ? { origin: args.origin } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "repos_status",
+    { description: "Repo counts: documents, blocks, commits, open edges, and unconverged doc count.", inputSchema: {} },
+    async () => {
+      try { return ok(reposStatus(store, repoId)); } catch (e) { return fail(e); }
+    },
+  );
+
+  server.registerTool(
+    "sync_status",
+    { description: "Watcher/sync state: last commit seq, last checkpoint, and whether the repo is convergent.", inputSchema: {} },
+    async () => {
+      try { return ok(syncStatus(store, repoId)); } catch (e) { return fail(e); }
     },
   );
 

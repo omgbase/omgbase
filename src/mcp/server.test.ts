@@ -34,10 +34,12 @@ beforeEach(async () => {
 afterEach(() => store.close());
 
 describe("MCP server skeleton", () => {
-  it("lists the read tools", async () => {
+  it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    expect(names).toEqual(["docs_outline", "nodes_get", "nodes_get_many", "query", "text_search"]);
+    for (const t of ["docs_outline", "nodes_get", "nodes_get_many", "query", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
+      expect(names, `missing tool ${t}`).toContain(t);
+    }
   });
 
   it("docs_outline returns the outline with an ids table", async () => {
