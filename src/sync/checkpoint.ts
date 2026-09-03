@@ -5,6 +5,7 @@ import { sha256 } from "../core/hash.js";
 import { mintId } from "../core/ids.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
+import { hasConflictMarkers } from "./git-heuristics.js";
 
 // Checkpoint processing (01 §6, 03 §8). A checkpoint is one debounced batch of
 // filesystem changes. For each changed file: if the on-disk hash already equals
@@ -23,6 +24,7 @@ export interface CheckpointResult {
   ingested: string[]; // paths that produced observed commits
   suppressed: string[]; // echo-suppressed paths (hash already matched)
   deleted: string[]; // paths gone from disk
+  conflicted: string[]; // paths flagged with git conflict markers
 }
 
 /**
@@ -42,6 +44,7 @@ export function processCheckpoint(
   const ingested: string[] = [];
   const suppressed: string[] = [];
   const deleted: string[] = [];
+  const conflicted: string[] = [];
   const fileEntries: [string, string | null, string | null][] = [];
 
   for (const change of changes) {
@@ -67,7 +70,20 @@ export function processCheckpoint(
       continue;
     }
 
+    // Git conflict markers: flag the document conflicted (mutations refused
+    // until clean) and do NOT reconcile the marker soup into blocks. The file
+    // still parses as opaque via ingest, but we record the conflicted flag.
+    if (hasConflictMarkers(content)) {
+      ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
+      store.db.prepare("UPDATE documents SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
+      conflicted.push(change.path);
+      fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
+      continue;
+    }
+
     ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
+    // Clean content clears any prior conflicted flag.
+    store.db.prepare("UPDATE documents SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
     ingested.push(change.path);
     fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
   }
@@ -76,5 +92,5 @@ export function processCheckpoint(
     .prepare("INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?, ?, ?, ?, ?)")
     .run(checkpointId, repoId, ts, JSON.stringify(fileEntries), opts.gitHead ?? null);
 
-  return { checkpointId, ingested, suppressed, deleted };
+  return { checkpointId, ingested, suppressed, deleted, conflicted };
 }
