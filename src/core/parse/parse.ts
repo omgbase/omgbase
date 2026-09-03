@@ -5,6 +5,7 @@ import { frontmatter } from "micromark-extension-frontmatter";
 import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
 import type { Root, RootContent } from "mdast";
 import type { BlockType, RawBlock } from "./types.js";
+import { normalizeVisibleText } from "../hash.js";
 
 // Nodes whose children nest as blocks (03 §1: parser nesting only).
 // Everything else at block level maps to a leaf block; unknown → opaque.
@@ -77,30 +78,25 @@ function buildBlock(node: RootContent, source: string): RawBlock {
   const raw = source.slice(start, end);
   const mapped = mapType(node);
   const type: BlockType = mapped ?? "opaque";
-  const children = mapped === null ? [] : childrenOf(node).map((c) => buildBlock(c, source));
+  let children = mapped === null ? [] : childrenOf(node).map((c) => buildBlock(c, source));
+
+  // Fold a tight list item's lone paragraph: the item block carries the text
+  // directly (frozen outline format, 06 §6). Loose/multi-block items keep them.
+  if ((type === "list_item" || type === "task") && children.length === 1 && children[0]!.type === "paragraph") {
+    children = [];
+  }
 
   return {
     type,
     span: { start, end },
     raw,
-    text: normalizeText(raw, type),
+    text: normalizeVisibleText(raw, type),
     attrs: mapped === null ? {} : attrsFor(node),
     children,
     trivia: "",
     anchors: [],
     outLinks: [],
   };
-}
-
-// Provisional normalization (02 §5.2) — refined in Stage 1. Strips the raw of
-// per-line surrounding whitespace and collapses internal runs; drops blanks.
-function normalizeText(raw: string, _type: BlockType): string {
-  return raw
-    .split("\n")
-    .map((line) => line.trim().replace(/[ \t]+/g, " "))
-    .filter((line) => line.length > 0)
-    .join(" ")
-    .normalize("NFC");
 }
 
 /** Parse Markdown source into a flat list of top-level blocks with byte spans. */

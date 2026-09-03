@@ -26,8 +26,7 @@ export function rawHash(raw: string): Buffer {
 }
 
 // Normalized text (02 §5.2): per-line trim + internal whitespace-run collapse,
-// drop blank lines, NFC. List-marker stripping is applied by the caller (it
-// needs block type), so this operates on already-marker-stripped text.
+// drop blank lines, NFC. Inline Markdown characters are preserved as content.
 export function normalizeText(raw: string): string {
   return raw
     .split(/\r\n|\r|\n/)
@@ -35,6 +34,19 @@ export function normalizeText(raw: string): string {
     .filter((line) => line.length > 0)
     .join(" ")
     .normalize("NFC");
+}
+
+// Type-aware visible text (02 §5.2). Strips block-level syntax markers that are
+// not content: ATX heading hashes and list/task markers. Inline markers stay.
+export function normalizeVisibleText(raw: string, type: string): string {
+  let s = raw;
+  if (type === "heading") {
+    s = s.replace(/^[ \t]*#{1,6}[ \t]+/, "").replace(/[ \t]+#*[ \t]*$/, "");
+  } else if (type === "list_item" || type === "task") {
+    // Strip the list marker and an optional GFM checkbox on the first line.
+    s = s.replace(/^[ \t]*([-*+]|\d+[.)])[ \t]+/, "").replace(/^\[[ xX]\][ \t]+/, "");
+  }
+  return normalizeText(s);
 }
 
 /** norm_hash — sha256 of the normalized text (02 §1, §5.2). */

@@ -2,7 +2,7 @@ import { Store } from "./store/store.js";
 import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type TreeInputBlock } from "./store/writers.js";
-import { sha256, normalizeText } from "./hash.js";
+import { sha256, normalizeVisibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import type { RawBlock } from "./parse/types.js";
@@ -53,7 +53,9 @@ function flatten(
   blocks.forEach((b, ordinal) => {
     const orderKey = keyBetween(prevKey, null);
     prevKey = orderKey;
-    const norm = normalizeText(b.raw);
+    // Visible text drives query/FTS/outline; norm_hash drives reconciliation
+    // phase 2 and strips markers per 02 §5.2.
+    const visible = normalizeVisibleText(b.raw, b.type);
     out.push({
       blockId: b.blockId,
       parentBlock: parent,
@@ -63,9 +65,9 @@ function flatten(
       ancestorPath,
       type: b.type,
       attrs: JSON.stringify(b.attrs),
-      text: norm,
+      text: visible,
       rawHash: sha256(b.raw),
-      normHash: sha256(norm),
+      normHash: sha256(visible),
     });
     if (b.children.length > 0) {
       flatten(b.children, b.blockId, depth + 1, `${ancestorPath}${b.blockId}/`, out);
