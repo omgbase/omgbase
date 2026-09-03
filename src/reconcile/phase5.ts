@@ -131,6 +131,10 @@ export function phase5Scored(state: PhaseState): void {
   // Deterministic order: score desc, then old key, then new key.
   candidates.sort((a, b) => b.score - a.score || cmp(a.old.key, b.old.key) || cmp(a.neu.key, b.neu.key));
 
+  // All scored candidates per new key, for near-miss recording (R5).
+  const byNewKey = new Map<string, Candidate[]>();
+  for (const c of candidates) (byNewKey.get(c.neu.key) ?? byNewKey.set(c.neu.key, []).get(c.neu.key)!).push(c);
+
   // accepted pairs per parent for the order (R3) check
   const acceptedByParent = new Map<string | null, { oldIndex: number; newIndex: number }[]>();
 
@@ -146,6 +150,12 @@ export function phase5Scored(state: PhaseState): void {
       if (crosses) continue;
     }
 
+    // Near-misses (R5): other candidates for this new block whose score fell
+    // within 0.1 below the acceptance threshold. Recorded on the winner.
+    const nearMisses = (byNewKey.get(c.neu.key) ?? [])
+      .filter((o) => o.old.blockId !== c.old.blockId && o.score < threshold && o.score >= threshold - 0.1)
+      .map((o) => ({ blockId: o.old.blockId!, score: round(o.score) }));
+
     // accept
     state.matched.set(c.neu.key, c.old.blockId!);
     state.usedOld.add(c.old.blockId!);
@@ -158,12 +168,16 @@ export function phase5Scored(state: PhaseState): void {
       confidence: c.score,
       reason: "scored",
       matcherV: state.config.matcherV,
-      detail: {},
+      detail: nearMisses.length > 0 ? { near_misses: nearMisses } : {},
     });
     const list = acceptedByParent.get(c.neu.parentKey) ?? [];
     list.push({ oldIndex: c.old.index, newIndex: c.neu.index });
     acceptedByParent.set(c.neu.parentKey, list);
   }
+}
+
+function round(n: number): number {
+  return Math.round(n * 1000) / 1000;
 }
 
 function cmp(a: string, b: string): number {
