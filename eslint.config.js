@@ -33,8 +33,11 @@ export default [
     },
   },
   {
-    // core/ is the foundation: it MUST NOT import from any sibling module (07 §0).
+    // core/ is the foundation: it MUST NOT import from any sibling module (07
+    // §0). Production code only — test files legitimately compose modules to
+    // build integration fixtures.
     files: ["src/core/**/*.ts"],
+    ignores: ["src/core/**/*.test.ts"],
     rules: {
       "no-restricted-imports": ["error", {
         paths: bannedSerializers,
