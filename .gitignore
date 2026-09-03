@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.omgbase/
+*.log
+.DS_Store
+coverage/
