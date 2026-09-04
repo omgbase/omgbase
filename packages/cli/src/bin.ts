@@ -7,9 +7,9 @@ const { positionals } = parseArgs({ allowPositionals: true, strict: false });
 const command = positionals[0];
 
 if (!command || command === "version") {
-  console.log(`omg ${VERSION}`);
+  console.log(`omgbase ${VERSION}`);
   process.exit(0);
 }
 
-console.error(`omg: unknown command '${command}'`);
+console.error(`omgbase: unknown command '${command}'`);
 process.exit(1);

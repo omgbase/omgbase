@@ -5,6 +5,7 @@
   "description": "Open Markdown Graph Base — CLI",
   "type": "module",
   "bin": {
+    "omgbase": "./dist/src/bin.js",
     "omg": "./dist/src/bin.js"
   },
   "scripts": {

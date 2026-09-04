@@ -3,7 +3,7 @@
 **Status:** normative design, `proposed` (ADR-012). No CLI is implemented yet; this document is the input for that work.
 **Depends on:** `01-architecture.md` §11–12; `02-data-model.md` §2, §6; `04-mutation-and-concurrency.md` §6; `06-mcp-api.md` (tool semantics); `10-query-language.md` (envelope, fenced form).
 
-The binary is `omg` — the name the existing docs already use (`02-data-model.md` §6 specs `omg rebuild-index`; the repo README reserves the binary).
+The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
 
 ---
 
