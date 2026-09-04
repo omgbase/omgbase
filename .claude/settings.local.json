@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__mrplex__repos_list",
+      "Bash(cat)",
+      "Bash(chmod +x /tmp/analyze_deps.sh)",
+      "Bash(/tmp/analyze_deps.sh)",
+      "Bash(git mv *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm *)"
+    ]
+  }
+}

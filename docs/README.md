@@ -18,6 +18,7 @@ This folder is the complete, self-contained input for implementation. It descend
 | `08-decisions.md` | ADRs (binding), the authoritative cut list, experiments, open questions | before proposing any deviation |
 | `09-projected-queries.md` | Deferred design: embedded queries projecting materialized-acting content (strata, budgets, virtual-first) — **v1 builds only its §8 reservations** | touching the parser fence map, edges DDL, or query-planner seams |
 | `10-query-language.md` | Normative query syntax: envelope, targets/fields, CEL subset grammar, absence truth table, structural functions, link-graph predicates, ordering, compilation contract, fence form | touching `search/` (the CEL compiler), or writing any filter in tests/fixtures |
+| `11-cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
 
 ## Rules for implementation agents
 

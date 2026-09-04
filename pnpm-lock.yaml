@@ -7,6 +7,35 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^8.18.0
+        version: 8.69.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^8.18.0
+        version: 8.69.0(eslint@9.39.5)(typescript@5.9.3)
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/cli:
+    dependencies:
+      '@omgbase/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/client: {}
+
+  packages/core:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
@@ -45,27 +74,9 @@ importers:
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.20.1
-      '@typescript-eslint/eslint-plugin':
-        specifier: ^8.18.0
-        version: 8.69.0(@typescript-eslint/parser@8.69.0(eslint@9.39.5)(typescript@5.9.3))(eslint@9.39.5)(typescript@5.9.3)
-      '@typescript-eslint/parser':
-        specifier: ^8.18.0
-        version: 8.69.0(eslint@9.39.5)(typescript@5.9.3)
-      eslint:
-        specifier: ^9.17.0
-        version: 9.39.5
       fast-check:
         specifier: ^4.9.0
         version: 4.9.0
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.20.1)
 
 packages:
 

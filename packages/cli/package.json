@@ -1,0 +1,19 @@
+{
+  "name": "omgbase",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open Markdown Graph Base — CLI",
+  "type": "module",
+  "bin": {
+    "omg": "./dist/src/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'no tests yet'",
+    "lint": "echo 'no lint yet'"
+  },
+  "dependencies": {
+    "@omgbase/core": "workspace:*"
+  }
+}
