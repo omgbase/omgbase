@@ -1,3 +1,5 @@
+<center><img src="https://i.imgur.com/GuNPnuA.png" maxwidth="80%"></center>
+
 # omgbase
 
 **Open Markdown Graph Base** — a versioned, addressable graph of authored Markdown structure.
