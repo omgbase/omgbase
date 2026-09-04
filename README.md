@@ -23,7 +23,7 @@ Requires **Node ≥ 22** and **pnpm**.
 
 ```bash
 pnpm install
-pnpm test        # 298 tests
+pnpm test
 pnpm typecheck
 pnpm lint
 ```
@@ -32,33 +32,39 @@ pnpm lint
 
 A single-writer engine process sits beside one or more Markdown working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
+The repo is a pnpm workspace of three packages:
+
 ```
-src/
-  core/        parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
-  reconcile/   matcher phases · scoring · dispositions · eval harness
-  sync/        watcher · checkpoints · reconciling ingest · recovery · git heuristics
-  mutate/      six kernel ops · changesets · CAS · macros
-  graph/       edge extraction · intervals · traversal · history/diff
-  search/      CEL query compiler · FTS · embeddings · vector · RRF · resolve/pipeline
-  mcp/         MCP server · tools · error mapping
-  migrate/     mrplex importer
-corpus/        round-trip + matcher fixtures
-docs/          normative design documents
+packages/
+  core/          @omgbase/core — the embedded engine
+    src/
+      core/      parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
+      reconcile/ matcher phases · scoring · dispositions · eval harness
+      sync/      watcher · checkpoints · reconciling ingest · recovery · git heuristics
+      mutate/    six kernel ops · changesets · CAS · macros
+      graph/     edge extraction · intervals · traversal · history/diff
+      search/    CEL query compiler · FTS · embeddings · vector · RRF · resolve/pipeline
+      mcp/       MCP server · tools · error mapping
+      migrate/   mrplex importer
+    corpus/      round-trip + matcher fixtures
+  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core)
+  client/        @omgbase/client — thin remote MCP client (placeholder)
+docs/            normative design documents
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.
 
 ## Quickstart (library)
 
-There is no `omg` CLI binary yet (its design is `docs/11-cli.md`, ADR-012); the engine is used as a library. All functions take a `Store` and a `repoId`.
+The `omg` CLI (`packages/cli`) is currently a stub — it exposes only `omg version`; real commands are still forthcoming (design in `docs/11-cli.md`, ADR-012). For now the engine is used as a library via `@omgbase/core`. All functions take a `Store` and a `repoId`.
 
 ### Attach a directory and query it
 
 ```ts
-import { Store } from "./src/core/store/store.js";
-import { attachRepo } from "./src/sync/attach.js";
-import { query } from "./src/search/query.js";
-import { docsOutline } from "./src/core/read/outline.js";
+import { Store } from "@omgbase/core/core/store/store";
+import { attachRepo } from "@omgbase/core/sync/attach";
+import { query } from "@omgbase/core/search/query";
+import { docsOutline } from "@omgbase/core/core/read/outline";
 
 // Open (or create) the engine database. Use ":memory:" for tests.
 const store = new Store({ path: "/path/to/vault/.omgbase/omgbase.db" });
@@ -82,7 +88,7 @@ console.log(outline.text);
 ### Watch for human edits
 
 ```ts
-import { Watcher } from "./src/sync/watcher.js";
+import { Watcher } from "@omgbase/core/sync/watcher";
 
 const watcher = new Watcher(store, repoId, "/path/to/vault", {
   quiescenceMs: 750,
@@ -96,7 +102,7 @@ watcher.start();
 ### Apply a structural mutation
 
 ```ts
-import { apply } from "./src/mutate/apply.js";
+import { apply } from "@omgbase/core/mutate/apply";
 
 // Move a block into a section, then edit it — atomically, in one changeset.
 apply(store, {
@@ -119,7 +125,7 @@ Mutations render the tree by splice, write the file atomically (temp → rename)
 ### Serve over MCP
 
 ```ts
-import { buildServer } from "./src/mcp/server.js";
+import { buildServer } from "@omgbase/core/mcp/server";
 
 const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
@@ -132,8 +138,8 @@ Tools exposed: `docs_outline`, `nodes_get`, `nodes_get_many`, `query`, `text_sea
 Vector search needs an embedding provider hook (vault text leaves the machine, so it is opt-in). Without one, semantic queries return `semantic_unavailable`.
 
 ```ts
-import { EmbeddingWorker } from "./src/search/embeddings.js";
-import { hybridSearch } from "./src/search/rrf.js";
+import { EmbeddingWorker } from "@omgbase/core/search/embeddings";
+import { hybridSearch } from "@omgbase/core/search/rrf";
 
 const worker = new EmbeddingWorker(store, myProvider);   // provider = { model, dim, embed() }
 const vec = await worker.embedQuery("stable identity across edits");
