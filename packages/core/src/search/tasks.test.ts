@@ -3,7 +3,7 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { buildEmbedTasks } from "./tasks.js";
-import { EmbeddingWorker, type EmbeddingProvider, type EmbedTask } from "./embeddings.js";
+import { EmbeddingWorker, type EmbeddingProvider } from "./embeddings.js";
 import { vectorSearch } from "./vector.js";
 
 let store: Store;
