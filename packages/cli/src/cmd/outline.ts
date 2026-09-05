@@ -58,7 +58,6 @@ function runOutline(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-// eslint-disable-next-line no-control-regex
 function colorizeOutline(line: string, style: import("../style.js").Style): string {
   // leading `  b01 ` alias → dim; trailing ` §` → accent.
   return line

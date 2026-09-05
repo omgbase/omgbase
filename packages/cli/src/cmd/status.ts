@@ -68,7 +68,6 @@ function runStatus(cli: Cli, args: string[]): number {
 }
 
 // Local width-aware pad (mirrors render.visibleWidth without importing the class).
-// eslint-disable-next-line no-control-regex
 const ANSI = /\x1b\[[0-9;]*m/g;
 function padVisible(s: string, w: number): string {
   const vis = s.replace(ANSI, "").length;

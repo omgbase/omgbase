@@ -5,7 +5,6 @@ import { Style, glyphs, type Glyphs, type Tier } from "./style.js";
 // still align. Nothing here touches the machine paths (--json/--jsonl/--ids),
 // which emit library objects verbatim from the command layer.
 
-// eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
 /** Visible width of a string, ignoring ANSI SGR sequences. */
