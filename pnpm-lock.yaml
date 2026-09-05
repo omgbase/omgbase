@@ -32,6 +32,9 @@ importers:
       '@omgbase/core':
         specifier: workspace:*
         version: link:../core
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
 
   packages/client: {}
 

@@ -2,7 +2,28 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+
+// file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
+// freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
+// one-shot command re-ingests only files that changed on disk since last ingest.
+export const FILE_STATS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS file_stats (
+  repo_id  TEXT NOT NULL,
+  path     TEXT NOT NULL,
+  mtime_ns INTEGER NOT NULL,
+  size     INTEGER NOT NULL,
+  hash     BLOB NOT NULL,
+  PRIMARY KEY (repo_id, path)
+);
+`;
+
+// Additive migrations keyed by the version they upgrade TO. Each runs inside a
+// transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
+// destructive changes. store.ts applies these in order for an older db.
+export const MIGRATIONS: Record<number, string> = {
+  2: FILE_STATS_DDL,
+};
 
 export const DDL = /* sql */ `
 -- ---- durable tables (02 §3) --------------------------------------------------
@@ -199,4 +220,6 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
   text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
 );
+
+${FILE_STATS_DDL}
 `;

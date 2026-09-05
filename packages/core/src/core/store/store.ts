@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DDL, SCHEMA_VERSION } from "./schema.js";
+import { DDL, SCHEMA_VERSION, MIGRATIONS } from "./schema.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -30,11 +30,21 @@ export class Store {
     if (current === 0) {
       this.db.exec(DDL);
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
-    } else if (current !== SCHEMA_VERSION) {
+      return;
+    }
+    if (current === SCHEMA_VERSION) return;
+    if (current > SCHEMA_VERSION) {
       throw new Error(
-        `schema version mismatch: db=${current} expected=${SCHEMA_VERSION} (migrations not yet implemented)`,
+        `database schema (v${current}) is newer than this build (v${SCHEMA_VERSION}); upgrade omgbase`,
       );
     }
+    // Apply forward additive migrations in order (each idempotent DDL).
+    for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
+      const ddl = MIGRATIONS[v];
+      if (!ddl) throw new Error(`no migration to schema v${v}`);
+      this.db.exec(ddl);
+    }
+    this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
   }
 
   /**

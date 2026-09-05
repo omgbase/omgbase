@@ -5,16 +5,17 @@
   "description": "Open Markdown Graph Base — CLI",
   "type": "module",
   "bin": {
-    "omgbase": "./dist/src/bin.js",
-    "omg": "./dist/src/bin.js"
+    "omgbase": "./dist/src/main.js",
+    "omg": "./dist/src/main.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'no tests yet'",
+    "test": "vitest run",
     "lint": "echo 'no lint yet'"
   },
   "dependencies": {
-    "@omgbase/core": "workspace:*"
+    "@omgbase/core": "workspace:*",
+    "yaml": "^2.9.0"
   }
 }

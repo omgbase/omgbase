@@ -246,6 +246,19 @@ CREATE VIRTUAL TABLE blocks_fts USING fts5(
 );
 -- Maintained by triggers or explicit sync in the commit transaction.
 
+-- Filesystem stat cache backing the CLI freshness sweep (11 §3.3). Lets a
+-- one-shot command detect out-of-band edits cheaply: compare (mtime_ns, size)
+-- per file and only hash/ingest the candidates that changed. Rebuildable by a
+-- full re-stat; the durable convergence signal remains documents.file_hash.
+CREATE TABLE file_stats (
+  repo_id  TEXT NOT NULL,
+  path     TEXT NOT NULL,
+  mtime_ns INTEGER NOT NULL,                -- fs.stat bigint mtimeNs
+  size     INTEGER NOT NULL,
+  hash     BLOB NOT NULL,                   -- sha256 of file bytes at last ingest/engine write
+  PRIMARY KEY (repo_id, path)
+);
+
 -- sqlite-vec index (loaded as extension) for current block vectors:
 -- CREATE VIRTUAL TABLE block_vec USING vec0(block_id TEXT PRIMARY KEY, embedding float[<dim>]);
 -- Rebuilt/updated async by the embedding worker; brute-force acceptable to ~10^5 vectors.
@@ -273,7 +286,7 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 
 ## 6. Rebuild rules (what "derived" means operationally)
 
-`omg rebuild-index [--sections|--edges|--fts|--vec|--projections|--all]` MUST reconstruct every table in §4 from tables in §3 only, byte-identically for deterministic tables (sections, doc_edges, block_changes) and semantically for FTS/vec. CI runs a drop-and-rebuild equivalence check on the fixture vault.
+`omg rebuild-index [--sections|--edges|--fts|--vec|--projections|--all]` MUST reconstruct every table in §4 from tables in §3 only, byte-identically for deterministic tables (sections, doc_edges, block_changes) and semantically for FTS/vec. CI runs a drop-and-rebuild equivalence check on the fixture vault. `file_stats` is the one exception: it caches filesystem state, not engine state, so it is rebuilt by re-statting the working tree (any missing/empty `file_stats` simply forces the next freshness sweep to hash every file — correct, just not free), never from §3.
 
 ## 7. Retention & GC
 

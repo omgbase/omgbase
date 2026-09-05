@@ -7,6 +7,8 @@ import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, MutationError, type MutDoc, type MutBlock } from "./tree.js";
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, type To, type Expect } from "./ops.js";
+import { withWriterLock } from "../sync/writer-lock.js";
+import { recordFileStat } from "../sync/freshness.js";
 
 // Changeset application (04 §2, §6). Ops apply in order across documents; later
 // ops see earlier effects; minted ids are referenceable via "$n.ids[i]"
@@ -27,6 +29,12 @@ export interface ApplyRequest {
   ops: Op[];
   origin: { actor: string; reason?: string };
   dryRun?: boolean;
+  /**
+   * Workspace .omgbase/ dir. When set, the file-write + commit phase runs under
+   * the cross-process writer lock (11 §3.2). Omitted in single-process/in-memory
+   * contexts (tests) where the in-process serialization of Store.write suffices.
+   */
+  omgbaseDir?: string;
 }
 
 export interface OpResult {
@@ -158,30 +166,41 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   // Write each touched file with the file-CAS + atomic-write protocol (04 §6),
   // then re-ingest the rendered bytes as an api-origin commit so identity
   // threads (the ops already assigned ids; reconciliation confirms carries).
-  const ts = new Date().toISOString();
-  for (const [docId, d] of loaded) {
-    const rendered = renderDoc(d);
-    const abs = join(req.rootPath, d.path);
+  // Steps 2–7 run under the cross-process writer lock when a workspace dir is
+  // supplied (11 §3.2); otherwise the Store's in-process serialization suffices.
+  const commitPhase = (): void => {
+    const ts = new Date().toISOString();
+    for (const [docId, d] of loaded) {
+      const rendered = renderDoc(d);
+      const abs = join(req.rootPath, d.path);
 
-    // File-CAS: on-disk bytes must equal the revision we computed against.
-    const current = store.db.prepare("SELECT file_hash FROM documents WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
-    if (existsSync(abs) && current?.file_hash) {
-      const onDisk = sha256(readFileSync(abs, "utf8"));
-      if (!onDisk.equals(current.file_hash)) {
-        // A human edit landed first: ingest it, then the caller must retry.
-        ingestFile(store, req.repoId, d.path, readFileSync(abs, "utf8"), { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
-        throw new MutationError("sync_conflict", `file ${d.path} changed on disk; re-ingested — retry`, { retriable: true });
+      // File-CAS: on-disk bytes must equal the revision we computed against.
+      const current = store.db.prepare("SELECT file_hash FROM documents WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
+      if (existsSync(abs) && current?.file_hash) {
+        const onDisk = sha256(readFileSync(abs, "utf8"));
+        if (!onDisk.equals(current.file_hash)) {
+          // A human edit landed first: ingest it, then the caller must retry.
+          ingestFile(store, req.repoId, d.path, readFileSync(abs, "utf8"), { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
+          if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(readFileSync(abs, "utf8")));
+          throw new MutationError("sync_conflict", `file ${d.path} changed on disk; re-ingested — retry`, { retriable: true });
+        }
       }
+
+      // Atomic write: temp file → rename.
+      const tmp = `${abs}.omgtmp`;
+      writeFileSync(tmp, rendered);
+      renameSync(tmp, abs);
+
+      // Commit: ingest the rendered bytes (api origin) with reconciliation.
+      ingestFile(store, req.repoId, d.path, rendered, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
+      // Keep the freshness cache warm so this engine write isn't re-hashed by a
+      // later sweep (echo suppression already covers correctness; this avoids work).
+      if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(rendered));
     }
+  };
 
-    // Atomic write: temp file → rename.
-    const tmp = `${abs}.omgtmp`;
-    writeFileSync(tmp, rendered);
-    renameSync(tmp, abs);
-
-    // Commit: ingest the rendered bytes (api origin) with reconciliation.
-    ingestFile(store, req.repoId, d.path, rendered, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
-  }
+  if (req.omgbaseDir) withWriterLock(req.omgbaseDir, commitPhase);
+  else commitPhase();
 
   return { results, revisions, committed: true };
 }

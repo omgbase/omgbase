@@ -56,9 +56,26 @@ docs/            normative design documents
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.
 
+## Quickstart (CLI)
+
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). CLI-A (the read surface) is implemented: `init`, `attach`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `log`, `hist`, `diff`, `links`, `sync`. Write/serve commands (`apply` + sugar, `watch`, `mcp`, admin) are CLI-B.
+
+```bash
+pnpm -r build           # build core + cli
+node packages/cli/dist/src/main.js init ./my-vault --yes   # or `pnpm link` to get `omgbase`/`omg` on PATH
+
+omg status                              # where am I: repo, sync, watcher, queue
+omg outline notes/hub.md                # compact orientation outline (frozen wire format)
+omg q 'type == "task" && !attrs.checked' --text deploy --ids | omg cat -   # pipe fuel
+omg log --since 24h                     # one commit digest per line
+omg find "stable identity rationale" -1 # top hit's id alone
+```
+
+Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.
+
 ## Quickstart (library)
 
-The `omg` CLI (`packages/cli`) is currently a stub — it exposes only `omg version`; real commands are still forthcoming (design in `docs/11-cli.md`, ADR-012). For now the engine is used as a library via `@omgbase/core`. All functions take a `Store` and a `repoId`.
+The engine can also be used directly as a library via `@omgbase/core`. All functions take a `Store` and a `repoId`.
 
 ### Attach a directory and query it
 
