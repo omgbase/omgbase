@@ -58,6 +58,24 @@ describe("graph_traverse", () => {
     expect(res.nodes).toContain(docId("b.md"));
   });
 
+  it("normalizes a block-id seed to its owning document", () => {
+    const blockId = (store.db.prepare(
+      "SELECT block_id FROM blocks WHERE doc_id=? AND text LIKE '%links to%'",
+    ).get(docId("a.md")) as { block_id: string }).block_id;
+    const res = graphTraverse(store, { from: [blockId], via: ["references"], direction: "out", depth: 3 });
+    expect(res.nodes).toContain(docId("a.md"));
+    expect(res.nodes).toContain(docId("b.md"));
+  });
+
+  it("projects node metadata into nodeInfo when select is given", () => {
+    const res = graphTraverse(store, { from: [docId("a.md")], via: ["references"], direction: "out", depth: 3, select: ["$path", "$kind"] });
+    expect(res.nodeInfo).toBeDefined();
+    expect(res.nodeInfo![docId("b.md")]).toMatchObject({ kind: "document", path: "b.md" });
+    // d.md is referenced but not present as a file → phantom, path from the id.
+    const phantom = Object.entries(res.nodeInfo!).find(([, v]) => v.kind === "phantom");
+    if (phantom) expect(phantom[1].path).toBe("d.md");
+  });
+
   it("enforces the node budget and flags truncation", () => {
     const res = graphTraverse(store, { from: [docId("a.md")], via: ["references"], direction: "out", depth: 8, budget: { maxNodes: 2 } });
     expect(res.truncated).toBe(true);

@@ -16,6 +16,7 @@ import { graphTraverse, graphPath } from "../graph/traverse.js";
 import { historyNode, diffBlocks, changesSince } from "../graph/history.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
+import { QUERY_SYNTAX, GRAPH_SYNTAX } from "./reference.js";
 
 // MCP server (06-mcp-api). The full tool surface wired to the engine: read
 // (docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
@@ -29,6 +30,12 @@ export interface ServerContext {
   repoId: string;
   /** working-tree root, required for mutation tools that write files. */
   rootPath?: string;
+  /**
+   * Embed a query string to a vector for semantic search. Absent ⇒ the `query`
+   * tool's `semantic` param yields `semantic_unavailable` (no provider). The
+   * host (CLI `omg mcp`) supplies this from the repo's configured embedder.
+   */
+  embedQuery?: (text: string) => Promise<{ model: string; vec: Float32Array }>;
 }
 
 function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
@@ -48,14 +55,24 @@ export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: "0.0.0" });
   const { store, repoId } = ctx;
 
-  function resolveDocId(ref: { doc?: string | undefined; path?: string | undefined }): string {
-    const info = ref.doc
-      ? findDoc(store, { docId: ref.doc })
-      : ref.path
-        ? findDoc(store, { repoId, path: ref.path })
-        : null;
-    if (!info) throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`);
-    return info.docId;
+  // Resolve the owning document id from an explicit doc/path, or — when neither
+  // is given — infer it from a block id. The MCP schemas mark `doc`/`path`
+  // optional precisely so a caller holding only a block id (e.g. from
+  // docs_outline or query) can hydrate it without a separate lookup.
+  function resolveDocId(ref: { doc?: string | undefined; path?: string | undefined; block?: string | undefined }): string {
+    if (ref.doc) {
+      const info = findDoc(store, { docId: ref.doc });
+      if (info) return info.docId;
+    } else if (ref.path) {
+      const info = findDoc(store, { repoId, path: ref.path });
+      if (info) return info.docId;
+    } else if (ref.block) {
+      const row = store.db
+        .prepare("SELECT doc_id FROM blocks WHERE block_id = ?")
+        .get(ref.block) as { doc_id: string } | undefined;
+      if (row) return row.doc_id;
+    }
+    throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`);
   }
 
   server.registerTool(
@@ -89,7 +106,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "nodes_get",
     {
-      description: "Fetch one block subtree at a resolution (skeleton|outline|text|raw|full). Args: doc/path + block id.",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. Use this to expand the lean ids returned by query/resolve/graph_traverse.",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -99,7 +116,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const docId = resolveDocId(args);
+        const docId = resolveDocId({ doc: args.doc, path: args.path, block: args.id });
         const node = nodesGet(store, docId, args.id, args.resolution ? { resolution: args.resolution } : {});
         if (!node) throw new EngineError("block_missing", `no block ${args.id}`);
         return ok(node);
@@ -123,7 +140,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const docId = resolveDocId(args);
+        const docId = resolveDocId({ doc: args.doc, path: args.path, block: args.ids[0] });
         const res = nodesGetMany(store, docId, args.ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
@@ -136,14 +153,36 @@ export function buildServer(ctx: ServerContext): McpServer {
   );
 
   server.registerTool(
+    "query_syntax",
+    {
+      description:
+        "Reference: the full `query` syntax — targets, the CEL filter subset, absence semantics, structural + link-graph functions, `select` projection, and worked examples. Call this before writing a non-trivial filter. No arguments.",
+      inputSchema: {},
+    },
+    async () => ok({ syntax: QUERY_SYNTAX }),
+  );
+
+  server.registerTool(
+    "graph_syntax",
+    {
+      description:
+        "Reference: the full `graph_traverse` / `graph_path` syntax — the doc-grain seed rule, predicates/direction/depth, `select` node projection, temporal as_of, and how to compose traversal with `query`. Call this before a non-trivial traversal. No arguments.",
+      inputSchema: {},
+    },
+    async () => ok({ syntax: GRAPH_SYNTAX }),
+  );
+
+  server.registerTool(
     "query",
     {
       description:
-        "CEL filter over documents|blocks (see the query language spec). Returns lean projected hits {id, path} with truncated + cursor. Hydrate by id via nodes_get.",
+        "Structured retrieval over documents|blocks. Modes intersect (AND): `filter` (CEL — call query_syntax for the grammar), `text` (FTS5 keyword), `semantic` (embedding similarity, needs a provider). `select` projects fields onto each hit so you can triage without a follow-up nodes_get: bare keys read the doc's frontmatter (e.g. \"layer\",\"type\",\"tracking\"); on blocks also \"type\", \"attrs.<k>\", \"$ordinal\"; \"$semantic_score\" with semantic. Default hit is lean {id, path}. Returns truncated + cursor. Blocks can constrain the parent doc via doc.<key> (e.g. doc.layer == \"canon\").",
       inputSchema: {
         from: z.enum(["documents", "blocks"]),
         filter: z.string().optional(),
         text: z.string().optional(),
+        semantic: z.string().optional(),
+        select: z.array(z.string()).optional(),
         order: z.array(z.string()).optional(),
         limit: z.number().int().optional(),
         cursor: z.string().nullable().optional(),
@@ -151,15 +190,22 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const res = runQuery(store, repoId, {
+        const env: Parameters<typeof runQuery>[2] = {
           from: args.from,
           ...(args.filter !== undefined ? { filter: args.filter } : {}),
           ...(args.text !== undefined ? { text: args.text } : {}),
+          ...(args.select !== undefined ? { select: args.select } : {}),
           ...(args.order !== undefined ? { order: args.order } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-        });
-        return ok(res);
+        };
+        if (args.semantic !== undefined && args.semantic.trim().length > 0) {
+          if (!ctx.embedQuery) {
+            throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
+          }
+          env.vector = await ctx.embedQuery(args.semantic);
+        }
+        return ok(runQuery(store, repoId, env));
       } catch (e) {
         return fail(e);
       }
@@ -169,7 +215,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "text_search",
     {
-      description: "Full-text (FTS5, bm25-ranked) search over block text. Returns hits with path + score + truncated.",
+      description: "Full-text (FTS5, bm25-ranked) keyword search over block text. Input is treated as a search box — plain words are ANDed, \"quoted phrases\" match adjacency, punctuation like / is safe (no query DSL). For structured filtering or frontmatter projection use `query` instead (see query_syntax).",
       inputSchema: { q: z.string(), limit: z.number().int().optional() },
     },
     async (args) => {
@@ -350,12 +396,13 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "graph_traverse",
     {
-      description: "Frontier-expand the authored edge graph from seed node ids. direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. Returns nodes, edges, truncated.",
+      description: "Frontier-expand the authored edge graph from seed node ids. Traversal is DOC-GRAIN: seeds are document ids; a block id is auto-normalized to its owning document (so ids from query/docs_outline work). direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. `select` projects per-node metadata into `nodeInfo` (e.g. [\"$path\",\"type\",\"layer\"]) so nodes are actionable without hydrating each id; phantom/external nodes carry their target path/uri. Returns nodes, edges, nodeInfo?, truncated.",
       inputSchema: {
         from: z.array(z.string()),
         via: z.array(z.string()).optional(),
         direction: z.enum(["out", "in", "both"]).optional(),
         depth: z.number().int().optional(),
+        select: z.array(z.string()).optional(),
         as_of: z.number().int().nullable().optional(),
       },
     },
@@ -366,6 +413,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           ...(args.via ? { via: args.via } : {}),
           ...(args.direction ? { direction: args.direction } : {}),
           ...(args.depth !== undefined ? { depth: args.depth } : {}),
+          ...(args.select ? { select: args.select } : {}),
           ...(args.as_of !== undefined ? { asOf: args.as_of } : {}),
         }));
       } catch (e) {

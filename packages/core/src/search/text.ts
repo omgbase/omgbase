@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { sanitizeFtsQuery } from "./fts-query.js";
 
 // text mode query surface (07 task 1.8). Full-text search over block text via
 // FTS5, ranked by bm25. Index maintenance lives in core/store/fts.ts and runs
@@ -25,6 +26,8 @@ export function textSearch(
   opts: { limit?: number } = {},
 ): TextSearchResult {
   const limit = opts.limit ?? 50;
+  const match = sanitizeFtsQuery(queryStr);
+  if (match === "") return { hits: [], truncated: false };
   const rows = store.db
     .prepare(
       `SELECT b.block_id AS blockId, b.doc_id AS docId, d.path AS path, b.type AS type,
@@ -36,7 +39,7 @@ export function textSearch(
        ORDER BY score
        LIMIT ?`,
     )
-    .all(queryStr, repoId, limit + 1) as (TextHit & { score: number })[];
+    .all(match, repoId, limit + 1) as (TextHit & { score: number })[];
 
   const truncated = rows.length > limit;
   const hits = rows.slice(0, limit).map((r) => ({ ...r, score: -r.score }));

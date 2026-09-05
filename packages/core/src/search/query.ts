@@ -2,6 +2,7 @@ import type { Store } from "../core/store/store.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
 import { hybridSearch } from "./rrf.js";
+import { sanitizeFtsQuery } from "./fts-query.js";
 
 // query tool (10-query-language; 07 task 1.7). Compiles a CEL filter to indexed
 // SQL over documents|blocks, intersects with optional text (FTS5), applies
@@ -67,10 +68,16 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
       const allowed = filterBlockIds(store, repoId, env.filter, blockIds);
       blockIds = blockIds.filter((id) => allowed.has(id));
     }
-    const pathById = new Map(hits.map((h) => [h.blockId, h.path]));
+    const scoreById = new Map(hits.map((h) => [h.blockId, h.score]));
     const page = blockIds.slice(0, limit);
+    const projById = projectionMaterial(store, page);
+    const wantScore = env.select?.includes("$semantic_score") ?? false;
     return {
-      hits: page.map((id) => ({ id, path: pathById.get(id) ?? "" })),
+      hits: page.map((id) => {
+        const hit = projectRow(projById.get(id) ?? { id, path: "" }, env.select, "blocks");
+        if (wantScore) hit.$semantic_score = scoreById.get(id) ?? 0;
+        return hit;
+      }),
       truncated: blockIds.length > limit,
       cursor: null,
     };
@@ -95,12 +102,15 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   }
 
   if (env.text && env.text.trim().length > 0) {
+    const match = sanitizeFtsQuery(env.text);
+    // A text clause that reduces to no searchable token matches nothing.
+    if (match === "") return { hits: [], truncated: false, cursor: null };
     if (target === "blocks") {
       where.push("b.rowid IN (SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?)");
     } else {
       where.push("d.doc_id IN (SELECT b2.doc_id FROM blocks_fts JOIN blocks b2 ON b2.rowid = blocks_fts.rowid WHERE blocks_fts MATCH ?)");
     }
-    params.push(env.text);
+    params.push(match);
   }
 
   // ordering: total order for stable cursors (ties break by id asc — 10 §7).
@@ -108,8 +118,9 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
 
   const base =
     target === "documents"
-      ? `SELECT d.doc_id AS id, d.path AS path, d.path AS ordId FROM documents d`
-      : `SELECT b.block_id AS id, d.path AS path, b.block_id AS ordId, b.ordinal AS ordinal
+      ? `SELECT d.doc_id AS id, d.path AS path, d.metadata AS metadata FROM documents d`
+      : `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
+                b.attrs AS attrs, d.metadata AS metadata
          FROM blocks b JOIN documents d ON d.doc_id = b.doc_id`;
 
   // Cursor: composite keyset on (path, id) matching the default order. The
@@ -127,14 +138,88 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const sql = `${base} WHERE ${where.join(" AND ")}${cursorClause} ORDER BY ${orderCols} LIMIT ?`;
   const runParams = [...params, limit + 1];
 
-  const rows = store.db.prepare(sql).all(...runParams) as { id: string; path: string }[];
+  const rows = store.db.prepare(sql).all(...runParams) as ProjectionRow[];
   const truncated = rows.length > limit;
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   const cursor = truncated && last ? encodeCursor(last.path, last.id) : null;
 
-  const hits: QueryHit[] = page.map((r) => ({ id: r.id, path: r.path }));
+  const hits: QueryHit[] = page.map((r) => projectRow(r, env.select, target));
   return { hits, truncated, cursor };
+}
+
+interface ProjectionRow {
+  id: string;
+  path: string;
+  metadata?: string;
+  ordinal?: number;
+  type?: string;
+  attrs?: string;
+}
+
+// Project a result row to a hit. `id` and `path` are always present (the lean
+// default and every caller's stable handle). A `select` list adds intrinsics
+// ($id/$path/$repo/$ordinal/$type…) and — for bare keys — frontmatter values
+// on both targets, plus block `type` and `attrs.<k>` on the blocks target.
+// This is the projection-then-hydrate shortcut (10 §7): triage on frontmatter
+// without an N-follow-up hydration round trip.
+function projectRow(row: ProjectionRow, select: string[] | undefined, target: Target): QueryHit {
+  const hit: QueryHit = { id: row.id, path: row.path };
+  if (!select || select.length === 0) return hit;
+
+  const fm = row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : {};
+  const attrs = row.attrs ? (JSON.parse(row.attrs) as Record<string, unknown>) : {};
+
+  for (const field of select) {
+    if (field === "$id" || field === "$path") continue; // already present
+    if (field === "$repo" || field === "$ordinal" || field === "$type") {
+      if (field === "$ordinal" && row.ordinal !== undefined) hit.ordinal = row.ordinal;
+      if (field === "$type" && row.type !== undefined) hit.type = row.type;
+      continue;
+    }
+    if (field === "type" && target === "blocks") {
+      if (row.type !== undefined) hit.type = row.type;
+      continue;
+    }
+    if (field.startsWith("attrs.") && target === "blocks") {
+      const key = field.slice("attrs.".length);
+      const v = readPath(attrs, key);
+      if (v !== undefined) hit[field] = v;
+      continue;
+    }
+    // Bare identifier (possibly dotted) ⇒ frontmatter key on the containing doc.
+    const v = readPath(fm, field);
+    if (v !== undefined) hit[field] = v;
+  }
+  return hit;
+}
+
+// Fetch projection material (path, ordinal, type, attrs, doc metadata) for a
+// set of block ids, preserving nothing about order — the caller keeps rank.
+function projectionMaterial(store: Store, blockIds: string[]): Map<string, ProjectionRow> {
+  const out = new Map<string, ProjectionRow>();
+  if (blockIds.length === 0) return out;
+  const placeholders = blockIds.map(() => "?").join(",");
+  const rows = store.db.prepare(
+    `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
+            b.attrs AS attrs, d.metadata AS metadata
+     FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
+     WHERE b.block_id IN (${placeholders})`,
+  ).all(...blockIds) as ProjectionRow[];
+  for (const r of rows) out.set(r.id, r);
+  return out;
+}
+
+// Read a dotted path (`meta.owner`) out of a parsed JSON object; undefined when
+// any segment is absent, mirroring CEL absence semantics (10 §3.3).
+function readPath(obj: Record<string, unknown>, path: string): unknown {
+  const segs = path.split(".");
+  let cur: unknown = obj;
+  for (const s of segs) {
+    if (cur === null || typeof cur !== "object") return undefined;
+    cur = (cur as Record<string, unknown>)[s];
+  }
+  return cur;
 }
 
 function buildOrder(order: string[] | undefined, target: Target): string {
@@ -196,8 +281,10 @@ function queryNodes(store: Store, repoId: string, env: QueryEnvelope, limit: num
   }
 
   if (env.text && env.text.trim().length > 0) {
+    const match = sanitizeFtsQuery(env.text);
+    if (match === "") return { hits: [], truncated: false, cursor: null };
     where.push("n.rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)");
-    params.push(env.text);
+    params.push(match);
   }
 
   const base = `SELECT n.node_id AS id, d.path AS path, n.kind AS kind, n.name AS name, n.value AS value

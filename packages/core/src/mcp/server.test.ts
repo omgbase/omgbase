@@ -40,9 +40,18 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "nodes_get", "nodes_get_many", "query", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
+  });
+
+  it("query_syntax and graph_syntax return reference docs", async () => {
+    const { payload: q } = (await call("query_syntax", {})) as { payload: { syntax: string } };
+    expect(q.syntax).toContain("$path.startsWith");
+    expect(q.syntax).toContain("select");
+    const { payload: g } = (await call("graph_syntax", {})) as { payload: { syntax: string } };
+    expect(g.syntax).toContain("DOC-GRAIN");
+    expect(g.syntax).toContain("nodeInfo");
   });
 
   it("docs_outline returns the outline with an ids table", async () => {
@@ -57,10 +66,29 @@ describe("MCP server skeleton", () => {
     expect(payload.truncated).toBe(false);
   });
 
+  it("query select projects frontmatter onto hits", async () => {
+    const { payload } = (await call("query", { from: "documents", filter: 'layer == "working"', select: ["layer"] })) as { payload: { hits: { path: string; layer: string }[] } };
+    expect(payload.hits[0]!.layer).toBe("working");
+  });
+
+  it("query semantic without a provider yields semantic_unavailable", async () => {
+    const { payload, isError } = (await call("query", { from: "blocks", semantic: "identity across edits" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("semantic_unavailable");
+  });
+
   it("nodes_get hydrates a block by id at a resolution", async () => {
     const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
     const headingId = outline.ids.b01!;
     const { payload } = (await call("nodes_get", { path: "notes.md", id: headingId, resolution: "raw" })) as { payload: { raw: string } };
+    expect(payload.raw).toBe("# Risks");
+  });
+
+  it("nodes_get infers the document from a block id alone (no doc/path)", async () => {
+    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
+    const headingId = outline.ids.b01!;
+    const { payload, isError } = (await call("nodes_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string }; isError: boolean };
+    expect(isError).toBe(false);
     expect(payload.raw).toBe("# Risks");
   });
 

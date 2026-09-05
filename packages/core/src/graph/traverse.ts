@@ -13,6 +13,20 @@ export interface TraverseSpec {
   depth?: number; // hard cap 8
   budget?: { maxNodes?: number; maxEdges?: number };
   asOf?: number | null; // commit seq; edges valid at that point
+  /**
+   * Project metadata for every node in the result. `["$path", "type", ...]`:
+   * `$path` and bare frontmatter keys resolve against the node's document;
+   * `$kind` marks document|phantom|external. Without this the result is opaque
+   * ids and callers must hydrate each one — the graph API's sharpest edge.
+   */
+  select?: string[];
+}
+
+/** Projected metadata for one node id, keyed into TraverseResult.nodeInfo. */
+export interface NodeInfo {
+  kind: "document" | "phantom" | "external";
+  path?: string; // doc path, phantom target path, or external uri
+  [k: string]: unknown; // projected frontmatter keys
 }
 
 export interface EdgeRow {
@@ -31,9 +45,35 @@ export interface TraverseResult {
   truncated: boolean;
   frontier: string[];
   budgetSpent: { nodes: number; edges: number };
+  /** node id → projected metadata; present only when `select` was requested. */
+  nodeInfo?: Record<string, NodeInfo>;
 }
 
 const HARD_DEPTH_CAP = 8;
+
+// Traversal is doc-grain: edges are keyed by source document, so seeds must be
+// doc ids. Callers frequently hold a block id (from docs_outline, query, or
+// resolve) and expect it to "just work"; silently returning no edges is the
+// single sharpest edge in the graph API. Normalize any block-grain seed to its
+// owning document id before expansion. Non-block ids (doc ids, phantom:*,
+// external x_*) pass through untouched.
+function normalizeSeeds(store: Store, seeds: string[]): string[] {
+  const blockIds = seeds.filter((s) => s.startsWith("b_"));
+  if (blockIds.length === 0) return seeds;
+  const placeholders = blockIds.map(() => "?").join(",");
+  const rows = store.db
+    .prepare(`SELECT block_id, doc_id FROM blocks WHERE block_id IN (${placeholders})`)
+    .all(...blockIds) as { block_id: string; doc_id: string }[];
+  const docByBlock = new Map(rows.map((r) => [r.block_id, r.doc_id]));
+  const out: string[] = [];
+  for (const s of seeds) {
+    const mapped = s.startsWith("b_") ? docByBlock.get(s) : undefined;
+    // Unknown block ids drop out (they touch no edges anyway); keep everything else.
+    if (mapped) out.push(mapped);
+    else if (!s.startsWith("b_")) out.push(s);
+  }
+  return [...new Set(out)];
+}
 
 // Fetch edges touching a frontier in a direction. Traversal is doc-grain (05
 // §3): nodes are keyed by SOURCE DOCUMENT (src_doc), so a frontier of doc ids
@@ -71,10 +111,11 @@ export function graphTraverse(store: Store, spec: TraverseSpec): TraverseResult 
   const maxEdges = spec.budget?.maxEdges ?? 800;
   const asOfSeq = spec.asOf ?? null;
 
-  const visited = new Set<string>(spec.from);
+  const seeds = normalizeSeeds(store, spec.from);
+  const visited = new Set<string>(seeds);
   const outEdges: { src: string; predicate: string; dst: string }[] = [];
   const seenEdge = new Set<string>();
-  let frontier = [...spec.from];
+  let frontier = [...seeds];
   let truncated = false;
 
   for (let hop = 0; hop < depth && frontier.length > 0; hop++) {
@@ -100,13 +141,71 @@ export function graphTraverse(store: Store, spec: TraverseSpec): TraverseResult 
     frontier = nextFrontier;
   }
 
-  return {
+  const result: TraverseResult = {
     nodes: [...visited],
     edges: outEdges,
     truncated,
     frontier,
     budgetSpent: { nodes: visited.size, edges: outEdges.length },
   };
+  if (spec.select && spec.select.length > 0) {
+    result.nodeInfo = projectNodes(store, result.nodes, spec.select);
+  }
+  return result;
+}
+
+// Resolve every node id in the result to projected metadata. Document ids join
+// `documents` for path + frontmatter; `phantom:<path>` ids carry their target
+// path in the id itself (unresolved link targets — useful for graph health);
+// external `x_*` ids join `external_nodes` for the uri. `$kind` is always set.
+function projectNodes(store: Store, nodeIds: string[], select: string[]): Record<string, NodeInfo> {
+  const out: Record<string, NodeInfo> = {};
+  const docIds = nodeIds.filter((id) => id.startsWith("d_"));
+  const externalIds = nodeIds.filter((id) => id.startsWith("x_"));
+
+  const docMeta = new Map<string, { path: string; metadata: string }>();
+  if (docIds.length > 0) {
+    const ph = docIds.map(() => "?").join(",");
+    const rows = store.db
+      .prepare(`SELECT doc_id, path, metadata FROM documents WHERE doc_id IN (${ph})`)
+      .all(...docIds) as { doc_id: string; path: string; metadata: string }[];
+    for (const r of rows) docMeta.set(r.doc_id, { path: r.path, metadata: r.metadata });
+  }
+
+  const extUri = new Map<string, string>();
+  if (externalIds.length > 0) {
+    const ph = externalIds.map(() => "?").join(",");
+    const rows = store.db
+      .prepare(`SELECT node_id, uri FROM external_nodes WHERE node_id IN (${ph})`)
+      .all(...externalIds) as { node_id: string; uri: string }[];
+    for (const r of rows) extUri.set(r.node_id, r.uri);
+  }
+
+  const wantPath = select.includes("$path");
+  const fmKeys = select.filter((s) => !s.startsWith("$"));
+
+  for (const id of nodeIds) {
+    if (id.startsWith("phantom:")) {
+      out[id] = { kind: "phantom", ...(wantPath ? { path: id.slice("phantom:".length) } : {}) };
+      continue;
+    }
+    if (id.startsWith("x_")) {
+      const uri = extUri.get(id);
+      out[id] = { kind: "external", ...(wantPath && uri ? { path: uri } : {}) };
+      continue;
+    }
+    const meta = docMeta.get(id);
+    const info: NodeInfo = { kind: "document" };
+    if (meta) {
+      if (wantPath) info.path = meta.path;
+      if (fmKeys.length > 0) {
+        const fm = JSON.parse(meta.metadata) as Record<string, unknown>;
+        for (const k of fmKeys) if (fm[k] !== undefined) info[k] = fm[k];
+      }
+    }
+    out[id] = info;
+  }
+  return out;
 }
 
 export interface PathSpec {
@@ -126,13 +225,17 @@ export function graphPath(store: Store, spec: PathSpec): { paths: string[][]; tr
   const k = Math.min(spec.k ?? 1, 5);
   const asOfSeq = spec.asOf ?? null;
 
+  const [from] = normalizeSeeds(store, [spec.from]);
+  const [to] = normalizeSeeds(store, [spec.to]);
+  if (!from || !to) return { paths: [], truncated: false };
+
   const paths: string[][] = [];
   // BFS over partial paths; enqueue neighbors until we collect k paths to `to`.
-  const queue: string[][] = [[spec.from]];
+  const queue: string[][] = [[from]];
   while (queue.length > 0 && paths.length < k) {
     const path = queue.shift()!;
     const tail = path[path.length - 1]!;
-    if (tail === spec.to && path.length > 1) { paths.push(path); continue; }
+    if (tail === to && path.length > 1) { paths.push(path); continue; }
     if (path.length > maxLen) continue;
     const edges = stepEdges(store, [tail], spec.via, direction, asOfSeq);
     const neighbors = new Set<string>();

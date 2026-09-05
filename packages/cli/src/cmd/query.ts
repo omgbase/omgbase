@@ -38,7 +38,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  query [filter] [--from blocks|documents] [--docs] [--text t] [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
+    cli.io.out("  query [filter] [--from blocks|documents] [--docs] [--text t] [--semantic q] [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
     return EXIT_OK;
   }
 

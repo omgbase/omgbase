@@ -3,6 +3,7 @@ import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep } from 
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK } from "../output.js";
+import { loadEmbedding } from "./_embed.js";
 
 // `omg mcp [--no-watch]` (11 §5.8) — MCP server on stdio; the host owns the
 // process lifetime. Runs an in-process watcher by default so a lone session is
@@ -57,7 +58,28 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · ${why}`));
   }
 
-  const handle = await serveStdio({ store: ws.store, repoId: repo.repoId, rootPath: repo.rootPath });
+  // Connect the configured embedder once (if any) so the query tool's
+  // `semantic` mode has a vectorizer for the session. Absent ⇒ semantic queries
+  // return semantic_unavailable. The spawned process lives for the session and
+  // is released on shutdown.
+  const embedding = await loadEmbedding(ws, repo.repoId);
+  if (embedding) {
+    cli.io.err(cli.style.dim(`[mcp] semantic query enabled via ${embedding.providerName}`));
+  }
+
+  const handle = await serveStdio({
+    store: ws.store,
+    repoId: repo.repoId,
+    rootPath: repo.rootPath,
+    ...(embedding
+      ? {
+          embedQuery: async (text: string) => ({
+            model: embedding.provider.model,
+            vec: await embedding.worker.embedQuery(text),
+          }),
+        }
+      : {}),
+  });
 
   let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
@@ -65,6 +87,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     shuttingDown = true;
     if (watcher) await watcher.stop();
     lease?.release();
+    if (embedding) await embedding.close();
     await handle.close();
     ws.close();
   };

@@ -53,6 +53,21 @@ describe("query — documents target", () => {
     const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working" || layer == "canon"' });
     expect(hits.map((h) => h.path).sort()).toEqual(["guides/a.md", "notes/c.md"]);
   });
+
+  it("select projects frontmatter keys onto hits (no hydration round-trip)", () => {
+    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working"', select: ["layer", "tags"] });
+    expect(hits).toEqual([{ id: hits[0]!.id, path: "guides/a.md", layer: "working", tags: ["pricing", "saas"] }]);
+  });
+
+  it("select omits absent keys (CEL absence semantics)", () => {
+    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "canon"', select: ["layer", "tags"] });
+    expect(hits[0]).toEqual({ id: hits[0]!.id, path: "notes/c.md", layer: "canon" }); // no tags key
+  });
+
+  it("empty select stays lean {id, path}", () => {
+    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working"', select: [] });
+    expect(Object.keys(hits[0]!).sort()).toEqual(["id", "path"]);
+  });
 });
 
 describe("query — blocks target", () => {
@@ -83,6 +98,19 @@ describe("query — blocks target", () => {
   it("within(path) scopes to a document", () => {
     const { hits } = query(store, repoId, { from: "blocks", filter: 'within("tasks.md") && type == "heading"' });
     expect(hits.length).toBe(2);
+  });
+
+  it("select projects block type + attrs and doc frontmatter", () => {
+    const { hits } = query(store, repoId, {
+      from: "blocks",
+      filter: 'type == "task" && !attrs.checked && within("tasks.md")',
+      select: ["type", "attrs.checked", "$ordinal"],
+    });
+    expect(hits.length).toBe(2);
+    for (const h of hits) {
+      expect(h.type).toBe("task");
+      expect(typeof h.ordinal).toBe("number");
+    }
   });
 });
 
