@@ -6,6 +6,10 @@
 // from deterministic UTF-8 encoding of equal strings. Hashing (02 §5) encodes
 // UTF-8 at hash time. This keeps offset handling robust and simple.
 
+/** General block kind — format-qualified string (e.g. "md:heading", "yaml:mapping_entry"). */
+export type BlockKind = string;
+
+/** Markdown-specific block types. Subset of BlockKind used by the markdown parser. */
 export type BlockType =
   | "heading"
   | "paragraph"
@@ -28,7 +32,7 @@ export interface Span {
 }
 
 export interface RawBlock {
-  type: BlockType;
+  type: BlockKind;
   span: Span;
   /** Exact source slice for this block's content (excludes trailing trivia). */
   raw: string;

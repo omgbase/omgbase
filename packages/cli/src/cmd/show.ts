@@ -29,12 +29,12 @@ function runShow(cli: Cli, args: string[]): number {
   if (resolved.kind === "document") {
     const info = findDoc(ws.store, { docId: resolved.docId })!;
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
-    const payload = { kind: "document", id: info.docId, path: info.path, frontmatter: info.frontmatter, edges: links };
+    const payload = { kind: "document", id: info.docId, path: info.path, metadata: info.metadata, edges: links };
     if (cli.flags.mode !== "human") {
       cli.io.out(JSON.stringify(payload));
       return EXIT_OK;
     }
-    renderDocCard(cli, info.path, info.frontmatter, links);
+    renderDocCard(cli, info.path, info.metadata, links);
     return EXIT_OK;
   }
 

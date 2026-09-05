@@ -45,10 +45,12 @@ const ORDERABLE_INTRINSIC: Record<string, string> = {
 
 export function query(store: Store, repoId: string, env: QueryEnvelope): QueryResult {
   const target = env.from;
-  if (target !== "documents" && target !== "blocks") {
-    throw new FilterInvalid(`'from' must be 'documents' or 'blocks'`, "10 §1");
+  if (target !== "documents" && target !== "blocks" && target !== "nodes") {
+    throw new FilterInvalid(`'from' must be 'documents', 'blocks', or 'nodes'`, "10 §1");
   }
+
   const limit = env.limit ?? 50;
+  if (target === "nodes") return queryNodes(store, repoId, env, limit);
 
   // Semantic path: a query vector fuses FTS + vector rankings (RRF) at block
   // grain. An optional CEL filter narrows the fused candidates to the block ids
@@ -180,6 +182,50 @@ function decodeCursor(cursor: string): { path: string; id: string } {
   } catch {
     throw new FilterInvalid("invalid cursor", "10 §7");
   }
+}
+
+function queryNodes(store: Store, repoId: string, env: QueryEnvelope, limit: number): QueryResult {
+  const where: string[] = ["n.repo_id = ?"];
+  const params: unknown[] = [repoId];
+
+  if (env.filter && env.filter.trim().length > 0) {
+    const ast = parseFilter(env.filter);
+    const compiled = compile(ast, "nodes");
+    where.push(compiled.sql);
+    params.push(...compiled.params);
+  }
+
+  if (env.text && env.text.trim().length > 0) {
+    where.push("n.rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)");
+    params.push(env.text);
+  }
+
+  const base = `SELECT n.node_id AS id, d.path AS path, n.kind AS kind, n.name AS name, n.value AS value
+     FROM nodes n JOIN documents d ON d.doc_id = n.doc_id`;
+
+  const idCol = "n.node_id";
+  let cursorClause = "";
+  if (env.cursor) {
+    const { path: cp, id: ci } = decodeCursor(env.cursor);
+    cursorClause = ` AND (d.path > ? OR (d.path = ? AND ${idCol} > ?))`;
+    params.push(cp, cp, ci);
+  }
+
+  const sql = `${base} WHERE ${where.join(" AND ")}${cursorClause} ORDER BY d.path ASC, ${idCol} ASC LIMIT ?`;
+  const rows = store.db.prepare(sql).all(...params, limit + 1) as { id: string; path: string; kind: string; name: string | null; value: string | null }[];
+  const truncated = rows.length > limit;
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  const cursor = truncated && last ? encodeCursor(last.path, last.id) : null;
+
+  const hits: QueryHit[] = page.map((r) => ({
+    id: r.id,
+    path: r.path,
+    kind: r.kind,
+    ...(r.name !== null ? { name: r.name } : {}),
+    ...(r.value !== null ? { value: r.value } : {}),
+  }));
+  return { hits, truncated, cursor };
 }
 
 export { FilterInvalid };

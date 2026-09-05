@@ -14,7 +14,7 @@ export interface ResolvedEdge {
   dstKind: "document" | "block" | "external" | "collection";
   dstNode: string; // resolved node id (document/external/block/collection)
   anchor: string | null;
-  provenance: "link" | "frontmatter" | "inline_field";
+  provenance: string;
 }
 
 // Stable key for diffing an edge set against currently-open rows.

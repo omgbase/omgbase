@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 6;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -18,11 +18,37 @@ CREATE TABLE IF NOT EXISTS file_stats (
 );
 `;
 
+export const NODES_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS nodes (
+  node_id    TEXT PRIMARY KEY,
+  repo_id    TEXT NOT NULL,
+  doc_id     TEXT NOT NULL,
+  block_id   TEXT,
+  kind       TEXT NOT NULL,
+  name       TEXT,
+  value      TEXT,
+  span_start INTEGER,
+  span_end   INTEGER,
+  attrs      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_nodes_doc  ON nodes(doc_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name) WHERE name IS NOT NULL;
+CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+  name, value, content='nodes', content_rowid='rowid', tokenize='porter unicode61'
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
+// Migrations 3, 4, 6 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
+  3: "",  // handled programmatically in store.ts
+  4: "",  // handled programmatically in store.ts
+  5: NODES_DDL,
+  6: "",  // handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -38,10 +64,12 @@ CREATE TABLE IF NOT EXISTS documents (
   doc_id         TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
   path           TEXT NOT NULL,
-  frontmatter    TEXT NOT NULL DEFAULT '{}',
+  format         TEXT NOT NULL DEFAULT 'markdown',
+  metadata       TEXT NOT NULL DEFAULT '{}',
   current_rev    TEXT,
   file_hash      BLOB,
   conflicted     INTEGER NOT NULL DEFAULT 0,
+  leading_trivia TEXT NOT NULL DEFAULT '',
   deleted_commit TEXT,
   UNIQUE (repo_id, path)
 );
@@ -60,6 +88,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   text           TEXT NOT NULL,
   raw_hash       BLOB NOT NULL,
   norm_hash      BLOB NOT NULL,
+  trivia_hash    BLOB,                     -- trailing trivia blob hash (NULL = no trivia)
   created_commit TEXT NOT NULL,
   deleted_commit TEXT
 );
@@ -127,7 +156,8 @@ CREATE TABLE IF NOT EXISTS edges (
   dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external','collection')),
   dst_node    TEXT NOT NULL,
   anchor      TEXT,
-  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected')),
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
+               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
   via_node    TEXT,
   from_commit TEXT NOT NULL,
   to_commit   TEXT
@@ -219,6 +249,26 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
   text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
+);
+
+CREATE TABLE IF NOT EXISTS nodes (
+  node_id    TEXT PRIMARY KEY,
+  repo_id    TEXT NOT NULL,
+  doc_id     TEXT NOT NULL,
+  block_id   TEXT,
+  kind       TEXT NOT NULL,
+  name       TEXT,
+  value      TEXT,
+  span_start INTEGER,
+  span_end   INTEGER,
+  attrs      TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_nodes_doc  ON nodes(doc_id);
+CREATE INDEX IF NOT EXISTS idx_nodes_kind ON nodes(kind);
+CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name) WHERE name IS NOT NULL;
+
+CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+  name, value, content='nodes', content_rowid='rowid', tokenize='porter unicode61'
 );
 
 ${FILE_STATS_DDL}

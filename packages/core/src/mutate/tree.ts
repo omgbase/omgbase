@@ -18,6 +18,7 @@ export interface MutBlock {
 export interface MutDoc {
   docId: string;
   path: string;
+  format: string;
   leadingTrivia: string;
   frontmatterRaw: string | null; // incl. fences; rendered verbatim before blocks
   children: MutBlock[];

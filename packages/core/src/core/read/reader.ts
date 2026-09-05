@@ -82,23 +82,25 @@ export interface DocInfo {
   docId: string;
   repoId: string;
   path: string;
-  frontmatter: Record<string, unknown>;
+  format: string;
+  metadata: Record<string, unknown>;
   currentRev: string | null;
 }
 
 export function findDoc(store: Store, ref: { docId?: string; repoId?: string; path?: string }): DocInfo | null {
   let row: Record<string, unknown> | undefined;
   if (ref.docId) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, frontmatter, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, metadata, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
   } else if (ref.repoId && ref.path) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, frontmatter, current_rev FROM documents WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, ref.path) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, metadata, current_rev FROM documents WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, ref.path) as Record<string, unknown> | undefined;
   }
   if (!row) return null;
   return {
     docId: row.doc_id as string,
     repoId: row.repo_id as string,
     path: row.path as string,
-    frontmatter: JSON.parse(row.frontmatter as string) as Record<string, unknown>,
+    format: (row.format as string) ?? "markdown",
+    metadata: JSON.parse(row.metadata as string) as Record<string, unknown>,
     currentRev: (row.current_rev as string | null) ?? null,
   };
 }

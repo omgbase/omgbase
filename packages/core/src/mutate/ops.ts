@@ -1,5 +1,6 @@
 import { mintId } from "../core/ids.js";
 import { parseTree } from "../core/parse/tree.js";
+import { adapterForFormat } from "../format/index.js";
 import { MutationError, locate, rawHashHex, parentChildrenHash, type MutBlock, type MutDoc } from "./tree.js";
 
 // Kernel ops (04 §1). Six operations over a MutDoc. Ops mutate the tree in
@@ -16,14 +17,24 @@ export interface Expect {
   parent_children_hash?: string;
 }
 
-// Parse op-supplied markdown into MutBlocks (dirty; ids minted).
-function parseMarkdownToBlocks(markdown: string): MutBlock[] {
-  const tree = parseTree(markdown.endsWith("\n") ? markdown : markdown + "\n");
+function defaultTrivia(format: string): string {
+  if (format === "json") return ",\n";
+  if (format === "yaml") return "\n";
+  return "\n\n";
+}
+
+// Parse op-supplied content into MutBlocks (dirty; ids minted). Uses the
+// format's adapter when available; falls back to markdown.
+function parseContentToBlocks(content: string, format: string): MutBlock[] {
+  const adapter = adapterForFormat(format);
+  const normalized = content.endsWith("\n") ? content : content + "\n";
+  const tree = adapter ? adapter.parse(normalized) : parseTree(normalized);
+  const trivia = defaultTrivia(format);
   const toMut = (b: { type: string; raw: string; trivia: string; attrs: Record<string, unknown>; children: unknown[] }): MutBlock => ({
     id: mintId("b"),
     type: b.type,
     raw: b.raw,
-    trivia: b.trivia || "\n\n",
+    trivia: b.trivia || trivia,
     attrs: b.attrs,
     children: (b.children as typeof b[]).map(toMut),
     dirty: true,
@@ -97,7 +108,7 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
 
 export function opInsert(doc: MutDoc, to: To, markdown: string): { ids: string[] } {
   const { siblings, index } = resolveTarget(doc, to);
-  const blocks = parseMarkdownToBlocks(markdown);
+  const blocks = parseContentToBlocks(markdown, doc.format);
   siblings.splice(index, 0, ...blocks);
   return { ids: blocks.map((b) => b.id) };
 }
@@ -107,13 +118,21 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   if (!found) throw new MutationError("block_missing", `block ${blockId} not found`, { op_index: opIndex, block: blockId });
   checkContentHash(found.block, expect, opIndex);
   if (markdown !== undefined) {
-    const parsed = parseMarkdownToBlocks(markdown);
-    if (parsed.length !== 1) throw new MutationError("type_mismatch", "update markdown must be a single block");
-    const nb = parsed[0]!;
-    found.block.raw = nb.raw;
-    found.block.type = nb.type;
-    found.block.attrs = nb.attrs;
-    found.block.children = nb.children;
+    if (doc.format === "markdown") {
+      const parsed = parseContentToBlocks(markdown, doc.format);
+      if (parsed.length !== 1) throw new MutationError("type_mismatch", "update content must be a single block");
+      const nb = parsed[0]!;
+      found.block.raw = nb.raw;
+      found.block.type = nb.type;
+      found.block.attrs = nb.attrs;
+      found.block.children = nb.children;
+    } else {
+      // Non-markdown: raw swap preserves the block's type and attrs. Fragments
+      // like JSON properties aren't valid standalone documents, so re-parsing
+      // would corrupt the block kind (e.g. json:property → json:scalar).
+      found.block.raw = markdown;
+      found.block.children = [];
+    }
     found.block.dirty = true;
   }
   if (attrs) {

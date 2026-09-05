@@ -5,7 +5,7 @@ import { FilterInvalid } from "./parser.js";
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
 // key never matches a comparison; !absent-bool is true.
 
-export type Target = "documents" | "blocks";
+export type Target = "documents" | "blocks" | "nodes";
 
 export interface Compiled {
   sql: string; // boolean SQL expression over the target's row
@@ -42,6 +42,15 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
         case "$content_hash": return { expr: "hex(d.file_hash)" };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on documents`, "10 §2");
       }
+    } else if (target === "nodes") {
+      switch (head) {
+        case "$id": return { expr: "n.node_id" };
+        case "$node_id": return { expr: "n.node_id" };
+        case "$doc_id": return { expr: "n.doc_id" };
+        case "$block_id": return { expr: "n.block_id" };
+        case "$path": return { expr: "d.path" };
+        default: throw new FilterInvalid(`unknown intrinsic ${head} on nodes`, "10 §2");
+      }
     } else {
       switch (head) {
         case "$id": return { expr: "b.block_id" };
@@ -56,9 +65,35 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
   }
 
   if (target === "documents") {
-    return { expr: `json_extract(d.frontmatter, ${jsonPath(segs)})` };
+    if (head === "format") return { expr: "d.format" };
+    return { expr: `json_extract(d.metadata, ${jsonPath(segs)})` };
   }
 
+  if (target === "nodes") {
+    if (head === "kind") return { expr: "n.kind" };
+    if (head === "name") return { expr: "n.name" };
+    if (head === "value") return { expr: "n.value" };
+    if (head === "attrs") {
+      return { expr: `json_extract(n.attrs, ${jsonPath(segs.slice(1))})` };
+    }
+    if (head === "doc") {
+      const rest = segs.slice(1);
+      if (rest[0]?.startsWith("$")) {
+        return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
+      }
+      if (rest[0] === "format") return { expr: "d.format" };
+      return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
+    }
+    if (head === "block") {
+      const rest = segs.slice(1);
+      if (rest[0] === "type") return { expr: "(SELECT bb.type FROM blocks bb WHERE bb.block_id = n.block_id)" };
+      if (rest[0] === "text") return { expr: "(SELECT bb.text FROM blocks bb WHERE bb.block_id = n.block_id)" };
+      throw new FilterInvalid(`unknown block field '${rest.join(".")}' on nodes`, "10 §2");
+    }
+    throw new FilterInvalid(`unknown field '${segs.join(".")}' on nodes`, "10 §2");
+  }
+
+  // blocks target
   if (head === "type") return { expr: "b.type" };
   if (head === "text") return { expr: "b.text" };
   if (head === "attrs") {
@@ -69,7 +104,8 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
     if (rest[0]?.startsWith("$")) {
       return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
     }
-    return { expr: `json_extract(d.frontmatter, ${jsonPath(rest)})` };
+    if (rest[0] === "format") return { expr: "d.format" };
+    return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
   }
   throw new FilterInvalid(`unknown field '${segs.join(".")}' on blocks`, "10 §2");
 }
@@ -259,6 +295,15 @@ function compileCall(name: string, args: Node[], target: Target): Compiled {
     case "child_count":
       requireBlocks(target, "child_count");
       throw new FilterInvalid("child_count() must be compared, e.g. child_count() > 0", "10 §5");
+    case "under_kind":
+      requireBlocks(target, "under_kind");
+      return compileUnderKind(argString(args, 0), args.length >= 2 ? argString(args, 1) : undefined);
+    case "yaml_path":
+      requireBlocks(target, "yaml_path");
+      return compileYamlPath(argString(args, 0));
+    case "json_pointer":
+      requireBlocks(target, "json_pointer");
+      return compileJsonPointer(argString(args, 0));
     case "list":
       throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
     default:
@@ -353,4 +398,96 @@ function compileMethod(node: { receiver: Node; name: string; args: Node[] }, tar
     default:
       throw new FilterInvalid(`unknown method .${name}()`, "10 §3.2");
   }
+}
+
+// under_kind(kind, name?) — blocks that are children/descendants of a block
+// with the given type and optional key/text match. Uses ancestor_path to find
+// the ancestor block, then checks its type and attrs.
+function compileUnderKind(kind: string, name?: string): Compiled {
+  if (name) {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM blocks ab
+        WHERE ab.doc_id = b.doc_id
+          AND b.ancestor_path LIKE '%/' || ab.block_id || '/%'
+          AND ab.type = ?
+          AND (ab.text LIKE '%' || ? || '%' OR json_extract(ab.attrs, '$.key') = ?)
+          AND ab.deleted_commit IS NULL
+      )`,
+      params: [kind, name, name],
+    };
+  }
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM blocks ab
+      WHERE ab.doc_id = b.doc_id
+        AND b.ancestor_path LIKE '%/' || ab.block_id || '/%'
+        AND ab.type = ?
+        AND ab.deleted_commit IS NULL
+    )`,
+    params: [kind],
+  };
+}
+
+// yaml_path("database.host") — blocks at a YAML key path. Builds nested
+// EXISTS subqueries walking parent_block upward so each alias is in scope.
+function compileYamlPath(path: string): Compiled {
+  const segments = path.split(".");
+  if (segments.length === 0) throw new FilterInvalid("yaml_path() requires a non-empty key path");
+
+  if (segments.length === 1) {
+    return {
+      sql: `(b.type LIKE 'yaml:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL)`,
+      params: [segments[0]!],
+    };
+  }
+
+  return compileKeyPathChain(segments, "yaml");
+}
+
+// json_pointer("#/definitions/User") — blocks at a JSON Pointer path.
+function compileJsonPointer(pointer: string): Compiled {
+  const normalized = pointer.replace(/^#?\/?/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length === 0) throw new FilterInvalid("json_pointer() requires a non-empty pointer");
+
+  if (segments.length === 1) {
+    return {
+      sql: `(b.type LIKE 'json:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL)`,
+      params: [segments[0]!],
+    };
+  }
+
+  return compileKeyPathChain(segments, "json");
+}
+
+// Build properly nested EXISTS for a multi-segment key path (yaml or json).
+// segments = ["database", "host"]: the leaf block has key "host", its parent
+// has key "database". Each ancestor check is a nested EXISTS so inner aliases
+// can reference the enclosing scope.
+function compileKeyPathChain(segments: string[], prefix: string): Compiled {
+  const leaf = segments[segments.length - 1]!;
+  const ancestors = segments.slice(0, -1);
+  const params: unknown[] = [leaf];
+
+  // Build from outermost ancestor (root) to the leaf's immediate parent.
+  // The innermost (leaf) condition is on `b` itself; each ancestor wraps
+  // its child in a nested EXISTS.
+  let sql = `b.type LIKE '${prefix}:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
+  let innerRef = "b";
+
+  for (let i = ancestors.length - 1; i >= 0; i--) {
+    const alias = `kp${i}`;
+    sql = `EXISTS (
+      SELECT 1 FROM blocks ${alias}
+      WHERE ${alias}.block_id = ${innerRef}.parent_block
+        AND ${alias}.type LIKE '${prefix}:%'
+        AND json_extract(${alias}.attrs, '$.key') = ?
+        AND ${alias}.deleted_commit IS NULL
+    ) AND ${sql}`;
+    params.unshift(ancestors[i]!);
+    innerRef = alias;
+  }
+
+  return { sql: `(${sql})`, params };
 }

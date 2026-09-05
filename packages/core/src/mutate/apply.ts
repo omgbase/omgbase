@@ -180,7 +180,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
         const onDisk = sha256(readFileSync(abs, "utf8"));
         if (!onDisk.equals(current.file_hash)) {
           // A human edit landed first: ingest it, then the caller must retry.
-          ingestFile(store, req.repoId, d.path, readFileSync(abs, "utf8"), { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
+          ingestFile(store, req.repoId, d.path, readFileSync(abs, "utf8"), { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
           if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(readFileSync(abs, "utf8")));
           throw new MutationError("sync_conflict", `file ${d.path} changed on disk; re-ingested — retry`, { retriable: true });
         }
@@ -192,7 +192,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       renameSync(tmp, abs);
 
       // Commit: ingest the rendered bytes (api origin) with reconciliation.
-      ingestFile(store, req.repoId, d.path, rendered, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, req.repoId, { ts }) });
+      ingestFile(store, req.repoId, d.path, rendered, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a
       // later sweep (echo suppression already covers correctness; this avoids work).
       if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(rendered));

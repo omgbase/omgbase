@@ -1,5 +1,16 @@
 export { VERSION } from "./core/index.js";
 
+// Format adapter system (format-adapter-architecture §Phase 0).
+export type { FormatAdapter, AdapterEdge, ProjectedNode, EmbeddingChunk, ReconcileHints } from "./format/adapter.js";
+export { AdapterCapability } from "./format/adapter.js";
+export { registerAdapter, adapterForFormat, adapterForPath, registeredFormats, detectFormat } from "./format/registry.js";
+export { markdownAdapter, MARKDOWN_FORMAT } from "./format/markdown.js";
+export { yamlAdapter, YAML_FORMAT } from "./format/yaml.js";
+export { jsonAdapter, JSON_FORMAT } from "./format/json.js";
+export { writeDocNodes, deleteDocNodes } from "./core/store/nodes.js";
+// Side-effect: registers built-in adapters.
+import "./format/index.js";
+
 // Workspace + sync surface used by the CLI (second client, 11 §1).
 export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js";
 export { freshnessSweep, rebuildFileStats, recordFileStat, type SweepResult } from "./sync/freshness.js";

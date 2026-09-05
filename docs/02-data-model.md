@@ -46,7 +46,8 @@ CREATE TABLE documents (
   doc_id        TEXT PRIMARY KEY,
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
   path          TEXT NOT NULL,             -- repo-relative, canonical (no leading slash)
-  frontmatter   TEXT NOT NULL DEFAULT '{}',-- JSON, parsed view of current frontmatter
+  format        TEXT NOT NULL DEFAULT 'markdown', -- adapter format: 'markdown', 'yaml', 'json', …
+  metadata      TEXT NOT NULL DEFAULT '{}',-- JSON, adapter-extracted property bag (frontmatter for md, full structure for yaml/json)
   current_rev   TEXT,                      -- REFERENCES revisions(rev_id) (nullable during create)
   file_hash     BLOB,                      -- sha256 of file bytes at last sync (convergence check)
   conflicted    INTEGER NOT NULL DEFAULT 0,-- git conflict markers present; mutations refused
@@ -65,7 +66,7 @@ CREATE TABLE blocks (
   ordinal       INTEGER NOT NULL,          -- materialized position among siblings (rebuilt per commit)
   depth         INTEGER NOT NULL,
   ancestor_path TEXT NOT NULL,             -- '/b_a1/b_b2/' — containment ancestors, for subtree queries
-  type          TEXT NOT NULL,             -- block type enum (01-architecture §3.3)
+  type          TEXT NOT NULL,             -- format-qualified block kind: 'heading', 'yaml:mapping_entry', 'json:property', …
   attrs         TEXT NOT NULL DEFAULT '{}',-- JSON typed attrs: checked, lang, level, info, alt…
   text          TEXT NOT NULL,             -- normalized visible text (query/FTS source)
   raw_hash      BLOB NOT NULL,             -- REFERENCES blobs(hash)
@@ -141,7 +142,8 @@ CREATE TABLE edges (
   dst_kind    TEXT NOT NULL CHECK (dst_kind IN ('document','block','external','collection')),
   dst_node    TEXT NOT NULL,               -- node id; external nodes minted per normalized URI
   anchor      TEXT,                        -- link anchor/fragment text if present
-  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected')),
+  provenance  TEXT NOT NULL CHECK (provenance IN ('link','frontmatter','inline_field','projected',
+               'yaml_ref','yaml_schema','yaml_extends','json_ref','json_schema')),
                                            -- 'projected' reserved for projected queries (09-…); unused in v1
   via_node    TEXT,                        -- NULL for authored edges; query block id for projected (reserved, v1-unused)
   from_commit TEXT NOT NULL,
@@ -245,6 +247,28 @@ CREATE VIRTUAL TABLE blocks_fts USING fts5(
   text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'
 );
 -- Maintained by triggers or explicit sync in the commit transaction.
+
+-- Projected semantic nodes from format adapters. Derived from block content
+-- at ingest time; deterministic hash-based identity. Queryable via from:"nodes".
+CREATE TABLE nodes (
+  node_id    TEXT PRIMARY KEY,             -- deterministic: hash(doc_id, block_id, kind, ordinal)
+  repo_id    TEXT NOT NULL,
+  doc_id     TEXT NOT NULL,
+  block_id   TEXT,                         -- anchor block (NULL for doc-level nodes)
+  kind       TEXT NOT NULL,                -- format-qualified: 'md:link', 'yaml:ref', 'json:schema'
+  name       TEXT,                         -- identifier/key name
+  value      TEXT,                         -- scalar value or target
+  span_start INTEGER,                      -- offset within block source
+  span_end   INTEGER,
+  attrs      TEXT NOT NULL DEFAULT '{}'    -- JSON format-specific properties
+);
+CREATE INDEX idx_nodes_doc  ON nodes(doc_id);
+CREATE INDEX idx_nodes_kind ON nodes(kind);
+CREATE INDEX idx_nodes_name ON nodes(name) WHERE name IS NOT NULL;
+
+CREATE VIRTUAL TABLE nodes_fts USING fts5(
+  name, value, content='nodes', content_rowid='rowid', tokenize='porter unicode61'
+);
 
 -- Filesystem stat cache backing the CLI freshness sweep (11 §3.3). Lets a
 -- one-shot command detect out-of-band edits cheaply: compare (mtime_ns, size)

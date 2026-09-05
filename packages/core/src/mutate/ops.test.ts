@@ -12,7 +12,7 @@ function doc(markdown: string): MutDoc {
     children: (b.children as (typeof b)[]).map(toMut),
   });
   return {
-    docId: "d_1", path: "a.md", leadingTrivia: tree.leadingTrivia, frontmatterRaw: null,
+    docId: "d_1", path: "a.md", format: "markdown", leadingTrivia: tree.leadingTrivia, frontmatterRaw: null,
     children: tree.children.filter((b) => b.type !== "frontmatter").map(toMut as never),
   };
 }
