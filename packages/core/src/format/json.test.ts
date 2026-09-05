@@ -118,9 +118,15 @@ describe("JSON adapter — edge extraction", () => {
   });
 });
 
-describe("JSON adapter — no render", () => {
-  it("does not expose render capability", () => {
-    expect(jsonAdapter.render).toBeUndefined();
-    expect(jsonAdapter.capabilities.has("render" as never)).toBe(false);
+describe("JSON adapter — render", () => {
+  it("round-trips via splice render", () => {
+    const tree = jsonAdapter.parse(SAMPLE);
+    expect(jsonAdapter.render!(tree)).toBe(SAMPLE);
+  });
+
+  it("round-trips a simple object", () => {
+    const src = `{"a": 1, "b": 2}`;
+    const tree = jsonAdapter.parse(src);
+    expect(jsonAdapter.render!(tree)).toBe(src);
   });
 });

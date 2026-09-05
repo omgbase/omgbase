@@ -252,13 +252,24 @@ export const jsonAdapter: FormatAdapter = {
   extensions: [".json"],
   capabilities: new Set([
     AdapterCapability.Parse,
+    AdapterCapability.Render,
     AdapterCapability.ExtractEdges,
     AdapterCapability.ExtractMetadata,
     AdapterCapability.ProjectNodes,
+    AdapterCapability.StructuralMutation,
   ]),
 
   parse(source: string): BlockTree {
     return buildTree(source);
+  },
+
+  render(tree: BlockTree): string {
+    const out: string[] = [tree.leadingTrivia];
+    for (const block of tree.children) {
+      out.push(block.dirty ? block.raw : block.raw);
+      out.push(block.trivia);
+    }
+    return out.join("");
   },
 
   projectNodes(blocks: RawBlock[]): ProjectedNode[] {

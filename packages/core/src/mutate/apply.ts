@@ -86,7 +86,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   const ensureDoc = (docId: string): MutDoc => {
     let d = loaded.get(docId);
     if (!d) {
-      const md = loadMutDoc(store.db, docId);
+      const md = loadMutDoc(store.db, docId, req.rootPath);
       if (!md) throw new MutationError("doc_missing", `doc ${docId} not found`);
       d = md;
       loaded.set(docId, d);

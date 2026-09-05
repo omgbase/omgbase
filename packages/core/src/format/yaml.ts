@@ -296,6 +296,7 @@ export const yamlAdapter: FormatAdapter = {
     AdapterCapability.ExtractEdges,
     AdapterCapability.ExtractMetadata,
     AdapterCapability.ProjectNodes,
+    AdapterCapability.StructuralMutation,
   ]),
 
   parse(source: string): BlockTree {
