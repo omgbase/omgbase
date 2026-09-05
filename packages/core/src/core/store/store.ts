@@ -40,11 +40,27 @@ export class Store {
     }
     // Apply forward additive migrations in order (each idempotent DDL).
     for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
+      if (v === 3) { this.migrateV3(); continue; }
+      if (v === 4) { this.migrateV4(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
     }
     this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  }
+
+  private migrateV3(): void {
+    const cols = this.db.pragma("table_info(documents)") as { name: string }[];
+    if (cols.length > 0 && !cols.some((c) => c.name === "format")) {
+      this.db.exec("ALTER TABLE documents ADD COLUMN format TEXT NOT NULL DEFAULT 'markdown'");
+    }
+  }
+
+  private migrateV4(): void {
+    const cols = this.db.pragma("table_info(documents)") as { name: string }[];
+    if (cols.length > 0 && cols.some((c) => c.name === "frontmatter") && !cols.some((c) => c.name === "metadata")) {
+      this.db.exec("ALTER TABLE documents RENAME COLUMN frontmatter TO metadata");
+    }
   }
 
   /**

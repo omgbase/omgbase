@@ -10,6 +10,7 @@ import { sha256, normalizeVisibleText } from "../core/hash.js";
 import { reconcileDocument, type ResurrectionCandidate } from "../reconcile/reconcile.js";
 import { flatten, type FlatSource } from "../reconcile/flatten.js";
 import { DEFAULT_CONFIG, type MatchBlock, type ReconcileConfig } from "../reconcile/types.js";
+import { adapterForPath, type AdapterEdge } from "../format/index.js";
 
 // Reconciling id resolver (07 task 2.7). Bridges core/ingest (which owns the
 // write) and reconcile/ (which owns identity). Loads the current block tree for
@@ -102,10 +103,12 @@ function assignFromMap(blocks: RawBlock[], assignment: Map<string, string>): Tre
 export function makeReconcilingResolver(
   store: Store,
   repoId: string,
-  opts: { ts?: string; config?: ReconcileConfig } = {},
+  opts: { ts?: string; config?: ReconcileConfig; path?: string } = {},
 ): IdResolver {
   const ts = opts.ts ?? new Date().toISOString();
   const config = opts.config ?? DEFAULT_CONFIG;
+  const adapter = opts.path ? adapterForPath(opts.path) : undefined;
+  const docDir = opts.path ? opts.path.replace(/[^/]*$/, "") : "";
   return (rest: RawBlock[], docId: string | null) => {
     const db = store.db;
     const oldBlocks = docId ? loadOldMatchBlocks(db, docId) : [];
@@ -124,20 +127,31 @@ export function makeReconcilingResolver(
       detail: d.detail,
     }));
 
-    // Edge extraction: walk the id-assigned tree, extract per block, resolve
-    // targets to node ids. Runs inside the ingest commit transaction.
-    const extractEdges = (thisDocId: string, frontmatter: Record<string, unknown>): ResolvedEdgeRow[] => {
+    // Edge extraction: adapter-aware. For formats with extractEdges(), use the
+    // adapter; otherwise fall back to markdown's per-block link scanner.
+    const extractEdges = (thisDocId: string, metadata: Record<string, unknown>): ResolvedEdgeRow[] => {
       const out: ResolvedEdgeRow[] = [];
-      const walk = (blocks: TreeInputBlock[]): void => {
-        for (const b of blocks) {
-          for (const e of extractFromBlock(b.blockId, b.type, b.raw)) {
-            out.push(resolveEdge(db, repoId, thisDocId, e));
-          }
-          if (b.children.length > 0) walk(b.children);
+
+      if (adapter?.extractEdges) {
+        const rawBlocks = collectRawBlocks(assigned);
+        const adapterEdges = adapter.extractEdges(rawBlocks, metadata);
+        for (const e of adapterEdges) {
+          out.push(resolveAdapterEdge(db, repoId, thisDocId, e, docDir));
         }
-      };
-      walk(assigned);
-      for (const e of extractFromFrontmatter(frontmatter)) out.push(resolveEdge(db, repoId, thisDocId, e));
+      } else {
+        // Markdown fallback: per-block link scanning + frontmatter relations.
+        const walk = (blocks: TreeInputBlock[]): void => {
+          for (const b of blocks) {
+            for (const e of extractFromBlock(b.blockId, b.type, b.raw)) {
+              out.push(resolveEdge(db, repoId, thisDocId, e));
+            }
+            if (b.children.length > 0) walk(b.children);
+          }
+        };
+        walk(assigned);
+        for (const e of extractFromFrontmatter(metadata)) out.push(resolveEdge(db, repoId, thisDocId, e));
+      }
+
       return out;
     };
 
@@ -172,6 +186,62 @@ function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType
     anchor: e.anchor,
     provenance: e.provenance,
   };
+}
+
+// Resolve relative paths (./foo, ../bar) against the source document's directory.
+function resolveRelativePath(target: string, docDir: string): string {
+  if (!target.startsWith("./") && !target.startsWith("../")) return target;
+  const parts = (docDir + target).split("/");
+  const resolved: string[] = [];
+  for (const p of parts) {
+    if (p === "." || p === "") continue;
+    if (p === "..") { resolved.pop(); continue; }
+    resolved.push(p);
+  }
+  return resolved.join("/");
+}
+
+// Resolve an adapter-produced edge to a ResolvedEdgeRow. Same resolution
+// logic as resolveEdge but accepts the AdapterEdge shape, with relative path
+// resolution against the source document's directory.
+function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: AdapterEdge, docDir: string): ResolvedEdgeRow {
+  let dstNode: string;
+  let dstKind = e.dstKind;
+  if (e.dstKind === "external") {
+    dstNode = resolveExternal(db, repoId, e.target);
+  } else if (e.target === "") {
+    dstNode = srcDoc;
+    dstKind = "document";
+  } else {
+    const resolved = resolveDocPath(db, repoId, resolveRelativePath(e.target, docDir));
+    dstNode = resolved.id;
+    dstKind = "document";
+  }
+  return {
+    srcDoc,
+    srcBlock: e.srcBlock,
+    srcField: e.srcField,
+    predicate: e.predicate,
+    dstKind,
+    dstNode,
+    anchor: e.anchor,
+    provenance: e.provenance,
+  };
+}
+
+// Collect RawBlock-shaped objects from the id-assigned tree for adapter edge extraction.
+function collectRawBlocks(blocks: TreeInputBlock[]): RawBlock[] {
+  return blocks.map((b) => ({
+    type: b.type,
+    span: { start: 0, end: 0 },
+    raw: b.raw,
+    text: "",
+    attrs: b.attrs,
+    children: collectRawBlocks(b.children),
+    trivia: b.trivia,
+    anchors: [],
+    outLinks: [],
+  }));
 }
 
 function toFlatSource(b: RawBlock): FlatSource {

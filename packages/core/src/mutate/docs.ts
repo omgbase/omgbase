@@ -64,7 +64,7 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
     writeFileSync(tmp, content);
     renameSync(tmp, abs);
     const ts = new Date().toISOString();
-    const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts }) });
+    const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
     if (ctx.omgbaseDir) recordFileStat(store, ctx.repoId, rel, abs, sha256(content));
     return { docId: res.docId, path: rel, committed: true };
   });
@@ -147,7 +147,7 @@ export function docsSetMeta(
     writeFileSync(tmp, content);
     renameSync(tmp, abs);
     const ts = new Date().toISOString();
-    const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts }) });
+    const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
     if (ctx.omgbaseDir) recordFileStat(store, ctx.repoId, info.path, abs, sha256(content));
     return { docId: res.docId, path: info.path, committed: true };
   });

@@ -49,7 +49,7 @@ export function importDocs(store: Store, repoId: string, docs: MrplexDoc[]): Imp
     const res = ingestFile(store, repoId, doc.path, doc.markdown, {
       ts,
       origin: "import",
-      resolveIds: makeReconcilingResolver(store, repoId, { ts }),
+      resolveIds: makeReconcilingResolver(store, repoId, { ts, path: doc.path }),
     });
     imported.push({ path: doc.path, docId: res.docId, blockCount: res.blockCount, converged: res.converged });
     if (!res.converged) allConverged = false;

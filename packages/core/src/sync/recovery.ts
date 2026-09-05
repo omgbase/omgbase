@@ -41,7 +41,7 @@ export function recoverRepo(store: Store, repoId: string, rootPath: string): Rec
       // Divergence: the file moved ahead of (or behind) the store. Re-ingest.
       ingestFile(store, repoId, doc.path, readFileSync(abs, "utf8"), {
         ts,
-        resolveIds: makeReconcilingResolver(store, repoId, { ts }),
+        resolveIds: makeReconcilingResolver(store, repoId, { ts, path: doc.path }),
       });
       healed.push(doc.path);
     }

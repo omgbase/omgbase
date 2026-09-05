@@ -35,7 +35,7 @@ export function attachRepo(store: Store, slug: string, rootPath: string): Attach
   for (const file of files) {
     const rel = relative(rootPath, file).split(sep).join("/");
     const content = readFileSync(file, "utf8");
-    const res = ingestFile(store, repoId, rel, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
+    const res = ingestFile(store, repoId, rel, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path: rel }) });
     if (!res.converged) allConverged = false;
   }
   return { repoId, fileCount: files.length, allConverged };

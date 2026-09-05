@@ -14,7 +14,7 @@ interface BlockRow {
   block_id: string;
   doc_id: string;
   path: string;
-  frontmatter: string;
+  metadata: string;
   ordinal: number;
   type: string;
   text: string;
@@ -29,9 +29,9 @@ interface SectionRow {
   last_ordinal: number;
 }
 
-function docTitle(frontmatterJson: string, firstHeadingByDoc: Map<string, string>, docId: string, path: string): string {
+function docTitle(metadataJson: string, firstHeadingByDoc: Map<string, string>, docId: string, path: string): string {
   try {
-    const fm = JSON.parse(frontmatterJson) as Record<string, unknown>;
+    const fm = JSON.parse(metadataJson) as Record<string, unknown>;
     if (typeof fm.title === "string" && fm.title.trim()) return fm.title;
   } catch {
     /* fall through */
@@ -43,7 +43,7 @@ function docTitle(frontmatterJson: string, firstHeadingByDoc: Map<string, string
 export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
   const blocks = store.db
     .prepare(
-      `SELECT b.block_id, b.doc_id, d.path AS path, d.frontmatter AS frontmatter,
+      `SELECT b.block_id, b.doc_id, d.path AS path, d.metadata AS metadata,
               b.ordinal, b.type, b.text, b.raw_hash
        FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
        WHERE b.repo_id = ? AND b.deleted_commit IS NULL
@@ -86,7 +86,7 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
   for (const b of blocks) {
     if (!shouldEmbed(b.text)) continue;
     const ctx = contextPrefix({
-      docTitle: docTitle(b.frontmatter, firstHeadingByDoc, b.doc_id, b.path),
+      docTitle: docTitle(b.metadata, firstHeadingByDoc, b.doc_id, b.path),
       path: b.path,
       headingChain: headingChain(b.doc_id, b.ordinal),
       blockType: b.type,

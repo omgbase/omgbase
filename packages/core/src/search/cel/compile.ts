@@ -5,7 +5,7 @@ import { FilterInvalid } from "./parser.js";
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
 // key never matches a comparison; !absent-bool is true.
 
-export type Target = "documents" | "blocks";
+export type Target = "documents" | "blocks" | "nodes";
 
 export interface Compiled {
   sql: string; // boolean SQL expression over the target's row
@@ -42,6 +42,15 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
         case "$content_hash": return { expr: "hex(d.file_hash)" };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on documents`, "10 §2");
       }
+    } else if (target === "nodes") {
+      switch (head) {
+        case "$id": return { expr: "n.node_id" };
+        case "$node_id": return { expr: "n.node_id" };
+        case "$doc_id": return { expr: "n.doc_id" };
+        case "$block_id": return { expr: "n.block_id" };
+        case "$path": return { expr: "d.path" };
+        default: throw new FilterInvalid(`unknown intrinsic ${head} on nodes`, "10 §2");
+      }
     } else {
       switch (head) {
         case "$id": return { expr: "b.block_id" };
@@ -56,9 +65,35 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
   }
 
   if (target === "documents") {
-    return { expr: `json_extract(d.frontmatter, ${jsonPath(segs)})` };
+    if (head === "format") return { expr: "d.format" };
+    return { expr: `json_extract(d.metadata, ${jsonPath(segs)})` };
   }
 
+  if (target === "nodes") {
+    if (head === "kind") return { expr: "n.kind" };
+    if (head === "name") return { expr: "n.name" };
+    if (head === "value") return { expr: "n.value" };
+    if (head === "attrs") {
+      return { expr: `json_extract(n.attrs, ${jsonPath(segs.slice(1))})` };
+    }
+    if (head === "doc") {
+      const rest = segs.slice(1);
+      if (rest[0]?.startsWith("$")) {
+        return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
+      }
+      if (rest[0] === "format") return { expr: "d.format" };
+      return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
+    }
+    if (head === "block") {
+      const rest = segs.slice(1);
+      if (rest[0] === "type") return { expr: "(SELECT bb.type FROM blocks bb WHERE bb.block_id = n.block_id)" };
+      if (rest[0] === "text") return { expr: "(SELECT bb.text FROM blocks bb WHERE bb.block_id = n.block_id)" };
+      throw new FilterInvalid(`unknown block field '${rest.join(".")}' on nodes`, "10 §2");
+    }
+    throw new FilterInvalid(`unknown field '${segs.join(".")}' on nodes`, "10 §2");
+  }
+
+  // blocks target
   if (head === "type") return { expr: "b.type" };
   if (head === "text") return { expr: "b.text" };
   if (head === "attrs") {
@@ -69,7 +104,8 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
     if (rest[0]?.startsWith("$")) {
       return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
     }
-    return { expr: `json_extract(d.frontmatter, ${jsonPath(rest)})` };
+    if (rest[0] === "format") return { expr: "d.format" };
+    return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
   }
   throw new FilterInvalid(`unknown field '${segs.join(".")}' on blocks`, "10 §2");
 }

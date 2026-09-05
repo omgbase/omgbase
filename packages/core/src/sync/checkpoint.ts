@@ -75,14 +75,14 @@ export function processCheckpoint(
     // until clean) and do NOT reconcile the marker soup into blocks. The file
     // still parses as opaque via ingest, but we record the conflicted flag.
     if (hasConflictMarkers(content)) {
-      ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
+      ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path: change.path }) });
       store.db.prepare("UPDATE documents SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
       conflicted.push(change.path);
       fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
       continue;
     }
 
-    ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts }) });
+    ingestFile(store, repoId, change.path, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path: change.path }) });
     // Clean content clears any prior conflicted flag.
     store.db.prepare("UPDATE documents SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
     ingested.push(change.path);

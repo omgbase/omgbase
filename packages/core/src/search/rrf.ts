@@ -45,9 +45,9 @@ const LAYER_BOOST: Record<string, number> = { canon: 1.3, working: 1.15, propose
 
 function computeBoosts(store: Store, docId: string, blockId: string, terms: string[]): Boosts {
   const boosts: Boosts = {};
-  const doc = store.db.prepare("SELECT path, frontmatter FROM documents WHERE doc_id = ?").get(docId) as { path: string; frontmatter: string } | undefined;
+  const doc = store.db.prepare("SELECT path, metadata FROM documents WHERE doc_id = ?").get(docId) as { path: string; metadata: string } | undefined;
   if (!doc) return boosts;
-  const fm = JSON.parse(doc.frontmatter) as Record<string, unknown>;
+  const fm = JSON.parse(doc.metadata) as Record<string, unknown>;
   const lowerTerms = terms.map((t) => t.toLowerCase()).filter(Boolean);
 
   // title match (frontmatter title or first heading text)

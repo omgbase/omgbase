@@ -7,9 +7,11 @@ import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
+import { writeDocNodes } from "./store/nodes.js";
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
-import type { RawBlock } from "./parse/types.js";
+import type { RawBlock, BlockTree } from "./parse/types.js";
+import { adapterForPath } from "../format/index.js";
 
 // Ingest path (07 task 1.4): parse → assign ids → commit. By default every
 // ingest re-mints (no identity threading). A caller (sync/) may supply an
@@ -38,7 +40,7 @@ export interface ResolvedEdgeRow {
   dstKind: "document" | "block" | "external" | "collection";
   dstNode: string;
   anchor: string | null;
-  provenance: "link" | "frontmatter" | "inline_field";
+  provenance: string;
 }
 
 // Given the parsed content blocks (frontmatter stripped) and the existing
@@ -142,18 +144,25 @@ export function ingestFile(
   repoId: string,
   path: string,
   content: string,
-  opts: { ts?: string; origin?: "observed" | "import"; resolveIds?: IdResolver } = {},
+  opts: { ts?: string; origin?: "observed" | "import"; resolveIds?: IdResolver; format?: string } = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
+  const adapter = adapterForPath(path);
+  const format = opts.format ?? adapter?.format ?? "markdown";
 
   return store.write((db): IngestResult => {
-    const tree = parseTree(content);
+    const tree: BlockTree = adapter ? adapter.parse(content) : parseTree(content);
     const { fmBlock, rest } = extractFrontmatter(tree.children);
 
-    // Frontmatter is stored as a blob + parsed JSON view on the document, not a block.
+    // Frontmatter blob (markdown-specific) preserved for revision history.
     const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
-    const frontmatterJson = JSON.stringify(parseFrontmatter(fmBlock));
+
+    // Metadata: adapter-provided for non-markdown formats, frontmatter-parsed for markdown.
+    const metadata = (adapter?.extractMetadata)
+      ? (adapter.extractMetadata(content) ?? parseFrontmatter(fmBlock))
+      : parseFrontmatter(fmBlock);
+    const metadataJson = JSON.stringify(metadata);
 
     // Upsert the document row (refresh frontmatter JSON view each ingest).
     let doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ?").get(repoId, path) as
@@ -163,13 +172,13 @@ export function ingestFile(
     const isNew = !doc;
     if (!doc) {
       db.prepare(
-        "INSERT INTO documents (doc_id, repo_id, path, frontmatter) VALUES (?, ?, ?, ?)",
-      ).run(docId, repoId, path, frontmatterJson);
+        "INSERT INTO documents (doc_id, repo_id, path, format, metadata) VALUES (?, ?, ?, ?, ?)",
+      ).run(docId, repoId, path, format, metadataJson);
       doc = { doc_id: docId };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE documents SET frontmatter = ? WHERE doc_id = ?").run(frontmatterJson, docId);
+      db.prepare("UPDATE documents SET metadata = ?, format = ? WHERE doc_id = ?").run(metadataJson, format, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -223,10 +232,22 @@ export function ingestFile(
     ftsIndexDoc(db, docId);
     rebuildSections(db, docId);
 
+    // Node projection: adapter-provided semantic features from parsed blocks.
+    if (adapter?.projectNodes) {
+      const rawBlocks = rest.map(toProjectionInput);
+      const projected = adapter.projectNodes(rawBlocks);
+      if (projected.length > 0) {
+        // Rewrite blockIds to use assigned ids instead of placeholder "root".
+        const idMap = buildBlockIdMap(assigned);
+        const withIds = projected.map((n) => ({ ...n, blockId: idMap.get(n.blockId) ?? n.blockId }));
+        writeDocNodes(db, repoId, docId, withIds);
+      }
+    }
+
     // Edge extraction + interval maintenance (05 §2), if the resolver supplies
     // an extractor. Runs in this commit transaction.
     if (resolved.extractEdges) {
-      const extracted = resolved.extractEdges(docId, JSON.parse(frontmatterJson) as Record<string, unknown>);
+      const extracted = resolved.extractEdges(docId, JSON.parse(metadataJson) as Record<string, unknown>);
       maintainEdges(db, repoId, docId, commit.commitId, extracted);
     }
 
@@ -261,7 +282,8 @@ export function ingestFile(
     );
 
     // Convergence check (01 §2): file bytes vs rendered revision.
-    const converged = fileHash.equals(renderedHash) && render(tree) === content;
+    const renderFn = adapter?.render ?? render;
+    const converged = fileHash.equals(renderedHash) && renderFn(tree) === content;
 
     return {
       docId,
@@ -271,4 +293,22 @@ export function ingestFile(
       converged,
     };
   });
+}
+
+function toProjectionInput(b: RawBlock): RawBlock {
+  return b;
+}
+
+function buildBlockIdMap(blocks: TreeInputBlock[]): Map<string, string> {
+  const map = new Map<string, string>();
+  const walk = (list: TreeInputBlock[], idx: number): void => {
+    for (const b of list) {
+      map.set(String(idx), b.blockId);
+      map.set(b.blockId, b.blockId);
+      idx++;
+      if (b.children.length > 0) walk(b.children, 0);
+    }
+  };
+  walk(blocks, 0);
+  return map;
 }
