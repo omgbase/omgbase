@@ -35,7 +35,7 @@ pnpm lint
 
 A single-writer engine process sits beside one or more working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
-The repo is a pnpm workspace of three packages:
+The repo is a pnpm workspace of four packages:
 
 ```
 packages/
@@ -53,6 +53,7 @@ packages/
     corpus/      round-trip + matcher fixtures
   cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core)
   client/        @omgbase/client — thin remote MCP client (placeholder)
+  embedder/      @omgbase/embedder — external embedding provider (transformers.js + all-MiniLM-L6-v2)
 docs/            normative design documents
 ```
 
@@ -92,12 +93,13 @@ In addition to the core CEL filter language (see `docs/10-query-language.md`), t
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The full command surface is implemented: reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
 
 ```bash
-pnpm -r build           # build core + cli
-node packages/cli/dist/src/main.js init ./my-vault --yes   # or `pnpm link` to get `omgbase`/`omg` on PATH
+pnpm -r build           # build core + cli + embedder
+pnpm rlink              # globally link all package binaries (omg, omgbase, omgbase-embedder)
 
+omg init ./my-vault --yes               # create workspace + attach a directory
 omg status                              # where am I: repo, sync, watcher, queue
 omg outline notes/hub.md                # compact orientation outline (frozen wire format)
 omg q 'type == "task" && !attrs.checked' --text deploy --ids | omg cat -   # pipe fuel
@@ -216,7 +218,7 @@ Tools exposed: `docs_outline`, `nodes_get`, `nodes_get_many`, `query`, `text_sea
 Semantic ranking needs an embedding provider, configured per repo and opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + all-MiniLM-L6-v2, 384-dim), exposed as the `omgbase-embedder` binary:
 
 ```bash
-pnpm add -g @omgbase/embedder          # or run the workspace binary directly
+# omgbase-embedder is on PATH after `pnpm rlink`
 omg config set embedding.provider omgbase-embedder   # a command (stdio) …
 omg config set embedding.provider https://embed.internal/embed   # … or an http endpoint
 omg embed drain                         # embed the corpus (prints an egress note for remote providers)

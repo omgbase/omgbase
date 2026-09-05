@@ -13,7 +13,8 @@
     "typecheck": "tsc -b",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
-    "lint:fix": "pnpm -r lint:fix"
+    "lint:fix": "pnpm -r lint:fix",
+    "rlink": "for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm link --global); done"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
