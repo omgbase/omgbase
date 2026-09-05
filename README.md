@@ -58,7 +58,7 @@ Rendering is **splice-only**: untouched blocks emit their exact retained bytes; 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The read surface is implemented: `init`, `attach`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `log`, `hist`, `diff`, `links`, `sync`, plus `mcp` (stdio MCP server). The write surface (`apply` + sugar, `edit`, `graph`, `run`, `watch`, admin) is still forthcoming.
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The full command surface is implemented: reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
 
 ```bash
 pnpm -r build           # build core + cli
@@ -69,6 +69,11 @@ omg outline notes/hub.md                # compact orientation outline (frozen wi
 omg q 'type == "task" && !attrs.checked' --text deploy --ids | omg cat -   # pipe fuel
 omg log --since 24h                     # one commit digest per line
 omg find "stable identity rationale" -1 # top hit's id alone
+
+# writes — the pipe is the changeset boundary
+omg q 'type == "task" && !attrs.checked && under_heading("Launch")' --ids | omg done -
+omg retarget old.md new.md              # plan by default; add --apply to commit
+omg edit b_k7z2p9q                       # $EDITOR round-trip, CAS pinned
 ```
 
 Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.

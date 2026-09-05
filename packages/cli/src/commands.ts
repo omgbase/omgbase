@@ -27,6 +27,13 @@ import { cmdDiff } from "./cmd/diff.js";
 import { cmdLinks } from "./cmd/links.js";
 import { cmdSync } from "./cmd/sync.js";
 import { cmdMcp } from "./cmd/mcp.js";
+import { cmdApply, cmdInsert, cmdUpdate, cmdMove, cmdRm, cmdDone, cmdAppend, cmdSplit, cmdMerge } from "./cmd/mutate.js";
+import { cmdEdit } from "./cmd/edit.js";
+import { cmdRetarget } from "./cmd/retarget.js";
+import { cmdNew, cmdMv, cmdMeta } from "./cmd/docs.js";
+import { cmdGraph } from "./cmd/graph.js";
+import { cmdRun } from "./cmd/run.js";
+import { cmdWatch, cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
 import { cmdHelp } from "./cmd/help.js";
 
 export const COMMANDS: Command[] = [
@@ -44,8 +51,31 @@ export const COMMANDS: Command[] = [
   cmdHist,
   cmdDiff,
   cmdLinks,
+  cmdApply,
+  cmdInsert,
+  cmdUpdate,
+  cmdEdit,
+  cmdMove,
+  cmdRm,
+  cmdDone,
+  cmdAppend,
+  cmdRetarget,
+  cmdSplit,
+  cmdMerge,
+  cmdNew,
+  cmdMv,
+  cmdMeta,
+  cmdGraph,
+  cmdRun,
   cmdSync,
+  cmdWatch,
   cmdMcp,
+  cmdRebuild,
+  cmdGc,
+  cmdDoctor,
+  cmdConfig,
+  cmdImport,
+  cmdEmbed,
   cmdHelp,
 ];
 

@@ -1,6 +1,6 @@
 # omgbase — CLI Surface (`omg`)
 
-**Status:** normative design, `proposed` (ADR-012). As-built: the read surface (§5.1–5.5, §5.8 `sync`) and `mcp` are implemented in `packages/cli`; the write surface (§5.6), `watch`, `graph`, `run`, and admin (§5.9) are still forthcoming.
+**Status:** normative design, `proposed` (ADR-012). As-built: implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `new`/`mv`/`rm --doc`/`meta`), `graph`, `run`, `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred; `embed` is a stub until an embedding provider is wired (05 §6). The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) were built as library functions (`@omgbase/core`) to back `new`/`mv`/`rm --doc`/`meta`; wiring them as MCP tools (06) is still pending.
 **Depends on:** `01-architecture.md` §11–12; `02-data-model.md` §2, §6; `04-mutation-and-concurrency.md` §6; `06-mcp-api.md` (tool semantics); `10-query-language.md` (envelope, fenced form).
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.

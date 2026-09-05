@@ -24,3 +24,39 @@ export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./
 export { FilterInvalid } from "./search/cel/parser.js";
 export { EngineError, type ErrorCode } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
+
+// Mutation surface consumed by CLI write commands (11 §5.6).
+export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";
+export { type To, type At, type Expect } from "./mutate/ops.js";
+export {
+  tasksComplete,
+  sectionsAppend,
+  sectionsRename,
+  sectionsMove,
+  listsInsertItem,
+  linksRetarget,
+  type RetargetHit,
+} from "./mutate/macros.js";
+
+// Graph traversal (11 §5.4) + admin/maintenance (11 §5.9).
+export {
+  graphTraverse,
+  graphPath,
+  graphSubgraph,
+  type TraverseSpec,
+  type PathSpec,
+  type SubgraphSpec,
+  type TraverseResult,
+  type Direction,
+} from "./graph/traverse.js";
+export {
+  docsCreate,
+  docsMove,
+  docsDelete,
+  docsSetMeta,
+  type DocOpContext,
+  type DocOpResult,
+} from "./mutate/docs.js";
+export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
+export { runGc, type GcResult } from "./core/store/gc.js";
+export { planImport, importDocs, type MrplexDoc, type ImportPlan, type ImportResult } from "./migrate/mrplex.js";
