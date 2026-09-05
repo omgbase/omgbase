@@ -21,13 +21,11 @@ export const YAML_FORMAT = "yaml";
 
 // Block kinds for YAML structures.
 const K = {
-  document: "yaml:document" as BlockKind,
   mapping: "yaml:mapping" as BlockKind,
   mapping_entry: "yaml:mapping_entry" as BlockKind,
   sequence: "yaml:sequence" as BlockKind,
   sequence_item: "yaml:sequence_item" as BlockKind,
   scalar: "yaml:scalar" as BlockKind,
-  comment: "yaml:comment" as BlockKind,
 } as const;
 
 function span(start: number, end: number): Span {

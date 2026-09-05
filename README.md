@@ -2,18 +2,19 @@
 
 # omgbase
 
-**Open Markdown Graph Base** — a versioned, addressable graph of authored Markdown structure.
+**Open Markdown Graph Base** — a versioned, addressable graph of authored structure across Markdown, YAML, JSON, and user-defined formats.
 
-Ordinary Markdown files stay the human representation (editable in any editor, Obsidian, Git, shell tools). The engine adds, on top of those files:
+Ordinary files stay the human representation (editable in any editor, Obsidian, Git, shell tools). The engine adds, on top of those files:
 
-- **stable block identity** — every paragraph, heading, list item, etc. gets a durable id that survives edits and moves;
+- **stable block identity** — every paragraph, heading, YAML mapping entry, JSON property, etc. gets a durable id that survives edits and moves;
 - **block-grain history** — who/what changed each block, across commits;
-- **a typed knowledge graph** — links, wikilinks, frontmatter relations, and inline fields become queryable, temporal edges;
+- **a typed knowledge graph** — links, `$ref`s, `extends`, frontmatter relations, and inline fields become queryable, temporal edges that cross format boundaries;
+- **semantic node projection** — links, tasks, anchors, environment variables, schema references, and other features are projected as queryable nodes anchored to their source blocks;
 - **hybrid retrieval** — full-text (FTS5) + vector search fused with reciprocal-rank fusion;
 - **a safe structural mutation API** — six kernel ops with content-hash CAS, built for autonomous agents;
 - **an MCP server** — the whole surface exposed as Model Context Protocol tools.
 
-The files are always the source of truth for *content*; the engine's database owns *identity, history, and derived indexes*. At quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked document.
+The files are always the source of truth for *content*; the engine's database owns *identity, history, and derived indexes*. At quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked Markdown document.
 
 ## Status
 
@@ -32,7 +33,7 @@ pnpm lint
 
 ## Architecture at a glance
 
-A single-writer engine process sits beside one or more Markdown working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
+A single-writer engine process sits beside one or more working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
 The repo is a pnpm workspace of three packages:
 
@@ -41,6 +42,7 @@ packages/
   core/          @omgbase/core — the embedded engine
     src/
       core/      parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
+      format/    adapter contract · registry · markdown/yaml/json adapters · node projection
       reconcile/ matcher phases · scoring · dispositions · eval harness
       sync/      watcher · checkpoints · reconciling ingest · recovery · git heuristics
       mutate/    six kernel ops · changesets · CAS · macros
@@ -55,6 +57,38 @@ docs/            normative design documents
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.
+
+### Three-layer model
+
+Every tracked file is a **Doc** (a versioned repository-level authored unit). Each doc decomposes into **Blocks** (source-backed structural regions — the mutation anchors) and **Nodes** (semantic features projected by format adapters — the discovery targets).
+
+- **Blocks** are what you *mutate*: markdown paragraphs, YAML mapping entries, JSON properties. Stable identity survives edits.
+- **Nodes** are what you *discover*: links, tasks, `$ref` references, environment variables, anchors, inline fields. Derived, deterministic, queryable.
+
+Agents query nodes to find what's relevant, then mutate the blocks those nodes are anchored to.
+
+### Multiformat support
+
+Format is auto-detected from file extension. Each format adapter declares progressive capabilities:
+
+| Format | Extensions | Parse | Render | Edges | Nodes | Mutation | Metadata |
+|--------|-----------|-------|--------|-------|-------|----------|----------|
+| **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | YAML frontmatter |
+| **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | — | full structure |
+| **JSON** | `.json` | yes | — | `$ref` `$schema` path values | `json:ref` `json:schema` | — | full object |
+
+Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that `graph_traverse` follows in one call.
+
+Block kinds are format-qualified with a colon separator: `md:heading`, `yaml:mapping_entry`, `json:property`. The `documents.metadata` column stores an adapter-extracted JSON property bag — YAML files store their full structure, JSON files store the parsed object, Markdown files store frontmatter — all queryable via the same CEL filter path.
+
+### Structural query functions
+
+In addition to the core CEL filter language (see `docs/10-query-language.md`), the query system provides format-aware structural functions for the `blocks` target:
+
+- `under_heading("Setup")` — markdown blocks under a heading (section range)
+- `under_kind("yaml:mapping_entry", "database")` — blocks nested under an ancestor of the given kind
+- `yaml_path("database.host")` — blocks at a YAML key path (walks parent chain)
+- `json_pointer("#/definitions/User")` — blocks at a JSON Pointer path
 
 ## Quickstart (CLI)
 
@@ -101,7 +135,7 @@ import { docsOutline } from "@omgbase/core/core/read/outline";
 // Open (or create) the engine database. Use ":memory:" for tests.
 const store = new Store({ path: "/path/to/vault/.omgbase/omgbase.db" });
 
-// Walk a Markdown tree: ingest every file, thread identity, extract edges.
+// Walk a directory tree: ingest every file (md/yaml/json), thread identity, extract edges.
 const { repoId } = attachRepo(store, "my-vault", "/path/to/vault");
 
 // CEL query over blocks (see docs/10-query-language.md for the full language).
@@ -109,6 +143,18 @@ const { hits } = query(store, repoId, {
   from: "blocks",
   filter: 'type == "task" && !attrs.checked && under_heading("Launch")',
   limit: 50,
+});
+
+// Query across formats: find YAML configs referencing a specific host.
+const yamlHits = query(store, repoId, {
+  from: "documents",
+  filter: 'format == "yaml" && database.host == "localhost"',
+});
+
+// Query nodes: find unchecked tasks across all markdown files.
+const tasks = query(store, repoId, {
+  from: "nodes",
+  filter: 'kind == "md:task" && attrs.checked == false',
 });
 
 // Compact orientation outline of one document.
