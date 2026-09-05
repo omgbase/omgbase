@@ -103,6 +103,7 @@ interface BlockRow {
   text: string;
   rawHash: Buffer;
   normHash: Buffer;
+  triviaHash: Buffer | null;
 }
 
 function flatten(
@@ -116,8 +117,6 @@ function flatten(
   blocks.forEach((b, ordinal) => {
     const orderKey = keyBetween(prevKey, null);
     prevKey = orderKey;
-    // Visible text drives query/FTS/outline; norm_hash drives reconciliation
-    // phase 2 and strips markers per 02 §5.2.
     const visible = normalizeVisibleText(b.raw, b.type);
     out.push({
       blockId: b.blockId,
@@ -131,6 +130,7 @@ function flatten(
       text: visible,
       rawHash: sha256(b.raw),
       normHash: sha256(visible),
+      triviaHash: b.trivia.length > 0 ? sha256(b.trivia) : null,
     });
     if (b.children.length > 0) {
       flatten(b.children, b.blockId, depth + 1, `${ancestorPath}${b.blockId}/`, out);
@@ -172,13 +172,13 @@ export function ingestFile(
     const isNew = !doc;
     if (!doc) {
       db.prepare(
-        "INSERT INTO documents (doc_id, repo_id, path, format, metadata) VALUES (?, ?, ?, ?, ?)",
-      ).run(docId, repoId, path, format, metadataJson);
+        "INSERT INTO documents (doc_id, repo_id, path, format, metadata, leading_trivia) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(docId, repoId, path, format, metadataJson, tree.leadingTrivia);
       doc = { doc_id: docId };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE documents SET metadata = ?, format = ? WHERE doc_id = ?").run(metadataJson, format, docId);
+      db.prepare("UPDATE documents SET metadata = ?, format = ?, leading_trivia = ? WHERE doc_id = ?").run(metadataJson, format, tree.leadingTrivia, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -221,10 +221,10 @@ export function ingestFile(
     const insert = db.prepare(
       `INSERT INTO blocks
          (block_id, repo_id, doc_id, parent_block, order_key, ordinal, depth,
-          ancestor_path, type, attrs, text, raw_hash, norm_hash, created_commit)
+          ancestor_path, type, attrs, text, raw_hash, norm_hash, trivia_hash, created_commit)
        VALUES
          (@blockId, @repoId, @docId, @parentBlock, @orderKey, @ordinal, @depth,
-          @ancestorPath, @type, @attrs, @text, @rawHash, @normHash, @createdCommit)`,
+          @ancestorPath, @type, @attrs, @text, @rawHash, @normHash, @triviaHash, @createdCommit)`,
     );
     for (const r of rows) {
       insert.run({ ...r, repoId, docId, createdCommit: commit.commitId });

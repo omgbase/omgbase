@@ -42,6 +42,7 @@ export class Store {
     for (let v = current + 1; v <= SCHEMA_VERSION; v++) {
       if (v === 3) { this.migrateV3(); continue; }
       if (v === 4) { this.migrateV4(); continue; }
+      if (v === 6) { this.migrateV6(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -60,6 +61,17 @@ export class Store {
     const cols = this.db.pragma("table_info(documents)") as { name: string }[];
     if (cols.length > 0 && cols.some((c) => c.name === "frontmatter") && !cols.some((c) => c.name === "metadata")) {
       this.db.exec("ALTER TABLE documents RENAME COLUMN frontmatter TO metadata");
+    }
+  }
+
+  private migrateV6(): void {
+    const docCols = this.db.pragma("table_info(documents)") as { name: string }[];
+    if (docCols.length > 0 && !docCols.some((c) => c.name === "leading_trivia")) {
+      this.db.exec("ALTER TABLE documents ADD COLUMN leading_trivia TEXT NOT NULL DEFAULT ''");
+    }
+    const blockCols = this.db.pragma("table_info(blocks)") as { name: string }[];
+    if (blockCols.length > 0 && !blockCols.some((c) => c.name === "trivia_hash")) {
+      this.db.exec("ALTER TABLE blocks ADD COLUMN trivia_hash BLOB");
     }
   }
 

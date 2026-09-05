@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -42,12 +42,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3 and 4 are programmatic — see store.ts migrateV3(), migrateV4().
+// Migrations 3, 4, 6 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
   4: "",  // handled programmatically in store.ts
   5: NODES_DDL,
+  6: "",  // handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -68,6 +69,7 @@ CREATE TABLE IF NOT EXISTS documents (
   current_rev    TEXT,
   file_hash      BLOB,
   conflicted     INTEGER NOT NULL DEFAULT 0,
+  leading_trivia TEXT NOT NULL DEFAULT '',
   deleted_commit TEXT,
   UNIQUE (repo_id, path)
 );
@@ -86,6 +88,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   text           TEXT NOT NULL,
   raw_hash       BLOB NOT NULL,
   norm_hash      BLOB NOT NULL,
+  trivia_hash    BLOB,                     -- trailing trivia blob hash (NULL = no trivia)
   created_commit TEXT NOT NULL,
   deleted_commit TEXT
 );
