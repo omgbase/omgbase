@@ -11,6 +11,7 @@ import { EngineError } from "./errors.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { MutationError } from "../mutate/tree.js";
 import { tasksComplete, sectionsAppend, linksRetarget } from "../mutate/macros.js";
+import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { graphTraverse, graphPath } from "../graph/traverse.js";
 import { historyNode, diffBlocks, changesSince } from "../graph/history.js";
 import { resolve as resolveThing } from "../search/resolve.js";
@@ -269,6 +270,77 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (args.dry_run !== false) return ok({ hits, applied: false });
         const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
         return ok({ hits, applied: true, ...res });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  // Doc-level operations (06 §API). The MCP server serializes writes in-process,
+  // so these pass no omgbaseDir (the flock is for cross-process CLI writers);
+  // MCP-originated writes are actor agent:mcp.
+  const docCtx = () => {
+    if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+    return { repoId, rootPath: ctx.rootPath, actor: "agent:mcp" };
+  };
+
+  server.registerTool(
+    "docs_create",
+    {
+      description: "Create a new document at `path` from complete file bytes (`markdown`), with optional structured `frontmatter`. Fails path_taken if it already exists.",
+      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional() },
+    },
+    async (args) => {
+      try {
+        return ok(docsCreate(store, docCtx(), args.path, args.markdown, args.frontmatter));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_move",
+    {
+      description: "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists.",
+      inputSchema: { doc: z.string(), to_path: z.string() },
+    },
+    async (args) => {
+      try {
+        return ok(docsMove(store, docCtx(), args.doc, args.to_path));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_delete",
+    {
+      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Requires the explicit doc id/path.",
+      inputSchema: { doc: z.string() },
+    },
+    async (args) => {
+      try {
+        return ok(docsDelete(store, docCtx(), args.doc));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_set_meta",
+    {
+      description: "Surgical frontmatter patch: set the given keys and/or unset named keys, re-ingesting the document. Other frontmatter is preserved.",
+      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
+    },
+    async (args) => {
+      try {
+        return ok(docsSetMeta(store, docCtx(), args.doc, {
+          ...(args.set ? { set: args.set } : {}),
+          ...(args.unset ? { unset: args.unset } : {}),
+        }));
       } catch (e) {
         return fail(e);
       }

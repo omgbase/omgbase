@@ -78,10 +78,12 @@ diff { doc, from_rev, to_rev, grain?: "blocks"|"unified" }
 apply { repo, ops[], origin, dry_run? }                       // 04-… §2 (the only real writer)
 tasks_complete | sections_append | sections_rename | sections_move
 | lists_insert_item | links_retarget                          // macros; same changeset machinery
-docs_create { repo, path, markdown, frontmatter? }
-docs_delete { doc, expect? }    docs_move { doc, to_path }
-docs_set_meta { doc, patch, expect? }                         // surgical frontmatter key patch
+docs_create { path, markdown, frontmatter? }                  // fails path_taken if it exists
+docs_delete { doc }             docs_move { doc, to_path }     // delete tombstones + resurrection-poolable
+docs_set_meta { doc, set?, unset? }                           // surgical frontmatter key patch
 ```
+
+> **As-built (implemented):** the four doc-level tools are registered in the MCP server and back the CLI's `new`/`mv`/`rm --doc`/`meta`. `docs_set_meta` takes `set` (keys to set) and `unset` (keys to remove) rather than a single `patch` object; the `expect` CAS guard specced above is not yet implemented (doc ops re-ingest the whole file, so concurrent-edit protection rides on the writer lock, not per-doc CAS). MCP-originated writes are actor `agent:mcp`.
 
 ### Admin
 
