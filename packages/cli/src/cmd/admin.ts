@@ -9,12 +9,14 @@ import {
   planImport,
   importDocs,
   reposStatus,
+  buildEmbedTasks,
   type RebuildTarget,
   type MrplexDoc,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
+import { loadEmbedding } from "./_embed.js";
 
 // watch + admin/maintenance (11 §5.8–5.9).
 
@@ -192,17 +194,49 @@ function runImport(cli: Cli, args: string[]): number {
 
 // ---- embed ------------------------------------------------------------------
 
-function runEmbed(cli: Cli, args: string[]): number {
+async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   const [sub] = args;
-  // The embedding queue/provider isn't wired in v1 (05 §6 stub). Report honestly.
-  if (sub === "drain") {
-    cli.io.err(cli.style.dim("  no embedding provider configured (05 §6); nothing to drain"));
+  const ws = cli.workspace();
+  const repo = cli.repo(ws);
+
+  const loaded = await loadEmbedding(ws, repo.repoId);
+  if (!loaded) {
+    // No provider configured (05 §6). Honest report; not an error.
+    const hint = 'set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)';
+    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: null, queued: 0 }));
+    else cli.io.err(cli.style.dim(`  no embedding provider configured — ${hint}`));
     return EXIT_OK;
   }
-  const payload = { queued: 0, provider: null };
-  if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(payload));
-  else cli.io.err(cli.style.dim("  embed queue: 0 (no provider configured)"));
-  return EXIT_OK;
+
+  try {
+    const tasks = buildEmbedTasks(ws.store, repo.repoId);
+    // Queue depth = embeddable blocks whose current-context vector isn't cached.
+    const pending = loaded.worker.staleBlocks(tasks);
+
+    if (sub === "drain") {
+      // Egress notice (05 §6): a remote provider receives block text off-machine.
+      if (loaded.remote) {
+        cli.io.err(cli.style.warn(`  embedding ${pending.length} block(s) via ${loaded.providerName} — block text is sent to this remote endpoint`));
+      } else {
+        cli.io.err(cli.style.dim(`  embedding ${pending.length} block(s) via ${loaded.providerName} (local process)`));
+      }
+      const result = await loaded.worker.process(tasks);
+      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...result }));
+      else cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
+      return EXIT_OK;
+    }
+
+    // status
+    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length };
+    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(payload));
+    else {
+      cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
+      cli.io.out(`  embeddable ${tasks.length}   ${cli.style.dim("queued")} ${payload.queued}`);
+    }
+    return EXIT_OK;
+  } finally {
+    await loaded.close();
+  }
 }
 
 // helpers ---------------------------------------------------------------------
@@ -243,3 +277,4 @@ export const cmdDoctor: Command = { name: "doctor", summary: "Invariant sweep (C
 export const cmdConfig: Command = { name: "config", summary: "Read/write repo settings", run: (c, a) => runConfig(c, a) };
 export const cmdImport: Command = { name: "import", summary: "Import from mrplex (plan-by-default)", run: (c, a) => runImport(c, a) };
 export const cmdEmbed: Command = { name: "embed", summary: "Embedding queue status/drain", run: (c, a) => runEmbed(c, a) };
+// (runEmbed help)  omg embed [status|drain]  — provider status or process the queue

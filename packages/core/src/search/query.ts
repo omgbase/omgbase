@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
+import { hybridSearch } from "./rrf.js";
 
 // query tool (10-query-language; 07 task 1.7). Compiles a CEL filter to indexed
 // SQL over documents|blocks, intersects with optional text (FTS5), applies
@@ -15,6 +16,13 @@ export interface QueryEnvelope {
   order?: string[];
   limit?: number;
   cursor?: string | null;
+  /**
+   * A pre-computed query vector for semantic retrieval. The query language is
+   * clock-free and provider-free (10 §3.1); callers that want semantic search
+   * embed the query string with their configured provider and pass the vector
+   * here. When present, results are hybrid-ranked (FTS ⊕ vector) via RRF.
+   */
+  vector?: { model: string; vec: Float32Array };
 }
 
 export interface QueryHit {
@@ -41,6 +49,30 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
     throw new FilterInvalid(`'from' must be 'documents' or 'blocks'`, "10 §1");
   }
   const limit = env.limit ?? 50;
+
+  // Semantic path: a query vector fuses FTS + vector rankings (RRF) at block
+  // grain. An optional CEL filter narrows the fused candidates to the block ids
+  // that also match structurally, so `--semantic` composes with `filter`.
+  if (env.vector) {
+    const hits = hybridSearch(store, {
+      repoId,
+      ...(env.text ? { text: env.text } : {}),
+      vector: env.vector,
+      limit: limit + 1 + (env.filter ? limit * 4 : 0),
+    });
+    let blockIds = hits.map((h) => h.blockId);
+    if (env.filter && env.filter.trim().length > 0) {
+      const allowed = filterBlockIds(store, repoId, env.filter, blockIds);
+      blockIds = blockIds.filter((id) => allowed.has(id));
+    }
+    const pathById = new Map(hits.map((h) => [h.blockId, h.path]));
+    const page = blockIds.slice(0, limit);
+    return {
+      hits: page.map((id) => ({ id, path: pathById.get(id) ?? "" })),
+      truncated: blockIds.length > limit,
+      cursor: null,
+    };
+  }
 
   const where: string[] = [];
   const params: unknown[] = [];
@@ -122,6 +154,19 @@ function buildOrder(order: string[] | undefined, target: Target): string {
   }
   parts.push(`${prefix} ASC`, `${idCol} ASC`);
   return parts.join(", ");
+}
+
+// Which of the given block ids satisfy a CEL filter (blocks target). Used by the
+// semantic path to intersect vector/FTS candidates with a structural filter.
+function filterBlockIds(store: Store, repoId: string, filter: string, blockIds: string[]): Set<string> {
+  if (blockIds.length === 0) return new Set();
+  const compiled = compile(parseFilter(filter), "blocks");
+  const placeholders = blockIds.map(() => "?").join(",");
+  const sql = `SELECT b.block_id AS id
+     FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
+     WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND b.block_id IN (${placeholders}) AND ${compiled.sql}`;
+  const rows = store.db.prepare(sql).all(repoId, ...blockIds, ...compiled.params) as { id: string }[];
+  return new Set(rows.map((r) => r.id));
 }
 
 function encodeCursor(path: string, id: string): string {

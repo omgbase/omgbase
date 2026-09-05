@@ -1,0 +1,27 @@
+{
+  "name": "@omgbase/embedder",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open Markdown Graph Base — local embedding server (transformers.js + all-MiniLM-L6-v2), spoken to over stdio",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "bin": {
+    "omgbase-embedder": "./dist/src/bin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "echo 'no lint yet'"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
+  }
+}

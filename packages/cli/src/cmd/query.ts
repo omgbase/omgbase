@@ -4,7 +4,8 @@ import { parse as parseYaml } from "yaml";
 import { query, type QueryEnvelope } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EXIT_OK } from "../output.js";
+import { truncationFooter, EngineErrorLike, EXIT_OK } from "../output.js";
+import { loadEmbedding } from "./_embed.js";
 
 // `omg query [filter]` (alias q) (11 §5.3). One query language, three input
 // forms → the same envelope (10 §1): positional CEL filter + flags; flags only;
@@ -19,7 +20,7 @@ function readStdin(): string {
   }
 }
 
-function runQuery(cli: Cli, args: string[]): number {
+async function runQuery(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -61,6 +62,24 @@ function runQuery(cli: Cli, args: string[]): number {
     if (values.cursor) env.cursor = values.cursor;
   }
 
+  // --semantic: embed the phrase with the configured provider and hand the
+  // vector to the envelope (query() then hybrid-ranks). No provider ⇒ a clear
+  // semantic_unavailable rather than silently ignoring the flag.
+  if (values.semantic) {
+    const loaded = await loadEmbedding(ws, repo.repoId);
+    if (!loaded) {
+      throw new EngineErrorLike("semantic_unavailable", "no embedding provider configured", {
+        hint: "omg config set embedding.provider <command|url>",
+      });
+    }
+    try {
+      const vec = await loaded.worker.embedQuery(values.semantic);
+      env.vector = { model: loaded.provider.model, vec };
+    } finally {
+      await loaded.close();
+    }
+  }
+
   const result = query(ws.store, repo.repoId, env);
 
   if (cli.flags.mode === "ids") {
@@ -92,4 +111,4 @@ function runQuery(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-export const cmdQuery: Command = { name: "query", aliases: ["q"], summary: "Query blocks/documents (CEL + text)", run: (cli, a) => runQuery(cli, a) };
+export const cmdQuery: Command = { name: "query", aliases: ["q"], summary: "Query blocks/documents (CEL + text + semantic)", run: (cli, a) => runQuery(cli, a) };

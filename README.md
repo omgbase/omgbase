@@ -163,11 +163,22 @@ const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
 ```
 
-Tools exposed: `docs_outline`, `nodes_get`, `nodes_get_many`, `query`, `text_search`, `resolve`, `apply`, `tasks_complete`, `sections_append`, `links_retarget`, `graph_traverse`, `graph_path`, `history_node`, `diff`, `changes_since`, `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor; every hydrating tool honors `budget_tokens`.
+Tools exposed: `docs_outline`, `nodes_get`, `nodes_get_many`, `query`, `text_search`, `resolve`, `apply`, `tasks_complete`, `sections_append`, `links_retarget`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `graph_traverse`, `graph_path`, `history_node`, `diff`, `changes_since`, `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor; every hydrating tool honors `budget_tokens`.
 
 ### Semantic search (optional)
 
-Vector search needs an embedding provider hook (vault text leaves the machine, so it is opt-in). Without one, semantic queries return `semantic_unavailable`.
+Semantic ranking needs an embedding provider, configured per repo and opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + all-MiniLM-L6-v2, 384-dim), exposed as the `omgbase-embedder` binary:
+
+```bash
+pnpm add -g @omgbase/embedder          # or run the workspace binary directly
+omg config set embedding.provider omgbase-embedder   # a command (stdio) …
+omg config set embedding.provider https://embed.internal/embed   # … or an http endpoint
+omg embed drain                         # embed the corpus (prints an egress note for remote providers)
+omg q --semantic "crash safety and durability" -n 5
+omg find "how are ids kept stable"      # hybrid FTS ⊕ vector by default when a provider is set
+```
+
+Without a configured provider, semantic queries return `semantic_unavailable`. The provider contract is `embed(texts) => Promise<number[][]>`; a remote HTTP embedder is the same contract behind a URL.
 
 ```ts
 import { EmbeddingWorker } from "@omgbase/core/search/embeddings";
