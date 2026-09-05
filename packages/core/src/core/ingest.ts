@@ -236,12 +236,13 @@ export function ingestFile(
     if (adapter?.projectNodes) {
       const rawBlocks = rest.map(toProjectionInput);
       const projected = adapter.projectNodes(rawBlocks);
-      if (projected.length > 0) {
-        // Rewrite blockIds to use assigned ids instead of placeholder "root".
-        const idMap = buildBlockIdMap(assigned);
-        const withIds = projected.map((n) => ({ ...n, blockId: idMap.get(n.blockId) ?? n.blockId }));
-        writeDocNodes(db, repoId, docId, withIds);
-      }
+      // Rewrite blockIds to real assigned ids; discard unmappable placeholders.
+      const idSet = collectBlockIds(assigned);
+      const withIds = projected.map((n) => ({
+        ...n,
+        blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
+      }));
+      writeDocNodes(db, repoId, docId, withIds);
     }
 
     // Edge extraction + interval maintenance (05 §2), if the resolver supplies
@@ -299,16 +300,14 @@ function toProjectionInput(b: RawBlock): RawBlock {
   return b;
 }
 
-function buildBlockIdMap(blocks: TreeInputBlock[]): Map<string, string> {
-  const map = new Map<string, string>();
-  const walk = (list: TreeInputBlock[], idx: number): void => {
+function collectBlockIds(blocks: TreeInputBlock[]): Set<string> {
+  const ids = new Set<string>();
+  const walk = (list: TreeInputBlock[]): void => {
     for (const b of list) {
-      map.set(String(idx), b.blockId);
-      map.set(b.blockId, b.blockId);
-      idx++;
-      if (b.children.length > 0) walk(b.children, 0);
+      ids.add(b.blockId);
+      if (b.children.length > 0) walk(b.children);
     }
   };
-  walk(blocks, 0);
-  return map;
+  walk(blocks);
+  return ids;
 }

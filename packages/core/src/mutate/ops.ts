@@ -118,16 +118,8 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   if (!found) throw new MutationError("block_missing", `block ${blockId} not found`, { op_index: opIndex, block: blockId });
   checkContentHash(found.block, expect, opIndex);
   if (markdown !== undefined) {
-    const parsed = parseContentToBlocks(markdown, doc.format);
-    const normalized = markdown.endsWith("\n") ? markdown : markdown + "\n";
-    if (parsed.length === 1 && parsed[0]!.raw.trim() === normalized.trim()) {
-      // Content parsed cleanly into exactly one block — use the parsed structure.
-      const nb = parsed[0]!;
-      found.block.raw = nb.raw;
-      found.block.type = nb.type;
-      found.block.attrs = nb.attrs;
-      found.block.children = nb.children;
-    } else if (doc.format === "markdown") {
+    if (doc.format === "markdown") {
+      const parsed = parseContentToBlocks(markdown, doc.format);
       if (parsed.length !== 1) throw new MutationError("type_mismatch", "update content must be a single block");
       const nb = parsed[0]!;
       found.block.raw = nb.raw;
@@ -135,8 +127,9 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
       found.block.attrs = nb.attrs;
       found.block.children = nb.children;
     } else {
-      // Non-markdown fragment that didn't parse as a standalone doc:
-      // raw content swap without re-parsing.
+      // Non-markdown: raw swap preserves the block's type and attrs. Fragments
+      // like JSON properties aren't valid standalone documents, so re-parsing
+      // would corrupt the block kind (e.g. json:property → json:scalar).
       found.block.raw = markdown;
       found.block.children = [];
     }

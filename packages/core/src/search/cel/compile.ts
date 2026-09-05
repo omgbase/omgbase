@@ -429,9 +429,8 @@ function compileUnderKind(kind: string, name?: string): Compiled {
   };
 }
 
-// yaml_path("database.host") — blocks at a YAML key path. Resolves by walking
-// the parent chain: the innermost block has attrs.key matching the last segment,
-// its parent has attrs.key matching the previous segment, etc.
+// yaml_path("database.host") — blocks at a YAML key path. Builds nested
+// EXISTS subqueries walking parent_block upward so each alias is in scope.
 function compileYamlPath(path: string): Compiled {
   const segments = path.split(".");
   if (segments.length === 0) throw new FilterInvalid("yaml_path() requires a non-empty key path");
@@ -443,35 +442,10 @@ function compileYamlPath(path: string): Compiled {
     };
   }
 
-  // For multi-segment paths, match the leaf key and verify each ancestor key.
-  // Build a chain of EXISTS subqueries walking parent_block upward.
-  const leaf = segments[segments.length - 1]!;
-  const ancestors = segments.slice(0, -1).reverse();
-
-  let innerSql = `b.type LIKE 'yaml:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
-  const params: unknown[] = [leaf];
-
-  // Walk up: each ancestor level checks parent_block's attrs.key.
-  let depth = 0;
-  for (const seg of ancestors) {
-    depth++;
-    const alias = `yp${depth}`;
-    innerSql = `${innerSql} AND EXISTS (
-      SELECT 1 FROM blocks ${alias}
-      WHERE ${alias}.block_id = ${depth === 1 ? "b" : `yp${depth - 1}`}.parent_block
-        AND ${alias}.type LIKE 'yaml:%'
-        AND json_extract(${alias}.attrs, '$.key') = ?
-        AND ${alias}.deleted_commit IS NULL
-    )`;
-    params.push(seg);
-  }
-
-  return { sql: `(${innerSql})`, params };
+  return compileKeyPathChain(segments, "yaml");
 }
 
 // json_pointer("#/definitions/User") — blocks at a JSON Pointer path.
-// Strips leading #/ and splits on /. Each segment matches a json:property
-// block's attrs.key, walking parent_block upward.
 function compileJsonPointer(pointer: string): Compiled {
   const normalized = pointer.replace(/^#?\/?/, "");
   const segments = normalized.split("/").filter(Boolean);
@@ -484,25 +458,36 @@ function compileJsonPointer(pointer: string): Compiled {
     };
   }
 
-  const leaf = segments[segments.length - 1]!;
-  const ancestors = segments.slice(0, -1).reverse();
+  return compileKeyPathChain(segments, "json");
+}
 
-  let innerSql = `b.type LIKE 'json:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
+// Build properly nested EXISTS for a multi-segment key path (yaml or json).
+// segments = ["database", "host"]: the leaf block has key "host", its parent
+// has key "database". Each ancestor check is a nested EXISTS so inner aliases
+// can reference the enclosing scope.
+function compileKeyPathChain(segments: string[], prefix: string): Compiled {
+  const leaf = segments[segments.length - 1]!;
+  const ancestors = segments.slice(0, -1);
   const params: unknown[] = [leaf];
 
-  let depth = 0;
-  for (const seg of ancestors) {
-    depth++;
-    const alias = `jp${depth}`;
-    innerSql = `${innerSql} AND EXISTS (
+  // Build from outermost ancestor (root) to the leaf's immediate parent.
+  // The innermost (leaf) condition is on `b` itself; each ancestor wraps
+  // its child in a nested EXISTS.
+  let sql = `b.type LIKE '${prefix}:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
+  let innerRef = "b";
+
+  for (let i = ancestors.length - 1; i >= 0; i--) {
+    const alias = `kp${i}`;
+    sql = `EXISTS (
       SELECT 1 FROM blocks ${alias}
-      WHERE ${alias}.block_id = ${depth === 1 ? "b" : `jp${depth - 1}`}.parent_block
-        AND ${alias}.type LIKE 'json:%'
+      WHERE ${alias}.block_id = ${innerRef}.parent_block
+        AND ${alias}.type LIKE '${prefix}:%'
         AND json_extract(${alias}.attrs, '$.key') = ?
         AND ${alias}.deleted_commit IS NULL
-    )`;
-    params.push(seg);
+    ) AND ${sql}`;
+    params.unshift(ancestors[i]!);
+    innerRef = alias;
   }
 
-  return { sql: `(${innerSql})`, params };
+  return { sql: `(${sql})`, params };
 }

@@ -14,7 +14,7 @@ Ordinary files stay the human representation (editable in any editor, Obsidian, 
 - **a safe structural mutation API** — six kernel ops with content-hash CAS, built for autonomous agents;
 - **an MCP server** — the whole surface exposed as Model Context Protocol tools.
 
-The files are always the source of truth for *content*; the engine's database owns *identity, history, and derived indexes*. At quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked Markdown document.
+The files are always the source of truth for *content*; the engine's database owns *identity, history, and derived indexes*. At quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked document with a round-trip renderer.
 
 ## Status
 
@@ -74,12 +74,12 @@ Format is auto-detected from file extension. Each format adapter declares progre
 | Format | Extensions | Parse | Render | Edges | Nodes | Mutation | Metadata |
 |--------|-----------|-------|--------|-------|-------|----------|----------|
 | **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | YAML frontmatter |
-| **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | — | full structure |
-| **JSON** | `.json` | yes | — | `$ref` `$schema` path values | `json:ref` `json:schema` | — | full object |
+| **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | yes | full structure |
+| **JSON** | `.json` | yes | yes | `$ref` `$schema` path values | `json:ref` `json:schema` | yes | full object |
 
 Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that `graph_traverse` follows in one call.
 
-Block kinds are format-qualified with a colon separator: `md:heading`, `yaml:mapping_entry`, `json:property`. The `documents.metadata` column stores an adapter-extracted JSON property bag — YAML files store their full structure, JSON files store the parsed object, Markdown files store frontmatter — all queryable via the same CEL filter path.
+Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc. The `documents.metadata` column stores an adapter-extracted JSON property bag — YAML files store their full structure, JSON files store the parsed object, Markdown files store frontmatter — all queryable via the same CEL filter path.
 
 ### Structural query functions
 

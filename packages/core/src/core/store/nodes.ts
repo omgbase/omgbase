@@ -36,12 +36,13 @@ export function writeDocNodes(
     const ordinal = kindCounters.get(key) ?? 0;
     kindCounters.set(key, ordinal + 1);
 
-    const nodeId = mintNodeId(docId, p.blockId ?? "", p.kind, ordinal);
+    const validBlockId = p.blockId?.startsWith("b_") ? p.blockId : null;
+    const nodeId = mintNodeId(docId, validBlockId ?? "", p.kind, ordinal);
     const name = p.name ?? null;
     const value = p.value ?? null;
 
     insert.run(
-      nodeId, repoId, docId, p.blockId ?? null, p.kind,
+      nodeId, repoId, docId, validBlockId, p.kind,
       name, value,
       p.spanStart ?? null, p.spanEnd ?? null,
       JSON.stringify(p.attrs ?? {}),
