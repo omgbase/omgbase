@@ -295,6 +295,15 @@ function compileCall(name: string, args: Node[], target: Target): Compiled {
     case "child_count":
       requireBlocks(target, "child_count");
       throw new FilterInvalid("child_count() must be compared, e.g. child_count() > 0", "10 §5");
+    case "under_kind":
+      requireBlocks(target, "under_kind");
+      return compileUnderKind(argString(args, 0), args.length >= 2 ? argString(args, 1) : undefined);
+    case "yaml_path":
+      requireBlocks(target, "yaml_path");
+      return compileYamlPath(argString(args, 0));
+    case "json_pointer":
+      requireBlocks(target, "json_pointer");
+      return compileJsonPointer(argString(args, 0));
     case "list":
       throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
     default:
@@ -389,4 +398,111 @@ function compileMethod(node: { receiver: Node; name: string; args: Node[] }, tar
     default:
       throw new FilterInvalid(`unknown method .${name}()`, "10 §3.2");
   }
+}
+
+// under_kind(kind, name?) — blocks that are children/descendants of a block
+// with the given type and optional key/text match. Uses ancestor_path to find
+// the ancestor block, then checks its type and attrs.
+function compileUnderKind(kind: string, name?: string): Compiled {
+  if (name) {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM blocks ab
+        WHERE ab.doc_id = b.doc_id
+          AND b.ancestor_path LIKE '%/' || ab.block_id || '/%'
+          AND ab.type = ?
+          AND (ab.text LIKE '%' || ? || '%' OR json_extract(ab.attrs, '$.key') = ?)
+          AND ab.deleted_commit IS NULL
+      )`,
+      params: [kind, name, name],
+    };
+  }
+  return {
+    sql: `EXISTS (
+      SELECT 1 FROM blocks ab
+      WHERE ab.doc_id = b.doc_id
+        AND b.ancestor_path LIKE '%/' || ab.block_id || '/%'
+        AND ab.type = ?
+        AND ab.deleted_commit IS NULL
+    )`,
+    params: [kind],
+  };
+}
+
+// yaml_path("database.host") — blocks at a YAML key path. Resolves by walking
+// the parent chain: the innermost block has attrs.key matching the last segment,
+// its parent has attrs.key matching the previous segment, etc.
+function compileYamlPath(path: string): Compiled {
+  const segments = path.split(".");
+  if (segments.length === 0) throw new FilterInvalid("yaml_path() requires a non-empty key path");
+
+  if (segments.length === 1) {
+    return {
+      sql: `(b.type LIKE 'yaml:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL)`,
+      params: [segments[0]!],
+    };
+  }
+
+  // For multi-segment paths, match the leaf key and verify each ancestor key.
+  // Build a chain of EXISTS subqueries walking parent_block upward.
+  const leaf = segments[segments.length - 1]!;
+  const ancestors = segments.slice(0, -1).reverse();
+
+  let innerSql = `b.type LIKE 'yaml:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
+  const params: unknown[] = [leaf];
+
+  // Walk up: each ancestor level checks parent_block's attrs.key.
+  let depth = 0;
+  for (const seg of ancestors) {
+    depth++;
+    const alias = `yp${depth}`;
+    innerSql = `${innerSql} AND EXISTS (
+      SELECT 1 FROM blocks ${alias}
+      WHERE ${alias}.block_id = ${depth === 1 ? "b" : `yp${depth - 1}`}.parent_block
+        AND ${alias}.type LIKE 'yaml:%'
+        AND json_extract(${alias}.attrs, '$.key') = ?
+        AND ${alias}.deleted_commit IS NULL
+    )`;
+    params.push(seg);
+  }
+
+  return { sql: `(${innerSql})`, params };
+}
+
+// json_pointer("#/definitions/User") — blocks at a JSON Pointer path.
+// Strips leading #/ and splits on /. Each segment matches a json:property
+// block's attrs.key, walking parent_block upward.
+function compileJsonPointer(pointer: string): Compiled {
+  const normalized = pointer.replace(/^#?\/?/, "");
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length === 0) throw new FilterInvalid("json_pointer() requires a non-empty pointer");
+
+  if (segments.length === 1) {
+    return {
+      sql: `(b.type LIKE 'json:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL)`,
+      params: [segments[0]!],
+    };
+  }
+
+  const leaf = segments[segments.length - 1]!;
+  const ancestors = segments.slice(0, -1).reverse();
+
+  let innerSql = `b.type LIKE 'json:%' AND json_extract(b.attrs, '$.key') = ? AND b.deleted_commit IS NULL`;
+  const params: unknown[] = [leaf];
+
+  let depth = 0;
+  for (const seg of ancestors) {
+    depth++;
+    const alias = `jp${depth}`;
+    innerSql = `${innerSql} AND EXISTS (
+      SELECT 1 FROM blocks ${alias}
+      WHERE ${alias}.block_id = ${depth === 1 ? "b" : `jp${depth - 1}`}.parent_block
+        AND ${alias}.type LIKE 'json:%'
+        AND json_extract(${alias}.attrs, '$.key') = ?
+        AND ${alias}.deleted_commit IS NULL
+    )`;
+    params.push(seg);
+  }
+
+  return { sql: `(${innerSql})`, params };
 }
