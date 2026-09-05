@@ -58,7 +58,7 @@ Rendering is **splice-only**: untouched blocks emit their exact retained bytes; 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). CLI-A (the read surface) is implemented: `init`, `attach`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `log`, `hist`, `diff`, `links`, `sync`. Write/serve commands (`apply` + sugar, `watch`, `mcp`, admin) are CLI-B.
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The read surface is implemented: `init`, `attach`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `log`, `hist`, `diff`, `links`, `sync`, plus `mcp` (stdio MCP server). The write surface (`apply` + sugar, `edit`, `graph`, `run`, `watch`, admin) is still forthcoming.
 
 ```bash
 pnpm -r build           # build core + cli
@@ -72,6 +72,14 @@ omg find "stable identity rationale" -1 # top hit's id alone
 ```
 
 Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.
+
+### MCP server
+
+`omg mcp` serves the full engine tool surface over stdio, with an in-process watcher so the session stays fresh. The host (Claude Code, Cursor, …) owns the process lifetime — the one-line integration:
+
+```json
+{ "command": "omg", "args": ["mcp", "-C", "/path/to/vault"] }
+```
 
 ## Quickstart (library)
 

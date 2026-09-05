@@ -11,7 +11,7 @@ const GROUPS: { title: string; names: string[] }[] = [
   { title: "orient & read", names: ["status", "ls", "outline", "cat", "show", "find"] },
   { title: "query", names: ["query"] },
   { title: "history & graph", names: ["log", "hist", "diff", "links"] },
-  { title: "sync", names: ["sync"] },
+  { title: "sync & serve", names: ["sync", "mcp"] },
 ];
 
 async function runHelp(cli: Cli): Promise<number> {

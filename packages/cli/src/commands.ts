@@ -26,6 +26,7 @@ import { cmdHist } from "./cmd/hist.js";
 import { cmdDiff } from "./cmd/diff.js";
 import { cmdLinks } from "./cmd/links.js";
 import { cmdSync } from "./cmd/sync.js";
+import { cmdMcp } from "./cmd/mcp.js";
 import { cmdHelp } from "./cmd/help.js";
 
 export const COMMANDS: Command[] = [
@@ -44,6 +45,7 @@ export const COMMANDS: Command[] = [
   cmdDiff,
   cmdLinks,
   cmdSync,
+  cmdMcp,
   cmdHelp,
 ];
 
