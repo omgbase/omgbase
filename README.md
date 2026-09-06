@@ -1,4 +1,4 @@
-<center><img src="https://i.imgur.com/GuNPnuA.png" maxwidth="80%"></center>
+<center><img src="https://i.imgur.com/U4Gunuy.png" maxwidth="80%"></center>
 
 # omgbase
 
