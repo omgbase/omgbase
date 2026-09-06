@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
+import { docsRead } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc } from "../core/read/reader.js";
 import { query as runQuery } from "../search/query.js";
@@ -79,7 +80,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_outline",
     {
       description:
-        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Args take a doc id or path.",
+        "Orientation call. Returns a document's compact indented outline (alias/type/label per line, § marks section headings). IDs are stable; prefer them in follow-ups. Args take a doc id or path. For the whole document body in one call, use docs_read.",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -104,9 +105,32 @@ export function buildServer(ctx: ServerContext): McpServer {
   );
 
   server.registerTool(
+    "docs_read",
+    {
+      description:
+        "Read a whole document in one call: `content` is the complete file bytes verbatim (fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. What `metadata` holds is format-dependent: for markdown it's the parsed frontmatter (and, as adapters grow, merged intrinsics like inline fields or an h1-derived title); for YAML/JSON it's the parsed object the file represents; other adapters extract per their format. The cold-start 'read the guide before doing anything' call. Args take a doc id or path. Pass include_ids:true to also get the outline alias→block-id map for follow-up edits. For structure-only orientation use docs_outline; to hydrate a single block use nodes_get.",
+      inputSchema: {
+        doc: z.string().optional(),
+        path: z.string().optional(),
+        include_ids: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const docId = resolveDocId(args);
+        const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
+        if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args)}`);
+        return ok(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     "nodes_get",
     {
-      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. Use this to expand the lean ids returned by query/resolve/graph_traverse.",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. Use this to expand the lean ids returned by query/resolve/graph_traverse. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),

@@ -30,14 +30,14 @@ Modes **intersect** (AND). Only current state is searched (history via `history_
 The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory, so user data can never collide with system fields.
 
 ### `documents`
-- **Bare identifiers** = frontmatter keys; nested maps with dots (`meta.owner`).
+- **Bare identifiers** = keys in the document's **metadata** — the structured property bag each format adapter produces (the `documents.metadata` column). What fills it is format-dependent: for **markdown** it is the parsed frontmatter (and, as adapters grow, may merge inline dataview-style fields and extracted intrinsics such as an h1-derived title); for **YAML/JSON** it is the parsed object the file represents; other adapters extract per their format. Nested maps with dots (`meta.owner`). "frontmatter key" is just the markdown reading of "metadata key."
 - **Intrinsics:** `$id`, `$path`, `$repo`, `$updated_at` (ISO-8601 UTC string; compares lexicographically = chronologically), `$body`, `$content_hash`.
 - **Link-graph predicates:** §6.
 
 ### `blocks`
 - **Bare fields:** `type` (block type enum), `text` (normalized text), `attrs.<key>` (typed attrs: `attrs.checked`, `attrs.lang`, `attrs.level`, …).
 - **Intrinsics:** `$id`, `$doc` (containing doc id), `$path` (containing doc's path), `$locator`, `$ordinal`, `$depth`, `$updated_at` (timestamp of the last commit that touched this block, from `block_changes`).
-- **Doc reach-through:** `doc.<key>` reads the containing document's frontmatter (`doc.layer == "canon"`); `doc.$path` etc. mirror the intrinsics (`$path` is the shortcut).
+- **Doc reach-through:** `doc.<key>` reads the containing document's metadata (`doc.layer == "canon"`); `doc.$path` etc. mirror the intrinsics (`$path` is the shortcut).
 - **Structural functions:** §5.
 
 ## 3. CEL subset
@@ -90,9 +90,9 @@ mrplex's rule — *a missing key never matches; the predicate is false, not an e
 
 Absence never errors and never propagates as an error. Type mismatches (comparing a string field to an int literal) behave as absence: false, not error.
 
-## 4. `list()` — scalar-or-list frontmatter (mrplex, verbatim)
+## 4. `list()` — scalar-or-list metadata (mrplex, verbatim)
 
-Frontmatter like `tags` may be scalar or list. `list(field)` coerces both shapes to a list (missing/null ⇒ `[]`) and is legal **only** inside `in`, `size(...)`, `.all`, `.exists`. A bare `list(tags) == "x"` is `filter_invalid`.
+A metadata key like `tags` may be scalar or list (in markdown, a frontmatter value written either way). `list(field)` coerces both shapes to a list (missing/null ⇒ `[]`) and is legal **only** inside `in`, `size(...)`, `.all`, `.exists`. A bare `list(tags) == "x"` is `filter_invalid`.
 
 ```
 "pricing" in list(tags)
@@ -114,13 +114,13 @@ All compile to indexed SQL (§8). This list supersedes the sketch in 05 §4 (`pa
 | `parent_type()` | the parent block's type, as a string (`parent_type() == "blockquote"`) | self-join |
 | `child_count()` | number of direct children | aggregate |
 
-On the `documents` target, `has_edge(pred[, target])` is also available and means "any block or frontmatter edge from this doc."
+On the `documents` target, `has_edge(pred[, target])` is also available and means "any block or metadata edge from this doc" (in markdown, metadata edges come from frontmatter fields).
 
 ## 6. Link-graph predicates (`documents` target; mrplex-compatible)
 
-- `$in(glob [, field])` — some doc matching the gitignore-style glob links TO this doc (optionally via that frontmatter field, or `"$body"`).
+- `$in(glob [, field])` — some doc matching the gitignore-style glob links TO this doc (optionally via that metadata field — a frontmatter field in markdown — or `"$body"`).
 - `$has(glob [, field])` — this doc links to a target matching the glob (dangling targets count).
-- `$links()` / `$backlinks()` — collections; usable only with `.size()`, `.exists(d, pred)`, `.all(d, pred)`; inside, `d.<key>` reads the other doc's frontmatter and `d.$path`/`d.$updated_at`/`d.$body` its intrinsics.
+- `$links()` / `$backlinks()` — collections; usable only with `.size()`, `.exists(d, pred)`, `.all(d, pred)`; inside, `d.<key>` reads the other doc's metadata and `d.$path`/`d.$updated_at`/`d.$body` its intrinsics.
 - **`_static` variants** (`$in_static`, `$has_static`, `$links_static()`, `$backlinks_static()`): authored links only, now and forever. The bare forms are identical in v1 and **transparently widen to include projected membership edges when projected queries ship** (ADR-011) — this carries forward mrplex's own reserved widening semantics, so queries written today keep meaning what they say. `_dyn` forms remain reserved and rejected.
 
 `$degrees` exists only inside `graph_traverse`'s `node_filter` (visibility semantics, per 05 §3); in `query` it is `filter_invalid`.
@@ -133,7 +133,7 @@ On the `documents` target, `has_edge(pred[, target])` is also available and mean
 
 ## 8. Compilation contract
 
-- MUST compile to indexed SQL: comparisons and boolean combinations over frontmatter (JSON1 extraction), `type`, `attrs.*`, all intrinsics; `startsWith` on `$path`; `under`/`under_heading`/`within`/`has_edge`; `text` (FTS5); `semantic` (vec).
+- MUST compile to indexed SQL: comparisons and boolean combinations over metadata (JSON1 extraction on `documents.metadata`), `type`, `attrs.*`, all intrinsics; `startsWith` on `$path`; `under`/`under_heading`/`within`/`has_edge`; `text` (FTS5); `semantic` (vec).
 - MAY post-filter over the SQL candidate set: `matches`, `.exists`/`.all` bodies, `list()` membership on unindexed keys. Post-filtering is bounded by `query.max_candidates` (default 10,000) — beyond it the query fails `filter_invalid` with hint "add an indexed predicate."
 - Statement timeout `query.timeout_ms` (default 2,000).
 - Evaluation is deterministic: same corpus revision + same envelope ⇒ same results and order (no clock functions; §3.1).

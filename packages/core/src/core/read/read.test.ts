@@ -3,6 +3,7 @@ import { Store } from "../store/store.js";
 import { ensureRepo } from "../attach.js";
 import { ingestFile } from "../ingest.js";
 import { docsOutline } from "./outline.js";
+import { docsRead } from "./document.js";
 import { nodesGet, nodesGetMany } from "./nodes.js";
 import { loadDocBlocks } from "./reader.js";
 
@@ -12,10 +13,10 @@ afterEach(() => {
   store = undefined;
 });
 
-function ingest(content: string): { docId: string } {
+function ingest(content: string, path = "a.md"): { docId: string } {
   store = new Store({ path: ":memory:" });
   const repoId = ensureRepo(store, "t", "/tmp");
-  const res = ingestFile(store, repoId, "a.md", content);
+  const res = ingestFile(store, repoId, path, content);
   return { docId: res.docId };
 }
 
@@ -47,6 +48,48 @@ describe("docsOutline — frozen wire format (06 §6)", () => {
     const { docId } = ingest("# H\n\n" + "para\n\n".repeat(40));
     const { truncated } = docsOutline(store!, docId, { budgetTokens: 5 });
     expect(truncated).toBe(true);
+  });
+});
+
+describe("docsRead — whole-document read", () => {
+  const WITH_FM = "---\nlayer: canon\ntitle: Guide\n---\n\n# Risks\n\nStable identity is hard.\n\n```ts\nconst x = 1;\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n";
+
+  it("returns the complete file bytes verbatim (fences, tables, frontmatter)", () => {
+    const { docId } = ingest(WITH_FM);
+    const res = docsRead(store!, docId);
+    expect(res?.content).toBe(WITH_FM);
+    expect(res?.path).toBe("a.md");
+    expect(res?.rev).toMatch(/^r/);
+  });
+
+  it("surfaces the document's metadata bag and omits ids by default", () => {
+    const { docId } = ingest(WITH_FM);
+    const res = docsRead(store!, docId);
+    expect(res?.metadata).toEqual({ layer: "canon", title: "Guide" });
+    expect(res?.ids).toBeUndefined();
+  });
+
+  it("is format-neutral: metadata is the adapter's bag, not markdown frontmatter", () => {
+    // A YAML file's metadata is the parsed object it represents (format/yaml.ts
+    // extractMetadata), not a frontmatter block — docsRead returns it verbatim.
+    const yaml = "database:\n  host: localhost\n  port: 5432\nauth: token\n";
+    const { docId } = ingest(yaml, "config.yaml");
+    const res = docsRead(store!, docId);
+    expect(res?.content).toBe(yaml);
+    expect((res?.metadata.database as Record<string, unknown>).host).toBe("localhost");
+    expect(res?.metadata.auth).toBe("token");
+  });
+
+  it("includes the outline id map when includeIds is set", () => {
+    const { docId } = ingest(SAMPLE);
+    const res = docsRead(store!, docId, { includeIds: true });
+    expect(Object.keys(res!.ids!).length).toBeGreaterThan(0);
+    expect(res!.ids!.b01).toMatch(/^b_/);
+  });
+
+  it("round-trips a document with no frontmatter byte-for-byte", () => {
+    const { docId } = ingest(SAMPLE);
+    expect(docsRead(store!, docId)?.content).toBe(SAMPLE);
   });
 });
 

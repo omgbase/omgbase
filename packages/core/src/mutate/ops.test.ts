@@ -28,6 +28,12 @@ describe("kernel ops", () => {
     expect(renderDoc(d)).toContain("Inserted paragraph.");
   });
 
+  it("insert after a trivia-less final block adds a separator (no jammed blocks)", () => {
+    const d = doc("# H\n\nbody"); // no trailing newline ⇒ last block trivia is ""
+    opInsert(d, { parent: { doc: true }, at: { after: idAt(d, 1) } }, "new para");
+    expect(renderDoc(d)).toBe("# H\n\nbody\n\nnew para\n");
+  });
+
   it("update requires content_hash CAS and replaces content in place", () => {
     const d = doc("# Title\n\nOld body.\n");
     const bId = idAt(d, 1);

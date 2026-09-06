@@ -40,6 +40,13 @@ docs_outline { doc | path, resolution?: "skeleton"|"outline"|"preview", depth?, 
 Returns the indented compact text format (id, type, label per line), optionally scoped to one section. The workhorse orientation call.
 
 ```
+docs_read { doc | path, include_ids? }
+```
+Reads a whole document in one call: `content` is the complete file bytes (verbatim — the same bytes `apply` writes to disk, fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. The cold-start "read the guide before doing anything" call — mirrors mrplex `docs_get`. `include_ids:true` also returns the outline alias→block-id map for follow-up edits. This is a server-side projection over ordered blocks, not blob storage: identity stays block-level (`docs_read` reads; `apply` writes via block ops). `nodes_get` on a doc/heading id returns only that block — use `docs_read` for the whole document.
+
+`metadata` is format-dependent, produced by the ingest adapter, not universally "frontmatter": for markdown it is the parsed frontmatter block (and, as adapters grow, may merge intrinsics — inline dataview-style fields, an h1-derived title); for a YAML or JSON file it is the parsed object the file represents; a bespoke adapter (say a `.trx` terminal-scrape format, or a `.js` file exposing its top-level exports) extracts whatever its format defines. `docs_read` returns whatever the adapter stored — it does not impose the markdown frontmatter model.
+
+```
 nodes_get { id | locator, resolution?, include?: ["children","ancestors","edges","history","section"] }
 nodes_get_many { ids[], resolution?, budget_tokens? }        // ≤ 100 ids
 resolve { query: "free text or partial locator", scope?: doc|path_glob, kinds?: ["block","document"], limit? }

@@ -1,6 +1,7 @@
 import { Store } from "./store/store.js";
 import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
+import { reconstructContent } from "./read/document.js";
 import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type TreeInputBlock } from "./store/writers.js";
 import { sha256, normalizeVisibleText } from "./hash.js";
 import { mintId } from "./ids.js";
@@ -157,6 +158,11 @@ export function ingestFile(
 
     // Frontmatter blob (markdown-specific) preserved for revision history.
     const fmBlobHex = fmBlock ? putBlob(db, fmBlock.raw) : null;
+    // The exact separator bytes between the frontmatter block and the first body
+    // block (the frontmatter block's trailing trivia). Persisted so the body
+    // reconstructs byte-for-byte instead of assuming a canonical blank line.
+    // NULL when there is no frontmatter.
+    const fmTrivia = fmBlock ? fmBlock.trivia : null;
 
     // Metadata: adapter-provided for non-markdown formats, frontmatter-parsed for markdown.
     const metadata = (adapter?.extractMetadata)
@@ -172,13 +178,13 @@ export function ingestFile(
     const isNew = !doc;
     if (!doc) {
       db.prepare(
-        "INSERT INTO documents (doc_id, repo_id, path, format, metadata, leading_trivia) VALUES (?, ?, ?, ?, ?, ?)",
-      ).run(docId, repoId, path, format, metadataJson, tree.leadingTrivia);
+        "INSERT INTO documents (doc_id, repo_id, path, format, metadata, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).run(docId, repoId, path, format, metadataJson, tree.leadingTrivia, fmTrivia);
       doc = { doc_id: docId };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE documents SET metadata = ?, format = ?, leading_trivia = ? WHERE doc_id = ?").run(metadataJson, format, tree.leadingTrivia, docId);
+      db.prepare("UPDATE documents SET metadata = ?, format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(metadataJson, format, tree.leadingTrivia, fmTrivia, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -282,9 +288,18 @@ export function ingestFile(
       docId,
     );
 
-    // Convergence check (01 §2): file bytes vs rendered revision.
+    // Convergence check (01 §2): file bytes vs rendered revision. Two independent
+    // round-trips must both reproduce the source exactly:
+    //   1. the freshly-parsed in-memory tree (validates the parser), and
+    //   2. a reload from storage (validates that persisted blocks + trivia +
+    //      frontmatter separator tile the source — the fidelity a plain read or
+    //      an `apply` write actually depends on). Rendering only the in-memory
+    //      tree hid store→reload separator loss; reconstructContent closes that.
     const renderFn = adapter?.render ?? render;
-    const converged = fileHash.equals(renderedHash) && renderFn(tree) === content;
+    const converged =
+      fileHash.equals(renderedHash) &&
+      renderFn(tree) === content &&
+      reconstructContent(db, docId) === content;
 
     return {
       docId,

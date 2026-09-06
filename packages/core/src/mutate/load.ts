@@ -15,15 +15,9 @@ interface Row {
   trivia_hash: Buffer | null;
 }
 
-function defaultTrivia(format: string): string {
-  if (format === "json") return ",\n";
-  if (format === "yaml") return "\n";
-  return "\n\n";
-}
-
 export function loadMutDoc(db: Database, docId: string): MutDoc | null {
-  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
-    | { doc_id: string; path: string; format: string; leading_trivia: string; current_rev: string | null }
+  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, frontmatter_trivia, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
+    | { doc_id: string; path: string; format: string; leading_trivia: string; frontmatter_trivia: string | null; current_rev: string | null }
     | undefined;
   if (!doc) return null;
 
@@ -35,12 +29,16 @@ export function loadMutDoc(db: Database, docId: string): MutDoc | null {
     )
     .all(docId) as Row[];
 
-  const fallbackTrivia = defaultTrivia(doc.format);
   const blob = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
   const nodes = new Map<string, MutBlock>();
   for (const r of rows) {
     const raw = (blob.get(r.raw_hash) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "";
-    let trivia = fallbackTrivia;
+    // A NULL trivia_hash means the block's trailing trivia was genuinely empty
+    // (e.g. the last block of a file with no trailing newline). Emit "" — never
+    // a fabricated separator, which would corrupt the file on the next write.
+    // Freshly-inserted blocks carry their own explicit trivia from the op layer,
+    // so they are unaffected by this.
+    let trivia = "";
     if (r.trivia_hash) {
       const tb = blob.get(r.trivia_hash) as { bytes: Buffer } | undefined;
       if (tb) trivia = tb.bytes.toString("utf8");
@@ -70,7 +68,10 @@ export function loadMutDoc(db: Database, docId: string): MutDoc | null {
     const rev = db.prepare("SELECT frontmatter_blob FROM revisions WHERE rev_id = ?").get(doc.current_rev) as { frontmatter_blob: Buffer | null } | undefined;
     if (rev?.frontmatter_blob) {
       const fm = blob.get(rev.frontmatter_blob) as { bytes: Buffer } | undefined;
-      if (fm) frontmatterRaw = fm.bytes.toString("utf8") + "\n\n";
+      // Append the exact stored separator (documents.frontmatter_trivia) so the
+      // write path round-trips byte-for-byte. Ingest always captures it when a
+      // frontmatter block exists, so the ?? "" is just a type guard.
+      if (fm) frontmatterRaw = fm.bytes.toString("utf8") + (doc.frontmatter_trivia ?? "");
     }
   }
 

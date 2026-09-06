@@ -40,7 +40,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -58,6 +58,37 @@ describe("MCP server skeleton", () => {
     const { payload } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string; ids: Record<string, string> } };
     expect(payload.text).toContain("§");
     expect(Object.keys(payload.ids).length).toBeGreaterThan(0);
+  });
+
+  it("docs_read returns the whole file bytes plus parsed metadata", async () => {
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as {
+      payload: { path: string; content: string; metadata: Record<string, unknown>; rev: string; ids?: unknown };
+    };
+    expect(payload.path).toBe("notes.md");
+    expect(payload.content).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
+    expect(payload.metadata).toEqual({ layer: "working" });
+    expect(payload.ids).toBeUndefined();
+  });
+
+  it("docs_read include_ids adds the outline id map", async () => {
+    const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: Record<string, string> };
+    };
+    expect(Object.keys(payload.ids).length).toBeGreaterThan(0);
+  });
+
+  it("docs_read maps a missing doc to doc_missing", async () => {
+    const { payload, isError } = (await call("docs_read", { path: "nope.md" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("doc_missing");
+  });
+
+  it("query select projects $body (whole document bytes) on documents", async () => {
+    const { payload } = (await call("query", { from: "documents", filter: 'layer == "working"', select: ["$body"] })) as {
+      payload: { hits: { path: string; $body: string }[] };
+    };
+    expect(payload.hits[0]!.$body).toContain("# Risks");
+    expect(payload.hits[0]!.$body).toContain("---\nlayer: working\n---");
   });
 
   it("query returns projected hits with truncated + cursor", async () => {

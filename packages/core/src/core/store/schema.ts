@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -49,6 +49,7 @@ export const MIGRATIONS: Record<number, string> = {
   4: "",  // handled programmatically in store.ts
   5: NODES_DDL,
   6: "",  // handled programmatically in store.ts
+  7: "",  // handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS documents (
   file_hash      BLOB,
   conflicted     INTEGER NOT NULL DEFAULT 0,
   leading_trivia TEXT NOT NULL DEFAULT '',
+  frontmatter_trivia TEXT,                  -- separator between frontmatter and first body block (NULL = no frontmatter)
   deleted_commit TEXT,
   UNIQUE (repo_id, path)
 );

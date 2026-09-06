@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { docsRead } from "../core/read/document.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
 import { hybridSearch } from "./rrf.js";
@@ -74,7 +75,7 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
     const wantScore = env.select?.includes("$semantic_score") ?? false;
     return {
       hits: page.map((id) => {
-        const hit = projectRow(projById.get(id) ?? { id, path: "" }, env.select, "blocks");
+        const hit = projectRow(store, projById.get(id) ?? { id, path: "" }, env.select, "blocks");
         if (wantScore) hit.$semantic_score = scoreById.get(id) ?? 0;
         return hit;
       }),
@@ -144,7 +145,7 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const last = page[page.length - 1];
   const cursor = truncated && last ? encodeCursor(last.path, last.id) : null;
 
-  const hits: QueryHit[] = page.map((r) => projectRow(r, env.select, target));
+  const hits: QueryHit[] = page.map((r) => projectRow(store, r, env.select, target));
   return { hits, truncated, cursor };
 }
 
@@ -159,11 +160,13 @@ interface ProjectionRow {
 
 // Project a result row to a hit. `id` and `path` are always present (the lean
 // default and every caller's stable handle). A `select` list adds intrinsics
-// ($id/$path/$repo/$ordinal/$type…) and — for bare keys — frontmatter values
-// on both targets, plus block `type` and `attrs.<k>` on the blocks target.
-// This is the projection-then-hydrate shortcut (10 §7): triage on frontmatter
-// without an N-follow-up hydration round trip.
-function projectRow(row: ProjectionRow, select: string[] | undefined, target: Target): QueryHit {
+// ($id/$path/$repo/$ordinal/$type/$body…) and — for bare keys — frontmatter
+// values on both targets, plus block `type` and `attrs.<k>` on the blocks
+// target. This is the projection-then-hydrate shortcut (10 §7): triage on
+// frontmatter without an N-follow-up hydration round trip. `$body` (documents
+// target) projects the whole reconstructed file bytes — the same content
+// docs_read returns — for callers that want the body inline with a filter.
+function projectRow(store: Store, row: ProjectionRow, select: string[] | undefined, target: Target): QueryHit {
   const hit: QueryHit = { id: row.id, path: row.path };
   if (!select || select.length === 0) return hit;
 
@@ -172,6 +175,13 @@ function projectRow(row: ProjectionRow, select: string[] | undefined, target: Ta
 
   for (const field of select) {
     if (field === "$id" || field === "$path") continue; // already present
+    if (field === "$body") {
+      if (target === "documents") {
+        const doc = docsRead(store, row.id);
+        if (doc) hit.$body = doc.content;
+      }
+      continue;
+    }
     if (field === "$repo" || field === "$ordinal" || field === "$type") {
       if (field === "$ordinal" && row.ordinal !== undefined) hit.ordinal = row.ordinal;
       if (field === "$type" && row.type !== undefined) hit.type = row.type;

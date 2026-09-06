@@ -15,10 +15,15 @@ Hydrate full content by id via nodes_get.
 ## Targets & field namespaces
 
 The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
-your content (frontmatter keys / block fields). They never collide.
+your content (metadata keys / block fields). They never collide.
 
 documents:
-  - bare identifier  = frontmatter key (nested via dots: meta.owner)
+  - bare identifier  = metadata key (nested via dots: meta.owner). "metadata" is
+                       the document's structured property bag, format-dependent:
+                       markdown = parsed frontmatter (+ future inline fields /
+                       derived title); YAML/JSON = the parsed object; other
+                       adapters extract per format. "frontmatter key" is just the
+                       markdown reading.
   - intrinsics       = $id, $path, $repo, $updated_at (ISO-8601, sorts
                        chronologically), $body, $content_hash
   - link-graph       = $in(glob), $has(glob), $links(), $backlinks() (+ _static)
@@ -26,7 +31,7 @@ documents:
 blocks:
   - bare fields      = type, text, attrs.<key> (attrs.checked, attrs.lang, ...)
   - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at
-  - doc reach-through= doc.<key> reads the CONTAINING doc's frontmatter
+  - doc reach-through= doc.<key> reads the CONTAINING doc's metadata
                        (e.g. doc.layer == "canon"); doc.$path etc. also work
 
 ## CEL subset
@@ -69,13 +74,16 @@ A missing key NEVER matches and NEVER errors:
   $has("guides/*")            this doc links to a target matching the glob
   $links().size() == 0        leaf docs (no outgoing links)
   $backlinks().exists(d, d.layer == "draft")   quantify over linking docs;
-                              inside, d.<key> reads the other doc's frontmatter
+                              inside, d.<key> reads the other doc's metadata
 
 ## select — projection (avoids N hydration round-trips)
 
 Project fields onto each hit. Default hit is {id, path}. select adds:
-  - bare key            → that frontmatter value from the doc  ("layer","type","tracking")
+  - bare key            → that metadata value from the doc  ("layer","type","tracking")
   - on blocks           → also "type", "attrs.<k>", "$ordinal"
+  - "$body"             → whole reconstructed file bytes (documents target only;
+                          same content docs_read returns). For a single doc,
+                          docs_read is cheaper than a $body query.
   - "$semantic_score"   → cosine-fused score (semantic queries only)
 Absent keys are simply omitted from the hit.
 
@@ -94,13 +102,14 @@ Absent keys are simply omitted from the hit.
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")
   from=blocks     semantic: "identity preservation across edits"   select: ["$ordinal","$semantic_score"]
 
-Common mistake: writing \`path.startsWith(...)\` (bare) matches a frontmatter key
+Common mistake: writing \`path.startsWith(...)\` (bare) matches a metadata key
 named "path" — almost always absent → empty. Use the intrinsic \`$path\`.
 `;
 
 export const GRAPH_SYNTAX = `# graph_traverse / graph_path — syntax reference
 
-Traverse the authored edge graph (links, frontmatter relations, inline fields).
+Traverse the authored edge graph (links, metadata relations, inline fields — in
+markdown, metadata relations come from frontmatter).
 
 ## Grain — the #1 gotcha
 
@@ -119,8 +128,8 @@ Node ids you'll see:
   from        array of seed ids (doc or block; blocks normalize to their doc)
   via         predicates to follow; omit = any authored predicate. Common
               predicates are authored: "references" (plain links), "embeds"
-              (images), plus any frontmatter/inline-field key ("project",
-              "type", "depends_on", ...).
+              (images), plus any metadata/inline-field key ("project",
+              "type", "depends_on", ...; frontmatter keys in markdown).
   direction   "out" (default) | "in" (backlinks) | "both"
   depth       hops, ≤ 8 (default 3)
   select      project per-node metadata into result.nodeInfo (see below)
@@ -135,7 +144,7 @@ Without select the result is opaque ids. With it, result.nodeInfo maps each node
 id → metadata:
   "$path"      the doc path (or phantom target path, or external uri)
   "$kind"      always present: "document" | "phantom" | "external"
-  bare key     a frontmatter value from that node's document ("type","layer",...)
+  bare key     a metadata value from that node's document ("type","layer",...)
 
 Example:
   graph_traverse from=["d_abc"] via=["references"] direction="both" depth=2

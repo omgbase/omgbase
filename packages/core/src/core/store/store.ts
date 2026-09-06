@@ -43,6 +43,7 @@ export class Store {
       if (v === 3) { this.migrateV3(); continue; }
       if (v === 4) { this.migrateV4(); continue; }
       if (v === 6) { this.migrateV6(); continue; }
+      if (v === 7) { this.migrateV7(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -72,6 +73,13 @@ export class Store {
     const blockCols = this.db.pragma("table_info(blocks)") as { name: string }[];
     if (blockCols.length > 0 && !blockCols.some((c) => c.name === "trivia_hash")) {
       this.db.exec("ALTER TABLE blocks ADD COLUMN trivia_hash BLOB");
+    }
+  }
+
+  private migrateV7(): void {
+    const docCols = this.db.pragma("table_info(documents)") as { name: string }[];
+    if (docCols.length > 0 && !docCols.some((c) => c.name === "frontmatter_trivia")) {
+      this.db.exec("ALTER TABLE documents ADD COLUMN frontmatter_trivia TEXT");
     }
   }
 

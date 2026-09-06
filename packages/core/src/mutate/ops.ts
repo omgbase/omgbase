@@ -109,6 +109,16 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
 export function opInsert(doc: MutDoc, to: To, markdown: string): { ids: string[] } {
   const { siblings, index } = resolveTarget(doc, to);
   const blocks = parseContentToBlocks(markdown, doc.format);
+  // The block now preceding the inserted run must carry a separator, or the two
+  // blocks render jammed together (e.g. appending after a file that had no
+  // trailing newline → its last block has empty trivia). Give it the format
+  // default only when it is currently empty; a real separator is left intact.
+  // Trivia is document tiling, rendered independently of the block's raw, so no
+  // `dirty` flag is set — the block's own content did not change.
+  if (index > 0) {
+    const prev = siblings[index - 1]!;
+    if (prev.trivia === "") prev.trivia = defaultTrivia(doc.format);
+  }
   siblings.splice(index, 0, ...blocks);
   return { ids: blocks.map((b) => b.id) };
 }

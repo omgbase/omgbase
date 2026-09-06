@@ -70,7 +70,7 @@ Structured specs only; no graph query language (ADR-006).
 
 **The query language is normatively specified in `10-query-language.md`** (envelope, targets, CEL subset grammar, absence semantics, structural functions, ordering, compilation contract). Summary only here:
 
-- **Targets:** `documents` (frontmatter keys bare; `$`-intrinsics) and `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc frontmatter via `doc.<key>`). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
+- **Targets:** `documents` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics) and `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
 - **Structural functions (blocks target),** compiled to indexed SQL: `under()`, `under_heading()`, `within()`, `has_edge()`, `has_anchor()`, `parent_type()`, `child_count()` (final set per 10-… §5 — object-returning `parent()`/`ancestors()` were dropped as not worth their compiler).
 - **Link-graph predicates (documents target),** mrplex-compatible: `$in(glob)`, `$has(glob)`, `$links()`, `$backlinks()` + `_static` variants with the reserved widening semantics (10-… §6).
 - Modes intersect (AND). Order: semantic score if present, else text rank, else `$updated_at` desc.
