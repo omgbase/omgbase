@@ -77,6 +77,74 @@ export function deleteDocProperties(db: Database, docId: string): void {
   db.prepare("DELETE FROM properties WHERE doc_id = ?").run(docId);
 }
 
+interface StoredRow {
+  source: PropertySource; key: string; card: PropertyCard; ord: number;
+  val_text: string | null; val_num: number | null; val_bool: number | null; val_json: string | null; type: PropertyType;
+}
+
+function decode(r: StoredRow): unknown {
+  switch (r.type) {
+    case "string": return r.val_text;
+    case "number": return r.val_num;
+    case "bool": return r.val_bool === 1;
+    case "null": return null;
+    case "json": return r.val_json ? JSON.parse(r.val_json) : null;
+  }
+}
+
+// Collapse a key's rows to the authored shape: a lone scalar row → the scalar;
+// anything else (list rows, or multiple values) → an array in (source-rank,
+// ord) order. Deterministic — see docs/12 §9.
+const SOURCE_RANK: Record<PropertySource, number> = { frontmatter: 0, inline: 1, computed: 2 };
+
+function shapeValues(rows: StoredRow[]): unknown {
+  if (rows.length === 1 && rows[0]!.card === "scalar") return decode(rows[0]!);
+  const ordered = [...rows].sort((a, b) => SOURCE_RANK[a.source] - SOURCE_RANK[b.source] || a.ord - b.ord);
+  return ordered.map(decode);
+}
+
+/**
+ * Effective (merged) property bag for a document: each key mapped to its
+ * authored-shaped value (scalar or array), unioned across authored sources
+ * (frontmatter + inline). Computed `$`-keys are included under their `$` name.
+ * This is the projection/hydration view that replaces documents.metadata.
+ */
+export function docPropertiesMerged(db: Database, docId: string): Record<string, unknown> {
+  const rows = db.prepare(
+    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ? AND deleted_commit IS NULL",
+  ).all(docId) as StoredRow[];
+  const byKey = new Map<string, StoredRow[]>();
+  for (const r of rows) {
+    const g = byKey.get(r.key) ?? [];
+    g.push(r);
+    byKey.set(r.key, g);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, group] of byKey) out[key] = shapeValues(group);
+  return out;
+}
+
+/** Properties grouped by source (docs_read shape): {frontmatter, inline, computed}. */
+export function docPropertiesGrouped(db: Database, docId: string): Record<PropertySource, Record<string, unknown>> {
+  const rows = db.prepare(
+    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ? AND deleted_commit IS NULL",
+  ).all(docId) as StoredRow[];
+  const grouped: Record<PropertySource, Map<string, StoredRow[]>> = {
+    frontmatter: new Map(), inline: new Map(), computed: new Map(),
+  };
+  for (const r of rows) {
+    const m = grouped[r.source];
+    const g = m.get(r.key) ?? [];
+    g.push(r);
+    m.set(r.key, g);
+  }
+  const out = { frontmatter: {}, inline: {}, computed: {} } as Record<PropertySource, Record<string, unknown>>;
+  for (const src of ["frontmatter", "inline", "computed"] as const) {
+    for (const [key, group] of grouped[src]) out[src][key] = shapeValues(group);
+  }
+  return out;
+}
+
 // Replace a document's property rows. Deterministic prop_id per (source,key,ord)
 // gives dedup/stable identity; a genuine duplicate (same source+key+ord) is
 // collapsed by the primary key (INSERT OR REPLACE).

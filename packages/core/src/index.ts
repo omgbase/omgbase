@@ -8,6 +8,7 @@ export { markdownAdapter, MARKDOWN_FORMAT } from "./format/markdown.js";
 export { yamlAdapter, YAML_FORMAT } from "./format/yaml.js";
 export { jsonAdapter, JSON_FORMAT } from "./format/json.js";
 export { writeDocNodes, deleteDocNodes } from "./core/store/nodes.js";
+export { docPropertiesMerged, docPropertiesGrouped, writeDocProperties, flattenFrontmatter } from "./core/store/properties.js";
 // Side-effect: registers built-in adapters.
 import "./format/index.js";
 

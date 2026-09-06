@@ -14,7 +14,6 @@ interface BlockRow {
   block_id: string;
   doc_id: string;
   path: string;
-  metadata: string;
   ordinal: number;
   type: string;
   text: string;
@@ -29,13 +28,9 @@ interface SectionRow {
   last_ordinal: number;
 }
 
-function docTitle(metadataJson: string, firstHeadingByDoc: Map<string, string>, docId: string, path: string): string {
-  try {
-    const fm = JSON.parse(metadataJson) as Record<string, unknown>;
-    if (typeof fm.title === "string" && fm.title.trim()) return fm.title;
-  } catch {
-    /* fall through */
-  }
+function docTitle(titleByDoc: Map<string, string>, firstHeadingByDoc: Map<string, string>, docId: string, path: string): string {
+  const t = titleByDoc.get(docId);
+  if (t && t.trim()) return t;
   return firstHeadingByDoc.get(docId) ?? path;
 }
 
@@ -43,13 +38,24 @@ function docTitle(metadataJson: string, firstHeadingByDoc: Map<string, string>, 
 export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
   const blocks = store.db
     .prepare(
-      `SELECT b.block_id, b.doc_id, d.path AS path, d.metadata AS metadata,
+      `SELECT b.block_id, b.doc_id, d.path AS path,
               b.ordinal, b.type, b.text, b.raw_hash
        FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
        WHERE b.repo_id = ? AND b.deleted_commit IS NULL
        ORDER BY d.path, b.ordinal`,
     )
     .all(repoId) as BlockRow[];
+
+  // Frontmatter title per doc (scalar), for the embed context prefix. One scan
+  // of the properties table instead of a per-block metadata parse.
+  const titleByDoc = new Map<string, string>();
+  for (const r of store.db.prepare(
+    `SELECT p.doc_id AS doc_id, p.val_text AS title FROM properties p
+     WHERE p.repo_id = ? AND p.source = 'frontmatter' AND p.key = 'title'
+       AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL`,
+  ).all(repoId) as { doc_id: string; title: string | null }[]) {
+    if (r.title) titleByDoc.set(r.doc_id, r.title);
+  }
 
   // All sections in the repo, with their heading text, for chain lookup.
   const sections = store.db
@@ -86,7 +92,7 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
   for (const b of blocks) {
     if (!shouldEmbed(b.text)) continue;
     const ctx = contextPrefix({
-      docTitle: docTitle(b.metadata, firstHeadingByDoc, b.doc_id, b.path),
+      docTitle: docTitle(titleByDoc, firstHeadingByDoc, b.doc_id, b.path),
       path: b.path,
       headingChain: headingChain(b.doc_id, b.ordinal),
       blockType: b.type,

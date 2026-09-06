@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { docPropertiesMerged } from "../core/store/properties.js";
 import { textSearch } from "./text.js";
 import { vectorSearch } from "./vector.js";
 
@@ -45,9 +46,9 @@ const LAYER_BOOST: Record<string, number> = { canon: 1.3, working: 1.15, propose
 
 function computeBoosts(store: Store, docId: string, blockId: string, terms: string[]): Boosts {
   const boosts: Boosts = {};
-  const doc = store.db.prepare("SELECT path, metadata FROM documents WHERE doc_id = ?").get(docId) as { path: string; metadata: string } | undefined;
+  const doc = store.db.prepare("SELECT path FROM documents WHERE doc_id = ?").get(docId) as { path: string } | undefined;
   if (!doc) return boosts;
-  const fm = JSON.parse(doc.metadata) as Record<string, unknown>;
+  const fm = docPropertiesMerged(store.db, docId);
   const lowerTerms = terms.map((t) => t.toLowerCase()).filter(Boolean);
 
   // title match (frontmatter title or first heading text)

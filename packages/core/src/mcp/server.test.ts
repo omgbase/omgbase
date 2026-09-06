@@ -60,13 +60,13 @@ describe("MCP server skeleton", () => {
     expect(Object.keys(payload.ids).length).toBeGreaterThan(0);
   });
 
-  it("docs_read returns the whole file bytes plus parsed metadata", async () => {
+  it("docs_read returns the whole file bytes plus properties grouped by source", async () => {
     const { payload } = (await call("docs_read", { path: "notes.md" })) as {
-      payload: { path: string; content: string; metadata: Record<string, unknown>; rev: string; ids?: unknown };
+      payload: { path: string; content: string; properties: Record<string, Record<string, unknown>>; rev: string; ids?: unknown };
     };
     expect(payload.path).toBe("notes.md");
     expect(payload.content).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
-    expect(payload.metadata).toEqual({ layer: "working" });
+    expect(payload.properties.frontmatter).toEqual({ layer: "working" });
     expect(payload.ids).toBeUndefined();
   });
 

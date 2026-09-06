@@ -2,6 +2,7 @@ import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
 import { findDoc } from "./reader.js";
 import { docsOutline } from "./outline.js";
+import { docPropertiesGrouped } from "../store/properties.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -27,7 +28,8 @@ export interface DocsReadResult {
   path: string;
   docId: string;
   rev: string | null;
-  metadata: Record<string, unknown>;
+  /** Properties grouped by source: { frontmatter, inline, computed }. */
+  properties: Record<string, Record<string, unknown>>;
   content: string;
   ids?: Record<string, string>;
 }
@@ -87,7 +89,7 @@ export function reconstructContent(db: Database, docId: string): string | null {
   return out.join("");
 }
 
-/** Read a whole document by id: full file bytes + metadata. Null if missing. */
+/** Read a whole document by id: full file bytes + properties. Null if missing. */
 export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}): DocsReadResult | null {
   const info = findDoc(store, { docId });
   if (!info) return null;
@@ -98,7 +100,7 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
     path: info.path,
     docId: info.docId,
     rev: info.currentRev,
-    metadata: info.metadata,
+    properties: docPropertiesGrouped(store.db, docId),
     content,
   };
   if (opts.includeIds) result.ids = docsOutline(store, docId).ids;

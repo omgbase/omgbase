@@ -62,22 +62,23 @@ describe("docsRead — whole-document read", () => {
     expect(res?.rev).toMatch(/^r/);
   });
 
-  it("surfaces the document's metadata bag and omits ids by default", () => {
+  it("surfaces properties grouped by source and omits ids by default", () => {
     const { docId } = ingest(WITH_FM);
     const res = docsRead(store!, docId);
-    expect(res?.metadata).toEqual({ layer: "canon", title: "Guide" });
+    expect(res?.properties.frontmatter).toEqual({ layer: "canon", title: "Guide" });
     expect(res?.ids).toBeUndefined();
   });
 
-  it("is format-neutral: metadata is the adapter's bag, not markdown frontmatter", () => {
+  it("is format-neutral: properties come from the adapter's metadata, dotted", () => {
     // A YAML file's metadata is the parsed object it represents (format/yaml.ts
-    // extractMetadata), not a frontmatter block — docsRead returns it verbatim.
+    // extractMetadata); it flattens into frontmatter-source property rows.
     const yaml = "database:\n  host: localhost\n  port: 5432\nauth: token\n";
     const { docId } = ingest(yaml, "config.yaml");
     const res = docsRead(store!, docId);
     expect(res?.content).toBe(yaml);
-    expect((res?.metadata.database as Record<string, unknown>).host).toBe("localhost");
-    expect(res?.metadata.auth).toBe("token");
+    const fm = res!.properties.frontmatter!;
+    expect(fm["database.host"]).toBe("localhost");
+    expect(fm["auth"]).toBe("token");
   });
 
   it("includes the outline id map when includeIds is set", () => {

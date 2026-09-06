@@ -4,9 +4,9 @@ import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { query } from "./query.js";
 
-// Proves the documents-target CEL path resolves against the `properties` table,
-// not documents.metadata. To rule out silent fall-through to json_extract, each
-// test NULLs out metadata after ingest so a metadata-based compile would fail.
+// The documents-target CEL path resolves against the `properties` table (the
+// documents.metadata column no longer exists, so a match can only come from
+// properties). These exercise scalar/list/nested/source-scoped resolution.
 
 let store: Store;
 let repoId: string;
@@ -17,22 +17,15 @@ beforeEach(() => {
 });
 afterEach(() => store.close());
 
-function ingestNoMeta(path: string, content: string): void {
-  ingestFile(store, repoId, path, content);
-  // Blank the JSON blob so any residual json_extract path returns nothing —
-  // if a query still matches, it MUST be coming from `properties`.
-  store.db.prepare("UPDATE documents SET metadata = '{}' WHERE path = ?").run(path);
-}
-
 function paths(filter: string): string[] {
   return query(store, repoId, { from: "documents", filter }).hits.map((h) => h.path).sort();
 }
 
-describe("documents queries resolve from properties (metadata blanked)", () => {
+describe("documents queries resolve from properties", () => {
   beforeEach(() => {
-    ingestNoMeta("a.md", "---\nlayer: working\ntags: [pricing, saas]\npriority: 3\n---\n\n# A\n");
-    ingestNoMeta("b.md", "---\nlayer: draft\ntags: docs\npriority: 1\n---\n\n# B\n");
-    ingestNoMeta("c.md", "---\nlayer: canon\nmeta:\n  owner: alice\n---\n\n# C\n");
+    ingestFile(store, repoId, "a.md", "---\nlayer: working\ntags: [pricing, saas]\npriority: 3\n---\n\n# A\n");
+    ingestFile(store, repoId, "b.md", "---\nlayer: draft\ntags: docs\npriority: 1\n---\n\n# B\n");
+    ingestFile(store, repoId, "c.md", "---\nlayer: canon\nmeta:\n  owner: alice\n---\n\n# C\n");
   });
 
   it("scalar equality", () => {
@@ -76,7 +69,7 @@ describe("documents queries resolve from properties (metadata blanked)", () => {
 describe("source-scoped access", () => {
   beforeEach(() => {
     // frontmatter job=farmer; inline job:: janitor / salesman
-    ingestNoMeta("d.md", "---\njob: farmer\n---\n\n# D\n\njob:: janitor\n\njob:: salesman\n");
+    ingestFile(store, repoId, "d.md", "---\njob: farmer\n---\n\n# D\n\njob:: janitor\n\njob:: salesman\n");
   });
 
   it("bare key spans authored sources (frontmatter + inline)", () => {

@@ -1,5 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { docsRead } from "../core/read/document.js";
+import { docPropertiesMerged } from "../core/store/properties.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
 import { hybridSearch } from "./rrf.js";
@@ -119,9 +120,9 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
 
   const base =
     target === "documents"
-      ? `SELECT d.doc_id AS id, d.path AS path, d.metadata AS metadata FROM documents d`
+      ? `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id FROM documents d`
       : `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
-                b.attrs AS attrs, d.metadata AS metadata
+                b.attrs AS attrs, d.doc_id AS doc_id
          FROM blocks b JOIN documents d ON d.doc_id = b.doc_id`;
 
   // Cursor: composite keyset on (path, id) matching the default order. The
@@ -152,7 +153,7 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
 interface ProjectionRow {
   id: string;
   path: string;
-  metadata?: string;
+  doc_id?: string;
   ordinal?: number;
   type?: string;
   attrs?: string;
@@ -170,8 +171,14 @@ function projectRow(store: Store, row: ProjectionRow, select: string[] | undefin
   const hit: QueryHit = { id: row.id, path: row.path };
   if (!select || select.length === 0) return hit;
 
-  const fm = row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : {};
   const attrs = row.attrs ? (JSON.parse(row.attrs) as Record<string, unknown>) : {};
+  // Bare-key projection reads the document's merged property bag, lazily (only
+  // when a bare key is actually selected) to avoid a per-hit query otherwise.
+  let props: Record<string, unknown> | undefined;
+  const propBag = (): Record<string, unknown> => {
+    if (props === undefined) props = row.doc_id ? docPropertiesMerged(store.db, row.doc_id) : {};
+    return props;
+  };
 
   for (const field of select) {
     if (field === "$id" || field === "$path") continue; // already present
@@ -197,8 +204,12 @@ function projectRow(store: Store, row: ProjectionRow, select: string[] | undefin
       if (v !== undefined) hit[field] = v;
       continue;
     }
-    // Bare identifier (possibly dotted) ⇒ frontmatter key on the containing doc.
-    const v = readPath(fm, field);
+    // Bare identifier ⇒ property key on the containing doc (merged authored
+    // view). Properties store dotted paths as flat keys ("meta.owner"), so try
+    // the flat key directly; fall back to nested-path walk for safety. Absent
+    // keys are omitted (CEL absence semantics).
+    const bag = propBag();
+    const v = field in bag ? bag[field] : readPath(bag, field);
     if (v !== undefined) hit[field] = v;
   }
   return hit;
@@ -212,7 +223,7 @@ function projectionMaterial(store: Store, blockIds: string[]): Map<string, Proje
   const placeholders = blockIds.map(() => "?").join(",");
   const rows = store.db.prepare(
     `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
-            b.attrs AS attrs, d.metadata AS metadata
+            b.attrs AS attrs, d.doc_id AS doc_id
      FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
      WHERE b.block_id IN (${placeholders})`,
   ).all(...blockIds) as ProjectionRow[];

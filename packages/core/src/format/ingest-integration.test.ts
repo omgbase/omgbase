@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ingestFile } from "../core/ingest.js";
+import { docPropertiesMerged } from "../core/store/properties.js";
 import { query } from "../search/query.js";
 import "../format/index.js"; // register adapters
 
@@ -117,25 +118,22 @@ describe("multiformat ingest integration", () => {
     expect(yamlBlocks.hits.length).toBeGreaterThan(0);
   });
 
-  it("populates metadata from YAML adapter extractMetadata", () => {
+  it("populates properties from YAML adapter extractMetadata", () => {
     const { store, repoId } = setup();
-    ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n  port: 5432\n");
+    const { docId } = ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n  port: 5432\n");
 
-    const row = store.db.prepare("SELECT metadata FROM documents WHERE path = 'config.yaml'").get() as { metadata: string };
-    const meta = JSON.parse(row.metadata) as Record<string, unknown>;
-    expect(meta.database).toBeDefined();
-    expect((meta.database as Record<string, unknown>).host).toBe("localhost");
-    expect((meta.database as Record<string, unknown>).port).toBe(5432);
+    const props = docPropertiesMerged(store.db, docId);
+    expect(props["database.host"]).toBe("localhost");
+    expect(props["database.port"]).toBe(5432);
   });
 
-  it("populates metadata from JSON adapter extractMetadata", () => {
+  it("populates properties from JSON adapter extractMetadata", () => {
     const { store, repoId } = setup();
-    ingestFile(store, repoId, "package.json", `{"name": "test", "version": "1.0.0"}`);
+    const { docId } = ingestFile(store, repoId, "package.json", `{"name": "test", "version": "1.0.0"}`);
 
-    const row = store.db.prepare("SELECT metadata FROM documents WHERE path = 'package.json'").get() as { metadata: string };
-    const meta = JSON.parse(row.metadata) as Record<string, unknown>;
-    expect(meta.name).toBe("test");
-    expect(meta.version).toBe("1.0.0");
+    const props = docPropertiesMerged(store.db, docId);
+    expect(props.name).toBe("test");
+    expect(props.version).toBe("1.0.0");
   });
 
   it("queries YAML document metadata with CEL filters", () => {

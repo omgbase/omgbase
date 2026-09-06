@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolveRef, nodesGet, findDoc, docLinks, historyNode } from "@omgbase/core";
+import { resolveRef, nodesGet, findDoc, docLinks, historyNode, docPropertiesMerged } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
@@ -29,12 +29,13 @@ function runShow(cli: Cli, args: string[]): number {
   if (resolved.kind === "document") {
     const info = findDoc(ws.store, { docId: resolved.docId })!;
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
-    const payload = { kind: "document", id: info.docId, path: info.path, metadata: info.metadata, edges: links };
+    const properties = docPropertiesMerged(ws.store.db, resolved.docId);
+    const payload = { kind: "document", id: info.docId, path: info.path, properties, edges: links };
     if (cli.flags.mode !== "human") {
       cli.io.out(JSON.stringify(payload));
       return EXIT_OK;
     }
-    renderDocCard(cli, info.path, info.metadata, links);
+    renderDocCard(cli, info.path, properties, links);
     return EXIT_OK;
   }
 
@@ -55,7 +56,7 @@ function renderDocCard(cli: Cli, path: string, fm: Record<string, unknown>, link
   io.out(render.rule(40));
   const keys = Object.keys(fm);
   if (keys.length > 0) {
-    io.out(`  ${style.dim("frontmatter")}`);
+    io.out(`  ${style.dim("properties")}`);
     for (const k of keys) io.out(`    ${style.accent(k)} ${style.dim("=")} ${fmt(fm[k])}`);
   }
   if (links.out.length > 0) {

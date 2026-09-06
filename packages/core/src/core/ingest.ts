@@ -165,13 +165,14 @@ export function ingestFile(
     // NULL when there is no frontmatter.
     const fmTrivia = fmBlock ? fmBlock.trivia : null;
 
-    // Metadata: adapter-provided for non-markdown formats, frontmatter-parsed for markdown.
+    // Document property bag: adapter-provided for non-markdown formats,
+    // frontmatter-parsed for markdown. Flattened into the properties table
+    // below (source=frontmatter); also drives frontmatter edge extraction.
     const metadata = (adapter?.extractMetadata)
       ? (adapter.extractMetadata(content) ?? parseFrontmatter(fmBlock))
       : parseFrontmatter(fmBlock);
-    const metadataJson = JSON.stringify(metadata);
 
-    // Upsert the document row (refresh frontmatter JSON view each ingest).
+    // Upsert the document row.
     let doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ?").get(repoId, path) as
       | { doc_id: string }
       | undefined;
@@ -179,13 +180,13 @@ export function ingestFile(
     const isNew = !doc;
     if (!doc) {
       db.prepare(
-        "INSERT INTO documents (doc_id, repo_id, path, format, metadata, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).run(docId, repoId, path, format, metadataJson, tree.leadingTrivia, fmTrivia);
+        "INSERT INTO documents (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
       doc = { doc_id: docId };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE documents SET metadata = ?, format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(metadataJson, format, tree.leadingTrivia, fmTrivia, docId);
+      db.prepare("UPDATE documents SET format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -282,7 +283,7 @@ export function ingestFile(
     // Edge extraction + interval maintenance (05 §2), if the resolver supplies
     // an extractor. Runs in this commit transaction.
     if (resolved.extractEdges) {
-      const extracted = resolved.extractEdges(docId, JSON.parse(metadataJson) as Record<string, unknown>);
+      const extracted = resolved.extractEdges(docId, metadata);
       maintainEdges(db, repoId, docId, commit.commitId, extracted);
     }
 

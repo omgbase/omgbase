@@ -98,7 +98,6 @@ CREATE TABLE IF NOT EXISTS documents (
   repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
   path           TEXT NOT NULL,
   format         TEXT NOT NULL DEFAULT 'markdown',
-  metadata       TEXT NOT NULL DEFAULT '{}',
   current_rev    TEXT,
   file_hash      BLOB,
   conflicted     INTEGER NOT NULL DEFAULT 0,

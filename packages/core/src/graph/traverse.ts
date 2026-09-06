@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { docPropertiesMerged } from "../core/store/properties.js";
 
 // Traversal API (05 §3). Iterative frontier expansion in SQL; visited set in
 // memory; budgets enforced per step; truncated set honestly. No graph query
@@ -163,13 +164,13 @@ function projectNodes(store: Store, nodeIds: string[], select: string[]): Record
   const docIds = nodeIds.filter((id) => id.startsWith("d_"));
   const externalIds = nodeIds.filter((id) => id.startsWith("x_"));
 
-  const docMeta = new Map<string, { path: string; metadata: string }>();
+  const docMeta = new Map<string, { path: string }>();
   if (docIds.length > 0) {
     const ph = docIds.map(() => "?").join(",");
     const rows = store.db
-      .prepare(`SELECT doc_id, path, metadata FROM documents WHERE doc_id IN (${ph})`)
-      .all(...docIds) as { doc_id: string; path: string; metadata: string }[];
-    for (const r of rows) docMeta.set(r.doc_id, { path: r.path, metadata: r.metadata });
+      .prepare(`SELECT doc_id, path FROM documents WHERE doc_id IN (${ph})`)
+      .all(...docIds) as { doc_id: string; path: string }[];
+    for (const r of rows) docMeta.set(r.doc_id, { path: r.path });
   }
 
   const extUri = new Map<string, string>();
@@ -199,8 +200,8 @@ function projectNodes(store: Store, nodeIds: string[], select: string[]): Record
     if (meta) {
       if (wantPath) info.path = meta.path;
       if (fmKeys.length > 0) {
-        const fm = JSON.parse(meta.metadata) as Record<string, unknown>;
-        for (const k of fmKeys) if (fm[k] !== undefined) info[k] = fm[k];
+        const bag = docPropertiesMerged(store.db, id);
+        for (const k of fmKeys) if (bag[k] !== undefined) info[k] = bag[k];
       }
     }
     out[id] = info;

@@ -111,9 +111,9 @@ describe("doc-level: new / meta / mv / rm --doc", () => {
     expect(existsSync(join(vault, "notes/fresh.md"))).toBe(true);
 
     omg(["meta", "notes/fresh.md", "--set", "status=active", "--set", "priority=3"]);
-    const meta = JSON.parse(omg(["show", "notes/fresh.md", "--json"])) as { metadata: Record<string, unknown> };
-    expect(meta.metadata.status).toBe("active");
-    expect(meta.metadata.priority).toBe(3); // YAML scalar → number
+    const meta = JSON.parse(omg(["show", "notes/fresh.md", "--json"])) as { properties: Record<string, unknown> };
+    expect(meta.properties.status).toBe("active");
+    expect(meta.properties.priority).toBe(3); // YAML scalar → number
 
     omg(["mv", "notes/fresh.md", "archive/fresh.md"]);
     expect(existsSync(join(vault, "archive/fresh.md"))).toBe(true);
