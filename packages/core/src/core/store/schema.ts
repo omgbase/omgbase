@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -16,6 +16,37 @@ CREATE TABLE IF NOT EXISTS file_stats (
   hash     BLOB NOT NULL,
   PRIMARY KEY (repo_id, path)
 );
+`;
+
+// properties (12-properties-table). One indexed row per property value: the
+// unified query surface for frontmatter, inline (key:: value), and computed
+// ($title/$tags) document properties, superseding the documents.metadata JSON
+// blob. `card` records the authored shape (scalar vs list) so scalar ==/!=/<
+// match only scalar-authored rows while list() sees all — reproducing the
+// json_extract scalar-vs-array distinction. Fully rebuildable from
+// blocks+frontmatter (rebuild-index --properties).
+export const PROPERTIES_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS properties (
+  prop_id        TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  block_id       TEXT,                    -- NULL = document-scoped (frontmatter, computed)
+  source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
+  key            TEXT NOT NULL,           -- dotted, flattened: "layer","meta.owner"; computed carry $: "$title"
+  card           TEXT NOT NULL CHECK (card IN ('scalar','list')),
+  ord            INTEGER NOT NULL DEFAULT 0,
+  val_text       TEXT,
+  val_num        REAL,
+  val_bool       INTEGER,
+  val_json       TEXT,
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')),
+  created_commit TEXT NOT NULL,
+  deleted_commit TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_props_doc      ON properties(doc_id)                 WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_props_key_text ON properties(repo_id, key, val_text) WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_num)  WHERE deleted_commit IS NULL;
+CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
 `;
 
 export const NODES_DDL = /* sql */ `
@@ -50,6 +81,7 @@ export const MIGRATIONS: Record<number, string> = {
   5: NODES_DDL,
   6: "",  // handled programmatically in store.ts
   7: "",  // handled programmatically in store.ts
+  8: PROPERTIES_DDL,
 };
 
 export const DDL = /* sql */ `
@@ -274,4 +306,5 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 );
 
 ${FILE_STATS_DDL}
+${PROPERTIES_DDL}
 `;

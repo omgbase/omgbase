@@ -9,6 +9,7 @@ import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
 import { writeDocNodes } from "./store/nodes.js";
+import { flattenFrontmatter, writeDocProperties, type PropertyRow } from "./store/properties.js";
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock, BlockTree } from "./parse/types.js";
@@ -239,6 +240,7 @@ export function ingestFile(
     rebuildSections(db, docId);
 
     // Node projection: adapter-provided semantic features from parsed blocks.
+    const propertyRows: PropertyRow[] = [];
     if (adapter?.projectNodes) {
       const rawBlocks = rest.map(toProjectionInput);
       const projected = adapter.projectNodes(rawBlocks);
@@ -249,7 +251,33 @@ export function ingestFile(
         blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
       }));
       writeDocNodes(db, repoId, docId, withIds);
+
+      // Inline properties (key:: value) → property rows (source=inline). Repeats
+      // of the same key accumulate; each occurrence is a card='list' row in
+      // document order (block ordinal drives ordering downstream).
+      const inlineOrd = new Map<string, number>();
+      for (const n of withIds) {
+        if (n.kind !== "md:inline_field" || !n.name) continue;
+        const ord = inlineOrd.get(n.name) ?? 0;
+        inlineOrd.set(n.name, ord + 1);
+        propertyRows.push({
+          source: "inline",
+          blockId: n.blockId || null,
+          key: n.name,
+          card: "list",
+          ord,
+          ...typedInlineValue(n.value),
+        });
+      }
     }
+
+    // Frontmatter → property rows (source=frontmatter). Flatten nested maps to
+    // dotted keys, arrays to ord-indexed list rows, scalars to a scalar row.
+    for (const r of flattenFrontmatter(metadata)) {
+      propertyRows.push({ source: "frontmatter", blockId: null, ...r });
+    }
+
+    writeDocProperties(db, repoId, docId, commit.commitId, propertyRows);
 
     // Edge extraction + interval maintenance (05 §2), if the resolver supplies
     // an extractor. Runs in this commit transaction.
@@ -313,6 +341,16 @@ export function ingestFile(
 
 function toProjectionInput(b: RawBlock): RawBlock {
   return b;
+}
+
+// Inline field values arrive as captured strings; coerce to a typed column so
+// numeric/bool inline props (priority:: 3) compare like their frontmatter kin.
+// A value that isn't cleanly numeric/bool stays a string.
+function typedInlineValue(raw: string | undefined): Pick<PropertyRow, "valText" | "valNum" | "valBool" | "valJson" | "type"> {
+  const v = (raw ?? "").trim();
+  if (v === "true" || v === "false") return { valText: null, valNum: null, valBool: v === "true" ? 1 : 0, valJson: null, type: "bool" };
+  if (v !== "" && Number.isFinite(Number(v))) return { valText: null, valNum: Number(v), valBool: null, valJson: null, type: "number" };
+  return { valText: v, valNum: null, valBool: null, valJson: null, type: "string" };
 }
 
 function collectBlockIds(blocks: TreeInputBlock[]): Set<string> {

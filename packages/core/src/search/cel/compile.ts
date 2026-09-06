@@ -26,6 +26,95 @@ function jsonPath(segs: string[]): string {
   return `'$.${segs.join(".")}'`;
 }
 
+// ---- properties routing (12-properties-table) -------------------------------
+// Documents-target fields (and doc.<k> reach-through from blocks/nodes) resolve
+// against the indexed `properties` table instead of json_extract over a JSON
+// blob. A field access is one of: a scalar-value expression (comparisons), or
+// an existence/count predicate (membership, size, has, bool-context). All
+// correlate on `d.doc_id` (documents `d` is present/joined on every target).
+
+const PROP_SOURCES = new Set(["frontmatter", "inline", "computed"]);
+
+// Validate + join identifier segments into a dotted property key. Segments come
+// from the lexer's identifier rule, so inlining is injection-safe (mirrors
+// jsonPath); keeping keys param-free preserves the "fields carry no params"
+// invariant the comparison/membership param ordering relies on.
+function propKey(segs: string[]): string {
+  for (const s of segs) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(s)) {
+      throw new FilterInvalid(`invalid field segment '${s}'`, "10 §2");
+    }
+  }
+  return segs.join(".");
+}
+
+interface PropRef { key: string; source?: string }
+
+// Is this field a properties-routed document property? Returns {key, source?}
+// or null (intrinsic, `format`, or a non-doc field). A leading
+// frontmatter./inline./computed. segment (with something after it) is a
+// source scope, not a key segment.
+function propRef(field: FieldRef, target: Target): PropRef | null {
+  if (field.intrinsic) return null;
+  let segs = field.segments;
+  if (target === "documents") {
+    if (segs[0] === "format") return null;
+  } else {
+    // blocks / nodes: only doc.<k> reach-through routes to properties.
+    if (segs[0] !== "doc") return null;
+    segs = segs.slice(1);
+    if (segs.length === 0 || segs[0]!.startsWith("$") || segs[0] === "format") return null;
+  }
+  if (segs.length >= 2 && PROP_SOURCES.has(segs[0]!)) {
+    const source = segs[0]!;
+    return { key: propKey(segs.slice(1)), source };
+  }
+  return { key: propKey(segs) };
+}
+
+function srcClause(source: string | undefined): string {
+  return source ? ` AND p.source = '${source}'` : "";
+}
+
+// Scalar value of a property for comparisons: the single scalar-authored row's
+// typed value (COALESCE keeps the stored type, so `tags == "a"` on a list — no
+// scalar row — is NULL ⇒ false, exactly like json_extract on an array). NULL
+// when the key has no scalar row.
+function propScalarExpr(ref: PropRef): string {
+  return `(SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p
+           WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}' AND p.card = 'scalar'${srcClause(ref.source)}
+             AND p.deleted_commit IS NULL LIMIT 1)`;
+}
+
+// EXISTS over ALL rows for the key (any card) whose value equals ? — the
+// membership primitive. Spans scalar and list rows, so `"canon" in list(layer)`
+// matches a scalar frontmatter value and `"a" in list(tags)` matches a list.
+function propMemberExists(ref: PropRef): string {
+  return `EXISTS (SELECT 1 FROM properties p WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}'${srcClause(ref.source)}
+            AND p.deleted_commit IS NULL AND COALESCE(p.val_text, p.val_num, p.val_bool) = ?)`;
+}
+
+// COUNT of all rows for the key (size(list(k))): 0 when absent, 1 for a scalar,
+// N for a list — matching json_array_length / scalar=1 / null=0 today.
+function propCountExpr(ref: PropRef): string {
+  return `(SELECT COUNT(*) FROM properties p WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}'${srcClause(ref.source)}
+           AND p.deleted_commit IS NULL)`;
+}
+
+// Existence of the key in any card (has(k)).
+function propHasExists(ref: PropRef): string {
+  return `EXISTS (SELECT 1 FROM properties p WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}'${srcClause(ref.source)}
+            AND p.deleted_commit IS NULL)`;
+}
+
+// Truthy in boolean position: present list row, or present scalar with a
+// truthy value (not 0/''/false). Absent ⇒ false; `!k` negates.
+function propTruthyExists(ref: PropRef): string {
+  return `EXISTS (SELECT 1 FROM properties p WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}'${srcClause(ref.source)}
+            AND p.deleted_commit IS NULL
+            AND (p.card = 'list' OR COALESCE(p.val_text, p.val_num, p.val_bool) NOT IN (0, '', 'false')))`;
+}
+
 // Column/JSON accessor for a field on a given target. Returns a SQL scalar
 // expression that is NULL when the field is absent. Never carries params.
 function fieldSql(field: FieldRef, target: Target): { expr: string } {
@@ -66,6 +155,8 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
 
   if (target === "documents") {
     if (head === "format") return { expr: "d.format" };
+    const ref = propRef(field, target);
+    if (ref) return { expr: propScalarExpr(ref) };
     return { expr: `json_extract(d.metadata, ${jsonPath(segs)})` };
   }
 
@@ -82,6 +173,8 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
         return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
       }
       if (rest[0] === "format") return { expr: "d.format" };
+      const ref = propRef(field, target);
+      if (ref) return { expr: propScalarExpr(ref) };
       return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
     }
     if (head === "block") {
@@ -105,6 +198,8 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
       return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
     }
     if (rest[0] === "format") return { expr: "d.format" };
+    const ref = propRef(field, target);
+    if (ref) return { expr: propScalarExpr(ref) };
     return { expr: `json_extract(d.metadata, ${jsonPath(rest)})` };
   }
   throw new FilterInvalid(`unknown field '${segs.join(".")}' on blocks`, "10 §2");
@@ -124,7 +219,10 @@ function scalarSql(node: Node, target: Target): { expr: string; params: unknown[
       case "size": {
         const inner = node.args[0];
         if (inner && inner.kind === "call" && inner.name === "list") {
-          const f = fieldSql(argField(inner.args, 0), target);
+          const lf = argField(inner.args, 0);
+          const ref = propRef(lf, target);
+          if (ref) return { expr: propCountExpr(ref), params: [] };
+          const f = fieldSql(lf, target);
           return {
             expr: `(CASE WHEN ${f.expr} IS NULL THEN 0
                         WHEN json_valid(${f.expr}) AND json_type(${f.expr})='array'
@@ -197,6 +295,8 @@ function coerce(lit: Literal): unknown {
 
 // A bare field in boolean position coerces to false when absent/false.
 function compileBoolField(field: FieldRef, target: Target): Compiled {
+  const ref = propRef(field, target);
+  if (ref) return { sql: propTruthyExists(ref), params: [] };
   const f = fieldSql(field, target);
   // truthy: not null, not 0, not '', not false
   return {
@@ -237,6 +337,11 @@ export function compile(node: Node, target: Target): Compiled {
 }
 
 function compileMembership(value: Literal, field: FieldRef, target: Target): Compiled {
+  // Documents-target (and doc.<k>) properties: membership is an indexed EXISTS
+  // over ALL rows for the key (any card) — scalar or list value equals v.
+  const ref = propRef(field, target);
+  if (ref) return { sql: propMemberExists(ref), params: [coerce(value)] };
+
   // "v" in list(field): field may be scalar or JSON array. Match either the
   // scalar equals v, or (when the value is a JSON array) the array contains v.
   // Absent ⇒ NULL ⇒ [] ⇒ false. json_each over a non-array/NULL yields no rows,
@@ -265,7 +370,10 @@ function argString(args: Node[], i: number): string {
 function compileCall(name: string, args: Node[], target: Target): Compiled {
   switch (name) {
     case "has": {
-      const f = fieldSql(argField(args, 0), target);
+      const hf = argField(args, 0);
+      const ref = propRef(hf, target);
+      if (ref) return { sql: propHasExists(ref), params: [] };
+      const f = fieldSql(hf, target);
       return { sql: `(${f.expr} IS NOT NULL)`, params: [] };
     }
     case "size":
