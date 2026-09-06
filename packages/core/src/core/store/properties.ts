@@ -73,6 +73,21 @@ export function flattenFrontmatter(obj: Record<string, unknown>): Omit<PropertyR
   return rows;
 }
 
+// Flatten computed properties (adapter computeProperties output) into rows.
+// Keys are already $-prefixed intrinsics ($title, $tags); a value is a scalar
+// (one scalar row) or an array of scalars (ord-indexed list rows).
+export function flattenComputed(obj: Record<string, unknown>): Omit<PropertyRow, "source" | "blockId">[] {
+  const rows: Omit<PropertyRow, "source" | "blockId">[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    if (Array.isArray(value)) {
+      value.forEach((e, ord) => rows.push({ key, card: "list", ord, ...typedValue(e) }));
+    } else {
+      rows.push({ key, card: "scalar", ord: 0, ...typedValue(value) });
+    }
+  }
+  return rows;
+}
+
 export function deleteDocProperties(db: Database, docId: string): void {
   db.prepare("DELETE FROM properties WHERE doc_id = ?").run(docId);
 }

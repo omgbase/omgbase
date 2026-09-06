@@ -89,3 +89,25 @@ describe("source-scoped access", () => {
     expect(paths('"farmer" in list(inline.job)')).toEqual([]);
   });
 });
+
+describe("computed $-intrinsics ($title, $tags)", () => {
+  beforeEach(() => {
+    // Authored title=Fromage collides with the computed $title (first H1).
+    ingestFile(store, repoId, "e.md", "---\ntitle: Fromage\n---\n\n# Cheese Guide\n\nabout #dairy and #cheese stuff\n");
+    ingestFile(store, repoId, "f.md", "# Other\n\nno tags here\n");
+  });
+
+  it("$title is the first H1, distinct from authored title", () => {
+    expect(paths('$title == "Cheese Guide"')).toEqual(["e.md"]);
+    expect(paths('title == "Fromage"')).toEqual(["e.md"]);   // authored, not shadowed
+    expect(paths('$title == "Fromage"')).toEqual([]);        // computed != authored
+    expect(paths('title == "Cheese Guide"')).toEqual([]);
+  });
+
+  it("$tags is body hashtags via list()", () => {
+    expect(paths('"dairy" in list($tags)')).toEqual(["e.md"]);
+    expect(paths('"cheese" in list($tags)')).toEqual(["e.md"]);
+    expect(paths("size(list($tags)) == 2")).toEqual(["e.md"]);
+    expect(paths("has($tags)")).toEqual(["e.md"]);            // f.md has none
+  });
+});

@@ -35,6 +35,11 @@ function jsonPath(segs: string[]): string {
 
 const PROP_SOURCES = new Set(["frontmatter", "inline", "computed"]);
 
+// Computed properties surfaced as document intrinsics (12 §4). Engine-derived,
+// stored as source='computed' rows keyed by their $ name. Filterable like any
+// property (scalar ==, list(), membership) but never shadow authored keys.
+const COMPUTED_INTRINSICS = new Set(["$title", "$tags"]);
+
 // Validate + join identifier segments into a dotted property key. Segments come
 // from the lexer's identifier rule, so inlining is injection-safe (mirrors
 // jsonPath); keeping keys param-free preserves the "fields carry no params"
@@ -55,14 +60,21 @@ interface PropRef { key: string; source?: string }
 // frontmatter./inline./computed. segment (with something after it) is a
 // source scope, not a key segment.
 function propRef(field: FieldRef, target: Target): PropRef | null {
-  if (field.intrinsic) return null;
   let segs = field.segments;
   if (target === "documents") {
+    // Computed intrinsic ($title, $tags): route to source='computed' rows.
+    if (field.intrinsic) {
+      if (segs.length === 1 && COMPUTED_INTRINSICS.has(segs[0]!)) return { key: segs[0]!, source: "computed" };
+      return null;
+    }
     if (segs[0] === "format") return null;
   } else {
+    if (field.intrinsic) return null;
     // blocks / nodes: only doc.<k> reach-through routes to properties.
     if (segs[0] !== "doc") return null;
     segs = segs.slice(1);
+    // doc.$title reach-through to a computed intrinsic.
+    if (segs.length === 1 && COMPUTED_INTRINSICS.has(segs[0]!)) return { key: segs[0]!, source: "computed" };
     if (segs.length === 0 || segs[0]!.startsWith("$") || segs[0] === "format") return null;
   }
   if (segs.length >= 2 && PROP_SOURCES.has(segs[0]!)) {
@@ -129,7 +141,12 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
         case "$repo": return { expr: "d.repo_id" };
         case "$updated_at": return { expr: "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev)" };
         case "$content_hash": return { expr: "hex(d.file_hash)" };
-        default: throw new FilterInvalid(`unknown intrinsic ${head} on documents`, "10 §2");
+        default: {
+          // Computed property intrinsic ($title, $tags) → properties row scalar.
+          const ref = propRef(field, target);
+          if (ref) return { expr: propScalarExpr(ref) };
+          throw new FilterInvalid(`unknown intrinsic ${head} on documents`, "10 §2");
+        }
       }
     } else if (target === "nodes") {
       switch (head) {

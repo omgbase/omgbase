@@ -9,7 +9,7 @@ import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
 import { writeDocNodes } from "./store/nodes.js";
-import { flattenFrontmatter, writeDocProperties, type PropertyRow } from "./store/properties.js";
+import { flattenFrontmatter, flattenComputed, writeDocProperties, type PropertyRow } from "./store/properties.js";
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock, BlockTree } from "./parse/types.js";
@@ -276,6 +276,15 @@ export function ingestFile(
     // dotted keys, arrays to ord-indexed list rows, scalars to a scalar row.
     for (const r of flattenFrontmatter(metadata)) {
       propertyRows.push({ source: "frontmatter", blockId: null, ...r });
+    }
+
+    // Computed → property rows (source=computed). Engine-derived $-intrinsics
+    // ($title, $tags) from the adapter; never claim authored keys.
+    if (adapter?.computeProperties) {
+      const computed = adapter.computeProperties(rest, metadata);
+      for (const r of flattenComputed(computed)) {
+        propertyRows.push({ source: "computed", blockId: null, ...r });
+      }
     }
 
     writeDocProperties(db, repoId, docId, commit.commitId, propertyRows);

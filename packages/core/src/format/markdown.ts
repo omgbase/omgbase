@@ -29,6 +29,7 @@ export const markdownAdapter: FormatAdapter = {
     AdapterCapability.Render,
     AdapterCapability.ExtractEdges,
     AdapterCapability.ExtractMetadata,
+    AdapterCapability.ComputeProperties,
     AdapterCapability.StructuralMutation,
     AdapterCapability.ProjectNodes,
   ]),
@@ -103,6 +104,45 @@ export const markdownAdapter: FormatAdapter = {
     };
     walk(blocks, "");
     return nodes;
+  },
+
+  // Computed properties surfaced as $-intrinsics (12 §4). These are engine-
+  // derived and never claim the authored `title`/`tags` keys.
+  //   $title — text of the first level-1 heading
+  //   $tags  — distinct #hashtags found in body text (order-preserving)
+  computeProperties(blocks: RawBlock[]): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+
+    const findH1 = (list: RawBlock[]): string | undefined => {
+      for (const b of list) {
+        if (b.type === "heading" && b.attrs.level === 1 && b.text.trim()) return b.text.trim();
+        const nested = findH1(b.children);
+        if (nested) return nested;
+      }
+      return undefined;
+    };
+    const title = findH1(blocks);
+    if (title) out.$title = title;
+
+    const tags: string[] = [];
+    const seen = new Set<string>();
+    const scan = (list: RawBlock[]): void => {
+      for (const b of list) {
+        // #tag — a hash followed by a word char, not inside a heading marker or
+        // a code fence. Matches Obsidian-style inline tags in prose.
+        if (b.type !== "heading" && b.type !== "code_fence") {
+          for (const m of b.raw.matchAll(/(?:^|\s)#([a-zA-Z][\w/-]*)/g)) {
+            const t = m[1]!;
+            if (!seen.has(t)) { seen.add(t); tags.push(t); }
+          }
+        }
+        scan(b.children);
+      }
+    };
+    scan(blocks);
+    if (tags.length > 0) out.$tags = tags;
+
+    return out;
   },
 
   reconcileHints(): ReconcileHints {
