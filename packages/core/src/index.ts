@@ -17,10 +17,12 @@ export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js
 export { freshnessSweep, rebuildFileStats, recordFileStat, type SweepResult } from "./sync/freshness.js";
 export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
-export { attachRepo } from "./sync/attach.js";
+export { attachRepo, type AttachResult } from "./sync/attach.js";
+export { walkMarkdown } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
-// Sync-plugin seam (13-sync-plugins): a pluggable source scope + the generic
-// reconciliation driver; FilesystemSource is the v1 implementation.
+// External sync-adapter seam (13-sync-plugins): a SyncSource is the in-engine
+// handle to an external adapter process; createExternalSource spawns one and
+// speaks the stdio protocol; the driver reconciles a repo against any source.
 export type {
   SyncSource,
   SourceCapabilities,
@@ -28,10 +30,10 @@ export type {
   SourceEntry,
   SourceItem,
   SourceWatch,
-  WatchOptions,
+  WatchListener,
 } from "./sync/plugin.js";
-export { FilesystemSource, walkMarkdown } from "./sync/filesystem-source.js";
-export { reconcileChanges, attachSource, type AttachResult, type FileChange } from "./sync/driver.js";
+export { createExternalSource, type ExternalSourceSpec } from "./sync/external-source.js";
+export { reconcileChanges, attachSource } from "./sync/driver.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";

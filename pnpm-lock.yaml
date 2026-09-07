@@ -32,6 +32,9 @@ importers:
       '@omgbase/core':
         specifier: workspace:*
         version: link:../core
+      '@omgbase/fs-adapter':
+        specifier: workspace:*
+        version: link:../fs-adapter
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -46,9 +49,6 @@ importers:
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
-      chokidar:
-        specifier: ^5.0.0
-        version: 5.0.0
       mdast-util-from-markdown:
         specifier: ^2.0.2
         version: 2.0.3
@@ -86,6 +86,12 @@ importers:
       '@huggingface/transformers':
         specifier: ^4.2.0
         version: 4.2.0
+
+  packages/fs-adapter:
+    dependencies:
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
 
 packages:
 

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
-import { walkMarkdown } from "./filesystem-source.js";
+import { walkMarkdown } from "./fs-util.js";
 
 // Freshness sweep (11 §3.3). Without a live watcher the database lags human
 // edits since the last ingest. Before a one-shot command runs, this sweep walks

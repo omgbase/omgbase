@@ -1,9 +1,10 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { openFsSource } from "./_source.js";
 
 // `omg mcp [--no-watch]` (11 §5.8) — MCP server on stdio; the host owns the
 // process lifetime. Runs an in-process watcher by default so a lone session is
@@ -53,23 +54,31 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
 
   let lease: WatchLease | null = null;
   let watcher: Watcher | null = null;
+  let source: SyncSource | null = null;
 
   if (wantWatch) {
     lease = WatchLease.tryAcquire(ws.omgbaseDir);
     if (lease) {
-      // Prime with a one-shot sweep so the session starts fresh, then watch.
-      freshnessSweep(ws.store, repo.repoId, repo.rootPath);
-      watcher = new Watcher(ws.store, repo.repoId, repo.rootPath, {
-        onCheckpoint: (r) => {
-          if (r.ingested.length > 0 || r.deleted.length > 0) {
-            cli.io.err(cli.style.dim(`[watch] checkpoint: +${r.ingested.length} -${r.deleted.length}`));
-            // A file change the watcher ingested may also need (re-)embedding.
-            drainer?.schedule();
-          }
-        },
-      });
-      watcher.start();
-      cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · watcher live`));
+      // Prime with a one-shot sweep so the session starts fresh, then watch via
+      // the external fs-adapter process (chokidar lives there, not in-engine).
+      if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+      source = await openFsSource(repo);
+      if (source) {
+        watcher = new Watcher(ws.store, repo.repoId, source, {
+          onCheckpoint: (r) => {
+            if (r.ingested.length > 0 || r.deleted.length > 0) {
+              cli.io.err(cli.style.dim(`[watch] checkpoint: +${r.ingested.length} -${r.deleted.length}`));
+              // A file change the watcher ingested may also need (re-)embedding.
+              drainer?.schedule();
+            }
+          },
+          onError: (err) => cli.io.err(cli.style.dim(`[watch] error: ${String(err)}`)),
+        });
+        await watcher.start();
+        cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · watcher live`));
+      } else {
+        cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · sourceless (no watch)`));
+      }
     } else {
       // Lost the race for the lease; another watcher is live — serve without one.
       cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · watcher elsewhere`));
@@ -84,7 +93,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   const handle = await serveStdio({
     store: ws.store,
     repoId: repo.repoId,
-    rootPath: repo.rootPath,
+    ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedding
       ? {
@@ -101,6 +110,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     if (shuttingDown) return;
     shuttingDown = true;
     if (watcher) await watcher.stop();
+    if (source) await source.close();
     lease?.release();
     // Drain any pending embeds before killing the provider process. flush()
     // runs a debounced-but-not-yet-fired drain; close() then awaits in-flight.

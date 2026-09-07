@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -50,6 +50,42 @@ CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_nu
 CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
 `;
 
+// Sync adapters/sources/attachments (13-sync-plugins §2). A workspace-level
+// registry: adapters map a name → external command; sources name an adapter +
+// config (rendered to flags at spawn); attachments join repo ⇄ source (m:n).
+// sync_state holds engine-owned per-attachment change-tracking (revision per
+// path, cursor) so a stateless adapter can be spawned fresh each run (§6).
+export const SYNC_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS adapters (
+  name     TEXT PRIMARY KEY,        -- workspace-unique adapter name (e.g. "fs")
+  command  TEXT NOT NULL,           -- argv[0] to spawn (e.g. "omgbase-fs-adapter")
+  args     TEXT NOT NULL DEFAULT '[]'  -- fixed leading args (JSON string[])
+);
+
+CREATE TABLE IF NOT EXISTS sources (
+  source_id TEXT PRIMARY KEY,
+  name      TEXT NOT NULL UNIQUE,   -- workspace-unique source name
+  adapter   TEXT NOT NULL REFERENCES adapters(name),
+  config    TEXT NOT NULL DEFAULT '{}',  -- JSON object → rendered to flags (13 §3.1)
+  env       TEXT NOT NULL DEFAULT '{}'   -- JSON object → spawn env (secrets; 13 §3.2)
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  source_id TEXT NOT NULL REFERENCES sources(source_id),
+  PRIMARY KEY (repo_id, source_id)
+);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+  repo_id   TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  path      TEXT NOT NULL,          -- '' reserved for the attachment-level cursor row
+  revision  TEXT,                   -- last-observed source revision for this path
+  cursor    TEXT,                   -- last poll/webhook cursor (attachment-level row)
+  PRIMARY KEY (repo_id, source_id, path)
+);
+`;
+
 export const NODES_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS nodes (
   node_id    TEXT PRIMARY KEY,
@@ -83,6 +119,7 @@ export const MIGRATIONS: Record<number, string> = {
   6: "",  // handled programmatically in store.ts
   7: "",  // handled programmatically in store.ts
   8: PROPERTIES_DDL,
+  9: "",  // SYNC_DDL + repos.root_path→nullable, handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -90,7 +127,7 @@ export const DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
-  root_path TEXT NOT NULL,
+  root_path TEXT,                   -- filesystem-only concept (13 §7); NULL for sourceless/non-fs repos
   settings  TEXT NOT NULL DEFAULT '{}'
 );
 
@@ -307,4 +344,5 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 
 ${FILE_STATS_DDL}
 ${PROPERTIES_DDL}
+${SYNC_DDL}
 `;

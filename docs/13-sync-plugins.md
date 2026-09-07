@@ -1,195 +1,191 @@
-# omgbase — Sync Plugins (Source Reconciliation Protocol)
+# omgbase — Sync Adapters (External Source Reconciliation)
 
-**Status:** normative design, `proposed`. As-built: the **filesystem** source is implemented behind this seam in `packages/core/src/sync/` (§7); the git/github/linear sources of §8 are illustrative and unbuilt.
-**Depends on:** `01-architecture.md` §6 (checkpoints), `03-reconciliation-spec.md` §8 (sync pipeline placement), `02-data-model.md` §3 (repos), `11-cli.md` §3.3 (freshness sweep, watch lease).
+**Status:** normative design, `proposed`. As-built: an interim *in-process* `SyncSource` seam shipped first (commit `2850b28`); this document supersedes it with the **external-adapter** model — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`). The `@omgbase/fs-adapter` package is the first adapter.
+**Depends on:** `01-architecture.md` §6 (checkpoints), `03-reconciliation-spec.md` §8 (sync pipeline placement), `02-data-model.md` §3 (repos), `11-cli.md` §3.3 (freshness sweep, watch lease). **Parallels:** `05-graph-and-query.md` §6 + `packages/core/src/search/external.ts` (the embedder external-process pattern this mirrors).
 
 ---
 
 ## 1. Purpose
 
-`sync` in omgbase is not "read files from disk." It is **reconciliation between an external source scope and an omgbase repo**. The filesystem is one source among many; git, GitHub, and Linear are others. This document defines the plugin seam that makes the source pluggable while the engine's storage, identity, history, graph, and query model stay source-independent.
+`sync` in omgbase is **reconciliation between an external source scope and an omgbase repo**, not "read files from disk." The filesystem is one source; git, GitHub, and Linear are others. Sources are **external processes** — an adapter can be written in any language, ships its own dependencies (chokidar, `@octokit`, the Linear SDK), and is swapped by config alone. The engine core carries **no source implementation and no filesystem-watch dependency**.
 
 ```text
 external source scope
         ↓
-   sync source (plugin)
+  adapter process   ← spawned; stdio protocol (§4); any language
+        ↓  (stdio)
+   omgbase engine   ← reconciliation, identity, history, commits, convergence
         ↓
-   omgbase repo  (blocks · revisions · commits · edges · properties)
+   omgbase repo
 ```
 
-A **repo** is therefore defined by a **source plugin + a source-specific scope + a sync policy**. The repo remains the authority/namespace/versioning boundary regardless of which plugin backs it (`02-data-model.md` §3: the `repos` table).
+This is the same architecture decision as the embedder: a capability the core must not vendor becomes a separate process behind a stdio contract. See `05 §6` — "a fake local provider is worse than useless." For sync the driver is dependency isolation and language independence: a GitHub adapter should not force `@octokit` into the engine.
 
-## 2. What is engine-owned vs source-owned
+## 2. Four entities
 
-The single most important boundary in this design. The engine already computes everything it needs from `(repoId, path, content)` — `ingestFile` hashes the content itself (`file_hash = sha256(content)`), reconciles against the prior revision, writes blocks/revisions/commits/edges/properties, and runs the convergence check. **None of that is filesystem-specific and none of it moves into a plugin.**
+The model separates *what a repo is* from *where its bytes come from* and *how that source is invoked*.
 
-| Concern | Owner | Why |
+| Entity | Scope | Is | Example |
+|---|---|---|---|
+| **adapter** | workspace | a named mapping to a **command** | `fs → omgbase-fs-adapter` |
+| **source** | workspace | a named `{ adapter, config }` — pure configuration | `product-fs → { adapter: fs, config: { root: ~/src/product } }` |
+| **repo** | workspace | a namespace / authority / versioning boundary | `product` |
+| **attachment** | — | a **many-to-many** join of repo ↔ source | `product ⇄ product-fs` |
+
+Consequences of this factoring (all deliberate):
+
+- **Repos exist without sources.** A bare repo is a valid, first-class state (§7). `omg repo create` makes one; content can be authored into it via `apply` with nothing to sync.
+- **A repo may have multiple sources.** Attaching many is allowed; the engine does not forbid it. Adapters *warn or refuse* combinations they know are incoherent (e.g. two Linear scopes into one repo), but the user owns the general case.
+- **A source may feed multiple repos.** Revision/cursor state is therefore per **attachment**, not per source (§6).
+- **The source holds config as data, not a command string.** The adapter owns *how to invoke*; the source owns *what to point at*. This keeps source rows clean and is what makes a future single-adapter-process-multiplexing-many-sources possible (§8).
+
+## 3. Adapters, sources, and how a command is built
+
+An **adapter** row maps a name to a command (and optional fixed args): `fs → omgbase-fs-adapter`. A **source** names an adapter and carries structured `config`. To run a source the engine:
+
+1. looks up the source's adapter → base command;
+2. renders `config` into flags (§3.1) and appends them;
+3. spawns the process and speaks the protocol (§4).
+
+`@omgbase/fs-adapter` (bin **`omgbase-fs-adapter`**) is the blessed default the CLI ships with; `omg init` seeds an `fs` adapter row pointing at it (§7). Other adapters are declared with `omg adapter add <name> --command <cmd>`.
+
+### 3.1 config → argv mapping
+
+Deterministic and mechanical (no adapter-declared flag schema in v1):
+
+- scalar `{root: "~/x"}` → `--root ~/x`
+- array `{include: ["**/*.md","**/*.mdx"]}` → `--include **/*.md --include **/*.mdx`
+- boolean `true` → bare `--flag`; `false` → omitted
+- keys are kebab-cased: `{maxDepth: 5}` → `--max-depth 5`
+
+### 3.2 secrets are env, never argv
+
+A token on the command line leaks into `ps`/process listings. Config carries a reserved **`env`** map delivered through the spawn environment, not argv:
+
+```jsonc
+{ "adapter": "github", "config": { "owner": "acme", "repo": "product" },
+  "env": { "GITHUB_TOKEN": "$GH_TOKEN" } }   // "$X" resolves from the engine's env at spawn
+```
+
+fs needs none of this; the seam exists from v1 so GitHub/Linear drop in without a redesign.
+
+## 4. The stdio protocol
+
+Newline-delimited JSON over the adapter's stdin/stdout, mirroring the embedder (`packages/core/src/search/external.ts`). **stdout is the protocol channel; stderr is logs/progress only, never protocol.** Requests carry a monotonic `id`; responses echo it (interleaving tolerated). The one extension beyond the embedder's strict request/response is a **server-initiated stream** for `watch`.
+
+### 4.1 Handshake
+
+On spawn the adapter writes exactly one line describing itself:
+
+```json
+{"protocol":1,"capabilities":{"identity":"inferred","writeThrough":true,"watch":true}}
+```
+
+- `identity: "inferred" | "borne"` — does the source carry stable per-member identity (§5)?
+- `writeThrough: boolean` — can the engine push its own mutations back?
+- `watch: boolean` — can the adapter stream a change feed, or is it poll-only (engine re-`enumerate`s)?
+
+### 4.2 Request / response methods
+
+Engine → adapter (`{"id":n,"method":...,"params":...}`), adapter → engine (`{"id":n,"result":...}` or `{"id":n,"error":"..."}`):
+
+| method | params | result |
 |---|---|---|
-| Enumerate the scope | **source** | only the source knows its members |
-| Transport bytes (`content`) | **source** | only the source can read upstream |
-| Change feed (what changed since when) | **source** | only the source observes its own events |
-| Cheap-change token (`revision`) | **source** | the source's own idea of "did this change" |
-| Content-hash echo suppression | **engine** | `sha256(content)` vs stored `file_hash` |
-| Reconciliation (block identity) | **engine** | only when the source's identity is *inferred* (§4) |
-| Commit boundaries + checkpoint row | **engine** | the durable log is engine truth |
-| Convergence check | **engine** | `file_hash == rendered_hash` is an engine invariant |
-| Format decomposition (bytes → blocks) | **engine** (format adapter) | a *different* axis, chosen by path/format |
+| `enumerate` | `{ cursor? }` | `{ entries: [{ path, revision, sourceId? }], cursor? }` |
+| `fetch` | `{ path }` | `{ item: { path, revision, content } \| null }` |
+| `write` | `{ path, content }` | `{ ok: true }` *(writeThrough only)* |
+| `remove` | `{ path }` | `{ ok: true }` *(writeThrough only)* |
+| `changes_since` | `{ cursor }` | `{ entries: [{ path, revision }], cursor }` *(poll sources)* |
 
-Corollary: **format adapters and sync sources are orthogonal plugin axes.** A source transports bytes; a format adapter decomposes them. A Linear issue arrives via the `linear` source and its markdown `description` is still decomposed by the markdown adapter.
+- **`path`** is the repo-relative storage key (`documents.path`).
+- **`revision`** is the source's cheap change-token (§5.1).
+- **`sourceId`** is the source's own locator when it differs from `path` (defaults to `path`; §5.2).
+- **`content`** is the bytes the engine ingests. The engine hashes them itself.
 
-## 3. The contract
+### 4.3 The watch stream
 
-A sync source is a value implementing `SyncSource`. Its filesystem-only surface — the operations `attach`, `checkpoint`, `freshness`, and `watch` actually exercise today — is:
+If `capabilities.watch`, the engine sends `{"id":n,"method":"watch"}` and the adapter thereafter emits **unsolicited** batch events until the engine cancels:
 
-```ts
-interface SyncSource {
-  capabilities(): SourceCapabilities;
-
-  /** The full current scope as (path, revision) pairs. Replaces the initial walk. */
-  enumerate(): Iterable<SourceEntry>;
-
-  /** Current state of one member, or null if it left the scope (a delete). */
-  fetch(path: string): SourceItem | null;
-
-  /** Subscribe to change batches; returns a stopper. Push sources implement this. */
-  watch?(onBatch: (paths: string[]) => void, opts?: { debounceMs?: number }): SourceWatch;
-
-  // --- write-through (only when capabilities().writeThrough) ---
-  /** Persist engine-authored bytes back to the source. */
-  write?(path: string, content: string): void;
-  /** Remove a member from the source. */
-  remove?(path: string): void;
-}
-
-interface SourceEntry {
-  /** Storage key: repo-relative canonical path (documents.path). */
-  path: string;
-  /** The source's cheap change-token. Equal ⇒ unchanged ⇒ engine no-op. */
-  revision: string;
-  /** Source locator, when it differs from `path`. Defaults to `path`. (§6) */
-  sourceId?: string;
-}
-
-interface SourceItem extends SourceEntry {
-  /** The bytes handed to ingestFile. The engine hashes these itself. */
-  content: string;
-}
-
-interface SourceWatch {
-  stop(): Promise<void> | void;
-  /** Force any pending batch to flush now (sync_flush). */
-  flush(): void;
-}
+```json
+{"event":"batch","paths":["notes/a.md","notes/b.md"]}
 ```
 
-Sources need not implement every operation; `capabilities()` advertises what is real. A read-only source omits `write`/`remove`. A poll-only source omits `watch` and the driver polls `enumerate` instead.
+Batching/debouncing to quiescence happens **adapter-side** (this is where chokidar lives). The engine cancels with `{"id":m,"method":"unwatch"}` and expects the adapter to stop emitting and exit cleanly on stdin EOF / SIGTERM.
 
-### 3.1 The `revision` token is the pivot
+## 5. Identity and the `revision` token
 
-`revision` is the source's answer to "did this member change, cheaply?" It powers **echo suppression at the source layer**, before any byte read:
+### 5.1 revision is the pivot
 
-- filesystem: `revision` derives from `(mtime_ns, size)` (a stat, no read); the content hash is the engine's second, authoritative gate.
-- git: the blob SHA.
-- GitHub/Linear: the entity's `updated_at` / version field / ETag.
+`revision` answers "did this member change, cheaply?" It drives the first of two echo-suppression layers:
 
-The driver stores the last-observed `revision` per member. On a change signal it compares tokens; equal ⇒ skip without fetching. This is the generalization of the filesystem freshness sweep's `(mtime_ns, size)` cache — which is why that cache belongs **inside** the filesystem source (§7), not in the engine.
+- filesystem: `"mtime_ns:size"` (a stat, no read).
+- git: the blob SHA. GitHub/Linear: `updated_at` / version / ETag.
 
-## 4. Capabilities: the two flags that change engine behavior
+The engine persists the **last-observed** revision per attachment+path (§6) and skips unchanged members without a `fetch`. The **authoritative** second layer is still engine-side: `sha256(content)` vs the stored `file_hash` guarantees convergence even if a token is coarse or lies.
 
-```ts
-interface SourceCapabilities {
-  /** Does the source carry stable per-member identity, or must the engine infer it? */
-  identity: "inferred" | "borne";
-  /** Can the engine push its own mutations back to the source? */
-  writeThrough: boolean;
-  /** Optional: kinds/resources the source exposes (for future multi-resource sources). */
-  resources?: string[];
-}
-```
+### 5.2 inferred vs borne identity
 
-- **`identity: "inferred"`** — the source hands over anonymous bytes with no stable sub-document identity (filesystem, raw git blobs). Block continuity across revisions must be *inferred* by the reconciler (`03-reconciliation-spec.md`): the probabilistic matcher, dispositions, the ≥0.995 precision gate. This is the *only* reason that machinery exists.
-- **`identity: "borne"`** — the source hands over stable IDs (Linear UUIDs, GitHub node IDs). The engine maps `sourceId → block/doc identity` deterministically and **skips the matcher entirely**. Running it would be wrong, not merely wasteful. (Borne-identity ingestion is closer to the API-mutation "operations" path than the filesystem "dispositions" path — `01-architecture.md` correction #2 turns out to be a special case of this rule.)
+- **`inferred`** — anonymous bytes; block continuity is inferred by the reconciler (`03`): the probabilistic matcher, dispositions, the ≥0.995 precision gate. Filesystem and raw-git-blob adapters are `inferred`. This is the *only* reason that machinery runs.
+- **`borne`** — stable upstream ids (Linear UUIDs, GitHub node ids) delivered as `sourceId`; the engine maps `sourceId → identity` deterministically and **skips the matcher** (running it would be wrong). *v1 status:* the driver has one path (`inferred`); the `borne` branch is defined so the reconcile call is written conditionally, but no `borne` adapter ships yet.
 
-  *v1 status:* the driver has one code path (`inferred`), matching filesystem. `borne` is defined here so the reconcile call is written as *conditional on capability* rather than unconditional — the hook a future source slots into — but no `borne` source ships in v1.
+## 6. Persistent sync state (engine-owned)
 
-- **`writeThrough: true`** — engine-authored writes (`apply`, doc ops) round-trip to the source. Filesystem writes files; the resulting change event is then **echo-suppressed** by revision/hash match (that is the whole reason echo suppression exists). A read-only source is `writeThrough: false`, and local edits to its projection are proposals subject to a future `validate`/`update` path (§8), not authority.
+Because adapters are spawned fresh and are stateless across runs, the **engine** owns durable sync state, keyed per **attachment** so one source feeding two repos tracks each independently:
 
-## 5. The driver: one reconciliation loop for every source
+- last-observed `revision` per `(attachment, path)` — replaces the filesystem `file_stats` cache, generalized.
+- last `cursor` per attachment — for poll/webhook sources (`changes_since`).
+- optional `sourceId ↔ path` map per attachment — for `borne` sources whose locator ≠ storage path.
 
-The engine exposes a source-agnostic **driver** that consumes a `SyncSource`. It replaces the filesystem bodies of `attachRepo` and `processCheckpoint` with one implementation:
+The adapter reports *current* revisions; the engine remembers *last-seen*. This is a cleaner split than the interim design (which let the fs source own its mtime cache).
+
+## 7. Repo & source lifecycle
 
 ```text
-reconcile(source, repoId, paths?):
-  members = paths ? paths.map(source.fetch) : source.enumerate()+fetch
-  for each member:
-    if member == null:                      → deleted   (tombstone doc)
-    else if revision == last_observed:      → no-op      (source-layer echo)
-    else:
-      content = member.content
-      if sha256(content) == stored file_hash: → suppressed (engine-layer echo)
-      else if capabilities.identity == "inferred":
-        ingestFile(reconcilingResolver)     → observed commit + dispositions
-      else: /* borne */
-        ingestFile(deterministic id map)    → observed commit (no matcher)
-      record last_observed = revision
-  one checkpoint row over the batch
-  convergence check per ingested doc (engine invariant, unchanged)
+omg init [dir]                     # workspace only: .omgbase/ + db. Seeds the `fs` adapter.
+                                   #   offers .gitignore if dir is inside a git tree (manners, not sync).
+                                   #   ends by suggesting `omg repo create` / `omg attach`.
+omg adapter add <name> --command <cmd>      # register an adapter
+omg adapter list
+omg source create <name> --adapter <a> [--k v …]   # a configured source (config from flags)
+omg source list
+omg repo create <name>             # bare repo, no source
+omg repo attach <repo> --source <source>    # the many-to-many join; runs the initial reconcile
+omg repo detach <repo> --source <source>    # disconnect; repo + content remain
+omg repo list                      # (supersedes `omg repos`)
+omg attach <path> [--name <n>]     # SUGAR: source create (fs) + repo create + repo attach, one breath
 ```
 
-The two-layer echo suppression (cheap `revision`, then authoritative content hash) is deliberate: `revision` avoids a fetch; the content hash is the correctness gate that guarantees convergence even if a source's token is coarse or lies.
+- **Workspace ≠ repo.** `.omgbase/` defines the workspace; it does not sync the dir it lives in and defines no repo. A workspace can sit in a git root, a notes dir, or `$HOME`.
+- **Workspace discovery:** `--workspace` flag wins; else `OMGBASE_WORKSPACE` env; else walk up from cwd for `.omgbase/` (the default). No global default dir.
+- **Sourceless / native repo:** a repo with no attachment. The **database is authoritative for content** (no external bytes, no write-back). `apply` works; it writes blocks/revisions with nothing to materialize. `sync`/`watch` are no-ops. Convergence is vacuous (no file to converge against). This inverts the filesystem canonicality of `01` correction #5 for that repo, deliberately.
+- **`sync`/`watch`/`mcp` gain no source flags.** They resolve the repo, read its attachments, spawn the adapters, and reconcile. The source is a durable property of the attachment, never a per-invocation choice.
 
-## 6. `path` vs `sourceId`
+## 8. Multiplexing (future capability, not v1)
 
-Today `documents.path` is both the storage key and the filesystem locator; they coincide. For a borne-identity source they will not (Linear's locator is a UUID; its `path` is synthesized, e.g. `issues/ENG-123.md`). The contract returns both as distinct fields — `SourceEntry.path` (storage key) and `SourceEntry.sourceId` (source locator, defaulting to `path`) — so:
+Because a source's config is structured data (not a baked command string), a future adapter can advertise `multiplex: true` and receive several source configs over the handshake instead of one via argv — one process serving many sources (many watched roots, one chokidar; many Linear scopes, one client). v1 is one process per attachment. The protocol keeps this additive by carrying source config in a handshake message path, not *only* in argv.
 
-- filesystem sets them equal and nothing changes;
-- a borne source can map `sourceId → path` however it likes **without a storage-schema migration**.
+## 9. The async consequence
 
-This one bit of hygiene is what keeps §8 additive. Persisting the `sourceId ↔ path ↔ last_revision` mapping durably is a §8 concern (borne sources need it); v1 filesystem keeps its map in the source's private cache (§7) because path *is* the locator.
+An in-process `fetch()` returns bytes synchronously; over a pipe it is a round-trip. Therefore `SyncSource.enumerate`/`fetch` and the driver (`reconcileChanges`/`attachSource`/`Watcher`) are **async**. This ripples into the previously-synchronous freshness sweep the CLI router runs before every one-shot command (`11 §3.3`, `main.ts`): that sweep, and the commands that depend on it, become async. This is unavoidable once *any* source is external and is the main revision to the interim in-process seam.
 
-## 7. Filesystem source (as-built v1)
+## 10. Engine vs adapter ownership
 
-`FilesystemSource implements SyncSource`, absorbing every `node:fs` touch that previously lived in `attach.ts`, `checkpoint.ts`, `freshness.ts`, and `watcher.ts`:
+| Concern | Owner |
+|---|---|
+| Enumerate scope · transport bytes · change feed · `revision` token | **adapter** |
+| Debounce/batch of the watch feed | **adapter** |
+| Content-hash echo suppression (`sha256` vs `file_hash`) | **engine** |
+| Reconciliation / block identity (when `inferred`) | **engine** |
+| Commit boundaries · checkpoint row · convergence check | **engine** |
+| Durable revision/cursor state (per attachment) | **engine** |
+| Format decomposition (bytes → blocks) — a *different* axis | **engine** (format adapter) |
 
-- `capabilities()` → `{ identity: "inferred", writeThrough: true }`.
-- `enumerate()` → recursive walk of the root for `*.md` (skipping `.omgbase`/`.git`/`node_modules`), yielding `{ path, revision }` where `revision = "${mtime_ns}:${size}"`.
-- `fetch(path)` → `existsSync` ? `{ path, revision, content: readFileSync }` : `null`.
-- `watch(onBatch)` → chokidar, debounced to quiescence (default 750ms), emitting repo-relative `.md` paths.
-- `write(path, content)` / `remove(path)` → the file-first write protocol (`04 §6`).
-- **Cheap-change cache** — the `file_stats` table (`(mtime_ns, size, hash)`) stays exactly as-is but is now conceptually **owned by the filesystem source**: it is that source's private implementation of the `revision` comparison in §3.1. No schema change. The freshness sweep becomes "the filesystem source's `enumerate` + revision-diff feeding the generic driver."
+**Format adapters and source adapters are orthogonal.** A source adapter transports bytes; a format adapter (`markdown`/`yaml`/`json`, in-process, per-block, hot path) decomposes them. A Linear issue arrives via the `linear` *source* adapter and its markdown `description` is decomposed by the markdown *format* adapter. The word "adapter" is qualified whenever ambiguous.
 
-The public library exports consumers already depend on — `attachRepo`, `processCheckpoint`/`CheckpointResult`, `freshnessSweep`/`rebuildFileStats`/`recordFileStat`/`SweepResult`, `Watcher`/`WatcherOptions` — are **preserved as thin wrappers**: each constructs a `FilesystemSource` and calls the generic driver. Behavior, results, and the CLI surface are unchanged. The refactor is internal.
+## 11. Multi-repo is the payoff
 
-## 8. Future sources (illustrative, unbuilt)
+One workspace DB holds many repos (`02 §3`); now each can be backed by a different adapter (or none). The prize is **cross-repo edges** — a Linear issue → a GitHub PR → a markdown doc in one `graph_traverse`. That needs a cross-repo query surface, which today's `query(store, repoId, …)` hard-scopes against and the MCP server binds one repo per session. Cross-repo query is out of scope here (a query/MCP change, not a sync change) but is the reason this seam matters.
 
-Sketches to validate that the seam generalizes; none ship in v1.
+## 12. Invariants (unchanged)
 
-```yaml
-# repo config carries the plugin + scope + policy (a future repos.settings shape)
-repo: product-source
-sync: { plugin: filesystem, source: { root: ~/src/product }, include: ["**/*.md"] }
----
-repo: product-github
-sync: { plugin: github, source: { owner: acme, repository: product }, include: [files, pull_requests, issues] }
----
-repo: product-linear
-sync: { plugin: linear, source: { workspace: acme }, scope: { teams: [ENG] }, include: [issues, documents] }
-```
-
-Additional contract operations these need, deferred out of v1:
-
-- `changesSince(cursor)` — poll-based incremental feed (webhook/API sources) as an alternative to push `watch`.
-- `normalize(resource)` — project an upstream representation into Doc/Block/Node records (delegating markdown fields to the format adapter).
-- `validate(localState)` — can a local projection be represented upstream? Produces the `invalid-local-projection` outcome.
-- `create` / `update(sourceId, patch, expectedRevision)` / `delete` / `move` — capability-gated write-through with the source's own concurrency semantics.
-- `materialize(resource, format)` — optional local file projection. **Explicitly not the default mental model:** for non-filesystem sources the graph/query value exists without ever writing a local file; materialization is a convenience, and treating it as central drags filesystem assumptions back in.
-
-Reconciliation outcomes generalize beyond the filesystem's create/update/delete to: `create · update · move/reparent · remove-from-scope · delete/archive · conflict · invalid-local-projection · no-op`. Different systems have different notions of identity, deletion, movement, revision, and authority; the outcome set is where that variety surfaces.
-
-## 9. Multi-repo is the payoff
-
-One workspace DB already holds many repos (`02 §3`). Once a repo = (plugin + scope + policy), a single workspace can hold `product-source` (filesystem), `product-github`, and `product-linear` side by side, and the prize is **cross-repo edges**: a Linear issue → a GitHub PR → a markdown doc, traversed in one `graph_traverse`. That requires cross-repo query, which today's `query(store, repoId, …)` hard-scopes against and the MCP server binds one repo per session. Cross-repo addressing is out of scope for this document (it is a query/MCP surface change, not a sync-plugin change) but is the reason the seam matters: **the source plugin makes heterogeneous repos possible; a cross-repo query surface makes them useful.**
-
-## 10. Invariants (unchanged by this seam)
-
-The engine invariants of `README.md` §Invariants hold identically regardless of source. In particular: convergence (`sha256(file) == rendered_hash`) is checked by the engine after every ingest; identity dispositions are stamped only on the `inferred` path; commits/dispositions remain append-only. A sync source can only *report* changes and *transport* bytes — it can never write a commit, mint identity, or bypass the convergence check.
+The `README.md` invariants hold regardless of adapter. Convergence (`sha256(file) == rendered_hash`) is engine-checked after every ingest; identity dispositions are stamped only on the `inferred` path; commits/dispositions are append-only. An adapter can only *report* changes and *transport* bytes — it can never write a commit, mint identity, or bypass the convergence check. A crashing or malicious adapter can corrupt neither identity nor history; at worst it stalls its own repo's freshness.

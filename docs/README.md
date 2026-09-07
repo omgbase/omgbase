@@ -20,7 +20,7 @@ This folder is the complete, self-contained input for implementation. It descend
 | `10-query-language.md` | Normative query syntax: envelope, targets/fields, CEL subset grammar, absence truth table, structural functions, link-graph predicates, ordering, compilation contract, fence form | touching `search/` (the CEL compiler), or writing any filter in tests/fixtures |
 | `11-cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
 | `12-properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
-| `13-sync-plugins.md` | Source reconciliation protocol: the `SyncSource` seam (enumerate/fetch/watch + revision token), engine-vs-source ownership, identity inferred\|borne, filesystem as first implementation, future git/github/linear sources | touching `sync/` or adding a new source |
+| `13-sync-plugins.md` | External source reconciliation: adapter/source/repo/attachment model, the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, engine-owned revision state, `@omgbase/fs-adapter`, repo/source lifecycle | touching `sync/`, the adapter protocol, or writing an adapter |
 
 ## Rules for implementation agents
 

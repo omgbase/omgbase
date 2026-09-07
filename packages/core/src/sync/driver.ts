@@ -7,25 +7,17 @@ import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
 import type { SyncSource } from "./plugin.js";
+import type { FileChange, CheckpointResult } from "./checkpoint.js";
 
-// Source-agnostic reconciliation driver (13-sync-plugins §5). One loop for every
-// source: fetch each changed member, engine-hash it for the authoritative echo
-// gate, reconcile+commit non-echoes, record one checkpoint row. Everything here
-// is engine-owned; the SyncSource only transports bytes and reports membership.
-// The filesystem specifics (walk, stat, chokidar) live in FilesystemSource.
+// Source-agnostic reconciliation driver (13-sync-plugins §5, §10). One loop for
+// every EXTERNAL source: fetch each changed member through the SyncSource (a pipe
+// to an adapter process), engine-hash the bytes for the authoritative echo gate,
+// and reconcile+commit non-echoes as one checkpoint. Everything here is
+// engine-owned; the adapter only transports bytes and reports membership. Async
+// because every source call crosses a process boundary (13 §9). The in-process
+// filesystem fast-path (checkpoint.ts) mirrors this loop synchronously.
 
-export interface FileChange {
-  /** repo-relative canonical path (storage key) */
-  path: string;
-}
-
-export interface CheckpointResult {
-  checkpointId: string;
-  ingested: string[]; // paths that produced observed commits
-  suppressed: string[]; // echo-suppressed paths (hash already matched)
-  deleted: string[]; // paths gone from the source scope
-  conflicted: string[]; // paths flagged with git conflict markers
-}
+export type { FileChange, CheckpointResult };
 
 /**
  * Reconcile a batch of changed members against a repo as one checkpoint.
@@ -33,13 +25,13 @@ export interface CheckpointResult {
  * engine hashes the bytes itself: a hash equal to the stored file_hash is an
  * echo (no commit); otherwise the member is ingested as an observed commit.
  */
-export function reconcileChanges(
+export async function reconcileChanges(
   store: Store,
   repoId: string,
   source: SyncSource,
   changes: FileChange[],
   opts: { ts?: string; gitHead?: string | null } = {},
-): CheckpointResult {
+): Promise<CheckpointResult> {
   const ts = opts.ts ?? new Date().toISOString();
   const inferred = source.capabilities().identity === "inferred";
   const checkpointId = mintId("cp");
@@ -55,7 +47,7 @@ export function reconcileChanges(
       .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
     const oldHex = existing?.file_hash?.toString("hex") ?? null;
 
-    const item = source.fetch(change.path);
+    const item = await source.fetch(change.path);
     if (item === null) {
       if (existing) deleted.push(change.path);
       fileEntries.push([change.path, oldHex, null]);
@@ -115,14 +107,19 @@ export interface AttachResult {
  * member the source enumerates (identity-inferred sources thread the reconciling
  * resolver so edges + identity are established on the initial walk).
  */
-export function attachSource(store: Store, slug: string, rootPath: string, source: SyncSource): AttachResult {
+export async function attachSource(
+  store: Store,
+  slug: string,
+  rootPath: string | null,
+  source: SyncSource,
+): Promise<AttachResult> {
   const repoId = ensureRepo(store, slug, rootPath);
   const inferred = source.capabilities().identity === "inferred";
   const ts = new Date().toISOString();
   let fileCount = 0;
   let allConverged = true;
-  for (const entry of source.enumerate()) {
-    const item = source.fetch(entry.path);
+  for (const entry of await source.enumerate()) {
+    const item = await source.fetch(entry.path);
     if (!item) continue;
     const res = ingestFile(store, repoId, entry.path, item.content, {
       ts,

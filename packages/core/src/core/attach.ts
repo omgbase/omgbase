@@ -32,8 +32,9 @@ function walkMarkdown(dir: string): string[] {
   return out;
 }
 
-/** Create (or reuse) a repo row for slug/root, returning its id. */
-export function ensureRepo(store: Store, slug: string, rootPath: string): string {
+/** Create (or reuse) a repo row for slug/root, returning its id. rootPath is a
+ *  filesystem-only concept (13 §7); pass null for sourceless/non-fs repos. */
+export function ensureRepo(store: Store, slug: string, rootPath: string | null = null): string {
   const existing = store.db.prepare("SELECT repo_id FROM repos WHERE slug = ?").get(slug) as
     | { repo_id: string }
     | undefined;

@@ -143,7 +143,8 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
       const ws = cli.workspace();
       if (!watchLeaseLive(ws.omgbaseDir)) {
         const repo = cli.repo(ws);
-        freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+        // Freshness is the filesystem fast-path; sourceless/non-fs repos skip it.
+        if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
       }
     }
     const code = await resolved.run(cli, parsed.rest);

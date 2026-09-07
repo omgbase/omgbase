@@ -18,6 +18,7 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { openFsSource } from "./_source.js";
 
 // watch + admin/maintenance (11 §5.8–5.9).
 
@@ -42,16 +43,27 @@ async function runWatch(cli: Cli, args: string[]): Promise<number> {
       })
     : null;
 
-  freshnessSweep(ws.store, repo.repoId, repo.rootPath); // start fresh
-  const watcher = new Watcher(ws.store, repo.repoId, repo.rootPath, {
+  if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // start fresh
+
+  // Live watching runs in the external fs-adapter process (chokidar lives there,
+  // not in the engine). A sourceless repo has nothing to watch.
+  const source = await openFsSource(repo);
+  if (!source) {
+    cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to watch`));
+    lease.release();
+    return EXIT_OK;
+  }
+
+  const watcher = new Watcher(ws.store, repo.repoId, source, {
     onCheckpoint: (r) => {
       if (r.ingested.length || r.deleted.length || r.conflicted.length) {
         cli.io.err(`${cli.style.ok(cli.render.g.sync)} +${r.ingested.length} -${r.deleted.length}${r.conflicted.length ? ` !${r.conflicted.length}` : ""}`);
         drainer?.schedule();
       }
     },
+    onError: (err) => cli.io.err(cli.style.err(`  watch error: ${String(err)}`)),
   });
-  watcher.start();
+  await watcher.start();
   // Prime: embed anything already stale at startup (post-sweep), in the background.
   drainer?.schedule();
   cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop${drainer ? " · auto-embed on" : ""}`));
@@ -60,6 +72,7 @@ async function runWatch(cli: Cli, args: string[]): Promise<number> {
     const stop = (): void => {
       void (async () => {
         await watcher.stop();
+        await source.close();
         if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
         if (embedding) await embedding.close();
         lease.release();

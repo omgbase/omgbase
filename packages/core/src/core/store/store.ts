@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DDL, SCHEMA_VERSION, MIGRATIONS } from "./schema.js";
+import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL } from "./schema.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -44,6 +44,7 @@ export class Store {
       if (v === 4) { this.migrateV4(); continue; }
       if (v === 6) { this.migrateV6(); continue; }
       if (v === 7) { this.migrateV7(); continue; }
+      if (v === 9) { this.migrateV9(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -81,6 +82,14 @@ export class Store {
     if (docCols.length > 0 && !docCols.some((c) => c.name === "frontmatter_trivia")) {
       this.db.exec("ALTER TABLE documents ADD COLUMN frontmatter_trivia TEXT");
     }
+  }
+
+  // v9 (13-sync-plugins): add the adapters/sources/attachments/sync_state tables.
+  // repos.root_path is relaxed to nullable in the base DDL for fresh dbs; an
+  // existing NOT NULL column still accepts all prior (non-null) rows, so no table
+  // rebuild is needed to migrate — new nullable inserts only happen on fresh dbs.
+  private migrateV9(): void {
+    this.db.exec(SYNC_DDL);
   }
 
   /**
