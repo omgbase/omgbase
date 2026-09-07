@@ -30,7 +30,9 @@ Modes **intersect** (AND). Only current state is searched (history via `history_
 The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory, so user data can never collide with system fields.
 
 ### `documents`
-- **Bare identifiers** = keys in the document's **metadata** — the structured property bag each format adapter produces (the `documents.metadata` column). What fills it is format-dependent: for **markdown** it is the parsed frontmatter (and, as adapters grow, may merge inline dataview-style fields and extracted intrinsics such as an h1-derived title); for **YAML/JSON** it is the parsed object the file represents; other adapters extract per their format. Nested maps with dots (`meta.owner`). "frontmatter key" is just the markdown reading of "metadata key."
+- **Bare identifiers** = a document **property** key, resolved against the indexed `properties` table (12-properties-table). A bare key spans the **authored** sources — frontmatter and inline (dataview-style `key:: value`) — unioned. For **markdown** a bare key is usually a frontmatter key; **YAML/JSON** docs expose the parsed object's keys the same way. Nested maps flatten to dotted keys (`meta.owner`). Values may be scalar or list — `==`/`!=`/`<` compare the scalar-authored value, `list()` is the multi-value accessor (§4); a scalar comparison against a list-authored key is false.
+- **Source-scoped:** `frontmatter.<k>` / `inline.<k>` narrow a bare key to one authored source (e.g. `inline.owner == "alice"`).
+- **Computed intrinsics:** `$title` (first H1 text), `$tags` (body `#hashtags`) — engine-derived, in the `$`-namespace. They do **not** shadow authored `title`/`tags`: `$title` is the H1, bare `title` is the frontmatter value.
 - **Intrinsics:** `$id`, `$path`, `$repo`, `$updated_at` (ISO-8601 UTC string; compares lexicographically = chronologically), `$body`, `$content_hash`.
 - **Link-graph predicates:** §6.
 

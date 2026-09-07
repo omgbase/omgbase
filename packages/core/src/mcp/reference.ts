@@ -18,12 +18,16 @@ The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
 your content (metadata keys / block fields). They never collide.
 
 documents:
-  - bare identifier  = metadata key (nested via dots: meta.owner). "metadata" is
-                       the document's structured property bag, format-dependent:
-                       markdown = parsed frontmatter (+ future inline fields /
-                       derived title); YAML/JSON = the parsed object; other
-                       adapters extract per format. "frontmatter key" is just the
-                       markdown reading.
+  - bare identifier  = a document PROPERTY key (nested via dots: meta.owner).
+                       Bare keys span the AUTHORED sources — frontmatter and
+                       inline (dataview-style key:: value) — unioned. For
+                       markdown a bare key is usually a frontmatter key; YAML/JSON
+                       docs expose the parsed object's keys the same way.
+  - source-scoped    = frontmatter.<k> / inline.<k> narrow a property to one
+                       authored source (e.g. inline.owner == "alice").
+  - computed         = $title (first H1), $tags (body #hashtags) — engine-derived
+                       $-intrinsics. They do NOT shadow an authored title/tags
+                       key: $title is the H1, title is the frontmatter value.
   - intrinsics       = $id, $path, $repo, $updated_at (ISO-8601, sorts
                        chronologically), $body, $content_hash
   - link-graph       = $in(glob), $has(glob), $links(), $backlinks() (+ _static)
@@ -31,8 +35,8 @@ documents:
 blocks:
   - bare fields      = type, text, attrs.<key> (attrs.checked, attrs.lang, ...)
   - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at
-  - doc reach-through= doc.<key> reads the CONTAINING doc's metadata
-                       (e.g. doc.layer == "canon"); doc.$path etc. also work
+  - doc reach-through= doc.<key> reads the CONTAINING doc's properties
+                       (e.g. doc.layer == "canon"); doc.$path / doc.$title etc. work
 
 ## CEL subset
 
@@ -79,7 +83,8 @@ A missing key NEVER matches and NEVER errors:
 ## select — projection (avoids N hydration round-trips)
 
 Project fields onto each hit. Default hit is {id, path}. select adds:
-  - bare key            → that metadata value from the doc  ("layer","type","tracking")
+  - bare key            → that property value from the doc  ("layer","type","tracking")
+                          (scalar-authored → scalar; list-authored → array)
   - on blocks           → also "type", "attrs.<k>", "$ordinal"
   - "$body"             → whole reconstructed file bytes (documents target only;
                           same content docs_read returns). For a single doc,
@@ -97,6 +102,9 @@ Absent keys are simply omitted from the hit.
   from=documents  filter: layer == "working"
   from=documents  filter: $path.startsWith("guides/") && $updated_at >= "2026-08-01"
   from=documents  filter: "pricing" in list(tags)      select: ["layer","tags"]
+  from=documents  filter: inline.owner == "alice"       (only inline key:: fields)
+  from=documents  filter: $title == "Q3 Plan"           (computed: first H1)
+  from=documents  filter: "urgent" in list($tags)       (computed: body #hashtags)
   from=documents  filter: !$in("**")                    (orphans)
   from=blocks     filter: type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")

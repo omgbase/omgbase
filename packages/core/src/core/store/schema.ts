@@ -23,8 +23,9 @@ CREATE TABLE IF NOT EXISTS file_stats (
 // ($title/$tags) document properties, superseding the documents.metadata JSON
 // blob. `card` records the authored shape (scalar vs list) so scalar ==/!=/<
 // match only scalar-authored rows while list() sees all — reproducing the
-// json_extract scalar-vs-array distinction. Fully rebuildable from
-// blocks+frontmatter (rebuild-index --properties).
+// json_extract scalar-vs-array distinction. Current-state, maintained
+// transactionally at ingest alongside blocks (repopulated by re-ingest, not by
+// rebuild-index — see docs/12 §6).
 export const PROPERTIES_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS properties (
   prop_id        TEXT PRIMARY KEY,

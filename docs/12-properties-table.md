@@ -271,16 +271,23 @@ in its place:
    from first H1, task counts, etc. New capability; markdown implements title.
 
 No `metadata` recompute step — the column is gone. All within the existing
-ingest transaction; rebuildable via `rebuild-index --properties` (fully derivable
-from stored blocks+frontmatter, no disk read).
+ingest transaction.
+
+**`properties` is current-state, peer to `blocks` — not a `rebuild-index`
+target.** The §4 derived tables `rebuild-index` rebuilds (`sections`, `edges`,
+`fts`, `block_changes`) are pure rollups of the `blocks` table. `properties`
+derives from the *same inputs `blocks` itself is built from* (block text +
+frontmatter blob + adapter), so it is maintained transactionally at ingest
+alongside `blocks` and repopulated the same way `blocks` is — by re-ingest
+(`attachDirectory` / `freshnessSweep`), not by an in-db rollup rebuild. Adding a
+`rebuild-index --properties` target would miscategorize it (and require fragile
+block-id remapping). If a bulk recompute is ever needed, it is a re-ingest pass,
+not an index rebuild.
 
 ## 7. Migration
 
 - Schema v8: add `properties` table + indexes; add `computeProperties` adapter
   capability (optional).
-- `rebuild-index --properties` (or fold into `--all`) repopulates from existing
-  `documents`/`blocks` — no disk read, fully in-db, so it's a real derived-index
-  rebuild.
 - Compiler: route documents-target bare keys and the new `source.<k>` accessors
   to `properties`; keep `json_extract` only as the `val_json` escape hatch.
 - Keep `nodes`/`nodes_fts` for non-property projections (links, anchors,
