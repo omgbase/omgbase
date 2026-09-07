@@ -1,23 +1,26 @@
-import chokidar, { type FSWatcher } from "chokidar";
-import { relative, sep } from "node:path";
 import type { Store } from "../core/store/store.js";
-import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
+import { reconcileChanges, type CheckpointResult } from "./driver.js";
+import { FilesystemSource } from "./filesystem-source.js";
+import type { SyncSource, SourceWatch } from "./plugin.js";
 
-// Filesystem watcher (01 §6, 07 task 1.5). Batches save events into checkpoints
-// at quiescence (default 750ms silence; config sync.quiescence_ms). The
-// debounce/batch logic is what makes git checkouts arrive as one cheap
-// checkpoint. Reconciliation is not wired yet (Stage 1 re-mints).
+// Sync watcher (01 §6, 07 task 1.5). Subscribes to a SyncSource's change feed
+// and reconciles each debounced batch into a checkpoint. As of 13-sync-plugins
+// the debounce/transport lives in the source's watch(); this class binds it to
+// the reconciliation driver. Defaults to a FilesystemSource so the existing
+// (store, repoId, rootPath) constructor keeps working; pass a `source` option to
+// watch any other source.
 
 export interface WatcherOptions {
   quiescenceMs?: number;
   onCheckpoint?: (result: CheckpointResult) => void;
+  /** Override the source (default: FilesystemSource over rootPath). */
+  source?: SyncSource;
 }
 
 export class Watcher {
-  private watcher: FSWatcher | null = null;
-  private pending = new Set<string>();
-  private timer: NodeJS.Timeout | null = null;
+  private sub: SourceWatch | null = null;
   private readonly quiescenceMs: number;
+  private readonly source: SyncSource;
 
   constructor(
     private store: Store,
@@ -26,41 +29,32 @@ export class Watcher {
     private opts: WatcherOptions = {},
   ) {
     this.quiescenceMs = opts.quiescenceMs ?? 750;
+    this.source = opts.source ?? new FilesystemSource(rootPath);
   }
 
   start(): void {
-    this.watcher = chokidar.watch(this.rootPath, {
-      ignored: (p: string) => /(^|[/\\])(\.omgbase|\.git|node_modules)([/\\]|$)/.test(p),
-      ignoreInitial: true,
-      persistent: true,
+    if (!this.source.watch) throw new Error("source does not support watch()");
+    this.sub = this.source.watch({
+      debounceMs: this.quiescenceMs,
+      onBatch: (paths) => this.ingest(paths),
     });
-    const onEvent = (abs: string): void => {
-      if (!abs.endsWith(".md")) return;
-      this.pending.add(relative(this.rootPath, abs).split(sep).join("/"));
-      this.schedule();
-    };
-    this.watcher.on("add", onEvent).on("change", onEvent).on("unlink", onEvent);
   }
 
-  private schedule(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.flush(), this.quiescenceMs);
-  }
-
-  /** Force a checkpoint now (sync_flush). Returns null if nothing pending. */
-  flush(): CheckpointResult | null {
-    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    if (this.pending.size === 0) return null;
-    const changes = [...this.pending].map((path) => ({ path }));
-    this.pending.clear();
-    const result = processCheckpoint(this.store, this.repoId, this.rootPath, changes);
+  private ingest(paths: string[]): CheckpointResult | null {
+    if (paths.length === 0) return null;
+    const result = reconcileChanges(this.store, this.repoId, this.source, paths.map((path) => ({ path })));
     this.opts.onCheckpoint?.(result);
     return result;
   }
 
+  /** Force a checkpoint now (sync_flush). Returns null if nothing pending. */
+  flush(): CheckpointResult | null {
+    const paths = this.sub?.flush() ?? [];
+    return this.ingest(paths);
+  }
+
   async stop(): Promise<void> {
-    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
-    await this.watcher?.close();
-    this.watcher = null;
+    await this.sub?.stop();
+    this.sub = null;
   }
 }

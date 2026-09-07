@@ -1,42 +1,16 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
 import type { Store } from "../core/store/store.js";
-import { ensureRepo } from "../core/attach.js";
-import { ingestFile } from "../core/ingest.js";
-import { makeReconcilingResolver } from "./reconciling-ingest.js";
+import { FilesystemSource } from "./filesystem-source.js";
+import { attachSource, type AttachResult } from "./driver.js";
 
-// Full-featured attach (sync/): like core attachDirectory but routes every file
-// through the reconciling resolver, so identity threads AND edges are extracted
-// on the initial walk. core/attach stays the resolver-less primitive; this is
-// the one the CLI/engine should use.
+// Full-featured filesystem attach (sync/). Routes every file through the
+// reconciling resolver so identity threads AND edges are extracted on the
+// initial walk. As of 13-sync-plugins this is a thin wrapper over the
+// source-agnostic attachSource driver with a FilesystemSource; core/attach stays
+// the resolver-less primitive.
 
-function walkMarkdown(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    if (entry === ".omgbase" || entry === ".git" || entry === "node_modules") continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walkMarkdown(full));
-    else if (entry.endsWith(".md")) out.push(full);
-  }
-  return out;
-}
+export type { AttachResult };
 
-export interface AttachResult {
-  repoId: string;
-  fileCount: number;
-  allConverged: boolean;
-}
-
+/** Attach a filesystem directory as a repo: create it + ingest all Markdown. */
 export function attachRepo(store: Store, slug: string, rootPath: string): AttachResult {
-  const repoId = ensureRepo(store, slug, rootPath);
-  const files = walkMarkdown(rootPath);
-  const ts = new Date().toISOString();
-  let allConverged = true;
-  for (const file of files) {
-    const rel = relative(rootPath, file).split(sep).join("/");
-    const content = readFileSync(file, "utf8");
-    const res = ingestFile(store, repoId, rel, content, { ts, resolveIds: makeReconcilingResolver(store, repoId, { ts, path: rel }) });
-    if (!res.converged) allConverged = false;
-  }
-  return { repoId, fileCount: files.length, allConverged };
+  return attachSource(store, slug, rootPath, new FilesystemSource(rootPath));
 }

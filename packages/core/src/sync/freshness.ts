@@ -1,8 +1,9 @@
-import { readdirSync, statSync, readFileSync, existsSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { statSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
+import { walkMarkdown } from "./filesystem-source.js";
 
 // Freshness sweep (11 §3.3). Without a live watcher the database lags human
 // edits since the last ingest. Before a one-shot command runs, this sweep walks
@@ -11,19 +12,10 @@ import { processCheckpoint, type CheckpointResult } from "./checkpoint.js";
 // observed checkpoint. At the envelope (≤10⁴ docs) the no-change case is a
 // directory walk plus stats — tens of milliseconds.
 //
-// file_stats is a derived table: it is refreshed here and after each ingest, and
-// is fully rebuildable by a re-stat (rebuildFileStats). It is a cache for change
-// detection only; the durable convergence signal remains documents.file_hash.
-
-function walkMarkdown(dir: string, root: string, out: string[]): void {
-  for (const entry of readdirSync(dir)) {
-    if (entry === ".omgbase" || entry === ".git" || entry === "node_modules") continue;
-    const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) walkMarkdown(full, root, out);
-    else if (entry.endsWith(".md")) out.push(relative(root, full).split(sep).join("/"));
-  }
-}
+// This is the filesystem source's durable change-detection cache (13-sync-plugins
+// §7): file_stats is the persisted form of the source's `revision` token. It is
+// a derived table, rebuildable by a re-stat (rebuildFileStats); the durable
+// convergence signal remains documents.file_hash.
 
 interface StatRow {
   mtime_ns: bigint;
@@ -65,8 +57,7 @@ export function freshnessSweep(store: Store, repoId: string, rootPath: string): 
     cache.set(row.path, { mtime_ns: BigInt(row.mtime_ns), size: row.size, hash: row.hash });
   }
 
-  const paths: string[] = [];
-  walkMarkdown(rootPath, rootPath, paths);
+  const paths = walkMarkdown(rootPath);
   const seen = new Set(paths);
 
   // Candidates: files whose (mtime_ns, size) differs from cache, or are new.
@@ -128,8 +119,7 @@ export function freshnessSweep(store: Store, repoId: string, rootPath: string): 
 /** Rebuild file_stats from scratch by re-statting + re-hashing every file. */
 export function rebuildFileStats(store: Store, repoId: string, rootPath: string): number {
   store.db.prepare("DELETE FROM file_stats WHERE repo_id = ?").run(repoId);
-  const paths: string[] = [];
-  walkMarkdown(rootPath, rootPath, paths);
+  const paths = walkMarkdown(rootPath);
   for (const path of paths) {
     const abs = join(rootPath, path);
     const hash = sha256(readFileSync(abs, "utf8"));

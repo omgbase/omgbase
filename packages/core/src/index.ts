@@ -19,6 +19,19 @@ export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
 export { attachRepo } from "./sync/attach.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
+// Sync-plugin seam (13-sync-plugins): a pluggable source scope + the generic
+// reconciliation driver; FilesystemSource is the v1 implementation.
+export type {
+  SyncSource,
+  SourceCapabilities,
+  SourceIdentity,
+  SourceEntry,
+  SourceItem,
+  SourceWatch,
+  WatchOptions,
+} from "./sync/plugin.js";
+export { FilesystemSource, walkMarkdown } from "./sync/filesystem-source.js";
+export { reconcileChanges, attachSource, type AttachResult, type FileChange } from "./sync/driver.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
