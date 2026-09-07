@@ -72,15 +72,25 @@ Agents query nodes to find what's relevant, then mutate the blocks those nodes a
 
 Format is auto-detected from file extension. Each format adapter declares progressive capabilities:
 
-| Format | Extensions | Parse | Render | Edges | Nodes | Mutation | Metadata |
-|--------|-----------|-------|--------|-------|-------|----------|----------|
-| **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | YAML frontmatter |
+| Format | Extensions | Parse | Render | Edges | Nodes | Mutation | Properties |
+|--------|-----------|-------|--------|-------|-------|----------|------------|
+| **Markdown** | `.md` `.markdown` | yes | yes | links, wikilinks, frontmatter, inline fields | `md:link` `md:wikilink` `md:task` `md:anchor` `md:inline_field` | yes | frontmatter + inline (`key:: value`) + computed (`$title`, `$tags`) |
 | **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | yes | full structure |
 | **JSON** | `.json` | yes | yes | `$ref` `$schema` path values | `json:ref` `json:schema` | yes | full object |
 
 Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that `graph_traverse` follows in one call.
 
-Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc. The `documents.metadata` column stores an adapter-extracted JSON property bag — YAML files store their full structure, JSON files store the parsed object, Markdown files store frontmatter — all queryable via the same CEL filter path.
+Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc.
+
+### Document properties
+
+Document-level properties live in one indexed `properties` table (design in `docs/12-properties-table.md`), unifying three sources under a single query surface — no per-document JSON blob:
+
+- **frontmatter** — the parsed YAML fence (markdown), or the whole parsed object (YAML/JSON files);
+- **inline** — dataview-style `key:: value` fields in body text, accumulating across occurrences;
+- **computed** — engine-derived `$`-intrinsics (`$title` from the first H1, `$tags` from body `#hashtags`) that never shadow authored keys.
+
+A CEL bare key (`layer == "canon"`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source; `$title` / `$tags` address the computed ones. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — preserving the exact CEL semantics across the row-backed store.
 
 ### Structural query functions
 
@@ -211,7 +221,7 @@ const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
 ```
 
-Tools exposed: `docs_outline`, `nodes_get`, `nodes_get_many`, `query`, `text_search`, `resolve`, `apply`, `tasks_complete`, `sections_append`, `links_retarget`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `graph_traverse`, `graph_path`, `history_node`, `diff`, `changes_since`, `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor; every hydrating tool honors `budget_tokens`.
+Tools exposed: `docs_outline`, `docs_read`, `nodes_get`, `nodes_get_many`, `query`, `query_syntax`, `graph_syntax`, `text_search`, `resolve`, `apply`, `tasks_complete`, `sections_append`, `links_retarget`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `graph_traverse`, `graph_path`, `history_node`, `diff`, `changes_since`, `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor; every hydrating tool honors `budget_tokens`. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source.
 
 ### Semantic search (optional)
 
