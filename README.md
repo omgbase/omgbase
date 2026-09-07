@@ -35,7 +35,7 @@ pnpm lint
 
 A single-writer engine process sits beside one or more working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
-The repo is a pnpm workspace of four packages:
+The repo is a pnpm workspace of five packages:
 
 ```
 packages/
@@ -44,16 +44,17 @@ packages/
       core/      parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
       format/    adapter contract · registry · markdown/yaml/json adapters · node projection
       reconcile/ matcher phases · scoring · dispositions · eval harness
-      sync/      watcher · checkpoints · reconciling ingest · recovery · git heuristics
+      sync/      external-source bridge · driver · checkpoints · reconciling ingest · settings layering · watcher
       mutate/    six kernel ops · changesets · CAS · macros
       graph/     edge extraction · intervals · traversal · history/diff
       search/    CEL query compiler · FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
       migrate/   mrplex importer
     corpus/      round-trip + matcher fixtures
-  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core)
+  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter)
   client/        @omgbase/client — thin remote MCP client (placeholder)
   embedder/      @omgbase/embedder — external embedding provider (transformers.js + all-MiniLM-L6-v2)
+  fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol)
 docs/            normative design documents
 ```
 
@@ -105,22 +106,41 @@ In addition to the core CEL filter language (see `docs/10-query-language.md`), t
 
 The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
 
-```bash
-pnpm -r build           # build core + cli + embedder
-pnpm rlink              # globally link all package binaries (omg, omgbase, omgbase-embedder)
+**Workspace, repo, config — the three things to know first.**
 
-omg init ./my-vault --yes               # create workspace + attach a directory
-omg status                              # where am I: repo, sync, watcher, queue
+- A **workspace** is the `.omgbase/` directory + its SQLite database. It is *not* the content — it can live in a project root, a notes directory, or `$HOME`. Commands find it by walking up from the cwd.
+- A **repo** is a named, synced scope *inside* a workspace. One workspace can hold many. Today a repo is backed by a filesystem directory (its `root_path`); the sync layer is being generalized to external adapters (git/GitHub/Linear — see `docs/13-sync-plugins.md`).
+- **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* that every repo inherits; a repo can *override* any key. This is why an embedder is set once for the whole workspace (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
+
+```bash
+pnpm -r build           # build all packages (core, cli, embedder, fs-adapter)
+pnpm rlink              # globally link binaries (omg, omgbase, omgbase-embedder, omgbase-fs-adapter)
+
+# --- bootstrap ------------------------------------------------------------
+omg init ./my-vault --yes   # create the workspace + attach ./my-vault as a repo + ingest
+cd ./my-vault
+omg status                  # where am I: repo, sync, watcher, queue
+omg repos                   # list every repo in this workspace
+
+# --- config (workspace default vs repo override) --------------------------
+omg config set embedding.provider omgbase-embedder --repo ""   # --repo "" ⇒ workspace default
+omg config list --repo ""                                       # show workspace defaults
+omg config list                                                 # effective view for this repo (◆ = overridden)
+omg config set gc.enabled true                                  # no --repo ⇒ this repo's layer
+
+# --- reads (current by default) -------------------------------------------
 omg outline notes/hub.md                # compact orientation outline (frozen wire format)
 omg q 'type == "task" && !attrs.checked' --text deploy --ids | omg cat -   # pipe fuel
 omg log --since 24h                     # one commit digest per line
 omg find "stable identity rationale" -1 # top hit's id alone
 
-# writes — the pipe is the changeset boundary
+# --- writes — the pipe is the changeset boundary --------------------------
 omg q 'type == "task" && !attrs.checked && under_heading("Launch")' --ids | omg done -
 omg retarget old.md new.md              # plan by default; add --apply to commit
 omg edit b_k7z2p9q                       # $EDITOR round-trip, CAS pinned
 ```
+
+**Config scope in one rule:** `omg config` targets the repo you're in (by cwd or `--repo <slug>`); pass `--repo ""` to target the workspace default layer; at the workspace root of a multi-repo workspace, a bare `omg config` falls back to the workspace layer. `get` returns the *effective* value (default merged with any override); `list --repo <slug>` marks overridden keys with `◆`.
 
 Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.
 
@@ -177,17 +197,29 @@ console.log(outline.text);
 
 ### Watch for human edits
 
-```ts
-import { Watcher } from "@omgbase/core/sync/watcher";
+Live watching runs in an **external adapter process** — chokidar lives in `@omgbase/fs-adapter` (spoken to over a stdio protocol), so the engine core carries no filesystem-watch dependency. The engine wraps the spawned adapter as a `SyncSource` and reconciles the batches it streams (design in `docs/13-sync-plugins.md`).
 
-const watcher = new Watcher(store, repoId, "/path/to/vault", {
-  quiescenceMs: 750,
+```ts
+import { Watcher, createExternalSource } from "@omgbase/core";
+import { fsAdapterBinPath } from "@omgbase/fs-adapter";
+import { execPath } from "node:process";
+
+// Spawn the filesystem adapter as an external process and present it as a source.
+const source = await createExternalSource({
+  command: execPath,
+  args: [fsAdapterBinPath(), "--root", "/path/to/vault"],
+});
+
+const watcher = new Watcher(store, repoId, source, {
   onCheckpoint: (cp) => console.log("ingested", cp.ingested),
 });
-watcher.start();
-// Human saves are debounced into checkpoints; the engine reconciles block
-// identity and maintains the graph + indexes automatically.
+await watcher.start();
+// Human saves are debounced (adapter-side) into checkpoints; the engine
+// reconciles block identity and maintains the graph + indexes automatically.
+// On shutdown: await watcher.stop(); await source.close();
 ```
+
+For one-shot, non-watching ingestion (used by `omg init`/`attach`/`sync`), the synchronous filesystem fast-path is still available directly as `attachRepo(store, slug, rootPath)` and `freshnessSweep(store, repoId, rootPath)`.
 
 ### Apply a structural mutation
 
@@ -225,12 +257,12 @@ Tools exposed: `docs_outline`, `docs_read`, `nodes_get`, `nodes_get_many`, `quer
 
 ### Semantic search (optional)
 
-Semantic ranking needs an embedding provider, configured per repo and opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + all-MiniLM-L6-v2, 384-dim), exposed as the `omgbase-embedder` binary:
+Semantic ranking needs an embedding provider, opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + all-MiniLM-L6-v2, 384-dim), exposed as the `omgbase-embedder` binary. Set it at the **workspace** layer (`--repo ""`) so every repo shares one vector space:
 
 ```bash
 # omgbase-embedder is on PATH after `pnpm rlink`
-omg config set embedding.provider omgbase-embedder   # a command (stdio) …
-omg config set embedding.provider https://embed.internal/embed   # … or an http endpoint
+omg config set embedding.provider omgbase-embedder --repo ""   # a command (stdio), workspace-wide …
+omg config set embedding.provider https://embed.internal/embed --repo ""   # … or an http endpoint
 omg embed drain                         # embed the corpus (prints an egress note for remote providers)
 omg q --semantic "crash safety and durability" -n 5
 omg find "how are ids kept stable"      # hybrid FTS ⊕ vector by default when a provider is set
