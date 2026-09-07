@@ -11,6 +11,13 @@ import {
   importDocs,
   reposStatus,
   buildEmbedTasks,
+  resolveSettings,
+  workspaceSettings,
+  repoOwnSettings,
+  writeWorkspaceSettings,
+  writeRepoSettings,
+  RepoSelectionError,
+  type Settings,
   type RebuildTarget,
   type MrplexDoc,
 } from "@omgbase/core";
@@ -114,7 +121,7 @@ function runGcCmd(cli: Cli, args: string[]): number {
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const settings = repoSettings(ws, repo.repoId);
+  const settings = resolveSettings(ws.store, repo.repoId);
   const enabled = Boolean((settings.gc as { enabled?: boolean } | undefined)?.enabled);
   if (!enabled && !values["dry-run"]) {
     throw new EngineErrorLike("target_missing", "gc is disabled; set gc.enabled=true (or use --dry-run)");
@@ -162,20 +169,69 @@ function runDoctor(cli: Cli, args: string[]): number {
 
 // ---- config -----------------------------------------------------------------
 
+// Config is one settings schema at two layers (config-scope). Which layer a
+// command targets follows normal repo selection: a resolved repo → that repo's
+// layer; `--repo ""` forces the workspace (default) layer; and an unresolvable
+// selection (ambiguous or none — e.g. standing at the workspace root with >1
+// repo) falls back to the workspace layer rather than erroring, since the
+// workspace IS what you mean when you're not clearly inside a repo.
+type ConfigScope = { kind: "workspace" } | { kind: "repo"; repoId: string; slug: string };
+
+function resolveConfigScope(cli: Cli, ws: ReturnType<Cli["workspace"]>): ConfigScope {
+  if (cli.flags.repo === "") return { kind: "workspace" };
+  try {
+    const repo = cli.repo(ws);
+    return { kind: "repo", repoId: repo.repoId, slug: repo.slug };
+  } catch (err) {
+    // An explicit --repo <slug> that doesn't resolve is a real error. A bare
+    // (cwd-based) selection that's ambiguous or empty just means "workspace
+    // layer" — the workspace is what you mean when not clearly inside a repo.
+    if (cli.flags.repo) throw err;
+    if (err instanceof RepoSelectionError) return { kind: "workspace" };
+    throw err;
+  }
+}
+
 function runConfig(cli: Cli, args: string[]): number {
   const [sub, ...rest] = args;
   const ws = cli.workspace();
-  const repo = cli.repo(ws);
+  const scope = resolveConfigScope(cli, ws);
+  const label = scope.kind === "workspace" ? "workspace" : scope.slug;
+
+  const readLayer = (): Settings =>
+    scope.kind === "workspace" ? workspaceSettings(ws.store) : repoOwnSettings(ws.store, scope.repoId);
+  const writeLayer = (s: Settings): void =>
+    scope.kind === "workspace" ? writeWorkspaceSettings(ws.store, s) : writeRepoSettings(ws.store, scope.repoId, s);
+
   if (sub === "list" || sub === undefined) {
-    const s = repoSettings(ws, repo.repoId);
-    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(s));
-    else for (const [k, v] of Object.entries(s)) cli.io.out(`${cli.style.accent(k)} ${cli.style.dim("=")} ${JSON.stringify(v)}`);
+    // At repo scope show the EFFECTIVE (merged) view with an override marker;
+    // at workspace scope the layer is the effective view.
+    if (scope.kind === "workspace") {
+      const s = workspaceSettings(ws.store);
+      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(s));
+      else {
+        cli.io.err(cli.style.dim(`  workspace defaults`));
+        for (const [k, v] of Object.entries(s)) cli.io.out(`  ${cli.style.accent(k)} ${cli.style.dim("=")} ${JSON.stringify(v)}`);
+      }
+      return EXIT_OK;
+    }
+    const effective = resolveSettings(ws.store, scope.repoId);
+    const own = repoOwnSettings(ws.store, scope.repoId);
+    if (cli.flags.mode !== "human") { cli.io.out(JSON.stringify(effective)); return EXIT_OK; }
+    cli.io.err(cli.style.dim(`  ${label} (effective; ${cli.render.g.diamond} = overrides workspace default)`));
+    for (const [k, v] of Object.entries(effective)) {
+      const overridden = Object.prototype.hasOwnProperty.call(own, k);
+      const mark = overridden ? cli.style.accent(cli.render.g.diamond) : " ";
+      cli.io.out(`  ${mark} ${cli.style.accent(k)} ${cli.style.dim("=")} ${JSON.stringify(v)}`);
+    }
     return EXIT_OK;
   }
   if (sub === "get") {
     const key = rest[0];
     if (!key) throw new CliUsageError("config get <key>");
-    const val = getPath(repoSettings(ws, repo.repoId), key);
+    // get returns the EFFECTIVE value (what actually takes effect for the scope).
+    const source = scope.kind === "workspace" ? workspaceSettings(ws.store) : resolveSettings(ws.store, scope.repoId);
+    const val = getPath(source, key);
     cli.io.out(val === undefined ? "" : typeof val === "string" ? val : JSON.stringify(val));
     return EXIT_OK;
   }
@@ -183,10 +239,10 @@ function runConfig(cli: Cli, args: string[]): number {
     const key = rest[0];
     const raw = rest[1];
     if (!key || raw === undefined) throw new CliUsageError("config set <key> <value>");
-    const settings = repoSettings(ws, repo.repoId);
+    const settings = readLayer();
     setPath(settings, key, coerce(raw));
-    ws.store.db.prepare("UPDATE repos SET settings = ? WHERE repo_id = ?").run(JSON.stringify(settings), repo.repoId);
-    cli.io.err(cli.style.dim(`  set ${key}`));
+    writeLayer(settings);
+    cli.io.err(cli.style.dim(`  set ${key} (${label})`));
     return EXIT_OK;
   }
   throw new CliUsageError(`unknown config subcommand '${sub}' (get|set|list)`);
@@ -288,14 +344,6 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
 
 // helpers ---------------------------------------------------------------------
 
-function repoSettings(ws: ReturnType<Cli["workspace"]>, repoId: string): Record<string, unknown> {
-  const row = ws.store.db.prepare("SELECT settings FROM repos WHERE repo_id = ?").get(repoId) as { settings: string } | undefined;
-  try {
-    return row ? (JSON.parse(row.settings) as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
 function getPath(obj: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), obj);
 }

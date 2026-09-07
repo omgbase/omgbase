@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS sync_state (
 );
 `;
 
+// Workspace-default settings (config-scope). A singleton row (id = 0) holding a
+// JSON blob with the SAME shape as repos.settings. It is the default layer: a
+// repo's own settings deep-merge on top (repo overrides workspace at the leaf).
+// There is no separate "global config" namespace — top-level concepts are the
+// tables (repos/adapters/sources); omg config speaks only this settings shape,
+// at the workspace (default) layer or a specific repo layer.
+export const WORKSPACE_SETTINGS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS workspace_settings (
+  id       INTEGER PRIMARY KEY CHECK (id = 0),
+  settings TEXT NOT NULL DEFAULT '{}'
+);
+INSERT OR IGNORE INTO workspace_settings (id, settings) VALUES (0, '{}');
+`;
+
 export const NODES_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS nodes (
   node_id    TEXT PRIMARY KEY,
@@ -120,6 +134,7 @@ export const MIGRATIONS: Record<number, string> = {
   7: "",  // handled programmatically in store.ts
   8: PROPERTIES_DDL,
   9: "",  // SYNC_DDL + repos.root_path→nullable, handled programmatically in store.ts
+  10: WORKSPACE_SETTINGS_DDL,
 };
 
 export const DDL = /* sql */ `
@@ -345,4 +360,5 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 ${FILE_STATS_DDL}
 ${PROPERTIES_DDL}
 ${SYNC_DDL}
+${WORKSPACE_SETTINGS_DDL}
 `;

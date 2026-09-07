@@ -1,21 +1,14 @@
-import { EmbeddingWorker, embeddingSettings, createExternalProvider, type EmbeddingProvider } from "@omgbase/core";
+import { EmbeddingWorker, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
 import type { Cli } from "../context.js";
 
-// Shared embedding setup for the CLI (05 §6). Reads embedding.* from repo
-// settings and connects to the configured external provider — a spawned command
-// (stdio JSON) or an http(s) endpoint. No in-process ML dependency and no JS
-// module import: the embedder is a separate process/service the user installs
-// and names in config. Returns null when no provider is configured — callers
-// surface semantic_unavailable.
-
-function repoSettings(ws: ReturnType<Cli["workspace"]>, repoId: string): Record<string, unknown> {
-  const row = ws.store.db.prepare("SELECT settings FROM repos WHERE repo_id = ?").get(repoId) as { settings: string } | undefined;
-  try {
-    return row ? (JSON.parse(row.settings) as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
+// Shared embedding setup for the CLI (05 §6). Reads embedding.* from the repo's
+// EFFECTIVE settings (workspace defaults ← repo overrides, config-scope) and
+// connects to the configured external provider — a spawned command (stdio JSON)
+// or an http(s) endpoint. No in-process ML dependency and no JS module import:
+// the embedder is a separate process/service the user installs and names in
+// config. Returns null when no provider is configured — callers surface
+// semantic_unavailable. The embedder is typically set once at the workspace
+// level so every repo shares one vector space.
 
 export interface LoadedEmbedding {
   worker: EmbeddingWorker;
@@ -35,7 +28,7 @@ export interface LoadedEmbedding {
  * close() when done (e.g. in a finally) to release a spawned process.
  */
 export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: string): Promise<LoadedEmbedding | null> {
-  const settings = embeddingSettings(repoSettings(ws, repoId));
+  const settings = embeddingSettings(resolveSettings(ws.store, repoId));
   if (!settings.provider) return null;
   const ext = await createExternalProvider(settings);
   if (!ext) return null;

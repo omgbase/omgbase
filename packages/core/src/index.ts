@@ -14,6 +14,15 @@ import "./format/index.js";
 
 // Workspace + sync surface used by the CLI (second client, 11 §1).
 export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js";
+export {
+  resolveSettings,
+  workspaceSettings,
+  repoOwnSettings,
+  writeWorkspaceSettings,
+  writeRepoSettings,
+  deepMerge,
+  type Settings,
+} from "./sync/settings.js";
 export { freshnessSweep, rebuildFileStats, recordFileStat, type SweepResult } from "./sync/freshness.js";
 export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
