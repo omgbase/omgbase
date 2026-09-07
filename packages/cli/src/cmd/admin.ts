@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   Watcher,
   WatchLease,
+  EmbedDrainer,
   freshnessSweep,
   rebuildIndex,
   runGc,
@@ -30,23 +31,40 @@ async function runWatch(cli: Cli, args: string[]): Promise<number> {
   const lease = WatchLease.tryAcquire(ws.omgbaseDir);
   if (!lease) throw new EngineErrorLike("target_missing", "another watcher already holds the lease for this workspace");
 
+  // Keep embeddings timely: when a checkpoint ingests changed files, schedule a
+  // background embed drain so their vectors don't go stale until a manual `omg
+  // embed drain`. Off when no provider is configured.
+  const embedding = await loadEmbedding(ws, repo.repoId);
+  const drainer = embedding
+    ? new EmbedDrainer(ws.store, repo.repoId, embedding.worker, {
+        onDrain: ({ embedded }) => cli.io.err(cli.style.dim(`  embedded ${embedded} block(s)`)),
+        onError: (err) => cli.io.err(cli.style.dim(`  embed drain failed: ${String(err)}`)),
+      })
+    : null;
+
   freshnessSweep(ws.store, repo.repoId, repo.rootPath); // start fresh
   const watcher = new Watcher(ws.store, repo.repoId, repo.rootPath, {
     onCheckpoint: (r) => {
       if (r.ingested.length || r.deleted.length || r.conflicted.length) {
         cli.io.err(`${cli.style.ok(cli.render.g.sync)} +${r.ingested.length} -${r.deleted.length}${r.conflicted.length ? ` !${r.conflicted.length}` : ""}`);
+        drainer?.schedule();
       }
     },
   });
   watcher.start();
-  cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop`));
+  // Prime: embed anything already stale at startup (post-sweep), in the background.
+  drainer?.schedule();
+  cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop${drainer ? " · auto-embed on" : ""}`));
 
   await new Promise<void>((resolve) => {
     const stop = (): void => {
-      void watcher.stop().then(() => {
+      void (async () => {
+        await watcher.stop();
+        if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
+        if (embedding) await embedding.close();
         lease.release();
         resolve();
-      });
+      })();
     };
     process.once("SIGINT", stop);
     process.once("SIGTERM", stop);
@@ -195,7 +213,15 @@ function runImport(cli: Cli, args: string[]): number {
 // ---- embed ------------------------------------------------------------------
 
 async function runEmbed(cli: Cli, args: string[]): Promise<number> {
-  const [sub] = args;
+  const sub = args.find((a) => !a.startsWith("-"));
+  if (args.includes("--help") || args.includes("-h") || sub === "help") {
+    cli.io.err("  embed [status|drain] [--verbose]  — embedding queue");
+    cli.io.err(cli.style.dim("    status (default)  report provider + how many blocks are queued (embeddable but not yet embedded)"));
+    cli.io.err(cli.style.dim("    drain             embed the queued blocks now; status alone makes no progress"));
+    cli.io.err(cli.style.dim("    --verbose         (with drain) print per-batch progress as blocks are embedded"));
+    return EXIT_OK;
+  }
+  const verbose = args.includes("--verbose") || args.includes("-v");
   const ws = cli.workspace();
   const repo = cli.repo(ws);
 
@@ -220,7 +246,13 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
       } else {
         cli.io.err(cli.style.dim(`  embedding ${pending.length} block(s) via ${loaded.providerName} (local process)`));
       }
-      const result = await loaded.worker.process(tasks);
+      const verboseHuman = verbose && cli.flags.mode === "human";
+      const result = await loaded.worker.process(tasks, {
+        ...(verbose ? { batchSize: 32 } : {}),
+        ...(verboseHuman
+          ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} embedded`)) }
+          : {}),
+      });
       if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...result }));
       else cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
       return EXIT_OK;
@@ -232,6 +264,8 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
     else {
       cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
       cli.io.out(`  embeddable ${tasks.length}   ${cli.style.dim("queued")} ${payload.queued}`);
+      // `status` reports but never embeds — point the reader at the verb that does.
+      if (payload.queued > 0) cli.io.out(cli.style.dim(`  run \`omg embed drain\` to embed the ${payload.queued} queued block(s)`));
     }
     return EXIT_OK;
   } finally {
@@ -276,5 +310,4 @@ export const cmdGc: Command = { name: "gc", summary: "Mark-and-sweep (flag-gated
 export const cmdDoctor: Command = { name: "doctor", summary: "Invariant sweep (CI-able)", run: (c, a) => runDoctor(c, a) };
 export const cmdConfig: Command = { name: "config", summary: "Read/write repo settings", run: (c, a) => runConfig(c, a) };
 export const cmdImport: Command = { name: "import", summary: "Import from mrplex (plan-by-default)", run: (c, a) => runImport(c, a) };
-export const cmdEmbed: Command = { name: "embed", summary: "Embedding queue status/drain", run: (c, a) => runEmbed(c, a) };
-// (runEmbed help)  omg embed [status|drain]  — provider status or process the queue
+export const cmdEmbed: Command = { name: "embed", summary: "Embedding queue: status, or drain to embed", run: (c, a) => runEmbed(c, a) };

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK } from "../output.js";
@@ -27,6 +27,25 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   const ws = cli.workspace();
   const repo = cli.repo(ws);
 
+  // Connect the configured embedder once (if any) so the query tool's
+  // `semantic` mode has a vectorizer for the session. Absent ⇒ semantic queries
+  // return semantic_unavailable. The spawned process lives for the session and
+  // is released on shutdown.
+  const embedding = await loadEmbedding(ws, repo.repoId);
+  if (embedding) {
+    cli.io.err(cli.style.dim(`[mcp] semantic query enabled via ${embedding.providerName}`));
+  }
+
+  // Keep embeddings timely: a background drainer embeds blocks touched by a
+  // mutation (or a watcher checkpoint) without blocking the tool's response.
+  // Only meaningful when a provider is configured.
+  const drainer = embedding
+    ? new EmbedDrainer(ws.store, repo.repoId, embedding.worker, {
+        onDrain: ({ embedded }) => cli.io.err(cli.style.dim(`[mcp] embedded ${embedded} block(s)`)),
+        onError: (err) => cli.io.err(cli.style.dim(`[mcp] embed drain failed: ${String(err)}`)),
+      })
+    : null;
+
   // Decide whether to run the in-process watcher. Off if --no-watch, or if a
   // live watcher already holds the lease (another `omg watch`/`omg mcp`).
   const leaseHeld = watchLeaseLive(ws.omgbaseDir);
@@ -44,6 +63,8 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
         onCheckpoint: (r) => {
           if (r.ingested.length > 0 || r.deleted.length > 0) {
             cli.io.err(cli.style.dim(`[watch] checkpoint: +${r.ingested.length} -${r.deleted.length}`));
+            // A file change the watcher ingested may also need (re-)embedding.
+            drainer?.schedule();
           }
         },
       });
@@ -58,19 +79,13 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · ${why}`));
   }
 
-  // Connect the configured embedder once (if any) so the query tool's
-  // `semantic` mode has a vectorizer for the session. Absent ⇒ semantic queries
-  // return semantic_unavailable. The spawned process lives for the session and
-  // is released on shutdown.
-  const embedding = await loadEmbedding(ws, repo.repoId);
-  if (embedding) {
-    cli.io.err(cli.style.dim(`[mcp] semantic query enabled via ${embedding.providerName}`));
-  }
+  if (drainer) cli.io.err(cli.style.dim(`[mcp] auto-embed on mutation enabled`));
 
   const handle = await serveStdio({
     store: ws.store,
     repoId: repo.repoId,
     rootPath: repo.rootPath,
+    ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedding
       ? {
           embedQuery: async (text: string) => ({
@@ -87,6 +102,9 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     shuttingDown = true;
     if (watcher) await watcher.stop();
     lease?.release();
+    // Drain any pending embeds before killing the provider process. flush()
+    // runs a debounced-but-not-yet-fired drain; close() then awaits in-flight.
+    if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
     if (embedding) await embedding.close();
     await handle.close();
     ws.close();

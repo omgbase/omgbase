@@ -34,7 +34,10 @@ documents:
 
 blocks:
   - bare fields      = type, text, attrs.<key> (attrs.checked, attrs.lang, ...)
-  - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at
+  - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at,
+                       $content_hash (projectable in select — the block's OWN
+                       raw hash, i.e. the value update/split expect; not the
+                       containing doc's)
   - doc reach-through= doc.<key> reads the CONTAINING doc's properties
                        (e.g. doc.layer == "canon"); doc.$path / doc.$title etc. work
 
@@ -89,7 +92,9 @@ Project fields onto each hit. Default hit is {id, path}. select adds:
   - "$body"             → whole reconstructed file bytes (documents target only;
                           same content docs_read returns). For a single doc,
                           docs_read is cheaper than a $body query.
-  - "$semantic_score"   → cosine-fused score (semantic queries only)
+  - "$semantic_score"   → cosine similarity to the query vector, 1 = identical
+                          (semantic queries only). Ordering is by this cosine;
+                          text/filter only prune candidates, they don't reweight.
 Absent keys are simply omitted from the hit.
 
 ## order & pagination

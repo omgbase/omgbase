@@ -34,6 +34,17 @@ describe("kernel ops", () => {
     expect(renderDoc(d)).toBe("# H\n\nbody\n\nnew para\n");
   });
 
+  it("insert of a heading between existing blocks keeps blank lines on both sides", () => {
+    const d = doc("# H\n\nfirst\n\nsecond\n");
+    // insert after "first" (index 1) — a following block ("second") exists.
+    opInsert(d, { parent: { doc: true }, at: { after: idAt(d, 1) } }, "## Mid\n\nmid body\n");
+    const out = renderDoc(d);
+    expect(out).toContain("first\n\n## Mid");
+    expect(out).not.toContain("first\n## Mid");
+    expect(out).toContain("mid body\n\nsecond");
+    expect(out).not.toContain("mid body\nsecond");
+  });
+
   it("update requires content_hash CAS and replaces content in place", () => {
     const d = doc("# Title\n\nOld body.\n");
     const bId = idAt(d, 1);

@@ -47,6 +47,21 @@ describe("embedding worker", () => {
     expect(w.getCached(t.contentHashHex, t.ctx)).not.toBeNull();
   });
 
+  it("batches misses and reports per-batch progress", async () => {
+    store = new Store({ path: ":memory:" });
+    const w = new EmbeddingWorker(store, fakeProvider());
+    const tasks = Array.from({ length: 7 }, (_, i) => task(`distinct block number ${i} with unique words here`));
+    const progress: { embedded: number; total: number }[] = [];
+    const result = await w.process(tasks, { batchSize: 3, onProgress: (p) => progress.push(p) });
+    expect(result.embedded).toBe(7);
+    // 7 misses in batches of 3 ⇒ progress ticks at 3, 6, 7.
+    expect(progress).toEqual([
+      { embedded: 3, total: 7 },
+      { embedded: 6, total: 7 },
+      { embedded: 7, total: 7 },
+    ]);
+  });
+
   it("context prefix + input formatting (05 §6)", () => {
     const ctx = contextPrefix({ docTitle: "Doc", path: "a.md", headingChain: ["H1", "H2"], blockType: "paragraph" });
     expect(ctx).toBe("Doc · a.md · H1 › H2 · paragraph");

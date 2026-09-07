@@ -3,7 +3,8 @@ import { docsRead } from "../core/read/document.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
-import { hybridSearch } from "./rrf.js";
+import { vectorSearch } from "./vector.js";
+import { textSearch } from "./text.js";
 import { sanitizeFtsQuery } from "./fts-query.js";
 
 // query tool (10-query-language; 07 task 1.7). Compiles a CEL filter to indexed
@@ -55,32 +56,35 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const limit = env.limit ?? 50;
   if (target === "nodes") return queryNodes(store, repoId, env, limit);
 
-  // Semantic path: a query vector fuses FTS + vector rankings (RRF) at block
-  // grain. An optional CEL filter narrows the fused candidates to the block ids
-  // that also match structurally, so `--semantic` composes with `filter`.
+  // Semantic path: rank block hits by raw cosine similarity to the query vector
+  // (10 §semantic — `$semantic_score` IS the cosine, 1 = identical). `text` and
+  // `filter` only PRUNE the candidate set (they intersect, AND); they never
+  // reweight the score, so ordering stays a faithful embedding ranking rather
+  // than the rank-fused, boost-multiplied score `resolve` returns. Using RRF
+  // here (the prior behavior) surfaced ~1/(60+rank) fractions as the score and
+  // let layer/title boosts dominate, scrambling true similarity order.
   if (env.vector) {
-    const hits = hybridSearch(store, {
-      repoId,
-      ...(env.text ? { text: env.text } : {}),
-      vector: env.vector,
-      limit: limit + 1 + (env.filter ? limit * 4 : 0),
-    });
-    let blockIds = hits.map((h) => h.blockId);
-    if (env.filter && env.filter.trim().length > 0) {
-      const allowed = filterBlockIds(store, repoId, env.filter, blockIds);
-      blockIds = blockIds.filter((id) => allowed.has(id));
+    let ranked = vectorSearch(store, repoId, env.vector.model, env.vector.vec, { limit: limit + 1 + (env.filter || env.text ? limit * 8 : 0) });
+    if (env.text && env.text.trim().length > 0) {
+      const match = sanitizeFtsQuery(env.text);
+      if (match === "") return { hits: [], truncated: false, cursor: null };
+      const allowed = new Set(textSearch(store, repoId, env.text, { limit: 500 }).hits.map((h) => h.blockId));
+      ranked = ranked.filter((h) => allowed.has(h.blockId));
     }
-    const scoreById = new Map(hits.map((h) => [h.blockId, h.score]));
-    const page = blockIds.slice(0, limit);
-    const projById = projectionMaterial(store, page);
+    if (env.filter && env.filter.trim().length > 0) {
+      const allowed = filterBlockIds(store, repoId, env.filter, ranked.map((h) => h.blockId));
+      ranked = ranked.filter((h) => allowed.has(h.blockId));
+    }
+    const page = ranked.slice(0, limit);
+    const projById = projectionMaterial(store, page.map((h) => h.blockId));
     const wantScore = env.select?.includes("$semantic_score") ?? false;
     return {
-      hits: page.map((id) => {
-        const hit = projectRow(store, projById.get(id) ?? { id, path: "" }, env.select, "blocks");
-        if (wantScore) hit.$semantic_score = scoreById.get(id) ?? 0;
+      hits: page.map((h) => {
+        const hit = projectRow(store, projById.get(h.blockId) ?? { id: h.blockId, path: h.path }, env.select, "blocks");
+        if (wantScore) hit.$semantic_score = h.cosine;
         return hit;
       }),
-      truncated: blockIds.length > limit,
+      truncated: ranked.length > limit,
       cursor: null,
     };
   }
@@ -120,9 +124,9 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
 
   const base =
     target === "documents"
-      ? `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id FROM documents d`
+      ? `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id, lower(hex(d.file_hash)) AS content_hash FROM documents d`
       : `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
-                b.attrs AS attrs, d.doc_id AS doc_id
+                b.attrs AS attrs, d.doc_id AS doc_id, lower(hex(b.raw_hash)) AS content_hash
          FROM blocks b JOIN documents d ON d.doc_id = b.doc_id`;
 
   // Cursor: composite keyset on (path, id) matching the default order. The
@@ -157,6 +161,7 @@ interface ProjectionRow {
   ordinal?: number;
   type?: string;
   attrs?: string;
+  content_hash?: string;
 }
 
 // Project a result row to a hit. `id` and `path` are always present (the lean
@@ -187,6 +192,14 @@ function projectRow(store: Store, row: ProjectionRow, select: string[] | undefin
         const doc = docsRead(store, row.id);
         if (doc) hit.$body = doc.content;
       }
+      continue;
+    }
+    if (field === "$content_hash") {
+      // Grain-correct: the blocks SELECT projects the block's own raw_hash (the
+      // exact value update/split CAS checks in expect.content_hash), the
+      // documents SELECT the doc file_hash — so a blocks query no longer leaks
+      // the containing document's hash through the bare-key fallback below.
+      if (row.content_hash !== undefined) hit.$content_hash = row.content_hash;
       continue;
     }
     if (field === "$repo" || field === "$ordinal" || field === "$type") {
@@ -223,7 +236,7 @@ function projectionMaterial(store: Store, blockIds: string[]): Map<string, Proje
   const placeholders = blockIds.map(() => "?").join(",");
   const rows = store.db.prepare(
     `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
-            b.attrs AS attrs, d.doc_id AS doc_id
+            b.attrs AS attrs, d.doc_id AS doc_id, lower(hex(b.raw_hash)) AS content_hash
      FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
      WHERE b.block_id IN (${placeholders})`,
   ).all(...blockIds) as ProjectionRow[];

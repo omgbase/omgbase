@@ -13,8 +13,9 @@ let store: Store;
 let repoId: string;
 let client: Client;
 
-async function connect(rootPath?: string): Promise<void> {
-  const server = buildServer(rootPath ? { store, repoId, rootPath } : { store, repoId });
+async function connect(rootPath?: string, onMutation?: () => void): Promise<void> {
+  const base = rootPath ? { store, repoId, rootPath } : { store, repoId };
+  const server = buildServer(onMutation ? { ...base, onMutation } : base);
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(serverT), client.connect(clientT)]);
@@ -197,5 +198,135 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(isError).toBe(false);
     const { payload } = (await call("query", { from: "documents", filter: 'layer == "working"' })) as { payload: { hits: unknown[] } };
     expect(payload.hits).toHaveLength(0);
+  });
+});
+
+describe("onMutation fires for writes (embed-drain trigger)", () => {
+  let root: string;
+  let mutations: number;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "omg-mcpmut-"));
+    writeFileSync(join(root, "notes.md"), "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n");
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", root);
+    ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n");
+    mutations = 0;
+    await connect(root, () => { mutations++; });
+  });
+  afterEach(() => {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("does not fire for a read (query)", async () => {
+    await call("query", { from: "documents", filter: 'layer == "working"' });
+    expect(mutations).toBe(0);
+  });
+
+  it("fires once for a successful apply", async () => {
+    const { payload: q } = (await call("query", { from: "documents", filter: 'layer == "working"', select: ["$path"] })) as { payload: { hits: { id: string }[] } };
+    const docId = q.hits[0]!.id;
+    const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "appended paragraph" }] })) as { isError: boolean };
+    expect(isError).toBe(false);
+    expect(mutations).toBe(1);
+  });
+
+  it("does not fire for a failed apply (validation error)", async () => {
+    const r = (await client.callTool({ name: "apply", arguments: { ops: [{ op: "update", markdown: "x" }] } })) as { isError?: boolean };
+    expect(r.isError).toBe(true);
+    expect(mutations).toBe(0);
+  });
+
+  it("does not fire for a dry-run apply", async () => {
+    const { payload: q } = (await call("query", { from: "documents", filter: 'layer == "working"', select: ["$path"] })) as { payload: { hits: { id: string }[] } };
+    const docId = q.hits[0]!.id;
+    const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "preview only" }], dry_run: true })) as { isError: boolean };
+    expect(isError).toBe(false);
+    expect(mutations).toBe(0);
+  });
+
+  it("fires for a doc-level write (docs_set_meta)", async () => {
+    const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active" } })) as { isError: boolean };
+    expect(isError).toBe(false);
+    expect(mutations).toBe(1);
+  });
+});
+
+describe("apply op schema + sections_append heading resolution", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "omg-mcpapply-"));
+    writeFileSync(join(root, "notes.md"), "# Intro\n\nintro body\n\n## Launch\n\nlaunch note\n");
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", root);
+    ingestFile(store, repoId, "notes.md", "# Intro\n\nintro body\n\n## Launch\n\nlaunch note\n");
+    writeFileSync(join(root, "other.md"), "## Launch\n\nother launch\n");
+    ingestFile(store, repoId, "other.md", "## Launch\n\nother launch\n");
+    await connect(root);
+  });
+  afterEach(() => {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("apply publishes a discriminated op schema (update requires `block`)", async () => {
+    const tools = await client.listTools();
+    const applyTool = tools.tools.find((t) => t.name === "apply")!;
+    const opsSchema = (applyTool.inputSchema as unknown as { properties: { ops: { items: { anyOf?: unknown[]; oneOf?: unknown[] } } } }).properties.ops;
+    const variants = (opsSchema.items.anyOf ?? opsSchema.items.oneOf) as { properties?: { op?: { const?: string } } }[];
+    expect(variants, "ops.items should be a union of per-op schemas, not z.any()").toBeTruthy();
+    const ops = new Set(variants.map((v) => v.properties?.op?.const));
+    expect(ops).toEqual(new Set(["insert", "update", "move", "remove", "split", "merge"]));
+  });
+
+  it("apply rejects an update op missing `block` as a validation error, not block_missing", async () => {
+    const r = (await client.callTool({ name: "apply", arguments: { ops: [{ op: "update", markdown: "x" }] } })) as { content: { text: string }[]; isError?: boolean };
+    expect(r.isError).toBe(true);
+    // The boundary schema names the missing field; it never reaches the engine's
+    // block_missing path (which would misreport "block undefined not found").
+    expect(r.content[0]!.text).toContain("block");
+    expect(r.content[0]!.text).not.toContain("block_missing");
+  });
+
+  it("sections_append resolves heading text to a block id (unique)", async () => {
+    const { isError } = (await call("sections_append", { heading: "Launch", markdown: "appended item", path: "notes.md" })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("appended item");
+  });
+
+  it("sections_append still accepts a heading block id", async () => {
+    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
+    const launchId = Object.values(outline.ids).find((id) => id.startsWith("b"))!;
+    void launchId;
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: Record<string, string> } };
+    // pick the id whose block is the Launch heading via nodes_get
+    let headingId = "";
+    for (const id of Object.values(read.ids)) {
+      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "## Launch") { headingId = id; break; }
+    }
+    expect(headingId).not.toBe("");
+    const { isError } = (await call("sections_append", { heading: headingId, markdown: "byid item" })) as { isError: boolean };
+    expect(isError).toBe(false);
+  });
+
+  it("sections_append with ambiguous heading text errors ambiguous_heading with candidates", async () => {
+    const { payload, isError } = (await call("sections_append", { heading: "Launch", markdown: "x" })) as {
+      payload: { error: string; data: { candidates: { block: string; doc: string }[] } }; isError: boolean;
+    };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("ambiguous_heading");
+    expect(payload.data.candidates.length).toBe(2);
+  });
+
+  it("sections_append with unknown heading text errors parent_missing", async () => {
+    const { payload, isError } = (await call("sections_append", { heading: "Nonexistent", markdown: "x", path: "notes.md" })) as {
+      payload: { error: string }; isError: boolean;
+    };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("parent_missing");
   });
 });

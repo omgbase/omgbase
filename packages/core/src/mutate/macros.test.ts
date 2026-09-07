@@ -57,6 +57,18 @@ describe("macros expand to kernel ops (visible)", () => {
     expect(text.indexOf("appended launch item")).toBeLessThan(text.indexOf("## Other"));
   });
 
+  it("sections_append that starts with a heading keeps a blank line before it", () => {
+    // Section's last paragraph ends the file with a single "\n" — the pre-fix
+    // behavior glued "…prev block.\n## Analysis" together with no blank line.
+    const docId = seed("g.md", "# Intro\n\ntrailing paragraph.\n");
+    const introId = block(docId, "Intro");
+    const ops = sectionsAppend(introId, "## Analysis\n\nhow they differ\n");
+    apply(store, { repoId, rootPath: dir, ops, origin: { actor: "agent:test" } });
+    const text = readFileSync(join(dir, "g.md"), "utf8");
+    expect(text).toContain("trailing paragraph.\n\n## Analysis");
+    expect(text).not.toContain("trailing paragraph.\n## Analysis");
+  });
+
   it("sections_rename rewrites the heading, preserving level", () => {
     const docId = seed("r.md", "## Old Title\n\nbody\n");
     const h = block(docId, "Old Title");

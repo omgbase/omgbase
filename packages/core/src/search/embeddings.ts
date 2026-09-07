@@ -67,8 +67,16 @@ export class EmbeddingWorker {
     return new Float32Array(row.vec.buffer, row.vec.byteOffset, row.vec.byteLength / 4);
   }
 
-  /** Embed a batch (skipping cache hits) and persist. Throws if no provider. */
-  async process(tasks: EmbedTask[]): Promise<{ embedded: number; cached: number }> {
+  /**
+   * Embed a batch (skipping cache hits) and persist. Throws if no provider.
+   * Cache misses are embedded in chunks of `batchSize` (default: all at once);
+   * `onProgress` fires after each chunk is persisted so callers can show live
+   * progress on a long drain.
+   */
+  async process(
+    tasks: EmbedTask[],
+    opts: { batchSize?: number; onProgress?: (p: { embedded: number; total: number }) => void } = {},
+  ): Promise<{ embedded: number; cached: number }> {
     if (!this.provider) throw new SemanticUnavailable("no embedding provider configured");
     const misses: EmbedTask[] = [];
     let cached = 0;
@@ -76,17 +84,22 @@ export class EmbeddingWorker {
       if (this.getCached(t.contentHashHex, t.ctx)) cached++;
       else misses.push(t);
     }
-    if (misses.length > 0) {
-      const vectors = await this.provider.embed(misses.map((t) => embedInput(t.ctx, t.text)));
-      const insert = this.store.db.prepare(
-        "INSERT OR REPLACE INTO embeddings (content_hash, ctx_hash, model, dim, vec) VALUES (?, ?, ?, ?, ?)",
-      );
+    const insert = this.store.db.prepare(
+      "INSERT OR REPLACE INTO embeddings (content_hash, ctx_hash, model, dim, vec) VALUES (?, ?, ?, ?, ?)",
+    );
+    const batchSize = opts.batchSize && opts.batchSize > 0 ? opts.batchSize : misses.length;
+    let embedded = 0;
+    for (let start = 0; start < misses.length; start += batchSize) {
+      const chunk = misses.slice(start, start + batchSize);
+      const vectors = await this.provider.embed(chunk.map((t) => embedInput(t.ctx, t.text)));
       this.store.write(() => {
-        misses.forEach((t, i) => {
+        chunk.forEach((t, i) => {
           const v = Float32Array.from(vectors[i]!);
           insert.run(Buffer.from(t.contentHashHex, "hex"), Buffer.from(ctxHashHex(t.ctx), "hex"), this.provider!.model, this.provider!.dim, Buffer.from(v.buffer));
         });
       });
+      embedded += chunk.length;
+      opts.onProgress?.({ embedded, total: misses.length });
     }
     return { embedded: misses.length, cached };
   }

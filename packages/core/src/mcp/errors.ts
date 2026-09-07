@@ -6,7 +6,7 @@ export type ErrorCode =
   | "stale_expectation" | "parent_missing" | "target_missing" | "block_missing"
   | "doc_missing" | "cycle_move" | "opaque_block" | "not_contiguous"
   | "type_mismatch" | "conflicted_document" | "path_taken" | "create_conflict"
-  | "ambiguous_locator" | "filter_invalid" | "budget_exceeded"
+  | "ambiguous_locator" | "ambiguous_heading" | "filter_invalid" | "budget_exceeded"
   | "semantic_unavailable" | "sync_conflict" | "repo_not_found";
 
 export interface EngineErrorBody {

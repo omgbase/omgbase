@@ -43,6 +43,7 @@ export {
   type EmbedTask,
 } from "./search/embeddings.js";
 export { buildEmbedTasks } from "./search/tasks.js";
+export { EmbedDrainer, type DrainerOptions } from "./search/drain.js";
 export { embeddingSettings, type EmbeddingSettings } from "./search/provider.js";
 export { createExternalProvider, type ExternalProvider } from "./search/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";

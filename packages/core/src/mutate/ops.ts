@@ -109,18 +109,38 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
 export function opInsert(doc: MutDoc, to: To, markdown: string): { ids: string[] } {
   const { siblings, index } = resolveTarget(doc, to);
   const blocks = parseContentToBlocks(markdown, doc.format);
-  // The block now preceding the inserted run must carry a separator, or the two
-  // blocks render jammed together (e.g. appending after a file that had no
-  // trailing newline → its last block has empty trivia). Give it the format
-  // default only when it is currently empty; a real separator is left intact.
-  // Trivia is document tiling, rendered independently of the block's raw, so no
-  // `dirty` flag is set — the block's own content did not change.
-  if (index > 0) {
-    const prev = siblings[index - 1]!;
-    if (prev.trivia === "") prev.trivia = defaultTrivia(doc.format);
+  // Trivia is document tiling rendered independently of a block's raw, so the
+  // separators fixed up here set no `dirty` flag — no block content changed.
+  // Only the top-level list is rendered from trivia (nested containers are
+  // re-emitted from children with single-newline joins, so their trivia is
+  // inert); confine separator normalization to that list.
+  if (siblings === doc.children) {
+    const sep = defaultTrivia(doc.format);
+    // Separator BEFORE the run: the block now preceding it must end at a real
+    // block boundary, or the two render jammed together — e.g. appending a
+    // heading at the end of a section whose last paragraph carried only a
+    // single trailing "\n" glued "…text\n## Heading" with no blank line.
+    if (index > 0) {
+      const prev = siblings[index - 1]!;
+      if (!separatesBlocks(prev.trivia, doc.format)) prev.trivia = sep;
+    }
+    // Separator AFTER the run: a mid-document insert leaves a following block,
+    // and the parsed run's last block ends in a lone "\n" — bump it too.
+    if (blocks.length > 0 && index < siblings.length) {
+      const last = blocks[blocks.length - 1]!;
+      if (!separatesBlocks(last.trivia, doc.format)) last.trivia = sep;
+    }
   }
   siblings.splice(index, 0, ...blocks);
   return { ids: blocks.map((b) => b.id) };
+}
+
+// Does this trailing trivia hold a real block boundary? Markdown block-level
+// content needs a blank line between blocks (a lone "\n" renders as a soft
+// continuation, jamming an ATX heading onto the previous paragraph); other
+// formats only need the separator to be non-empty.
+function separatesBlocks(trivia: string, format: string): boolean {
+  return format === "markdown" ? trivia.includes("\n\n") : trivia !== "";
 }
 
 export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown?: string, attrs?: Record<string, unknown>, expect?: Expect): { ids: string[] } {

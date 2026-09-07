@@ -114,6 +114,18 @@ describe("nodesGet — resolution ladder", () => {
     expect(node?.raw).toBe("Stable block identity is quite difficult to achieve in practice.");
   });
 
+  it("raw/full resolutions expose the block's content_hash (the CAS value)", () => {
+    const { docId } = ingest(SAMPLE);
+    const roots = loadDocBlocks(store!, docId);
+    const para = roots[1]!;
+    const rawNode = nodesGet(store!, docId, para.blockId, { resolution: "raw" });
+    const fullNode = nodesGet(store!, docId, para.blockId, { resolution: "full" });
+    expect(rawNode?.content_hash).toBe(para.rawHashHex);
+    expect(fullNode?.content_hash).toBe(para.rawHashHex);
+    // Lean resolutions stay lean — no hash.
+    expect(nodesGet(store!, docId, para.blockId, { resolution: "text" })?.content_hash).toBeUndefined();
+  });
+
   it("returns null for unknown block", () => {
     const { docId } = ingest("# H\n");
     expect(nodesGet(store!, docId, "b_missing")).toBeNull();

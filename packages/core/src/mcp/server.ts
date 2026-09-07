@@ -5,6 +5,7 @@ import { docsOutline } from "../core/read/outline.js";
 import { docsRead } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc } from "../core/read/reader.js";
+import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { query as runQuery } from "../search/query.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
@@ -37,7 +38,47 @@ export interface ServerContext {
    * host (CLI `omg mcp`) supplies this from the repo's configured embedder.
    */
   embedQuery?: (text: string) => Promise<{ model: string; vec: Float32Array }>;
+  /**
+   * Called after any successful write tool (apply/macros/doc ops). The host
+   * (CLI `omg mcp`) uses this to schedule a background embed drain so a block's
+   * vector stays fresh without a manual `omg embed drain`. Must be cheap and
+   * non-blocking — it fires on the mutation's response path; the actual
+   * embedding happens off it. Absent ⇒ mutations don't auto-drain.
+   */
+  onMutation?: () => void;
 }
+
+// Kernel-op schemas (04 §1) published as the `apply` tool's op grammar. Giving
+// each op a real schema (rather than z.any()) makes the required fields
+// discoverable in the tool's JSON schema and turns a malformed op — e.g. an
+// `update` missing its `block` id — into a boundary validation error naming the
+// field, instead of a downstream `block_missing` for "block undefined".
+const atSchema = z.union([
+  z.literal("start"),
+  z.literal("end"),
+  z.object({ before: z.string() }),
+  z.object({ after: z.string() }),
+]);
+const toSchema = z.object({
+  parent: z.union([
+    z.string().describe("a block id to nest under"),
+    z.object({ doc: z.literal(true) }).describe("the document's top level"),
+    z.object({ heading: z.string(), scope: z.literal("section") }).describe("a heading's section range"),
+  ]),
+  at: atSchema,
+});
+const expectSchema = z.object({
+  content_hash: z.string().optional(),
+  parent_children_hash: z.string().optional(),
+});
+const opSchema = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("insert"), doc: z.string().optional(), to: toSchema, markdown: z.string() }),
+  z.object({ op: z.literal("update"), block: z.string(), markdown: z.string().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional() }),
+  z.object({ op: z.literal("move"), blocks: z.array(z.string()), to: toSchema }),
+  z.object({ op: z.literal("remove"), blocks: z.array(z.string()), expect: z.record(z.string(), expectSchema).optional() }),
+  z.object({ op: z.literal("split"), block: z.string(), at: z.array(z.number().int()), expect: expectSchema.optional() }),
+  z.object({ op: z.literal("merge"), blocks: z.array(z.string()), separator: z.string().optional(), expect: z.record(z.string(), expectSchema).optional() }),
+]);
 
 function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
   return { content: [{ type: "text", text: JSON.stringify(payload) }] };
@@ -55,6 +96,14 @@ function fail(err: unknown): { content: { type: "text"; text: string }[]; isErro
 export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: "0.0.0" });
   const { store, repoId } = ctx;
+
+  // Wrap a successful write's result: notify the host so it can schedule a
+  // background embed drain. onMutation must be cheap/non-blocking (see
+  // ServerContext); we never await it, keeping it off the response path.
+  function okMutated(payload: unknown): { content: { type: "text"; text: string }[] } {
+    ctx.onMutation?.();
+    return ok(payload);
+  }
 
   // Resolve the owning document id from an explicit doc/path, or — when neither
   // is given — infer it from a block id. The MCP schemas mark `doc`/`path`
@@ -74,6 +123,34 @@ export function buildServer(ctx: ServerContext): McpServer {
       if (row) return row.doc_id;
     }
     throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`);
+  }
+
+  // Resolve `heading` (a block id or heading text) to a heading block id, for
+  // macros that address a section. A value that already names a live heading
+  // block is returned as-is; otherwise it's matched as heading text (normalized
+  // the same way the parser stores block.text), scoped to a doc/path when given.
+  // Repo-wide text that isn't unique fails ambiguous_heading with candidate ids.
+  function resolveHeadingId(heading: string, scope: { doc?: string; path?: string }): string {
+    const asBlock = store.db
+      .prepare("SELECT block_id FROM blocks WHERE block_id = ? AND type = 'heading' AND deleted_commit IS NULL")
+      .get(heading) as { block_id: string } | undefined;
+    if (asBlock) return asBlock.block_id;
+
+    const wantDoc = scope.doc || scope.path ? resolveDocId(scope) : undefined;
+    const needle = normalizeVisibleText(heading, "heading");
+    const rows = (wantDoc
+      ? store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND doc_id = ? AND deleted_commit IS NULL")
+        .all(repoId, wantDoc)
+      : store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND deleted_commit IS NULL")
+        .all(repoId)) as { block_id: string; doc_id: string; text: string }[];
+    const matches = rows.filter((r) => normalizeText(r.text) === needle);
+    if (matches.length === 0) throw new EngineError("parent_missing", `no heading matching ${JSON.stringify(heading)}`, { data: { heading, ...(wantDoc ? { doc: wantDoc } : {}) } });
+    if (matches.length > 1) {
+      throw new EngineError("ambiguous_heading", `heading ${JSON.stringify(heading)} matches ${matches.length} headings; pass its block id or a doc/path scope`, {
+        data: { heading, candidates: matches.map((m) => ({ block: m.block_id, doc: m.doc_id })) },
+      });
+    }
+    return matches[0]!.block_id;
   }
 
   server.registerTool(
@@ -130,7 +207,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "nodes_get",
     {
-      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. Use this to expand the lean ids returned by query/resolve/graph_traverse. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. The raw and full resolutions include the block's `content_hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict. Use this to expand the lean ids returned by query/resolve/graph_traverse. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -270,9 +347,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "apply",
     {
       description:
-        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. Conflicts carry current truth — retry from the error, don't re-read.",
+        "The only real writer. Applies a changeset of kernel ops (insert/update/move/remove/split/merge) atomically — all apply or none. Each op is a tagged object keyed by \"op\"; the block an op targets is named by its `block` (update/split) or `blocks` (move/remove/merge) field, never `id`/`target`. Ops apply in order; later ops see earlier effects; minted ids are referenceable via \"$n.ids[i]\". Pass dry_run:true first for multi-doc changes to preview diffs. Conflicts carry current truth — retry from the error, don't re-read.",
       inputSchema: {
-        ops: z.array(z.any()),
+        ops: z.array(opSchema),
         reason: z.string().optional(),
         dry_run: z.boolean().optional(),
       },
@@ -286,7 +363,8 @@ export function buildServer(ctx: ServerContext): McpServer {
           origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
         });
-        return ok(res);
+        // A dry run previews without writing — don't schedule a drain for it.
+        return args.dry_run ? ok(res) : okMutated(res);
       } catch (e) {
         return fail(e);
       }
@@ -303,7 +381,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
         const ops = tasksComplete(store, args.blocks);
-        return ok(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
+        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
       } catch (e) {
         return fail(e);
       }
@@ -313,14 +391,16 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "sections_append",
     {
-      description: "Macro: append markdown at the end of a heading's section range. Expands to a single insert op.",
-      inputSchema: { heading: z.string(), markdown: z.string() },
+      description:
+        "Macro: append markdown at the end of a heading's section range. `heading` accepts the heading's block id (preferred, from docs_outline) OR its text — text is resolved to an id, scoped to `doc`/`path` when given. Heading text without a doc scope is repo-wide and errors ambiguous_heading (with candidate ids) when it isn't unique. Expands to a single insert op.",
+      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional() },
     },
     async (args) => {
       try {
         if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
-        const ops = sectionsAppend(args.heading, args.markdown);
-        return ok(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
+        const headingId = resolveHeadingId(args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
+        const ops = sectionsAppend(headingId, args.markdown);
+        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
       } catch (e) {
         return fail(e);
       }
@@ -339,7 +419,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { ops, hits } = linksRetarget(store, repoId, args.from_target, args.to_target);
         if (args.dry_run !== false) return ok({ hits, applied: false });
         const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
-        return ok({ hits, applied: true, ...res });
+        return okMutated({ hits, applied: true, ...res });
       } catch (e) {
         return fail(e);
       }
@@ -362,7 +442,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(docsCreate(store, docCtx(), args.path, args.markdown, args.frontmatter));
+        return okMutated(docsCreate(store, docCtx(), args.path, args.markdown, args.frontmatter));
       } catch (e) {
         return fail(e);
       }
@@ -377,7 +457,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(docsMove(store, docCtx(), args.doc, args.to_path));
+        return okMutated(docsMove(store, docCtx(), args.doc, args.to_path));
       } catch (e) {
         return fail(e);
       }
@@ -392,7 +472,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(docsDelete(store, docCtx(), args.doc));
+        return okMutated(docsDelete(store, docCtx(), args.doc));
       } catch (e) {
         return fail(e);
       }
@@ -407,7 +487,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(docsSetMeta(store, docCtx(), args.doc, {
+        return okMutated(docsSetMeta(store, docCtx(), args.doc, {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
         }));

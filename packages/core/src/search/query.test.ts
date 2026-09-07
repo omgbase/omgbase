@@ -6,6 +6,8 @@ import { query } from "./query.js";
 import { FilterInvalid } from "./cel/parser.js";
 import { parseFilter } from "./cel/parser.js";
 import { compile } from "./cel/compile.js";
+import { EmbeddingWorker, contextPrefix, type EmbeddingProvider, type EmbedTask } from "./embeddings.js";
+import { sha256 } from "../core/hash.js";
 
 let store: Store;
 let repoId: string;
@@ -112,6 +114,30 @@ describe("query — blocks target", () => {
       expect(typeof h.ordinal).toBe("number");
     }
   });
+
+  it("$content_hash on blocks is the block's own raw hash, not the doc hash", () => {
+    const { hits } = query(store, repoId, {
+      from: "blocks",
+      filter: 'type == "heading" && within("tasks.md") && text == "Launch"',
+      select: ["$content_hash"],
+    });
+    expect(hits.length).toBe(1);
+    const blockId = hits[0]!.id;
+    // Ground truth: the block's stored raw_hash — the value update/split CAS on.
+    const rawHash = (store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ?").get(blockId) as { h: string }).h;
+    expect(hits[0]!.$content_hash).toBe(rawHash);
+    // And it must NOT be the containing document's file_hash.
+    const docId = (store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ?").get(blockId) as { doc_id: string }).doc_id;
+    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM documents WHERE doc_id = ?").get(docId) as { h: string }).h;
+    expect(hits[0]!.$content_hash).not.toBe(docHash);
+  });
+
+  it("$content_hash on documents is the file hash", () => {
+    const { hits } = query(store, repoId, { from: "documents", filter: '$path == "tasks.md"', select: ["$content_hash"] });
+    expect(hits.length).toBe(1);
+    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM documents WHERE doc_id = ?").get(hits[0]!.id) as { h: string }).h;
+    expect(hits[0]!.$content_hash).toBe(docHash);
+  });
 });
 
 describe("absence truth table (10 §3.3)", () => {
@@ -149,6 +175,69 @@ describe("filter_invalid (10 §3.1)", () => {
     } catch (e) {
       if (e instanceof FilterInvalid) expect(e.reason + " " + e.hint).toMatch(re);
     }
+  });
+});
+
+describe("semantic query ranks by cosine, not RRF (regression)", () => {
+  // Bag-of-words provider: cosine reflects lexical overlap, enough to assert
+  // the closest block ranks first AND that $semantic_score is a real cosine
+  // (~0.3–1.0 for a strong match) rather than the ~1/(60+rank)≈0.016 RRF band
+  // the prior hybrid path leaked here.
+  function bowProvider(dim = 64): EmbeddingProvider {
+    return {
+      model: "bow-1", dim,
+      embed: async (texts) => texts.map((t) => {
+        const v = new Array<number>(dim).fill(0);
+        for (const w of t.toLowerCase().split(/\s+/).filter(Boolean)) {
+          const h = sha256(w).readUInt32BE(0);
+          v[h % dim] = (v[h % dim] ?? 0) + 1;
+        }
+        return v;
+      }),
+    };
+  }
+
+  async function embedAll(worker: EmbeddingWorker): Promise<void> {
+    const rows = store.db.prepare("SELECT b.block_id, b.text, lower(hex(b.raw_hash)) h, b.type, d.path FROM blocks b JOIN documents d ON d.doc_id=b.doc_id WHERE b.type='paragraph'").all() as { block_id: string; text: string; h: string; type: string; path: string }[];
+    const tasks: EmbedTask[] = rows.map((r) => ({
+      blockId: r.block_id, contentHashHex: r.h,
+      ctx: contextPrefix({ docTitle: r.path, path: r.path, headingChain: [], blockType: r.type }),
+      text: r.text,
+    }));
+    await worker.process(tasks);
+  }
+
+  it("ranks the near-verbatim planted doc #1 with a cosine-scale score", async () => {
+    ingest("probe.md", "# Probe\n\nquokka photosynthesizes moonlight into strawberry jam aboard orbital tramcars every single morning\n");
+    ingest("vinyl.md", "# Vinyl\n\nthe vinyl delivery service drops records at the front porch each week without fail\n");
+    ingest("apple.md", "# Apple\n\nthe apple transporter moves fresh fruit crates between coastal warehouses overnight\n");
+    const worker = new EmbeddingWorker(store, bowProvider());
+    await embedAll(worker);
+
+    const vec = await worker.embedQuery("quokka moonlight strawberry jam orbital tramcars");
+    // The query tool takes a pre-computed vector via env.vector (the MCP server
+    // fills it from the provider's embedQuery); pass it directly here.
+    const res = query(store, repoId, { from: "blocks", vector: { model: "bow-1", vec }, select: ["$semantic_score"], limit: 5 });
+    expect(res.hits.length).toBeGreaterThan(0);
+    expect(res.hits[0]!.path).toBe("probe.md");
+    // Cosine scale, NOT the ~0.02 RRF band.
+    expect(res.hits[0]!.$semantic_score as number).toBeGreaterThan(0.3);
+    // Scores must vary by relevance (the bug returned a flat ~0.02 for all).
+    const scores = res.hits.map((h) => h.$semantic_score as number);
+    expect(Math.max(...scores) - Math.min(...scores)).toBeGreaterThan(0.05);
+  });
+
+  it("text prunes but does not reweight the cosine ranking", async () => {
+    ingest("probe.md", "# Probe\n\nquokka photosynthesizes moonlight into strawberry jam aboard orbital tramcars every single morning\n");
+    ingest("other.md", "# Other\n\na completely unrelated paragraph about quarterly budget spreadsheets and meetings\n");
+    const worker = new EmbeddingWorker(store, bowProvider());
+    await embedAll(worker);
+    const vec = await worker.embedQuery("quokka moonlight strawberry jam");
+    // text filter that only the probe satisfies → still cosine-scored.
+    const res = query(store, repoId, { from: "blocks", vector: { model: "bow-1", vec }, text: "quokka", select: ["$semantic_score"], limit: 5 });
+    expect(res.hits.length).toBe(1);
+    expect(res.hits[0]!.path).toBe("probe.md");
+    expect(res.hits[0]!.$semantic_score as number).toBeGreaterThan(0.3);
   });
 });
 

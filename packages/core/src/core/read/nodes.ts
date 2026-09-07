@@ -11,6 +11,8 @@ export interface GetNode {
   label?: string;
   text?: string;
   raw?: string;
+  /** The block's raw_hash (hex) — the value update/split expect as content_hash. */
+  content_hash?: string;
   attrs?: Record<string, unknown>;
   placement?: { parent: string | null; ordinal: number; depth: number };
   children?: GetNode[];
@@ -35,9 +37,11 @@ function project(store: Store, node: BlockNode, resolution: Resolution, includeC
       break;
     case "raw":
       out.raw = blockRaw(store, node.rawHashHex);
+      out.content_hash = node.rawHashHex;
       break;
     case "full":
       out.raw = blockRaw(store, node.rawHashHex);
+      out.content_hash = node.rawHashHex;
       out.text = node.text;
       out.attrs = node.attrs;
       out.placement = { parent: node.parentBlock, ordinal: node.ordinal, depth: node.depth };
