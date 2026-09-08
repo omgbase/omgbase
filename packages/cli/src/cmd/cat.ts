@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolveRef, nodesGet, blockRaw, loadDocBlocks, findDoc } from "@omgbase/core";
+import { resolveRef, nodesGet, docsRead } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
@@ -28,21 +28,17 @@ function runCat(cli: Cli, args: string[]): number {
   if (!resolved) throw new EngineErrorLike("doc_missing", `no node ${ref}`);
 
   if (resolved.kind === "document") {
-    // Cat the whole document: concatenate block raws in order.
-    const info = findDoc(ws.store, { docId: resolved.docId })!;
-    const roots = loadDocBlocks(ws.store, resolved.docId);
-    const parts: string[] = [];
-    const walk = (nodes: typeof roots): void => {
-      for (const n of nodes) {
-        parts.push(blockRaw(ws.store, n.rawHashHex));
-        walk(n.children);
-      }
-    };
-    walk(roots);
+    // Cat the whole document byte-for-byte via the faithful reconstructor
+    // (leading trivia + frontmatter + each top-level block's raw + its trivia).
+    // This is the same content docs_read returns and what ingest's convergence
+    // check asserts against — never a hand-rolled block join (which dropped
+    // trivia and mangled spacing).
+    const res = docsRead(ws.store, resolved.docId);
+    if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     if (cli.flags.mode === "json") {
-      cli.io.out(JSON.stringify({ doc: resolved.docId, path: info.path, content: parts.join("\n") }));
+      cli.io.out(JSON.stringify({ doc: res.docId, path: res.path, content: res.content }));
     } else {
-      cli.io.out(parts.join("\n"));
+      cli.io.out(res.content);
     }
     return EXIT_OK;
   }

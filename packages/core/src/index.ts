@@ -50,6 +50,7 @@ export { reposStatus, syncStatus, type RepoStatus, type SyncStatus } from "./syn
 
 // Read surface consumed by CLI read commands (11 §5.2–5.5).
 export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/read/outline.js";
+export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions } from "./core/read/document.js";
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
 export { findDoc, loadDocBlocks, blockRaw, type DocInfo, type BlockNode } from "./core/read/reader.js";
 export { resolveRef, type ResolvedRef } from "./core/read/refs.js";
