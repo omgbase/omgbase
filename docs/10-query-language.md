@@ -1,7 +1,7 @@
 # omgbase — Query Language Spec
 
 **Status:** normative. This document defines the filter/query syntax completely; the sketches in `05-graph-and-query.md` §4 defer to it. Task 1.7 implements this spec.
-**Compatibility:** on the `docs` target, omgbase is a superset of mrplex's documented query language (its `query_syntax` reference, 2026-09): same modes, same CEL subset, same absence rule, same `list()` polymorphism, same link-graph predicates including the `_static` variants. Deltas: the `blocks` target, structural functions, an `order` key, block-grain intrinsics, and the fenced-query form.
+**Compatibility:** on the `docs` target, omgbase is a superset of mrplex's documented query language (its `query_syntax` reference, 2026-09): same modes, same CEL subset, same absence rule, same `list()` polymorphism, same link-graph predicates including the `_static` variants. Deltas: the `blocks` and `nodes` targets, structural functions, an `order` key, block-grain and node-grain intrinsics, owning-entity reach-through (`doc.*`, `block.*`), and the fenced-query form.
 
 ---
 
@@ -11,7 +11,7 @@ One envelope everywhere — the `query` tool, the `seed` stage of `pipeline`, an
 
 ```jsonc
 {
-  "from": "blocks",                  // "docs" | "blocks"; required
+  "from": "blocks",                  // "docs" | "blocks" | "nodes"; required
   "filter": "<CEL boolean>",         // optional
   "text": "term \"a phrase\"",       // optional; FTS
   "semantic": "natural language",    // optional; embeddings (semantic_unavailable if no hook)
@@ -39,8 +39,16 @@ The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifie
 ### `blocks`
 - **Bare fields:** `type` (block type enum), `text` (normalized text), `attrs.<key>` (typed attrs: `attrs.checked`, `attrs.lang`, `attrs.level`, …).
 - **Intrinsics:** `$id`, `$doc` (containing doc id), `$path` (containing doc's path), `$locator`, `$ordinal`, `$depth`, `$updated_at` (timestamp of the last commit that touched this block, from `block_changes`).
-- **Doc reach-through:** `doc.<key>` reads the containing document's metadata (`doc.layer == "canon"`); `doc.$path` etc. mirror the intrinsics (`$path` is the shortcut).
+- **Doc reach-through:** `doc.<key>` reads the containing document's metadata (`doc.layer == "canon"`); `doc.$path`, `doc.$updated_at`, `doc.format` reach the owning document's intrinsics/format (`$path` is the shortcut for `doc.$path`). Reach-through is **scope, not selection**: `doc.layer == "canon"` constrains which blocks are eligible; it does not copy the doc's metadata onto the block row. The engine resolves it as an indexed correlated subquery against the owning document (the `properties` table for authored keys), preserving normalization.
 - **Structural functions:** §5.
+
+### `nodes`
+Nodes are the addressable structural/semantic units a format adapter projects from blocks (markdown tasks/links/headings, YAML mapping entries, …). A node query composes a node-grain predicate with owning-Block and owning-Doc predicates in one expression.
+- **Bare fields:** `kind` (node kind, adapter-namespaced: `md:task`, `md:link`, `yaml:env_var`, …), `name`, `value`, `attrs.<key>` (node-specific typed attrs: `attrs.checked`, …).
+- **Intrinsics:** `$id` (= `$node_id`), `$node_id`, `$doc_id`, `$block_id`, `$path` (owning doc's path).
+- **Doc reach-through:** `doc.<key>` reads the owning document's metadata (`doc.layer == "canon"`); `doc.$path`, `doc.$updated_at`, `doc.format` reach its intrinsics/format — same scope-not-selection semantics as the blocks target above.
+- **Block reach-through:** `block.type`, `block.text` read the source block the node was projected from.
+- Structural functions (§5) are **not** available on `nodes` (they are block-tree operations); compose owning-block/doc predicates via `block.*` / `doc.*` instead.
 
 ## 3. CEL subset
 
@@ -130,7 +138,7 @@ On the `docs` target, `has_edge(pred[, target])` is also available and means "an
 ## 7. `order`, `select`, pagination
 
 - **`order`:** array of field references, `-` prefix for descending: `["$path", "$ordinal"]`, `["-$updated_at"]`. Orderable: intrinsics, bare scalar fields, `doc.<key>`. Default when absent: `$semantic_score` desc if semantic, else text rank, else `$updated_at` desc. Ties always break by `$id` ascending — total order is required for stable cursors.
-- **`select` defaults:** docs ⇒ `["$path"]` (mrplex); blocks ⇒ `["$id", "$locator"]`. `$semantic_score` and `$evidence` (RRF/boost breakdown, 05 §5) available when relevant. Bodies/text travel only when selected or via `resolution`.
+- **`select` defaults:** docs ⇒ `["$path"]` (mrplex); blocks ⇒ `["$id", "$locator"]`; nodes ⇒ `id` + `path` + `kind` and any present `name`/`value` (the node target projects these fixed fields; richer `select` projection is not yet wired). `$semantic_score` and `$evidence` (RRF/boost breakdown, 05 §5) available when relevant. Bodies/text travel only when selected or via `resolution`.
 - **`cursor`:** opaque; valid for the same envelope only; results carry `truncated` + `cursor` per the API rules.
 
 ## 8. Compilation contract
@@ -170,6 +178,7 @@ project: list(ref)
 | Orphans | `filter: !$in("**")` |
 | Everything a MOC references, minus one | `filter: $in("moc/**") && !$in("moc/contractors.md")` |
 | Unchecked tasks under Launch in working docs | `from: blocks · filter: type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
+| Task nodes only from canon docs in one namespace | `from: nodes · filter: kind == "md:task" && !attrs.checked && doc.layer == "canon" && doc.$path.startsWith("canon/")` |
 | Paragraphs citing a specific doc | `from: blocks · filter: type == "paragraph" && has_edge("references", "d_92aaaaa")` |
 | Blocks about a concept (semantic) | `from: blocks · semantic: "identity preservation across edits"` |
 | Code fences in TypeScript under Examples | `from: blocks · filter: type == "code_fence" && attrs.lang == "ts" && under_heading("Examples")` |
