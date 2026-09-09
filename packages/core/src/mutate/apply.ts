@@ -4,6 +4,7 @@ import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
+import { makeKnownIdResolver } from "./known-ids.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, MutationError, type MutDoc, type MutBlock } from "./tree.js";
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, type To, type Expect } from "./ops.js";
@@ -81,6 +82,9 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   // Load all docs that ops touch into memory; apply ops in order.
   const loaded = new Map<string, MutDoc>();
   const before = new Map<string, string>();
+  // Block ids present in each doc BEFORE any op — used to label intent
+  // dispositions (edited vs inserted) on the known-id commit path.
+  const priorIds = new Map<string, Set<string>>();
   const results: OpResult[] = [];
 
   const ensureDoc = (docId: string): MutDoc => {
@@ -91,6 +95,8 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       d = md;
       loaded.set(docId, d);
       before.set(docId, renderDoc(d));
+      const ids = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as { block_id: string }[];
+      priorIds.set(docId, new Set(ids.map((r) => r.block_id)));
     }
     return d;
   };
@@ -191,8 +197,18 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       writeFileSync(tmp, rendered);
       renameSync(tmp, abs);
 
-      // Commit: ingest the rendered bytes (api origin) with reconciliation.
-      ingestFile(store, req.repoId, d.path, rendered, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
+      // Commit (INTENT path): persist the ops' tree with its KNOWN block ids —
+      // never re-derive identity from the rendered bytes. The mutated MutDoc `d`
+      // already carries deterministic ids (opUpdate keeps a block's id in place,
+      // untouched blocks keep theirs, new blocks carry the op-minted id), so the
+      // known-id resolver threads them onto the re-parsed tree and records intent
+      // dispositions (confidence 1.0). Re-reconciling here would gamble block —
+      // and thus node — identity on the probabilistic matcher (node-editability).
+      ingestFile(store, req.repoId, d.path, rendered, {
+        ts,
+        origin: "import",
+        resolveIds: makeKnownIdResolver(store, req.repoId, d, priorIds.get(docId) ?? new Set(), { path: d.path }),
+      });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a
       // later sweep (echo suppression already covers correctness; this avoids work).
       if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(rendered));

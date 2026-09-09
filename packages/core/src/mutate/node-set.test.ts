@@ -70,6 +70,28 @@ describe("nodeSet — surgical node-property edits via block update", () => {
     }
   });
 
+  it("block AND node ids survive an edit (intent path carries identity)", () => {
+    const { store, repoId, root } = setup("a.md", "# Doc\n\nSee [a](/x.md) then [b](/y.md) here.\n");
+    const nodeBefore = store.db.prepare("SELECT node_id, block_id FROM nodes WHERE value = '/y.md'").get() as { node_id: string; block_id: string };
+    const paraBefore = store.db.prepare("SELECT block_id FROM blocks WHERE type = 'paragraph'").get() as { block_id: string };
+
+    apply(store, { repoId, rootPath: root, ops: nodeSet(store, nodeBefore.node_id, "name", "Bee"), origin: { actor: "test" } });
+
+    const paraAfter = store.db.prepare("SELECT block_id FROM blocks WHERE type = 'paragraph'").all() as { block_id: string }[];
+    const nodeAfter = store.db.prepare("SELECT node_id FROM nodes WHERE value = '/y.md'").get() as { node_id: string } | undefined;
+    // The edited paragraph keeps its block id (not re-minted by a reconcile).
+    expect(paraAfter.length).toBe(1);
+    expect(paraAfter[0]!.block_id).toBe(paraBefore.block_id);
+    // The node id — derived from (doc, block, kind, ordinal) — therefore survives.
+    expect(nodeAfter?.node_id).toBe(nodeBefore.node_id);
+
+    // And the SAME node id is still editable a second time (was impossible when
+    // apply re-reconciled its own writes and re-minted).
+    const ops2 = nodeSet(store, nodeAfter!.node_id, "value", "/z.md");
+    apply(store, { repoId, rootPath: root, ops: ops2, origin: { actor: "test" } });
+    expect(readFileSync(join(root, "a.md"), "utf8")).toBe("# Doc\n\nSee [a](/x.md) then [Bee](/z.md) here.\n");
+  });
+
   it("editablePropsFor reports the registered props per kind", () => {
     expect(editablePropsFor("markdown", "md:link").sort()).toEqual(["name", "value"]);
     expect(editablePropsFor("markdown", "md:task")).toEqual(["checked"]);

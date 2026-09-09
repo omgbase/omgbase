@@ -1,0 +1,153 @@
+import type { Database } from "better-sqlite3";
+import type { Store } from "../core/store/store.js";
+import type { RawBlock } from "../core/parse/types.js";
+import type { TreeInputBlock } from "../core/store/writers.js";
+import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
+import { mintId } from "../core/ids.js";
+import { extractFromBlock, extractFromFrontmatter } from "../graph/extract.js";
+import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
+import { adapterForPath, type AdapterEdge } from "../format/index.js";
+import type { MutBlock, MutDoc } from "./tree.js";
+
+// Known-id resolver for the INTENT path (04 §2, node-editability fix). When
+// `apply` commits, it already holds the mutated tree with DETERMINISTIC block
+// ids — opUpdate keeps a block's id in place, untouched blocks keep theirs, and
+// new blocks carry the id the op minted. Re-ingesting the rendered bytes through
+// the probabilistic reconciler would DISCARD those ids and re-derive identity
+// from bytes, re-minting on ordinary edits (and cascading to node ids). This
+// resolver instead carries the MutDoc's ids onto the re-parsed blocks
+// positionally — round-trip law guarantees parse(render(tree)) is structurally
+// identical to the op tree — and records intent dispositions (confidence 1.0),
+// never a matcher guess. Edge extraction is still real derivation (reused).
+
+/** Flatten a MutDoc body to a positional id list mirroring flatten()'s keys. */
+function idByPositionalKey(children: MutBlock[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const walk = (list: MutBlock[], parentKey: string | null): void => {
+    list.forEach((b, index) => {
+      const key = `${parentKey ?? ""}/${index}`;
+      out.set(key, b.id);
+      if (b.children.length > 0) walk(b.children, key);
+    });
+  };
+  walk(children, null);
+  return out;
+}
+
+/** Assign the MutDoc's ids onto the re-parsed tree by positional key; mint only
+ *  if a position is unexpectedly absent (should not happen under round-trip). */
+function assignFromMut(blocks: RawBlock[], byKey: Map<string, string>): TreeInputBlock[] {
+  const walk = (list: RawBlock[], parentKey: string | null): TreeInputBlock[] =>
+    list.map((b, index) => {
+      const key = `${parentKey ?? ""}/${index}`;
+      const blockId = byKey.get(key) ?? mintId("b");
+      return { blockId, type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: walk(b.children, key) };
+    });
+  return walk(blocks, null);
+}
+
+function collectRawBlocks(blocks: TreeInputBlock[]): { blockId: string; type: string; raw: string }[] {
+  const out: { blockId: string; type: string; raw: string }[] = [];
+  const walk = (list: TreeInputBlock[]): void => {
+    for (const b of list) { out.push({ blockId: b.blockId, type: b.type, raw: b.raw }); walk(b.children); }
+  };
+  walk(blocks);
+  return out;
+}
+
+function collectIds(blocks: TreeInputBlock[]): string[] {
+  const out: string[] = [];
+  const walk = (list: TreeInputBlock[]): void => { for (const b of list) { out.push(b.blockId); walk(b.children); } };
+  walk(blocks);
+  return out;
+}
+
+/**
+ * An IdResolver that threads the ops' known ids (from the committed MutDoc)
+ * rather than reconciling. `priorIds` is the set of block ids that existed in
+ * the doc's previous revision — used only to label dispositions (same/edited vs
+ * inserted); it does not affect id assignment.
+ */
+export function makeKnownIdResolver(
+  store: Store,
+  repoId: string,
+  doc: MutDoc,
+  priorIds: Set<string>,
+  opts: { path?: string } = {},
+): IdResolver {
+  const adapter = opts.path ? adapterForPath(opts.path) : undefined;
+  const byKey = idByPositionalKey(doc.children);
+
+  return (rest: RawBlock[], docId: string | null) => {
+    const db = store.db;
+    const assigned = assignFromMut(rest, byKey);
+    const nowIds = collectIds(assigned);
+    const nowSet = new Set(nowIds);
+
+    // Dispositions are INTENT, not inference: a carried id that existed before is
+    // `same`/`edited` (confidence 1.0); an id new this commit is `inserted`; a
+    // prior id no longer present is `deleted`.
+    const dispositions: DispositionRow[] = nowIds.map((id) => ({
+      blockId: id,
+      kind: priorIds.has(id) ? "edited" : "inserted",
+      confidence: 1,
+      reason: "api",
+      matcherV: null,
+      detail: {},
+    }));
+    const deleted: string[] = [...priorIds].filter((id) => !nowSet.has(id));
+
+    const extractEdges = (thisDocId: string, metadata: Record<string, unknown>): ResolvedEdgeRow[] => {
+      const out: ResolvedEdgeRow[] = [];
+      if (adapter?.extractEdges) {
+        const raw = collectRawBlocks(assigned);
+        for (const e of adapter.extractEdges(raw as never, metadata)) out.push(resolveAdapterEdge(db, repoId, thisDocId, e));
+      } else {
+        const walk = (blocks: TreeInputBlock[]): void => {
+          for (const b of blocks) {
+            for (const e of extractFromBlock(b.blockId, b.type, b.raw)) out.push(resolveEdge(db, repoId, thisDocId, e));
+            if (b.children.length > 0) walk(b.children);
+          }
+        };
+        walk(assigned);
+        for (const e of extractFromFrontmatter(metadata)) out.push(resolveEdge(db, repoId, thisDocId, e));
+      }
+      return out;
+    };
+
+    void docId;
+    return { assigned, dispositions, deleted, extractEdges };
+  };
+}
+
+// Edge resolution — mirrors reconciling-ingest's resolvers (block-anchor targets
+// resolve to the document node in v1; the anchor is preserved on the edge).
+function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType<typeof extractFromBlock>[number]): ResolvedEdgeRow {
+  let dstNode: string;
+  let dstKind = e.dstKind;
+  if (e.dstKind === "external") {
+    dstNode = resolveExternal(db, repoId, e.target);
+  } else if (e.target === "") {
+    dstNode = srcDoc;
+    dstKind = "document";
+  } else {
+    dstNode = resolveDocPath(db, repoId, e.target).id;
+    dstKind = "document";
+  }
+  return { srcDoc, srcBlock: e.srcBlock, srcField: e.srcField, predicate: e.predicate, dstKind, dstNode, anchor: e.anchor, provenance: e.provenance };
+}
+
+function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: AdapterEdge): ResolvedEdgeRow {
+  let dstNode: string;
+  let dstKind = e.dstKind;
+  if (e.dstKind === "external") {
+    dstNode = resolveExternal(db, repoId, e.target);
+  } else if (e.target === "") {
+    dstNode = srcDoc;
+    dstKind = "document";
+  } else {
+    dstNode = resolveDocPath(db, repoId, e.target).id;
+    dstKind = "document";
+  }
+  return { srcDoc, srcBlock: e.srcBlock, srcField: e.srcField, predicate: e.predicate, dstKind, dstNode, anchor: e.anchor, provenance: e.provenance };
+}
