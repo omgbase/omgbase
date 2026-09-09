@@ -24,7 +24,7 @@ import {
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
-import { loadEmbedding } from "./_embed.js";
+import { loadEmbedding, drainEmbeddings } from "./_embed.js";
 import { openFsSource } from "./_source.js";
 
 // watch + admin/maintenance (11 §5.8–5.9).
@@ -303,28 +303,18 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
 
+  if (sub === "drain") {
+    await loaded.close(); // drainEmbeddings connects its own provider
+    const result = await drainEmbeddings(cli, ws, repo.repoId, { verbose });
+    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...(result ?? { embedded: 0, cached: 0 }) }));
+    else if (result) cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
+    return EXIT_OK;
+  }
+
   try {
     const tasks = buildEmbedTasks(ws.store, repo.repoId);
     // Queue depth = embeddable blocks whose current-context vector isn't cached.
     const pending = loaded.worker.staleBlocks(tasks);
-
-    if (sub === "drain") {
-      // Egress notice (05 §6): a remote provider receives block text off-machine.
-      if (loaded.remote) {
-        cli.io.err(cli.style.warn(`  embedding ${pending.length} block(s) via ${loaded.providerName} — block text is sent to this remote endpoint`));
-      } else {
-        cli.io.err(cli.style.dim(`  embedding ${pending.length} block(s) via ${loaded.providerName} (local process)`));
-      }
-      const verboseHuman = verbose && cli.flags.mode === "human";
-      const result = await loaded.worker.process(tasks, {
-        ...(verboseHuman
-          ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} embedded`)) }
-          : {}),
-      });
-      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...result }));
-      else cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
-      return EXIT_OK;
-    }
 
     // status
     const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length };

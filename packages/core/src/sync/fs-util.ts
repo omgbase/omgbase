@@ -1,4 +1,5 @@
 import { readdirSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
 // Shared filesystem walk for the in-process one-shot/reconcile paths (attach,
@@ -20,5 +21,35 @@ export function walkMarkdown(root: string): string[] {
     }
   };
   recur(root);
+  return out;
+}
+
+/**
+ * Async variant of {@link walkMarkdown}: identical result, but yields to the
+ * event loop between directories and invokes `onFound(count)` as matches
+ * accumulate. This lets a caller drive a live progress counter (e.g. beside an
+ * interactive prompt) while the scan runs. `signal` lets the caller stop early
+ * once a decision has been made — the partial result is still returned.
+ */
+export async function walkMarkdownAsync(
+  root: string,
+  onFound?: (count: number) => void,
+  signal?: { aborted: boolean },
+): Promise<string[]> {
+  const out: string[] = [];
+  const recur = async (dir: string): Promise<void> => {
+    if (signal?.aborted) return;
+    for (const entry of await readdir(dir)) {
+      if (signal?.aborted) return;
+      if (IGNORED_DIRS.has(entry)) continue;
+      const full = join(dir, entry);
+      if ((await stat(full)).isDirectory()) await recur(full);
+      else if (entry.endsWith(".md")) {
+        out.push(relative(root, full).split(sep).join("/"));
+        onFound?.(out.length);
+      }
+    }
+  };
+  await recur(root);
   return out;
 }

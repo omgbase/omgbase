@@ -66,7 +66,8 @@ beforeAll(() => {
     join(vault, "hub.md"),
     ["# Hub", "", "Intro.", "", "## Tasks", "", "- [ ] a task", "- [x] done task", ""].join("\n"),
   );
-  execFileSync("node", [BIN, "init", vault, "--yes"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 
 afterAll(() => {

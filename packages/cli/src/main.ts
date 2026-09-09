@@ -8,7 +8,7 @@ import {
   type Cli,
   type GlobalFlags,
 } from "./context.js";
-import { CliUsageError, renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
+import { CliUsageError, EngineErrorLike, renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
 import { resolveCommand } from "./commands.js";
 
 // Hand-rolled router (11 §8: no commander). Splits global flags from the
@@ -142,9 +142,18 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
     if (!flags.stale && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
       const ws = cli.workspace();
       if (!watchLeaseLive(ws.omgbaseDir)) {
-        const repo = cli.repo(ws);
-        // Freshness is the filesystem fast-path; sourceless/non-fs repos skip it.
-        if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+        // Best-effort: the sweep keeps reads current, but a workspace with no
+        // attached repo (or an unresolvable cwd) has nothing to sweep. That's
+        // not an error for the command itself (e.g. `config` on a fresh
+        // workspace) — only the sweep is skipped; the command still runs and
+        // surfaces its own repo_not_found if it truly needs a repo.
+        try {
+          const repo = cli.repo(ws);
+          // Freshness is the filesystem fast-path; sourceless/non-fs repos skip it.
+          if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+        } catch (err) {
+          if (!(err instanceof EngineErrorLike && err.code === "repo_not_found")) throw err;
+        }
       }
     }
     const code = await resolved.run(cli, parsed.rest);

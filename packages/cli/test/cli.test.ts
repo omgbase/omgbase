@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -57,8 +57,9 @@ beforeAll(() => {
     ].join("\n"),
   );
   writeFileSync(join(vault, "target.md"), "# Target\n\nReferenced by hub.\n");
-  // init (build the workspace).
-  execFileSync("node", [BIN, "init", vault, "--yes"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  // init (build the workspace), then attach the tree to ingest it.
+  execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 
 afterAll(() => {
@@ -195,6 +196,73 @@ describe("--json parity", () => {
     const res = JSON.parse(omg(["status", "--json"]).stdout) as Record<string, unknown>;
     for (const k of ["repo", "docs", "blocks", "commits", "watcher", "convergent"]) {
       expect(res).toHaveProperty(k);
+    }
+  });
+});
+
+describe("init / attach split (consent-gated ingest)", () => {
+  const run = (cwd: string, args: string[]): { code: number; stderr: string; stdout: string } => {
+    const res = spawnSync("node", [BIN, "-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    return { code: res.status ?? 1, stderr: res.stderr ?? "", stdout: res.stdout ?? "" };
+  };
+
+  it("init creates a workspace but ingests nothing; attach is required", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-split-"));
+    try {
+      writeFileSync(join(root, "note.md"), "# Note\n\nbody\n");
+      run(root, ["init", "--yes", "--no-embedder"]);
+      // Before attach: workspace exists but no repo ingested yet.
+      expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
+      // -y ingests the tree; attach --json reports the file count.
+      const attached = JSON.parse(run(root, ["attach", ".", "-y", "--json"]).stdout) as { files: number };
+      expect(attached.files).toBe(1);
+      // Now a repo exists and is queryable.
+      const after = JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[];
+      expect(after).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("attach without -y in a non-TTY refuses to ingest", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-split-"));
+    try {
+      writeFileSync(join(root, "note.md"), "# Note\n\nbody\n");
+      run(root, ["init", "--yes", "--no-embedder"]);
+      const res = run(root, ["attach", "."]);
+      expect(res.stderr).toMatch(/refusing to attach without -y/);
+      // Declined ⇒ still no repo ingested.
+      expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("init --embedder sets the provider verbatim (no prompt, no PATH check)", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-split-"));
+    try {
+      run(root, ["init", "--yes", "--embedder", "http://localhost:9999/embed"]);
+      // Workspace-layer provider is set to exactly what we passed.
+      const cfg = JSON.parse(run(root, ["config", "list", "--repo", "", "--json"]).stdout) as {
+        embedding?: { provider?: string };
+      };
+      expect(cfg.embedding?.provider).toBe("http://localhost:9999/embed");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("init --no-embedder leaves no provider and hints how to add one", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-split-"));
+    try {
+      const res = run(root, ["init", "--yes", "--no-embedder"]);
+      const cfg = JSON.parse(run(root, ["config", "list", "--repo", "", "--json"]).stdout) as {
+        embedding?: { provider?: string };
+      };
+      expect(cfg.embedding?.provider).toBeUndefined();
+      void res;
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

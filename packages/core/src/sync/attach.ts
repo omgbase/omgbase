@@ -18,13 +18,18 @@ export interface AttachResult {
   allConverged: boolean;
 }
 
-/** Attach a filesystem directory as a repo: create it + ingest all Markdown. */
-export function attachRepo(store: Store, slug: string, rootPath: string): AttachResult {
+/**
+ * Attach a filesystem directory as a repo: create it + ingest all Markdown.
+ * `files` (repo-relative paths) may be supplied by a caller that already
+ * walked the tree — e.g. the CLI, which walks to drive a live count beside its
+ * confirmation prompt — to avoid walking twice; omit it to walk here.
+ */
+export function attachRepo(store: Store, slug: string, rootPath: string, files?: string[]): AttachResult {
   const repoId = ensureRepo(store, slug, rootPath);
-  const files = walkMarkdown(rootPath);
+  const walked = files ?? walkMarkdown(rootPath);
   const ts = new Date().toISOString();
   let allConverged = true;
-  for (const rel of files) {
+  for (const rel of walked) {
     const content = readFileSync(join(rootPath, rel), "utf8");
     const res = ingestFile(store, repoId, rel, content, {
       ts,
@@ -32,5 +37,5 @@ export function attachRepo(store: Store, slug: string, rootPath: string): Attach
     });
     if (!res.converged) allConverged = false;
   }
-  return { repoId, fileCount: files.length, allConverged };
+  return { repoId, fileCount: walked.length, allConverged };
 }

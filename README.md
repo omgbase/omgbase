@@ -117,8 +117,9 @@ pnpm -r build           # build all packages (core, cli, embedder, fs-adapter)
 pnpm rlink              # globally link binaries (omg, omgbase, omgbase-embedder, omgbase-fs-adapter)
 
 # --- bootstrap ------------------------------------------------------------
-omg init ./my-vault --yes   # create the workspace + attach ./my-vault as a repo + ingest
+omg init ./my-vault --yes   # create the workspace (.omgbase/ + DB); does NOT ingest
 cd ./my-vault
+omg attach . -y             # ingest this tree as a repo (prompts without -y)
 omg status                  # where am I: repo, sync, watcher, queue
 omg repos                   # list every repo in this workspace
 

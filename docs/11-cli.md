@@ -119,8 +119,8 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 
 | Command | Does |
 |---|---|
-| `omg init [dir]` | Create `.omgbase/` + DB in `dir` (default cwd), attach `dir` as a repo (slug = basename). Offers to append `.omgbase/` to `.gitignore` — prompt on TTY, `--yes` for scripts, **never silent** (02 §2). Then full initial ingest. |
-| `omg attach <path> --slug <s>` | Attach an additional working tree to this workspace (`attachRepo`). |
+| `omg init [dir]` | Create the workspace (`.omgbase/` + DB) in `dir` (default cwd). Does **not** ingest files — that's a separate consent-gated `attach` step, so `init` never absorbs whatever happens to live under cwd (home dir, desktop, …). If inside a git working tree, offers to ignore the DB via the closest `.gitignore` at/above the workspace (creating one at the git root if none), written relative to that file — prompt on TTY, `--yes` for scripts, **never silent** (02 §2). Outside git, nothing to ignore. Also offers to set the embedding provider: if `omgbase-embedder` is installed it offers it (`--yes` accepts); `--embedder <cmd\|url>` sets any provider verbatim; `--no-embedder` skips. If none ends up set, prints install+config guidance. |
+| `omg attach <path> [--slug <s>] [-y]` | Attach a working tree and ingest its Markdown (`attachRepo`; slug defaults to basename). Prompts before ingesting, showing a live file count that grows as the tree is scanned (`248+` while scanning, `248` when done) beside `[y/N]`; Enter = No. `-y` skips the prompt; a non-TTY without `-y` refuses rather than absorbing the tree silently. |
 | `omg repos` | List repos: slug, root path, doc/block counts. |
 
 ### 5.2 Orient & read

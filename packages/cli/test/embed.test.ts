@@ -45,7 +45,10 @@ beforeEach(() => {
     join(vault, "cook.md"),
     "# Recipes\n\nTo make a proper risotto you toast the arborio rice in butter then add warm stock one ladle at a time stirring until each addition is absorbed before adding more.\n",
   );
-  execFileSync("node", [BIN, "init", vault, "--yes"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  // --no-embedder: start with NO provider so the "no provider configured" block
+  // is deterministic regardless of whether omgbase-embedder is on the test host.
+  execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -89,5 +92,28 @@ describe("embed via external stdio provider (fake embedder)", () => {
     omg(["embed", "drain"]);
     const ids = omg(["find", "risotto rice cooking", "-1"]).trim();
     expect(ids).toMatch(/^b_/);
+  });
+});
+
+describe("attach auto-drains when a provider is configured", () => {
+  it("attach embeds the freshly-ingested blocks, leaving nothing queued", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-attach-drain-"));
+    try {
+      writeFileSync(
+        join(root, "arch.md"),
+        "# Architecture\n\nThe engine serializes all state changes through one append-only commit log per repository backed by an embedded SQLite database in write-ahead logging mode for durability and concurrency across readers.\n",
+      );
+      // init with the fake embedder as the provider, then attach.
+      execFileSync("node", [BIN, "init", root, "--yes", "--embedder", `node ${FAKE}`], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+      const attachJson = execFileSync("node", [BIN, "-C", root, "--json", "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+      const res = JSON.parse(attachJson) as { files: number; embedded?: number };
+      expect(res.files).toBe(1);
+      expect(res.embedded).toBeGreaterThanOrEqual(1);
+      // Queue is empty right after attach — no separate drain needed.
+      const status = JSON.parse(execFileSync("node", [BIN, "-C", root, "embed", "status", "--json"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } })) as { queued: number };
+      expect(status.queued).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

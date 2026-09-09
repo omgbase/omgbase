@@ -1,4 +1,4 @@
-import { EmbeddingWorker, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
+import { EmbeddingWorker, buildEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
 import type { Cli } from "../context.js";
 
 // Shared embedding setup for the CLI (05 §6). Reads embedding.* from the repo's
@@ -39,4 +39,57 @@ export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: st
     remote: /^https?:\/\//i.test(settings.provider),
     close: ext.close,
   };
+}
+
+export interface DrainDecision {
+  /** number of blocks that would be embedded (cache misses). */
+  pending: number;
+  /** true if the provider is a remote endpoint (block text leaves the machine). */
+  remote: boolean;
+  providerName: string;
+}
+
+/**
+ * Embed the repo's queued blocks now, connecting the configured provider and
+ * releasing it afterward. No-op (returns null) when no provider is configured.
+ * `verbose` prints per-batch progress in human mode. An optional `confirm` gate
+ * is consulted BEFORE any block text is handed to the provider — returning
+ * false skips the drain (also null). Callers that are themselves the explicit
+ * "drain now" intent (`omg embed drain`) omit `confirm`; callers doing it as a
+ * side effect (post-`attach`) pass one so the user consents to the egress.
+ * Shared by both so they speak the same egress notice + progress output.
+ */
+export async function drainEmbeddings(
+  cli: Cli,
+  ws: ReturnType<Cli["workspace"]>,
+  repoId: string,
+  opts: { verbose?: boolean; confirm?: (d: DrainDecision) => Promise<boolean> } = {},
+): Promise<{ embedded: number; cached: number } | null> {
+  const loaded = await loadEmbedding(ws, repoId);
+  if (!loaded) return null;
+  try {
+    const tasks = buildEmbedTasks(ws.store, repoId);
+    const pending = loaded.worker.staleBlocks(tasks);
+
+    if (opts.confirm) {
+      const ok = await opts.confirm({ pending: pending.length, remote: loaded.remote, providerName: loaded.providerName });
+      if (!ok) return null;
+    }
+
+    // Egress notice (05 §6): a remote provider receives block text off-machine.
+    if (loaded.remote) {
+      cli.io.err(cli.style.warn(`  embedding ${pending.length} block(s) via ${loaded.providerName} — block text is sent to this remote endpoint`));
+    } else {
+      cli.io.err(cli.style.dim(`  embedding ${pending.length} block(s) via ${loaded.providerName} (local process)`));
+    }
+    const verboseHuman = Boolean(opts.verbose) && cli.flags.mode === "human";
+    const result = await loaded.worker.process(tasks, {
+      ...(verboseHuman
+        ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} embedded`)) }
+        : {}),
+    });
+    return result;
+  } finally {
+    await loaded.close();
+  }
 }
