@@ -76,6 +76,32 @@ describe("graph_traverse", () => {
     if (phantom) expect(phantom[1].path).toBe("d.md");
   });
 
+  it("resolves a document path seed to its doc id when repoId is given", () => {
+    const res = graphTraverse(store, { from: ["a.md"], repoId, via: ["references"], direction: "out", depth: 3 });
+    expect(res.nodes).toContain(docId("a.md"));
+    expect(res.nodes).toContain(docId("b.md"));
+    expect(res.nodes).toContain(docId("c.md"));
+  });
+
+  it("throws seed_unresolved for an unknown path", () => {
+    expect(() =>
+      graphTraverse(store, { from: ["no-such-doc.md"], repoId, direction: "out", depth: 1 }),
+    ).toThrowError(/seed.*could not be resolved/i);
+  });
+
+  it("throws seed_unresolved for a path seed when repoId is absent", () => {
+    expect(() =>
+      graphTraverse(store, { from: ["a.md"], direction: "out", depth: 1 }),
+    ).toThrowError(/seed.*could not be resolved/i);
+  });
+
+  it("mixes path and id seeds in the same from array", () => {
+    const res = graphTraverse(store, { from: ["a.md", docId("c.md")], repoId, via: ["references"], direction: "out", depth: 1 });
+    expect(res.nodes).toContain(docId("a.md"));
+    expect(res.nodes).toContain(docId("b.md"));
+    expect(res.nodes).toContain(docId("c.md"));
+  });
+
   it("enforces the node budget and flags truncation", () => {
     const res = graphTraverse(store, { from: [docId("a.md")], via: ["references"], direction: "out", depth: 8, budget: { maxNodes: 2 } });
     expect(res.truncated).toBe(true);
