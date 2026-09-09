@@ -175,7 +175,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       const abs = join(req.rootPath, d.path);
 
       // File-CAS: on-disk bytes must equal the revision we computed against.
-      const current = store.db.prepare("SELECT file_hash FROM documents WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
+      const current = store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
       if (existsSync(abs) && current?.file_hash) {
         const onDisk = sha256(readFileSync(abs, "utf8"));
         if (!onDisk.equals(current.file_hash)) {

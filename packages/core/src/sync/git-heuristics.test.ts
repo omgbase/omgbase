@@ -45,12 +45,12 @@ describe("checkpoint git integration", () => {
     writeFileSync(join(dir, "a.md"), "# A\n\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\n");
     const res = processCheckpoint(store, repoId, dir, [{ path: "a.md" }]);
     expect(res.conflicted).toEqual(["a.md"]);
-    expect((store.db.prepare("SELECT conflicted c FROM documents WHERE path='a.md'").get() as { c: number }).c).toBe(1);
+    expect((store.db.prepare("SELECT conflicted c FROM docs WHERE path='a.md'").get() as { c: number }).c).toBe(1);
 
     // Resolve the conflict → flag clears.
     writeFileSync(join(dir, "a.md"), "# A\n\nresolved body\n");
     processCheckpoint(store, repoId, dir, [{ path: "a.md" }]);
-    expect((store.db.prepare("SELECT conflicted c FROM documents WHERE path='a.md'").get() as { c: number }).c).toBe(0);
+    expect((store.db.prepare("SELECT conflicted c FROM docs WHERE path='a.md'").get() as { c: number }).c).toBe(0);
   });
 
   it("branch-switch storm: many files in one checkpoint, no identity carnage", () => {
@@ -62,7 +62,7 @@ describe("checkpoint git integration", () => {
     // Capture block ids.
     const idsBefore = new Map<string, string>();
     for (let i = 0; i < 20; i++) {
-      const docId = (store.db.prepare("SELECT doc_id FROM documents WHERE path=?").get(`d${i}.md`) as { doc_id: string }).doc_id;
+      const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(`d${i}.md`) as { doc_id: string }).doc_id;
       const b = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph'").get(docId) as { block_id: string };
       idsBefore.set(`d${i}.md`, b.block_id);
     }
@@ -76,7 +76,7 @@ describe("checkpoint git integration", () => {
     expect(res.ingested).toHaveLength(0);
     // Block ids unchanged.
     for (let i = 0; i < 20; i++) {
-      const docId = (store.db.prepare("SELECT doc_id FROM documents WHERE path=?").get(`d${i}.md`) as { doc_id: string }).doc_id;
+      const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(`d${i}.md`) as { doc_id: string }).doc_id;
       const b = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph'").get(docId) as { block_id: string };
       expect(b.block_id).toBe(idsBefore.get(`d${i}.md`));
     }

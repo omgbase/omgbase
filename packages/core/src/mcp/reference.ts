@@ -17,7 +17,7 @@ Hydrate full content by id via nodes_get.
 The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
 your content (metadata keys / block fields). They never collide.
 
-documents:
+docs:
   - bare identifier  = a document PROPERTY key (nested via dots: meta.owner).
                        Bare keys span the AUTHORED sources — frontmatter and
                        inline (dataview-style key:: value) — unioned. For
@@ -75,7 +75,7 @@ A missing key NEVER matches and NEVER errors:
   parent_type() == "x"        parent block's type (must be compared)
   child_count() > 0           number of direct children (must be compared)
 
-## Link-graph predicates (documents target)
+## Link-graph predicates (docs target)
 
   $in("moc/**")               some doc matching the glob links TO this doc
   $has("guides/*")            this doc links to a target matching the glob
@@ -89,7 +89,7 @@ Project fields onto each hit. Default hit is {id, path}. select adds:
   - bare key            → that property value from the doc  ("layer","type","tracking")
                           (scalar-authored → scalar; list-authored → array)
   - on blocks           → also "type", "attrs.<k>", "$ordinal"
-  - "$body"             → whole reconstructed file bytes (documents target only;
+  - "$body"             → whole reconstructed file bytes (docs target only;
                           same content docs_read returns). For a single doc,
                           docs_read is cheaper than a $body query.
   - "$semantic_score"   → cosine similarity to the query vector, 1 = identical
@@ -104,13 +104,13 @@ Absent keys are simply omitted from the hit.
 
 ## Examples
 
-  from=documents  filter: layer == "working"
-  from=documents  filter: $path.startsWith("guides/") && $updated_at >= "2026-08-01"
-  from=documents  filter: "pricing" in list(tags)      select: ["layer","tags"]
-  from=documents  filter: inline.owner == "alice"       (only inline key:: fields)
-  from=documents  filter: $title == "Q3 Plan"           (computed: first H1)
-  from=documents  filter: "urgent" in list($tags)       (computed: body #hashtags)
-  from=documents  filter: !$in("**")                    (orphans)
+  from=docs       filter: layer == "working"
+  from=docs       filter: $path.startsWith("guides/") && $updated_at >= "2026-08-01"
+  from=docs       filter: "pricing" in list(tags)      select: ["layer","tags"]
+  from=docs       filter: inline.owner == "alice"       (only inline key:: fields)
+  from=docs       filter: $title == "Q3 Plan"           (computed: first H1)
+  from=docs       filter: "urgent" in list($tags)       (computed: body #hashtags)
+  from=docs       filter: !$in("**")                    (orphans)
   from=blocks     filter: type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")
   from=blocks     semantic: "identity preservation across edits"   select: ["$ordinal","$semantic_score"]

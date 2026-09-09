@@ -168,7 +168,7 @@ function projectNodes(store: Store, nodeIds: string[], select: string[]): Record
   if (docIds.length > 0) {
     const ph = docIds.map(() => "?").join(",");
     const rows = store.db
-      .prepare(`SELECT doc_id, path FROM documents WHERE doc_id IN (${ph})`)
+      .prepare(`SELECT doc_id, path FROM docs WHERE doc_id IN (${ph})`)
       .all(...docIds) as { doc_id: string; path: string }[];
     for (const r of rows) docMeta.set(r.doc_id, { path: r.path });
   }

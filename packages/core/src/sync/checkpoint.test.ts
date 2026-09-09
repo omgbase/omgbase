@@ -75,7 +75,7 @@ describe("processCheckpoint", () => {
     writeFileSync(join(dir, "a.md"), "# A\n\nNow with a body.\n");
     const res = processCheckpoint(store, repoId, dir, [{ path: "a.md" }]);
     expect(res.ingested).toEqual(["a.md"]);
-    const doc = store.db.prepare("SELECT doc_id FROM documents WHERE path = 'a.md'").get() as { doc_id: string };
+    const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path = 'a.md'").get() as { doc_id: string };
     const revs = store.db.prepare("SELECT count(*) c FROM revisions WHERE doc_id = ?").get(doc.doc_id) as { c: number };
     expect(revs.c).toBe(2);
   });
@@ -86,7 +86,7 @@ describe("processCheckpoint", () => {
     processCheckpoint(store, repoId, dir, [{ path: "conv.md" }]);
     const onDisk = readFileSync(join(dir, "conv.md"), "utf8");
     expect(render(parseTree(onDisk))).toBe(content);
-    const doc = store.db.prepare("SELECT file_hash, current_rev FROM documents WHERE path='conv.md'").get() as { file_hash: Buffer; current_rev: string };
+    const doc = store.db.prepare("SELECT file_hash, current_rev FROM docs WHERE path='conv.md'").get() as { file_hash: Buffer; current_rev: string };
     const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.current_rev) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);
   });

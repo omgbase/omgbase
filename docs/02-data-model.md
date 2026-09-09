@@ -42,7 +42,7 @@ CREATE TABLE repos (
   settings     TEXT NOT NULL DEFAULT '{}' -- JSON: sync.quiescence_ms, matcher thresholds, embedding config…
 );
 
-CREATE TABLE documents (
+CREATE TABLE docs (
   doc_id        TEXT PRIMARY KEY,
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
   path          TEXT NOT NULL,             -- repo-relative, canonical (no leading slash)
@@ -60,7 +60,7 @@ CREATE TABLE documents (
 CREATE TABLE blocks (
   block_id      TEXT PRIMARY KEY,
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
-  doc_id        TEXT NOT NULL REFERENCES documents(doc_id),
+  doc_id        TEXT NOT NULL REFERENCES docs(doc_id),
   parent_block  TEXT,                      -- NULL = top-level child of document
   order_key     TEXT NOT NULL,             -- fractional key; sorts lexicographically among siblings
   ordinal       INTEGER NOT NULL,          -- materialized position among siblings (rebuilt per commit)
@@ -94,7 +94,7 @@ CREATE TABLE tree_nodes (
 
 CREATE TABLE revisions (
   rev_id           TEXT PRIMARY KEY,
-  doc_id           TEXT NOT NULL REFERENCES documents(doc_id),
+  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
   seq              INTEGER NOT NULL,       -- per-document, monotonically increasing
   root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
   frontmatter_blob BLOB REFERENCES blobs(hash),  -- raw YAML text incl. fences; NULL if none
@@ -273,7 +273,7 @@ CREATE VIRTUAL TABLE nodes_fts USING fts5(
 -- Filesystem stat cache backing the CLI freshness sweep (11 §3.3). Lets a
 -- one-shot command detect out-of-band edits cheaply: compare (mtime_ns, size)
 -- per file and only hash/ingest the candidates that changed. Rebuildable by a
--- full re-stat; the durable convergence signal remains documents.file_hash.
+-- full re-stat; the durable convergence signal remains docs.file_hash.
 CREATE TABLE file_stats (
   repo_id  TEXT NOT NULL,
   path     TEXT NOT NULL,

@@ -97,7 +97,7 @@ Engine → adapter (`{"id":n,"method":...,"params":...}`), adapter → engine (`
 | `remove` | `{ path }` | `{ ok: true }` *(writeThrough only)* |
 | `changes_since` | `{ cursor }` | `{ entries: [{ path, revision }], cursor }` *(poll sources)* |
 
-- **`path`** is the repo-relative storage key (`documents.path`).
+- **`path`** is the repo-relative storage key (`docs.path`).
 - **`revision`** is the source's cheap change-token (§5.1).
 - **`sourceId`** is the source's own locator when it differs from `path` (defaults to `path`; §5.2).
 - **`content`** is the bytes the engine ingests. The engine hashes them itself.

@@ -91,7 +91,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
       // Update the document row's path + its open revisions' path pointer, and
       // record an api commit noting the move.
       const commit = newCommit(db, { repoId: ctx.repoId, ts, origin: "api", actor: ctx.actor ?? null, reason: `move ${info.path} -> ${toRel}` });
-      db.prepare("UPDATE documents SET path = ? WHERE doc_id = ?").run(toRel, info.docId);
+      db.prepare("UPDATE docs SET path = ? WHERE doc_id = ?").run(toRel, info.docId);
       db.prepare("UPDATE revisions SET path = ? WHERE doc_id = ? AND rev_id = ?").run(toRel, info.docId, info.currentRev);
       void commit;
     });
@@ -116,7 +116,7 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
       // Tombstone the document and its live blocks; FTS rows drop with the blocks.
       ftsDeleteDoc(db, info.docId);
       db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, info.docId);
-      db.prepare("UPDATE documents SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, info.docId);
+      db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, info.docId);
     });
     if (existsSync(abs)) unlinkSync(abs);
     if (ctx.omgbaseDir) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(ctx.repoId, info.path);

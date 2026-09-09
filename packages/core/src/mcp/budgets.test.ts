@@ -22,7 +22,7 @@ afterEach(() => store.close());
 function bigDoc(): string {
   const paras = Array.from({ length: 40 }, (_, i) => `paragraph number ${i} with a fair amount of words to consume budget space`);
   ingestFile(store, repoId, "big.md", "# Big\n\n" + paras.join("\n\n") + "\n");
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path='big.md'").get() as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path='big.md'").get() as { doc_id: string }).doc_id;
 }
 
 describe("budget_tokens + cursor audit", () => {

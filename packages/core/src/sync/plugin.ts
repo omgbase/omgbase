@@ -26,7 +26,7 @@ export interface SourceCapabilities {
 
 /** A member of the source scope: its storage key + cheap change-token (13 §4.2). */
 export interface SourceEntry {
-  /** Storage key — repo-relative canonical path (documents.path). */
+  /** Storage key — repo-relative canonical path (docs.path). */
   path: string;
   /** The source's cheap change-token; equal ⇒ unchanged ⇒ engine no-op. */
   revision: string;

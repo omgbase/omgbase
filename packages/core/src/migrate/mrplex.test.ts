@@ -24,7 +24,7 @@ describe("mrplex importer (7.4)", () => {
     expect(plan.totalBytes).toBeGreaterThan(0);
     expect(plan.paths).toEqual(["concepts/identity.md", "projects/omgbase.md"]);
     // nothing written
-    expect((store.db.prepare("SELECT count(*) c FROM documents").get() as { c: number }).c).toBe(0);
+    expect((store.db.prepare("SELECT count(*) c FROM docs").get() as { c: number }).c).toBe(0);
   });
 
   it("imports docs as import-origin commits with minted ids + convergence", () => {

@@ -40,7 +40,7 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
     .prepare(
       `SELECT b.block_id, b.doc_id, d.path AS path,
               b.ordinal, b.type, b.text, b.raw_hash
-       FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
+       FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
        WHERE b.repo_id = ? AND b.deleted_commit IS NULL
        ORDER BY d.path, b.ordinal`,
     )

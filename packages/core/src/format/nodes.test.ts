@@ -18,7 +18,7 @@ describe("node projection — markdown", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/docs/guide.md) and [api](/api.md).\n");
 
-    const rows = store.db.prepare("SELECT kind, name, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM documents WHERE path = 'test.md')").all() as { kind: string; name: string | null; value: string | null }[];
+    const rows = store.db.prepare("SELECT kind, name, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'test.md')").all() as { kind: string; name: string | null; value: string | null }[];
     const links = rows.filter((r) => r.kind === "md:link");
     expect(links.length).toBe(2);
     expect(links.map((l) => l.value)).toContain("/docs/guide.md");
@@ -29,7 +29,7 @@ describe("node projection — markdown", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [[other note]] and [[second note]].\n");
 
-    const rows = store.db.prepare("SELECT kind, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM documents WHERE path = 'test.md')").all() as { kind: string; value: string | null }[];
+    const rows = store.db.prepare("SELECT kind, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'test.md')").all() as { kind: string; value: string | null }[];
     const wikilinks = rows.filter((r) => r.kind === "md:wikilink");
     expect(wikilinks.length).toBe(2);
   });
@@ -38,7 +38,7 @@ describe("node projection — markdown", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo\n- regular item\n");
 
-    const rows = store.db.prepare("SELECT kind, value, attrs FROM nodes WHERE doc_id IN (SELECT doc_id FROM documents WHERE path = 'test.md')").all() as { kind: string; value: string | null; attrs: string }[];
+    const rows = store.db.prepare("SELECT kind, value, attrs FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'test.md')").all() as { kind: string; value: string | null; attrs: string }[];
     const tasks = rows.filter((r) => r.kind === "md:task");
     expect(tasks.length).toBe(2);
     const checked = tasks.filter((t) => JSON.parse(t.attrs).checked === true);
@@ -49,7 +49,7 @@ describe("node projection — markdown", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const rows = store.db.prepare("SELECT kind, name, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM documents WHERE path = 'test.md')").all() as { kind: string; name: string | null; value: string | null }[];
+    const rows = store.db.prepare("SELECT kind, name, value FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'test.md')").all() as { kind: string; name: string | null; value: string | null }[];
     const fields = rows.filter((r) => r.kind === "md:inline_field");
     expect(fields.length).toBe(2);
     expect(fields.map((f) => f.name)).toContain("status");
@@ -62,7 +62,7 @@ describe("node projection — yaml", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n  password: ${DB_PASSWORD}\n");
 
-    const rows = store.db.prepare("SELECT kind, name FROM nodes WHERE doc_id IN (SELECT doc_id FROM documents WHERE path = 'config.yaml')").all() as { kind: string; name: string | null }[];
+    const rows = store.db.prepare("SELECT kind, name FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'config.yaml')").all() as { kind: string; name: string | null }[];
     const envVars = rows.filter((r) => r.kind === "yaml:env_var");
     expect(envVars.length).toBeGreaterThanOrEqual(2);
     expect(envVars.map((e) => e.name)).toContain("DB_HOST");

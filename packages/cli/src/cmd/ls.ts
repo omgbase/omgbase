@@ -26,7 +26,7 @@ function runLs(cli: Cli, args: string[]): number {
               (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
               (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
                 WHERE r.rev_id = d.current_rev) AS ts
-       FROM documents d
+       FROM docs d
        WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'
        ORDER BY d.path`,
     )

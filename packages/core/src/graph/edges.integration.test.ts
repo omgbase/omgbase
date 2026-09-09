@@ -56,7 +56,7 @@ describe("edge interval maintenance (05 §2)", () => {
     // Create foo.md, then re-save a.md so extraction resolves to the real id.
     save("foo.md", "# Foo\n");
     save("a.md", "# A\n\nlink to [foo](/foo.md) still\n");
-    const fooId = (store.db.prepare("SELECT doc_id FROM documents WHERE path='foo.md'").get() as { doc_id: string }).doc_id;
+    const fooId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='foo.md'").get() as { doc_id: string }).doc_id;
     expect(openEdges().some((e) => e.dst_node === fooId)).toBe(true);
     expect(openEdges().some((e) => e.dst_node === "phantom:foo.md")).toBe(false);
   });
@@ -65,7 +65,7 @@ describe("edge interval maintenance (05 §2)", () => {
     // /x.md linked from two DIFFERENT blocks → rollup count 2 (same-block
     // duplicates dedupe at extraction, so use separate paragraphs).
     save("a.md", "# A\n\nfirst para links [x](/x.md) here\n\nsecond para links [x again](/x.md)\n\nthird [y](/y.md)\n");
-    const docId = (store.db.prepare("SELECT doc_id FROM documents WHERE path='a.md'").get() as { doc_id: string }).doc_id;
+    const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md'").get() as { doc_id: string }).doc_id;
     const before = store.db.prepare("SELECT predicate, dst_node, count, samples FROM doc_edges WHERE src_doc=? ORDER BY dst_node").all(docId);
     const xRow = (before as { dst_node: string; count: number }[]).find((r) => r.dst_node === "phantom:x.md");
     expect(xRow!.count).toBe(2);

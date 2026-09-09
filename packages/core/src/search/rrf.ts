@@ -46,7 +46,7 @@ const LAYER_BOOST: Record<string, number> = { canon: 1.3, working: 1.15, propose
 
 function computeBoosts(store: Store, docId: string, blockId: string, terms: string[]): Boosts {
   const boosts: Boosts = {};
-  const doc = store.db.prepare("SELECT path FROM documents WHERE doc_id = ?").get(docId) as { path: string } | undefined;
+  const doc = store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined;
   if (!doc) return boosts;
   const fm = docPropertiesMerged(store.db, docId);
   const lowerTerms = terms.map((t) => t.toLowerCase()).filter(Boolean);
@@ -101,7 +101,7 @@ export function hybridSearch(store: Store, input: HybridInput): HybridHit[] {
 
   // Union of candidate block ids.
   const candidates = new Set<string>([...ftsRanks.keys(), ...vecRanks.keys()]);
-  const meta = store.db.prepare("SELECT doc_id, (SELECT path FROM documents WHERE doc_id = blocks.doc_id) AS path FROM blocks WHERE block_id = ?");
+  const meta = store.db.prepare("SELECT doc_id, (SELECT path FROM docs WHERE doc_id = blocks.doc_id) AS path FROM blocks WHERE block_id = ?");
 
   const hits: HybridHit[] = [];
   for (const blockId of candidates) {

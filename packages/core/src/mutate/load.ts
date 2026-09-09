@@ -16,7 +16,7 @@ interface Row {
 }
 
 export function loadMutDoc(db: Database, docId: string): MutDoc | null {
-  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, frontmatter_trivia, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
+  const doc = db.prepare("SELECT doc_id, path, format, leading_trivia, frontmatter_trivia, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(docId) as
     | { doc_id: string; path: string; format: string; leading_trivia: string; frontmatter_trivia: string | null; current_rev: string | null }
     | undefined;
   if (!doc) return null;
@@ -68,7 +68,7 @@ export function loadMutDoc(db: Database, docId: string): MutDoc | null {
     const rev = db.prepare("SELECT frontmatter_blob FROM revisions WHERE rev_id = ?").get(doc.current_rev) as { frontmatter_blob: Buffer | null } | undefined;
     if (rev?.frontmatter_blob) {
       const fm = blob.get(rev.frontmatter_blob) as { bytes: Buffer } | undefined;
-      // Append the exact stored separator (documents.frontmatter_trivia) so the
+      // Append the exact stored separator (docs.frontmatter_trivia) so the
       // write path round-trips byte-for-byte. Ingest always captures it when a
       // frontmatter block exists, so the ?? "" is just a type guard.
       if (fm) frontmatterRaw = fm.bytes.toString("utf8") + (doc.frontmatter_trivia ?? "");

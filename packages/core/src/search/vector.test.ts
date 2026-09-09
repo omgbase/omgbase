@@ -32,7 +32,7 @@ beforeEach(() => {
 afterEach(() => store.close());
 
 function embedBlocks(worker: EmbeddingWorker, docPath: string): Promise<unknown> {
-  const docId = (store.db.prepare("SELECT doc_id FROM documents WHERE path=?").get(docPath) as { doc_id: string }).doc_id;
+  const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(docPath) as { doc_id: string }).doc_id;
   const rows = store.db.prepare("SELECT block_id, text, lower(hex(raw_hash)) h, type FROM blocks WHERE doc_id=? AND type='paragraph'").all(docId) as { block_id: string; text: string; h: string; type: string }[];
   const tasks: EmbedTask[] = rows.map((r) => ({
     blockId: r.block_id,

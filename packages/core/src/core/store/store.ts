@@ -45,6 +45,7 @@ export class Store {
       if (v === 6) { this.migrateV6(); continue; }
       if (v === 7) { this.migrateV7(); continue; }
       if (v === 9) { this.migrateV9(); continue; }
+      if (v === 11) { this.migrateV11(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -90,6 +91,20 @@ export class Store {
   // rebuild is needed to migrate — new nullable inserts only happen on fresh dbs.
   private migrateV9(): void {
     this.db.exec(SYNC_DDL);
+  }
+
+  // v11: rename the `documents` table to `docs`. SQLite (>= 3.25, legacy_alter_table
+  // off by default) rewrites the FK references in blocks/revisions automatically,
+  // so no child-table rebuild is needed. Idempotent: skip if `docs` already exists
+  // (fresh dbs get `docs` straight from the DDL and never run this).
+  private migrateV11(): void {
+    const tableExists = (name: string): boolean =>
+      !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+    // Fresh dbs already have `docs` from the DDL; a `documents` table only exists
+    // on real pre-v11 dbs. Rename only when the old table is present and the new
+    // one is not — otherwise there's nothing to do.
+    if (tableExists("docs") || !tableExists("documents")) return;
+    this.db.exec("ALTER TABLE documents RENAME TO docs");
   }
 
   /**

@@ -137,7 +137,7 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 ### 5.3 Query
 
 ```
-omg query [filter] [--from blocks|documents] [--docs] [--text t] [--semantic s]
+omg query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic s]
           [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]
 ```
 
@@ -147,7 +147,7 @@ Alias `omg q`. One query language, three input forms, all producing the same env
 2. **Flags only** (no filter is legal — pure FTS/semantic).
 3. **`-f file|-`**: the envelope as YAML — *exactly* the ```` ```omg ```` fence body (10 §10). A query authored in a document runs unchanged from a file or stdin; one language everywhere.
 
-Defaults: `--from blocks`; `--docs` is sugar for `--from documents`. Human output: one hit per line, `$id  $locator  <first line of text>`, evidence with `-v`.
+Defaults: `--from blocks`; `--docs` is sugar for `--from docs`. Human output: one hit per line, `$id  $locator  <first line of text>`, evidence with `-v`.
 
 `omg run <locator|path>` — evaluate the ```` ```omg ```` fence at a locator (or the first fence in a doc) and print its results with the same renderer. Strictly read-and-print: fences stay **inert** in the corpus (ADR-011 §8 reservations hold; nothing is projected, nothing is written). This is the fence-authoring loop: edit fence, `omg run`, repeat.
 

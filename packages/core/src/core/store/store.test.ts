@@ -34,7 +34,7 @@ describe("Store — schema & config", () => {
         .all() as { name: string }[]
     ).map((r) => r.name);
     for (const t of [
-      "repos", "documents", "blocks", "blobs", "tree_nodes", "revisions",
+      "repos", "docs", "blocks", "blobs", "tree_nodes", "revisions",
       "commits", "dispositions", "edges", "external_nodes", "collections",
       "checkpoints", "resurrection_pool", "sections", "doc_edges",
       "block_changes", "inferred_edges", "embeddings", "blocks_fts",
@@ -72,7 +72,7 @@ describe("Store — schema & config", () => {
     expect(() =>
       store!.db
         .prepare(
-          "INSERT INTO documents (doc_id, repo_id, path) VALUES ('d_x','rp_missing','a.md')",
+          "INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_x','rp_missing','a.md')",
         )
         .run(),
     ).toThrow(/FOREIGN KEY/);

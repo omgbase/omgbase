@@ -1,7 +1,7 @@
 # omgbase — Properties Table (design proposal)
 
 **Status:** proposal / RFC. Not yet normative. Supersedes the ad-hoc split between
-`documents.metadata` (JSON blob) and the `nodes` table for property-shaped data.
+`docs.metadata` (JSON blob) and the `nodes` table for property-shaped data.
 
 ---
 
@@ -20,7 +20,7 @@ doesn't exist yet as a query surface:
 
 | Source | Where it lives now | Indexed? | Queryable? |
 |---|---|---|---|
-| Frontmatter | `documents.metadata` (JSON TEXT column) | **No** — full scan + `json_extract` per row | Yes (bare keys → CEL) |
+| Frontmatter | `docs.metadata` (JSON TEXT column) | **No** — full scan + `json_extract` per row | Yes (bare keys → CEL) |
 | Inline props | `nodes` table (`kind='md:inline_field'`) | Yes (`idx_nodes_kind/name`) | Only via `from:"nodes"` |
 | Computed | nowhere durable | — | No |
 
@@ -28,9 +28,9 @@ So `layer == "canon"` is a table scan (`json_extract(d.metadata, '$.layer')` wit
 no index — compile.ts:69), while the inline-field surface is indexed but lives
 on a different target with a different shape. The assumption that "the JSON
 column makes querying fast" is **false**: it makes compilation *simple* (one
-expression) but every documents-target frontmatter filter scans the table.
+expression) but every docs-target frontmatter filter scans the table.
 
-## 2. What `documents.metadata` actually does today
+## 2. What `docs.metadata` actually does today
 
 Traced across the codebase, the JSON column is the **sole query+projection
 surface for frontmatter**, used by:
@@ -125,7 +125,7 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
 
 The authored CEL syntax and its semantics are **unchanged** — bare keys, `==`,
 `!=`, `list()`, membership, `size()` all keep the exact meaning they have today
-against `documents.metadata`. Only the compile target changes (indexed
+against `docs.metadata`. Only the compile target changes (indexed
 `properties` rows instead of `json_extract` scans), plus two additive powers:
 source-scoped accessors and computed `$`-intrinsics.
 
@@ -136,10 +136,10 @@ compare the scalar; `list()` is the explicit multi-value accessor. We do **not**
 make bare comparison existential.
 
 ```
-from: documents  filter: layer == "canon"          # scalar equality (unchanged)
-from: documents  filter: priority >= 3             # scalar range (unchanged)
-from: documents  filter: "pricing" in list(tags)   # list membership (unchanged)
-from: documents  filter: size(list(tags)) > 2      # list length (unchanged)
+from: docs  filter: layer == "canon"          # scalar equality (unchanged)
+from: docs  filter: priority >= 3             # scalar range (unchanged)
+from: docs  filter: "pricing" in list(tags)   # list membership (unchanged)
+from: docs  filter: size(list(tags)) > 2      # list length (unchanged)
 ```
 
 The load-bearing rule to preserve: **`tags == "a"` where `tags` is a YAML list
@@ -175,9 +175,9 @@ A source-qualified accessor narrows to one provenance; same operators, same
 scalar/list rules, just filtered by `source`:
 
 ```
-from: documents  filter: frontmatter.layer == "canon"    # only the fence
-from: documents  filter: inline.job == "janitor"         # only key:: fields
-from: documents  filter: "farmer" in list(job)           # any authored source
+from: docs  filter: frontmatter.layer == "canon"    # only the fence
+from: docs  filter: inline.job == "janitor"         # only key:: fields
+from: docs  filter: "farmer" in list(job)           # any authored source
 ```
 
 Bare `<k>` spans authored sources (`frontmatter` + `inline`); `frontmatter.<k>`
@@ -224,7 +224,7 @@ render as scalars, list-authored as arrays (honest to `card`). `query` select
 gains `frontmatter.<k>` / `inline.<k>` / bare `<k>` / the computed `$`-intrinsics
 / `$properties`.
 
-## 5. `documents.metadata` is removed (decided)
+## 5. `docs.metadata` is removed (decided)
 
 The JSON column is **dropped, not demoted.** It was a mis-named
 (`metadata` conflated "frontmatter" with "everything"), unindexed, redundant
@@ -233,7 +233,7 @@ authoritative bytes already live in the frontmatter blob. There is no "merged
 view" column and no precedence order to define — union semantics (§4) mean the
 merged view is just "all rows for the key," computed on demand from the index.
 
-Every current reader of `documents.metadata` is repointed at `properties`:
+Every current reader of `docs.metadata` is repointed at `properties`:
 
 | Site | Today | After |
 |---|---|---|
@@ -288,11 +288,11 @@ not an index rebuild.
 
 - Schema v8: add `properties` table + indexes; add `computeProperties` adapter
   capability (optional).
-- Compiler: route documents-target bare keys and the new `source.<k>` accessors
+- Compiler: route docs-target bare keys and the new `source.<k>` accessors
   to `properties`; keep `json_extract` only as the `val_json` escape hatch.
 - Keep `nodes`/`nodes_fts` for non-property projections (links, anchors,
   wikilinks, tasks-as-nodes); inline *fields* migrate to `properties`.
-- **Drop the `documents.metadata` column** (schema v8 rewrites the table).
+- **Drop the `docs.metadata` column** (schema v8 rewrites the table).
   Since nothing is deployed there is no data to preserve — the column simply
   ceases to exist; `DocInfo.metadata` and every read of it are removed in the
   same change.
@@ -322,7 +322,7 @@ not an index rebuild.
   with the `card` gate on scalar comparisons. The semantics are unchanged, so
   the existing CEL test suite is a strong equivalence oracle — port it and it
   must stay green, plus new cases for `card` and multi-source union.
-- **Read-site churn.** ~6 sites read `documents.metadata` today; all repoint to
+- **Read-site churn.** ~6 sites read `docs.metadata` today; all repoint to
   `properties` and `DocInfo.metadata` is removed (§5). Bounded and enumerated.
 - **More rows.** N frontmatter keys + M array elements + K inline fields = N+M+K
   rows vs. one blob. Negligible at Zettelkasten scale; soak-test it.
@@ -341,7 +341,7 @@ not an index rebuild.
 ## 9. Resolved decisions + remaining open questions
 
 **Decided (Brendan):**
-- **Kill `documents.metadata`.** Not demoted — removed. Wrong name, redundant,
+- **Kill `docs.metadata`.** Not demoted — removed. Wrong name, redundant,
   unindexed. (§5)
 - **CEL semantics unchanged; `list()` stays the explicit multi-value tool.**
   Values may be scalar or list (as YAML always allows); `==`/`!=` are scalar,

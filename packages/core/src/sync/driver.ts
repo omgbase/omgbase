@@ -43,7 +43,7 @@ export async function reconcileChanges(
 
   for (const change of changes) {
     const existing = store.db
-      .prepare("SELECT doc_id, file_hash FROM documents WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
       .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
     const oldHex = existing?.file_hash?.toString("hex") ?? null;
 
@@ -75,14 +75,14 @@ export async function reconcileChanges(
     // clean) but still ingest the marker soup as opaque so the file tracks.
     if (hasConflictMarkers(content)) {
       ingestFile(store, repoId, change.path, content, { ts, ...(resolveIds ? { resolveIds } : {}) });
-      store.db.prepare("UPDATE documents SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
+      store.db.prepare("UPDATE docs SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
       conflicted.push(change.path);
       fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
       continue;
     }
 
     ingestFile(store, repoId, change.path, content, { ts, ...(resolveIds ? { resolveIds } : {}) });
-    store.db.prepare("UPDATE documents SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
+    store.db.prepare("UPDATE docs SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
     ingested.push(change.path);
     fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
   }

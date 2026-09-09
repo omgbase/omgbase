@@ -68,10 +68,10 @@ afterAll(() => {
 describe("bootstrap", () => {
   it("repos lists the attached vault", () => {
     const { stdout } = omg(["repos", "--json"]);
-    const repos = JSON.parse(stdout) as { slug: string; documents: number }[];
+    const repos = JSON.parse(stdout) as { slug: string; docs: number }[];
     expect(repos).toHaveLength(1);
     expect(repos[0]!.slug).toBe("vault");
-    expect(repos[0]!.documents).toBe(2);
+    expect(repos[0]!.docs).toBe(2);
   });
 });
 
@@ -193,7 +193,7 @@ describe("errors + exit codes (§2.4)", () => {
 describe("--json parity", () => {
   it("status --json is a flat object with the documented fields", () => {
     const res = JSON.parse(omg(["status", "--json"]).stdout) as Record<string, unknown>;
-    for (const k of ["repo", "documents", "blocks", "commits", "watcher", "convergent"]) {
+    for (const k of ["repo", "docs", "blocks", "commits", "watcher", "convergent"]) {
       expect(res).toHaveProperty(k);
     }
   });

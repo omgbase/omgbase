@@ -34,10 +34,10 @@ describe("crash recovery (04 §6)", () => {
     expect(result.healed).toEqual(["a.md"]);
 
     // Store now converges with the on-disk bytes.
-    const doc = store.db.prepare("SELECT file_hash, current_rev FROM documents WHERE path='a.md'").get() as { file_hash: Buffer; current_rev: string };
+    const doc = store.db.prepare("SELECT file_hash, current_rev FROM docs WHERE path='a.md'").get() as { file_hash: Buffer; current_rev: string };
     const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.current_rev) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);
-    const blocks = store.db.prepare("SELECT text FROM blocks WHERE doc_id=(SELECT doc_id FROM documents WHERE path='a.md')").all() as { text: string }[];
+    const blocks = store.db.prepare("SELECT text FROM blocks WHERE doc_id=(SELECT doc_id FROM docs WHERE path='a.md')").all() as { text: string }[];
     expect(blocks.some((b) => b.text.includes("uncommitted"))).toBe(true);
   });
 

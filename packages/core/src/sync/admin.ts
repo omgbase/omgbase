@@ -8,7 +8,7 @@ export interface RepoStatus {
   repoId: string;
   slug: string;
   rootPath: string;
-  documents: number;
+  docs: number;
   blocks: number;
   commits: number;
   openEdges: number;
@@ -20,14 +20,14 @@ export function reposStatus(store: Store, repoId: string): RepoStatus {
   const repo = store.db.prepare("SELECT slug, root_path FROM repos WHERE repo_id = ?").get(repoId) as { slug: string; root_path: string } | undefined;
   const count = (sql: string): number => (store.db.prepare(sql).get(repoId) as { c: number }).c;
   const unconverged = (store.db.prepare(
-    `SELECT count(*) c FROM documents d JOIN revisions r ON r.rev_id = d.current_rev
+    `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.current_rev
      WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.file_hash IS NOT r.rendered_hash`,
   ).get(repoId) as { c: number }).c;
   return {
     repoId,
     slug: repo?.slug ?? "",
     rootPath: repo?.root_path ?? "",
-    documents: count("SELECT count(*) c FROM documents WHERE repo_id = ? AND deleted_commit IS NULL"),
+    docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_commit IS NULL"),
     blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_commit IS NULL"),
     commits: count("SELECT count(*) c FROM commits WHERE repo_id = ?"),
     openEdges: count("SELECT count(*) c FROM edges WHERE repo_id = ? AND to_commit IS NULL"),

@@ -11,7 +11,7 @@ import { docPropertiesGrouped } from "../store/properties.js";
 // serialized metadata head + each top-level block raw + its trailing trivia) —
 // fences, tables, and list markers preserved verbatim, matching nodes_get raw
 // fidelity. `metadata` is the document's structured property bag as the ingest
-// adapter produced it: for markdown, parsed frontmatter (see documents.metadata
+// adapter produced it: for markdown, parsed frontmatter (see docs.metadata
 // in ingest.ts); for YAML/JSON, the parsed object; other formats extract per
 // their adapter. docsRead is format-neutral — it returns whatever metadata was
 // stored and the exact file bytes.
@@ -20,7 +20,7 @@ import { docPropertiesGrouped } from "../store/properties.js";
 // identity stays block-level. Reconstruction stays in core/ (the 07 §0 boundary
 // forbids importing the mutate splice renderer). Every separator is STORED, not
 // assumed: a block with no trivia_hash genuinely had empty trailing bytes, and
-// the frontmatter→body separator is persisted as documents.frontmatter_trivia.
+// the frontmatter→body separator is persisted as docs.frontmatter_trivia.
 // So leading_trivia + frontmatter + frontmatter_trivia + Σ(raw + trivia)
 // round-trips the file byte-for-byte (03 §2.1 coverage invariant).
 
@@ -55,7 +55,7 @@ function blob(db: Database, hash: Buffer): string {
  */
 export function reconstructContent(db: Database, docId: string): string | null {
   const doc = db
-    .prepare("SELECT leading_trivia, frontmatter_trivia, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL")
+    .prepare("SELECT leading_trivia, frontmatter_trivia, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL")
     .get(docId) as { leading_trivia: string; frontmatter_trivia: string | null; current_rev: string | null } | undefined;
   if (!doc) return null;
 

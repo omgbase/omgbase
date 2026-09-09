@@ -49,7 +49,7 @@ describe("perf at reduced envelope scale", () => {
   });
 
   it("docs_outline p95 < 50ms", () => {
-    const docIds = (store.db.prepare("SELECT doc_id FROM documents LIMIT 50").all() as { doc_id: string }[]).map((r) => r.doc_id);
+    const docIds = (store.db.prepare("SELECT doc_id FROM docs LIMIT 50").all() as { doc_id: string }[]).map((r) => r.doc_id);
     let i = 0;
     const p = bench(50, () => { docsOutline(store, docIds[i++ % docIds.length]!); });
     expect(p).toBeLessThan(50);
@@ -62,9 +62,9 @@ describe("perf at reduced envelope scale", () => {
     expect(p).toBeLessThan(100);
   });
 
-  it("query (documents frontmatter) p95 < 100ms", () => {
+  it("query (docs frontmatter) p95 < 100ms", () => {
     const p = bench(50, () => {
-      query(store, repoId, { from: "documents", filter: 'layer == "canon"', limit: 20 });
+      query(store, repoId, { from: "docs", filter: 'layer == "canon"', limit: 20 });
     });
     expect(p).toBeLessThan(100);
   });

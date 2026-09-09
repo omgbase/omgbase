@@ -38,7 +38,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  query [filter] [--from blocks|documents] [--docs] [--text t] [--semantic q] [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
+    cli.io.out("  query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic q] [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
     return EXIT_OK;
   }
 
@@ -51,7 +51,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
     const parsed = (parseYaml(raw) ?? {}) as Partial<QueryEnvelope>;
     env = { from: parsed.from ?? "blocks", ...parsed };
   } else {
-    const from = values.docs ? "documents" : (values.from as "documents" | "blocks" | undefined) ?? "blocks";
+    const from = values.docs ? "docs" : (values.from as "docs" | "blocks" | undefined) ?? "blocks";
     env = { from };
     const filter = positionals.join(" ").trim();
     if (filter) env.filter = filter;
@@ -111,4 +111,4 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
   return EXIT_OK;
 }
 
-export const cmdQuery: Command = { name: "query", aliases: ["q"], summary: "Query blocks/documents (CEL + text + semantic)", run: (cli, a) => runQuery(cli, a) };
+export const cmdQuery: Command = { name: "query", aliases: ["q"], summary: "Query blocks/docs (CEL + text + semantic)", run: (cli, a) => runQuery(cli, a) };

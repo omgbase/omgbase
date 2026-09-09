@@ -89,9 +89,9 @@ export interface DocInfo {
 export function findDoc(store: Store, ref: { docId?: string; repoId?: string; path?: string }): DocInfo | null {
   let row: Record<string, unknown> | undefined;
   if (ref.docId) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM documents WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
   } else if (ref.repoId && ref.path) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM documents WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, ref.path) as Record<string, unknown> | undefined;
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, ref.path) as Record<string, unknown> | undefined;
   }
   if (!row) return null;
   return {

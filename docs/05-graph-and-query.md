@@ -58,7 +58,7 @@ Structured specs only; no graph query language (ADR-006).
 
 ```jsonc
 {
-  "from": "blocks",                          // "documents" | "blocks"
+  "from": "blocks",                          // "docs" | "blocks"
   "filter": "type == 'task' && !attrs.checked && under_heading('Launch') && doc.layer == 'working'",
   "text": "deploy",                          // FTS5 over block text (docs: over doc text)
   "semantic": "deployment readiness",        // optional; requires embedding hook
@@ -70,9 +70,9 @@ Structured specs only; no graph query language (ADR-006).
 
 **The query language is normatively specified in `10-query-language.md`** (envelope, targets, CEL subset grammar, absence semantics, structural functions, ordering, compilation contract). Summary only here:
 
-- **Targets:** `documents` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics) and `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
+- **Targets:** `docs` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics) and `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
 - **Structural functions (blocks target),** compiled to indexed SQL: `under()`, `under_heading()`, `within()`, `has_edge()`, `has_anchor()`, `parent_type()`, `child_count()` (final set per 10-… §5 — object-returning `parent()`/`ancestors()` were dropped as not worth their compiler).
-- **Link-graph predicates (documents target),** mrplex-compatible: `$in(glob)`, `$has(glob)`, `$links()`, `$backlinks()` + `_static` variants with the reserved widening semantics (10-… §6).
+- **Link-graph predicates (docs target),** mrplex-compatible: `$in(glob)`, `$has(glob)`, `$links()`, `$backlinks()` + `_static` variants with the reserved widening semantics (10-… §6).
 - Modes intersect (AND). Order: semantic score if present, else text rank, else `$updated_at` desc.
 - CEL compilation: compile the supported subset to SQL WHERE; anything else evaluates as a post-filter over candidate rows (correct first, fast where it matters). `filter_invalid` errors carry reason + hint.
 

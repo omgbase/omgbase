@@ -173,20 +173,20 @@ export function ingestFile(
       : parseFrontmatter(fmBlock);
 
     // Upsert the document row.
-    let doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ?").get(repoId, path) as
+    let doc = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
       | { doc_id: string }
       | undefined;
     const docId = doc?.doc_id ?? mintId("d");
     const isNew = !doc;
     if (!doc) {
       db.prepare(
-        "INSERT INTO documents (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
       doc = { doc_id: docId };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE documents SET format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
+      db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -320,7 +320,7 @@ export function ingestFile(
 
     // Update document current pointers + convergence hash.
     const fileHash = sha256(content);
-    db.prepare("UPDATE documents SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(
+    db.prepare("UPDATE docs SET current_rev = ?, file_hash = ? WHERE doc_id = ?").run(
       rev.revId,
       fileHash,
       docId,

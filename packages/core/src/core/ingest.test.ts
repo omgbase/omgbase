@@ -22,7 +22,7 @@ describe("ingestFile", () => {
     expect(res.converged).toBe(true);
     expect(res.blockCount).toBeGreaterThan(0);
 
-    const doc = store.db.prepare("SELECT current_rev, file_hash FROM documents WHERE doc_id = ?").get(res.docId) as { current_rev: string; file_hash: Buffer };
+    const doc = store.db.prepare("SELECT current_rev, file_hash FROM docs WHERE doc_id = ?").get(res.docId) as { current_rev: string; file_hash: Buffer };
     expect(doc.current_rev).toBe(res.revId);
 
     const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(res.revId) as { rendered_hash: Buffer };
@@ -67,7 +67,7 @@ describe("attachDirectory — fixture vault", () => {
     expect(res.fileCount).toBeGreaterThanOrEqual(50);
     expect(res.allConverged).toBe(true);
 
-    const docCount = (store.db.prepare("SELECT count(*) c FROM documents").get() as { c: number }).c;
+    const docCount = (store.db.prepare("SELECT count(*) c FROM docs").get() as { c: number }).c;
     expect(docCount).toBe(res.fileCount);
   });
 });

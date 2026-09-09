@@ -31,7 +31,7 @@ function save(path: string, content: string): void {
 
 function blockId(path: string, index: number): string {
   const rows = store.db
-    .prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM documents WHERE path = ?) AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal")
+    .prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal")
     .all(path) as { block_id: string }[];
   return rows[index]!.block_id;
 }
@@ -86,7 +86,7 @@ describe("YAML mutations", () => {
       rootPath: dir,
       ops: [{
         op: "insert",
-        doc: (store.db.prepare("SELECT doc_id FROM documents WHERE path = 'config.yaml'").get() as { doc_id: string }).doc_id,
+        doc: (store.db.prepare("SELECT doc_id FROM docs WHERE path = 'config.yaml'").get() as { doc_id: string }).doc_id,
         to: { parent: { doc: true }, at: "end" },
         markdown: "cache_ttl: 300\n",
       }],

@@ -34,7 +34,7 @@ export function textSearch(
               b.text AS text, bm25(blocks_fts) AS score
        FROM blocks_fts
        JOIN blocks b ON b.rowid = blocks_fts.rowid
-       JOIN documents d ON d.doc_id = b.doc_id
+       JOIN docs d ON d.doc_id = b.doc_id
        WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_commit IS NULL
        ORDER BY score
        LIMIT ?`,

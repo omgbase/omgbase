@@ -106,7 +106,7 @@ export function resolveExternal(db: Database, repoId: string, uri: string): stri
 // path-keyed node, joined by path at query time).
 export function resolveDocPath(db: Database, repoId: string, path: string): { id: string; phantom: boolean } {
   const canonical = path.replace(/^\//, "");
-  const doc = db.prepare("SELECT doc_id FROM documents WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(repoId, canonical) as { doc_id: string } | undefined;
+  const doc = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(repoId, canonical) as { doc_id: string } | undefined;
   if (doc) return { id: doc.doc_id, phantom: false };
   // Phantom: a deterministic placeholder keyed by path.
   return { id: `phantom:${canonical}`, phantom: true };

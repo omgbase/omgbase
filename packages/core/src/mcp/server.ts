@@ -277,9 +277,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query",
     {
       description:
-        "Structured retrieval over documents|blocks. Modes intersect (AND): `filter` (CEL — call query_syntax for the grammar), `text` (FTS5 keyword), `semantic` (embedding similarity, needs a provider). `select` projects fields onto each hit so you can triage without a follow-up nodes_get: bare keys read the doc's frontmatter (e.g. \"layer\",\"type\",\"tracking\"); on blocks also \"type\", \"attrs.<k>\", \"$ordinal\"; \"$semantic_score\" with semantic. Default hit is lean {id, path}. Returns truncated + cursor. Blocks can constrain the parent doc via doc.<key> (e.g. doc.layer == \"canon\").",
+        "Structured retrieval over docs|blocks. Modes intersect (AND): `filter` (CEL — call query_syntax for the grammar), `text` (FTS5 keyword), `semantic` (embedding similarity, needs a provider). `select` projects fields onto each hit so you can triage without a follow-up nodes_get: bare keys read the doc's frontmatter (e.g. \"layer\",\"type\",\"tracking\"); on blocks also \"type\", \"attrs.<k>\", \"$ordinal\"; \"$semantic_score\" with semantic. Default hit is lean {id, path}. Returns truncated + cursor. Blocks can constrain the parent doc via doc.<key> (e.g. doc.layer == \"canon\").",
       inputSchema: {
-        from: z.enum(["documents", "blocks"]),
+        from: z.enum(["docs", "blocks"]),
         filter: z.string().optional(),
         text: z.string().optional(),
         semantic: z.string().optional(),
@@ -592,7 +592,7 @@ export function buildServer(ctx: ServerContext): McpServer {
 
   server.registerTool(
     "repos_status",
-    { description: "Repo counts: documents, blocks, commits, open edges, and unconverged doc count.", inputSchema: {} },
+    { description: "Repo counts: docs, blocks, commits, open edges, and unconverged doc count.", inputSchema: {} },
     async () => {
       try { return ok(reposStatus(store, repoId)); } catch (e) { return fail(e); }
     },

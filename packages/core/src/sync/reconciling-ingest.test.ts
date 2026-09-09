@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 function blockIds(): { text: string; id: string }[] {
-  const doc = store.db.prepare("SELECT doc_id FROM documents WHERE path='doc.md'").get() as { doc_id: string };
+  const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path='doc.md'").get() as { doc_id: string };
   return store.db.prepare("SELECT text, block_id AS id FROM blocks WHERE doc_id = ? ORDER BY ordinal").all(doc.doc_id) as { text: string; id: string }[];
 }
 

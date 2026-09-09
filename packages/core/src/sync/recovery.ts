@@ -20,7 +20,7 @@ export function recoverRepo(store: Store, repoId: string, rootPath: string): Rec
   const docs = store.db
     .prepare(
       `SELECT d.doc_id, d.path, d.file_hash, r.rendered_hash
-       FROM documents d LEFT JOIN revisions r ON r.rev_id = d.current_rev
+       FROM docs d LEFT JOIN revisions r ON r.rev_id = d.current_rev
        WHERE d.repo_id = ? AND d.deleted_commit IS NULL`,
     )
     .all(repoId) as { doc_id: string; path: string; file_hash: Buffer | null; rendered_hash: Buffer | null }[];

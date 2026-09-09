@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS file_stats (
 
 // properties (12-properties-table). One indexed row per property value: the
 // unified query surface for frontmatter, inline (key:: value), and computed
-// ($title/$tags) document properties, superseding the documents.metadata JSON
+// ($title/$tags) document properties, superseding the docs.metadata JSON
 // blob. `card` records the authored shape (scalar vs list) so scalar ==/!=/<
 // match only scalar-authored rows while list() sees all — reproducing the
 // json_extract scalar-vs-array distinction. Current-state, maintained
@@ -124,7 +124,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
-// Migrations 3, 4, 6 are programmatic — see store.ts.
+// Migrations 3, 4, 6, 7, 9, 11 are programmatic — see store.ts.
 export const MIGRATIONS: Record<number, string> = {
   2: FILE_STATS_DDL,
   3: "",  // handled programmatically in store.ts
@@ -135,6 +135,7 @@ export const MIGRATIONS: Record<number, string> = {
   8: PROPERTIES_DDL,
   9: "",  // SYNC_DDL + repos.root_path→nullable, handled programmatically in store.ts
   10: WORKSPACE_SETTINGS_DDL,
+  11: "",  // ALTER TABLE documents RENAME TO docs, handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -146,7 +147,7 @@ CREATE TABLE IF NOT EXISTS repos (
   settings  TEXT NOT NULL DEFAULT '{}'
 );
 
-CREATE TABLE IF NOT EXISTS documents (
+CREATE TABLE IF NOT EXISTS docs (
   doc_id         TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
   path           TEXT NOT NULL,
@@ -163,7 +164,7 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE TABLE IF NOT EXISTS blocks (
   block_id       TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL REFERENCES repos(repo_id),
-  doc_id         TEXT NOT NULL REFERENCES documents(doc_id),
+  doc_id         TEXT NOT NULL REFERENCES docs(doc_id),
   parent_block   TEXT,
   order_key      TEXT NOT NULL,
   ordinal        INTEGER NOT NULL,
@@ -196,7 +197,7 @@ CREATE TABLE IF NOT EXISTS tree_nodes (
 
 CREATE TABLE IF NOT EXISTS revisions (
   rev_id           TEXT PRIMARY KEY,
-  doc_id           TEXT NOT NULL REFERENCES documents(doc_id),
+  doc_id           TEXT NOT NULL REFERENCES docs(doc_id),
   seq              INTEGER NOT NULL,
   root_tree        BLOB NOT NULL REFERENCES tree_nodes(hash),
   frontmatter_blob BLOB REFERENCES blobs(hash),

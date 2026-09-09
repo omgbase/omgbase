@@ -30,7 +30,7 @@ afterEach(() => {
 function seed(path: string, content: string): string {
   writeFileSync(join(dir, path), content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path = ?").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get(path) as { doc_id: string }).doc_id;
 }
 function block(docId: string, prefix: string): string {
   const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ?").all(docId) as { block_id: string; text: string }[];
@@ -129,7 +129,7 @@ describe("soak: repeated random ops preserve invariants", () => {
     void docId;
     let counter = 0;
     for (let i = 0; i < 1000; i++) {
-      const rows = store.db.prepare("SELECT block_id, text, lower(hex(raw_hash)) h, type FROM blocks WHERE doc_id = (SELECT doc_id FROM documents WHERE path='soak.md') AND type='paragraph'").all() as { block_id: string; text: string; h: string; type: string }[];
+      const rows = store.db.prepare("SELECT block_id, text, lower(hex(raw_hash)) h, type FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path='soak.md') AND type='paragraph'").all() as { block_id: string; text: string; h: string; type: string }[];
       if (rows.length === 0 || i % 3 === 0) {
         const h = block(docId, "Soak");
         apply(store, { repoId, rootPath: dir, ops: [{ op: "insert", to: { parent: { heading: h, scope: "section" }, at: "end" }, markdown: `inserted line ${counter++}` }], origin: { actor: "agent:soak" } });
@@ -139,7 +139,7 @@ describe("soak: repeated random ops preserve invariants", () => {
       }
     }
     // Convergence invariant: stored file_hash == current revision rendered_hash.
-    const doc = store.db.prepare("SELECT file_hash, current_rev FROM documents WHERE path='soak.md'").get() as { file_hash: Buffer; current_rev: string };
+    const doc = store.db.prepare("SELECT file_hash, current_rev FROM docs WHERE path='soak.md'").get() as { file_hash: Buffer; current_rev: string };
     const rev = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id=?").get(doc.current_rev) as { rendered_hash: Buffer };
     expect(doc.file_hash.equals(rev.rendered_hash)).toBe(true);
     // And the file on disk matches too.

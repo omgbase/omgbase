@@ -32,7 +32,7 @@ export function vectorSearch(store: Store, repoId: string, model: string, queryV
       `SELECT b.block_id AS blockId, b.doc_id AS docId, d.path AS path, e.vec AS vec
        FROM embeddings e
        JOIN blocks b ON b.raw_hash = e.content_hash AND b.deleted_commit IS NULL
-       JOIN documents d ON d.doc_id = b.doc_id
+       JOIN docs d ON d.doc_id = b.doc_id
        WHERE b.repo_id = ? AND e.model = ?`,
     )
     .all(repoId, model) as { blockId: string; docId: string; path: string; vec: Buffer }[];

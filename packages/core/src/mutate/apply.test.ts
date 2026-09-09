@@ -25,7 +25,7 @@ afterEach(() => {
 function seed(path: string, content: string): string {
   writeFileSync(join(dir, path), content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path = ?").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get(path) as { doc_id: string }).doc_id;
 }
 function blockByText(docId: string, prefix: string): string {
   const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ?").all(docId) as { block_id: string; text: string }[];
@@ -96,7 +96,7 @@ describe("apply — changesets", () => {
     const aId = seed("a.md", "# A\n\nmovable paragraph content here\n");
     seed("b.md", "# B\n\nb original\n");
     const moveId = blockByText(aId, "movable");
-    const bDoc = (store.db.prepare("SELECT doc_id FROM documents WHERE path='b.md'").get() as { doc_id: string }).doc_id;
+    const bDoc = (store.db.prepare("SELECT doc_id FROM docs WHERE path='b.md'").get() as { doc_id: string }).doc_id;
     const bHeading = blockByText(bDoc, "B");
     const res = apply(store, {
       repoId, rootPath: dir,

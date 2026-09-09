@@ -67,7 +67,7 @@ describe("reconcile driver over a non-filesystem source", () => {
     files.set("a.md", "# A\n\nnow with a body\n");
     const res = await reconcileChanges(store, repoId, src, [{ path: "a.md" }]);
     expect(res.ingested).toEqual(["a.md"]);
-    const doc = store.db.prepare("SELECT doc_id FROM documents WHERE path='a.md'").get() as { doc_id: string };
+    const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md'").get() as { doc_id: string };
     const revs = store.db.prepare("SELECT count(*) c FROM revisions WHERE doc_id=?").get(doc.doc_id) as { c: number };
     expect(revs.c).toBe(2);
   });

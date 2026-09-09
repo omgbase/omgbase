@@ -26,7 +26,7 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function docId(path: string): string {
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path=?").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
 }
 
 describe("graph_traverse", () => {

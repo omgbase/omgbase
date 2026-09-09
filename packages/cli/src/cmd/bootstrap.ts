@@ -113,11 +113,11 @@ function runRepos(cli: Cli, args: string[]): number {
   const repos = ws.repos().map((r) => ({ ...r, status: reposStatus(ws.store, r.repoId) }));
 
   if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(repos.map((r) => ({ slug: r.slug, root: r.rootPath, documents: r.status.documents, blocks: r.status.blocks }))));
+    cli.io.out(JSON.stringify(repos.map((r) => ({ slug: r.slug, root: r.rootPath, docs: r.status.docs, blocks: r.status.blocks }))));
     return EXIT_OK;
   }
   if (cli.flags.mode === "jsonl") {
-    for (const r of repos) cli.io.out(JSON.stringify({ slug: r.slug, root: r.rootPath, documents: r.status.documents, blocks: r.status.blocks }));
+    for (const r of repos) cli.io.out(JSON.stringify({ slug: r.slug, root: r.rootPath, docs: r.status.docs, blocks: r.status.blocks }));
     return EXIT_OK;
   }
   if (cli.flags.mode === "ids") {
@@ -129,7 +129,7 @@ function runRepos(cli: Cli, args: string[]): number {
   const rows = repos.map((r) => [
     `  ${render.g.diamond} ${style.accent(r.slug)}`,
     style.path(shortenHome(r.rootPath)),
-    style.dim(`${r.status.documents} docs`),
+    style.dim(`${r.status.docs} docs`),
     style.dim(`${r.status.blocks} blocks`),
   ]);
   if (rows.length === 0) io.out(style.dim("  no repos attached"));

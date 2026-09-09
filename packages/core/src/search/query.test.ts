@@ -22,7 +22,7 @@ function ingest(path: string, content: string): void {
   ingestFile(store, repoId, path, content);
 }
 
-describe("query — documents target", () => {
+describe("query — docs target", () => {
   beforeEach(() => {
     ingest("guides/a.md", "---\nlayer: working\ntags: [pricing, saas]\n---\n\n# A\n\nbody\n");
     ingest("guides/b.md", "---\nlayer: draft\ntags: docs\n---\n\n# B\n\nbody\n");
@@ -30,44 +30,44 @@ describe("query — documents target", () => {
   });
 
   it("filters by frontmatter scalar (layer == working)", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working"' });
+    const { hits } = query(store, repoId, { from: "docs", filter: 'layer == "working"' });
     expect(hits.map((h) => h.path)).toEqual(["guides/a.md"]);
   });
 
   it("filters by path prefix", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: '$path.startsWith("guides/")' });
+    const { hits } = query(store, repoId, { from: "docs", filter: '$path.startsWith("guides/")' });
     expect(hits.map((h) => h.path).sort()).toEqual(["guides/a.md", "guides/b.md"]);
   });
 
   it("list() membership matches scalar or list frontmatter", () => {
-    const pricing = query(store, repoId, { from: "documents", filter: '"pricing" in list(tags)' });
+    const pricing = query(store, repoId, { from: "docs", filter: '"pricing" in list(tags)' });
     expect(pricing.hits.map((h) => h.path)).toEqual(["guides/a.md"]);
-    const docs = query(store, repoId, { from: "documents", filter: '"docs" in list(tags)' });
+    const docs = query(store, repoId, { from: "docs", filter: '"docs" in list(tags)' });
     expect(docs.hits.map((h) => h.path)).toEqual(["guides/b.md"]);
   });
 
   it("size(list()) works", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: "size(list(tags)) > 1" });
+    const { hits } = query(store, repoId, { from: "docs", filter: "size(list(tags)) > 1" });
     expect(hits.map((h) => h.path)).toEqual(["guides/a.md"]);
   });
 
   it("boolean combinations (&&, ||, !)", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working" || layer == "canon"' });
+    const { hits } = query(store, repoId, { from: "docs", filter: 'layer == "working" || layer == "canon"' });
     expect(hits.map((h) => h.path).sort()).toEqual(["guides/a.md", "notes/c.md"]);
   });
 
   it("select projects frontmatter keys onto hits (no hydration round-trip)", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working"', select: ["layer", "tags"] });
+    const { hits } = query(store, repoId, { from: "docs", filter: 'layer == "working"', select: ["layer", "tags"] });
     expect(hits).toEqual([{ id: hits[0]!.id, path: "guides/a.md", layer: "working", tags: ["pricing", "saas"] }]);
   });
 
   it("select omits absent keys (CEL absence semantics)", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "canon"', select: ["layer", "tags"] });
+    const { hits } = query(store, repoId, { from: "docs", filter: 'layer == "canon"', select: ["layer", "tags"] });
     expect(hits[0]).toEqual({ id: hits[0]!.id, path: "notes/c.md", layer: "canon" }); // no tags key
   });
 
   it("empty select stays lean {id, path}", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: 'layer == "working"', select: [] });
+    const { hits } = query(store, repoId, { from: "docs", filter: 'layer == "working"', select: [] });
     expect(Object.keys(hits[0]!).sort()).toEqual(["id", "path"]);
   });
 });
@@ -128,14 +128,14 @@ describe("query — blocks target", () => {
     expect(hits[0]!.$content_hash).toBe(rawHash);
     // And it must NOT be the containing document's file_hash.
     const docId = (store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ?").get(blockId) as { doc_id: string }).doc_id;
-    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM documents WHERE doc_id = ?").get(docId) as { h: string }).h;
+    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM docs WHERE doc_id = ?").get(docId) as { h: string }).h;
     expect(hits[0]!.$content_hash).not.toBe(docHash);
   });
 
-  it("$content_hash on documents is the file hash", () => {
-    const { hits } = query(store, repoId, { from: "documents", filter: '$path == "tasks.md"', select: ["$content_hash"] });
+  it("$content_hash on docs is the file hash", () => {
+    const { hits } = query(store, repoId, { from: "docs", filter: '$path == "tasks.md"', select: ["$content_hash"] });
     expect(hits.length).toBe(1);
-    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM documents WHERE doc_id = ?").get(hits[0]!.id) as { h: string }).h;
+    const docHash = (store.db.prepare("SELECT lower(hex(file_hash)) h FROM docs WHERE doc_id = ?").get(hits[0]!.id) as { h: string }).h;
     expect(hits[0]!.$content_hash).toBe(docHash);
   });
 });
@@ -146,18 +146,18 @@ describe("absence truth table (10 §3.3)", () => {
   });
 
   it("comparison on absent field is false (incl. !=)", () => {
-    expect(query(store, repoId, { from: "documents", filter: 'missing == "v"' }).hits).toHaveLength(0);
-    expect(query(store, repoId, { from: "documents", filter: 'missing != "v"' }).hits).toHaveLength(0);
+    expect(query(store, repoId, { from: "docs", filter: 'missing == "v"' }).hits).toHaveLength(0);
+    expect(query(store, repoId, { from: "docs", filter: 'missing != "v"' }).hits).toHaveLength(0);
   });
 
   it("bare absent field coerces to false; !absent is true", () => {
-    expect(query(store, repoId, { from: "documents", filter: "missing" }).hits).toHaveLength(0);
-    expect(query(store, repoId, { from: "documents", filter: "!missing" }).hits).toHaveLength(1);
+    expect(query(store, repoId, { from: "docs", filter: "missing" }).hits).toHaveLength(0);
+    expect(query(store, repoId, { from: "docs", filter: "!missing" }).hits).toHaveLength(1);
   });
 
   it("has(field) tests existence", () => {
-    expect(query(store, repoId, { from: "documents", filter: "has(present)" }).hits).toHaveLength(1);
-    expect(query(store, repoId, { from: "documents", filter: "has(missing)" }).hits).toHaveLength(0);
+    expect(query(store, repoId, { from: "docs", filter: "has(present)" }).hits).toHaveLength(1);
+    expect(query(store, repoId, { from: "docs", filter: "has(missing)" }).hits).toHaveLength(0);
   });
 });
 
@@ -169,9 +169,9 @@ describe("filter_invalid (10 §3.1)", () => {
     ["list(tags) == \"x\"", /list\(\)/],
   ];
   it.each(bad)("rejects %j", (filter, re) => {
-    expect(() => query(new Store({ path: ":memory:" }), "rp_x", { from: "documents", filter })).toThrow(FilterInvalid);
+    expect(() => query(new Store({ path: ":memory:" }), "rp_x", { from: "docs", filter })).toThrow(FilterInvalid);
     try {
-      compile(parseFilter(filter), "documents");
+      compile(parseFilter(filter), "docs");
     } catch (e) {
       if (e instanceof FilterInvalid) expect(e.reason + " " + e.hint).toMatch(re);
     }
@@ -198,7 +198,7 @@ describe("semantic query ranks by cosine, not RRF (regression)", () => {
   }
 
   async function embedAll(worker: EmbeddingWorker): Promise<void> {
-    const rows = store.db.prepare("SELECT b.block_id, b.text, lower(hex(b.raw_hash)) h, b.type, d.path FROM blocks b JOIN documents d ON d.doc_id=b.doc_id WHERE b.type='paragraph'").all() as { block_id: string; text: string; h: string; type: string; path: string }[];
+    const rows = store.db.prepare("SELECT b.block_id, b.text, lower(hex(b.raw_hash)) h, b.type, d.path FROM blocks b JOIN docs d ON d.doc_id=b.doc_id WHERE b.type='paragraph'").all() as { block_id: string; text: string; h: string; type: string; path: string }[];
     const tasks: EmbedTask[] = rows.map((r) => ({
       blockId: r.block_id, contentHashHex: r.h,
       ctx: contextPrefix({ docTitle: r.path, path: r.path, headingChain: [], blockType: r.type }),
@@ -246,10 +246,10 @@ describe("ordering + pagination", () => {
     for (let i = 0; i < 5; i++) ingest(`d${i}.md`, `# Doc ${i}\n`);
   });
   it("orders by path and paginates with a cursor", () => {
-    const page1 = query(store, repoId, { from: "documents", limit: 2 });
+    const page1 = query(store, repoId, { from: "docs", limit: 2 });
     expect(page1.hits).toHaveLength(2);
     expect(page1.truncated).toBe(true);
-    const page2 = query(store, repoId, { from: "documents", limit: 2, cursor: page1.cursor });
+    const page2 = query(store, repoId, { from: "docs", limit: 2, cursor: page1.cursor });
     expect(page2.hits.length).toBeGreaterThan(0);
     // no overlap
     const ids1 = new Set(page1.hits.map((h) => h.id));

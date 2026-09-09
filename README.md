@@ -179,7 +179,7 @@ const { hits } = query(store, repoId, {
 
 // Query across formats: find YAML configs referencing a specific host.
 const yamlHits = query(store, repoId, {
-  from: "documents",
+  from: "docs",
   filter: 'format == "yaml" && database.host == "localhost"',
 });
 
@@ -190,7 +190,7 @@ const tasks = query(store, repoId, {
 });
 
 // Compact orientation outline of one document.
-const doc = store.db.prepare("SELECT doc_id FROM documents WHERE path = ?").get("notes.md");
+const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get("notes.md");
 const outline = docsOutline(store, doc.doc_id);
 console.log(outline.text);
 ```

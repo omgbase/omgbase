@@ -14,7 +14,7 @@ export type RebuildTarget = "sections" | "edges" | "fts" | "block_changes" | "al
 
 export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void {
   store.write((db) => {
-    const docIds = (db.prepare("SELECT doc_id FROM documents WHERE deleted_commit IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
+    const docIds = (db.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL").all() as { doc_id: string }[]).map((r) => r.doc_id);
 
     if (target === "sections" || target === "all") {
       for (const docId of docIds) rebuildSections(db, docId);

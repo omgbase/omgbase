@@ -21,7 +21,7 @@ function runStatus(cli: Cli, args: string[]): number {
   const payload = {
     repo: repo.slug,
     root: repo.rootPath,
-    documents: rs.documents,
+    docs: rs.docs,
     blocks: rs.blocks,
     commits: rs.commits,
     openEdges: rs.openEdges,
@@ -45,7 +45,7 @@ function runStatus(cli: Cli, args: string[]): number {
 
   // Two-column figure grid.
   const left: [string, string][] = [
-    [`${style.path(g.doc)} docs`, String(rs.documents)],
+    [`${style.path(g.doc)} docs`, String(rs.docs)],
     [`${style.dim(g.block)} blocks`, String(rs.blocks)],
     [`${g.diamond} commits`, String(rs.commits)],
     [`${g.arrow} edges`, String(rs.openEdges)],

@@ -75,7 +75,7 @@ describe("content-addressed writers", () => {
 describe("commit & revision sequencing", () => {
   it("assigns per-repo commit seq and per-doc revision seq", () => {
     store = fresh();
-    store.db.prepare("INSERT INTO documents (doc_id, repo_id, path) VALUES ('d_1','rp_1','a.md')").run();
+    store.db.prepare("INSERT INTO docs (doc_id, repo_id, path) VALUES ('d_1','rp_1','a.md')").run();
 
     store.write((db) => {
       const c1 = newCommit(db, { repoId: "rp_1", ts: "t1", origin: "observed" });

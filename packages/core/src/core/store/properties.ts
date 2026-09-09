@@ -122,7 +122,7 @@ function shapeValues(rows: StoredRow[]): unknown {
  * Effective (merged) property bag for a document: each key mapped to its
  * authored-shaped value (scalar or array), unioned across authored sources
  * (frontmatter + inline). Computed `$`-keys are included under their `$` name.
- * This is the projection/hydration view that replaces documents.metadata.
+ * This is the projection/hydration view that replaces docs.metadata.
  */
 export function docPropertiesMerged(db: Database, docId: string): Record<string, unknown> {
   const rows = db.prepare(

@@ -8,7 +8,7 @@ import { textSearch } from "./text.js";
 import { sanitizeFtsQuery } from "./fts-query.js";
 
 // query tool (10-query-language; 07 task 1.7). Compiles a CEL filter to indexed
-// SQL over documents|blocks, intersects with optional text (FTS5), applies
+// SQL over docs|blocks, intersects with optional text (FTS5), applies
 // order + limit + cursor. Returns lean projected hits (ids/paths); callers
 // hydrate by id.
 
@@ -49,8 +49,8 @@ const ORDERABLE_INTRINSIC: Record<string, string> = {
 
 export function query(store: Store, repoId: string, env: QueryEnvelope): QueryResult {
   const target = env.from;
-  if (target !== "documents" && target !== "blocks" && target !== "nodes") {
-    throw new FilterInvalid(`'from' must be 'documents', 'blocks', or 'nodes'`, "10 §1");
+  if (target !== "docs" && target !== "blocks" && target !== "nodes") {
+    throw new FilterInvalid(`'from' must be 'docs', 'blocks', or 'nodes'`, "10 §1");
   }
 
   const limit = env.limit ?? 50;
@@ -92,7 +92,7 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const where: string[] = [];
   const params: unknown[] = [];
 
-  if (target === "documents") {
+  if (target === "docs") {
     where.push("d.repo_id = ?", "d.deleted_commit IS NULL");
     params.push(repoId);
   } else {
@@ -123,17 +123,17 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const orderCols = buildOrder(env.order, target);
 
   const base =
-    target === "documents"
-      ? `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id, lower(hex(d.file_hash)) AS content_hash FROM documents d`
+    target === "docs"
+      ? `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id, lower(hex(d.file_hash)) AS content_hash FROM docs d`
       : `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
                 b.attrs AS attrs, d.doc_id AS doc_id, lower(hex(b.raw_hash)) AS content_hash
-         FROM blocks b JOIN documents d ON d.doc_id = b.doc_id`;
+         FROM blocks b JOIN docs d ON d.doc_id = b.doc_id`;
 
   // Cursor: composite keyset on (path, id) matching the default order. The
   // opaque cursor encodes the last emitted row's path and id; the keyset
   // predicate `(path > p) OR (path = p AND id > i)` resumes exactly after it.
   // Custom `order` clauses use the same (path,id) tiebreak, so this stays valid.
-  const idCol = target === "documents" ? "d.doc_id" : "b.block_id";
+  const idCol = target === "docs" ? "d.doc_id" : "b.block_id";
   let cursorClause = "";
   if (env.cursor) {
     const { path: cp, id: ci } = decodeCursor(env.cursor);
@@ -169,7 +169,7 @@ interface ProjectionRow {
 // ($id/$path/$repo/$ordinal/$type/$body…) and — for bare keys — frontmatter
 // values on both targets, plus block `type` and `attrs.<k>` on the blocks
 // target. This is the projection-then-hydrate shortcut (10 §7): triage on
-// frontmatter without an N-follow-up hydration round trip. `$body` (documents
+// frontmatter without an N-follow-up hydration round trip. `$body` (docs
 // target) projects the whole reconstructed file bytes — the same content
 // docs_read returns — for callers that want the body inline with a filter.
 function projectRow(store: Store, row: ProjectionRow, select: string[] | undefined, target: Target): QueryHit {
@@ -188,7 +188,7 @@ function projectRow(store: Store, row: ProjectionRow, select: string[] | undefin
   for (const field of select) {
     if (field === "$id" || field === "$path") continue; // already present
     if (field === "$body") {
-      if (target === "documents") {
+      if (target === "docs") {
         const doc = docsRead(store, row.id);
         if (doc) hit.$body = doc.content;
       }
@@ -197,7 +197,7 @@ function projectRow(store: Store, row: ProjectionRow, select: string[] | undefin
     if (field === "$content_hash") {
       // Grain-correct: the blocks SELECT projects the block's own raw_hash (the
       // exact value update/split CAS checks in expect.content_hash), the
-      // documents SELECT the doc file_hash — so a blocks query no longer leaks
+      // docs SELECT the doc file_hash — so a blocks query no longer leaks
       // the containing document's hash through the bare-key fallback below.
       if (row.content_hash !== undefined) hit.$content_hash = row.content_hash;
       continue;
@@ -237,7 +237,7 @@ function projectionMaterial(store: Store, blockIds: string[]): Map<string, Proje
   const rows = store.db.prepare(
     `SELECT b.block_id AS id, d.path AS path, b.ordinal AS ordinal, b.type AS type,
             b.attrs AS attrs, d.doc_id AS doc_id, lower(hex(b.raw_hash)) AS content_hash
-     FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
+     FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
      WHERE b.block_id IN (${placeholders})`,
   ).all(...blockIds) as ProjectionRow[];
   for (const r of rows) out.set(r.id, r);
@@ -257,11 +257,11 @@ function readPath(obj: Record<string, unknown>, path: string): unknown {
 }
 
 function buildOrder(order: string[] | undefined, target: Target): string {
-  const idCol = target === "documents" ? "d.doc_id" : "b.block_id";
+  const idCol = target === "docs" ? "d.doc_id" : "b.block_id";
   // Default: path asc, id asc. A total order on (path, id) keeps the keyset
   // cursor valid (§7). Explicit `order` fields sort first; (path, id) always
   // breaks ties so the cursor predicate remains correct.
-  const prefix = target === "documents"
+  const prefix = target === "docs"
     ? `d.path`
     : `d.path`; // path column is `d.path` for both targets in the SELECT/JOIN
   const parts: string[] = [];
@@ -284,7 +284,7 @@ function filterBlockIds(store: Store, repoId: string, filter: string, blockIds: 
   const compiled = compile(parseFilter(filter), "blocks");
   const placeholders = blockIds.map(() => "?").join(",");
   const sql = `SELECT b.block_id AS id
-     FROM blocks b JOIN documents d ON d.doc_id = b.doc_id
+     FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
      WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND b.block_id IN (${placeholders}) AND ${compiled.sql}`;
   const rows = store.db.prepare(sql).all(repoId, ...blockIds, ...compiled.params) as { id: string }[];
   return new Set(rows.map((r) => r.id));
@@ -322,7 +322,7 @@ function queryNodes(store: Store, repoId: string, env: QueryEnvelope, limit: num
   }
 
   const base = `SELECT n.node_id AS id, d.path AS path, n.kind AS kind, n.name AS name, n.value AS value
-     FROM nodes n JOIN documents d ON d.doc_id = n.doc_id`;
+     FROM nodes n JOIN docs d ON d.doc_id = n.doc_id`;
 
   const idCol = "n.node_id";
   let cursorClause = "";

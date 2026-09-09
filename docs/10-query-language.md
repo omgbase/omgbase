@@ -1,7 +1,7 @@
 # omgbase — Query Language Spec
 
 **Status:** normative. This document defines the filter/query syntax completely; the sketches in `05-graph-and-query.md` §4 defer to it. Task 1.7 implements this spec.
-**Compatibility:** on the `documents` target, omgbase is a superset of mrplex's documented query language (its `query_syntax` reference, 2026-09): same modes, same CEL subset, same absence rule, same `list()` polymorphism, same link-graph predicates including the `_static` variants. Deltas: the `blocks` target, structural functions, an `order` key, block-grain intrinsics, and the fenced-query form.
+**Compatibility:** on the `docs` target, omgbase is a superset of mrplex's documented query language (its `query_syntax` reference, 2026-09): same modes, same CEL subset, same absence rule, same `list()` polymorphism, same link-graph predicates including the `_static` variants. Deltas: the `blocks` target, structural functions, an `order` key, block-grain intrinsics, and the fenced-query form.
 
 ---
 
@@ -11,7 +11,7 @@ One envelope everywhere — the `query` tool, the `seed` stage of `pipeline`, an
 
 ```jsonc
 {
-  "from": "blocks",                  // "documents" | "blocks"; required
+  "from": "blocks",                  // "docs" | "blocks"; required
   "filter": "<CEL boolean>",         // optional
   "text": "term \"a phrase\"",       // optional; FTS
   "semantic": "natural language",    // optional; embeddings (semantic_unavailable if no hook)
@@ -29,7 +29,7 @@ Modes **intersect** (AND). Only current state is searched (history via `history_
 
 The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory, so user data can never collide with system fields.
 
-### `documents`
+### `docs`
 - **Bare identifiers** = a document **property** key, resolved against the indexed `properties` table (12-properties-table). A bare key spans the **authored** sources — frontmatter and inline (dataview-style `key:: value`) — unioned. For **markdown** a bare key is usually a frontmatter key; **YAML/JSON** docs expose the parsed object's keys the same way. Nested maps flatten to dotted keys (`meta.owner`). Values may be scalar or list — `==`/`!=`/`<` compare the scalar-authored value, `list()` is the multi-value accessor (§4); a scalar comparison against a list-authored key is false.
 - **Source-scoped:** `frontmatter.<k>` / `inline.<k>` narrow a bare key to one authored source (e.g. `inline.owner == "alice"`).
 - **Computed intrinsics:** `$title` (first H1 text), `$tags` (body `#hashtags`) — engine-derived, in the `$`-namespace. They do **not** shadow authored `title`/`tags`: `$title` is the H1, bare `title` is the frontmatter value.
@@ -110,15 +110,15 @@ All compile to indexed SQL (§8). This list supersedes the sketch in 05 §4 (`pa
 |---|---|---|
 | `under(id_or_locator)` | block lies in the containment subtree of the target; when the target is a heading, in its **section range** | `ancestor_path` prefix / `sections` range |
 | `under_heading(s)` | some ancestor section's heading text contains `s` (case-insensitive substring) | `sections` join |
-| `within(target)` | containing doc matches: doc id, exact path, path glob, or collection id | `documents` / collection membership |
+| `within(target)` | containing doc matches: doc id, exact path, path glob, or collection id | `docs` / collection membership |
 | `has_edge(pred [, target])` | an open authored edge with predicate `pred` originates from this block (optionally to `target` id/path) | `edges` |
 | `has_anchor()` | block carries an authored `^ref` | `blocks` |
 | `parent_type()` | the parent block's type, as a string (`parent_type() == "blockquote"`) | self-join |
 | `child_count()` | number of direct children | aggregate |
 
-On the `documents` target, `has_edge(pred[, target])` is also available and means "any block or metadata edge from this doc" (in markdown, metadata edges come from frontmatter fields).
+On the `docs` target, `has_edge(pred[, target])` is also available and means "any block or metadata edge from this doc" (in markdown, metadata edges come from frontmatter fields).
 
-## 6. Link-graph predicates (`documents` target; mrplex-compatible)
+## 6. Link-graph predicates (`docs` target; mrplex-compatible)
 
 - `$in(glob [, field])` — some doc matching the gitignore-style glob links TO this doc (optionally via that metadata field — a frontmatter field in markdown — or `"$body"`).
 - `$has(glob [, field])` — this doc links to a target matching the glob (dangling targets count).
@@ -130,12 +130,12 @@ On the `documents` target, `has_edge(pred[, target])` is also available and mean
 ## 7. `order`, `select`, pagination
 
 - **`order`:** array of field references, `-` prefix for descending: `["$path", "$ordinal"]`, `["-$updated_at"]`. Orderable: intrinsics, bare scalar fields, `doc.<key>`. Default when absent: `$semantic_score` desc if semantic, else text rank, else `$updated_at` desc. Ties always break by `$id` ascending — total order is required for stable cursors.
-- **`select` defaults:** documents ⇒ `["$path"]` (mrplex); blocks ⇒ `["$id", "$locator"]`. `$semantic_score` and `$evidence` (RRF/boost breakdown, 05 §5) available when relevant. Bodies/text travel only when selected or via `resolution`.
+- **`select` defaults:** docs ⇒ `["$path"]` (mrplex); blocks ⇒ `["$id", "$locator"]`. `$semantic_score` and `$evidence` (RRF/boost breakdown, 05 §5) available when relevant. Bodies/text travel only when selected or via `resolution`.
 - **`cursor`:** opaque; valid for the same envelope only; results carry `truncated` + `cursor` per the API rules.
 
 ## 8. Compilation contract
 
-- MUST compile to indexed SQL: comparisons and boolean combinations over metadata (JSON1 extraction on `documents.metadata`), `type`, `attrs.*`, all intrinsics; `startsWith` on `$path`; `under`/`under_heading`/`within`/`has_edge`; `text` (FTS5); `semantic` (vec).
+- MUST compile to indexed SQL: comparisons and boolean combinations over metadata (JSON1 extraction on `docs.metadata`), `type`, `attrs.*`, all intrinsics; `startsWith` on `$path`; `under`/`under_heading`/`within`/`has_edge`; `text` (FTS5); `semantic` (vec).
 - MAY post-filter over the SQL candidate set: `matches`, `.exists`/`.all` bodies, `list()` membership on unindexed keys. Post-filtering is bounded by `query.max_candidates` (default 10,000) — beyond it the query fails `filter_invalid` with hint "add an indexed predicate."
 - Statement timeout `query.timeout_ms` (default 2,000).
 - Evaluation is deterministic: same corpus revision + same envelope ⇒ same results and order (no clock functions; §3.1).
@@ -163,7 +163,7 @@ project: list(ref)
 
 | Intent | Envelope |
 |---|---|
-| Working-layer docs | `from: documents · filter: layer == "working"` |
+| Working-layer docs | `from: docs · filter: layer == "working"` |
 | Guides, recently touched | `filter: $path.startsWith("guides/") && $updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `filter: "pricing" in list(tags)` |
 | Leaf docs (no outgoing links) | `filter: $links().size() == 0` |

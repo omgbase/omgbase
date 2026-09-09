@@ -4,8 +4,8 @@ import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { query } from "./query.js";
 
-// The documents-target CEL path resolves against the `properties` table (the
-// documents.metadata column no longer exists, so a match can only come from
+// The docs-target CEL path resolves against the `properties` table (the
+// docs.metadata column no longer exists, so a match can only come from
 // properties). These exercise scalar/list/nested/source-scoped resolution.
 
 let store: Store;
@@ -18,10 +18,10 @@ beforeEach(() => {
 afterEach(() => store.close());
 
 function paths(filter: string): string[] {
-  return query(store, repoId, { from: "documents", filter }).hits.map((h) => h.path).sort();
+  return query(store, repoId, { from: "docs", filter }).hits.map((h) => h.path).sort();
 }
 
-describe("documents queries resolve from properties", () => {
+describe("docs queries resolve from properties", () => {
   beforeEach(() => {
     ingestFile(store, repoId, "a.md", "---\nlayer: working\ntags: [pricing, saas]\npriority: 3\n---\n\n# A\n");
     ingestFile(store, repoId, "b.md", "---\nlayer: draft\ntags: docs\npriority: 1\n---\n\n# B\n");

@@ -103,9 +103,9 @@ describe("trace suite", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\ncites [target](/target.md) in this paragraph\n");
     await connect();
-    const targetId = (store.db.prepare("SELECT doc_id FROM documents WHERE path='target.md'").get() as { doc_id: string }).doc_id;
+    const targetId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='target.md'").get() as { doc_id: string }).doc_id;
     const { payload } = await call("graph_traverse", { from: [targetId], via: ["references"], direction: "in", depth: 1 });
-    const srcId = (store.db.prepare("SELECT doc_id FROM documents WHERE path='src.md'").get() as { doc_id: string }).doc_id;
+    const srcId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='src.md'").get() as { doc_id: string }).doc_id;
     expect(arr(payload.nodes)).toContain(srcId);
     expect(turns).toBe(1);
   });
@@ -125,7 +125,7 @@ describe("trace suite", () => {
   it("conflict carries current truth (retry-from-error)", async () => {
     save("c.md", "# C\n\nbody paragraph to edit\n");
     await connect();
-    const bId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=(SELECT doc_id FROM documents WHERE path='c.md') AND text LIKE 'body%'").get() as { block_id: string }).block_id;
+    const bId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=(SELECT doc_id FROM docs WHERE path='c.md') AND text LIKE 'body%'").get() as { block_id: string }).block_id;
     const { payload, isError } = await call("apply", {
       ops: [{ op: "update", block: bId, markdown: "new", expect: { content_hash: "deadbeef" } }],
     });

@@ -88,7 +88,7 @@ describe("pipeline (seed → expand → hydrate, one call)", () => {
         expand: { via: ["references"], direction: "out", depth: 1 },
       });
       expect(res.graph).toBeTruthy();
-      const bId = (store.db.prepare("SELECT doc_id FROM documents WHERE path='b.md' AND repo_id=?").get(rRepo) as { doc_id: string }).doc_id;
+      const bId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='b.md' AND repo_id=?").get(rRepo) as { doc_id: string }).doc_id;
       expect(res.graph!.nodes).toContain(bId);
     } finally {
       rmSync(dir, { recursive: true, force: true });

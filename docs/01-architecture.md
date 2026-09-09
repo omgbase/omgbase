@@ -137,7 +137,7 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 9. Query & retrieval (summary; full spec in `05-graph-and-query.md`)
 
-- CEL filters over two targets: `documents` and `blocks` (block filters may reach doc frontmatter via `doc.`). Structural functions (`under()`, `under_heading()`, `within()`, `has_edge()`, …) compile to indexed lookups.
+- CEL filters over two targets: `docs` and `blocks` (block filters may reach doc frontmatter via `doc.`). Structural functions (`under()`, `under_heading()`, `within()`, `has_edge()`, …) compile to indexed lookups.
 - Hybrid retrieval: FTS5 + vectors fused by **reciprocal-rank fusion**, then explainable multiplicative boosts (title/heading/path match, epistemic layer, recency). Every hit returns its evidence.
 - Embeddings attach to blocks: input = `doc title · path · heading chain · block type` + block text; key = `(content_hash, ctx_hash, model)`; async recompute.
 - The `pipeline` call composes seed → expand → hydrate in one round trip.

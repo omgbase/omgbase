@@ -25,7 +25,7 @@ afterEach(() => {
 function seed(path: string, content: string): string {
   writeFileSync(join(dir, path), content);
   processCheckpoint(store, repoId, dir, [{ path }]);
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path = ?").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get(path) as { doc_id: string }).doc_id;
 }
 function block(docId: string, prefix: string): string {
   const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ?").all(docId) as { block_id: string; text: string }[];

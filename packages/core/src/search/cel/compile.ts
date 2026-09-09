@@ -5,7 +5,7 @@ import { FilterInvalid } from "./parser.js";
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
 // key never matches a comparison; !absent-bool is true.
 
-export type Target = "documents" | "blocks" | "nodes";
+export type Target = "docs" | "blocks" | "nodes";
 
 export interface Compiled {
   sql: string; // boolean SQL expression over the target's row
@@ -31,7 +31,7 @@ function jsonPath(segs: string[]): string {
 // against the indexed `properties` table instead of json_extract over a JSON
 // blob. A field access is one of: a scalar-value expression (comparisons), or
 // an existence/count predicate (membership, size, has, bool-context). All
-// correlate on `d.doc_id` (documents `d` is present/joined on every target).
+// correlate on `d.doc_id` (docs `d` is present/joined on every target).
 
 const PROP_SOURCES = new Set(["frontmatter", "inline", "computed"]);
 
@@ -61,7 +61,7 @@ interface PropRef { key: string; source?: string }
 // source scope, not a key segment.
 function propRef(field: FieldRef, target: Target): PropRef | null {
   let segs = field.segments;
-  if (target === "documents") {
+  if (target === "docs") {
     // Computed intrinsic ($title, $tags): route to source='computed' rows.
     if (field.intrinsic) {
       if (segs.length === 1 && COMPUTED_INTRINSICS.has(segs[0]!)) return { key: segs[0]!, source: "computed" };
@@ -134,7 +134,7 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
   const head = segs[0]!;
 
   if (field.intrinsic) {
-    if (target === "documents") {
+    if (target === "docs") {
       switch (head) {
         case "$id": return { expr: "d.doc_id" };
         case "$path": return { expr: "d.path" };
@@ -145,7 +145,7 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
           // Computed property intrinsic ($title, $tags) → properties row scalar.
           const ref = propRef(field, target);
           if (ref) return { expr: propScalarExpr(ref) };
-          throw new FilterInvalid(`unknown intrinsic ${head} on documents`, "10 §2");
+          throw new FilterInvalid(`unknown intrinsic ${head} on docs`, "10 §2");
         }
       }
     } else if (target === "nodes") {
@@ -170,7 +170,7 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
     }
   }
 
-  if (target === "documents") {
+  if (target === "docs") {
     if (head === "format") return { expr: "d.format" };
     const ref = propRef(field, target);
     if (ref) return { expr: propScalarExpr(ref) };
@@ -187,7 +187,7 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
     if (head === "doc") {
       const rest = segs.slice(1);
       if (rest[0]?.startsWith("$")) {
-        return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
+        return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "docs");
       }
       if (rest[0] === "format") return { expr: "d.format" };
       const ref = propRef(field, target);
@@ -212,7 +212,7 @@ function fieldSql(field: FieldRef, target: Target): { expr: string } {
   if (head === "doc") {
     const rest = segs.slice(1);
     if (rest[0]?.startsWith("$")) {
-      return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "documents");
+      return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "docs");
     }
     if (rest[0] === "format") return { expr: "d.format" };
     const ref = propRef(field, target);

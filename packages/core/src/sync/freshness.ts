@@ -15,7 +15,7 @@ import { walkMarkdown } from "./fs-util.js";
 // This is the filesystem source's durable change-detection cache (13-sync-plugins
 // §7): file_stats is the persisted form of the source's `revision` token. It is
 // a derived table, rebuildable by a re-stat (rebuildFileStats); the durable
-// convergence signal remains documents.file_hash.
+// convergence signal remains docs.file_hash.
 
 interface StatRow {
   mtime_ns: bigint;

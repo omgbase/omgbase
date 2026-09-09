@@ -21,7 +21,7 @@ describe("multiformat ingest integration", () => {
     const result = ingestFile(store, repoId, "config/database.yaml", content);
     expect(result.blockCount).toBeGreaterThan(0);
 
-    const doc = store.db.prepare("SELECT format FROM documents WHERE doc_id = ?").get(result.docId) as { format: string };
+    const doc = store.db.prepare("SELECT format FROM docs WHERE doc_id = ?").get(result.docId) as { format: string };
     expect(doc.format).toBe("yaml");
   });
 
@@ -31,7 +31,7 @@ describe("multiformat ingest integration", () => {
     const result = ingestFile(store, repoId, "package.json", content);
     expect(result.blockCount).toBeGreaterThan(0);
 
-    const doc = store.db.prepare("SELECT format FROM documents WHERE doc_id = ?").get(result.docId) as { format: string };
+    const doc = store.db.prepare("SELECT format FROM docs WHERE doc_id = ?").get(result.docId) as { format: string };
     expect(doc.format).toBe("json");
   });
 
@@ -41,7 +41,7 @@ describe("multiformat ingest integration", () => {
     const result = ingestFile(store, repoId, "readme.md", content);
     expect(result.blockCount).toBeGreaterThan(0);
 
-    const doc = store.db.prepare("SELECT format FROM documents WHERE doc_id = ?").get(result.docId) as { format: string };
+    const doc = store.db.prepare("SELECT format FROM docs WHERE doc_id = ?").get(result.docId) as { format: string };
     expect(doc.format).toBe("markdown");
   });
 
@@ -69,21 +69,21 @@ describe("multiformat ingest integration", () => {
     expect(blocks.every((b) => b.type.startsWith("json:"))).toBe(true);
   });
 
-  it("queries by format on documents target", () => {
+  it("queries by format on docs target", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "readme.md", "# Hello\n");
     ingestFile(store, repoId, "config.yaml", "key: value\n");
     ingestFile(store, repoId, "data.json", `{"a": 1}`);
 
-    const yamlDocs = query(store, repoId, { from: "documents", filter: 'format == "yaml"' });
+    const yamlDocs = query(store, repoId, { from: "docs", filter: 'format == "yaml"' });
     expect(yamlDocs.hits.length).toBe(1);
     expect(yamlDocs.hits[0]!.path).toBe("config.yaml");
 
-    const jsonDocs = query(store, repoId, { from: "documents", filter: 'format == "json"' });
+    const jsonDocs = query(store, repoId, { from: "docs", filter: 'format == "json"' });
     expect(jsonDocs.hits.length).toBe(1);
     expect(jsonDocs.hits[0]!.path).toBe("data.json");
 
-    const mdDocs = query(store, repoId, { from: "documents", filter: 'format == "markdown"' });
+    const mdDocs = query(store, repoId, { from: "docs", filter: 'format == "markdown"' });
     expect(mdDocs.hits.length).toBe(1);
     expect(mdDocs.hits[0]!.path).toBe("readme.md");
   });
@@ -142,7 +142,7 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "other.yaml", "database:\n  host: remote\nlogging:\n  level: info\n");
 
     const debugDocs = query(store, repoId, {
-      from: "documents",
+      from: "docs",
       filter: 'logging.level == "debug"',
     });
     expect(debugDocs.hits.length).toBe(1);
@@ -155,7 +155,7 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "b.json", `{"name": "beta", "private": false}`);
 
     const privateDocs = query(store, repoId, {
-      from: "documents",
+      from: "docs",
       filter: 'name == "alpha"',
     });
     expect(privateDocs.hits.length).toBe(1);

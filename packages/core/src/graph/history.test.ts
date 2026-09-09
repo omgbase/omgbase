@@ -27,7 +27,7 @@ function save(path: string, content: string): void {
   processCheckpoint(store, repoId, dir, [{ path }]);
 }
 function docId(path: string): string {
-  return (store.db.prepare("SELECT doc_id FROM documents WHERE path=?").get(path) as { doc_id: string }).doc_id;
+  return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
 }
 function blockByText(path: string, prefix: string): string {
   const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ?").all(docId(path)) as { block_id: string; text: string }[];
@@ -50,9 +50,9 @@ describe("history_node", () => {
 describe("diff (block grain)", () => {
   it("reports added/removed/changed blocks between revisions", () => {
     save("a.md", "# H\n\nkeep me around please\n\nremove me later\n");
-    const rev1 = (store.db.prepare("SELECT current_rev FROM documents WHERE path='a.md'").get() as { current_rev: string }).current_rev;
+    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='a.md'").get() as { current_rev: string }).current_rev;
     save("a.md", "# H\n\nkeep me around please\n\nbrand new paragraph here\n");
-    const rev2 = (store.db.prepare("SELECT current_rev FROM documents WHERE path='a.md'").get() as { current_rev: string }).current_rev;
+    const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='a.md'").get() as { current_rev: string }).current_rev;
 
     const diff = diffBlocks(store, docId("a.md"), rev1, rev2);
     expect(diff.some((d) => d.kind === "removed" && d.before?.includes("remove me"))).toBe(true);
