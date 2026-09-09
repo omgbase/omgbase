@@ -108,6 +108,18 @@ class Parser {
     let cur = node;
     while (this.peek().type === "dot") {
       this.next();
+      // A `$`-segment after a dot is an intrinsic reach-through continuation
+      // (`doc.$path`, `doc.$updated_at`): the lexer emits it as a `field` token
+      // (value keeps the `$`). It is never a method receiver, so append it as a
+      // field segment directly. The compiler routes `doc.$…` to docs intrinsics.
+      if (this.peek().type === "field") {
+        const seg = this.next().value;
+        if (cur.kind !== "field") {
+          throw new FilterInvalid(`unexpected '.${seg}' — intrinsic segment requires a field receiver`, "10 §2");
+        }
+        cur = { kind: "field", segments: [...cur.segments, seg], intrinsic: cur.intrinsic };
+        continue;
+      }
       const name = this.expect("ident").value;
       if (this.peek().type !== "lparen") {
         // dotted field continuation (only valid if receiver was a field)

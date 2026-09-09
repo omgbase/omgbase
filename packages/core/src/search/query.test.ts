@@ -140,6 +140,39 @@ describe("query — blocks target", () => {
   });
 });
 
+describe("owning-doc reach-through (doc.<key> / doc.$intrinsic)", () => {
+  beforeEach(() => {
+    ingest("canon/a.md", "---\nlayer: canon\n---\n\n- [ ] a todo\n- [x] a done\n");
+    ingest("draft/b.md", "---\nlayer: draft\n---\n\n- [ ] b todo\n");
+  });
+
+  it("blocks: bare doc.<key> constrains eligibility by owning-doc metadata", () => {
+    const { hits } = query(store, repoId, { from: "blocks", filter: 'type == "task" && doc.layer == "canon"' });
+    expect(hits.length).toBe(2); // both tasks in canon/a.md; none from draft
+  });
+
+  it("blocks: doc.$path intrinsic reach-through parses and filters", () => {
+    const { hits } = query(store, repoId, { from: "blocks", filter: 'type == "task" && doc.$path.startsWith("canon/")' });
+    expect(hits.length).toBe(2);
+  });
+
+  it("nodes: node predicate composes with owning-doc metadata + intrinsic scope", () => {
+    // The brief's core example, tightened: unchecked task nodes, canon docs, one namespace.
+    const { hits } = query(store, repoId, {
+      from: "nodes",
+      filter: 'kind == "md:task" && doc.layer == "canon" && !attrs.checked && doc.$path.startsWith("canon/")',
+    });
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.value).toBe("a todo");
+  });
+
+  it("doc.$intrinsic segment requires a field receiver (parse guard)", () => {
+    // A `$`-segment after a dot is only a reach-through continuation; it must
+    // not attach to a non-field receiver.
+    expect(() => query(store, repoId, { from: "blocks", filter: 'size(list(tags)).$path' })).toThrow(FilterInvalid);
+  });
+});
+
 describe("absence truth table (10 §3.3)", () => {
   beforeEach(() => {
     ingest("x.md", "---\npresent: yes\n---\n\n# X\n");
