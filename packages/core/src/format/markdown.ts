@@ -74,30 +74,38 @@ export const markdownAdapter: FormatAdapter = {
 
   projectNodes(blocks: RawBlock[]): ProjectedNode[] {
     const nodes: ProjectedNode[] = [];
-    const walk = (list: RawBlock[], blockId: string): void => {
+    // Byte span of a regex match within the block's raw bytes (node-locates the
+    // feature inside its block; disambiguates multiple same-kind nodes — 13/nodes).
+    const span = (m: RegExpMatchArray): { spanStart: number; spanEnd: number } => ({
+      spanStart: m.index ?? 0,
+      spanEnd: (m.index ?? 0) + m[0].length,
+    });
+    const walk = (list: RawBlock[], parentId: string): void => {
       for (const b of list) {
-        const id = blockId || "root";
+        // Anchor to the block's OWN assigned id (zipped on by ingest); fall back
+        // to the parent's id, then "root", for pre-identity/parse-time callers.
+        const id = b.blockId || parentId || "root";
         // Links: [text](target)
         for (const m of b.raw.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
-          nodes.push({ kind: "md:link", name: m[1], value: m[2], blockId: id });
+          nodes.push({ kind: "md:link", name: m[1], value: m[2], blockId: id, ...span(m) });
         }
         // Wikilinks: [[target]]
         for (const m of b.raw.matchAll(/\[\[([^\]]+)\]\]/g)) {
-          nodes.push({ kind: "md:wikilink", value: m[1], blockId: id });
+          nodes.push({ kind: "md:wikilink", value: m[1], blockId: id, ...span(m) });
         }
-        // Tasks: checkbox items
+        // Tasks: checkbox items (the whole block; span covers its raw)
         if (b.type === "task") {
           const checked = b.attrs.checked === true;
-          nodes.push({ kind: "md:task", value: b.text, blockId: id, attrs: { checked } });
+          nodes.push({ kind: "md:task", value: b.text, blockId: id, attrs: { checked }, spanStart: 0, spanEnd: b.raw.length });
         }
         // Anchors: ^ref
         const anchorRe = /\^([a-zA-Z0-9_-]+)/g;
         for (const m of b.raw.matchAll(anchorRe)) {
-          nodes.push({ kind: "md:anchor", name: m[1], blockId: id });
+          nodes.push({ kind: "md:anchor", name: m[1], blockId: id, ...span(m) });
         }
         // Inline fields: key:: value
         for (const m of b.raw.matchAll(/(?:^|\s)([a-z][a-z0-9_]*)::\s*(\S+)/gi)) {
-          nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id });
+          nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, ...span(m) });
         }
         if (b.children.length > 0) walk(b.children, id);
       }

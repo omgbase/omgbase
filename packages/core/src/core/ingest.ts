@@ -243,9 +243,11 @@ export function ingestFile(
     // Node projection: adapter-provided semantic features from parsed blocks.
     const propertyRows: PropertyRow[] = [];
     if (adapter?.projectNodes) {
-      const rawBlocks = rest.map(toProjectionInput);
+      // Zip assigned block ids onto the parsed blocks so projectNodes can anchor
+      // each node to its own block (the parsed RawBlocks are pre-identity).
+      const rawBlocks = zipAssignedIds(rest, assigned);
       const projected = adapter.projectNodes(rawBlocks);
-      // Rewrite blockIds to real assigned ids; discard unmappable placeholders.
+      // Keep only nodes anchored to a real assigned block id.
       const idSet = collectBlockIds(assigned);
       const withIds = projected.map((n) => ({
         ...n,
@@ -349,8 +351,20 @@ export function ingestFile(
   });
 }
 
-function toProjectionInput(b: RawBlock): RawBlock {
-  return b;
+// Zip assigned block ids onto the parsed RawBlocks for node projection. The
+// parsed `rest` and `assigned` trees are the same blocks in the same order and
+// nesting (assigned is a 1:1 id-carrying projection of rest), so we walk them in
+// lockstep and stamp each RawBlock's blockId. Returns fresh RawBlocks (originals
+// untouched — blockId is a projection-only field).
+function zipAssignedIds(parsed: RawBlock[], assigned: TreeInputBlock[]): RawBlock[] {
+  return parsed.map((b, i) => {
+    const a = assigned[i];
+    return {
+      ...b,
+      ...(a ? { blockId: a.blockId } : {}),
+      children: a ? zipAssignedIds(b.children, a.children) : b.children,
+    };
+  });
 }
 
 // Inline field values arrive as captured strings; coerce to a typed column so

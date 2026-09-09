@@ -277,13 +277,14 @@ export const jsonAdapter: FormatAdapter = {
     const walk = (list: RawBlock[]): void => {
       for (const b of list) {
         const key = b.attrs.key as string ?? "";
+        const id = b.blockId ?? "";
         if (b.type === "json:property" && key === "$ref") {
           const val = b.text.replace(/^"[^"]*"\s*:\s*/, "").replace(/^"|"$/g, "").trim();
-          nodes.push({ kind: "json:ref", name: "$ref", value: val, blockId: key });
+          nodes.push({ kind: "json:ref", name: "$ref", value: val, blockId: id });
         }
         if (b.type === "json:property" && key === "$schema") {
           const val = b.text.replace(/^"[^"]*"\s*:\s*/, "").replace(/^"|"$/g, "").trim();
-          nodes.push({ kind: "json:schema", name: "$schema", value: val, blockId: key });
+          nodes.push({ kind: "json:schema", name: "$schema", value: val, blockId: id });
         }
         if (b.children.length > 0) walk(b.children);
       }

@@ -352,7 +352,7 @@ export const yamlAdapter: FormatAdapter = {
     const nodes: ProjectedNode[] = [];
     const walk = (list: RawBlock[]): void => {
       for (const b of list) {
-        const id = b.type === "yaml:mapping_entry" ? (b.attrs.key as string ?? "") : "";
+        const id = b.blockId ?? "";
         // $ref values
         if (b.type === "yaml:mapping_entry" && b.attrs.key === "$ref") {
           const val = b.raw.replace(/^[^:]*:\s*/, "").trim();

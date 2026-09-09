@@ -25,6 +25,31 @@ describe("node projection — markdown", () => {
     expect(links.map((l) => l.value)).toContain("/api.md");
   });
 
+  it("anchors nodes to their real block id and records exact spans", () => {
+    const { store, repoId } = setup();
+    ingestFile(store, repoId, "test.md", "# Hello\n\nSee [a](/x.md) then [b](/y.md) here.\n");
+
+    const rows = store.db.prepare(
+      `SELECT n.kind, n.value, n.block_id, n.span_start, n.span_end,
+              substr(bl_blob.bytes, n.span_start + 1, n.span_end - n.span_start) AS sliced
+       FROM nodes n
+       JOIN blocks bl ON bl.block_id = n.block_id
+       JOIN blobs bl_blob ON bl_blob.hash = bl.raw_hash
+       WHERE n.kind = 'md:link' ORDER BY n.span_start`,
+    ).all() as { kind: string; value: string; block_id: string; span_start: number; span_end: number; sliced: Buffer }[];
+
+    expect(rows.length).toBe(2);
+    // Both links anchor to a real b_ block id (regression: block_id was NULL).
+    expect(rows.every((r) => r.block_id?.startsWith("b_"))).toBe(true);
+    // Both links are in the SAME paragraph block.
+    expect(rows[0]!.block_id).toBe(rows[1]!.block_id);
+    // Spans slice the block's raw bytes to exactly the link markup — this is
+    // what disambiguates the two links for surgical node-prop edits. (blobs.bytes
+    // is a BLOB column, so substr returns a Buffer.)
+    expect(rows[0]!.sliced.toString("utf8")).toBe("[a](/x.md)");
+    expect(rows[1]!.sliced.toString("utf8")).toBe("[b](/y.md)");
+  });
+
   it("projects md:wikilink nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [[other note]] and [[second note]].\n");

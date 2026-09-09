@@ -53,6 +53,12 @@ export interface RawBlock {
   anchors: string[];
   /** Extracted outgoing links for edge extraction (Stage 4). */
   outLinks: ExtractedLink[];
+  /**
+   * Assigned block id, populated ONLY for node projection (ingest zips the
+   * assigned tree onto the parsed blocks before calling projectNodes) so an
+   * adapter can anchor each node to its own block. Absent during parse/reconcile.
+   */
+  blockId?: string;
 }
 
 export interface ExtractedLink {
