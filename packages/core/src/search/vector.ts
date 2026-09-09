@@ -13,6 +13,12 @@ export interface VectorHit {
   cosine: number;
 }
 
+export interface DocVectorHit {
+  docId: string;
+  path: string;
+  cosine: number;
+}
+
 function cosine(a: Float32Array, b: Float32Array): number {
   let dot = 0, na = 0, nb = 0;
   const n = Math.min(a.length, b.length);
@@ -42,5 +48,29 @@ export function vectorSearch(store: Store, repoId: string, model: string, queryV
     return { blockId: r.blockId, docId: r.docId, path: r.path, cosine: cosine(queryVec, v) };
   });
   scored.sort((a, b) => b.cosine - a.cosine || (a.blockId < b.blockId ? -1 : 1));
+  return scored.slice(0, limit);
+}
+
+// Doc-grain vector search (doc semantic retrieval). Brute-force cosine over the
+// doc_embeddings cache joined to live docs — one vector per document, so results
+// are ranked whole documents (mrplex-parity), never multiple blocks of the same
+// file. Keyed by doc_id (not content_hash), so we join doc_embeddings.doc_id =
+// docs.doc_id and keep only rows for the requested model.
+export function docVectorSearch(store: Store, repoId: string, model: string, queryVec: Float32Array, opts: { limit?: number } = {}): DocVectorHit[] {
+  const limit = opts.limit ?? 50;
+  const rows = store.db
+    .prepare(
+      `SELECT d.doc_id AS docId, d.path AS path, e.vec AS vec
+       FROM doc_embeddings e
+       JOIN docs d ON d.doc_id = e.doc_id AND d.deleted_commit IS NULL
+       WHERE d.repo_id = ? AND e.model = ?`,
+    )
+    .all(repoId, model) as { docId: string; path: string; vec: Buffer }[];
+
+  const scored = rows.map((r) => {
+    const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4);
+    return { docId: r.docId, path: r.path, cosine: cosine(queryVec, v) };
+  });
+  scored.sort((a, b) => b.cosine - a.cosine || (a.docId < b.docId ? -1 : 1));
   return scored.slice(0, limit);
 }

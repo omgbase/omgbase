@@ -13,6 +13,13 @@ export interface EmbeddingSettings {
   model?: string;
   /** Optional dimension override passed through to the provider factory. */
   dim?: number;
+  /**
+   * Optional max input length (tokens) the provider's model accepts before it
+   * truncates. Sets the doc-embedding whole-doc vs pooled-fallback threshold; a
+   * provider that reports it in its handshake overrides this. Absent everywhere
+   * ⇒ the worker's conservative default budget applies.
+   */
+  maxInputTokens?: number;
 }
 
 /** Read the embedding.* block out of a repo's parsed settings JSON. */

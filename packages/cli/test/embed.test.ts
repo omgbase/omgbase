@@ -71,15 +71,21 @@ describe("embed via external stdio provider (fake embedder)", () => {
   });
 
   it("status → drain → status reflects the queue draining", () => {
-    const before = JSON.parse(omg(["embed", "status", "--json"])) as { provider: string; queued: number; embeddable: number };
+    const before = JSON.parse(omg(["embed", "status", "--json"])) as { provider: string; queued: number; embeddable: number; docs: number; docsQueued: number };
     expect(before.embeddable).toBeGreaterThanOrEqual(2);
     expect(before.queued).toBe(before.embeddable);
+    // Doc-grain queue is reported and non-empty before draining.
+    expect(before.docsQueued).toBe(before.docs);
+    expect(before.docs).toBeGreaterThanOrEqual(1);
 
+    // Drain embeds both grains; `embedded` folds in the doc vectors, so it's the
+    // block queue plus the doc queue (each doc = one whole-doc or pooled vector).
     const drained = JSON.parse(omg(["embed", "drain", "--json"])) as { embedded: number };
-    expect(drained.embedded).toBe(before.embeddable);
+    expect(drained.embedded).toBe(before.embeddable + before.docsQueued);
 
-    const after = JSON.parse(omg(["embed", "status", "--json"])) as { queued: number };
+    const after = JSON.parse(omg(["embed", "status", "--json"])) as { queued: number; docsQueued: number };
     expect(after.queued).toBe(0);
+    expect(after.docsQueued).toBe(0);
   });
 
   it("query --semantic returns hybrid hits after draining", () => {

@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -121,6 +121,29 @@ CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
 );
 `;
 
+// doc_embeddings (doc-grain semantic retrieval). One vector per (doc_id, model)
+// so `from=docs semantic` ranks whole documents by topical relevance rather than
+// re-labelling block hits. `input_hash` is the freshness key: the sha256 of the
+// exact bytes that produced the vector (whole-doc embed input, or the pooled
+// fallback's composite of block hashes) — a stored row whose input_hash no
+// longer matches the current document's is stale and re-embedded. `method`
+// records which strategy produced it ('whole' = whole-document embedding;
+// 'pooled' = token-weighted mean of block vectors, used only when the doc's
+// embed input exceeds the provider's max input length). Derived/rebuildable
+// like the block `embeddings` cache; keyed by doc_id (not content_hash) because
+// a document has no single stable content hash across block edits.
+export const DOC_EMBEDDINGS_DDL = /* sql */ `
+CREATE TABLE IF NOT EXISTS doc_embeddings (
+  doc_id     TEXT NOT NULL,
+  model      TEXT NOT NULL,
+  input_hash BLOB NOT NULL,
+  method     TEXT NOT NULL CHECK (method IN ('whole','pooled')),
+  dim        INTEGER NOT NULL,
+  vec        BLOB NOT NULL,
+  PRIMARY KEY (doc_id, model)
+);
+`;
+
 // Additive migrations keyed by the version they upgrade TO. Each runs inside a
 // transaction. Only forward, idempotent DDL (CREATE ... IF NOT EXISTS) — no
 // destructive changes. store.ts applies these in order for an older db.
@@ -136,6 +159,7 @@ export const MIGRATIONS: Record<number, string> = {
   9: "",  // SYNC_DDL + repos.root_path→nullable, handled programmatically in store.ts
   10: WORKSPACE_SETTINGS_DDL,
   11: "",  // ALTER TABLE documents RENAME TO docs, handled programmatically in store.ts
+  12: DOC_EMBEDDINGS_DDL,  // doc-grain semantic vectors
 };
 
 export const DDL = /* sql */ `
@@ -333,6 +357,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vec          BLOB NOT NULL,
   PRIMARY KEY (content_hash, ctx_hash, model)
 );
+
+${DOC_EMBEDDINGS_DDL}
 
 CREATE VIRTUAL TABLE IF NOT EXISTS blocks_fts USING fts5(
   text, content='blocks', content_rowid='rowid', tokenize='porter unicode61'

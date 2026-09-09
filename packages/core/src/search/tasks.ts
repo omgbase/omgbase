@@ -1,5 +1,7 @@
 import type { Store } from "../core/store/store.js";
-import { contextPrefix, shouldEmbed, type EmbedTask } from "./embeddings.js";
+import { reconstructContent } from "../core/read/document.js";
+import { docPropertiesMerged } from "../core/store/properties.js";
+import { contextPrefix, shouldEmbed, estimateTokens, type EmbedTask, type DocEmbedTask, type DocEmbedBlockRef } from "./embeddings.js";
 
 // Build the embedding task list for a repo (05 §6). Walks every live block,
 // keeps those worth embedding on their own (shouldEmbed), and attaches the
@@ -98,6 +100,72 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
       blockType: b.type,
     });
     tasks.push({ blockId: b.block_id, contentHashHex: b.raw_hash.toString("hex"), ctx, text: b.text });
+  }
+  return tasks;
+}
+
+// The doc-embedding header: a lightweight identifying line prepended to the
+// body so schema-y atomic notes (a two-line canon definition) embed with their
+// title + type/layer context rather than as near-empty bodies. Kept minimal and
+// consistent with the block embedder's context prefix shape ("title · path ·
+// …") so both grains embed in a comparable space.
+function docHeader(title: string, path: string, props: Record<string, unknown>): string {
+  const bits = [title, path];
+  const type = props["type"];
+  if (typeof type === "string" && type.trim()) bits.push(`type: ${type}`);
+  const layer = props["layer"];
+  if (typeof layer === "string" && layer.trim()) bits.push(`layer: ${layer}`);
+  return bits.join(" · ");
+}
+
+/**
+ * Build DocEmbedTask[] for every live document in the repo (doc-grain semantic
+ * retrieval). Each task carries the whole-document embed input (header +
+ * reconstructed body) and the doc's block references (for the pooled fallback,
+ * reusing block vectors already keyed in the embeddings cache with the SAME ctx
+ * as buildEmbedTasks). Docs with no reconstructable content are skipped.
+ */
+export function buildDocEmbedTasks(store: Store, repoId: string): DocEmbedTask[] {
+  const blockTasks = buildEmbedTasks(store, repoId);
+  const blocksByDoc = new Map<string, DocEmbedBlockRef[]>();
+  // Map block tasks back to their owning doc via a block_id → doc_id lookup, so
+  // the pooled fallback references exactly the vectors the block embedder cached.
+  const docIdByBlock = new Map<string, string>();
+  for (const r of store.db.prepare(
+    `SELECT block_id, doc_id FROM blocks WHERE repo_id = ? AND deleted_commit IS NULL`,
+  ).all(repoId) as { block_id: string; doc_id: string }[]) {
+    docIdByBlock.set(r.block_id, r.doc_id);
+  }
+  for (const t of blockTasks) {
+    const docId = docIdByBlock.get(t.blockId);
+    if (!docId) continue;
+    (blocksByDoc.get(docId) ?? blocksByDoc.set(docId, []).get(docId)!).push({
+      contentHashHex: t.contentHashHex,
+      ctx: t.ctx,
+      tokens: estimateTokens(t.text),
+    });
+  }
+
+  const docs = store.db
+    .prepare(
+      `SELECT doc_id, path FROM docs WHERE repo_id = ? AND deleted_commit IS NULL ORDER BY path`,
+    )
+    .all(repoId) as { doc_id: string; path: string }[];
+
+  const tasks: DocEmbedTask[] = [];
+  for (const d of docs) {
+    const body = reconstructContent(store.db, d.doc_id);
+    if (body === null) continue;
+    const props = docPropertiesMerged(store.db, d.doc_id);
+    const title =
+      (typeof props["$title"] === "string" && (props["$title"] as string).trim())
+        ? (props["$title"] as string)
+        : (typeof props["title"] === "string" && (props["title"] as string).trim())
+          ? (props["title"] as string)
+          : d.path;
+    const input = `${docHeader(title, d.path, props)}\n${body}`;
+    if (input.trim().length === 0) continue;
+    tasks.push({ docId: d.doc_id, input, blocks: blocksByDoc.get(d.doc_id) ?? [] });
   }
   return tasks;
 }
