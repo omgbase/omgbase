@@ -148,7 +148,7 @@ function runDoctor(cli: Cli, args: string[]): number {
   const liveBlocks = (db.prepare("SELECT count(*) c FROM blocks WHERE deleted_commit IS NULL").get() as { c: number }).c;
   checks.push({ name: "fts rows == live blocks", ok: ftsCount === liveBlocks, detail: `fts=${ftsCount} live=${liveBlocks}` });
 
-  const dangling = (db.prepare("SELECT count(*) c FROM documents d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)").get() as { c: number }).c;
+  const dangling = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)").get() as { c: number }).c;
   checks.push({ name: "no dangling current_rev", ok: dangling === 0, detail: `${dangling} dangling` });
 
   const integrity = db.pragma("integrity_check", { simple: true }) as string;
@@ -317,7 +317,6 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
       }
       const verboseHuman = verbose && cli.flags.mode === "human";
       const result = await loaded.worker.process(tasks, {
-        ...(verbose ? { batchSize: 32 } : {}),
         ...(verboseHuman
           ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} embedded`)) }
           : {}),

@@ -39,6 +39,13 @@ export interface EmbedTask {
   text: string;
 }
 
+// Default cache-miss chunk size for process(). Embedding is done in bounded
+// batches so a single request never grows unbounded — a large all-at-once
+// request can exceed the provider's per-request limits (stdio line size, HTTP
+// body cap) and fail silently. Callers may override via opts.batchSize; the
+// value only affects request chunking, never whether work happens.
+const DEFAULT_EMBED_BATCH = 32;
+
 // Rows < minTokens roll into their section aggregate rather than embedding
 // alone (05 §6). We surface this as a filter the caller applies.
 export function shouldEmbed(text: string, minTokens = 24): boolean {
@@ -69,9 +76,9 @@ export class EmbeddingWorker {
 
   /**
    * Embed a batch (skipping cache hits) and persist. Throws if no provider.
-   * Cache misses are embedded in chunks of `batchSize` (default: all at once);
-   * `onProgress` fires after each chunk is persisted so callers can show live
-   * progress on a long drain.
+   * Cache misses are embedded in chunks of `batchSize` (default:
+   * DEFAULT_EMBED_BATCH); `onProgress` fires after each chunk is persisted so
+   * callers can show live progress on a long drain.
    */
   async process(
     tasks: EmbedTask[],
@@ -87,7 +94,7 @@ export class EmbeddingWorker {
     const insert = this.store.db.prepare(
       "INSERT OR REPLACE INTO embeddings (content_hash, ctx_hash, model, dim, vec) VALUES (?, ?, ?, ?, ?)",
     );
-    const batchSize = opts.batchSize && opts.batchSize > 0 ? opts.batchSize : misses.length;
+    const batchSize = opts.batchSize && opts.batchSize > 0 ? opts.batchSize : DEFAULT_EMBED_BATCH;
     let embedded = 0;
     for (let start = 0; start < misses.length; start += batchSize) {
       const chunk = misses.slice(start, start + batchSize);
@@ -101,7 +108,7 @@ export class EmbeddingWorker {
       embedded += chunk.length;
       opts.onProgress?.({ embedded, total: misses.length });
     }
-    return { embedded: misses.length, cached };
+    return { embedded, cached };
   }
 
   /** Embed a bare query string (no context prefix, 05 §6). */

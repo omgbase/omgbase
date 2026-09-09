@@ -62,6 +62,31 @@ describe("embedding worker", () => {
     ]);
   });
 
+  it("default drain chunks misses into bounded requests (no all-at-once)", async () => {
+    // Regression: process() used to default to one batch of ALL misses, so a
+    // large drain sent a single oversized request that could fail silently.
+    // A batch cap belongs in the worker, independent of any caller flag.
+    store = new Store({ path: ":memory:" });
+    const MAX_PER_REQUEST = 50;
+    const requestSizes: number[] = [];
+    const provider: EmbeddingProvider = {
+      model: "capped-1",
+      dim: 8,
+      embed: async (texts) => {
+        requestSizes.push(texts.length);
+        if (texts.length > MAX_PER_REQUEST) throw new Error(`batch too large: ${texts.length}`);
+        return texts.map(() => new Array<number>(8).fill(0));
+      },
+    };
+    const w = new EmbeddingWorker(store, provider);
+    const tasks = Array.from({ length: 100 }, (_, i) => task(`distinct block number ${i} with unique words here`));
+    // No opts: relies on the worker's own default batch, not a caller-supplied one.
+    const result = await w.process(tasks);
+    expect(result.embedded).toBe(100);
+    expect(requestSizes.length).toBeGreaterThan(1);
+    expect(Math.max(...requestSizes)).toBeLessThanOrEqual(MAX_PER_REQUEST);
+  });
+
   it("context prefix + input formatting (05 §6)", () => {
     const ctx = contextPrefix({ docTitle: "Doc", path: "a.md", headingChain: ["H1", "H2"], blockType: "paragraph" });
     expect(ctx).toBe("Doc · a.md · H1 › H2 · paragraph");
