@@ -7,7 +7,7 @@ export type ErrorCode =
   | "doc_missing" | "cycle_move" | "opaque_block" | "not_contiguous"
   | "type_mismatch" | "conflicted_document" | "path_taken" | "create_conflict"
   | "ambiguous_locator" | "ambiguous_heading" | "filter_invalid" | "budget_exceeded"
-  | "semantic_unavailable" | "sync_conflict" | "repo_not_found" | "node_not_editable";
+  | "semantic_unavailable" | "sync_conflict" | "repo_not_found" | "node_not_editable" | "seed_unresolved";
 
 export interface EngineErrorBody {
   error: ErrorCode;

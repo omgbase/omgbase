@@ -518,7 +518,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "graph_traverse",
     {
-      description: "Frontier-expand the authored edge graph from seed node ids. Traversal is DOC-GRAIN: seeds are document ids; a block id is auto-normalized to its owning document (so ids from query/docs_outline work). direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. `select` projects per-node metadata into `nodeInfo` (e.g. [\"$path\",\"type\",\"layer\"]) so nodes are actionable without hydrating each id; phantom/external nodes carry their target path/uri. Returns nodes, edges, nodeInfo?, truncated.",
+      description: "Frontier-expand the authored edge graph from seed nodes. Seeds accept document ids (d_…), block ids (b_…, auto-normalized to owning doc), document paths (resolved to doc id), or phantom/external ids. direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. `select` projects per-node metadata into `nodeInfo` (e.g. [\"$path\",\"type\",\"layer\"]) so nodes are actionable without hydrating each id; phantom/external nodes carry their target path/uri. Returns nodes, edges, nodeInfo?, truncated.",
       inputSchema: {
         from: z.array(z.string()),
         via: z.array(z.string()).optional(),
@@ -532,6 +532,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         return ok(graphTraverse(store, {
           from: args.from,
+          repoId,
           ...(args.via ? { via: args.via } : {}),
           ...(args.direction ? { direction: args.direction } : {}),
           ...(args.depth !== undefined ? { depth: args.depth } : {}),
@@ -547,12 +548,12 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "graph_path",
     {
-      description: "Up to k shortest paths between two node ids via BFS over authored edges. max_len ≤ 8, k ≤ 5.",
+      description: "Up to k shortest paths between two nodes via BFS over authored edges. Seeds accept document ids, block ids, or document paths. max_len ≤ 8, k ≤ 5.",
       inputSchema: { from: z.string(), to: z.string(), via: z.array(z.string()).optional(), max_len: z.number().int().optional(), k: z.number().int().optional() },
     },
     async (args) => {
       try {
-        return ok(graphPath(store, { from: args.from, to: args.to, ...(args.via ? { via: args.via } : {}), ...(args.max_len !== undefined ? { maxLen: args.max_len } : {}), ...(args.k !== undefined ? { k: args.k } : {}) }));
+        return ok(graphPath(store, { from: args.from, to: args.to, repoId, ...(args.via ? { via: args.via } : {}), ...(args.max_len !== undefined ? { maxLen: args.max_len } : {}), ...(args.k !== undefined ? { k: args.k } : {}) }));
       } catch (e) {
         return fail(e);
       }

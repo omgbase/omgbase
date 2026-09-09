@@ -1,5 +1,8 @@
 import type { Store } from "../core/store/store.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
+import { isValidId } from "../core/ids.js";
+import { findDoc } from "../core/read/reader.js";
+import { EngineError } from "../mcp/errors.js";
 
 // Traversal API (05 §3). Iterative frontier expansion in SQL; visited set in
 // memory; budgets enforced per step; truncated set honestly. No graph query
@@ -9,6 +12,7 @@ export type Direction = "out" | "in" | "both";
 
 export interface TraverseSpec {
   from: string[];
+  repoId?: string;
   via?: string[]; // predicates; empty = any authored predicate
   direction?: Direction;
   depth?: number; // hard cap 8
@@ -56,23 +60,50 @@ const HARD_DEPTH_CAP = 8;
 // doc ids. Callers frequently hold a block id (from docs_outline, query, or
 // resolve) and expect it to "just work"; silently returning no edges is the
 // single sharpest edge in the graph API. Normalize any block-grain seed to its
-// owning document id before expansion. Non-block ids (doc ids, phantom:*,
-// external x_*) pass through untouched.
-function normalizeSeeds(store: Store, seeds: string[]): string[] {
+// owning document id before expansion. Path strings are resolved to their
+// document id when repoId is available; unresolvable paths throw seed_unresolved
+// rather than silently minting a phantom node.
+function normalizeSeeds(store: Store, seeds: string[], repoId?: string): string[] {
   const blockIds = seeds.filter((s) => s.startsWith("b_"));
-  if (blockIds.length === 0) return seeds;
-  const placeholders = blockIds.map(() => "?").join(",");
-  const rows = store.db
-    .prepare(`SELECT block_id, doc_id FROM blocks WHERE block_id IN (${placeholders})`)
-    .all(...blockIds) as { block_id: string; doc_id: string }[];
-  const docByBlock = new Map(rows.map((r) => [r.block_id, r.doc_id]));
   const out: string[] = [];
-  for (const s of seeds) {
-    const mapped = s.startsWith("b_") ? docByBlock.get(s) : undefined;
-    // Unknown block ids drop out (they touch no edges anyway); keep everything else.
-    if (mapped) out.push(mapped);
-    else if (!s.startsWith("b_")) out.push(s);
+
+  // Batch-resolve block ids.
+  const docByBlock = new Map<string, string>();
+  if (blockIds.length > 0) {
+    const placeholders = blockIds.map(() => "?").join(",");
+    const rows = store.db
+      .prepare(`SELECT block_id, doc_id FROM blocks WHERE block_id IN (${placeholders})`)
+      .all(...blockIds) as { block_id: string; doc_id: string }[];
+    for (const r of rows) docByBlock.set(r.block_id, r.doc_id);
   }
+
+  const unresolved: string[] = [];
+  for (const s of seeds) {
+    if (s.startsWith("b_")) {
+      const mapped = docByBlock.get(s);
+      if (mapped) out.push(mapped);
+      // Unknown block ids drop out (they touch no edges anyway).
+      continue;
+    }
+    // Recognized node ids (d_, x_, phantom:) pass through.
+    if (s.startsWith("d_") || s.startsWith("x_") || s.startsWith("phantom:")) {
+      out.push(s);
+      continue;
+    }
+    // Anything else is treated as a document path.
+    if (repoId) {
+      const info = findDoc(store, { repoId, path: s });
+      if (info) { out.push(info.docId); continue; }
+    }
+    unresolved.push(s);
+  }
+
+  if (unresolved.length > 0) {
+    throw new EngineError("seed_unresolved",
+      `Seed${unresolved.length > 1 ? "s" : ""} could not be resolved to a node: ${unresolved.join(", ")}`,
+      { data: { seeds: unresolved } });
+  }
+
   return [...new Set(out)];
 }
 
@@ -112,7 +143,7 @@ export function graphTraverse(store: Store, spec: TraverseSpec): TraverseResult 
   const maxEdges = spec.budget?.maxEdges ?? 800;
   const asOfSeq = spec.asOf ?? null;
 
-  const seeds = normalizeSeeds(store, spec.from);
+  const seeds = normalizeSeeds(store, spec.from, spec.repoId);
   const visited = new Set<string>(seeds);
   const outEdges: { src: string; predicate: string; dst: string }[] = [];
   const seenEdge = new Set<string>();
@@ -212,6 +243,7 @@ function projectNodes(store: Store, nodeIds: string[], select: string[]): Record
 export interface PathSpec {
   from: string;
   to: string;
+  repoId?: string;
   via?: string[];
   direction?: Direction;
   maxLen?: number; // ≤ 8
@@ -226,8 +258,8 @@ export function graphPath(store: Store, spec: PathSpec): { paths: string[][]; tr
   const k = Math.min(spec.k ?? 1, 5);
   const asOfSeq = spec.asOf ?? null;
 
-  const [from] = normalizeSeeds(store, [spec.from]);
-  const [to] = normalizeSeeds(store, [spec.to]);
+  const [from] = normalizeSeeds(store, [spec.from], spec.repoId);
+  const [to] = normalizeSeeds(store, [spec.to], spec.repoId);
   if (!from || !to) return { paths: [], truncated: false };
 
   const paths: string[][] = [];
@@ -254,6 +286,7 @@ export function graphPath(store: Store, spec: PathSpec): { paths: string[][]; tr
 
 export interface SubgraphSpec {
   seeds: string[];
+  repoId?: string;
   via?: string[];
   radius?: number; // ≤ 3
   budget?: { maxNodes?: number; maxEdges?: number };
@@ -263,6 +296,7 @@ export interface SubgraphSpec {
 export function graphSubgraph(store: Store, spec: SubgraphSpec): TraverseResult {
   const traverseSpec: TraverseSpec = {
     from: spec.seeds,
+    ...(spec.repoId ? { repoId: spec.repoId } : {}),
     direction: "both",
     depth: Math.min(spec.radius ?? 2, 3),
   };
