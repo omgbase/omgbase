@@ -13,9 +13,18 @@ let store: Store;
 let repoId: string;
 let client: Client;
 
-async function connect(rootPath?: string, onMutation?: () => void): Promise<void> {
+async function connect(
+  rootPath?: string,
+  onMutation?: () => void,
+  embedQuery?: (text: string) => Promise<{ model: string; vec: Float32Array }>,
+): Promise<void> {
   const base = rootPath ? { store, repoId, rootPath } : { store, repoId };
-  const server = buildServer(onMutation ? { ...base, onMutation } : base);
+  const withHooks = {
+    ...base,
+    ...(onMutation ? { onMutation } : {}),
+    ...(embedQuery ? { embedQuery } : {}),
+  };
+  const server = buildServer(withHooks);
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: "test", version: "0" });
   await Promise.all([server.connect(serverT), client.connect(clientT)]);
@@ -107,6 +116,20 @@ describe("MCP server skeleton", () => {
     const { payload, isError } = (await call("query", { from: "blocks", semantic: "identity across edits" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("semantic_unavailable");
+  });
+
+  it("resolve embeds the query when a provider is configured (hybrid, not FTS-only)", async () => {
+    store.close();
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", "/tmp");
+    ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n");
+    let embeddedWith: string | undefined;
+    await connect(undefined, undefined, async (text: string) => {
+      embeddedWith = text;
+      return { model: "test-1", vec: new Float32Array([0, 1, 0, 0]) };
+    });
+    await call("resolve", { query: "why isn't severity shown to artists" });
+    expect(embeddedWith).toBe("why isn't severity shown to artists");
   });
 
   it("nodes_get hydrates a block by id at a resolution", async () => {

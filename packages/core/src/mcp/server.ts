@@ -331,12 +331,16 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "resolve",
     {
-      description: "Hybrid search specialized for 'the id of the thing I mean'. Returns ranked {id, locator, preview, evidence}. Prefer the returned ids in follow-up calls.",
+      description: "Resolve a name/title/concept to the concrete blocks it refers to — 'the id of the thing I mean'. Hybrid ranker (FTS + semantic when a provider is configured); best on short, entity-shaped inputs (a title, term, or phrase). Returns ranked {id, locator, preview, evidence}; prefer the returned ids in follow-up calls. For open natural-language questions or passage retrieval, use `query` with `semantic` instead.",
       inputSchema: { query: z.string(), limit: z.number().int().optional() },
     },
     async (args) => {
       try {
-        return ok(resolveThing(store, { repoId, query: args.query, ...(args.limit !== undefined ? { limit: args.limit } : {}) }));
+        const input: Parameters<typeof resolveThing>[1] = { repoId, query: args.query, ...(args.limit !== undefined ? { limit: args.limit } : {}) };
+        // Hybrid: fuse the query vector into the ranking when a provider is
+        // configured (mirrors CLI `omg find`). Absent ⇒ FTS-only.
+        if (ctx.embedQuery) input.vector = await ctx.embedQuery(args.query);
+        return ok(resolveThing(store, input));
       } catch (e) {
         return fail(e);
       }
