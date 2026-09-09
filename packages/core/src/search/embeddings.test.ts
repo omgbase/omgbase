@@ -7,9 +7,9 @@ let store: Store | undefined;
 afterEach(() => { store?.close(); store = undefined; });
 
 // Deterministic fake provider: vector = per-word hashed bag (stable, no egress).
-function fakeProvider(dim = 8): EmbeddingProvider {
+function fakeProvider(dim = 8, model = "fake-1"): EmbeddingProvider {
   return {
-    model: "fake-1",
+    model,
     dim,
     embed: async (texts) =>
       texts.map((t) => {
@@ -110,5 +110,27 @@ describe("embedding worker", () => {
   it("tiny blocks are not embedded alone (< 24 tokens)", () => {
     expect(shouldEmbed("short")).toBe(false);
     expect(shouldEmbed(new Array(30).fill("word").join(" "))).toBe(true);
+  });
+
+  it("prune reclaims other models' vectors, keeps the current model's", async () => {
+    store = new Store({ path: ":memory:" });
+    const t = task("stable identity across edits is the goal for this embedding");
+
+    // Embed once under the old model, then again under a new one (as a model
+    // switch would): the cache keys on model, so both rows coexist.
+    await new EmbeddingWorker(store, fakeProvider(8, "old-model")).process([t]);
+    const current = new EmbeddingWorker(store, fakeProvider(8, "new-model"));
+    await current.process([t]);
+
+    // From the new model's view, the old row is foreign dead weight.
+    expect(current.foreignVectorCount()).toEqual({ blocks: 1, docs: 0 });
+
+    const pruned = current.pruneForeignVectors();
+    expect(pruned).toEqual({ blocks: 1, docs: 0 });
+    // Current model's vector survives; nothing foreign remains.
+    expect(current.getCached(t.contentHashHex, t.ctx)).not.toBeNull();
+    expect(current.foreignVectorCount()).toEqual({ blocks: 0, docs: 0 });
+    const rows = (store.db.prepare("SELECT count(*) c FROM embeddings").get() as { c: number }).c;
+    expect(rows).toBe(1);
   });
 });

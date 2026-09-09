@@ -5,7 +5,9 @@
 import { createInterface } from "node:readline";
 
 const DIM = 8;
-const MODEL = "fake-8";
+// Model is overridable via env (like the real omgbase-embedder) so tests can
+// simulate a model switch — the cache/search key on model name.
+const MODEL = process.env.OMGBASE_EMBEDDER_MODEL ?? "fake-8";
 
 function embed(text) {
   const v = new Array(DIM).fill(0);

@@ -306,4 +306,28 @@ export class EmbeddingWorker {
   staleBlocks(tasks: EmbedTask[]): string[] {
     return tasks.filter((t) => shouldEmbed(t.text) && !this.getCached(t.contentHashHex, t.ctx)).map((t) => t.blockId);
   }
+
+  /**
+   * Vectors left behind by a previous model. The cache and both search paths key
+   * on model name, so after switching models the old model's rows are dead
+   * weight: never read, never overwritten (the new model writes under its own
+   * key). Reports how many block + doc vectors belong to a model OTHER than the
+   * current provider's, so callers can offer to reclaim the space.
+   */
+  foreignVectorCount(): { blocks: number; docs: number } {
+    if (!this.provider) return { blocks: 0, docs: 0 };
+    const blocks = (this.store.db.prepare("SELECT count(*) c FROM embeddings WHERE model != ?").get(this.provider.model) as { c: number }).c;
+    const docs = (this.store.db.prepare("SELECT count(*) c FROM doc_embeddings WHERE model != ?").get(this.provider.model) as { c: number }).c;
+    return { blocks, docs };
+  }
+
+  /** Delete every cached vector not produced by the current model. */
+  pruneForeignVectors(): { blocks: number; docs: number } {
+    if (!this.provider) return { blocks: 0, docs: 0 };
+    const model = this.provider.model;
+    return this.store.write((db) => ({
+      blocks: db.prepare("DELETE FROM embeddings WHERE model != ?").run(model).changes,
+      docs: db.prepare("DELETE FROM doc_embeddings WHERE model != ?").run(model).changes,
+    }));
+  }
 }

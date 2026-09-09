@@ -63,8 +63,8 @@ export async function drainEmbeddings(
   cli: Cli,
   ws: ReturnType<Cli["workspace"]>,
   repoId: string,
-  opts: { verbose?: boolean; confirm?: (d: DrainDecision) => Promise<boolean> } = {},
-): Promise<{ embedded: number; cached: number } | null> {
+  opts: { verbose?: boolean; prune?: boolean; confirm?: (d: DrainDecision) => Promise<boolean> } = {},
+): Promise<{ embedded: number; cached: number; pruned?: { blocks: number; docs: number } } | null> {
   const loaded = await loadEmbedding(ws, repoId);
   if (!loaded) return null;
   try {
@@ -98,9 +98,20 @@ export async function drainEmbeddings(
         ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} doc(s) embedded`)) }
         : {}),
     });
+    // Prune AFTER the drain, so the current model's vectors are in place before
+    // we reclaim the old model's — a crash mid-way leaves the new vectors, not a
+    // half-empty cache. Only touches rows for models other than the current one.
+    let pruned: { blocks: number; docs: number } | undefined;
+    if (opts.prune) {
+      pruned = loaded.worker.pruneForeignVectors();
+      if (cli.flags.mode === "human" && (pruned.blocks || pruned.docs)) {
+        cli.io.err(cli.style.dim(`  pruned ${pruned.blocks} block + ${pruned.docs} doc vector(s) from other models`));
+      }
+    }
+
     // Fold doc work into the block counts so callers' "embedded/cached" report
     // covers both grains (pooled docs count as embedded work done).
-    return { embedded: result.embedded + docResult.embedded + docResult.pooled, cached: result.cached + docResult.cached };
+    return { embedded: result.embedded + docResult.embedded + docResult.pooled, cached: result.cached + docResult.cached, ...(pruned ? { pruned } : {}) };
   } finally {
     await loaded.close();
   }

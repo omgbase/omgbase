@@ -99,6 +99,32 @@ describe("embed via external stdio provider (fake embedder)", () => {
     const ids = omg(["find", "risotto rice cooking", "-1"]).trim();
     expect(ids).toMatch(/^b_/);
   });
+
+  it("switching models leaves foreign vectors that --prune reclaims", () => {
+    // Embed under the default fake model, then re-run under a different model
+    // name (as a model swap would). The cache keys on model, so old-model rows
+    // linger — reported by status and cleared by `drain --prune`.
+    omg(["embed", "drain"]);
+    const swapped = { ...process.env, NO_COLOR: "1", OMGBASE_EMBEDDER_MODEL: "fake-other" };
+    const run = (args: string[]): string => execFileSync("node", [BIN, "-C", vault, ...args], { encoding: "utf8", env: swapped });
+
+    // Under the new model everything is a cache miss again; drain re-embeds.
+    run(["embed", "drain"]);
+    const before = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number };
+    expect(before.foreignBlocks).toBeGreaterThanOrEqual(2);
+    expect(before.foreignDocs).toBeGreaterThanOrEqual(1);
+
+    const pruned = JSON.parse(run(["embed", "drain", "--prune", "--json"])) as { pruned?: { blocks: number; docs: number } };
+    expect(pruned.pruned?.blocks).toBe(before.foreignBlocks);
+    expect(pruned.pruned?.docs).toBe(before.foreignDocs);
+
+    const after = JSON.parse(run(["embed", "status", "--json"])) as { foreignBlocks: number; foreignDocs: number; queued: number; docsQueued: number };
+    expect(after.foreignBlocks).toBe(0);
+    expect(after.foreignDocs).toBe(0);
+    // The new model's own vectors survived the prune — nothing re-queued.
+    expect(after.queued).toBe(0);
+    expect(after.docsQueued).toBe(0);
+  });
 });
 
 describe("attach auto-drains when a provider is configured", () => {

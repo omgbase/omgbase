@@ -1,8 +1,8 @@
 import { pipeline, type FeatureExtractionPipeline } from "@huggingface/transformers";
 
 // @omgbase/embedder — the default local embedding provider (05 §6). Runs
-// all-MiniLM-L6-v2 (384-dim sentence embeddings) via transformers.js: pure
-// JS + WASM/ONNX, no native build. Model weights (~90MB) download to the
+// gte-base (768-dim sentence embeddings) via transformers.js: pure
+// JS + WASM/ONNX, no native build. Model weights download to the
 // transformers.js cache on first use, then run fully offline.
 //
 // This package is a standalone process (see bin.ts, the `omgbase-embedder` binary):
@@ -17,13 +17,13 @@ export interface EmbeddingProvider {
   embed(texts: string[]): Promise<number[][]>;
 }
 
-const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
-const DEFAULT_DIM = 384;
+const DEFAULT_MODEL = "Xenova/gte-base";
+const DEFAULT_DIM = 768;
 
 export interface CreateProviderOptions {
-  /** transformers.js model id; defaults to Xenova/all-MiniLM-L6-v2. */
+  /** transformers.js model id; defaults to Xenova/gte-base. */
   model?: string;
-  /** embedding dimension the model produces; defaults to 384 (MiniLM-L6). */
+  /** embedding dimension the model produces; defaults to 768 (gte-base). */
   dim?: number;
 }
 

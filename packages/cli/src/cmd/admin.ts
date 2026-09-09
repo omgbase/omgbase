@@ -285,13 +285,15 @@ function runImport(cli: Cli, args: string[]): number {
 async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   const sub = args.find((a) => !a.startsWith("-"));
   if (args.includes("--help") || args.includes("-h") || sub === "help") {
-    cli.io.err("  embed [status|drain] [--verbose]  — embedding queue");
+    cli.io.err("  embed [status|drain] [--verbose] [--prune]  — embedding queue");
     cli.io.err(cli.style.dim("    status (default)  report provider + how many blocks are queued (embeddable but not yet embedded)"));
     cli.io.err(cli.style.dim("    drain             embed the queued blocks now; status alone makes no progress"));
     cli.io.err(cli.style.dim("    --verbose         (with drain) print per-batch progress as blocks are embedded"));
+    cli.io.err(cli.style.dim("    --prune           (with drain) after embedding, delete vectors left by other models (e.g. after switching models)"));
     return EXIT_OK;
   }
   const verbose = args.includes("--verbose") || args.includes("-v");
+  const prune = args.includes("--prune");
   const ws = cli.workspace();
   const repo = cli.repo(ws);
 
@@ -306,7 +308,7 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
 
   if (sub === "drain") {
     await loaded.close(); // drainEmbeddings connects its own provider
-    const result = await drainEmbeddings(cli, ws, repo.repoId, { verbose });
+    const result = await drainEmbeddings(cli, ws, repo.repoId, { verbose, prune });
     if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...(result ?? { embedded: 0, cached: 0 }) }));
     else if (result) cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
     return EXIT_OK;
@@ -319,9 +321,11 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
     // Doc-grain queue depth = live docs whose current-content vector isn't cached.
     const docTasks = buildDocEmbedTasks(ws.store, repo.repoId);
     const docPending = loaded.worker.staleDocs(docTasks);
+    // Vectors left by a previous model (dead weight after a model switch).
+    const foreign = loaded.worker.foreignVectorCount();
 
     // status
-    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length };
+    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length, foreignBlocks: foreign.blocks, foreignDocs: foreign.docs };
     if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(payload));
     else {
       cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
@@ -329,6 +333,9 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
       cli.io.out(`  docs ${docTasks.length}   ${cli.style.dim("queued")} ${payload.docsQueued}`);
       // `status` reports but never embeds — point the reader at the verb that does.
       if (payload.queued > 0 || payload.docsQueued > 0) cli.io.out(cli.style.dim(`  run \`omg embed drain\` to embed the ${payload.queued} queued block(s) + ${payload.docsQueued} doc(s)`));
+      // Stale vectors from another model don't affect search (queries filter by
+      // model) but waste space — nudge toward reclaiming them.
+      if (foreign.blocks > 0 || foreign.docs > 0) cli.io.out(cli.style.dim(`  ${foreign.blocks} block + ${foreign.docs} doc vector(s) from other models — \`omg embed drain --prune\` to reclaim`));
     }
     return EXIT_OK;
   } finally {

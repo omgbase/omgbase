@@ -2,7 +2,7 @@
   "name": "@omgbase/embedder",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base — local embedding server (transformers.js + all-MiniLM-L6-v2), spoken to over stdio",
+  "description": "Open Markdown Graph Base — local embedding server (transformers.js + gte-base), spoken to over stdio",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

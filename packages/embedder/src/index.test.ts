@@ -7,8 +7,8 @@ import { createProvider } from "./index.js";
 describe("createProvider", () => {
   it("returns an EmbeddingProvider with model + dim, without loading weights", () => {
     const p = createProvider();
-    expect(p.model).toBe("Xenova/all-MiniLM-L6-v2");
-    expect(p.dim).toBe(384);
+    expect(p.model).toBe("Xenova/gte-base");
+    expect(p.dim).toBe(768);
     expect(typeof p.embed).toBe("function");
   });
 
@@ -27,14 +27,14 @@ describe("createProvider", () => {
 const e2e = process.env.OMGBASE_EMBEDDER_E2E === "1" ? describe : describe.skip;
 
 e2e("transformers.js E2E (downloads weights on first run)", () => {
-  it("embeds text into normalized 384-d vectors; similar texts score higher", async () => {
+  it("embeds text into normalized 768-d vectors; similar texts score higher", async () => {
     const p = createProvider();
     const [a, b, c] = await p.embed([
       "the cat sat on the mat",
       "a feline rested on the rug",
       "quarterly financial projections for the fiscal year",
     ]);
-    expect(a).toHaveLength(384);
+    expect(a).toHaveLength(768);
     // L2-normalized ⇒ unit length.
     const norm = Math.sqrt(a!.reduce((s, x) => s + x * x, 0));
     expect(norm).toBeCloseTo(1, 1);
@@ -43,5 +43,5 @@ e2e("transformers.js E2E (downloads weights on first run)", () => {
     // The two cat/feline sentences should be more similar to each other than to
     // the finance sentence.
     expect(cos(a!, b!)).toBeGreaterThan(cos(a!, c!));
-  });
+  }, 180_000);
 });

@@ -11,15 +11,15 @@ import { createProvider } from "./index.js";
 //   • stdout carries ONLY protocol JSON; all logs go to stderr.
 //
 // Model + dim come from env so the same binary can serve different models:
-//   OMGBASE_EMBEDDER_MODEL (default Xenova/all-MiniLM-L6-v2), OMGBASE_EMBEDDER_DIM (384),
-//   OMGBASE_EMBEDDER_MAX_TOKENS (default 256 — all-MiniLM-L6-v2's max sequence
+//   OMGBASE_EMBEDDER_MODEL (default Xenova/gte-base), OMGBASE_EMBEDDER_DIM (768),
+//   OMGBASE_EMBEDDER_MAX_TOKENS (default 512 — gte-base's max sequence
 //   length; the model truncates beyond it). Reported in the handshake so the
 //   engine's doc-embedding path picks whole-doc vs pooled-fallback from the
 //   model's real limit rather than a hardcoded guess.
 
-const model = process.env.OMGBASE_EMBEDDER_MODEL ?? "Xenova/all-MiniLM-L6-v2";
-const dim = Number(process.env.OMGBASE_EMBEDDER_DIM ?? "384");
-const maxInputTokens = Number(process.env.OMGBASE_EMBEDDER_MAX_TOKENS ?? "256");
+const model = process.env.OMGBASE_EMBEDDER_MODEL ?? "Xenova/gte-base";
+const dim = Number(process.env.OMGBASE_EMBEDDER_DIM ?? "768");
+const maxInputTokens = Number(process.env.OMGBASE_EMBEDDER_MAX_TOKENS ?? "512");
 
 const provider = createProvider({ model, dim });
 
