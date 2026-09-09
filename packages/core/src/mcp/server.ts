@@ -12,7 +12,7 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { MutationError } from "../mutate/tree.js";
-import { tasksComplete, sectionsAppend, linksRetarget } from "../mutate/macros.js";
+import { tasksComplete, sectionsAppend, linksRetarget, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { graphTraverse, graphPath } from "../graph/traverse.js";
 import { historyNode, diffBlocks, changesSince } from "../graph/history.js";
@@ -382,6 +382,24 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
         const ops = tasksComplete(store, args.blocks);
         return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "node_set",
+    {
+      description:
+        "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). Takes the node id (from query from:nodes), a property, and its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor.",
+      inputSchema: { node: z.string(), prop: z.string(), value: z.string() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const ops = nodeSet(store, args.node, args.prop, args.value);
+        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "node_set" } }));
       } catch (e) {
         return fail(e);
       }

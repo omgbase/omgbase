@@ -1,6 +1,6 @@
 // Markdown format adapter — wraps existing parse/render/extract modules.
 
-import { AdapterCapability, type FormatAdapter, type AdapterEdge, type ProjectedNode, type ReconcileHints } from "./adapter.js";
+import { AdapterCapability, type FormatAdapter, type AdapterEdge, type ProjectedNode, type ReconcileHints, type NodeEditors } from "./adapter.js";
 import type { BlockTree, RawBlock } from "../core/parse/types.js";
 import { parseTree, assertFullCoverage } from "../core/parse/tree.js";
 import { render } from "../core/parse/render.js";
@@ -113,6 +113,36 @@ export const markdownAdapter: FormatAdapter = {
     walk(blocks, "");
     return nodes;
   },
+
+  // Editable node properties (node-editability). Each editor rewrites ONLY the
+  // node's own span within the block's raw bytes, then returns a block `update`
+  // (markdown or attrs). The span pins the exact occurrence, so editing the
+  // first of several same-kind nodes in one block is unambiguous.
+  nodeEditors: {
+    "md:link": {
+      // Retype the link text: [OLD](target) → [NEW](target), this occurrence only.
+      name: ({ blockRaw, span, node }, newValue) => {
+        if (!span) throw new Error("md:link.name requires a recorded span");
+        const seg = blockRaw.slice(span.start, span.end);
+        const rebuilt = seg.replace(/^\[[^\]]*\]/, `[${newValue}]`);
+        if (rebuilt === seg) throw new Error(`could not locate link text in ${JSON.stringify(seg)}`);
+        void node;
+        return { markdown: blockRaw.slice(0, span.start) + rebuilt + blockRaw.slice(span.end) };
+      },
+      // Retarget the link: [text](OLD) → [text](NEW), this occurrence only.
+      value: ({ blockRaw, span }, newValue) => {
+        if (!span) throw new Error("md:link.value requires a recorded span");
+        const seg = blockRaw.slice(span.start, span.end);
+        const rebuilt = seg.replace(/\]\(([^)\s]+)(\s+"[^"]*")?\)$/, (_m, _url, title) => `](${newValue}${title ?? ""})`);
+        if (rebuilt === seg) throw new Error(`could not locate link target in ${JSON.stringify(seg)}`);
+        return { markdown: blockRaw.slice(0, span.start) + rebuilt + blockRaw.slice(span.end) };
+      },
+    },
+    "md:task": {
+      // A task's checkbox is a typed block attribute, not a byte edit.
+      checked: (_ctx, newValue) => ({ attrs: { checked: newValue === "true" || newValue === "1" } }),
+    },
+  } as NodeEditors,
 
   // Computed properties surfaced as $-intrinsics (12 §4). These are engine-
   // derived and never claim the authored `title`/`tags` keys.

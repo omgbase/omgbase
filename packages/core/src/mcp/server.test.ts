@@ -41,7 +41,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });

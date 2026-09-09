@@ -89,6 +89,8 @@ export {
   sectionsMove,
   listsInsertItem,
   linksRetarget,
+  nodeSet,
+  editablePropsFor,
   type RetargetHit,
 } from "./mutate/macros.js";
 

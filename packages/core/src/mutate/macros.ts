@@ -1,6 +1,8 @@
 import type { Store } from "../core/store/store.js";
 import type { Op } from "./apply.js";
 import type { To } from "./ops.js";
+import { adapterForFormat } from "../format/registry.js";
+import { MutationError } from "./tree.js";
 
 // Server-side macros (04 §3). Each expands deterministically to kernel ops —
 // no policy judgment (that belongs in the agent). The expansion is returned so
@@ -69,6 +71,63 @@ export interface RetargetHit {
   block: string;
   oldRaw: string;
   newRaw: string;
+}
+
+/** node_set: surgically set one editable property of a node (node-editability).
+ * Resolves the node → its block + owning doc's format adapter, runs the adapter's
+ * registered editor for (kind, prop) against the block's current raw + the node's
+ * span, and returns a single kernel `update` op (markdown or attrs) with a CAS
+ * pin. The node stays a read-only projection; the write goes through the block.
+ * Throws node_not_editable when no editor is registered for (kind, prop). */
+export function nodeSet(store: Store, nodeId: string, prop: string, value: string): Op[] {
+  const node = store.db.prepare(
+    `SELECT n.kind, n.name, n.value, n.attrs, n.span_start, n.span_end, n.block_id,
+            d.format AS format
+     FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
+     WHERE n.node_id = ?`,
+  ).get(nodeId) as
+    | { kind: string; name: string | null; value: string | null; attrs: string; span_start: number | null; span_end: number | null; block_id: string | null; format: string }
+    | undefined;
+  if (!node) throw new MutationError("block_missing", `node ${nodeId} not found`, {});
+  if (!node.block_id) throw new MutationError("node_not_editable", `node ${nodeId} is not anchored to a block`, {});
+
+  const adapter = adapterForFormat(node.format);
+  const editor = adapter?.nodeEditors?.[node.kind]?.[prop];
+  if (!editor) {
+    throw new MutationError("node_not_editable", `no editor for ${node.kind}.${prop}`, {
+      kind: node.kind, prop, editable: editablePropsFor(node.format, node.kind),
+    });
+  }
+
+  const blockRaw = rawOfBlock(store, node.block_id);
+  if (blockRaw === null) throw new MutationError("block_missing", `block ${node.block_id} not found`, {});
+  const hash = rawHashOfBlock(store, node.block_id);
+
+  const result = editor(
+    {
+      blockRaw,
+      span: node.span_start !== null && node.span_end !== null ? { start: node.span_start, end: node.span_end } : null,
+      node: {
+        kind: node.kind,
+        ...(node.name !== null ? { name: node.name } : {}),
+        ...(node.value !== null ? { value: node.value } : {}),
+        attrs: JSON.parse(node.attrs || "{}") as Record<string, unknown>,
+      },
+    },
+    value,
+  );
+
+  const expect = hash ? { expect: { content_hash: hash } } : {};
+  if ("markdown" in result) {
+    return [{ op: "update", block: node.block_id, markdown: result.markdown, ...expect } as Op];
+  }
+  return [{ op: "update", block: node.block_id, attrs: result.attrs, ...expect } as Op];
+}
+
+/** The editable property names registered for a (format, kind), for discovery. */
+export function editablePropsFor(format: string, kind: string): string[] {
+  const editors = adapterForFormat(format)?.nodeEditors?.[kind];
+  return editors ? Object.keys(editors) : [];
 }
 
 /** links_retarget: rewrite a link destination substring across affected blocks.
