@@ -46,12 +46,14 @@ async function connectHttp(settings: EmbeddingSettings): Promise<ExternalProvide
   const url = settings.provider!;
   let model = settings.model ?? "http";
   let dim = settings.dim ?? 0;
+  let maxInputTokens = settings.maxInputTokens;
   try {
     const res = await fetch(url, { method: "GET" });
     if (res.ok) {
-      const meta = (await res.json()) as { model?: string; dim?: number };
+      const meta = (await res.json()) as { model?: string; dim?: number; maxInputTokens?: number };
       if (meta.model) model = meta.model;
       if (typeof meta.dim === "number") dim = meta.dim;
+      if (typeof meta.maxInputTokens === "number") maxInputTokens = meta.maxInputTokens;
     }
   } catch {
     // Metadata is best-effort; embed() failures below are the real signal.
@@ -59,6 +61,7 @@ async function connectHttp(settings: EmbeddingSettings): Promise<ExternalProvide
   const provider: EmbeddingProvider = {
     model,
     dim,
+    ...(maxInputTokens !== undefined ? { maxInputTokens } : {}),
     async embed(texts: string[]): Promise<number[][]> {
       if (texts.length === 0) return [];
       const res = await fetch(url, {
@@ -96,14 +99,16 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
     child.once("exit", (code) => reject(new Error(`embedding command '${cmd}' exited early (code ${code ?? "?"})`)));
   });
 
-  // Handshake: first stdout line carries model + dim.
+  // Handshake: first stdout line carries model + dim (+ optional maxInputTokens).
   const handshakeRaw = await Promise.race([lines.next(), spawnFailed]);
   let model = settings.model ?? "stdio";
   let dim = settings.dim ?? 0;
+  let maxInputTokens = settings.maxInputTokens;
   try {
-    const meta = JSON.parse(handshakeRaw) as { model?: string; dim?: number };
+    const meta = JSON.parse(handshakeRaw) as { model?: string; dim?: number; maxInputTokens?: number };
     if (meta.model) model = meta.model;
     if (typeof meta.dim === "number") dim = meta.dim;
+    if (typeof meta.maxInputTokens === "number") maxInputTokens = meta.maxInputTokens;
   } catch {
     throw new Error(`embedding command '${cmd}' sent an invalid handshake line: ${handshakeRaw.slice(0, 120)}`);
   }
@@ -112,6 +117,7 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
   const provider: EmbeddingProvider = {
     model,
     dim,
+    ...(maxInputTokens !== undefined ? { maxInputTokens } : {}),
     async embed(texts: string[]): Promise<number[][]> {
       if (texts.length === 0) return [];
       const id = nextId++;

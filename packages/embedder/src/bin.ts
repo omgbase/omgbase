@@ -11,10 +11,15 @@ import { createProvider } from "./index.js";
 //   • stdout carries ONLY protocol JSON; all logs go to stderr.
 //
 // Model + dim come from env so the same binary can serve different models:
-//   OMGBASE_EMBEDDER_MODEL (default Xenova/all-MiniLM-L6-v2), OMGBASE_EMBEDDER_DIM (384).
+//   OMGBASE_EMBEDDER_MODEL (default Xenova/all-MiniLM-L6-v2), OMGBASE_EMBEDDER_DIM (384),
+//   OMGBASE_EMBEDDER_MAX_TOKENS (default 256 — all-MiniLM-L6-v2's max sequence
+//   length; the model truncates beyond it). Reported in the handshake so the
+//   engine's doc-embedding path picks whole-doc vs pooled-fallback from the
+//   model's real limit rather than a hardcoded guess.
 
 const model = process.env.OMGBASE_EMBEDDER_MODEL ?? "Xenova/all-MiniLM-L6-v2";
 const dim = Number(process.env.OMGBASE_EMBEDDER_DIM ?? "384");
+const maxInputTokens = Number(process.env.OMGBASE_EMBEDDER_MAX_TOKENS ?? "256");
 
 const provider = createProvider({ model, dim });
 
@@ -24,7 +29,7 @@ function write(obj: unknown): void {
 
 async function main(): Promise<void> {
   // Handshake first, so the client can read model/dim before sending work.
-  write({ model, dim });
+  write({ model, dim, maxInputTokens });
   process.stderr.write(`[omgbase-embedder] ready: ${model} (${dim}d)\n`);
 
   const rl = createInterface({ input: process.stdin });

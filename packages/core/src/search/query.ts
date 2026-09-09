@@ -3,7 +3,7 @@ import { docsRead } from "../core/read/document.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
 import { parseFilter, FilterInvalid } from "./cel/parser.js";
 import { compile, type Target } from "./cel/compile.js";
-import { vectorSearch } from "./vector.js";
+import { vectorSearch, docVectorSearch } from "./vector.js";
 import { textSearch } from "./text.js";
 import { sanitizeFtsQuery } from "./fts-query.js";
 
@@ -56,13 +56,20 @@ export function query(store: Store, repoId: string, env: QueryEnvelope): QueryRe
   const limit = env.limit ?? 50;
   if (target === "nodes") return queryNodes(store, repoId, env, limit);
 
-  // Semantic path: rank block hits by raw cosine similarity to the query vector
+  // Semantic path: rank hits by raw cosine similarity to the query vector
   // (10 §semantic — `$semantic_score` IS the cosine, 1 = identical). `text` and
   // `filter` only PRUNE the candidate set (they intersect, AND); they never
   // reweight the score, so ordering stays a faithful embedding ranking rather
   // than the rank-fused, boost-multiplied score `resolve` returns. Using RRF
   // here (the prior behavior) surfaced ~1/(60+rank) fractions as the score and
   // let layer/title boosts dominate, scrambling true similarity order.
+  //
+  // The docs target scores DOCUMENT vectors (one per file), so it ranks whole
+  // documents by topical relevance — never multiple blocks of the same file.
+  // The blocks target keeps the passage-grain block search below.
+  if (env.vector && target === "docs") {
+    return semanticDocs(store, repoId, env, limit);
+  }
   if (env.vector) {
     let ranked = vectorSearch(store, repoId, env.vector.model, env.vector.vec, { limit: limit + 1 + (env.filter || env.text ? limit * 8 : 0) });
     if (env.text && env.text.trim().length > 0) {
@@ -275,6 +282,77 @@ function buildOrder(order: string[] | undefined, target: Target): string {
   }
   parts.push(`${prefix} ASC`, `${idCol} ASC`);
   return parts.join(", ");
+}
+
+// Doc-grain semantic search: rank whole-document vectors by cosine to the query
+// vector, prune by optional text/filter (AND), project one hit per document.
+// Mirrors the block semantic path's prune-don't-reweight contract, but at doc
+// grain — the fix for `from=docs semantic` returning relabelled block hits.
+function semanticDocs(store: Store, repoId: string, env: QueryEnvelope, limit: number): QueryResult {
+  const vector = env.vector!;
+  const over = env.filter || env.text ? limit * 8 : 0;
+  let ranked = docVectorSearch(store, repoId, vector.model, vector.vec, { limit: limit + 1 + over });
+
+  if (env.text && env.text.trim().length > 0) {
+    const match = sanitizeFtsQuery(env.text);
+    if (match === "") return { hits: [], truncated: false, cursor: null };
+    // A doc matches the text clause when any of its blocks does.
+    const allowed = new Set(
+      textSearch(store, repoId, env.text, { limit: 500 }).hits.map((h) => docIdForBlock(store, h.blockId)).filter((v): v is string => !!v),
+    );
+    ranked = ranked.filter((h) => allowed.has(h.docId));
+  }
+  if (env.filter && env.filter.trim().length > 0) {
+    const allowed = filterDocIds(store, repoId, env.filter, ranked.map((h) => h.docId));
+    ranked = ranked.filter((h) => allowed.has(h.docId));
+  }
+
+  const page = ranked.slice(0, limit);
+  const wantScore = env.select?.includes("$semantic_score") ?? false;
+  const projById = docProjectionMaterial(store, page.map((h) => h.docId));
+  return {
+    hits: page.map((h) => {
+      const hit = projectRow(store, projById.get(h.docId) ?? { id: h.docId, path: h.path, doc_id: h.docId }, env.select, "docs");
+      if (wantScore) hit.$semantic_score = h.cosine;
+      return hit;
+    }),
+    truncated: ranked.length > limit,
+    cursor: null,
+  };
+}
+
+// Doc id owning a block (for mapping FTS block hits back to their document).
+function docIdForBlock(store: Store, blockId: string): string | undefined {
+  const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ?").get(blockId) as { doc_id: string } | undefined;
+  return row?.doc_id;
+}
+
+// Projection material (path, doc metadata) for a set of doc ids — the docs-target
+// analogue of projectionMaterial, so the semantic docs path can project bare
+// frontmatter keys / $content_hash without re-deriving them per hit.
+function docProjectionMaterial(store: Store, docIds: string[]): Map<string, ProjectionRow> {
+  const out = new Map<string, ProjectionRow>();
+  if (docIds.length === 0) return out;
+  const placeholders = docIds.map(() => "?").join(",");
+  const rows = store.db.prepare(
+    `SELECT d.doc_id AS id, d.path AS path, d.doc_id AS doc_id, lower(hex(d.file_hash)) AS content_hash
+     FROM docs d WHERE d.doc_id IN (${placeholders})`,
+  ).all(...docIds) as ProjectionRow[];
+  for (const r of rows) out.set(r.id, r);
+  return out;
+}
+
+// Which of the given doc ids satisfy a CEL filter (docs target). Used by the
+// doc semantic path to intersect vector candidates with a structural filter.
+function filterDocIds(store: Store, repoId: string, filter: string, docIds: string[]): Set<string> {
+  if (docIds.length === 0) return new Set();
+  const compiled = compile(parseFilter(filter), "docs");
+  const placeholders = docIds.map(() => "?").join(",");
+  const sql = `SELECT d.doc_id AS id
+     FROM docs d
+     WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.doc_id IN (${placeholders}) AND ${compiled.sql}`;
+  const rows = store.db.prepare(sql).all(repoId, ...docIds, ...compiled.params) as { id: string }[];
+  return new Set(rows.map((r) => r.id));
 }
 
 // Which of the given block ids satisfy a CEL filter (blocks target). Used by the

@@ -1,6 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { EmbeddingWorker } from "./embeddings.js";
-import { buildEmbedTasks } from "./tasks.js";
+import { buildEmbedTasks, buildDocEmbedTasks } from "./tasks.js";
 
 // Background embed drainer (05 §6). Mutations only ever *queue* embeddable
 // blocks; a stale vector degrades semantic search silently until someone runs
@@ -84,9 +84,19 @@ export class EmbedDrainer {
     while (this.dirty && !this.closed) {
       this.dirty = false;
       try {
+        // Blocks first: the pooled doc-embedding fallback reuses block vectors,
+        // so embedding blocks before docs means a large doc can pool from
+        // freshly-cached vectors in the same drain.
         const tasks = buildEmbedTasks(this.store, this.repoId);
         const result = await this.worker.process(tasks);
-        if (result.embedded > 0) this.opts.onDrain?.(result);
+        // Then docs: recompute any document whose content changed (a block edit
+        // shifts the whole-doc input, invalidating its cached vector), so doc
+        // vectors never drift from content.
+        const docTasks = buildDocEmbedTasks(this.store, this.repoId);
+        const docResult = await this.worker.processDocs(docTasks);
+        if (result.embedded > 0 || docResult.embedded > 0 || docResult.pooled > 0) {
+          this.opts.onDrain?.({ embedded: result.embedded + docResult.embedded, cached: result.cached });
+        }
       } catch (err) {
         this.opts.onError?.(err);
         // Swallow — a transient provider failure must not crash the host. The

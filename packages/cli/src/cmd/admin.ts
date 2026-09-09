@@ -11,6 +11,7 @@ import {
   importDocs,
   reposStatus,
   buildEmbedTasks,
+  buildDocEmbedTasks,
   resolveSettings,
   workspaceSettings,
   repoOwnSettings,
@@ -315,15 +316,19 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
     const tasks = buildEmbedTasks(ws.store, repo.repoId);
     // Queue depth = embeddable blocks whose current-context vector isn't cached.
     const pending = loaded.worker.staleBlocks(tasks);
+    // Doc-grain queue depth = live docs whose current-content vector isn't cached.
+    const docTasks = buildDocEmbedTasks(ws.store, repo.repoId);
+    const docPending = loaded.worker.staleDocs(docTasks);
 
     // status
-    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length };
+    const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length };
     if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(payload));
     else {
       cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
       cli.io.out(`  embeddable ${tasks.length}   ${cli.style.dim("queued")} ${payload.queued}`);
+      cli.io.out(`  docs ${docTasks.length}   ${cli.style.dim("queued")} ${payload.docsQueued}`);
       // `status` reports but never embeds — point the reader at the verb that does.
-      if (payload.queued > 0) cli.io.out(cli.style.dim(`  run \`omg embed drain\` to embed the ${payload.queued} queued block(s)`));
+      if (payload.queued > 0 || payload.docsQueued > 0) cli.io.out(cli.style.dim(`  run \`omg embed drain\` to embed the ${payload.queued} queued block(s) + ${payload.docsQueued} doc(s)`));
     }
     return EXIT_OK;
   } finally {

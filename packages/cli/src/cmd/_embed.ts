@@ -1,4 +1,4 @@
-import { EmbeddingWorker, buildEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
+import { EmbeddingWorker, buildEmbedTasks, buildDocEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
 import type { Cli } from "../context.js";
 
 // Shared embedding setup for the CLI (05 §6). Reads embedding.* from the repo's
@@ -88,7 +88,19 @@ export async function drainEmbeddings(
         ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} embedded`)) }
         : {}),
     });
-    return result;
+    // Doc-grain vectors: embed whole documents (or pool block vectors for
+    // oversized docs) after blocks, so the pooled fallback can reuse the
+    // vectors just cached. This is also the one-time backfill path for existing
+    // repos — a fresh doc_embeddings table fills on the first drain.
+    const docTasks = buildDocEmbedTasks(ws.store, repoId);
+    const docResult = await loaded.worker.processDocs(docTasks, {
+      ...(verboseHuman
+        ? { onProgress: ({ embedded, total }) => cli.io.err(cli.style.dim(`    … ${embedded}/${total} doc(s) embedded`)) }
+        : {}),
+    });
+    // Fold doc work into the block counts so callers' "embedded/cached" report
+    // covers both grains (pooled docs count as embedded work done).
+    return { embedded: result.embedded + docResult.embedded + docResult.pooled, cached: result.cached + docResult.cached };
   } finally {
     await loaded.close();
   }

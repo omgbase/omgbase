@@ -97,6 +97,14 @@ Project fields onto each hit. Default hit is {id, path}. select adds:
                           text/filter only prune candidates, they don't reweight.
 Absent keys are simply omitted from the hit.
 
+## semantic grain (docs vs blocks)
+
+\`semantic\` scores at the TARGET's grain. from=docs ranks whole DOCUMENTS by a
+per-document embedding — "which document is about X", one hit per file (never
+several blocks of the same file). from=blocks ranks PASSAGES — "which block is
+about X". Pick docs to find the right note, blocks to find the right passage
+within notes. text/filter prune the candidate set (AND); they never reweight.
+
 ## order & pagination
 
   order: ["$path", "-$updated_at"]   (- = descending; ties break by $id)
