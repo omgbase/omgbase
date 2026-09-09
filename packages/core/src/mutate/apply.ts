@@ -2,6 +2,8 @@ import { writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
+import { isValidId } from "../core/ids.js";
+import { findDoc } from "../core/read/reader.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { makeKnownIdResolver } from "./known-ids.js";
@@ -71,6 +73,17 @@ function resolveTo(to: To, results: OpResult[]): To {
   return { parent, at };
 }
 
+// Resolve an insert op's `doc` field, which may be a minted doc id (d_...) or a
+// document path. Paths are resolved to their id via findDoc, matching the
+// path-or-id ergonomics of the read/graph surfaces (graph_traverse, docs_read,
+// nodes_get). An unresolvable path throws doc_missing naming the path.
+function resolveDocRef(store: Store, repoId: string, ref: string): string {
+  if (isValidId(ref, "d")) return ref;
+  const info = findDoc(store, { repoId, path: ref });
+  if (!info) throw new MutationError("doc_missing", `doc ${ref} not found`, { doc: ref });
+  return info.docId;
+}
+
 // Which doc a given block id lives in (searches loaded docs; falls back to store).
 function docIdForBlock(store: Store, repoId: string, blockId: string): string | null {
   const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
@@ -105,7 +118,9 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
     switch (rawOp.op) {
       case "insert": {
         const to = resolveTo(rawOp.to, results);
-        const docId = rawOp.doc ?? parentDoc(store, req.repoId, to, loaded);
+        const docId = rawOp.doc !== undefined
+          ? resolveDocRef(store, req.repoId, rawOp.doc)
+          : parentDoc(store, req.repoId, to, loaded);
         const d = ensureDoc(docId);
         results.push(opInsert(d, to, rawOp.markdown));
         break;

@@ -92,6 +92,39 @@ describe("apply — changesets", () => {
     expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Body.");
   });
 
+  it("insert op accepts a document path for `doc`, not just a d_ id", () => {
+    const docId = seed("a.md", "# Title\n\nBody.\n");
+    const res = apply(store, {
+      repoId, rootPath: dir, dryRun: true,
+      ops: [{ op: "insert", to: { parent: { doc: true }, at: "end" }, doc: "a.md", markdown: "Appended." }],
+      origin: { actor: "agent:test" },
+    });
+    expect(res.committed).toBe(false);
+    expect(res.revisions).toEqual([{ doc: docId, path: "a.md" }]);
+    expect(res.diffs!["a.md"]!.after).toContain("Appended.");
+  });
+
+  it("insert op still accepts a minted d_ id for `doc`", () => {
+    const docId = seed("a.md", "# Title\n\nBody.\n");
+    const res = apply(store, {
+      repoId, rootPath: dir, dryRun: true,
+      ops: [{ op: "insert", to: { parent: { doc: true }, at: "end" }, doc: docId, markdown: "Appended." }],
+      origin: { actor: "agent:test" },
+    });
+    expect(res.diffs!["a.md"]!.after).toContain("Appended.");
+  });
+
+  it("insert op with an unknown doc path throws doc_missing naming the path", () => {
+    seed("a.md", "# Title\n\nBody.\n");
+    expect(() =>
+      apply(store, {
+        repoId, rootPath: dir, dryRun: true,
+        ops: [{ op: "insert", to: { parent: { doc: true }, at: "end" }, doc: "nope.md", markdown: "x" }],
+        origin: { actor: "agent:test" },
+      }),
+    ).toThrow(/doc nope\.md not found/);
+  });
+
   it("cross-document move relocates content between files atomically", () => {
     const aId = seed("a.md", "# A\n\nmovable paragraph content here\n");
     seed("b.md", "# B\n\nb original\n");
