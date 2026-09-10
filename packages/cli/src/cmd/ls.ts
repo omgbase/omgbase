@@ -45,13 +45,13 @@ function runLs(cli: Cli, args: string[]): number {
     return EXIT_OK;
   }
 
-  const { render, style, io } = cli;
+  const { style, io } = cli;
   if (rows.length === 0) {
     io.err(style.dim("  no documents"));
     return EXIT_OK;
   }
   const table = rows.map((r) => [
-    `${style.path(render.g.doc)} ${style.accent(r.path)}`,
+    style.accent(r.path),
     style.dim(`${r.blocks} blocks`),
     style.dim(relTime(r.ts)),
   ]);
