@@ -22,25 +22,27 @@ function ingest(content: string, path = "a.md"): { docId: string } {
 
 const SAMPLE = "# Risks\n\nStable block identity is quite difficult to achieve in practice.\n\n- [ ] decide on id write-back\n- [x] pick a hash\n";
 
-describe("docsOutline — frozen wire format (06 §6)", () => {
-  it("renders indented alias/type/label lines with section marks", () => {
+describe("docsOutline — wire format (06 §6)", () => {
+  it("renders indented id/type/label lines with full block ids inline", () => {
     const { docId } = ingest(SAMPLE);
-    const { text, ids } = docsOutline(store!, docId);
-    expect(text).toMatchInlineSnapshot(`
-      "b01 h1   Risks  §
-      b02 p    Stable block identity is quite difficult to achieve in practice.
-      b03 ul
-        b04 li   ☐ decide on id write-back
-        b05 li   ☑ pick a hash"
+    const { text } = docsOutline(store!, docId);
+    // Strip the per-run block ids so the shape is snapshot-stable.
+    const shape = text.replace(/b_[0-9a-z]+/g, "b_ID");
+    expect(shape).toMatchInlineSnapshot(`
+      "b_ID h1   Risks  §
+      b_ID p    Stable block identity is quite difficult to achieve in practice.
+      b_ID ul
+        b_ID li   ☐ decide on id write-back
+        b_ID li   ☑ pick a hash"
     `);
-    expect(Object.keys(ids)).toHaveLength(5);
-    expect(ids.b01).toMatch(/^b_/);
+    expect(text.split("\n")).toHaveLength(5);
+    for (const line of text.split("\n")) expect(line.trimStart()).toMatch(/^b_[0-9a-z]+ /);
   });
 
   it("skeleton resolution omits labels", () => {
     const { docId } = ingest("# H\n\nbody\n");
     const { text } = docsOutline(store!, docId, { resolution: "skeleton" });
-    expect(text).toContain("b01 h1");
+    expect(text).toMatch(/^b_[0-9a-z]+ h1/m);
     expect(text).not.toContain("body");
   });
 
@@ -81,11 +83,11 @@ describe("docsRead — whole-document read", () => {
     expect(fm["auth"]).toBe("token");
   });
 
-  it("includes the outline id map when includeIds is set", () => {
+  it("includes the block ids in order when includeIds is set", () => {
     const { docId } = ingest(SAMPLE);
     const res = docsRead(store!, docId, { includeIds: true });
-    expect(Object.keys(res!.ids!).length).toBeGreaterThan(0);
-    expect(res!.ids!.b01).toMatch(/^b_/);
+    expect(res!.ids!.length).toBeGreaterThan(0);
+    expect(res!.ids![0]).toMatch(/^b_/);
   });
 
   it("round-trips a document with no frontmatter byte-for-byte", () => {

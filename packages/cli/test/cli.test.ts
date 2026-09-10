@@ -77,15 +77,13 @@ describe("bootstrap", () => {
 });
 
 describe("C1 — orient (outline, frozen wire format)", () => {
-  it("emits aliased outline + ids table", () => {
+  it("emits an outline with full block ids inline", () => {
     const { stdout } = omg(["outline", "hub.md", "--json"]);
-    const res = JSON.parse(stdout) as { text: string; ids: Record<string, string> };
-    // Frozen format: `b01 h1 Hub §` style lines; heading gets a section mark.
-    expect(res.text).toMatch(/b01 h1\s+Hub/);
+    const res = JSON.parse(stdout) as { text: string };
+    // Wire format: `b_… h1 Hub §` style lines; heading gets a section mark.
+    expect(res.text).toMatch(/^b_[0-9a-z]+ h1\s+Hub/m);
     expect(res.text).toContain("§");
-    // ids table maps aliases → real block ids.
-    expect(Object.keys(res.ids)[0]).toBe("b01");
-    expect(res.ids.b01).toMatch(/^b_/);
+    expect(res).not.toHaveProperty("ids");
   });
 });
 

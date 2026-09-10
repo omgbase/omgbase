@@ -1,7 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
-import { findDoc } from "./reader.js";
-import { docsOutline } from "./outline.js";
+import { findDoc, loadDocBlocks, type BlockNode } from "./reader.js";
 import { docPropertiesGrouped } from "../store/properties.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
@@ -31,7 +30,8 @@ export interface DocsReadResult {
   /** Properties grouped by source: { frontmatter, inline, computed }. */
   properties: Record<string, Record<string, unknown>>;
   content: string;
-  ids?: Record<string, string>;
+  /** Block ids in document order, for follow-up edits (include_ids). */
+  ids?: string[];
 }
 
 export interface DocsReadOptions {
@@ -103,6 +103,16 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
     properties: docPropertiesGrouped(store.db, docId),
     content,
   };
-  if (opts.includeIds) result.ids = docsOutline(store, docId).ids;
+  if (opts.includeIds) {
+    const ids: string[] = [];
+    const collect = (nodes: BlockNode[]): void => {
+      for (const n of nodes) {
+        ids.push(n.blockId);
+        collect(n.children);
+      }
+    };
+    collect(loadDocBlocks(store, docId));
+    result.ids = ids;
+  }
   return result;
 }

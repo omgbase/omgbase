@@ -1,9 +1,10 @@
 import type { Store } from "../store/store.js";
 import { loadDocBlocks, type BlockNode } from "./reader.js";
 
-// Outline wire format (06 §6, frozen). Each line:
-//   <alias> <type-abbr> <label>            [§ for section-owning headings]
-// Aliases (b01…) map to full ids in a trailing `ids` table to halve token cost.
+// Outline wire format (06 §6). Each line:
+//   <block-id> <type-abbr> <label>         [§ for section-owning headings]
+// The full block id (b_…) is emitted inline so it can be used directly in
+// follow-up ops without a separate alias→id lookup table.
 
 const TYPE_ABBR: Record<string, string> = {
   heading: "h",
@@ -46,7 +47,6 @@ function truncateWords(text: string, n: number): string {
 
 export interface OutlineResult {
   text: string;
-  ids: Record<string, string>; // alias → full id
   truncated: boolean;
 }
 
@@ -63,9 +63,7 @@ export function docsOutline(store: Store, docId: string, opts: OutlineOptions = 
   const maxDepth = opts.depth ?? Infinity;
   const budget = opts.budgetTokens ?? Infinity;
 
-  const ids: Record<string, string> = {};
   const lines: string[] = [];
-  let alias = 0;
   let tokens = 0;
   let truncated = false;
 
@@ -73,12 +71,10 @@ export function docsOutline(store: Store, docId: string, opts: OutlineOptions = 
     for (const node of nodes) {
       if (truncated) return;
       if (indent > maxDepth) continue;
-      const aliasId = `b${String(++alias).padStart(2, "0")}`;
-      ids[aliasId] = node.blockId;
       const pad = "  ".repeat(indent);
       const sectionMark = node.type === "heading" ? "  §" : "";
       const label = resolution === "skeleton" ? "" : labelFor(node);
-      const line = `${pad}${aliasId} ${typeLabel(node).padEnd(4)} ${label}${sectionMark}`.trimEnd();
+      const line = `${pad}${node.blockId} ${typeLabel(node).padEnd(4)} ${label}${sectionMark}`.trimEnd();
 
       const lineTokens = Math.ceil(line.length / 4);
       if (tokens + lineTokens > budget) {
@@ -92,5 +88,5 @@ export function docsOutline(store: Store, docId: string, opts: OutlineOptions = 
   };
 
   walk(roots, 0);
-  return { text: lines.join("\n"), ids, truncated };
+  return { text: lines.join("\n"), truncated };
 }

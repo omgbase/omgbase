@@ -64,10 +64,11 @@ describe("MCP server skeleton", () => {
     expect(g.syntax).toContain("nodeInfo");
   });
 
-  it("docs_outline returns the outline with an ids table", async () => {
-    const { payload } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string; ids: Record<string, string> } };
+  it("docs_outline returns the outline with full block ids inline", async () => {
+    const { payload } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string; ids?: unknown } };
     expect(payload.text).toContain("§");
-    expect(Object.keys(payload.ids).length).toBeGreaterThan(0);
+    expect(payload.text).toMatch(/^b_[0-9a-z]+ /m);
+    expect(payload.ids).toBeUndefined();
   });
 
   it("docs_read returns the whole file bytes plus properties grouped by source", async () => {
@@ -80,11 +81,12 @@ describe("MCP server skeleton", () => {
     expect(payload.ids).toBeUndefined();
   });
 
-  it("docs_read include_ids adds the outline id map", async () => {
+  it("docs_read include_ids adds the ordered block ids", async () => {
     const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
-      payload: { ids: Record<string, string> };
+      payload: { ids: string[] };
     };
-    expect(Object.keys(payload.ids).length).toBeGreaterThan(0);
+    expect(payload.ids.length).toBeGreaterThan(0);
+    expect(payload.ids[0]).toMatch(/^b_/);
   });
 
   it("docs_read maps a missing doc to doc_missing", async () => {
@@ -133,15 +135,15 @@ describe("MCP server skeleton", () => {
   });
 
   it("nodes_get hydrates a block by id at a resolution", async () => {
-    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
-    const headingId = outline.ids.b01!;
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
+    const headingId = read.ids[0]!;
     const { payload } = (await call("nodes_get", { path: "notes.md", id: headingId, resolution: "raw" })) as { payload: { raw: string } };
     expect(payload.raw).toBe("# Risks");
   });
 
   it("nodes_get infers the document from a block id alone (no doc/path)", async () => {
-    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
-    const headingId = outline.ids.b01!;
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
+    const headingId = read.ids[0]!;
     const { payload, isError } = (await call("nodes_get", { id: headingId, resolution: "raw" })) as { payload: { raw: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.raw).toBe("# Risks");
@@ -321,13 +323,10 @@ describe("apply op schema + sections_append heading resolution", () => {
   });
 
   it("sections_append still accepts a heading block id", async () => {
-    const { payload: outline } = (await call("docs_outline", { path: "notes.md" })) as { payload: { ids: Record<string, string> } };
-    const launchId = Object.values(outline.ids).find((id) => id.startsWith("b"))!;
-    void launchId;
-    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: Record<string, string> } };
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
     // pick the id whose block is the Launch heading via nodes_get
     let headingId = "";
-    for (const id of Object.values(read.ids)) {
+    for (const id of read.ids) {
       const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
       if (payload.raw === "## Launch") { headingId = id; break; }
     }

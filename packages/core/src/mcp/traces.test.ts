@@ -55,18 +55,17 @@ describe("trace suite", () => {
   it("T1 — move a decision from Open Questions into Decisions (≤ 2 turns)", async () => {
     save("proj.md", "# Project\n\n## Open Questions\n\nshould identity be engine-local\n\n## Decisions\n\nuse sqlite for storage\n");
     await connect();
-    // 1. outline to find the block id
-    const { payload: outline } = await call("docs_outline", { path: "proj.md" });
-    const ids = obj(outline.ids);
-    const qAlias = Object.entries(ids).find(([, id]) => {
-      const row = store.db.prepare("SELECT text FROM blocks WHERE block_id=?").get(id as string) as { text: string } | undefined;
+    // 1. read to get the block ids inline (no alias table anymore)
+    const { payload: read } = await call("docs_read", { path: "proj.md", include_ids: true });
+    const ids = read.ids as string[];
+    const qId = ids.find((id) => {
+      const row = store.db.prepare("SELECT text FROM blocks WHERE block_id=?").get(id) as { text: string } | undefined;
       return row?.text.startsWith("should identity");
-    })![0];
-    const qId = ids[qAlias];
-    const decHeading = Object.values(ids).find((id) => {
-      const row = store.db.prepare("SELECT text, type FROM blocks WHERE block_id=?").get(id as string) as { text: string; type: string } | undefined;
+    })!;
+    const decHeading = ids.find((id) => {
+      const row = store.db.prepare("SELECT text, type FROM blocks WHERE block_id=?").get(id) as { text: string; type: string } | undefined;
       return row?.type === "heading" && row.text === "Decisions";
-    }) as string;
+    })!;
     // 2. apply the move
     const { payload: res } = await call("apply", {
       ops: [{ op: "move", blocks: [qId], to: { parent: { heading: decHeading, scope: "section" }, at: "end" } }],

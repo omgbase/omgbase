@@ -106,7 +106,7 @@ Semantic search from a one-shot process serves whatever vectors exist; hits back
 ## 4. Output contract
 
 1. **stdout is data; stderr is everything else.** Diagnostics, progress, truncation footers, errors — stderr. A piped `omg` never mixes prose into data.
-2. **Human format by default**, when stdout is a TTY: aligned columns, `$id` always paired with `$locator` (06 §2 — locators are for eyes, IDs are for follow-ups), checkbox glyphs for tasks, the frozen outline wire format (06 §6) for outlines — the CLI renders the same `b01`-aliased text the MCP tool returns, ids table included.
+2. **Human format by default**, when stdout is a TTY: aligned columns, `$id` always paired with `$locator` (06 §2 — locators are for eyes, IDs are for follow-ups), checkbox glyphs for tasks, the outline wire format (06 §6) for outlines — the CLI renders the same inline-`b_`-id text the MCP tool returns.
 3. **`--json` is the library's result object, verbatim.** The CLI MUST NOT invent shapes: `QueryResult`, `ApplyResult`, `CommitDigest`, conflict objects — same fields as the MCP surface. `--jsonl` flattens list results to one object per line; `--ids` to bare IDs.
 4. **Truncation is loud.** Any truncated result prints a stderr footer: `… truncated; continue with --cursor <c>`. Exit code stays 0.
 5. **Budgets exist here too.** Hydrating commands accept `--budget-tokens` (for agent-with-shell use); list commands accept `-n/--limit` and `--cursor`.
@@ -233,7 +233,7 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q … --ids |
 
 ## 6. Acceptance traces (CLI analogues of 06 §7; executable, keystroke-budgeted)
 
-**C1 — orient.** `omg outline projects/omgbase.md` — 1 command; frozen wire format; ids table trailer.
+**C1 — orient.** `omg outline projects/omgbase.md` — 1 command; wire format with inline block ids.
 
 **C2 — "complete the unchecked deploy tasks under Launch."**
 ```

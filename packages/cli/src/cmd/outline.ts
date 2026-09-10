@@ -4,8 +4,8 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK } from "../output.js";
 
-// `omg outline <doc|path>` (alias ol) — the frozen wire format (06 §6). Human
-// output prints the outline text + the ids alias table; --json emits the
+// `omg outline <doc|path>` (alias ol) — the wire format (06 §6). Human output
+// prints the outline text with full block ids inline; --json emits the
 // OutlineResult verbatim.
 
 function runOutline(cli: Cli, args: string[]): number {
@@ -44,24 +44,18 @@ function runOutline(cli: Cli, args: string[]): number {
   const { render, style, io } = cli;
   io.out(render.wordmark(info.path));
   io.out(render.rule(40));
-  // The outline text is the frozen format; colorize alias ids (dim) + § marks.
+  // Colorize the inline block ids + § marks.
   for (const line of result.text.split("\n")) {
     io.out(colorizeOutline(line, style));
-  }
-  // ids alias table trailer.
-  io.out("");
-  io.out(style.dim("  ids:"));
-  for (const [alias, id] of Object.entries(result.ids)) {
-    io.out(`    ${style.accent(alias)} ${style.dim("→")} ${style.id(id)}`);
   }
   if (result.truncated) truncationFooter(io, style, "budget");
   return EXIT_OK;
 }
 
 function colorizeOutline(line: string, style: import("../style.js").Style): string {
-  // leading `  b01 ` alias → dim; trailing ` §` → accent.
+  // leading block id (b_…) → id style; trailing ` §` → accent.
   return line
-    .replace(/\b(b\d{2,})\b/, (m) => style.id(m))
+    .replace(/\bb_[0-9a-z]+\b/, (m) => style.id(m))
     .replace(/§/g, style.accent("§"));
 }
 

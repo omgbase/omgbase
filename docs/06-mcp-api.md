@@ -42,7 +42,7 @@ Returns the indented compact text format (id, type, label per line), optionally 
 ```
 docs_read { doc | path, include_ids? }
 ```
-Reads a whole document in one call: `content` is the complete file bytes (verbatim — the same bytes `apply` writes to disk, fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. The cold-start "read the guide before doing anything" call — mirrors mrplex `docs_get`. `include_ids:true` also returns the outline alias→block-id map for follow-up edits. This is a server-side projection over ordered blocks, not blob storage: identity stays block-level (`docs_read` reads; `apply` writes via block ops). `nodes_get` on a doc/heading id returns only that block — use `docs_read` for the whole document.
+Reads a whole document in one call: `content` is the complete file bytes (verbatim — the same bytes `apply` writes to disk, fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. The cold-start "read the guide before doing anything" call — mirrors mrplex `docs_get`. `include_ids:true` also returns the document's block ids in order for follow-up edits. This is a server-side projection over ordered blocks, not blob storage: identity stays block-level (`docs_read` reads; `apply` writes via block ops). `nodes_get` on a doc/heading id returns only that block — use `docs_read` for the whole document.
 
 `metadata` is format-dependent, produced by the ingest adapter, not universally "frontmatter": for markdown it is the parsed frontmatter block (and, as adapters grow, may merge intrinsics — inline dataview-style fields, an h1-derived title); for a YAML or JSON file it is the parsed object the file represents; a bespoke adapter (say a `.trx` terminal-scrape format, or a `.js` file exposing its top-level exports) extracts whatever its format defines. `docs_read` returns whatever the adapter stored — it does not impose the markdown frontmatter model.
 
@@ -112,15 +112,15 @@ sync_flush { repo }           // force a checkpoint now — read-your-own-writes
 
 `stale_expectation` · `parent_missing` · `target_missing` · `block_missing` · `doc_missing` · `cycle_move` · `opaque_block` · `not_contiguous` · `type_mismatch` · `conflicted_document` · `path_taken` · `create_conflict` · `ambiguous_locator` · `filter_invalid` · `budget_exceeded` (partial result attached) · `semantic_unavailable` · `sync_conflict` · `repo_not_found`. Shape: `{ error, message, data?, retriable: boolean }` — stable codes, prose free to improve.
 
-## 6. Outline wire format (frozen)
+## 6. Outline wire format
 
 ```
-b01 h2  Risks                          §
-b02 p   Stable block identity is quite…
-b03 ul
-b04 li  ☐ decide on id write-back
+b_k2n8x4q h2  Risks                          §
+b_9fw3mzt p   Stable block identity is quite…
+b_p7c1vd0 ul
+b_r5h6yja li  ☐ decide on id write-back
 ```
-Column 1: short per-response alias (`b01`…) mapped to full IDs in a trailing `ids` table — halves token cost for large outlines while keeping full IDs one lookup away. `§` marks heading lines that own a section range. Checkbox glyphs for tasks. `annotate` flags append terse suffixes (`←3 refs`, `~2d`, `conf .82`).
+Column 1: the full block id (`b_…`), emitted inline so it can be dropped straight into a follow-up op — no alias table to resolve. `§` marks heading lines that own a section range. Checkbox glyphs for tasks. `annotate` flags append terse suffixes (`←3 refs`, `~2d`, `conf .82`).
 
 ## 7. Worked traces (acceptance fixtures for Stage 6)
 
