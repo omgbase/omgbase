@@ -211,6 +211,80 @@ describe("filter_invalid (10 §3.1)", () => {
   });
 });
 
+describe("bare reserved-intrinsic collision fails loud (docs open namespace)", () => {
+  beforeEach(() => {
+    // A doc whose frontmatter DOES carry authored title/tags, to prove those
+    // (computed-intrinsic-shadowing) bare keys keep working.
+    ingest("guides/a.md", "---\ntitle: Authored Title\ntags: [pricing, saas]\nlayer: working\n---\n\n# H1 Heading\n\nbody\n");
+    ingest("notes/c.md", "---\nlayer: canon\n---\n\n# C\n\nbody\n");
+  });
+
+  const reserved = ["path", "id", "repo", "updated_at", "content_hash", "body"];
+
+  it.each(reserved)("bare %s (comparison position) throws with a $-hint", (name) => {
+    expect(() => query(store, repoId, { from: "docs", filter: `${name} == "x"` })).toThrow(FilterInvalid);
+    try {
+      compile(parseFilter(`${name} == "x"`), "docs");
+    } catch (e) {
+      if (e instanceof FilterInvalid) {
+        expect(e.reason).toMatch(new RegExp(`did you mean the intrinsic \\$${name}`));
+        expect(e.reason).toMatch(new RegExp(`frontmatter\\.${name}`));
+      }
+    }
+  });
+
+  it("bare path in boolean position throws", () => {
+    expect(() => query(store, repoId, { from: "docs", filter: "path" })).toThrow(FilterInvalid);
+    expect(() => query(store, repoId, { from: "docs", filter: "!path" })).toThrow(FilterInvalid);
+  });
+
+  it("bare path in method-call position (the documented trap) throws", () => {
+    expect(() => query(store, repoId, { from: "docs", filter: 'path.startsWith("guides/")' })).toThrow(FilterInvalid);
+  });
+
+  it("bare path in membership / has / size positions throws", () => {
+    expect(() => query(store, repoId, { from: "docs", filter: '"x" in list(path)' })).toThrow(FilterInvalid);
+    expect(() => query(store, repoId, { from: "docs", filter: "has(path)" })).toThrow(FilterInvalid);
+    expect(() => query(store, repoId, { from: "docs", filter: "size(list(path)) > 0" })).toThrow(FilterInvalid);
+  });
+
+  it("the intrinsic $path still works", () => {
+    const { hits } = query(store, repoId, { from: "docs", filter: '$path.startsWith("guides/")' });
+    expect(hits.map((h) => h.path)).toEqual(["guides/a.md"]);
+  });
+
+  it("source-scoped frontmatter.path forces the property (no throw, absence semantics)", () => {
+    // No frontmatter key literally named "path" exists → matches nothing, but
+    // does NOT throw: the user explicitly asked for the property.
+    const { hits } = query(store, repoId, { from: "docs", filter: 'frontmatter.path == "guides/a.md"' });
+    expect(hits).toHaveLength(0);
+  });
+
+  it("bare title / tags stay frontmatter-key access (computed-intrinsic exclusion)", () => {
+    const byTitle = query(store, repoId, { from: "docs", filter: 'title == "Authored Title"' });
+    expect(byTitle.hits.map((h) => h.path)).toEqual(["guides/a.md"]);
+    const byTag = query(store, repoId, { from: "docs", filter: '"pricing" in list(tags)' });
+    expect(byTag.hits.map((h) => h.path)).toEqual(["guides/a.md"]);
+  });
+
+  it("a genuinely-unknown bare key keeps absence semantics (silent empty, no throw)", () => {
+    expect(query(store, repoId, { from: "docs", filter: 'nonexistent_key == "v"' }).hits).toHaveLength(0);
+    expect(query(store, repoId, { from: "docs", filter: "nonexistent_key" }).hits).toHaveLength(0);
+  });
+
+  it("doc.path reach-through from blocks throws with the hint; doc.$path works", () => {
+    ingest("tasks.md", "# T\n\n- [ ] a task\n");
+    expect(() => query(store, repoId, { from: "blocks", filter: 'type == "task" && doc.path.startsWith("t")' })).toThrow(FilterInvalid);
+    const ok = query(store, repoId, { from: "blocks", filter: 'type == "task" && doc.$path.startsWith("tasks")' });
+    expect(ok.hits.length).toBe(1);
+  });
+
+  it("blocks closed-namespace behavior unchanged (bare checked still throws)", () => {
+    ingest("tasks.md", "# T\n\n- [ ] a task\n");
+    expect(() => query(store, repoId, { from: "blocks", filter: "checked" })).toThrow(FilterInvalid);
+  });
+});
+
 describe("semantic query ranks by cosine, not RRF (regression)", () => {
   // Bag-of-words provider: cosine reflects lexical overlap, enough to assert
   // the closest block ranks first AND that $semantic_score is a real cosine

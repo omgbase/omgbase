@@ -6,6 +6,7 @@ import { ensureRepo } from "../core/attach.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
+import { tombstoneObservedDeletion } from "./tombstone.js";
 import type { SyncSource } from "./plugin.js";
 import type { FileChange, CheckpointResult } from "./checkpoint.js";
 
@@ -49,7 +50,12 @@ export async function reconcileChanges(
 
     const item = await source.fetch(change.path);
     if (item === null) {
-      if (existing) deleted.push(change.path);
+      // Member left the source scope (deleted/moved out): tombstone the live doc
+      // (drop FTS, tombstone blocks + doc, pool blocks) so it stops being served.
+      if (existing) {
+        tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
+        deleted.push(change.path);
+      }
       fileEntries.push([change.path, oldHex, null]);
       continue;
     }

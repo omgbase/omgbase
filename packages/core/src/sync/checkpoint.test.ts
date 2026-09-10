@@ -9,6 +9,7 @@ import { processCheckpoint } from "./checkpoint.js";
 import { readFileSync } from "node:fs";
 import { render } from "../core/parse/render.js";
 import { parseTree } from "../core/parse/tree.js";
+import { textSearch } from "../search/text.js";
 
 let dir: string;
 let store: Store;
@@ -67,6 +68,55 @@ describe("processCheckpoint", () => {
     unlinkSync(join(dir, "a.md"));
     const res = processCheckpoint(store, repoId, dir, [{ path: "a.md" }]);
     expect(res.deleted).toEqual(["a.md"]);
+  });
+
+  it("tombstones a deleted doc: blocks tombstoned, FTS + reads stop serving it, observed commit", () => {
+    writeFileSync(join(dir, "ghost.md"), "# Ghost\n\nsearchableghostword lives here\n");
+    processCheckpoint(store, repoId, dir, [{ path: "ghost.md" }]);
+    const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path='ghost.md'").get() as { doc_id: string };
+
+    // Live + FTS-indexed before deletion.
+    expect(textSearch(store, repoId, "searchableghostword").hits.length).toBeGreaterThanOrEqual(1);
+
+    unlinkSync(join(dir, "ghost.md"));
+    const res = processCheckpoint(store, repoId, dir, [{ path: "ghost.md" }]);
+    expect(res.deleted).toEqual(["ghost.md"]);
+
+    // The doc row is tombstoned and no longer served by the live-docs query.
+    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='ghost.md' AND deleted_commit IS NULL").get();
+    expect(live).toBeUndefined();
+    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_commit: string | null };
+    expect(tombstoned.deleted_commit).not.toBeNull();
+
+    // Its blocks are tombstoned and FTS no longer returns it.
+    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_commit IS NULL").get(doc.doc_id) as { c: number };
+    expect(liveBlocks.c).toBe(0);
+    expect(textSearch(store, repoId, "searchableghostword").hits.length).toBe(0);
+
+    // The tombstone commit is observed-origin (engine witnessed it, did not author it).
+    const commit = store.db.prepare("SELECT origin FROM commits WHERE commit_id=?").get(tombstoned.deleted_commit) as { origin: string };
+    expect(commit.origin).toBe("observed");
+  });
+
+  it("delete then recreate resurrects a block id via the resurrection pool", () => {
+    const content = "# Doc\n\nfirst paragraph stays put across the cycle\n\nsecond paragraph also survives here\n";
+    writeFileSync(join(dir, "d.md"), content);
+    processCheckpoint(store, repoId, dir, [{ path: "d.md" }]);
+    const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path='d.md'").get() as { doc_id: string };
+    const before = store.db.prepare("SELECT block_id AS id, text FROM blocks WHERE doc_id=? ORDER BY ordinal").all(doc.doc_id) as { id: string; text: string }[];
+    const firstId = before.find((b) => b.text.startsWith("first"))!.id;
+
+    // Observed deletion pools the blocks.
+    unlinkSync(join(dir, "d.md"));
+    processCheckpoint(store, repoId, dir, [{ path: "d.md" }]);
+    const pooled = store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE block_id=?").get(firstId) as { c: number };
+    expect(pooled.c).toBe(1);
+
+    // Recreate the file: the reconciling resolver resurrects the block id.
+    writeFileSync(join(dir, "d.md"), content);
+    processCheckpoint(store, repoId, dir, [{ path: "d.md" }]);
+    const live = store.db.prepare("SELECT block_id AS id FROM blocks WHERE deleted_commit IS NULL AND text LIKE 'first%'").all() as { id: string }[];
+    expect(live.some((b) => b.id === firstId)).toBe(true);
   });
 
   it("re-ingests a genuinely changed file (new revision)", () => {

@@ -27,7 +27,7 @@ Modes **intersect** (AND). Only current state is searched (history via `history_
 
 ## 2. Targets and field namespaces
 
-The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory, so user data can never collide with system fields.
+The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory. On the closed-namespace `blocks`/`nodes` targets an unknown bare field is `filter_invalid`. On the open-namespace `docs` target (and the `doc.<key>` reach-through), a bare key is normally free content — but a bare first segment that collides with an intrinsic **base name** (`id`, `path`, `repo`, `updated_at`, `content_hash`, `body`) is `filter_invalid` with a *"did you mean `$X`?"* hint, because it almost always is a typo for the intrinsic and would otherwise silently read an absent frontmatter key and match nothing. Force the property with the source-scoped `frontmatter.<k>` form. The exceptions are `title`/`tags` (see Computed intrinsics below): their `$`-forms are computed and do not shadow authored frontmatter, so bare `title`/`tags` stay property access.
 
 ### `docs`
 - **Bare identifiers** = a document **property** key, resolved against the indexed `properties` table (12-properties-table). A bare key spans the **authored** sources — frontmatter and inline (dataview-style `key:: value`) — unioned. For **markdown** a bare key is usually a frontmatter key; **YAML/JSON** docs expose the parsed object's keys the same way. Nested maps flatten to dotted keys (`meta.owner`). Values may be scalar or list — `==`/`!=`/`<` compare the scalar-authored value, `list()` is the multi-value accessor (§4); a scalar comparison against a list-authored key is false.
@@ -98,7 +98,7 @@ mrplex's rule — *a missing key never matches; the predicate is false, not an e
 | `f.contains(...)` and other string fns | false |
 | `has(f)` | false — use this when you need existence itself |
 
-Absence never errors and never propagates as an error. Type mismatches (comparing a string field to an int literal) behave as absence: false, not error.
+Absence never errors and never propagates as an error. Type mismatches (comparing a string field to an int literal) behave as absence: false, not error. This table governs *genuinely unknown* keys — a bare `layer` where no such frontmatter key exists still silently yields false. The one exception is a bare key whose first segment collides with an intrinsic base name (`id`/`path`/`repo`/`updated_at`/`content_hash`/`body`; see §2): that is rejected at compile time with a hint, since a silent empty there is far more likely a typo for `$path` than a real absent-key query.
 
 ## 4. `list()` — scalar-or-list metadata (mrplex, verbatim)
 

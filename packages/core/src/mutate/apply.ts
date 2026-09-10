@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { isValidId } from "../core/ids.js";
-import { findDoc } from "../core/read/reader.js";
+import { findDocByRef } from "../core/read/reader.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { makeKnownIdResolver } from "./known-ids.js";
@@ -74,12 +74,15 @@ function resolveTo(to: To, results: OpResult[]): To {
 }
 
 // Resolve an insert op's `doc` field, which may be a minted doc id (d_...) or a
-// document path. Paths are resolved to their id via findDoc, matching the
-// path-or-id ergonomics of the read/graph surfaces (graph_traverse, docs_read,
-// nodes_get). An unresolvable path throws doc_missing naming the path.
+// document path — the same id-or-path symmetry the read/graph surfaces expose
+// (shared via findDocByRef; see core/read/reader.ts). A valid d_ id passes
+// through WITHOUT a store lookup so a doc minted by an earlier op in the SAME
+// changeset (not yet committed) still resolves; ensureDoc validates existence.
+// A path is resolved via the shared helper; an unresolvable path throws
+// doc_missing naming it.
 function resolveDocRef(store: Store, repoId: string, ref: string): string {
   if (isValidId(ref, "d")) return ref;
-  const info = findDoc(store, { repoId, path: ref });
+  const info = findDocByRef(store, repoId, ref);
   if (!info) throw new MutationError("doc_missing", `doc ${ref} not found`, { doc: ref });
   return info.docId;
 }

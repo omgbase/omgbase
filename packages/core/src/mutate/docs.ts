@@ -4,7 +4,7 @@ import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { ingestFile } from "../core/ingest.js";
-import { findDoc } from "../core/read/reader.js";
+import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { newCommit } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
@@ -72,7 +72,7 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
 
 /** docs_move: rename a document to a new path (identity preserved). */
 export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath: string): DocOpResult {
-  const info = findDoc(store, docRef.startsWith("d_") ? { docId: docRef } : { repoId: ctx.repoId, path: docRef });
+  const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
   const toRel = canonical(toPath);
   if (findDoc(store, { repoId: ctx.repoId, path: toRel })) throw new MutationError("path_taken", `a document already exists at ${toRel}`);
@@ -105,7 +105,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
 
 /** docs_delete: mark a document deleted and remove its file (resurrection-poolable). */
 export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): DocOpResult {
-  const info = findDoc(store, docRef.startsWith("d_") ? { docId: docRef } : { repoId: ctx.repoId, path: docRef });
+  const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
   return underLock(ctx, () => {
@@ -131,7 +131,7 @@ export function docsSetMeta(
   docRef: string,
   patch: { set?: Record<string, unknown>; unset?: string[] },
 ): DocOpResult {
-  const info = findDoc(store, docRef.startsWith("d_") ? { docId: docRef } : { repoId: ctx.repoId, path: docRef });
+  const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
   return underLock(ctx, () => {

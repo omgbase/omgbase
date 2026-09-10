@@ -1,4 +1,5 @@
 import type { Store } from "../store/store.js";
+import { isValidId } from "../ids.js";
 
 // Read-side reconstruction of current-state blocks (02 §3 blocks table).
 // Rebuilds the containment forest for a document from parent_block + order_key.
@@ -101,4 +102,23 @@ export function findDoc(store: Store, ref: { docId?: string; repoId?: string; pa
     format: (row.format as string) ?? "markdown",
     currentRev: (row.current_rev as string | null) ?? null,
   };
+}
+
+/**
+ * Resolve a single `doc` ref that may be EITHER a minted document id (`d_…`) OR
+ * a repo-relative path — the id-or-path symmetry every doc-ref surface expects
+ * (docs_read/outline/read_at, diff, apply's insert.doc, graph seeds, docHistory).
+ * This is the ONE dispatch those call sites route through so the "path in the
+ * doc field" trap can't recur per-tool.
+ *
+ * A `d_`-shaped id is looked up by id ONLY — if it doesn't exist we return null
+ * (the caller fails loud) rather than falling through to a path lookup that
+ * would also miss and confusingly report a path-not-found for a d_ value.
+ * Anything else is treated as a path. Returns null when unresolvable; callers
+ * throw a clear doc_missing/target_missing so an unresolvable ref is never a
+ * silent empty result.
+ */
+export function findDocByRef(store: Store, repoId: string, ref: string): DocInfo | null {
+  if (isValidId(ref, "d")) return findDoc(store, { docId: ref });
+  return findDoc(store, { repoId, path: ref });
 }

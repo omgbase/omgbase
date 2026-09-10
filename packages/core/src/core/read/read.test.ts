@@ -3,9 +3,10 @@ import { Store } from "../store/store.js";
 import { ensureRepo } from "../attach.js";
 import { ingestFile } from "../ingest.js";
 import { docsOutline } from "./outline.js";
-import { docsRead } from "./document.js";
+import { docsRead, readDocumentAtRevision } from "./document.js";
 import { nodesGet, nodesGetMany } from "./nodes.js";
-import { loadDocBlocks } from "./reader.js";
+import { loadDocBlocks, findDocByRef } from "./reader.js";
+import { sha256 } from "../hash.js";
 
 let store: Store | undefined;
 afterEach(() => {
@@ -149,5 +150,116 @@ describe("nodesGetMany", () => {
     const many = Array.from({ length: 101 }, (_, i) => `b_${i}`);
     const res = nodesGetMany(store!, docId, many);
     expect(res.truncated).toBe(true);
+  });
+});
+
+describe("readDocumentAtRevision — whole-doc time travel", () => {
+  // Re-ingest the same path repeatedly to build a revision chain. We keep the
+  // leading trivia and frontmatter separator IDENTICAL across revisions so the
+  // rendered_hash equality holds even for the earliest revision (see the
+  // fidelity caveat in document.ts — doc-level trivia is not per-revision).
+  function ingestRevs(path: string, contents: string[]): { docId: string; revs: string[]; hashes: Buffer[] } {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "t", "/tmp");
+    let docId = "";
+    const revs: string[] = [];
+    const hashes: Buffer[] = [];
+    for (const c of contents) {
+      const res = ingestFile(store, repoId, path, c);
+      docId = res.docId;
+      const row = store.db.prepare("SELECT current_rev FROM docs WHERE doc_id = ?").get(docId) as { current_rev: string };
+      const revRow = store.db.prepare("SELECT rendered_hash FROM revisions WHERE rev_id = ?").get(row.current_rev) as { rendered_hash: Buffer };
+      revs.push(row.current_rev);
+      hashes.push(revRow.rendered_hash);
+    }
+    return { docId, revs, hashes };
+  }
+
+  const V1 = "---\nlayer: working\n---\n\n# Guide\n\nThe original first paragraph, kept long enough to persist.\n";
+  const V2 = "---\nlayer: working\n---\n\n# Guide\n\nThe original first paragraph, kept long enough to persist.\n\nA second paragraph appears in revision two here.\n";
+  const V3 = "---\nlayer: working\n---\n\n# Guide\n\nThe first paragraph is rewritten in revision three entirely.\n\nA second paragraph appears in revision two here.\n";
+
+  it("reconstructs the earliest revision byte-for-byte with a matching rendered_hash", () => {
+    const { docId, revs, hashes } = ingestRevs("guide.md", [V1, V2, V3]);
+    const res = readDocumentAtRevision(store!, docId, revs[0]!);
+    expect(res).not.toBeNull();
+    expect(res!.content).toBe(V1);
+    expect(res!.renderedHashMatch).toBe(true);
+    expect(sha256(res!.content).equals(hashes[0]!)).toBe(true);
+  });
+
+  it("reconstructs a middle revision byte-for-byte", () => {
+    const { docId, revs } = ingestRevs("guide.md", [V1, V2, V3]);
+    const res = readDocumentAtRevision(store!, docId, revs[1]!);
+    expect(res!.content).toBe(V2);
+    expect(res!.renderedHashMatch).toBe(true);
+  });
+
+  it("the current revision matches docsRead(...).content exactly", () => {
+    const { docId, revs } = ingestRevs("guide.md", [V1, V2, V3]);
+    const current = docsRead(store!, docId)!;
+    const at = readDocumentAtRevision(store!, docId, revs[2]!)!;
+    expect(at.content).toBe(current.content);
+    expect(at.content).toBe(V3);
+    expect(at.renderedHashMatch).toBe(true);
+  });
+
+  it("reconstructs nested container blocks (list with children) faithfully", () => {
+    const nestedV1 = "# Tasks\n\n- parent one\n  - child a\n  - child b\n- parent two\n";
+    const nestedV2 = nestedV1 + "\n> a trailing blockquote\n> spanning two lines\n";
+    const { docId, revs } = ingestRevs("tasks.md", [nestedV1, nestedV2]);
+    const res = readDocumentAtRevision(store!, docId, revs[0]!)!;
+    expect(res.content).toBe(nestedV1);
+    // The top-level-only walk still yields the nested children verbatim.
+    expect(res.content).toContain("  - child a");
+    expect(res.content).toContain("  - child b");
+    expect(res.renderedHashMatch).toBe(true);
+  });
+
+  it("returns null for an unknown revision id", () => {
+    const { docId } = ingestRevs("guide.md", [V1]);
+    expect(readDocumentAtRevision(store!, docId, "r_does_not_exist")).toBeNull();
+  });
+
+  it("returns null when the revision belongs to a DIFFERENT document", () => {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "t", "/tmp");
+    const a = ingestFile(store, repoId, "a.md", V1).docId;
+    ingestFile(store, repoId, "b.md", V2);
+    const bRev = (store.db.prepare("SELECT current_rev FROM docs WHERE path = 'b.md'").get() as { current_rev: string }).current_rev;
+    // b's revision id is real, but not a revision of document a.
+    expect(readDocumentAtRevision(store, a, bRev)).toBeNull();
+  });
+
+  it("carries current properties flagged propertiesAreCurrent", () => {
+    const { docId, revs } = ingestRevs("guide.md", [V1, V2]);
+    const res = readDocumentAtRevision(store!, docId, revs[0]!)!;
+    expect(res.propertiesAreCurrent).toBe(true);
+    expect(res.properties.frontmatter).toEqual({ layer: "working" });
+  });
+});
+
+describe("findDocByRef — the shared id-or-path resolver", () => {
+  it("resolves a d_ id, a path, and returns null for the unresolvable", () => {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "t", "/tmp");
+    const docId = ingestFile(store, repoId, "guide.md", "# G\n\nbody\n").docId;
+
+    // by id
+    expect(findDocByRef(store, repoId, docId)?.docId).toBe(docId);
+    // by path
+    const byPath = findDocByRef(store, repoId, "guide.md");
+    expect(byPath?.docId).toBe(docId);
+    expect(byPath?.path).toBe("guide.md");
+    // unresolvable path
+    expect(findDocByRef(store, repoId, "missing.md")).toBeNull();
+  });
+
+  it("a d_-shaped id that doesn't exist returns null (no path fallthrough)", () => {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "t", "/tmp");
+    ingestFile(store, repoId, "guide.md", "# G\n\nbody\n");
+    // Valid d_ shape, no such doc — must NOT be reinterpreted as a path.
+    expect(findDocByRef(store, repoId, "d_0000000")).toBeNull();
   });
 });

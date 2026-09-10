@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
+import { processCheckpoint } from "../sync/checkpoint.js";
 import { buildServer } from "./server.js";
 
 let store: Store;
@@ -50,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -93,6 +94,93 @@ describe("MCP server skeleton", () => {
     const { payload, isError } = (await call("docs_read", { path: "nope.md" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("doc_missing");
+  });
+
+  it("docs_read_at time-travels to an earlier revision's exact bytes", async () => {
+    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    // Edit the doc so the current revision differs from rev1.
+    ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nA freshly added tail paragraph.\n");
+    const { payload } = (await call("docs_read_at", { path: "notes.md", rev: rev1 })) as {
+      payload: { content: string; rev: string; renderedHashMatch: boolean };
+    };
+    expect(payload.content).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
+    expect(payload.rev).toBe(rev1);
+    expect(payload.renderedHashMatch).toBe(true);
+  });
+
+  it("docs_read_at with an unknown revision maps to target_missing", async () => {
+    const { payload, isError } = (await call("docs_read_at", { path: "notes.md", rev: "r_nope" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("target_missing");
+  });
+
+  // Ref-resolution audit: doc-ref tools accept a d_ id OR a path in `doc`
+  // (findDocByRef), and never silent-empty on an unresolvable ref.
+  it("docs_read / docs_outline accept a d_ id in the `doc` field", async () => {
+    const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
+    const { payload: read } = (await call("docs_read", { doc: docId })) as { payload: { path: string } };
+    expect(read.path).toBe("notes.md");
+    const { payload: outline } = (await call("docs_outline", { doc: docId })) as { payload: { text: string } };
+    expect(outline.text).toContain("§");
+  });
+
+  it("docs_read / docs_outline accept a PATH in the `doc` field (id-or-path symmetry)", async () => {
+    const { payload: read } = (await call("docs_read", { doc: "notes.md" })) as { payload: { path: string } };
+    expect(read.path).toBe("notes.md");
+    const { payload: outline } = (await call("docs_outline", { doc: "notes.md" })) as { payload: { text: string } };
+    expect(outline.text).toContain("§");
+  });
+
+  it("docs_read_at accepts a PATH in the `doc` field", async () => {
+    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const { payload } = (await call("docs_read_at", { doc: "notes.md", rev: rev1 })) as { payload: { rev: string } };
+    expect(payload.rev).toBe(rev1);
+  });
+
+  it("a d_-shaped id that doesn't exist maps to doc_missing (loud, not path-fallthrough)", async () => {
+    const { payload, isError } = (await call("docs_read", { doc: "d_0000000" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("doc_missing");
+  });
+
+  it("diff resolves a PATH in `doc` and returns the real block-grain diff (not silent-empty)", async () => {
+    const rev1 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    ingestFile(store, repoId, "notes.md", "---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n\nAdded tail.\n");
+    const rev2 = (store.db.prepare("SELECT current_rev FROM docs WHERE path='notes.md'").get() as { current_rev: string }).current_rev;
+    const { payload, isError } = (await call("diff", { doc: "notes.md", from_rev: rev1, to_rev: rev2 })) as {
+      payload: { kind: string }[]; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(Array.isArray(payload)).toBe(true);
+    expect(payload.some((e) => e.kind === "added")).toBe(true);
+  });
+
+  it("diff with an unresolvable doc errors doc_missing (not an empty diff)", async () => {
+    const { payload, isError } = (await call("diff", { doc: "nope.md", from_rev: "r_a", to_rev: "r_b" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("doc_missing");
+  });
+
+  it("docs_history lists per-doc version history for a path glob", async () => {
+    ingestFile(store, repoId, "journal/x.md", "# X\n\nfirst version of x here\n");
+    ingestFile(store, repoId, "journal/x.md", "# X\n\nsecond version of x here\n");
+    ingestFile(store, repoId, "journal/y.md", "# Y\n\nonly version of y\n");
+    ingestFile(store, repoId, "other/z.md", "# Z\n");
+    const { payload } = (await call("docs_history", { path_glob: "journal/*" })) as {
+      payload: { docs: { path: string; versions: { seq: number; isCurrent: boolean }[] }[]; truncated: boolean };
+    };
+    expect(payload.docs.map((d) => d.path)).toEqual(["journal/x.md", "journal/y.md"]);
+    const x = payload.docs.find((d) => d.path === "journal/x.md")!;
+    expect(x.versions.length).toBe(2);
+    expect(x.versions[0]!.seq).toBeLessThan(x.versions[1]!.seq);
+    expect(x.versions.filter((v) => v.isCurrent)).toHaveLength(1);
+    expect(x.versions[x.versions.length - 1]!.isCurrent).toBe(true);
+  });
+
+  it("docs_history without path_glob or doc is a validation error", async () => {
+    const { payload, isError } = (await call("docs_history", {})) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("target_missing");
   });
 
   it("query select projects $body (whole document bytes) on docs", async () => {
@@ -223,6 +311,70 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(isError).toBe(false);
     const { payload } = (await call("query", { from: "docs", filter: 'layer == "working"' })) as { payload: { hits: unknown[] } };
     expect(payload.hits).toHaveLength(0);
+  });
+
+  it("docs_move / docs_set_meta accept a d_ id in `doc` too (id-or-path regression)", async () => {
+    const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
+    const { isError: metaErr } = (await call("docs_set_meta", { doc: docId, set: { status: "byid" } })) as { isError: boolean };
+    expect(metaErr).toBe(false);
+    const { payload, isError } = (await call("docs_move", { doc: docId, to_path: "moved/byid.md" })) as { payload: { path: string }; isError: boolean };
+    expect(isError).toBe(false);
+    expect(payload.path).toBe("moved/byid.md");
+  });
+});
+
+describe("link health MCP tools (links_stale / links_repair)", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "omg-mcplinks-"));
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", root);
+    // Ingest via checkpoint so the edge index is populated (edge extraction is
+    // wired in the sync path, not plain ingestFile).
+    writeFileSync(join(root, "a.md"), "# A\n\nSee [b](/b.md) and <https://example.com/x>.\n");
+    processCheckpoint(store, repoId, root, [{ path: "a.md" }]);
+    await connect(root);
+  });
+  afterEach(() => {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("links_stale returns the LinkHealth shape with a dangling doc link", async () => {
+    const { payload, isError } = (await call("links_stale", {})) as {
+      payload: { stale: { target: string; srcPath: string; reason: string }[]; externalCount: number; totalOpenEdges: number; truncated: boolean };
+      isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.stale).toHaveLength(1);
+    expect(payload.stale[0]!.target).toBe("b.md");
+    expect(payload.stale[0]!.srcPath).toBe("a.md");
+    expect(payload.stale[0]!.reason).toBe("dangling_doc");
+    expect(payload.externalCount).toBeGreaterThanOrEqual(1);
+    expect(payload.truncated).toBe(false);
+  });
+
+  it("links_repair dry_run previews, commit rewrites and clears the stale link", async () => {
+    // Give the repair a real destination doc so the edge re-resolves.
+    await call("docs_create", { path: "c.md", markdown: "# C\n" });
+
+    const { payload: dry, isError: dryErr } = (await call("links_repair", {
+      from_target: "/b.md", to_target: "/c.md", dry_run: true,
+    })) as { payload: { hits: unknown[]; applied: boolean }; isError: boolean };
+    expect(dryErr).toBe(false);
+    expect(dry.applied).toBe(false);
+    expect(dry.hits).toHaveLength(1);
+    // Still stale — dry run did not write.
+    const { payload: mid } = (await call("links_stale", {})) as { payload: { stale: unknown[] } };
+    expect(mid.stale).toHaveLength(1);
+
+    const { isError: commitErr } = (await call("links_repair", {
+      from_target: "/b.md", to_target: "/c.md", dry_run: false,
+    })) as { isError: boolean };
+    expect(commitErr).toBe(false);
+    const { payload: after } = (await call("links_stale", {})) as { payload: { stale: unknown[] } };
+    expect(after.stale).toHaveLength(0);
   });
 });
 

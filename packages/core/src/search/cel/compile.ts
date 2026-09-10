@@ -40,6 +40,33 @@ const PROP_SOURCES = new Set(["frontmatter", "inline", "computed"]);
 // property (scalar ==, list(), membership) but never shadow authored keys.
 const COMPUTED_INTRINSICS = new Set(["$title", "$tags"]);
 
+// Base names of the document intrinsics ($id, $path, ...) MINUS their `$`. On
+// the docs open namespace (and doc.<k> reach-through), a BARE first segment
+// equal to one of these is almost always a typo for the intrinsic: it would
+// otherwise resolve to an absent frontmatter key and silently match nothing
+// (a misleading empty). We reject it with a hint instead. `title`/`tags` are
+// deliberately EXCLUDED: their $-forms are `computed` intrinsics that do not
+// shadow authored frontmatter, so bare `title`/`tags` remain legitimate key
+// access (see COMPUTED_INTRINSICS and QUERY_SYNTAX). A source-scoped form
+// (frontmatter.path / inline.path) is an explicit request for that property
+// and is likewise not caught — only the bare first-segment case is the trap.
+const RESERVED_INTRINSIC_BASENAMES = new Set([
+  "id", "path", "repo", "updated_at", "content_hash", "body",
+]);
+
+// Guard the docs open namespace against reserved-intrinsic collisions. `segs`
+// are the property key segments (after any doc./source scope has been peeled).
+// Throws when the FIRST segment shadows an intrinsic base name.
+function guardReservedCollision(segs: string[]): void {
+  if (RESERVED_INTRINSIC_BASENAMES.has(segs[0]!)) {
+    const name = segs[0]!;
+    throw new FilterInvalid(
+      `bare '${name}' reads a frontmatter key; did you mean the intrinsic $${name}? (use frontmatter.${name} to force the property)`,
+      "10 §2",
+    );
+  }
+}
+
 // Validate + join identifier segments into a dotted property key. Segments come
 // from the lexer's identifier rule, so inlining is injection-safe (mirrors
 // jsonPath); keeping keys param-free preserves the "fields carry no params"
@@ -81,6 +108,10 @@ function propRef(field: FieldRef, target: Target): PropRef | null {
     const source = segs[0]!;
     return { key: propKey(segs.slice(1)), source };
   }
+  // Bare (non-`$`, non-source-scoped) key: reject a first segment that shadows
+  // a reserved intrinsic base name (path/id/repo/...) so a typo for `$path`
+  // fails loud instead of silently resolving to an absent frontmatter key.
+  guardReservedCollision(segs);
   return { key: propKey(segs) };
 }
 

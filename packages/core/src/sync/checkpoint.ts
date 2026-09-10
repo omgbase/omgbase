@@ -7,6 +7,7 @@ import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
+import { tombstoneObservedDeletion } from "./tombstone.js";
 
 // In-process filesystem checkpoint (01 §6, 03 §8). A checkpoint is one batch of
 // filesystem changes. This is the synchronous one-shot/reconcile fast-path
@@ -57,7 +58,12 @@ export function processCheckpoint(
     const oldHex = existing?.file_hash?.toString("hex") ?? null;
 
     if (!existsSync(abs)) {
-      if (existing) deleted.push(change.path);
+      // File gone from disk: tombstone the live doc (drop FTS, tombstone blocks +
+      // doc, pool blocks for resurrection) so it stops being served as a ghost.
+      if (existing) {
+        tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
+        deleted.push(change.path);
+      }
       fileEntries.push([change.path, oldHex, null]);
       continue;
     }

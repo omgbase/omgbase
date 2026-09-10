@@ -135,20 +135,52 @@ export function editablePropsFor(format: string, kind: string): string[] {
  * preview. v1 matches the target substring in block raw; Stage 4 will drive
  * this from the edge index for precision. */
 export function linksRetarget(store: Store, repoId: string, fromTarget: string, toTarget: string): { ops: Op[]; hits: RetargetHit[] } {
-  const rows = store.db.prepare(
+  return linksRepair(store, repoId, [{ from: fromTarget, to: toTarget }]);
+}
+
+/** A single from→to link-destination rewrite. */
+export interface LinkRepair {
+  from: string;
+  to: string;
+}
+
+/**
+ * links_repair: bulk stale-link repair. The multi-pair generalization of
+ * links_retarget — given a batch of {from,to} destination rewrites, produce the
+ * kernel update ops (one per affected block, coalesced across pairs) plus the
+ * hits for dry-run preview. Repairs compose within ONE changeset so an agent can
+ * fix many dangling targets (surfaced by linksStale) at once.
+ *
+ * Op generation reuses the same substring rewrite as the single-pair case (they
+ * share this function; linksRetarget delegates here) — a block hit by more than
+ * one pair accumulates all rewrites into a single update op, keeping the
+ * content-hash CAS pin valid (one op per block, not per pair). No FS/network I/O.
+ */
+export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[]): { ops: Op[]; hits: RetargetHit[] } {
+  const effective = repairs.filter((r) => r.from !== "" && r.from !== r.to);
+  if (effective.length === 0) return { ops: [], hits: [] };
+
+  // Collect candidate blocks once per distinct `from` substring.
+  const byBlock = new Map<string, string>(); // block_id → current best raw (bytes)
+  const stmt = store.db.prepare(
     `SELECT bl.block_id, b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash
      WHERE bl.repo_id = ? AND bl.deleted_commit IS NULL AND instr(b.bytes, ?) > 0`,
-  ).all(repoId, fromTarget) as { block_id: string; bytes: Buffer }[];
+  );
+  for (const r of effective) {
+    const rows = stmt.all(repoId, r.from) as { block_id: string; bytes: Buffer }[];
+    for (const row of rows) if (!byBlock.has(row.block_id)) byBlock.set(row.block_id, row.bytes.toString("utf8"));
+  }
 
   const ops: Op[] = [];
   const hits: RetargetHit[] = [];
-  for (const r of rows) {
-    const oldRaw = r.bytes.toString("utf8");
-    const newRaw = oldRaw.split(fromTarget).join(toTarget);
+  for (const [blockId, oldRaw] of byBlock) {
+    // Apply every pair's substring rewrite in sequence to this block's raw.
+    let newRaw = oldRaw;
+    for (const r of effective) newRaw = newRaw.split(r.from).join(r.to);
     if (newRaw === oldRaw) continue;
-    const hash = rawHashOfBlock(store, r.block_id);
-    ops.push({ op: "update", block: r.block_id, markdown: newRaw, ...(hash ? { expect: { content_hash: hash } } : {}) } as Op);
-    hits.push({ block: r.block_id, oldRaw, newRaw });
+    const hash = rawHashOfBlock(store, blockId);
+    ops.push({ op: "update", block: blockId, markdown: newRaw, ...(hash ? { expect: { content_hash: hash } } : {}) } as Op);
+    hits.push({ block: blockId, oldRaw, newRaw });
   }
   return { ops, hits };
 }

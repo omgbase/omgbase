@@ -58,6 +58,31 @@ describe("reconcile driver over a non-filesystem source", () => {
     expect(third.deleted).toEqual(["a.md"]);
   });
 
+  it("tombstones a member that left the source scope (fetch → null)", async () => {
+    store = new Store({ path: ":memory:" });
+    const files = new Map([["a.md", "# A\n\nuniquescopeword body\n"]]);
+    const src = new MemorySource(files);
+    const repoId = ensureRepo(store, "mem", null);
+    await reconcileChanges(store, repoId, src, [{ path: "a.md" }]);
+    const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md'").get() as { doc_id: string };
+
+    // Member leaves the scope: fetch now returns null for a.md.
+    files.delete("a.md");
+    const res = await reconcileChanges(store, repoId, src, [{ path: "a.md" }]);
+    expect(res.deleted).toEqual(["a.md"]);
+
+    // Doc + blocks tombstoned; no longer served by the live-docs query.
+    const live = store.db.prepare("SELECT doc_id FROM docs WHERE path='a.md' AND deleted_commit IS NULL").get();
+    expect(live).toBeUndefined();
+    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id=?").get(doc.doc_id) as { deleted_commit: string | null };
+    expect(tombstoned.deleted_commit).not.toBeNull();
+    const liveBlocks = store.db.prepare("SELECT count(*) c FROM blocks WHERE doc_id=? AND deleted_commit IS NULL").get(doc.doc_id) as { c: number };
+    expect(liveBlocks.c).toBe(0);
+    // Blocks are pooled for resurrection on re-appearance.
+    const pooled = store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE doc_id=?").get(doc.doc_id) as { c: number };
+    expect(pooled.c).toBeGreaterThanOrEqual(1);
+  });
+
   it("re-ingests a genuinely changed member as a new revision", async () => {
     store = new Store({ path: ":memory:" });
     const files = new Map([["a.md", "# A\n"]]);

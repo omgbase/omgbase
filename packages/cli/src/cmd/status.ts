@@ -11,8 +11,8 @@ function runStatus(cli: Cli, args: string[]): number {
   parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const rs = reposStatus(ws.store, repo.repoId);
-  const ss = syncStatus(ws.store, repo.repoId);
+  const rs = reposStatus(ws.store, repo.repoId, repo.rootPath);
+  const ss = syncStatus(ws.store, repo.repoId, repo.rootPath);
   const watcher = watchLeaseLive(ws.omgbaseDir);
   // Embedding queue depth: count blocks whose embeddings are missing is a v1
   // approximation; the queue table isn't wired yet, so report 0 (05 §6 stub).
@@ -27,6 +27,7 @@ function runStatus(cli: Cli, args: string[]): number {
     openEdges: rs.openEdges,
     unconverged: rs.unconverged,
     convergent: ss.convergent,
+    disk: ss.disk,
     lastCommitSeq: ss.lastCommitSeq,
     watcher: watcher ? "live" : "none",
     embedQueue: queued,
@@ -52,7 +53,7 @@ function runStatus(cli: Cli, args: string[]): number {
   ];
   const right: [string, string][] = [
     ["watcher", watcher ? render.statusDot("live", "live") : render.statusDot("none", "none")],
-    ["synced", ss.convergent ? render.statusDot("ok", "converged") : render.statusDot("warn", `${rs.unconverged} behind`)],
+    ["synced", ss.convergent ? render.statusDot("ok", "converged") : render.statusDot("warn", syncedLabel(ss, rs.unconverged))],
     ["queue", queued === 0 ? style.dim("empty") : style.warn(`${queued} queued`)],
     ["commit#", style.dim(String(ss.lastCommitSeq))],
   ];
@@ -65,6 +66,17 @@ function runStatus(cli: Cli, args: string[]): number {
     io.out(padVisible(lCell, 26) + rCell);
   }
   return EXIT_OK;
+}
+
+// Summarize why the repo isn't convergent: DB-internal lag and/or on-disk drift.
+function syncedLabel(ss: ReturnType<typeof syncStatus>, unconverged: number): string {
+  const parts: string[] = [];
+  if (unconverged > 0) parts.push(`${unconverged} behind`);
+  if (ss.disk.deleted > 0) parts.push(`${ss.disk.deleted} deleted`);
+  if (ss.disk.changed > 0) parts.push(`${ss.disk.changed} drifted`);
+  if (ss.disk.untracked > 0) parts.push(`${ss.disk.untracked} untracked`);
+  if (!ss.diskChecked) parts.push("disk unverified");
+  return parts.length > 0 ? parts.join(", ") : "unconverged";
 }
 
 // Local width-aware pad (mirrors render.visibleWidth without importing the class).

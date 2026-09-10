@@ -116,6 +116,86 @@ export function freshnessSweep(store: Store, repoId: string, rootPath: string): 
   };
 }
 
+/**
+ * Counts of ways the DB disagrees with the current filesystem. All fields are
+ * "not yet reconciled" states a freshnessSweep/ingest would resolve.
+ */
+export interface DiskDrift {
+  /** non-deleted docs whose on-disk content hash != the doc's stored file_hash (drifted edits). */
+  changed: number;
+  /** non-deleted docs whose file is no longer on disk (deletes not yet ingested). */
+  deleted: number;
+  /** *.md files on disk with no corresponding non-deleted doc (new files not yet ingested). */
+  untracked: number;
+}
+
+/**
+ * READ-ONLY disk-drift detector. Mirrors freshnessSweep's staged cheap approach
+ * — stat-compare against file_stats first, hash only the stat-mismatched
+ * candidates — but never ingests, commits, or touches file_stats. It answers a
+ * single question: does the DB still agree with what's on disk right now?
+ *
+ * `changed` is decided by comparing a candidate's content hash to the doc's
+ * stored `file_hash` (the same sha256(bytes) checkpoint writes), so a stat
+ * change without a content change is NOT counted as drift. At the envelope
+ * (≤10⁴ docs) the clean case is a directory walk plus stats (tens of ms);
+ * hashing is bounded to files whose (mtime_ns, size) moved.
+ */
+export function detectDiskDrift(store: Store, repoId: string, rootPath: string): DiskDrift {
+  // Stat cache keyed by path, for cheap change detection.
+  const cache = new Map<string, StatRow>();
+  for (const row of store.db
+    .prepare("SELECT path, mtime_ns, size, hash FROM file_stats WHERE repo_id = ?")
+    .all(repoId) as { path: string; mtime_ns: bigint | number; size: number; hash: Buffer }[]) {
+    cache.set(row.path, { mtime_ns: BigInt(row.mtime_ns), size: row.size, hash: row.hash });
+  }
+
+  // Live docs keyed by path, with their durable file_hash (the convergence
+  // signal). This is the authority for changed/deleted/untracked, independent
+  // of the derived file_stats cache.
+  const docs = new Map<string, Buffer | null>();
+  for (const row of store.db
+    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL")
+    .all(repoId) as { path: string; file_hash: Buffer | null }[]) {
+    docs.set(row.path, row.file_hash);
+  }
+
+  const paths = walkMarkdown(rootPath);
+  const seen = new Set(paths);
+
+  // Candidates whose (mtime_ns, size) differs from the stat cache (or are new).
+  const candidates: string[] = [];
+  for (const path of paths) {
+    const st = statSync(join(rootPath, path), { bigint: true });
+    const cached = cache.get(path);
+    if (!cached || cached.mtime_ns !== st.mtimeNs || cached.size !== Number(st.size)) {
+      candidates.push(path);
+    }
+  }
+
+  let changed = 0;
+  let untracked = 0;
+  for (const path of candidates) {
+    const doc = docs.get(path);
+    if (doc === undefined) {
+      // No non-deleted doc for an on-disk *.md ⇒ untracked (new file).
+      untracked += 1;
+      continue;
+    }
+    const hash = sha256(readFileSync(join(rootPath, path), "utf8"));
+    // Genuinely drifted only if content hash differs from the doc's file_hash.
+    if (!doc || !doc.equals(hash)) changed += 1;
+  }
+
+  // A doc present in the DB whose path isn't on disk anymore is a pending delete.
+  let deleted = 0;
+  for (const path of docs.keys()) {
+    if (!seen.has(path)) deleted += 1;
+  }
+
+  return { changed, deleted, untracked };
+}
+
 /** Rebuild file_stats from scratch by re-statting + re-hashing every file. */
 export function rebuildFileStats(store: Store, repoId: string, rootPath: string): number {
   store.db.prepare("DELETE FROM file_stats WHERE repo_id = ?").run(repoId);

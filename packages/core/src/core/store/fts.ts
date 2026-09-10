@@ -11,9 +11,14 @@ interface FtsRow {
   text: string;
 }
 
-/** Remove a document's block rows from the FTS index (call before deleting blocks). */
+/** Remove a document's live block rows from the FTS index (call before deleting
+ * or tombstoning blocks). Only live blocks are indexed (see ftsIndexDoc), so the
+ * delete must target the SAME set: an already-tombstoned block has no FTS row, and
+ * re-issuing a 'delete' for it corrupts the external-content index. Keeping this
+ * symmetric with ftsIndexDoc (deleted_commit IS NULL) makes a tombstone followed by
+ * a later re-ingest of the same doc id (observed delete → recreate) idempotent. */
 export function ftsDeleteDoc(db: Database, docId: string): void {
-  const rows = db.prepare("SELECT rowid, text FROM blocks WHERE doc_id = ?").all(docId) as FtsRow[];
+  const rows = db.prepare("SELECT rowid, text FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL").all(docId) as FtsRow[];
   const del = db.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?, ?)");
   for (const r of rows) del.run(r.rowid, r.text);
 }

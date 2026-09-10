@@ -2,9 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
-import { docsRead } from "../core/read/document.js";
+import { docsRead, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
-import { findDoc } from "../core/read/reader.js";
+import { findDoc, findDocByRef } from "../core/read/reader.js";
+import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { query as runQuery } from "../search/query.js";
 import { textSearch } from "../search/text.js";
@@ -12,10 +13,11 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { MutationError } from "../mutate/tree.js";
-import { tasksComplete, sectionsAppend, linksRetarget, nodeSet } from "../mutate/macros.js";
+import { tasksComplete, sectionsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { graphTraverse, graphPath } from "../graph/traverse.js";
-import { historyNode, diffBlocks, changesSince } from "../graph/history.js";
+import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/history.js";
+import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
 import { QUERY_SYNTAX, GRAPH_SYNTAX } from "./reference.js";
@@ -109,9 +111,16 @@ export function buildServer(ctx: ServerContext): McpServer {
   // is given — infer it from a block id. The MCP schemas mark `doc`/`path`
   // optional precisely so a caller holding only a block id (e.g. from
   // docs_outline or query) can hydrate it without a separate lookup.
+  //
+  // `doc` is id-OR-path: an agent holding a path from a prior query/outline hit
+  // routinely reaches for the most obvious field, so it must accept both (via
+  // the shared findDocByRef). `path` stays explicit-path; `block` infers the
+  // owning doc. An unresolvable ref throws doc_missing (loud), never a silent
+  // empty — including a d_-shaped id that doesn't exist (findDocByRef won't fall
+  // through to a path lookup for it).
   function resolveDocId(ref: { doc?: string | undefined; path?: string | undefined; block?: string | undefined }): string {
     if (ref.doc) {
-      const info = findDoc(store, { docId: ref.doc });
+      const info = findDocByRef(store, repoId, ref.doc);
       if (info) return info.docId;
     } else if (ref.path) {
       const info = findDoc(store, { repoId, path: ref.path });
@@ -122,7 +131,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         .get(ref.block) as { doc_id: string } | undefined;
       if (row) return row.doc_id;
     }
-    throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`);
+    throw new EngineError("doc_missing", `no document for ${JSON.stringify(ref)}`, { data: ref });
   }
 
   // Resolve `heading` (a block id or heading text) to a heading block id, for
@@ -448,6 +457,58 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
+  server.registerTool(
+    "links_stale",
+    {
+      description:
+        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the human-readable missing path, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated`. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single). Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
+      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional() },
+    },
+    async (args) => {
+      try {
+        return ok(linksStale(store, repoId, {
+          ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "links_repair",
+    {
+      description:
+        "Macro: BULK stale-link repair — rewrite one or MANY link-destination substrings across all blocks that contain them, in ONE changeset. This is links_retarget generalized to a batch: pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted for the one-off case. A block matched by multiple pairs gets a single coalesced update op (CAS-safe). ALWAYS call with dry_run:true first to preview `hits`, then dry_run:false to apply.",
+      inputSchema: {
+        repairs: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
+        from_target: z.string().optional(),
+        to_target: z.string().optional(),
+        dry_run: z.boolean().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const repairs = args.repairs
+          ? args.repairs
+          : args.from_target !== undefined && args.to_target !== undefined
+            ? [{ from: args.from_target, to: args.to_target }]
+            : null;
+        if (!repairs || repairs.length === 0) {
+          throw new EngineError("target_missing", "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair");
+        }
+        const { ops, hits } = linksRepair(store, repoId, repairs);
+        if (args.dry_run !== false) return ok({ hits, applied: false });
+        const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" } });
+        return okMutated({ hits, applied: true, ...res });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
   // Doc-level operations (06 §API). The MCP server serializes writes in-process,
   // so these pass no omgbaseDir (the flock is for cross-process CLI writers);
   // MCP-originated writes are actor agent:mcp.
@@ -587,7 +648,71 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(diffBlocks(store, args.doc, args.from_rev, args.to_rev));
+        // Resolve `doc` id-or-path FIRST: diffBlocks keys its SQL on the doc id,
+        // so a raw path here would silently return an empty diff (no error) —
+        // the misleading-empty trap. resolveDocId throws doc_missing when the
+        // ref names no document.
+        const docId = resolveDocId({ doc: args.doc });
+        return ok(diffBlocks(store, docId, args.from_rev, args.to_rev));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_read_at",
+    {
+      description:
+        "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `content` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `path`/`docId`/`rev`. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from diff, history_node, or changes_since. Contrast: docs_read = current bytes; diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. `properties` are CURRENT values (propertiesAreCurrent:true), since property history is not stored. Args take a doc id or path plus a rev id.",
+      inputSchema: { doc: z.string().optional(), path: z.string().optional(), rev: z.string() },
+    },
+    async (args) => {
+      try {
+        const docId = resolveDocId(args);
+        const res = readDocumentAtRevision(store, docId, args.rev);
+        if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(args.rev)} for document ${docId}`, { data: { doc: docId, rev: args.rev } });
+        return ok(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_history",
+    {
+      description:
+        "VERSION HISTORY of matching documents, grouped BY DOCUMENT: for each doc, its ordered revision list (oldest→newest) with `rev`/`seq`/`commit`/`ts`/`origin`/`actor`/`contentHash`/`isCurrent`. Give `path_glob` (e.g. \"journal/*\" — `*` matches ACROSS `/`, so journal/* and journal/** are equivalent) OR a single `doc` (id or path); at least one is required. `contentHash` (hex of the revision's rendered file hash) lets you spot no-op vs real changes. Feed a returned `rev` into `docs_read_at` (whole doc AT that rev) or `diff` (block-grain changes BETWEEN two revs). By default only live docs; `include_deleted:true` also returns tombstoned docs (their history is intact for audit). `limit` caps DOCUMENTS returned (default 50) with a `truncated` flag. Contrast `changes_since`: a repo-wide COMMIT feed, not this per-document view.",
+      inputSchema: {
+        path_glob: z.string().optional(),
+        doc: z.string().optional(),
+        include_deleted: z.boolean().optional(),
+        limit: z.number().int().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        if (!args.path_glob && !args.doc) {
+          throw new EngineError("target_missing", "docs_history requires one of path_glob or doc");
+        }
+        if (args.doc) {
+          // Validate the ref resolves (or, when include_deleted, a tombstoned doc
+          // exists). findDocByRef does the id-or-path dispatch (isValidId); the
+          // tombstone fallback uses the same dispatch.
+          const info = findDocByRef(store, repoId, args.doc);
+          const asId = isValidId(args.doc, "d");
+          const known = info || (args.include_deleted
+            ? store.db.prepare(asId ? "SELECT 1 FROM docs WHERE doc_id = ?" : "SELECT 1 FROM docs WHERE repo_id = ? AND path = ?").get(...(asId ? [args.doc] : [repoId, args.doc]))
+            : undefined);
+          if (!known) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args.doc)}`);
+        }
+        return ok(docHistory(store, repoId, {
+          ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
+          ...(args.doc ? { doc: args.doc } : {}),
+          ...(args.include_deleted !== undefined ? { includeDeleted: args.include_deleted } : {}),
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+        }));
       } catch (e) {
         return fail(e);
       }
@@ -615,17 +740,31 @@ export function buildServer(ctx: ServerContext): McpServer {
 
   server.registerTool(
     "repos_status",
-    { description: "Repo counts: docs, blocks, commits, open edges, and unconverged doc count.", inputSchema: {} },
+    {
+      description:
+        "Repo counts: docs, blocks, commits, open edges, unconverged doc count, and on-disk drift. " +
+        "`disk` reports a READ-ONLY scan of the working tree vs the DB: `changed` (files edited on disk but not re-ingested), " +
+        "`deleted` (docs whose file is gone from disk), `untracked` (new *.md not yet ingested), and `checked` " +
+        "(false when the server has no working-tree path — disk agreement is then UNVERIFIED, not clean).",
+      inputSchema: {},
+    },
     async () => {
-      try { return ok(reposStatus(store, repoId)); } catch (e) { return fail(e); }
+      try { return ok(reposStatus(store, repoId, ctx.rootPath)); } catch (e) { return fail(e); }
     },
   );
 
   server.registerTool(
     "sync_status",
-    { description: "Watcher/sync state: last commit seq, last checkpoint, and whether the repo is convergent.", inputSchema: {} },
+    {
+      description:
+        "Watcher/sync state: last commit seq, last checkpoint, and whether the repo is convergent. " +
+        "`convergent` is true ONLY when the DB is internally converged AND a working-tree scan ran (`diskChecked`) AND found no drift " +
+        "(`disk.changed`/`deleted`/`untracked` all 0). If the server has no working-tree path, `diskChecked` is false and `convergent` is " +
+        "false — a green light is never shown while disk freshness is unverified, so an agent can trust `convergent: true` to mean not stale.",
+      inputSchema: {},
+    },
     async () => {
-      try { return ok(syncStatus(store, repoId)); } catch (e) { return fail(e); }
+      try { return ok(syncStatus(store, repoId, ctx.rootPath)); } catch (e) { return fail(e); }
     },
   );
 

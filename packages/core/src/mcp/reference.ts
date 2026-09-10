@@ -15,7 +15,14 @@ Hydrate full content by id via nodes_get.
 ## Targets & field namespaces
 
 The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
-your content (metadata keys / block fields). They never collide.
+your content (metadata keys / block fields). A bare identifier whose FIRST
+segment collides with an intrinsic base name (path/id/repo/updated_at/
+content_hash/body) is REJECTED with a "did you mean \$X?" hint — it is almost
+always a typo for the intrinsic (bare \`path\` would silently read an absent
+frontmatter key and match nothing). Force the property with \`frontmatter.<k>\`.
+The exceptions are \`title\`/\`tags\`: their \$-forms are computed (H1 / body
+#hashtags) and do NOT shadow authored frontmatter, so bare \`title\`/\`tags\`
+stay frontmatter-key access.
 
 docs:
   - bare identifier  = a document PROPERTY key (nested via dots: meta.owner).
@@ -123,8 +130,9 @@ within notes. text/filter prune the candidate set (AND); they never reweight.
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")
   from=blocks     semantic: "identity preservation across edits"   select: ["$ordinal","$semantic_score"]
 
-Common mistake: writing \`path.startsWith(...)\` (bare) matches a metadata key
-named "path" — almost always absent → empty. Use the intrinsic \`$path\`.
+Common mistake: writing \`path.startsWith(...)\` (bare) meant the intrinsic. This
+now fails loud (bare \`path\` collides with the intrinsic base name) with a hint
+to use \`$path\` — no more misleading empty result. Use the intrinsic \`$path\`.
 `;
 
 export const GRAPH_SYNTAX = `# graph_traverse / graph_path — syntax reference
