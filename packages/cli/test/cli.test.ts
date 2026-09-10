@@ -129,6 +129,20 @@ describe("query", () => {
     const { stdout } = omg(["q", 'type == "task" && !attrs.checked', "--ids"]);
     expect(stdout.trim().split("\n").filter(Boolean)).toHaveLength(1);
   });
+
+  it("-s comma list and repeated -s flags project the same fields", () => {
+    const comma = omg(["q", 'type == "task"', "-s", "$path,$type", "--json"]).stdout;
+    const repeated = omg(["q", 'type == "task"', "-s", "$path", "-s", "$type", "--json"]).stdout;
+    const longform = omg(["q", 'type == "task"', "--select", "$path,$type", "--json"]).stdout;
+    expect(comma).toBe(repeated);
+    expect(comma).toBe(longform);
+    const { hits } = JSON.parse(comma) as { hits: Record<string, unknown>[] };
+    expect(hits.length).toBeGreaterThan(0);
+    for (const h of hits) {
+      expect(h.path).toBeDefined();
+      expect(h.type).toBeDefined();
+    }
+  });
 });
 
 describe("freshness (§3.3): reads are current without a watcher", () => {

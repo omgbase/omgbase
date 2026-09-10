@@ -138,7 +138,7 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 
 ```
 omg query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic s]
-          [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]
+          [-s|--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]
 ```
 
 Alias `omg q`. One query language, three input forms, all producing the same envelope (10 §1):

@@ -29,7 +29,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
       docs: { type: "boolean" },
       text: { type: "string" },
       semantic: { type: "string" },
-      select: { type: "string" },
+      select: { type: "string", short: "s", multiple: true },
       order: { type: "string" },
       n: { type: "string", short: "n" },
       cursor: { type: "string" },
@@ -38,7 +38,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic q] [--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
+    cli.io.out("  query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic q] [-s|--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]");
     return EXIT_OK;
   }
 
@@ -56,7 +56,7 @@ async function runQuery(cli: Cli, args: string[]): Promise<number> {
     const filter = positionals.join(" ").trim();
     if (filter) env.filter = filter;
     if (values.text) env.text = values.text;
-    if (values.select) env.select = values.select.split(",").map((s) => s.trim());
+    if (values.select) env.select = values.select.flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean);
     if (values.order) env.order = values.order.split(",").map((s) => s.trim());
     if (values.n) env.limit = Number(values.n);
     if (values.cursor) env.cursor = values.cursor;
