@@ -255,19 +255,27 @@ export function ingestFile(
       }));
       writeDocNodes(db, repoId, docId, withIds);
 
-      // Inline properties (key:: value) → property rows (source=inline). Repeats
-      // of the same key accumulate; each occurrence is a card='list' row in
-      // document order (block ordinal drives ordering downstream).
+      // Inline properties (key:: value) → property rows (source=inline). The
+      // authored shape within the inline source drives `card`: a key that occurs
+      // exactly once in the document is `scalar` (so `element == "fire"` can
+      // match a lone `element:: fire`); a key that repeats is `list`. Repeats
+      // accumulate as ord-indexed rows in document order (block ordinal, then
+      // in-block position — the order withIds already carries). Effective bare-
+      // key cardinality (a frontmatter+inline collision) is decided at query
+      // time by the single-value gate on scalar comparisons (see compile.ts),
+      // not here — each source stays honest to its own authored shape.
+      const inlineFields = withIds.filter((n) => n.kind === "md:inline_field" && n.name);
+      const inlineCounts = new Map<string, number>();
+      for (const n of inlineFields) inlineCounts.set(n.name!, (inlineCounts.get(n.name!) ?? 0) + 1);
       const inlineOrd = new Map<string, number>();
-      for (const n of withIds) {
-        if (n.kind !== "md:inline_field" || !n.name) continue;
-        const ord = inlineOrd.get(n.name) ?? 0;
-        inlineOrd.set(n.name, ord + 1);
+      for (const n of inlineFields) {
+        const ord = inlineOrd.get(n.name!) ?? 0;
+        inlineOrd.set(n.name!, ord + 1);
         propertyRows.push({
           source: "inline",
           blockId: n.blockId || null,
-          key: n.name,
-          card: "list",
+          key: n.name!,
+          card: (inlineCounts.get(n.name!) ?? 0) > 1 ? "list" : "scalar",
           ord,
           ...typedInlineValue(n.value),
         });

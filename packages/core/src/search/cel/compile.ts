@@ -115,18 +115,29 @@ function propRef(field: FieldRef, target: Target): PropRef | null {
   return { key: propKey(segs) };
 }
 
-function srcClause(source: string | undefined): string {
-  return source ? ` AND p.source = '${source}'` : "";
+function srcClause(source: string | undefined, alias = "p"): string {
+  return source ? ` AND ${alias}.source = '${source}'` : "";
 }
 
-// Scalar value of a property for comparisons: the single scalar-authored row's
-// typed value (COALESCE keeps the stored type, so `tags == "a"` on a list — no
-// scalar row — is NULL ⇒ false, exactly like json_extract on an array). NULL
-// when the key has no scalar row.
+// Scalar value of a property for comparisons: the scalar-authored value, but
+// ONLY when the key is single-valued in the queried scope. A key resolves to a
+// scalar iff it has exactly one row in scope AND that row is card='scalar'.
+// This makes:
+//   - a lone inline `element:: fire` (card='scalar', 1 row) comparable;
+//   - a YAML list `tags: [a]` (1 row, card='list') NOT scalar-equal;
+//   - a frontmatter+inline collision on a bare key (≥2 rows in the union scope)
+//     fall back to list semantics — `job == "farmer"` is false, you must use
+//     `"farmer" in list(job)`.
+// The inner COUNT spans ALL cards in scope so multiplicity — not just authored
+// shape — governs scalar eligibility. NULL (⇒ false) when the gate fails.
 function propScalarExpr(ref: PropRef): string {
   return `(SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p
            WHERE p.doc_id = d.doc_id AND p.key = '${ref.key}' AND p.card = 'scalar'${srcClause(ref.source)}
-             AND p.deleted_commit IS NULL LIMIT 1)`;
+             AND p.deleted_commit IS NULL
+             AND (SELECT COUNT(*) FROM properties p2
+                  WHERE p2.doc_id = d.doc_id AND p2.key = '${ref.key}'${srcClause(ref.source, "p2")}
+                    AND p2.deleted_commit IS NULL) = 1
+           LIMIT 1)`;
 }
 
 // EXISTS over ALL rows for the key (any card) whose value equals ? — the

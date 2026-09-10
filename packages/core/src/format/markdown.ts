@@ -103,9 +103,20 @@ export const markdownAdapter: FormatAdapter = {
         for (const m of b.raw.matchAll(anchorRe)) {
           nodes.push({ kind: "md:anchor", name: m[1], blockId: id, ...span(m) });
         }
-        // Inline fields: key:: value
-        for (const m of b.raw.matchAll(/(?:^|\s)([a-z][a-z0-9_]*)::\s*(\S+)/gi)) {
+        // Inline fields (dataview forms). Two shapes, so a multi-word value is
+        // captured whole instead of truncated at the first space:
+        //   line form  `key:: value`  — key at line start, value to end of line
+        //   bracketed  `[key:: value]` / `(key:: value)` — value ends at closer
+        // Bracketed matches first; the line form is anchored to a line start
+        // (leading whitespace only), so a `[key:: …]`/`(key:: …)` sitting on its
+        // own line is not double-counted (a bracket is not `[a-z]`).
+        for (const m of b.raw.matchAll(/[[(]([a-z][a-z0-9_]*)::[ \t]*([^\]\n)]*?)[ \t]*[\])]/gi)) {
           nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, ...span(m) });
+        }
+        for (const m of b.raw.matchAll(/^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$/gim)) {
+          const start = (m.index ?? 0) + (m[0].match(/^[ \t]*/)?.[0].length ?? 0);
+          const end = (m.index ?? 0) + m[0].replace(/[ \t]+$/, "").length;
+          nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, spanStart: start, spanEnd: end });
         }
         if (b.children.length > 0) walk(b.children, id);
       }

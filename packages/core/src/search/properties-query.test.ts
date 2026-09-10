@@ -90,6 +90,46 @@ describe("source-scoped access", () => {
   });
 });
 
+describe("inline cardinality (single vs repeated vs collision)", () => {
+  beforeEach(() => {
+    // g: a single inline field — scalar-comparable, multi-word value intact.
+    ingestFile(store, repoId, "g.md", "# G\n\nelement:: fire\n\nknown_for:: tria prima\n");
+    // h: the same inline key twice — a list, so scalar == must miss.
+    ingestFile(store, repoId, "h.md", "# H\n\nmood:: calm\n\nmood:: restless\n");
+    // i: an inline key that COLLIDES with a frontmatter key of the same name —
+    //    the bare-key union is multi-valued, so scalar == falls back to list.
+    ingestFile(store, repoId, "i.md", "---\nowner: alice\n---\n\n# I\n\nowner:: bob\n");
+  });
+
+  it("a lone inline field is scalar-comparable", () => {
+    expect(paths('element == "fire"')).toEqual(["g.md"]);
+    expect(paths('inline.element == "fire"')).toEqual(["g.md"]);
+  });
+
+  it("a multi-word inline value is comparable whole", () => {
+    expect(paths('known_for == "tria prima"')).toEqual(["g.md"]);
+    expect(paths('known_for == "tria"')).toEqual([]);   // no longer truncated
+  });
+
+  it("a repeated inline key is a list — scalar == misses, list() finds it", () => {
+    expect(paths('mood == "calm"')).toEqual([]);
+    expect(paths('"calm" in list(mood)')).toEqual(["h.md"]);
+    expect(paths('"restless" in list(mood)')).toEqual(["h.md"]);
+    expect(paths("size(list(mood)) == 2")).toEqual(["h.md"]);
+  });
+
+  it("a frontmatter+inline collision on a bare key is a list, not a scalar", () => {
+    // Neither authored value satisfies bare scalar == (the union has 2 rows);
+    // both are reachable via list(). Source-scoped access stays scalar per side.
+    expect(paths('owner == "alice"')).toEqual([]);
+    expect(paths('owner == "bob"')).toEqual([]);
+    expect(paths('"alice" in list(owner)')).toEqual(["i.md"]);
+    expect(paths('"bob" in list(owner)')).toEqual(["i.md"]);
+    expect(paths('frontmatter.owner == "alice"')).toEqual(["i.md"]);
+    expect(paths('inline.owner == "bob"')).toEqual(["i.md"]);
+  });
+});
+
 describe("computed $-intrinsics ($title, $tags)", () => {
   beforeEach(() => {
     // Authored title=Fromage collides with the computed $title (first H1).

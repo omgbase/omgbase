@@ -51,9 +51,16 @@ blocks:
 ## CEL subset
 
   comparisons  ==  !=  <  <=  >  >=      (one side must be a literal)
+                                         (matches only a SINGLE-VALUED key: one
+                                          scalar value in scope. A list, a
+                                          repeated inline key, or a bare key that
+                                          collides across frontmatter + inline is
+                                          multi-valued → use list(). A lone inline
+                                          key:: value IS scalar-comparable.)
   boolean      &&  ||  !
   grouping     ( ... )
-  membership   "v" in list(field)        (field may be scalar OR list)
+  membership   "v" in list(field)        (field may be scalar OR list; the way
+                                          to match any multi-valued key)
   functions    has(f)                     field exists (the explicit presence test)
                size(x)                    string length / list length
                contains/startsWith/endsWith  free or method form:

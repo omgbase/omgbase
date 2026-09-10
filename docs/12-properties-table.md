@@ -162,12 +162,28 @@ size(list(tags))    →  (SELECT COUNT(*) FROM properties WHERE … key='tags' �
 
 **How the row model preserves scalar `==`.** A single YAML scalar `layer: canon`
 stores one row with a flag marking it scalar-authored; a YAML list `tags: [a,b]`
-stores rows marked list-authored. `layer == "canon"` compiles to "the key has a
-**scalar-authored** row equal to the literal"; a list-authored key therefore
-never satisfies scalar `==` (reproducing today's `tags == "a"` ⇒ false). The
-flag is a small `card` column (`scalar` | `list`) on `properties`, set at ingest
-from the YAML/JSON shape. `list()` ignores `card` (sees all rows); `==`/`!=`/`<`
-require `card='scalar'`.
+stores rows marked list-authored. The flag is a small `card` column
+(`scalar` | `list`) on `properties`, set at ingest from the YAML/JSON shape (and,
+for inline fields, from occurrence count — see §6). `list()` ignores `card` (sees
+all rows).
+
+`layer == "canon"` compiles to "the key is **single-valued in the queried scope**
+and its one row is **scalar-authored** and equal to the literal." Two independent
+gates, both required:
+
+1. **Single-value in scope.** `COUNT(*)` of the key's rows in the scope
+   (a `(doc, key)`, narrowed by `source` for `frontmatter.`/`inline.`) must be 1.
+   A list of two elements, a repeated inline field, or a **bare key that collides
+   across frontmatter + inline** all have ≥2 rows, so scalar `==` cannot match —
+   you use `list()`. This is what makes a frontmatter/inline collision behave as a
+   list without needing a merged-shape rewrite at ingest.
+2. **Scalar-authored.** That single row must be `card='scalar'`. A one-element
+   YAML list `tags: [a]` is a single row but list-authored, so `tags == "a"` stays
+   false (reproducing `tags == "a"` ⇒ false).
+
+A lone inline `element:: fire` is one scalar-authored row in scope ⇒ `element ==
+"fire"` matches; a second `element:: …` in the same doc makes it list-authored
+*and* multi-valued, so scalar `==` falls back to `list()`.
 
 ### Provenance-scoped access (the new differentiation)
 
@@ -263,9 +279,18 @@ in its place:
    happened in the parser — we store the parsed result.)
 2. **Route inline fields → property rows** (`source='inline'`): the adapter
    emits `md:inline_field` ProjectedNodes with name/value + block_id; these
-   become `properties` rows. Repeats accumulate as multiple rows (the union
-   semantics fall straight out of the row model — `job:: janitor` +
-   `job:: salesman` = two rows). Inline fields move fully out of `nodes`.
+   become `properties` rows. `card` reflects the authored shape within the inline
+   source: a key that occurs **once** in the document is `scalar` (so a lone
+   `element:: fire` is scalar-comparable); a key that **repeats** is `list`, its
+   occurrences accumulating as `ord`-indexed rows in document order
+   (`job:: janitor` + `job:: salesman` = two `list` rows). The union semantics
+   fall straight out of the row model, and cross-source multiplicity (a bare key
+   that also has a frontmatter row) is handled at query time by the single-value
+   gate (§4), not by rewriting `card` here. Inline fields move fully out of
+   `nodes`. The adapter captures an inline value to end of line (dataview line
+   form `key:: multi word value`) or to the closer for the bracketed in-prose
+   form (`[key:: value]` / `(key:: value)`) — not just the first whitespace-
+   delimited token.
 3. **Computed props hook** (`source='computed'`): an adapter capability
    (`computeProperties(blocks, frontmatter)`) returning derived rows — title
    from first H1, task counts, etc. New capability; markdown implements title.
@@ -349,8 +374,13 @@ not an index rebuild.
   scalar-vs-array distinction so `tags == "a"` on a list stays false. (§4)
 - **Bare key = the authored union (frontmatter + inline).** Inline repeats and
   cross-source authored collisions accumulate into the key's value set (queried
-  via `list()`); scalar `==` still matches any scalar-authored row. YAML
-  duplicate-key rules apply within a fence before storage.
+  via `list()`). **Scalar `==` matches only when the key is single-valued in the
+  queried scope** — one row, scalar-authored (§4). So a lone inline `element::
+  fire` is scalar-comparable, but a repeat or a frontmatter/inline collision on a
+  bare key becomes a list and must be read with `list()`. (This refines the
+  earlier "scalar `==` matches any scalar-authored row" wording: multiplicity in
+  scope, not just authored shape, gates scalar comparison.) YAML duplicate-key
+  rules apply within a fence before storage.
 - **Computed props are `$`-intrinsics, not bare keys.** `$title` (first H1),
   `$tags` (body hashtags) live in the `$`-namespace and do NOT claim/shadow the
   authored `title`/`tags` keys. (§4)

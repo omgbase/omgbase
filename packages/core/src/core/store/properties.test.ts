@@ -56,10 +56,30 @@ describe("ingest → properties rows", () => {
     expect(tags.map((r) => [r.card, r.ord, r.val_text])).toEqual([["list", 0, "a"], ["list", 1, "b"]]);
   });
 
-  it("accumulates repeated inline fields as list rows in order", () => {
+  it("a lone inline field is card='scalar' (comparable), not list", () => {
+    const rows = props("# H\n\nelement:: fire\n");
+    const el = rows.filter((r) => r.source === "inline" && r.key === "element");
+    expect(el.map((r) => [r.card, r.ord, r.val_text])).toEqual([["scalar", 0, "fire"]]);
+  });
+
+  it("accumulates repeated inline fields as card='list' rows in order", () => {
     const rows = props("# H\n\njob:: janitor\n\njob:: salesman\n");
     const job = rows.filter((r) => r.source === "inline" && r.key === "job");
-    expect(job.map((r) => [r.ord, r.val_text])).toEqual([[0, "janitor"], [1, "salesman"]]);
+    expect(job.map((r) => [r.card, r.ord, r.val_text])).toEqual([["list", 0, "janitor"], ["list", 1, "salesman"]]);
+  });
+
+  it("captures a multi-word inline value whole (not truncated at the first space)", () => {
+    const rows = props("# H\n\nknown_for:: tria prima\n");
+    const k = rows.find((r) => r.source === "inline" && r.key === "known_for")!;
+    expect(k).toMatchObject({ card: "scalar", val_text: "tria prima" });
+  });
+
+  it("captures a bracketed in-prose inline value up to the closer", () => {
+    const rows = props("# H\n\nSee [element:: quick silver] in the text (state:: liquid metal).\n");
+    const el = rows.find((r) => r.source === "inline" && r.key === "element")!;
+    const st = rows.find((r) => r.source === "inline" && r.key === "state")!;
+    expect(el).toMatchObject({ val_text: "quick silver" });
+    expect(st).toMatchObject({ val_text: "liquid metal" });
   });
 
   it("coerces numeric inline values", () => {

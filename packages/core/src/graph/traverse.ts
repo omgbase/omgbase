@@ -1,6 +1,5 @@
 import type { Store } from "../core/store/store.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
-import { isValidId } from "../core/ids.js";
 import { findDoc } from "../core/read/reader.js";
 import { EngineError } from "../mcp/errors.js";
 
