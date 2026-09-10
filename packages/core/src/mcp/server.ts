@@ -8,6 +8,7 @@ import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { query as runQuery } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
@@ -316,6 +317,29 @@ export function buildServer(ctx: ServerContext): McpServer {
           env.vector = await ctx.embedQuery(args.semantic);
         }
         return ok(runQuery(store, repoId, env));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "oqx",
+    {
+      description:
+        "OQX (omgbase Query eXpressions) — composable query in ONE expression: `from docs|blocks|nodes`, `where`, `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes.exists(where kind == \"md:task\")` returns only the docs that themselves contain a matching node (not a global scan). Ops: `.exists(...)`/`.count(...)` in where; `.collect(...)` in select for hierarchical results (`select tasks: nodes.collect(where kind == \"md:task\" select text: value)`). Scalar predicates use the same CEL grammar as `query` (see query_syntax), including doc.<key> reach-through. Receivers available: `nodes`, `blocks` (from docs). Returns lean hits {id, path, ...projections} with truncated + cursor. This version covers structural navigation; graph traversal is not included yet (use graph_traverse).",
+      inputSchema: {
+        query: z.string(),
+        limit: z.number().int().optional(),
+        cursor: z.string().nullable().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        return ok(oqxRun(store, repoId, args.query, {
+          ...(args.limit !== undefined ? { limit: args.limit } : {}),
+          ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+        }));
       } catch (e) {
         return fail(e);
       }

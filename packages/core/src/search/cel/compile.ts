@@ -364,6 +364,15 @@ function compileBoolField(field: FieldRef, target: Target): Compiled {
   };
 }
 
+// A value-expression fragment for OQX projection (`select name: <expr>`). Parses
+// a single scalar CEL expression (a field or value-returning call) and returns a
+// NULL-when-absent SQL scalar + params. Comparisons/booleans are not values and
+// are rejected. The alias contract matches compile()/fieldSql() (docs=d,
+// blocks=b, nodes=n) — this is the future alias-parameterization seam.
+export function scalarValue(node: Node, target: Target): { expr: string; params: unknown[] } {
+  return scalarSql(node, target);
+}
+
 export function compile(node: Node, target: Target): Compiled {
   switch (node.kind) {
     case "or": {

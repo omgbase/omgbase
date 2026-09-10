@@ -21,6 +21,7 @@ import { cmdCat } from "./cmd/cat.js";
 import { cmdShow } from "./cmd/show.js";
 import { cmdFind } from "./cmd/find.js";
 import { cmdQuery } from "./cmd/query.js";
+import { cmdOqx } from "./cmd/oqx.js";
 import { cmdLog } from "./cmd/log.js";
 import { cmdHist } from "./cmd/hist.js";
 import { cmdDiff } from "./cmd/diff.js";
@@ -48,6 +49,7 @@ export const COMMANDS: Command[] = [
   cmdShow,
   cmdFind,
   cmdQuery,
+  cmdOqx,
   cmdLog,
   cmdHist,
   cmdDiff,
