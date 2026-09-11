@@ -39,15 +39,15 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  oqx <source> [-n N] [--cursor c] [-f file|-]");
-    cli.io.out("  e.g. oqx 'from docs where nodes.count(where kind == \"md:task\") >= 2'");
-    cli.io.out("       oqx 'from nodes where kind == \"md:section\" select items: section.blocks.collect(where type == \"list_item\")'");
-    cli.io.out("       oqx 'from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open'");
-    cli.io.out("       oqx 'from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)'");
-    cli.io.out("       oqx 'repo.count(from docs where layer == \"canon\")'   # scalar; also repo.exists/first/single(...)");
-    cli.io.out("       oqx 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
-    cli.io.out("       oqx 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
-    cli.io.out("       oqx 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
+    cli.io.out("  query <source> [-n N] [--cursor c] [-f file|-]");
+    cli.io.out("  e.g. query 'from docs where nodes.count(where kind == \"md:task\") >= 2'");
+    cli.io.out("       query 'from nodes where kind == \"md:section\" select items: section.blocks.collect(where type == \"list_item\")'");
+    cli.io.out("       query 'from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open'");
+    cli.io.out("       query 'from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)'");
+    cli.io.out("       query 'repo.count(from docs where layer == \"canon\")'   # scalar; also repo.exists/first/single(...)");
+    cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
+    cli.io.out("       query 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
+    cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
     return EXIT_OK;
   }
 
@@ -125,8 +125,11 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   return EXIT_OK;
 }
 
+// `query` (alias `q`) is the single query surface; `oqx` stays as an alias since
+// the engine keeps that name. The command impl lives in this file (oqx.ts).
 export const cmdOqx: Command = {
-  name: "oqx",
-  summary: "Composable query (OQX: from/where/select + collection ops)",
+  name: "query",
+  aliases: ["q", "oqx"],
+  summary: "Composable query (OQX engine: from/where/select + collection ops)",
   run: (cli, a) => runOqx(cli, a),
 };
