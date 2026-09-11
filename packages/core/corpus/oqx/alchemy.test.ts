@@ -656,6 +656,35 @@ describe("alchemy corpus — blocks and nodes targets", () => {
   });
 });
 
+describe("alchemy corpus — text() full-text (parity with the retained query() oracle)", () => {
+  // query() is the oracle we keep until OQX fully subsumes it; text() must agree
+  // with query()'s `text:` clause over the same FTS index for the same terms.
+  for (const term of ["mercury", "calcination", "sulphur"]) {
+    it(`docs matching text("${term}") equal query()'s text: for the same term`, () => {
+      const oqx = paths(`from docs where text("${term}")`);
+      const cel = query(store, repoId, { from: "docs", text: term, limit: 100 }).hits.map((h) => h.path);
+      expect(oqx.slice().sort()).toEqual(cel.slice().sort());
+      expect(oqx.length).toBeGreaterThan(0);
+    });
+  }
+
+  it("composes with a scalar predicate (text prunes, then the scalar narrows)", () => {
+    const canon = paths('from docs where text("mercury") && layer == "canon"');
+    const all = paths('from docs where text("mercury")');
+    expect(canon.length).toBeGreaterThan(0);
+    expect(canon.every((p) => all.includes(p))).toBe(true);
+  });
+
+  it("composes INSIDE a correlated subquery — a per-row full-text task predicate", () => {
+    // docs with a TASK node whose text matches (porter stem: "recrystallization"
+    // ~ coagulation's "Recrystallize alum" task, and the Feb lab note's
+    // "recrystallization cycles" task). The flat query tool has no way to express
+    // "a task node matching this text".
+    expect(paths('from docs where nodes.exists(where kind == "md:task" && text("recrystallization"))'))
+      .toEqual(["lab/2026-02-notes.md", "processes/coagulation.md"]);
+  });
+});
+
 describe("alchemy corpus — top-level consumers (repo.<op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.

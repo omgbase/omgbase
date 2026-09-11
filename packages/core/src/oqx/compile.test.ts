@@ -309,3 +309,33 @@ describe("OQX compile — alias allocation under same-target nesting", () => {
     expect(sql).toMatch(/FROM nodes n1 WHERE n1\.doc_id = n\.doc_id/);
   });
 });
+
+describe("OQX compile — text() full-text predicate", () => {
+  it("docs target: prunes to docs whose blocks match, aliased by the scope", () => {
+    const c = compileSrc('from docs where text("aurora")');
+    expect(c.where).toContain("d.doc_id IN (SELECT b2.doc_id FROM blocks_fts JOIN blocks b2 ON b2.rowid = blocks_fts.rowid WHERE blocks_fts MATCH ?)");
+    expect(c.whereParams).toContain('"aurora"'); // fts-query.js quotes tokens for phrase-safety
+  });
+
+  it("blocks target: matches the block's own FTS rowid", () => {
+    const c = compileSrc('from blocks where text("aurora")');
+    expect(c.where).toContain("b.rowid IN (SELECT rowid FROM blocks_fts WHERE blocks_fts MATCH ?)");
+  });
+
+  it("nodes target: uses the node FTS index", () => {
+    const c = compileSrc('from nodes where text("aurora")');
+    expect(c.where).toContain("n.rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)");
+  });
+
+  it("a no-token query compiles to a matches-nothing predicate (no param)", () => {
+    const c = compileSrc('from docs where text("()")');
+    expect(c.where).toContain("(1 = 0)");
+    expect(c.whereParams).toEqual(["rp_1"]); // only the repo guard; no FTS param
+  });
+
+  it("inside a correlated exists, the child scope's alias carries the FTS prune", () => {
+    const c = compileSrc('from docs where nodes.exists(where text("aurora"))');
+    // the nested node scope (alias n) prunes via nodes_fts, correlated to the doc.
+    expect(c.where).toContain("n.rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)");
+  });
+});

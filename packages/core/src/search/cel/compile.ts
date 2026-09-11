@@ -1,5 +1,6 @@
 import type { Node, FieldRef, Literal, Comparison, RelOp, OuterRef } from "./ast.js";
 import { FilterInvalid } from "./parser.js";
+import { sanitizeFtsQuery } from "../fts-query.js";
 
 // Compile a CEL AST to a SQL WHERE fragment + bound params for a target
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
@@ -557,6 +558,8 @@ function compileCall(name: string, args: Node[], target: Target, ctx: AliasCtx):
     case "within":
       requireBlocks(target, "within");
       return compileWithin(argString(args, 0), ctx);
+    case "text":
+      return compileText(argString(args, 0), target, ctx);
     case "has_edge":
       return compileHasEdge(args, target, ctx);
     case "has_anchor":
@@ -643,6 +646,31 @@ function compileWithin(target: string, ctx: AliasCtx): Compiled {
     return { sql: `(${ctx.doc}.path LIKE ? ESCAPE '\\')`, params: [like] };
   }
   return { sql: `(${ctx.doc}.path = ?)`, params: [target] };
+}
+
+// text("terms") — a full-text PRUNING predicate (FTS5, the same index the
+// `query` tool's `text:` uses). It is a boolean, not a ranker: it says "this
+// row's text matches", composing with every other predicate (and, notably,
+// inside correlated subqueries / collects). bm25 relevance ordering is a
+// ranking concern handled separately (order by). The literal is sanitized at
+// compile time (fts-query.js); a query that reduces to no searchable token
+// matches nothing (mirrors the `query` tool's empty-text short-circuit). Blocks
+// match their own row; docs match when any of their blocks does; nodes use the
+// node FTS index. Aliased by the scope so it works under OQX's per-scope aliases.
+function compileText(terms: string, target: Target, ctx: AliasCtx): Compiled {
+  const match = sanitizeFtsQuery(terms);
+  if (match === "") return { sql: "(1 = 0)", params: [] };
+  if (target === "docs") {
+    return {
+      sql: `${ctx.self}.doc_id IN (SELECT b2.doc_id FROM blocks_fts JOIN blocks b2 ON b2.rowid = blocks_fts.rowid WHERE blocks_fts MATCH ?)`,
+      params: [match],
+    };
+  }
+  const ftsTable = target === "nodes" ? "nodes_fts" : "blocks_fts";
+  return {
+    sql: `${ctx.self}.rowid IN (SELECT rowid FROM ${ftsTable} WHERE ${ftsTable} MATCH ?)`,
+    params: [match],
+  };
 }
 
 function compileHasEdge(args: Node[], target: Target, ctx: AliasCtx): Compiled {

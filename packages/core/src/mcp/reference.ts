@@ -66,6 +66,9 @@ blocks:
                contains/startsWith/endsWith  free or method form:
                  $path.startsWith("guides/")   x.contains("s")
                matches("^re$")            RE2 (post-filter; pair with an indexed term)
+               text("terms")             full-text (FTS5) match — a PRUNING predicate,
+                                         not a ranker; blocks/nodes match their own
+                                         text, docs match when any block does
   literals     "str"  'str'  123  1.5  true  false  null
 
 NOT supported (→ filter_invalid): arithmetic (+ - * /), ternary, list/struct

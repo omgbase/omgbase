@@ -176,6 +176,53 @@ describe("OQX end-to-end — pagination", () => {
   });
 });
 
+describe("OQX end-to-end — text() full-text predicate", () => {
+  beforeEach(() => {
+    ingest("alpha.md", "---\nlayer: canon\n---\n\n# Alpha\n\nThe crimson salamander dances.\n\n- [ ] distill the quintessence\n");
+    ingest("beta.md", "---\nlayer: draft\n---\n\n# Beta\n\nA gray pigeon rests.\n\n- [ ] grind the cinnabar\n");
+  });
+
+  it("blocks target: matches the block whose text contains the term", () => {
+    const { hits } = run('from blocks where text("salamander")');
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.path).toBe("alpha.md");
+  });
+
+  it("docs target: a doc matches when any of its blocks does", () => {
+    expect(run('from docs where text("salamander")').hits.map((h) => h.path)).toEqual(["alpha.md"]);
+    expect(run('from docs where text("pigeon")').hits.map((h) => h.path)).toEqual(["beta.md"]);
+  });
+
+  it("composes with a scalar predicate (AND)", () => {
+    expect(run('from docs where text("crimson") && layer == "canon"').hits.map((h) => h.path)).toEqual(["alpha.md"]);
+    expect(run('from docs where text("crimson") && layer == "draft"').hits.map((h) => h.path)).toEqual([]);
+  });
+
+  it("nodes target: matches a task node by its indexed text", () => {
+    const { hits } = run('from nodes where kind == "md:task" && text("quintessence")');
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.path).toBe("alpha.md");
+  });
+
+  it("composes INSIDE a correlated subquery — the win query() cannot express", () => {
+    // docs that contain a task node whose text matches — a per-row full-text
+    // predicate nested in an exists(). The old `query` tool has no such form.
+    const { hits } = run('from docs where nodes.exists(where kind == "md:task" && text("cinnabar"))');
+    expect(hits.map((h) => h.path)).toEqual(["beta.md"]);
+  });
+
+  it("a query that reduces to no searchable token matches nothing", () => {
+    expect(run('from docs where text("")').hits).toEqual([]);
+    expect(run('from docs where text("()")').hits).toEqual([]);
+  });
+
+  it("matches query()'s text: envelope for the same terms (parity)", () => {
+    const oqx = run('from docs where text("salamander")');
+    const cel = query(store, repoId, { from: "docs", text: "salamander" });
+    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
+  });
+});
+
 describe("OQX end-to-end — top-level consumers (repo.<op>)", () => {
   beforeEach(() => {
     ingest("canon/a.md", "---\nlayer: canon\n---\n\n# A\n\n- [ ] t\n");

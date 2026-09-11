@@ -43,6 +43,7 @@ function runOqx(cli: Cli, args: string[]): number {
     cli.io.out("       oqx 'from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open'");
     cli.io.out("       oqx 'from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)'");
     cli.io.out("       oqx 'repo.count(from docs where layer == \"canon\")'   # scalar; also repo.exists/first/single(...)");
+    cli.io.out("       oqx 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     return EXIT_OK;
   }
 
