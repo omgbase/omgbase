@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ingestFile } from "../core/ingest.js";
-import { query } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 import "../format/index.js";
 
 let store: Store | undefined;
@@ -100,10 +100,10 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n\n- [x] done\n- [ ] todo\n");
 
-    const links = query(store, repoId, { from: "nodes", filter: 'kind == "md:link"' });
+    const links = oqxRun(store, repoId, 'from nodes where kind == "md:link"');
     expect(links.hits.length).toBe(1);
 
-    const tasks = query(store, repoId, { from: "nodes", filter: 'kind == "md:task"' });
+    const tasks = oqxRun(store, repoId, 'from nodes where kind == "md:task"');
     expect(tasks.hits.length).toBe(2);
   });
 
@@ -111,7 +111,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const status = query(store, repoId, { from: "nodes", filter: 'name == "status"' });
+    const status = oqxRun(store, repoId, 'from nodes where name == "status"');
     expect(status.hits.length).toBe(1);
   });
 
@@ -119,7 +119,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const active = query(store, repoId, { from: "nodes", filter: 'value == "active"' });
+    const active = oqxRun(store, repoId, 'from nodes where value == "active"');
     expect(active.hits.length).toBe(1);
   });
 
@@ -128,10 +128,10 @@ describe("node queries — from: nodes", () => {
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n");
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n");
 
-    const mdNodes = query(store, repoId, { from: "nodes", filter: 'kind.startsWith("md:")' });
+    const mdNodes = oqxRun(store, repoId, 'from nodes where kind.startsWith("md:")');
     expect(mdNodes.hits.length).toBeGreaterThan(0);
 
-    const yamlNodes = query(store, repoId, { from: "nodes", filter: 'kind.startsWith("yaml:")' });
+    const yamlNodes = oqxRun(store, repoId, 'from nodes where kind.startsWith("yaml:")');
     expect(yamlNodes.hits.length).toBeGreaterThan(0);
   });
 
@@ -140,7 +140,7 @@ describe("node queries — from: nodes", () => {
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n");
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n");
 
-    const yamlOnly = query(store, repoId, { from: "nodes", filter: 'doc.format == "yaml"' });
+    const yamlOnly = oqxRun(store, repoId, 'from nodes where doc.format == "yaml" select kind: kind');
     expect(yamlOnly.hits.length).toBeGreaterThan(0);
     expect(yamlOnly.hits.every((h) => (h as Record<string, unknown>).kind?.toString().startsWith("yaml:"))).toBe(true);
   });
@@ -149,7 +149,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\npriority:: high\n");
 
-    const results = query(store, repoId, { from: "nodes", text: "active" });
+    const results = oqxRun(store, repoId, 'from nodes where text("active")');
     expect(results.hits.length).toBeGreaterThan(0);
   });
 
@@ -157,7 +157,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo\n");
 
-    const checked = query(store, repoId, { from: "nodes", filter: 'kind == "md:task" && attrs.checked == true' });
+    const checked = oqxRun(store, repoId, 'from nodes where kind == "md:task" && attrs.checked == true');
     expect(checked.hits.length).toBe(1);
   });
 
@@ -165,7 +165,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\n");
 
-    const results = query(store, repoId, { from: "nodes", filter: 'kind == "md:inline_field"' });
+    const results = oqxRun(store, repoId, 'from nodes where kind == "md:inline_field" select kind: kind, name: name, value: value');
     expect(results.hits.length).toBe(1);
     const hit = results.hits[0]!;
     expect(hit.kind).toBe("md:inline_field");

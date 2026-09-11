@@ -94,14 +94,14 @@ describe("omg mcp (stdio)", () => {
     const tools = await rpc.send("tools/list", {});
     const names = ((tools.result as { tools?: { name: string }[] })?.tools ?? []).map((t) => t.name);
     expect(names).toContain("docs_outline");
-    expect(names).toContain("query");
+    expect(names).toContain("oqx");
 
     const outline = await rpc.send("tools/call", { name: "docs_outline", arguments: { path: "hub.md" } });
     const oc = (outline.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
     expect(oc.isError).toBeFalsy();
     expect(oc.content?.[0]?.text ?? "").toContain("Hub");
 
-    const q = await rpc.send("tools/call", { name: "query", arguments: { from: "blocks", filter: 'type == "task"' } });
+    const q = await rpc.send("tools/call", { name: "oqx", arguments: { query: 'from blocks where type == "task"' } });
     const qc = (q.result as { content?: { text?: string }[] }) ?? {};
     const body = JSON.parse(qc.content?.[0]?.text ?? "{}") as { hits?: unknown[] };
     expect(body.hits).toHaveLength(2);

@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "oqx", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "graph_traverse", "graph_path", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -184,7 +184,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("query select projects $body (whole document bytes) on docs", async () => {
-    const { payload } = (await call("query", { from: "docs", filter: 'layer == "working"', select: ["$body"] })) as {
+    const { payload } = (await call("oqx", { query: 'from docs where layer == "working" select $body' })) as {
       payload: { hits: { path: string; $body: string }[] };
     };
     expect(payload.hits[0]!.$body).toContain("# Risks");
@@ -192,18 +192,18 @@ describe("MCP server skeleton", () => {
   });
 
   it("query returns projected hits with truncated + cursor", async () => {
-    const { payload } = (await call("query", { from: "docs", filter: 'layer == "working"' })) as { payload: { hits: { path: string }[]; truncated: boolean } };
+    const { payload } = (await call("oqx", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[]; truncated: boolean } };
     expect(payload.hits.map((h) => h.path)).toEqual(["notes.md"]);
     expect(payload.truncated).toBe(false);
   });
 
   it("query select projects frontmatter onto hits", async () => {
-    const { payload } = (await call("query", { from: "docs", filter: 'layer == "working"', select: ["layer"] })) as { payload: { hits: { path: string; layer: string }[] } };
+    const { payload } = (await call("oqx", { query: 'from docs where layer == "working" select layer' })) as { payload: { hits: { path: string; layer: string }[] } };
     expect(payload.hits[0]!.layer).toBe("working");
   });
 
   it("query semantic without a provider yields semantic_unavailable", async () => {
-    const { payload, isError } = (await call("query", { from: "blocks", semantic: "identity across edits" })) as { payload: { error: string }; isError: boolean };
+    const { payload, isError } = (await call("oqx", { query: 'from blocks where semantic("identity across edits") > 0.5' })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("semantic_unavailable");
   });
@@ -243,7 +243,7 @@ describe("MCP server skeleton", () => {
   });
 
   it("maps a bad filter to filter_invalid with reason + hint", async () => {
-    const { payload, isError } = (await call("query", { from: "docs", filter: "a + b == 1" })) as { payload: { error: string; data: { hint: string } }; isError: boolean };
+    const { payload, isError } = (await call("oqx", { query: "from docs where a + b == 1" })) as { payload: { error: string; data: { hint: string } }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("filter_invalid");
     expect(payload.data.hint).toContain("10");
@@ -281,7 +281,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     })) as { payload: { docId: string; path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.path).toBe("sub/fresh.md");
-    const { payload: q } = (await call("query", { from: "docs", filter: 'status == "draft"' })) as { payload: { hits: { path: string }[] } };
+    const { payload: q } = (await call("oqx", { query: 'from docs where status == "draft"' })) as { payload: { hits: { path: string }[] } };
     expect(q.hits.map((h) => h.path)).toContain("sub/fresh.md");
   });
 
@@ -294,7 +294,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   it("docs_set_meta patches frontmatter, preserving other keys", async () => {
     const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("query", { from: "docs", filter: 'layer == "working" && status == "active"' })) as { payload: { hits: { path: string }[] } };
+    const { payload } = (await call("oqx", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { path: string }[] } };
     expect(payload.hits.map((h) => h.path)).toContain("notes.md");
   });
 
@@ -302,14 +302,14 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
     expect(payload.path).toBe("moved/notes.md");
-    const { payload: q } = (await call("query", { from: "docs", filter: 'layer == "working"' })) as { payload: { hits: { path: string }[] } };
+    const { payload: q } = (await call("oqx", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
     expect(q.hits.map((h) => h.path)).toContain("moved/notes.md");
   });
 
   it("docs_delete tombstones the document", async () => {
     const { isError } = (await call("docs_delete", { doc: "notes.md" })) as { isError: boolean };
     expect(isError).toBe(false);
-    const { payload } = (await call("query", { from: "docs", filter: 'layer == "working"' })) as { payload: { hits: unknown[] } };
+    const { payload } = (await call("oqx", { query: 'from docs where layer == "working"' })) as { payload: { hits: unknown[] } };
     expect(payload.hits).toHaveLength(0);
   });
 
@@ -397,12 +397,12 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("does not fire for a read (query)", async () => {
-    await call("query", { from: "docs", filter: 'layer == "working"' });
+    await call("oqx", { query: 'from docs where layer == "working"' });
     expect(mutations).toBe(0);
   });
 
   it("fires once for a successful apply", async () => {
-    const { payload: q } = (await call("query", { from: "docs", filter: 'layer == "working"', select: ["$path"] })) as { payload: { hits: { id: string }[] } };
+    const { payload: q } = (await call("oqx", { query: 'from docs where layer == "working" select $path' })) as { payload: { hits: { id: string }[] } };
     const docId = q.hits[0]!.id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "appended paragraph" }] })) as { isError: boolean };
     expect(isError).toBe(false);
@@ -416,7 +416,7 @@ describe("onMutation fires for writes (embed-drain trigger)", () => {
   });
 
   it("does not fire for a dry-run apply", async () => {
-    const { payload: q } = (await call("query", { from: "docs", filter: 'layer == "working"', select: ["$path"] })) as { payload: { hits: { id: string }[] } };
+    const { payload: q } = (await call("oqx", { query: 'from docs where layer == "working" select $path' })) as { payload: { hits: { id: string }[] } };
     const docId = q.hits[0]!.id;
     const { isError } = (await call("apply", { ops: [{ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "preview only" }], dry_run: true })) as { isError: boolean };
     expect(isError).toBe(false);

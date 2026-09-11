@@ -54,7 +54,6 @@ export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
 export { findDoc, loadDocBlocks, blockRaw, type DocInfo, type BlockNode } from "./core/read/reader.js";
 export { resolveRef, type ResolvedRef } from "./core/read/refs.js";
-export { query, type QueryEnvelope, type QueryResult, type QueryHit } from "./search/query.js";
 export { resolve, type ResolveHit, type ResolveInput } from "./search/resolve.js";
 
 // OQX — omgbase Query eXpressions (unified composable query language, slice 1:

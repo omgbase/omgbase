@@ -7,8 +7,7 @@ import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
-import { query as runQuery } from "../search/query.js";
-import { oqxRunAsync } from "../oqx/run.js";
+import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
@@ -284,46 +283,6 @@ export function buildServer(ctx: ServerContext): McpServer {
   );
 
   server.registerTool(
-    "query",
-    {
-      description:
-        "Structured retrieval over docs|blocks. Modes intersect (AND): `filter` (CEL — call query_syntax for the grammar), `text` (FTS5 keyword), `semantic` (embedding similarity, needs a provider). `select` projects fields onto each hit so you can triage without a follow-up nodes_get: bare keys read the doc's frontmatter (e.g. \"layer\",\"type\",\"tracking\"); on blocks also \"type\", \"attrs.<k>\", \"$ordinal\"; \"$semantic_score\" with semantic. Default hit is lean {id, path}. Returns truncated + cursor. Blocks can constrain the parent doc via doc.<key> (e.g. doc.layer == \"canon\").",
-      inputSchema: {
-        from: z.enum(["docs", "blocks"]),
-        filter: z.string().optional(),
-        text: z.string().optional(),
-        semantic: z.string().optional(),
-        select: z.array(z.string()).optional(),
-        order: z.array(z.string()).optional(),
-        limit: z.number().int().optional(),
-        cursor: z.string().nullable().optional(),
-      },
-    },
-    async (args) => {
-      try {
-        const env: Parameters<typeof runQuery>[2] = {
-          from: args.from,
-          ...(args.filter !== undefined ? { filter: args.filter } : {}),
-          ...(args.text !== undefined ? { text: args.text } : {}),
-          ...(args.select !== undefined ? { select: args.select } : {}),
-          ...(args.order !== undefined ? { order: args.order } : {}),
-          ...(args.limit !== undefined ? { limit: args.limit } : {}),
-          ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-        };
-        if (args.semantic !== undefined && args.semantic.trim().length > 0) {
-          if (!ctx.embedQuery) {
-            throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
-          }
-          env.vector = await ctx.embedQuery(args.semantic);
-        }
-        return ok(runQuery(store, repoId, env));
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.registerTool(
     "oqx",
     {
       description:
@@ -336,6 +295,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
+        // A `semantic(...)` query with no provider is semantic_unavailable (not a
+        // generic filter error) — surface that specific code, mirroring resolve.
+        if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) {
+          throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
+        }
         return ok(await oqxRunAsync(store, repoId, args.query, {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),

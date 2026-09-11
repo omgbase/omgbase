@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ingestFile } from "../core/ingest.js";
-import { query } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 import "../format/index.js";
 
 let store: Store | undefined;
@@ -18,10 +18,7 @@ describe("under_kind() — cross-format structural function", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n  port: 5432\nlogging:\n  level: debug\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'under_kind("yaml:mapping_entry", "database")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where under_kind("yaml:mapping_entry", "database")');
     expect(results.hits.length).toBeGreaterThan(0);
   });
 
@@ -29,10 +26,7 @@ describe("under_kind() — cross-format structural function", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'under_kind("yaml:mapping_entry")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where under_kind("yaml:mapping_entry")');
     expect(results.hits.length).toBeGreaterThan(0);
   });
 
@@ -40,10 +34,7 @@ describe("under_kind() — cross-format structural function", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Introduction\n\nHello world.\n\n# Conclusion\n\nGoodbye.\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'under_kind("heading", "Introduction")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where under_kind("heading", "Introduction")');
     // The paragraph "Hello world." is under the Introduction heading section,
     // but under_kind uses parent/child hierarchy, not sections. Markdown blocks
     // are flat (not nested under headings), so this tests the ancestor_path approach.
@@ -58,10 +49,7 @@ describe("yaml_path() — YAML key path navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\nlogging:\n  level: debug\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'yaml_path("database")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where yaml_path("database")');
     expect(results.hits.length).toBe(1);
   });
 
@@ -69,10 +57,7 @@ describe("yaml_path() — YAML key path navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n  port: 5432\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'yaml_path("database.host")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where yaml_path("database.host")');
     expect(results.hits.length).toBe(1);
   });
 
@@ -80,10 +65,7 @@ describe("yaml_path() — YAML key path navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'yaml_path("database.password")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where yaml_path("database.password")');
     expect(results.hits.length).toBe(0);
   });
 
@@ -92,10 +74,7 @@ describe("yaml_path() — YAML key path navigation", () => {
     ingestFile(store, repoId, "a.yaml", "database:\n  host: a\n");
     ingestFile(store, repoId, "b.yaml", "database:\n  host: b\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'yaml_path("database.host")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where yaml_path("database.host")');
     expect(results.hits.length).toBe(2);
   });
 });
@@ -105,10 +84,7 @@ describe("json_pointer() — JSON Pointer navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "data.json", `{"name": "test", "version": "1.0"}`);
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'json_pointer("name")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where json_pointer("name")');
     expect(results.hits.length).toBe(1);
   });
 
@@ -116,10 +92,7 @@ describe("json_pointer() — JSON Pointer navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "data.json", `{"name": "test"}`);
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'json_pointer("#/name")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where json_pointer("#/name")');
     expect(results.hits.length).toBe(1);
   });
 
@@ -127,10 +100,7 @@ describe("json_pointer() — JSON Pointer navigation", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "data.json", `{"name": "test"}`);
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'json_pointer("missing")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where json_pointer("missing")');
     expect(results.hits.length).toBe(0);
   });
 });
@@ -140,11 +110,7 @@ describe("combining structural functions with other filters", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n  port: 5432\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'yaml_path("database.host")',
-      text: "localhost",
-    });
+    const results = oqxRun(store, repoId, 'from blocks where yaml_path("database.host") && text("localhost")');
     expect(results.hits.length).toBe(1);
   });
 
@@ -153,10 +119,7 @@ describe("combining structural functions with other filters", () => {
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\n");
     ingestFile(store, repoId, "readme.md", "# Hello\n");
 
-    const results = query(store, repoId, {
-      from: "blocks",
-      filter: 'doc.format == "yaml" && yaml_path("database")',
-    });
+    const results = oqxRun(store, repoId, 'from blocks where doc.format == "yaml" && yaml_path("database")');
     expect(results.hits.length).toBe(1);
   });
 });

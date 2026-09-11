@@ -3,7 +3,7 @@ import { Store } from "./store/store.js";
 import { ensureRepo } from "./attach.js";
 import { ingestFile } from "./ingest.js";
 import { docsOutline } from "./read/outline.js";
-import { query } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 
 // Perf pass (07 task 7.5). The envelope is 10^6 blocks; a full-scale run is too
 // slow for CI, so we validate the query paths stay indexed at a reduced but
@@ -57,21 +57,21 @@ describe("perf at reduced envelope scale", () => {
 
   it("query (blocks filter) p95 < 100ms", () => {
     const p = bench(50, () => {
-      query(store, repoId, { from: "blocks", filter: 'type == "paragraph" && under_heading("Section A")', limit: 20 });
+      oqxRun(store, repoId, 'from blocks where type == "paragraph" && under_heading("Section A")', { limit: 20 });
     });
     expect(p).toBeLessThan(100);
   });
 
   it("query (docs frontmatter) p95 < 100ms", () => {
     const p = bench(50, () => {
-      query(store, repoId, { from: "docs", filter: 'layer == "canon"', limit: 20 });
+      oqxRun(store, repoId, 'from docs where layer == "canon"', { limit: 20 });
     });
     expect(p).toBeLessThan(100);
   });
 
   it("text query p95 < 100ms", () => {
     const p = bench(50, () => {
-      query(store, repoId, { from: "blocks", text: "topic", limit: 20 });
+      oqxRun(store, repoId, 'from blocks where text("topic")', { limit: 20 });
     });
     expect(p).toBeLessThan(100);
   });

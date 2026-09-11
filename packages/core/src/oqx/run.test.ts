@@ -3,7 +3,6 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { oqxRun } from "./run.js";
-import { query } from "../search/query.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import "../format/index.js"; // register format adapters so nodes are projected
 
@@ -70,10 +69,10 @@ describe("OQX end-to-end — blocks and nodes targets", () => {
     ingest("b.md", "---\nlayer: draft\n---\n\n# Other\n\n- [ ] unrelated\n");
   });
 
-  it("filters blocks with a scalar predicate (parity with query())", () => {
+  it("filters blocks by a scalar predicate (unchecked task blocks across docs)", () => {
+    // a.md's "deploy" + b.md's "unrelated" are unchecked; a.md's "docs" is checked.
     const oqx = run('from blocks where type == "task" && !attrs.checked');
-    const cel = query(store, repoId, { from: "blocks", filter: 'type == "task" && !attrs.checked' });
-    expect(oqx.hits.map((h) => h.id).sort()).toEqual(cel.hits.map((h) => h.id).sort());
+    expect(oqx.hits.map((h) => h.path).sort()).toEqual(["a.md", "b.md"]);
   });
 
   it("filters docs by a correlated block predicate (doc.blocks)", () => {
@@ -134,17 +133,13 @@ describe("OQX end-to-end — absence semantics parity", () => {
     ingest("b.md", "# B\n\nbody\n"); // no frontmatter at all
   });
 
-  it("a missing key never matches (same rows as query())", () => {
+  it("a missing key never matches (absence = false)", () => {
     const oqx = run('from docs where layer == "canon"');
-    const cel = query(store, repoId, { from: "docs", filter: 'layer == "canon"' });
-    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
     expect(oqx.hits.map((h) => h.path)).toEqual(["a.md"]);
   });
 
-  it("negation of an absent field is true (same as query())", () => {
+  it("negation of an absent field is true", () => {
     const oqx = run('from docs where !layer');
-    const cel = query(store, repoId, { from: "docs", filter: "!layer" });
-    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
     expect(oqx.hits.map((h) => h.path)).toEqual(["b.md"]);
   });
 });
@@ -216,10 +211,8 @@ describe("OQX end-to-end — text() full-text predicate", () => {
     expect(run('from docs where text("()")').hits).toEqual([]);
   });
 
-  it("matches query()'s text: envelope for the same terms (parity)", () => {
-    const oqx = run('from docs where text("salamander")');
-    const cel = query(store, repoId, { from: "docs", text: "salamander" });
-    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
+  it("matches only the docs whose blocks contain the term", () => {
+    expect(run('from docs where text("salamander")').hits.map((h) => h.path)).toEqual(["alpha.md"]);
   });
 });
 
@@ -505,28 +498,27 @@ describe("OQX end-to-end — $body and $content_hash projections", () => {
     ingest("a.md", "---\ntitle: A\n---\n\n# Heading\n\nfirst paragraph body text\n");
   });
 
-  it("docs $content_hash is lowercase hex and matches query()", () => {
+  it("docs $content_hash is the file's lowercase hex hash", () => {
     const oqx = run("from docs select h: $content_hash").hits[0]!;
-    const cel = query(store, repoId, { from: "docs", select: ["$content_hash"] }).hits[0]!;
+    const direct = store.db.prepare("SELECT lower(hex(file_hash)) AS h FROM docs WHERE path = ?").get("a.md") as { h: string };
     expect(oqx.h as string).toMatch(/^[0-9a-f]+$/);
-    expect(oqx.h).toBe(cel.$content_hash);
+    expect(oqx.h).toBe(direct.h);
   });
 
-  it("blocks $content_hash exposes the per-block CAS token, matching query()", () => {
+  it("blocks $content_hash exposes the per-block CAS token (lowercase hex of raw_hash)", () => {
     const hits = run('from blocks where type == "paragraph" select h: $content_hash').hits;
     expect(hits.length).toBeGreaterThan(0);
-    for (const h of hits) expect(h.h as string).toMatch(/^[0-9a-f]+$/);
-    const cel = query(store, repoId, { from: "blocks", filter: 'type == "paragraph"', select: ["$content_hash"] }).hits;
-    const byId = new Map(hits.map((h) => [h.id, h.h]));
-    for (const c of cel) expect(byId.get(c.id)).toBe(c.$content_hash);
+    for (const h of hits) {
+      expect(h.h as string).toMatch(/^[0-9a-f]+$/);
+      const direct = store.db.prepare("SELECT lower(hex(raw_hash)) AS h FROM blocks WHERE block_id = ?").get(h.id) as { h: string };
+      expect(h.h).toBe(direct.h);
+    }
   });
 
-  it("docs $body is the reconstructed file content (matches query())", () => {
+  it("docs $body is the reconstructed file content", () => {
     const b = run("from docs select body: $body").hits[0]!.body as string;
     expect(b).toContain("first paragraph body text");
     expect(b).toContain("# Heading");
-    const cel = query(store, repoId, { from: "docs", select: ["$body"] }).hits[0]!;
-    expect(b).toBe(cel.$body);
   });
 
   it("blocks $body is the block's own text", () => {

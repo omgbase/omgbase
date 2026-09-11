@@ -5,7 +5,6 @@ import { ingestFile } from "../core/ingest.js";
 import { EmbeddingWorker, type EmbeddingProvider } from "./embeddings.js";
 import { buildEmbedTasks, buildDocEmbedTasks } from "./tasks.js";
 import { docVectorSearch } from "./vector.js";
-import { query } from "./query.js";
 import { sha256 } from "../core/hash.js";
 
 let store: Store;
@@ -74,48 +73,6 @@ describe("doc-grain semantic retrieval", () => {
     // no doc appears twice
     const paths = hits.map((h) => h.path);
     expect(new Set(paths).size).toBe(paths.length);
-  });
-
-  it("from=docs semantic and from=blocks semantic no longer return identical hits", async () => {
-    // One dense doc with many blocks vs several short atomic docs on one topic.
-    ingestFile(store, repoId, "dense.md",
-      "# Dense guide\n\n" +
-      "epistemic stability governs how confident knowledge should be treated across layers\n\n" +
-      "network partitions and consensus protocols are unrelated infra concerns entirely here\n\n" +
-      "caching strategies and eviction policies for high throughput systems described at length\n\n" +
-      "observability logging and tracing pipelines for production incident response workflows\n");
-    ingestFile(store, repoId, "layer.md", "# Layer\n\nepistemic layers describe the stability of knowledge from draft to canon over time\n");
-    ingestFile(store, repoId, "canon.md", "# Canon\n\ncanon is the most stable epistemic layer holding foundational laws and confident knowledge\n");
-    const worker = new EmbeddingWorker(store, bowProvider());
-    await drainAll(worker);
-
-    const vec = { model: "bow-doc", vec: await worker.embedQuery("epistemic stability and how confident knowledge should be treated") };
-    const docHits = query(store, repoId, { from: "docs", vector: vec, limit: 5, select: ["$semantic_score"] }).hits;
-    const blockHits = query(store, repoId, { from: "blocks", vector: vec, limit: 5, select: ["$semantic_score"] }).hits;
-
-    // Docs target returns document ids; blocks target returns block ids.
-    expect(docHits.every((h) => h.id.startsWith("d_"))).toBe(true);
-    expect(blockHits.every((h) => h.id.startsWith("b_"))).toBe(true);
-    // Not byte-identical.
-    expect(docHits.map((h) => h.id)).not.toEqual(blockHits.map((h) => h.id));
-    // AC3: no single document occupies more than one slot in the docs result.
-    const docPaths = docHits.map((h) => h.path);
-    expect(new Set(docPaths).size).toBe(docPaths.length);
-    // The short atomic layer/canon notes surface at doc grain.
-    expect(docPaths).toContain("layer.md");
-    expect(docPaths).toContain("canon.md");
-  });
-
-  it("blocks semantic behavior is unchanged (regression): still ranks blocks by passage cosine", async () => {
-    ingestFile(store, repoId, "a.md",
-      "# Doc\n\nthe cat sat on the warm mat by the fireplace all afternoon long today here now and enjoyed the sun and the soft blanket while kittens played nearby happily\n\n" +
-      "distributed consensus protocols require careful handling of network partitions and failures across many replicas in a large cluster spanning several data centers around the world today\n");
-    const worker = new EmbeddingWorker(store, bowProvider());
-    await drainAll(worker);
-    const vec = { model: "bow-doc", vec: await worker.embedQuery("cats sitting on a mat near the fireplace") };
-    const hits = query(store, repoId, { from: "blocks", vector: vec, limit: 5 }).hits;
-    expect(hits.length).toBeGreaterThan(0);
-    expect(hits.every((h) => h.id.startsWith("b_"))).toBe(true);
   });
 
   it("fallback: an oversized doc pools its block vectors, token-weighted + unit-norm", async () => {
@@ -221,15 +178,5 @@ describe("doc-grain semantic retrieval", () => {
     const after = docVectorSearch(store, repoId, "bow-doc", q, { limit: 1 })[0]!.cosine;
 
     expect(after).toBeGreaterThan(before);
-  });
-
-  it("docs semantic prunes by filter (AND) without reweighting", async () => {
-    ingestFile(store, repoId, "keep.md", "---\nlayer: canon\n---\n# Keep\n\nepistemic stability of confident knowledge across layers described here in detail\n");
-    ingestFile(store, repoId, "drop.md", "---\nlayer: draft\n---\n# Drop\n\nepistemic stability of confident knowledge across layers described here in detail\n");
-    const worker = new EmbeddingWorker(store, bowProvider());
-    await drainAll(worker);
-    const vec = { model: "bow-doc", vec: await worker.embedQuery("epistemic stability confident knowledge layers") };
-    const hits = query(store, repoId, { from: "docs", vector: vec, filter: 'layer == "canon"', limit: 5 }).hits;
-    expect(hits.map((h) => h.path)).toEqual(["keep.md"]);
   });
 });

@@ -80,7 +80,7 @@ describe("trace suite", () => {
   it("T2 — complete unchecked tasks under a heading (≤ 2 turns)", async () => {
     save("tasks.md", "# Work\n\n## Launch\n\n- [ ] deploy the service now\n- [ ] write the launch docs\n");
     await connect();
-    const { payload: q } = await call("query", { from: "blocks", filter: 'type == "task" && !attrs.checked && under_heading("Launch")' });
+    const { payload: q } = await call("oqx", { query: 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' });
     const hits = q.hits as { id: string }[];
     expect(hits.length).toBe(2);
     const { payload: res } = await call("tasks_complete", { blocks: hits.map((h) => h.id) });

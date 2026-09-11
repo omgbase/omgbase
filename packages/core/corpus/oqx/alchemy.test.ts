@@ -8,7 +8,6 @@ import { ingestFile } from "../../src/core/ingest.js";
 import { parseTree, assertFullCoverage } from "../../src/core/parse/tree.js";
 import { render } from "../../src/core/parse/render.js";
 import { oqxRun } from "../../src/oqx/run.js";
-import { query } from "../../src/search/query.js";
 import { FilterInvalid } from "../../src/search/cel/parser.js";
 import "../../src/format/index.js"; // registers format adapters (node projection)
 
@@ -656,14 +655,19 @@ describe("alchemy corpus — blocks and nodes targets", () => {
   });
 });
 
-describe("alchemy corpus — text() full-text (parity with the retained query() oracle)", () => {
-  // query() is the oracle we keep until OQX fully subsumes it; text() must agree
-  // with query()'s `text:` clause over the same FTS index for the same terms.
+describe("alchemy corpus — text() full-text", () => {
+  // Oracle: the raw FTS5 index (a doc matches when any of its blocks does) —
+  // OQX's text() on docs must agree with a direct blocks_fts join.
+  function ftsDocs(term: string): string[] {
+    return (store.db.prepare(
+      "SELECT DISTINCT d.path AS path FROM blocks_fts JOIN blocks b ON b.rowid = blocks_fts.rowid " +
+        "JOIN docs d ON d.doc_id = b.doc_id WHERE blocks_fts MATCH ? AND b.repo_id = ? AND b.deleted_commit IS NULL",
+    ).all(term, repoId) as { path: string }[]).map((r) => r.path).sort();
+  }
   for (const term of ["mercury", "calcination", "sulphur"]) {
-    it(`docs matching text("${term}") equal query()'s text: for the same term`, () => {
+    it(`docs matching text("${term}") equal the raw FTS index for the term`, () => {
       const oqx = paths(`from docs where text("${term}")`);
-      const cel = query(store, repoId, { from: "docs", text: term, limit: 100 }).hits.map((h) => h.path);
-      expect(oqx.slice().sort()).toEqual(cel.slice().sort());
+      expect(oqx.slice().sort()).toEqual(ftsDocs(term));
       expect(oqx.length).toBeGreaterThan(0);
     });
   }
@@ -769,25 +773,6 @@ describe("alchemy corpus — pagination", () => {
     expect(all.truncated).toBe(false);
     expect(all.cursor).toBeNull();
   });
-});
-
-describe("alchemy corpus — parity with the CEL query engine", () => {
-  // A pure-scalar OQX query must select exactly what query() selects: OQX hands
-  // scalar predicates to the same compiler.
-  const cases = [
-    ['type == "substance"', 'from docs where type == "substance"'],
-    ['"substance" in list(tags)', 'from docs where "substance" in list(tags)'],
-    ["era < 1000", "from docs where era < 1000"],
-    ["!verified", "from docs where !verified"],
-    ['$path.startsWith("lab/")', 'from docs where $path.startsWith("lab/")'],
-  ] as const;
-
-  for (const [filter, oqx] of cases) {
-    it(`matches query() for: ${filter}`, () => {
-      const cel = query(store, repoId, { from: "docs", filter, limit: 100 });
-      expect(paths(oqx)).toEqual(cel.hits.map((h) => h.path));
-    });
-  }
 });
 
 describe("alchemy corpus — failure modes are loud", () => {
