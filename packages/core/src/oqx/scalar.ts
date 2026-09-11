@@ -9,10 +9,13 @@
 // canonical per-target defaults.
 
 import { parseFilter } from "../search/cel/parser.js";
-import { compile as celCompile, scalarValue, type Target, type AliasCtx } from "../search/cel/compile.js";
+import {
+  compile as celCompile, scalarValue,
+  type Target, type AliasCtx, type OuterBinding, type OuterResolver,
+} from "../search/cel/compile.js";
 import type { ScalarPredicate } from "./ir.js";
 
-export type { AliasCtx };
+export type { AliasCtx, OuterBinding, OuterResolver };
 
 /** Compile a scalar boolean predicate to a SQL WHERE fragment. */
 export function compilePredicate(p: ScalarPredicate, ctx?: AliasCtx): { sql: string; params: unknown[] } {

@@ -34,9 +34,18 @@ export interface Relation {
   correlate: (outer: string, inner: string) => string;
   /** child row always shares the outer row's document (see relations.ts). */
   sameDoc: boolean;
+  /** a root/global relation (`repo.docs`, `repo.nodes`, `repo.blocks`): an
+   * UNBOUNDED scan of the whole repository, uncorrelated to the outer row —
+   * correlation is expressed explicitly via `^name` outer references in its
+   * where. Unlike structural relations it allocates its own document scope, so
+   * `correlate` returns no predicate. */
+  root?: boolean;
 }
 
-export type CollectionKind = "collect" | "exists" | "count";
+// `collect` returns an array; `exists`/`count` are where-position predicates;
+// `first`/`single` are select-position zero-or-one / one-to-one lookups that
+// return a single record (`single` errors if it matches more than one row).
+export type CollectionKind = "collect" | "exists" | "count" | "first" | "single";
 
 /** A receiver-constrained nested operation over a structural relation. In
  * where-position a bare op (or `exists`) means "non-empty"; `count` may carry a
@@ -77,10 +86,29 @@ export type SelectItem =
   | { kind: "field"; name: string; source: string; lift?: boolean }
   | { kind: "collect"; name: string; op: CollectionOp };
 
+/** A top-level query consumer: how the whole outer query's result is shaped.
+ * The default (and, before this, only) consumer is `collect` — a hit
+ * collection. `count`/`exists` reduce the query to a scalar; `first`/`single`
+ * to zero-or-one row (`single` errors if the query matches more than one). They
+ * are the SAME consuming operators used on nested collections, applied to the
+ * repository at the top level (see the OQX design note; spelled `repo.<op>(…)`).
+ * `all` is reserved but not implemented yet. */
+export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
+
+/** One `order by` term: a scalar VALUE expression (raw CEL, compiled against the
+ * query target — a frontmatter field, `$path`, `semantic("…")`, …) and a
+ * direction. Ordering is what turns semantic()/bm25 scores into a ranking. */
+export interface OrderSpec { source: string; desc: boolean }
+
 /** Top-level OQX query. */
 export interface Query {
   kind: "query";
   target: CelTarget;
   where: WhereExpr | null;
   select: SelectItem[];
+  /** `order by <expr> [asc|desc], …` — applied to collect/first/single (ignored
+   * by count/exists). A custom order disables keyset-cursor pagination. */
+  orderBy?: OrderSpec[];
+  /** how the outer result is consumed/shaped; defaults to `collect`. */
+  consumer: OqxConsumer;
 }

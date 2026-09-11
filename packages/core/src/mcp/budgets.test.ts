@@ -4,7 +4,7 @@ import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { docsOutline } from "../core/read/outline.js";
 import { nodesGetMany } from "../core/read/nodes.js";
-import { query } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 import { textSearch } from "../search/text.js";
 
 // Budget + cursor audit (07 task 6.1). Every hydrating / list-shaped result must
@@ -44,10 +44,10 @@ describe("budget_tokens + cursor audit", () => {
 
   it("query carries truncated + a resumable cursor", () => {
     bigDoc();
-    const page = query(store, repoId, { from: "blocks", limit: 5 });
+    const page = oqxRun(store, repoId, "from blocks", { limit: 5 });
     expect(page.truncated).toBe(true);
     expect(page.cursor).not.toBeNull();
-    const next = query(store, repoId, { from: "blocks", limit: 5, cursor: page.cursor });
+    const next = oqxRun(store, repoId, "from blocks", { limit: 5, cursor: page.cursor });
     // no overlap between pages
     const firstIds = new Set(page.hits.map((h) => h.id));
     expect(next.hits.some((h) => firstIds.has(h.id))).toBe(false);

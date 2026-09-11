@@ -3,7 +3,6 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { oqxRun } from "./run.js";
-import { query } from "../search/query.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import "../format/index.js"; // register format adapters so nodes are projected
 
@@ -70,10 +69,10 @@ describe("OQX end-to-end — blocks and nodes targets", () => {
     ingest("b.md", "---\nlayer: draft\n---\n\n# Other\n\n- [ ] unrelated\n");
   });
 
-  it("filters blocks with a scalar predicate (parity with query())", () => {
+  it("filters blocks by a scalar predicate (unchecked task blocks across docs)", () => {
+    // a.md's "deploy" + b.md's "unrelated" are unchecked; a.md's "docs" is checked.
     const oqx = run('from blocks where type == "task" && !attrs.checked');
-    const cel = query(store, repoId, { from: "blocks", filter: 'type == "task" && !attrs.checked' });
-    expect(oqx.hits.map((h) => h.id).sort()).toEqual(cel.hits.map((h) => h.id).sort());
+    expect(oqx.hits.map((h) => h.path).sort()).toEqual(["a.md", "b.md"]);
   });
 
   it("filters docs by a correlated block predicate (doc.blocks)", () => {
@@ -134,17 +133,13 @@ describe("OQX end-to-end — absence semantics parity", () => {
     ingest("b.md", "# B\n\nbody\n"); // no frontmatter at all
   });
 
-  it("a missing key never matches (same rows as query())", () => {
+  it("a missing key never matches (absence = false)", () => {
     const oqx = run('from docs where layer == "canon"');
-    const cel = query(store, repoId, { from: "docs", filter: 'layer == "canon"' });
-    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
     expect(oqx.hits.map((h) => h.path)).toEqual(["a.md"]);
   });
 
-  it("negation of an absent field is true (same as query())", () => {
+  it("negation of an absent field is true", () => {
     const oqx = run('from docs where !layer');
-    const cel = query(store, repoId, { from: "docs", filter: "!layer" });
-    expect(oqx.hits.map((h) => h.path)).toEqual(cel.hits.map((h) => h.path));
     expect(oqx.hits.map((h) => h.path)).toEqual(["b.md"]);
   });
 });
@@ -173,6 +168,145 @@ describe("OQX end-to-end — pagination", () => {
 
   it("rejects a malformed cursor", () => {
     expect(() => run("from docs", { limit: 2, cursor: "not-a-cursor" })).toThrow(FilterInvalid);
+  });
+});
+
+describe("OQX end-to-end — text() full-text predicate", () => {
+  beforeEach(() => {
+    ingest("alpha.md", "---\nlayer: canon\n---\n\n# Alpha\n\nThe crimson salamander dances.\n\n- [ ] distill the quintessence\n");
+    ingest("beta.md", "---\nlayer: draft\n---\n\n# Beta\n\nA gray pigeon rests.\n\n- [ ] grind the cinnabar\n");
+  });
+
+  it("blocks target: matches the block whose text contains the term", () => {
+    const { hits } = run('from blocks where text("salamander")');
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.path).toBe("alpha.md");
+  });
+
+  it("docs target: a doc matches when any of its blocks does", () => {
+    expect(run('from docs where text("salamander")').hits.map((h) => h.path)).toEqual(["alpha.md"]);
+    expect(run('from docs where text("pigeon")').hits.map((h) => h.path)).toEqual(["beta.md"]);
+  });
+
+  it("composes with a scalar predicate (AND)", () => {
+    expect(run('from docs where text("crimson") && layer == "canon"').hits.map((h) => h.path)).toEqual(["alpha.md"]);
+    expect(run('from docs where text("crimson") && layer == "draft"').hits.map((h) => h.path)).toEqual([]);
+  });
+
+  it("nodes target: matches a task node by its indexed text", () => {
+    const { hits } = run('from nodes where kind == "md:task" && text("quintessence")');
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.path).toBe("alpha.md");
+  });
+
+  it("composes INSIDE a correlated subquery — the win query() cannot express", () => {
+    // docs that contain a task node whose text matches — a per-row full-text
+    // predicate nested in an exists(). The old `query` tool has no such form.
+    const { hits } = run('from docs where nodes.exists(where kind == "md:task" && text("cinnabar"))');
+    expect(hits.map((h) => h.path)).toEqual(["beta.md"]);
+  });
+
+  it("a query that reduces to no searchable token matches nothing", () => {
+    expect(run('from docs where text("")').hits).toEqual([]);
+    expect(run('from docs where text("()")').hits).toEqual([]);
+  });
+
+  it("matches only the docs whose blocks contain the term", () => {
+    expect(run('from docs where text("salamander")').hits.map((h) => h.path)).toEqual(["alpha.md"]);
+  });
+});
+
+describe("OQX end-to-end — top-level consumers (repo.<op>)", () => {
+  beforeEach(() => {
+    ingest("canon/a.md", "---\nlayer: canon\n---\n\n# A\n\n- [ ] t\n");
+    ingest("canon/b.md", "---\nlayer: canon\n---\n\n# B\n\nprose\n");
+    ingest("draft/c.md", "---\nlayer: draft\n---\n\n# C\n\nprose\n");
+  });
+
+  it("a bare query defaults to the collect consumer", () => {
+    const r = run("from docs");
+    expect(r.consumer).toBe("collect");
+    expect(r.hits.map((h) => h.path)).toEqual(["canon/a.md", "canon/b.md", "draft/c.md"]);
+  });
+
+  it("repo.collect(...) is explicitly the same as the bare form", () => {
+    const bare = run('from docs where layer == "canon"');
+    const wrapped = run('repo.collect(from docs where layer == "canon")');
+    expect(wrapped.consumer).toBe("collect");
+    expect(wrapped.hits.map((h) => h.path)).toEqual(bare.hits.map((h) => h.path));
+  });
+
+  it("repo.count(...) reduces the query to the matching-row count (no hits)", () => {
+    const r = run('repo.count(from docs where layer == "canon")');
+    expect(r.consumer).toBe("count");
+    expect(r.count).toBe(2);
+    expect(r.hits).toEqual([]);
+    expect(r.cursor).toBeNull();
+  });
+
+  it("repo.count over a correlated where counts docs, not their nodes", () => {
+    // only canon/a.md has a task; the count is of DOCS, one per matching row.
+    const r = run('repo.count(from docs where nodes.exists(where kind == "md:task"))');
+    expect(r.count).toBe(1);
+  });
+
+  it("repo.exists(...) is a boolean over the outer row set", () => {
+    expect(run('repo.exists(from docs where layer == "draft")').exists).toBe(true);
+    expect(run('repo.exists(from docs where layer == "ghost")').exists).toBe(false);
+  });
+
+  it("repo.first(...) returns exactly the first row in path order (with its projections)", () => {
+    const r = run('repo.first(from docs where layer == "canon" select l: layer)');
+    expect(r.consumer).toBe("first");
+    expect(r.hits.length).toBe(1);
+    expect(r.hits[0]!.path).toBe("canon/a.md");
+    expect(r.hits[0]!.l).toBe("canon");
+    expect(r.truncated).toBe(false);
+  });
+
+  it("repo.first(...) over an empty match is zero rows, not an error", () => {
+    expect(run('repo.first(from docs where layer == "ghost")').hits).toEqual([]);
+  });
+
+  it("repo.single(...) returns the one matching row", () => {
+    const r = run('repo.single(from docs where layer == "draft")');
+    expect(r.consumer).toBe("single");
+    expect(r.hits.map((h) => h.path)).toEqual(["draft/c.md"]);
+  });
+
+  it("repo.single(...) fails loudly when more than one row matches", () => {
+    expect(() => run('repo.single(from docs where layer == "canon")')).toThrow(/matched more than one row/);
+  });
+
+  it("repo.single(...) over no match is zero rows (like the nested single)", () => {
+    expect(run('repo.single(from docs where layer == "ghost")').hits).toEqual([]);
+  });
+
+  it("consumers wrap a full query — where + a nested collect projection survive", () => {
+    const r = run('repo.first(from docs where nodes.exists(where kind == "md:task") select tasks: nodes.collect(where kind == "md:task" select v: value))');
+    expect(r.hits[0]!.path).toBe("canon/a.md");
+    expect((r.hits[0]!.tasks as { v: string }[]).map((t) => t.v)).toEqual(["t"]);
+  });
+
+  it("rejects an unknown top-level consumer", () => {
+    expect(() => run("repo.frobnicate(from docs)")).toThrow(/unknown top-level consumer/);
+  });
+
+  it("reserves `all` but reports it unimplemented", () => {
+    expect(() => run("repo.all(from docs)")).toThrow(/not implemented yet/);
+  });
+
+  it("rejects a consumer wrapper with no closing paren", () => {
+    expect(() => run("repo.count(from docs")).toThrow(FilterInvalid);
+  });
+
+  it("a top-level consumer and the repo.<target> ROOT RELATION coexist (same sigil, different roles)", () => {
+    // repo.first(...) is the top-level consumer; repo.docs.collect(...) inside
+    // the select is the root-relation receiver — both parse in one query.
+    const r = run('repo.first(from docs where layer == "draft" select canon: repo.docs.collect(where layer == "canon" select p: $path))');
+    expect(r.consumer).toBe("first");
+    expect(r.hits[0]!.path).toBe("draft/c.md");
+    expect((r.hits[0]!.canon as { p: string }[]).map((x) => x.p).sort()).toEqual(["canon/a.md", "canon/b.md"]);
   });
 });
 
@@ -323,5 +457,79 @@ describe("OQX end-to-end — errors surface as filter_invalid", () => {
   });
   it("unknown field on a target", () => {
     expect(() => run("from blocks where bogus_field == 1")).toThrow(FilterInvalid);
+  });
+});
+
+describe("OQX end-to-end — order by", () => {
+  beforeEach(() => {
+    ingest("a.md", "---\nord: 2\n---\n\n# A\n");
+    ingest("b.md", "---\nord: 1\n---\n\n# B\n");
+    ingest("c.md", "---\nord: 3\n---\n\n# C\n");
+    ingest("d.md", "---\nord: 1\n---\n\n# D\n");
+  });
+
+  it("default (no order by) stays in path order", () => {
+    expect(run("from docs").hits.map((h) => h.path)).toEqual(["a.md", "b.md", "c.md", "d.md"]);
+  });
+
+  it("orders ascending by a frontmatter field, ties broken by path", () => {
+    // b,d both ord=1 (path order between them), then a=2, c=3.
+    expect(run("from docs order by ord asc").hits.map((h) => h.path)).toEqual(["b.md", "d.md", "a.md", "c.md"]);
+  });
+
+  it("orders descending", () => {
+    expect(run("from docs order by ord desc").hits.map((h) => h.path)).toEqual(["c.md", "a.md", "b.md", "d.md"]);
+  });
+
+  it("a custom order disables the keyset cursor but still reports truncation", () => {
+    const r = run("from docs order by ord asc", { limit: 2 });
+    expect(r.hits.map((h) => h.path)).toEqual(["b.md", "d.md"]);
+    expect(r.truncated).toBe(true);
+    expect(r.cursor).toBeNull();
+  });
+
+  it("repo.first honors the order (the top-ranked row)", () => {
+    expect(run("repo.first(from docs order by ord desc)").hits.map((h) => h.path)).toEqual(["c.md"]);
+  });
+});
+
+describe("OQX end-to-end — $body and $content_hash projections", () => {
+  beforeEach(() => {
+    ingest("a.md", "---\ntitle: A\n---\n\n# Heading\n\nfirst paragraph body text\n");
+  });
+
+  it("docs $content_hash is the file's lowercase hex hash", () => {
+    const oqx = run("from docs select h: $content_hash").hits[0]!;
+    const direct = store.db.prepare("SELECT lower(hex(file_hash)) AS h FROM docs WHERE path = ?").get("a.md") as { h: string };
+    expect(oqx.h as string).toMatch(/^[0-9a-f]+$/);
+    expect(oqx.h).toBe(direct.h);
+  });
+
+  it("blocks $content_hash exposes the per-block CAS token (lowercase hex of raw_hash)", () => {
+    const hits = run('from blocks where type == "paragraph" select h: $content_hash').hits;
+    expect(hits.length).toBeGreaterThan(0);
+    for (const h of hits) {
+      expect(h.h as string).toMatch(/^[0-9a-f]+$/);
+      const direct = store.db.prepare("SELECT lower(hex(raw_hash)) AS h FROM blocks WHERE block_id = ?").get(h.id) as { h: string };
+      expect(h.h).toBe(direct.h);
+    }
+  });
+
+  it("docs $body is the reconstructed file content", () => {
+    const b = run("from docs select body: $body").hits[0]!.body as string;
+    expect(b).toContain("first paragraph body text");
+    expect(b).toContain("# Heading");
+  });
+
+  it("blocks $body is the block's own text", () => {
+    const hits = run('from blocks where type == "paragraph" select body: $body').hits;
+    expect(hits[0]!.body as string).toContain("first paragraph body text");
+  });
+
+  it("$content_hash also works as a filter predicate and order term (not just a projection)", () => {
+    const ch = run("from docs select h: $content_hash").hits[0]!.h as string;
+    expect(run(`from docs where $content_hash == "${ch}"`).hits.map((h) => h.path)).toEqual(["a.md"]);
+    // order by a block's content hash is legal (a CEL intrinsic, pure SQL)
+    expect(() => run("from blocks order by $content_hash")).not.toThrow();
   });
 });

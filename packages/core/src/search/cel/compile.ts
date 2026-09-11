@@ -1,5 +1,6 @@
-import type { Node, FieldRef, Literal, Comparison, RelOp } from "./ast.js";
+import type { Node, FieldRef, Literal, Comparison, RelOp, OuterRef } from "./ast.js";
 import { FilterInvalid } from "./parser.js";
+import { sanitizeFtsQuery } from "../fts-query.js";
 
 // Compile a CEL AST to a SQL WHERE fragment + bound params for a target
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
@@ -21,6 +22,42 @@ export type Target = "docs" | "blocks" | "nodes";
 export interface AliasCtx {
   self: string;
   doc: string;
+  /** Resolver for `^name` one-scope-outward references (OQX correlation). OQX
+   * supplies it per nested scope; the base `query` surface leaves it undefined,
+   * so a `^name` reaching an absent resolver is a loud error. */
+  outer?: OuterResolver;
+  /** Resolver for `semantic("phrase")` — maps the phrase to a pre-computed query
+   * vector (BLOB) + its model. OQX's async runner embeds the literals and
+   * supplies this; when absent (or the phrase is unresolved) `semantic(...)` is a
+   * loud `semantic_unavailable`. The language stays provider-free: the function
+   * takes a string, the runtime supplies the embedding. */
+  semantic?: SemanticResolver;
+}
+
+// A binding visible to a nested scope via `^name`. A parent SELECT value binds a
+// `scalar` (its value expression compiled against the parent row); a lift or a
+// parent `collect` binds a `collection` (a json-array subquery). Each is a thunk
+// so it is only compiled when actually referenced.
+export interface OuterBinding {
+  scalar?: () => { expr: string; params: unknown[] };
+  collection?: () => { expr: string; params: unknown[] };
+}
+export type OuterResolver = (name: string) => OuterBinding | undefined;
+
+// A resolved query embedding for a `semantic("phrase")` call: the query vector
+// as a bound BLOB plus the model whose stored embeddings it must be compared to.
+export interface SemanticVec { vec: Buffer; model: string }
+export type SemanticResolver = (phrase: string) => SemanticVec | undefined;
+
+function resolveOuter(ctx: AliasCtx, name: string): OuterBinding {
+  const b = ctx.outer?.(name);
+  if (!b) {
+    throw new FilterInvalid(
+      `no binding ^${name} one scope outward — a ^ reference reads a name bound in the immediately enclosing query scope`,
+      "OQX ^",
+    );
+  }
+  return b;
 }
 
 export function defaultCtx(target: Target): AliasCtx {
@@ -201,7 +238,7 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${self}.path` };
         case "$repo": return { expr: `${self}.repo_id` };
         case "$updated_at": return { expr: `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)` };
-        case "$content_hash": return { expr: `hex(${self}.file_hash)` };
+        case "$content_hash": return { expr: `lower(hex(${self}.file_hash))` };
         default: {
           // Computed property intrinsic ($title, $tags) → properties row scalar.
           const ref = propRef(field, target);
@@ -225,6 +262,8 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${doc}.path` };
         case "$ordinal": return { expr: `${self}.ordinal` };
         case "$depth": return { expr: `${self}.depth` };
+        case "$content_hash": return { expr: `lower(hex(${self}.raw_hash))` };
+        case "$body": return { expr: `${self}.text` };
         case "$updated_at": return { expr: `(SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ${self}.block_id)` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on blocks`, "10 §2");
       }
@@ -292,8 +331,20 @@ function literalParam(lit: Literal): unknown {
 // SQL scalar expression + its params.
 function scalarSql(node: Node, target: Target, ctx: AliasCtx): { expr: string; params: unknown[] } {
   if (node.kind === "field") return { expr: fieldSql(node, target, ctx).expr, params: [] };
+  if (node.kind === "outerref") {
+    const b = resolveOuter(ctx, node.name);
+    if (!b.scalar) {
+      throw new FilterInvalid(
+        `^${node.name} is a collection binding; use it as \`<value> in ^${node.name}\`, not as a scalar`,
+        "OQX ^",
+      );
+    }
+    return b.scalar();
+  }
   if (node.kind === "call") {
     switch (node.name) {
+      case "semantic":
+        return compileSemantic(argString(node.args, 0), target, ctx);
       case "size": {
         const inner = node.args[0];
         if (inner && inner.kind === "call" && inner.name === "list") {
@@ -328,27 +379,44 @@ function scalarSql(node: Node, target: Target, ctx: AliasCtx): { expr: string; p
 }
 
 function compileComparison(cmp: Comparison, target: Target, ctx: AliasCtx): Compiled {
-  let scalar: Node;
-  let litNode: Literal;
-  let op = cmp.op;
-  if (cmp.right.kind === "literal") {
-    scalar = cmp.left; litNode = cmp.right;
-  } else if (cmp.left.kind === "literal") {
-    scalar = cmp.right; litNode = cmp.left; op = flip(op);
-  } else {
-    throw new FilterInvalid("one side of a comparison must be a literal", "10 §3.1");
-  }
-  if (scalar.kind === "call" && scalar.name === "list") {
-    throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
+  const rejectList = (n: Node): void => {
+    if (n.kind === "call" && n.name === "list") {
+      throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
+    }
+  };
+
+  // Literal-on-one-side: the canonical form, kept byte-identical (a bound `?`).
+  if (cmp.right.kind === "literal" || cmp.left.kind === "literal") {
+    let scalar: Node;
+    let litNode: Literal;
+    let op = cmp.op;
+    if (cmp.right.kind === "literal") {
+      scalar = cmp.left; litNode = cmp.right;
+    } else {
+      scalar = cmp.right; litNode = cmp.left as Literal; op = flip(op);
+    }
+    rejectList(scalar);
+    const s = scalarSql(scalar, target, ctx);
+    // NULL-safe: absent operands yield NULL; `NULL <op> x` is NULL (falsy),
+    // exactly the absence=false rule — including `!=` (10 §3.3 note).
+    return {
+      sql: `(${s.expr} ${SQL_OP[op]} ?) IS 1`,
+      params: [...s.params, coerce(litNode)],
+    };
   }
 
-  const s = scalarSql(scalar, target, ctx);
-  const sqlOp = SQL_OP[op];
-  // NULL-safe: absent operands yield NULL; `NULL <op> x` is NULL (falsy),
-  // exactly the absence=false rule — including `!=` (10 §3.3 note).
+  // Neither side is a literal. This is only reachable via a `^name` correlation
+  // operand (`attrs.id == ^owner_id`) — the base `query` grammar still requires a
+  // literal (field-vs-field stays an error, unchanged behaviour).
+  if (cmp.left.kind !== "outerref" && cmp.right.kind !== "outerref") {
+    throw new FilterInvalid("one side of a comparison must be a literal", "10 §3.1");
+  }
+  rejectList(cmp.left); rejectList(cmp.right);
+  const l = scalarSql(cmp.left, target, ctx);
+  const r = scalarSql(cmp.right, target, ctx);
   return {
-    sql: `(${s.expr} ${sqlOp} ?) IS 1`,
-    params: [...s.params, coerce(litNode)],
+    sql: `(${l.expr} ${SQL_OP[cmp.op]} ${r.expr}) IS 1`,
+    params: [...l.params, ...r.params],
   };
 }
 
@@ -412,6 +480,8 @@ export function compile(node: Node, target: Target, ctx: AliasCtx = defaultCtx(t
       return compileComparison(node, target, ctx);
     case "membership":
       return compileMembership(node.value, node.field, target, ctx);
+    case "outerMembership":
+      return compileOuterMembership(node.value, node.collection, target, ctx);
     case "field":
       return compileBoolField(node, target, ctx);
     case "call":
@@ -443,6 +513,34 @@ function compileMembership(value: Literal, field: FieldRef, target: Target, ctx:
   return { sql, params: [coerce(value), coerce(value)] };
 }
 
+// `<value> in ^name`: does the one-scope-outward collection (a json array, e.g.
+// a lift) contain the current scope's value? json_each yields no rows over a
+// NULL/non-array, so absence ⇒ false. The collection expression is resolved from
+// the enclosing scope (it references the parent row's aliases, valid here as a
+// correlated subquery); its params precede the value's in statement order.
+function compileOuterMembership(value: Node, ref: OuterRef, target: Target, ctx: AliasCtx): Compiled {
+  const b = resolveOuter(ctx, ref.name);
+  if (!b.collection) {
+    throw new FilterInvalid(
+      `^${ref.name} is a scalar binding; membership needs a collection (a lift or a parent collect)`,
+      "OQX ^",
+    );
+  }
+  const coll = b.collection();
+  let vExpr: string;
+  let vParams: unknown[];
+  if (value.kind === "literal") {
+    vExpr = "?"; vParams = [coerce(value)];
+  } else {
+    const v = scalarSql(value, target, ctx);
+    vExpr = v.expr; vParams = v.params;
+  }
+  return {
+    sql: `EXISTS (SELECT 1 FROM json_each(${coll.expr}) je WHERE je.value = ${vExpr})`,
+    params: [...coll.params, ...vParams],
+  };
+}
+
 function argField(args: Node[], i: number): FieldRef {
   const a = args[i];
   if (!a || a.kind !== "field") throw new FilterInvalid("expected a field argument");
@@ -465,6 +563,10 @@ function compileCall(name: string, args: Node[], target: Target, ctx: AliasCtx):
     }
     case "size":
       throw new FilterInvalid("size(...) must be compared, e.g. size(list(tags)) > 2", "10 §4");
+    case "semantic":
+      // semantic(...) yields a cosine SCORE, not a boolean; it must be compared
+      // (threshold prune) or projected — e.g. semantic("aurora") > 0.6.
+      throw new FilterInvalid('semantic(...) returns a score; compare it, e.g. semantic("x") > 0.6', "OQX semantic");
     // structural functions (blocks target) — 10 §5
     case "under":
       requireBlocks(target, "under");
@@ -475,6 +577,8 @@ function compileCall(name: string, args: Node[], target: Target, ctx: AliasCtx):
     case "within":
       requireBlocks(target, "within");
       return compileWithin(argString(args, 0), ctx);
+    case "text":
+      return compileText(argString(args, 0), target, ctx);
     case "has_edge":
       return compileHasEdge(args, target, ctx);
     case "has_anchor":
@@ -561,6 +665,57 @@ function compileWithin(target: string, ctx: AliasCtx): Compiled {
     return { sql: `(${ctx.doc}.path LIKE ? ESCAPE '\\')`, params: [like] };
   }
   return { sql: `(${ctx.doc}.path = ?)`, params: [target] };
+}
+
+// text("terms") — a full-text PRUNING predicate (FTS5, the same index the
+// `query` tool's `text:` uses). It is a boolean, not a ranker: it says "this
+// row's text matches", composing with every other predicate (and, notably,
+// inside correlated subqueries / collects). bm25 relevance ordering is a
+// ranking concern handled separately (order by). The literal is sanitized at
+// compile time (fts-query.js); a query that reduces to no searchable token
+// matches nothing (mirrors the `query` tool's empty-text short-circuit). Blocks
+// match their own row; docs match when any of their blocks does; nodes use the
+// node FTS index. Aliased by the scope so it works under OQX's per-scope aliases.
+function compileText(terms: string, target: Target, ctx: AliasCtx): Compiled {
+  const match = sanitizeFtsQuery(terms);
+  if (match === "") return { sql: "(1 = 0)", params: [] };
+  if (target === "docs") {
+    return {
+      sql: `${ctx.self}.doc_id IN (SELECT b2.doc_id FROM blocks_fts JOIN blocks b2 ON b2.rowid = blocks_fts.rowid WHERE blocks_fts MATCH ?)`,
+      params: [match],
+    };
+  }
+  const ftsTable = target === "nodes" ? "nodes_fts" : "blocks_fts";
+  return {
+    sql: `${ctx.self}.rowid IN (SELECT rowid FROM ${ftsTable} WHERE ${ftsTable} MATCH ?)`,
+    params: [match],
+  };
+}
+
+// semantic("phrase") — a scalar SCORE: cosine similarity of the current row's
+// embedding to the (pre-computed) query vector, via the `cosine` UDF. A SCORE,
+// not a ranker — usable as a threshold prune (`semantic("x") > 0.6`) or a
+// projection (`select s: semantic("x")`); ORDER BY does the actual ranking.
+// docs score their whole-document vector (doc_embeddings), blocks their own
+// block vector (embeddings, keyed by raw_hash); nodes have no embeddings. A row
+// with no stored vector scores NULL (cosine of a missing BLOB) ⇒ absent, so a
+// threshold comparison excludes it (absence = false). The query vector + model
+// come from ctx.semantic (the runner embedded the literal); absent ⇒ loud.
+function compileSemantic(phrase: string, target: Target, ctx: AliasCtx): { expr: string; params: unknown[] } {
+  if (target === "nodes") {
+    throw new FilterInvalid('semantic(...) is available on the docs and blocks targets (nodes have no embeddings)', "OQX semantic");
+  }
+  const resolved = ctx.semantic?.(phrase);
+  if (!resolved) {
+    throw new FilterInvalid(
+      `semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`,
+      "OQX semantic",
+    );
+  }
+  const expr = target === "docs"
+    ? `(SELECT cosine(de.vec, ?) FROM doc_embeddings de WHERE de.doc_id = ${ctx.self}.doc_id AND de.model = ?)`
+    : `(SELECT cosine(e.vec, ?) FROM embeddings e WHERE e.content_hash = ${ctx.self}.raw_hash AND e.model = ? LIMIT 1)`;
+  return { expr, params: [resolved.vec, resolved.model] };
 }
 
 function compileHasEdge(args: Node[], target: Target, ctx: AliasCtx): Compiled {

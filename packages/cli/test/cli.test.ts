@@ -115,37 +115,33 @@ describe("C4 — dependency query (has_edge)", () => {
   });
 });
 
-describe("query", () => {
-  it("CEL filter over tasks, --ids emits bare ids (pipe fuel)", () => {
-    const { stdout } = omg(["q", 'type == "task"', "--ids"]);
+describe("query (oqx)", () => {
+  it("OQX filter over tasks, --ids emits bare ids (pipe fuel)", () => {
+    const { stdout } = omg(["oqx", 'from blocks where type == "task"', "--ids"]);
     const ids = stdout.trim().split("\n").filter(Boolean);
     expect(ids).toHaveLength(2);
     for (const id of ids) expect(id).toMatch(/^b_/);
   });
 
   it("unchecked-task filter narrows the set", () => {
-    const { stdout } = omg(["q", 'type == "task" && !attrs.checked', "--ids"]);
+    const { stdout } = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]);
     expect(stdout.trim().split("\n").filter(Boolean)).toHaveLength(1);
   });
 
-  it("-s comma list and repeated -s flags project the same fields", () => {
-    const comma = omg(["q", 'type == "task"', "-s", "$path,$type", "--json"]).stdout;
-    const repeated = omg(["q", 'type == "task"', "-s", "$path", "-s", "$type", "--json"]).stdout;
-    const longform = omg(["q", 'type == "task"', "--select", "$path,$type", "--json"]).stdout;
-    expect(comma).toBe(repeated);
-    expect(comma).toBe(longform);
-    const { hits } = JSON.parse(comma) as { hits: Record<string, unknown>[] };
+  it("a select clause projects fields onto each hit", () => {
+    const { stdout } = omg(["oqx", 'from blocks where type == "task" select p: $path, t: type', "--json"]);
+    const { hits } = JSON.parse(stdout) as { hits: Record<string, unknown>[] };
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {
-      expect(h.path).toBeDefined();
-      expect(h.type).toBeDefined();
+      expect(h.p).toBeDefined();
+      expect(h.t).toBe("task");
     }
   });
 });
 
 describe("freshness (§3.3): reads are current without a watcher", () => {
   it("an out-of-band edit is visible on the next command", () => {
-    const before = omg(["q", 'type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const before = omg(["oqx", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(before).toHaveLength(2);
 
     writeFileSync(
@@ -170,7 +166,7 @@ describe("freshness (§3.3): reads are current without a watcher", () => {
     const future = Date.now() / 1000 + 5;
     utimesSync(join(vault, "hub.md"), future, future);
 
-    const after = omg(["q", 'type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const after = omg(["oqx", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(after).toHaveLength(3);
   });
 });

@@ -1,5 +1,6 @@
 ---
 type: substance
+slug: philosophers-stone
 layer: canon
 tradition: western
 tags: [substance, goal, legendary]

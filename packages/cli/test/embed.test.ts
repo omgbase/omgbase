@@ -58,8 +58,8 @@ describe("embed with no provider configured", () => {
     expect(res.provider).toBeNull();
   });
 
-  it("query --semantic without a provider → semantic_unavailable, exit 1", () => {
-    const { code, stderr } = omgFails(["q", "--semantic", "durability", "--json"]);
+  it("oqx semantic() without a provider → semantic_unavailable, exit 1", () => {
+    const { code, stderr } = omgFails(["oqx", 'from blocks where semantic("durability") > 0', "--json"]);
     expect(code).toBe(1);
     expect(stderr).toContain("semantic_unavailable");
   });
@@ -88,9 +88,9 @@ describe("embed via external stdio provider (fake embedder)", () => {
     expect(after.docsQueued).toBe(0);
   });
 
-  it("query --semantic returns hybrid hits after draining", () => {
+  it("oqx order by semantic() returns ranked hits after draining", () => {
     omg(["embed", "drain"]);
-    const res = JSON.parse(omg(["q", "--semantic", "database durability and crash safety", "--json"])) as { hits: { path: string }[] };
+    const res = JSON.parse(omg(["oqx", 'from blocks order by semantic("database durability and crash safety") desc', "--json"])) as { hits: { path: string }[] };
     expect(res.hits.length).toBeGreaterThan(0);
   });
 

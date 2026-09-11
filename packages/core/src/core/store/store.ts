@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL } from "./schema.js";
+import { cosineBytes } from "../vec.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -22,6 +23,11 @@ export class Store {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
     this.db.pragma("foreign_keys = ON");
+    // cosine(vecBlob, queryBlob) → REAL: the similarity used by OQX's semantic()
+    // scalar. Deterministic (same inputs → same score) so SQLite may cache it.
+    this.db.function("cosine", { deterministic: true }, (a, b) =>
+      cosineBytes(a as Uint8Array | null, b as Uint8Array | null),
+    );
     this.migrate();
   }
 

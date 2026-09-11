@@ -1,5 +1,6 @@
 ---
 type: substance
+slug: salt
 layer: canon
 tradition: western
 element: salt

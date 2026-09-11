@@ -66,6 +66,13 @@ blocks:
                contains/startsWith/endsWith  free or method form:
                  $path.startsWith("guides/")   x.contains("s")
                matches("^re$")            RE2 (post-filter; pair with an indexed term)
+               text("terms")             full-text (FTS5) match — a PRUNING predicate,
+                                         not a ranker; blocks/nodes match their own
+                                         text, docs match when any block does
+               semantic("phrase")        embedding cosine SCORE vs the phrase (docs/blocks
+                                         only); a value — threshold it (semantic("x") > 0.6)
+                                         or project it; ORDER BY does the ranking. Needs an
+                                         embedding provider; absent ⇒ semantic_unavailable
   literals     "str"  'str'  123  1.5  true  false  null
 
 NOT supported (→ filter_invalid): arithmetic (+ - * /), ternary, list/struct

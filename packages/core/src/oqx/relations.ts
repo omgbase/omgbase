@@ -11,7 +11,8 @@ import type { CelTarget, Relation } from "./ir.js";
 import { topOrdinal } from "../search/cel/compile.js";
 
 interface RelationDef extends Relation {
-  /** the outer target this relation may be walked FROM. */
+  /** the outer target this relation may be walked FROM. Ignored for root
+   * relations, which are reachable from any scope. */
   from: CelTarget;
   /** true for single-valued relations (node.doc, node.block). */
   singleValued: boolean;
@@ -86,6 +87,28 @@ export const RELATIONS: Record<string, RelationDef> = {
     correlate: (o, i) =>
       `${i}.doc_id = ${o}.doc_id AND ${i}.kind = 'md:section' AND ${topOrdinal(o)} >= ${first(i)} AND ${topOrdinal(o)} <= ${last(i)}`,
     singleValued: false, sameDoc: true,
+  },
+
+  // ---- root/global relations (repo.<target>) --------------------------------
+  // An explicit unbounded scan of the whole repository, reachable from any
+  // scope. There is NO structural correlation to the outer row (correlate() is
+  // the constant `1`); correlation is expressed by `^name` outer references in
+  // the where. `sameDoc: false` — the child gets its own document scope (the
+  // compiler joins a distinct `docs` alias), so `$path` / `doc.*` inside resolve
+  // against the CHILD row's document, not the outer one. This is the join
+  // escape hatch (semi/anti/lateral joins) the correlated-subqueries design
+  // note calls for; keeping it explicit keeps accidental global scans visible.
+  "repo.docs": {
+    name: "repo.docs", from: "docs", childTarget: "docs",
+    correlate: () => "1", singleValued: false, sameDoc: false, root: true,
+  },
+  "repo.blocks": {
+    name: "repo.blocks", from: "blocks", childTarget: "blocks",
+    correlate: () => "1", singleValued: false, sameDoc: false, root: true,
+  },
+  "repo.nodes": {
+    name: "repo.nodes", from: "nodes", childTarget: "nodes",
+    correlate: () => "1", singleValued: false, sameDoc: false, root: true,
   },
 };
 

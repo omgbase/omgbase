@@ -1,14 +1,14 @@
 import { parseArgs } from "node:util";
-import { parse as parseYaml } from "yaml";
-import { resolveRef, findDoc, loadDocBlocks, blockRaw, query, type QueryEnvelope, type BlockNode } from "@omgbase/core";
+import { resolveRef, findDoc, loadDocBlocks, blockRaw, oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type BlockNode } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK } from "../output.js";
+import { loadEmbedding } from "./_embed.js";
 
 // `omg run <locator|path>` (11 §5.3) — evaluate the first ```omg fence in a doc
-// (or the fence at a block locator) and print its results with the query
-// renderer. Strictly read-and-print: fences stay INERT in the corpus (ADR-011
-// §8) — nothing is projected, nothing is written. The fence-authoring loop.
+// (or the fence at a block locator) and print its results. The fence body is an
+// OQX source string (the same language `omg oqx` runs). Strictly read-and-print:
+// fences stay INERT in the corpus (ADR-011 §8) — nothing is projected or written.
 
 function firstOmgFence(roots: BlockNode[]): BlockNode | null {
   for (const n of roots) {
@@ -19,7 +19,7 @@ function firstOmgFence(roots: BlockNode[]): BlockNode | null {
   return null;
 }
 
-// Strip the ``` fences from a code-fence block's raw, returning the body YAML.
+// Strip the ``` fences from a code-fence block's raw, returning the body.
 function fenceBody(raw: string): string {
   const lines = raw.split("\n");
   if (lines[0]?.trimStart().startsWith("```")) lines.shift();
@@ -28,10 +28,10 @@ function fenceBody(raw: string): string {
   return lines.join("\n");
 }
 
-function runRun(cli: Cli, args: string[]): number {
+async function runRun(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   if (values.help) {
-    cli.io.err("  run <locator|path>  — evaluate the first ```omg fence in a doc and print results (inert)");
+    cli.io.err("  run <locator|path>  — evaluate the first ```omg fence (OQX source) in a doc and print results (inert)");
     return EXIT_OK;
   }
   const ref = positionals[0];
@@ -66,18 +66,36 @@ function runRun(cli: Cli, args: string[]): number {
     fenceRaw = blockRaw(ws.store, fence.rawHashHex);
   }
 
-  const body = fenceBody(fenceRaw);
-  let env: QueryEnvelope;
-  try {
-    const parsed = (parseYaml(body) ?? {}) as Partial<QueryEnvelope>;
-    env = { from: parsed.from ?? "blocks", ...parsed };
-  } catch (err) {
-    throw new EngineErrorLike("filter_invalid", `fence body is not valid YAML: ${(err as Error).message}`);
+  const source = fenceBody(fenceRaw).trim();
+  if (!source) throw new EngineErrorLike("target_missing", `the omg fence in ${ref} is empty`);
+
+  // Same execution path as `omg oqx`: load the embedder only when the fence uses
+  // semantic(...); everything else runs on the sync core.
+  const phrases = collectSemanticPhrases(source);
+  let result;
+  if (phrases.length > 0) {
+    const loaded = await loadEmbedding(ws, repo.repoId);
+    if (!loaded) {
+      throw new EngineErrorLike("semantic_unavailable", "semantic(...) needs an embedding provider", {
+        hint: "omg config set embedding.provider <command|url>",
+      });
+    }
+    try {
+      const embed: EmbedQuery = async (t) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(t) });
+      result = await oqxRunAsync(ws.store, repo.repoId, source, {}, embed);
+    } finally {
+      await loaded.close();
+    }
+  } else {
+    result = oqxRun(ws.store, repo.repoId, source);
   }
 
-  const result = query(ws.store, repo.repoId, env);
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify(result));
+    return EXIT_OK;
+  }
+  if (result.consumer === "count" || result.consumer === "exists") {
+    cli.io.out(result.consumer === "count" ? String(result.count) : String(result.exists));
     return EXIT_OK;
   }
   if (cli.flags.mode === "ids") {
@@ -97,4 +115,4 @@ function runRun(cli: Cli, args: string[]): number {
   return EXIT_OK;
 }
 
-export const cmdRun: Command = { name: "run", summary: "Evaluate an ```omg fence (inert, read-only)", run: (c, a) => runRun(c, a) };
+export const cmdRun: Command = { name: "run", summary: "Evaluate an ```omg fence (OQX, inert, read-only)", run: (c, a) => runRun(c, a) };

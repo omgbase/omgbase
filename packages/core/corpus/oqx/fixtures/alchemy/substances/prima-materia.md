@@ -1,5 +1,6 @@
 ---
 type: substance
+slug: prima-materia
 layer: canon
 tradition: western
 tags: [substance, theory]

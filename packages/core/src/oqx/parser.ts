@@ -11,12 +11,15 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import type {
   SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceScalar, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
 } from "./ast.js";
-import type { CountRelOp } from "./ir.js";
+import type { CountRelOp, OqxConsumer, OrderSpec } from "./ir.js";
 
-const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section"]);
-const OP_NAMES = new Set(["collect", "exists", "count"]);
+const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section", "repo"]);
+const OP_NAMES = new Set(["collect", "exists", "count", "first", "single"]);
 const TARGETS = new Set(["docs", "blocks", "nodes"]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
+// Top-level consumers wrapping the whole query (`repo.<op>(from …)`); the bare
+// `from …` form defaults to `collect`. `all` is reserved but not implemented.
+const TOP_CONSUMERS = new Set(["collect", "count", "exists", "first", "single"]);
 
 export function parseOqx(src: string): SurfaceQuery {
   let tokens: OqxToken[];
@@ -47,6 +50,43 @@ class OqxParser {
   }
 
   parseQuery(): SurfaceQuery {
+    // Optional top-level consumer wrapper: `repo.<op>( <query> )`. At the very
+    // start `repo.` can only be a consumer (a query must otherwise begin with
+    // `from`; the `repo.<target>` ROOT RELATION only appears as a receiver
+    // inside where/select), so there is no ambiguity.
+    const consumer = this.tryParseTopConsumer();
+    const q = this.parseFromQuery(consumer !== null);
+    if (consumer) {
+      q.consumer = consumer;
+      if (!this.at("rparen")) this.fail(`expected ')' to close repo.${consumer}(...)`);
+      this.next();
+    }
+    if (!this.at("eof")) this.fail(`unexpected '${this.peek().value || this.peek().type}' after the query`);
+    return q;
+  }
+
+  // Detect + open a top-level consumer wrapper, consuming `repo . <op> (` and
+  // returning the consumer. Returns null (without consuming) when the source
+  // does not start with `repo`.
+  private tryParseTopConsumer(): OqxConsumer | null {
+    if (!this.at("ident", "repo")) return null;
+    this.next(); // repo
+    if (!this.at("dot")) this.fail("expected `.<consumer>(...)` after a top-level `repo`");
+    this.next();
+    if (!this.at("ident")) this.fail("expected a consumer name after `repo.`");
+    const op = this.next().value;
+    if (op === "all") this.fail("`all` is a reserved top-level consumer but is not implemented yet");
+    if (!TOP_CONSUMERS.has(op)) {
+      this.fail(`unknown top-level consumer 'repo.${op}' — use collect/count/exists/first/single`);
+    }
+    if (!this.at("lparen")) this.fail(`expected '(' after 'repo.${op}'`);
+    this.next();
+    return op as OqxConsumer;
+  }
+
+  // Parse the `from … [where …] [select …]` query body. When `wrapped`, the
+  // body is enclosed in a consumer's parens, so it also terminates at `)`.
+  private parseFromQuery(wrapped: boolean): SurfaceQuery {
     if (!this.at("kw", "from")) this.fail("OQX query must start with `from`");
     this.next();
     const t = this.next();
@@ -57,7 +97,8 @@ class OqxParser {
     const q: SurfaceQuery = { from, where: null, select: [] };
     let sawWhere = false;
     let sawSelect = false;
-    while (!this.at("eof")) {
+    let sawOrder = false;
+    while (!this.at("eof") && !(wrapped && this.at("rparen"))) {
       if (this.at("kw", "where")) {
         if (sawWhere) this.fail("duplicate `where` clause");
         sawWhere = true;
@@ -68,11 +109,46 @@ class OqxParser {
         sawSelect = true;
         this.next();
         q.select = this.parseSelectItems();
+      } else if (this.atOrderBy()) {
+        if (sawOrder) this.fail("duplicate `order by` clause");
+        sawOrder = true;
+        this.next(); this.next(); // `order` `by`
+        q.orderBy = this.parseOrderSpecs();
       } else {
-        this.fail(`unexpected '${this.peek().value || this.peek().type}' — expected where/select`);
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' — expected where/select/order by`);
       }
     }
     return q;
+  }
+
+  // `order` and `by` are NOT reserved keywords — only the adjacent pair marks the
+  // clause, so `order` stays usable as an ordinary field name elsewhere.
+  private atOrderBy(): boolean {
+    const t = this.peek();
+    const nx = this.tokens[this.pos + 1];
+    return t.type === "ident" && t.value === "order" && !!nx && nx.type === "ident" && nx.value === "by";
+  }
+
+  // order := spec { "," spec };  spec := <valueExpr> [asc | desc]  (default asc)
+  private parseOrderSpecs(): OrderSpec[] {
+    const specs = [this.parseOrderSpec()];
+    while (this.at("comma")) { this.next(); specs.push(this.parseOrderSpec()); }
+    return specs;
+  }
+
+  private parseOrderSpec(): OrderSpec {
+    // Capture the value expression up to a comma / clause boundary, then peel a
+    // trailing asc|desc word (requires preceding whitespace, so a field like
+    // `foo_desc` or a string ending in "asc" is unaffected).
+    const raw = this.captureScalarUntilSelectBoundary();
+    if (!raw) this.fail("expected an order expression after `order by`");
+    const m = /\s+(asc|desc)$/i.exec(raw);
+    if (m) {
+      const source = raw.slice(0, m.index).trim();
+      if (!source) this.fail("order expression is only a direction; expected `<expr> asc|desc`");
+      return { source, desc: m[1]!.toLowerCase() === "desc" };
+    }
+    return { source: raw, desc: false };
   }
 
   // ---- where boolean tree: or → and → unary(!) → primary --------------------
@@ -221,8 +297,10 @@ class OqxParser {
       // named projection: either a nested collect op, or a scalar value expr.
       const op = this.tryParseOp();
       if (op) {
-        if (op.op !== "collect") this.fail(`select projection '${name}' must use collect(...), not ${op.op}(...)`);
-        if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not collect(...)`);
+        if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
+          this.fail(`select projection '${name}' must use collect(...)/first(...)/single(...), not ${op.op}(...)`);
+        }
+        if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not ${op.op}(...)`);
         return { kind: "collect", name, op };
       }
       const source = this.captureScalarUntilSelectBoundary();
@@ -264,6 +342,11 @@ class OqxParser {
         if (t.type === "and") break;
         if (t.type === "op" && (t.value === "||" || t.value === "!")) break;
         if (t.type === "kw" && (t.value === "where" || t.value === "select")) break;
+        // a trailing `order by` clause ends a where-leaf or select value.
+        if (t.type === "ident" && t.value === "order") {
+          const nx = this.tokens[this.pos + 1];
+          if (nx && nx.type === "ident" && nx.value === "by") break;
+        }
         if (t.type === "rparen") break;
         if (stopOnComma && t.type === "comma") break;
       }

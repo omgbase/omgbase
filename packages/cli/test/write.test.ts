@@ -47,10 +47,10 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("C2 — complete unchecked tasks via pipe (resulting commit)", () => {
   it("done - consumes ids from stdin and checks the boxes on disk", () => {
-    const ids = omg(["q", 'type == "task" && !attrs.checked', "--ids"]).trim();
+    const ids = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
     expect(ids.split("\n").filter(Boolean)).toHaveLength(2);
     omg(["done", "-"], ids + "\n");
-    const after = omg(["q", 'type == "task" && !attrs.checked', "--ids"]).trim();
+    const after = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
     expect(after).toBe("");
     // and it's persisted in the file
     expect(readFileSync(join(vault, "hub.md"), "utf8")).not.toContain("- [ ] wire deploy");
@@ -95,13 +95,13 @@ describe("C7 — fence authoring (run, inert)", () => {
   it("evaluates an omg fence and does not write anything", () => {
     writeFileSync(
       join(vault, "q.md"),
-      ["# Q", "", "```omg", "from: blocks", "filter: 'type == \"task\"'", "```", ""].join("\n"),
+      ["# Q", "", "```omg", 'from blocks where type == "task"', "```", ""].join("\n"),
     );
     // freshness sweep picks up the new file on the next command
     const out = omg(["run", "q.md", "--ids"]).trim().split("\n").filter(Boolean);
     expect(out.length).toBe(3); // three tasks in hub.md
     // fence stayed inert: the code_fence block is still just a fence
-    const fenceQuery = omg(["q", 'type == "code_fence"', "--ids"]).trim();
+    const fenceQuery = omg(["oqx", 'from blocks where type == "code_fence"', "--ids"]).trim();
     expect(fenceQuery.split("\n").filter(Boolean)).toHaveLength(1);
   });
 });

@@ -333,3 +333,128 @@ describe("OQX lowering", () => {
     ))).toThrow(/lift is only valid/);
   });
 });
+
+describe("OQX parser + lowering — root relations and first/single", () => {
+  it("parses a repo.<target> root receiver", () => {
+    const q = parseOqx('from docs select refs: repo.docs.collect(where slug == ^ref)');
+    const item = q.select[0]!;
+    if (item.kind !== "collect") throw new Error("expected a collect select item");
+    expect(item.op.receiver).toBe("repo.docs");
+    expect(item.op.op).toBe("collect");
+  });
+
+  it("parses first/single select projections", () => {
+    for (const op of ["first", "single"]) {
+      const q = parseOqx(`from docs select x: repo.docs.${op}(where slug == ^ref)`);
+      const item = q.select[0]!;
+      if (item.kind !== "collect") throw new Error("expected a collect select item");
+      expect(item.op.op).toBe(op);
+    }
+  });
+
+  it("lowers a root relation reachable from any target (repo.nodes from docs)", () => {
+    const q = lowerQuery(parseOqx('from docs select ns: repo.nodes.collect(where kind == "md:task")'));
+    const item = q.select[0]!;
+    if (item.kind !== "collect") throw new Error("expected a collect select item");
+    expect(item.op.relation.name).toBe("repo.nodes");
+    expect(item.op.relation.root).toBe(true);
+    expect(item.op.relation.childTarget).toBe("nodes");
+  });
+
+  it("rejects first/single in where position, pointing at exists/count", () => {
+    expect(() => lowerQuery(parseOqx('from docs where repo.docs.first(where slug == "x")'))).toThrow(
+      /select-position lookup/,
+    );
+  });
+
+  it("rejects exists/count as a select projection", () => {
+    expect(() => parseOqx('from docs select x: repo.docs.exists(where slug == "x")')).toThrow(
+      /must use collect\(\.\.\.\)\/first/,
+    );
+  });
+});
+
+describe("OQX parser + lowering — top-level consumers (repo.<op>)", () => {
+  it("a bare query lowers to the default collect consumer", () => {
+    expect(lowerQuery(parseOqx("from docs")).consumer).toBe("collect");
+  });
+
+  it("parses each top-level consumer wrapper", () => {
+    for (const op of ["collect", "count", "exists", "first", "single"]) {
+      const sq = parseOqx(`repo.${op}(from docs where layer == "canon")`);
+      expect(sq.consumer).toBe(op);
+      expect(sq.from).toBe("docs");
+      expect(lowerQuery(sq).consumer).toBe(op);
+    }
+  });
+
+  it("the wrapped query keeps its full where/select structure", () => {
+    const q = lowerQuery(parseOqx('repo.first(from docs where layer == "canon" select p: $path)'));
+    expect(q.consumer).toBe("first");
+    expect(q.where).not.toBeNull();
+    expect(q.select[0]!.name).toBe("p");
+  });
+
+  it("rejects an unknown consumer name", () => {
+    expect(() => parseOqx("repo.frobnicate(from docs)")).toThrow(/unknown top-level consumer/);
+  });
+
+  it("reserves `all` but reports it unimplemented", () => {
+    expect(() => parseOqx("repo.all(from docs)")).toThrow(/not implemented yet/);
+  });
+
+  it("requires a closing paren", () => {
+    expect(() => parseOqx("repo.count(from docs")).toThrow(/expected '\)'/);
+  });
+
+  it("rejects trailing input after a wrapped query", () => {
+    expect(() => parseOqx("repo.count(from docs) select p: $path")).toThrow(/after the query/);
+  });
+
+  it("requires `.<op>(` after a leading repo", () => {
+    expect(() => parseOqx("repo from docs")).toThrow(/after a top-level `repo`/);
+  });
+});
+
+describe("OQX parser + lowering — order by", () => {
+  it("parses a single term, default ascending", () => {
+    const q = parseOqx("from docs order by updated_at");
+    expect(q.orderBy).toEqual([{ source: "updated_at", desc: false }]);
+  });
+
+  it("parses asc/desc directions and multiple terms", () => {
+    const q = parseOqx("from docs order by rank desc, $path asc, title");
+    expect(q.orderBy).toEqual([
+      { source: "rank", desc: true },
+      { source: "$path", desc: false },
+      { source: "title", desc: false },
+    ]);
+  });
+
+  it("orders by a function expression (semantic/bm25 ranking)", () => {
+    const q = parseOqx('from blocks order by semantic("aurora") desc');
+    expect(q.orderBy).toEqual([{ source: 'semantic("aurora")', desc: true }]);
+  });
+
+  it("`order` is still a usable field name when not followed by `by`", () => {
+    const q = parseOqx("from docs where order == 3");
+    expect(q.where).toEqual({ kind: "scalar", source: "order == 3" });
+    expect(q.orderBy).toBeUndefined();
+  });
+
+  it("a select value does not swallow a trailing order by", () => {
+    const q = parseOqx("from docs select p: $path order by $path desc");
+    expect(q.select).toEqual([{ kind: "field", name: "p", source: "$path" }]);
+    expect(q.orderBy).toEqual([{ source: "$path", desc: true }]);
+  });
+
+  it("lowers order by onto the Query, and it survives a consumer wrapper", () => {
+    const q = lowerQuery(parseOqx("repo.first(from docs order by updated_at desc)"));
+    expect(q.consumer).toBe("first");
+    expect(q.orderBy).toEqual([{ source: "updated_at", desc: true }]);
+  });
+
+  it("rejects a duplicate order by clause", () => {
+    expect(() => parseOqx("from docs order by a order by b")).toThrow(/duplicate `order by`/);
+  });
+});

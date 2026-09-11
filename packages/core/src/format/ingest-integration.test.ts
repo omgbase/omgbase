@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ingestFile } from "../core/ingest.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
-import { query } from "../search/query.js";
+import { oqxRun } from "../oqx/run.js";
 import "../format/index.js"; // register adapters
 
 let store: Store | undefined;
@@ -75,15 +75,15 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "config.yaml", "key: value\n");
     ingestFile(store, repoId, "data.json", `{"a": 1}`);
 
-    const yamlDocs = query(store, repoId, { from: "docs", filter: 'format == "yaml"' });
+    const yamlDocs = oqxRun(store, repoId, 'from docs where format == "yaml"');
     expect(yamlDocs.hits.length).toBe(1);
     expect(yamlDocs.hits[0]!.path).toBe("config.yaml");
 
-    const jsonDocs = query(store, repoId, { from: "docs", filter: 'format == "json"' });
+    const jsonDocs = oqxRun(store, repoId, 'from docs where format == "json"');
     expect(jsonDocs.hits.length).toBe(1);
     expect(jsonDocs.hits[0]!.path).toBe("data.json");
 
-    const mdDocs = query(store, repoId, { from: "docs", filter: 'format == "markdown"' });
+    const mdDocs = oqxRun(store, repoId, 'from docs where format == "markdown"');
     expect(mdDocs.hits.length).toBe(1);
     expect(mdDocs.hits[0]!.path).toBe("readme.md");
   });
@@ -93,16 +93,10 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "readme.md", "# Hello\n\nParagraph.\n");
     ingestFile(store, repoId, "config.yaml", "key: value\n");
 
-    const yamlBlocks = query(store, repoId, {
-      from: "blocks",
-      filter: 'type.startsWith("yaml:")',
-    });
+    const yamlBlocks = oqxRun(store, repoId, 'from blocks where type.startsWith("yaml:")');
     expect(yamlBlocks.hits.length).toBeGreaterThan(0);
 
-    const headings = query(store, repoId, {
-      from: "blocks",
-      filter: 'type == "heading"',
-    });
+    const headings = oqxRun(store, repoId, 'from blocks where type == "heading"');
     expect(headings.hits.length).toBe(1);
   });
 
@@ -111,10 +105,7 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "readme.md", "# Hello\n");
     ingestFile(store, repoId, "config.yaml", "key: value\n");
 
-    const yamlBlocks = query(store, repoId, {
-      from: "blocks",
-      filter: 'doc.format == "yaml"',
-    });
+    const yamlBlocks = oqxRun(store, repoId, 'from blocks where doc.format == "yaml"');
     expect(yamlBlocks.hits.length).toBeGreaterThan(0);
   });
 
@@ -141,10 +132,7 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "config.yaml", "database:\n  host: localhost\nlogging:\n  level: debug\n");
     ingestFile(store, repoId, "other.yaml", "database:\n  host: remote\nlogging:\n  level: info\n");
 
-    const debugDocs = query(store, repoId, {
-      from: "docs",
-      filter: 'logging.level == "debug"',
-    });
+    const debugDocs = oqxRun(store, repoId, 'from docs where logging.level == "debug"');
     expect(debugDocs.hits.length).toBe(1);
     expect(debugDocs.hits[0]!.path).toBe("config.yaml");
   });
@@ -154,10 +142,7 @@ describe("multiformat ingest integration", () => {
     ingestFile(store, repoId, "a.json", `{"name": "alpha", "private": true}`);
     ingestFile(store, repoId, "b.json", `{"name": "beta", "private": false}`);
 
-    const privateDocs = query(store, repoId, {
-      from: "docs",
-      filter: 'name == "alpha"',
-    });
+    const privateDocs = oqxRun(store, repoId, 'from docs where name == "alpha"');
     expect(privateDocs.hits.length).toBe(1);
     expect(privateDocs.hits[0]!.path).toBe("a.json");
   });

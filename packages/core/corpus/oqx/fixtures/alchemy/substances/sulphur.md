@@ -1,5 +1,6 @@
 ---
 type: substance
+slug: sulphur
 layer: canon
 tradition: western
 element: sulphur

@@ -1,5 +1,6 @@
 ---
 type: process
+slug: magnum-opus
 layer: canon
 tradition: western
 tags: [process, framework]

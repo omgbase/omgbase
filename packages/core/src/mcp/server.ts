@@ -7,8 +7,7 @@ import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
-import { query as runQuery } from "../search/query.js";
-import { oqxRun } from "../oqx/run.js";
+import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
@@ -287,47 +286,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query",
     {
       description:
-        "Structured retrieval over docs|blocks. Modes intersect (AND): `filter` (CEL — call query_syntax for the grammar), `text` (FTS5 keyword), `semantic` (embedding similarity, needs a provider). `select` projects fields onto each hit so you can triage without a follow-up nodes_get: bare keys read the doc's frontmatter (e.g. \"layer\",\"type\",\"tracking\"); on blocks also \"type\", \"attrs.<k>\", \"$ordinal\"; \"$semantic_score\" with semantic. Default hit is lean {id, path}. Returns truncated + cursor. Blocks can constrain the parent doc via doc.<key> (e.g. doc.layer == \"canon\").",
-      inputSchema: {
-        from: z.enum(["docs", "blocks"]),
-        filter: z.string().optional(),
-        text: z.string().optional(),
-        semantic: z.string().optional(),
-        select: z.array(z.string()).optional(),
-        order: z.array(z.string()).optional(),
-        limit: z.number().int().optional(),
-        cursor: z.string().nullable().optional(),
-      },
-    },
-    async (args) => {
-      try {
-        const env: Parameters<typeof runQuery>[2] = {
-          from: args.from,
-          ...(args.filter !== undefined ? { filter: args.filter } : {}),
-          ...(args.text !== undefined ? { text: args.text } : {}),
-          ...(args.select !== undefined ? { select: args.select } : {}),
-          ...(args.order !== undefined ? { order: args.order } : {}),
-          ...(args.limit !== undefined ? { limit: args.limit } : {}),
-          ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-        };
-        if (args.semantic !== undefined && args.semantic.trim().length > 0) {
-          if (!ctx.embedQuery) {
-            throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
-          }
-          env.vector = await ctx.embedQuery(args.semantic);
-        }
-        return ok(runQuery(store, repoId, env));
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.registerTool(
-    "oqx",
-    {
-      description:
-        "OQX (omgbase Query eXpressions) — composable query in ONE expression: `from docs|blocks|nodes`, `where`, `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes.exists(where kind == \"md:task\")` returns only the docs that themselves contain a matching node (not a global scan). Ops: `.exists(...)` / `.count(...)` in where — with an optional count comparison `nodes.count(where kind == \"md:task\") >= 2`; `.collect(...)` in select for hierarchical results, nestable (`select secs: nodes.collect(where kind == \"md:section\" select h: name, items: section.blocks.collect(where type == \"list_item\"))`). The where clause is a boolean tree: compose scalar predicates and collection ops with `&&`, `||`, `!`, and grouping (`layer == \"canon\" || nodes.exists(where kind == \"md:task\")`). One-scope lift: a `collect` in `where` with a `^name` both filters (non-empty) and binds the matching values into the parent select in one expression — `from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open` returns the docs with an open task, each carrying its open-task texts. Scalar predicates use the same CEL grammar as `query` (see query_syntax), including doc.<key> reach-through. Receivers: from docs — `nodes`, `blocks`; from nodes — `section.blocks` (content under an `md:section` node's heading, transitively including deeper headings) and `section.subsections` (contained sections); from blocks — `section` (enclosing `md:section` node(s)). Returns lean hits {id, path, ...projections} with truncated + cursor. Covers structural + section navigation; graph traversal is not included yet (use graph_traverse).",
+        "OQX (omgbase Query eXpressions) — composable query in ONE expression: `from docs|blocks|nodes`, `where`, `select`. Its distinctive power is receiver-constrained nested queries that correlate to the current row: `from docs where nodes.exists(where kind == \"md:task\")` returns only the docs that themselves contain a matching node (not a global scan). Ops: `.exists(...)` / `.count(...)` in where — with an optional count comparison `nodes.count(where kind == \"md:task\") >= 2`; `.collect(...)` in select for hierarchical results, nestable (`select secs: nodes.collect(where kind == \"md:section\" select h: name, items: section.blocks.collect(where type == \"list_item\"))`). The where clause is a boolean tree: compose scalar predicates and collection ops with `&&`, `||`, `!`, and grouping (`layer == \"canon\" || nodes.exists(where kind == \"md:task\")`). One-scope lift: a `collect` in `where` with a `^name` both filters (non-empty) and binds the matching values into the parent select in one expression — `from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open` returns the docs with an open task, each carrying its open-task texts. Correlation / joins (the `^` sigil, symmetric with the lift): a nested query may READ a name bound one scope outward — bind it in the parent (a select value or a lift), then reference `^name` inside a nested query's where. Combined with the explicit root relations `repo.docs` / `repo.nodes` / `repo.blocks` (an UNBOUNDED repository scan, uncorrelated until you add a `^` predicate) this expresses lateral/dependent joins without a JOIN keyword: `repo.<t>.exists(where … == ^k)` = semi-join, `!…exists` = anti-join, `.collect(…)` in select = nested left-join, and the select-only lookups `.first(…)` / `.single(…)` (zero-or-one / one-to-one; `single` errors if it matches >1) — e.g. `from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)`. Membership over a lifted set: `<value> in ^keys`. `^` reads exactly ONE scope out (no arbitrary-ancestor search). Top-level consumers: wrap the WHOLE query to change its result shape — `repo.count(from … )` and `repo.exists(from … )` reduce to a scalar (returned as `count`/`exists`, no hits), `repo.first(from … )` / `repo.single(from … )` return zero-or-one hit (`single` errors if the query matches >1); a bare `from …` is `repo.collect(…)`. (Distinct from the `repo.<target>` root RELATION, which is a receiver inside where/select.) Scalar predicates use the same CEL grammar as `query` (see query_syntax), including doc.<key> reach-through and `text(\"terms\")` — a full-text (FTS5) PRUNING predicate that, because it is an ordinary predicate, composes inside correlated subqueries and collects (e.g. `nodes.exists(where kind == \"md:task\" && text(\"ship\"))`), which the flat `query` tool cannot express. (`text` prunes; relevance ranking is separate.) And `semantic(\"phrase\")` — an embedding cosine SCORE (docs/blocks only) usable as a threshold prune (`semantic(\"the great work\") > 0.6`) or a projection (`select score: semantic(\"…\")`); it needs an embedding provider (else semantic_unavailable) and, like `text`, composes inside nested scopes. Ranking: `order by <expr> [asc|desc], …` sorts the result (`order by semantic(\"the great work\") desc` = semantic top-K; also orders by any frontmatter field / `$path`), always tie-broken by (path, id) for a total order — this is how score functions become a ranking. A custom order disables the keyset cursor (you still get the top `limit` with `truncated`). Receivers: from docs — `nodes`, `blocks`; from nodes — `section.blocks` (content under an `md:section` node's heading, transitively including deeper headings) and `section.subsections` (contained sections); from blocks — `section` (enclosing `md:section` node(s)); from any scope — `repo.docs` / `repo.nodes` / `repo.blocks`. Returns lean hits {id, path, ...projections} with truncated + cursor (or a `count`/`exists` scalar for those consumers). Covers structural + section navigation + ad-hoc correlation; graph traversal is not included yet (use graph_traverse).",
       inputSchema: {
         query: z.string(),
         limit: z.number().int().optional(),
@@ -336,10 +295,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return ok(oqxRun(store, repoId, args.query, {
+        // A `semantic(...)` query with no provider is semantic_unavailable (not a
+        // generic filter error) — surface that specific code, mirroring resolve.
+        if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) {
+          throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
+        }
+        return ok(await oqxRunAsync(store, repoId, args.query, {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
-        }));
+        }, ctx.embedQuery));
       } catch (e) {
         return fail(e);
       }

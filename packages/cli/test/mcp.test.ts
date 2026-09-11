@@ -101,7 +101,7 @@ describe("omg mcp (stdio)", () => {
     expect(oc.isError).toBeFalsy();
     expect(oc.content?.[0]?.text ?? "").toContain("Hub");
 
-    const q = await rpc.send("tools/call", { name: "query", arguments: { from: "blocks", filter: 'type == "task"' } });
+    const q = await rpc.send("tools/call", { name: "query", arguments: { query: 'from blocks where type == "task"' } });
     const qc = (q.result as { content?: { text?: string }[] }) ?? {};
     const body = JSON.parse(qc.content?.[0]?.text ?? "{}") as { hits?: unknown[] };
     expect(body.hits).toHaveLength(2);
