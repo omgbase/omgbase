@@ -6,6 +6,7 @@
 // pagination); `first`/`single` return zero-or-one hit (`single` errors on >1).
 
 import type { Store } from "../core/store/store.js";
+import { docsRead } from "../core/read/document.js";
 import { parseOqx } from "./parser.js";
 import { lowerQuery } from "./lower.js";
 import { compileQuery, type CompiledQuery } from "./compile.js";
@@ -116,7 +117,7 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   }
 
   if (q.consumer !== "collect") {
-    const hits = rows.map((r) => rowToHit(r, compiled));
+    const hits = rows.map((r) => rowToHit(r, compiled, store));
     return { hits, truncated: false, cursor: null, consumer: q.consumer };
   }
 
@@ -126,7 +127,7 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   // No keyset cursor for a custom-ordered result (see above): report truncation
   // but no resumable cursor.
   const cursor = truncated && last && !compiled.orderBy ? encodeCursor(String(last.path), String(last.id)) : null;
-  const hits = page.map((r) => rowToHit(r, compiled));
+  const hits = page.map((r) => rowToHit(r, compiled, store));
   return { hits, truncated, cursor, consumer: "collect" };
 }
 
@@ -169,10 +170,16 @@ export async function oqxRunAsync(
 }
 
 // Map a projected SQL row to a lean hit: parse JSON columns (collect arrays,
-// lifted collections, first/single records) and unwrap+check `single` columns.
-function rowToHit(r: Record<string, unknown>, compiled: CompiledQuery): OqxHit {
+// lifted collections, first/single records), unwrap+check `single` columns, and
+// fill a docs `$body` projection from the reconstructed document (docsRead).
+function rowToHit(r: Record<string, unknown>, compiled: CompiledQuery, store: Store): OqxHit {
   const hit: OqxHit = { id: String(r.id), path: String(r.path) };
   for (const p of compiled.projections) {
+    // docs `$body`: not a SQL column — reconstruct the file per hit.
+    if (p.docBody) {
+      hit[p.name] = docsRead(store, hit.id)?.content ?? null;
+      continue;
+    }
     let val = r[p.name];
     if (p.isJson && typeof val === "string") {
       val = JSON.parse(val) as unknown;

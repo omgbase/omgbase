@@ -351,8 +351,10 @@ export interface CompiledQuery {
   from: string;
   where: string;
   whereParams: unknown[];
-  /** extra projection columns beyond id/path, in order, with their names. */
-  projections: { name: string; sql: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean }[];
+  /** extra projection columns beyond id/path, in order, with their names.
+   * `docBody` marks a docs `$body` projection whose value is the reconstructed
+   * file content, filled by run.ts (docsRead) rather than SQL. */
+  projections: { name: string; sql: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean; docBody?: boolean }[];
   target: CelTarget;
   /** compiled `order by` terms ("expr DIR, …"), without the (path,id) tiebreak;
    * present only when the query has an order clause. */
@@ -435,7 +437,7 @@ export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolv
 function compileProjection(
   s: SelectItem, target: CelTarget, ctx: AliasCtx, inUse: Set<string>, repoId: string,
   enclosingBindings: OuterResolver | undefined, lifts: Map<string, LiftBinding>,
-): { name: string; sql: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean } {
+): { name: string; sql: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean; docBody?: boolean } {
   if (s.kind === "collect") {
     const c = compileSelectOp(s.op, ctx, inUse, repoId, enclosingBindings);
     return {
@@ -456,6 +458,12 @@ function compileProjection(
       params: [...v.params, ...body.params],
       isJson: true,
     };
+  }
+  // docs `$body` is the reconstructed file — not a SQL column. Emit a NULL
+  // placeholder and let run.ts fill it via docsRead (per hit). (On blocks,
+  // `$body` is the block's text column, handled by the CEL layer below.)
+  if (s.source === "$body" && target === "docs") {
+    return { name: s.name, sql: `NULL AS "${s.name}"`, params: [], isJson: false, docBody: true };
   }
   const v = compileValue(s.source, target, ctx);
   return { name: s.name, sql: `${v.expr} AS "${s.name}"`, params: v.params, isJson: false };

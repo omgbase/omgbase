@@ -238,7 +238,7 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${self}.path` };
         case "$repo": return { expr: `${self}.repo_id` };
         case "$updated_at": return { expr: `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)` };
-        case "$content_hash": return { expr: `hex(${self}.file_hash)` };
+        case "$content_hash": return { expr: `lower(hex(${self}.file_hash))` };
         default: {
           // Computed property intrinsic ($title, $tags) → properties row scalar.
           const ref = propRef(field, target);
@@ -262,6 +262,8 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${doc}.path` };
         case "$ordinal": return { expr: `${self}.ordinal` };
         case "$depth": return { expr: `${self}.depth` };
+        case "$content_hash": return { expr: `lower(hex(${self}.raw_hash))` };
+        case "$body": return { expr: `${self}.text` };
         case "$updated_at": return { expr: `(SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ${self}.block_id)` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on blocks`, "10 §2");
       }

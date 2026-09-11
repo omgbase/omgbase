@@ -499,3 +499,45 @@ describe("OQX end-to-end — order by", () => {
     expect(run("repo.first(from docs order by ord desc)").hits.map((h) => h.path)).toEqual(["c.md"]);
   });
 });
+
+describe("OQX end-to-end — $body and $content_hash projections", () => {
+  beforeEach(() => {
+    ingest("a.md", "---\ntitle: A\n---\n\n# Heading\n\nfirst paragraph body text\n");
+  });
+
+  it("docs $content_hash is lowercase hex and matches query()", () => {
+    const oqx = run("from docs select h: $content_hash").hits[0]!;
+    const cel = query(store, repoId, { from: "docs", select: ["$content_hash"] }).hits[0]!;
+    expect(oqx.h as string).toMatch(/^[0-9a-f]+$/);
+    expect(oqx.h).toBe(cel.$content_hash);
+  });
+
+  it("blocks $content_hash exposes the per-block CAS token, matching query()", () => {
+    const hits = run('from blocks where type == "paragraph" select h: $content_hash').hits;
+    expect(hits.length).toBeGreaterThan(0);
+    for (const h of hits) expect(h.h as string).toMatch(/^[0-9a-f]+$/);
+    const cel = query(store, repoId, { from: "blocks", filter: 'type == "paragraph"', select: ["$content_hash"] }).hits;
+    const byId = new Map(hits.map((h) => [h.id, h.h]));
+    for (const c of cel) expect(byId.get(c.id)).toBe(c.$content_hash);
+  });
+
+  it("docs $body is the reconstructed file content (matches query())", () => {
+    const b = run("from docs select body: $body").hits[0]!.body as string;
+    expect(b).toContain("first paragraph body text");
+    expect(b).toContain("# Heading");
+    const cel = query(store, repoId, { from: "docs", select: ["$body"] }).hits[0]!;
+    expect(b).toBe(cel.$body);
+  });
+
+  it("blocks $body is the block's own text", () => {
+    const hits = run('from blocks where type == "paragraph" select body: $body').hits;
+    expect(hits[0]!.body as string).toContain("first paragraph body text");
+  });
+
+  it("$content_hash also works as a filter predicate and order term (not just a projection)", () => {
+    const ch = run("from docs select h: $content_hash").hits[0]!.h as string;
+    expect(run(`from docs where $content_hash == "${ch}"`).hits.map((h) => h.path)).toEqual(["a.md"]);
+    // order by a block's content hash is legal (a CEL intrinsic, pure SQL)
+    expect(() => run("from blocks order by $content_hash")).not.toThrow();
+  });
+});
