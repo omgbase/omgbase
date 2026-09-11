@@ -2,7 +2,7 @@
 // lower.ts. Scalar interiors are held as raw source strings; receivers as raw
 // tokens (resolved to structural relations against the enclosing target).
 
-import type { CountRelOp, OqxConsumer } from "./ir.js";
+import type { CountRelOp, OqxConsumer, OrderSpec } from "./ir.js";
 
 export type SurfaceTarget = "docs" | "blocks" | "nodes";
 
@@ -50,4 +50,6 @@ export interface SurfaceQuery {
   /** an explicit top-level consumer wrapping the query (`repo.count(from …)`);
    * absent in the bare `from …` form, which lowers to the default `collect`. */
   consumer?: OqxConsumer;
+  /** `order by <expr> [asc|desc], …`, captured verbatim (asc/desc stripped). */
+  orderBy?: OrderSpec[];
 }

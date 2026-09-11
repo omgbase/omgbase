@@ -47,6 +47,9 @@ export function lowerQuery(sq: SurfaceQuery): Query {
     where: sq.where ? lowerWhere(sq.where, SURFACE_TO_CEL[sq.from], true) : null,
     select: sq.select.map((s) => lowerSelect(s, SURFACE_TO_CEL[sq.from], "normal")),
     consumer: sq.consumer ?? "collect",
+    // order expressions are scalar values compiled against the query target;
+    // captured verbatim, so lowering just carries them through.
+    ...(sq.orderBy && sq.orderBy.length > 0 ? { orderBy: sq.orderBy } : {}),
   };
 }
 

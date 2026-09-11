@@ -466,3 +466,36 @@ describe("OQX end-to-end — errors surface as filter_invalid", () => {
     expect(() => run("from blocks where bogus_field == 1")).toThrow(FilterInvalid);
   });
 });
+
+describe("OQX end-to-end — order by", () => {
+  beforeEach(() => {
+    ingest("a.md", "---\nord: 2\n---\n\n# A\n");
+    ingest("b.md", "---\nord: 1\n---\n\n# B\n");
+    ingest("c.md", "---\nord: 3\n---\n\n# C\n");
+    ingest("d.md", "---\nord: 1\n---\n\n# D\n");
+  });
+
+  it("default (no order by) stays in path order", () => {
+    expect(run("from docs").hits.map((h) => h.path)).toEqual(["a.md", "b.md", "c.md", "d.md"]);
+  });
+
+  it("orders ascending by a frontmatter field, ties broken by path", () => {
+    // b,d both ord=1 (path order between them), then a=2, c=3.
+    expect(run("from docs order by ord asc").hits.map((h) => h.path)).toEqual(["b.md", "d.md", "a.md", "c.md"]);
+  });
+
+  it("orders descending", () => {
+    expect(run("from docs order by ord desc").hits.map((h) => h.path)).toEqual(["c.md", "a.md", "b.md", "d.md"]);
+  });
+
+  it("a custom order disables the keyset cursor but still reports truncation", () => {
+    const r = run("from docs order by ord asc", { limit: 2 });
+    expect(r.hits.map((h) => h.path)).toEqual(["b.md", "d.md"]);
+    expect(r.truncated).toBe(true);
+    expect(r.cursor).toBeNull();
+  });
+
+  it("repo.first honors the order (the top-ranked row)", () => {
+    expect(run("repo.first(from docs order by ord desc)").hits.map((h) => h.path)).toEqual(["c.md"]);
+  });
+});

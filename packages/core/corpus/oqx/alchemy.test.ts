@@ -685,6 +685,27 @@ describe("alchemy corpus — text() full-text (parity with the retained query() 
   });
 });
 
+describe("alchemy corpus — order by", () => {
+  const P = "practitioners/";
+  it("orders the practitioners by era ascending (numeric, not lexical)", () => {
+    // eras 250 < 800 < 1530 < 1680 — a lexical sort would misplace 1530/1680.
+    expect(paths('from docs where type == "practitioner" order by era asc')).toEqual([
+      `${P}maria-prophetissa.md`, `${P}jabir-ibn-hayyan.md`, `${P}paracelsus.md`, `${P}newton.md`,
+    ]);
+  });
+
+  it("orders descending", () => {
+    expect(paths('from docs where type == "practitioner" order by era desc')).toEqual([
+      `${P}newton.md`, `${P}paracelsus.md`, `${P}jabir-ibn-hayyan.md`, `${P}maria-prophetissa.md`,
+    ]);
+  });
+
+  it("repo.first + order by era desc is the latest practitioner (Newton)", () => {
+    const r = hits('repo.first(from docs where type == "practitioner" order by era desc)');
+    expect(r.hits.map((h) => h.path)).toEqual([`${P}newton.md`]);
+  });
+});
+
 describe("alchemy corpus — top-level consumers (repo.<op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.

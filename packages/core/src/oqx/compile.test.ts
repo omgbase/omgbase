@@ -363,3 +363,15 @@ describe("OQX compile — semantic() scalar score", () => {
     );
   });
 });
+
+describe("OQX compile — order by", () => {
+  it("emits compiled order terms with direction (before run.ts adds the path/id tiebreak)", () => {
+    const c = compileSrc("from docs order by title desc");
+    expect(c.orderBy).toBeDefined();
+    expect(c.orderBy!.sql).toMatch(/DESC$/);
+  });
+
+  it("no order clause ⇒ no orderBy fragment", () => {
+    expect(compileSrc("from docs").orderBy).toBeUndefined();
+  });
+});

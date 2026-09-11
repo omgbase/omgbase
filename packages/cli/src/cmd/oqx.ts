@@ -11,8 +11,9 @@ import { loadEmbedding } from "./_embed.js";
 // over scalar predicates and collection ops, count comparisons, nestable
 // collect, one-scope lifts (^name:) that filter + capture, one-scope-outward
 // references (^name) that correlate a nested query to a parent binding, explicit
-// root relations repo.docs/nodes/blocks for join-equivalents, and first/single
-// lookups). Wrap the whole query in a top-level consumer to change its result
+// root relations repo.docs/nodes/blocks for join-equivalents, first/single
+// lookups, full-text text(...) + embedding-score semantic(...) predicates, and
+// `order by <expr> [asc|desc]` ranking). Wrap the whole query in a top-level consumer to change its result
 // shape: repo.count(...)/repo.exists(...) reduce to a scalar, repo.first(...)/
 // repo.single(...) to zero-or-one row (bare = repo.collect). Coexists with
 // `omg q` (CEL). Source is a positional string or -f file|-. Human output: one
@@ -46,6 +47,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       oqx 'repo.count(from docs where layer == \"canon\")'   # scalar; also repo.exists/first/single(...)");
     cli.io.out("       oqx 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       oqx 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
+    cli.io.out("       oqx 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
     return EXIT_OK;
   }
 

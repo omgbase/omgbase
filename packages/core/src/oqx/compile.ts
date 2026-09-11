@@ -354,6 +354,9 @@ export interface CompiledQuery {
   /** extra projection columns beyond id/path, in order, with their names. */
   projections: { name: string; sql: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean }[];
   target: CelTarget;
+  /** compiled `order by` terms ("expr DIR, …"), without the (path,id) tiebreak;
+   * present only when the query has an order clause. */
+  orderBy?: { sql: string; params: unknown[] };
 }
 
 // A lifted binding: a `^name` inside a top-level where-position collect. The
@@ -402,12 +405,30 @@ export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolv
   const whereSql = w.sql === "1" ? g.sql : `${g.sql} AND ${w.sql}`;
   const lifts = gatherLiftBindings(q.where);
   const projections = q.select.map((s) => compileProjection(s, q.target, ctx, inUse, repoId, topBindings, lifts));
+
+  // Order expressions are scalar VALUEs over the query row (frontmatter fields,
+  // $path, semantic("…"), …), compiled against the top ctx (so its semantic
+  // resolver applies). The comma-joined "expr DIR" fragment; run.ts appends the
+  // (path, id) total-order tiebreak and decides which consumers honor it.
+  let orderBy: { sql: string; params: unknown[] } | undefined;
+  if (q.orderBy && q.orderBy.length > 0) {
+    const parts: string[] = [];
+    const oparams: unknown[] = [];
+    for (const o of q.orderBy) {
+      const v = compileValue(o.source, q.target, ctx);
+      parts.push(`${v.expr} ${o.desc ? "DESC" : "ASC"}`);
+      oparams.push(...v.params);
+    }
+    orderBy = { sql: parts.join(", "), params: oparams };
+  }
+
   return {
     from: fromClause(q.target),
     where: whereSql,
     whereParams: [...g.params, ...w.params],
     projections,
     target: q.target,
+    ...(orderBy ? { orderBy } : {}),
   };
 }
 

@@ -99,6 +99,11 @@ different sets. Several tests depend on this; keep it fully checked.
     `^me`);
   - `single(...)` / `first(...)` look up each lab note's `subject` process as one
     cardinality-checked record (slug is unique, so `single` is safe).
+- **Order by (`order by <expr> [asc|desc]`)** — the four practitioners have
+  distinct `era` values (250 / 800 / 1530 / 1680), so `order by era` sorts them
+  Maria → Jabir → Paracelsus → Newton (numeric, not lexical), `desc` reverses,
+  and `repo.first(… order by era desc)` is Newton. Ranking is how `semantic()` /
+  bm25 scores become a top-K.
 - **Top-level consumers (`repo.<op>(from …)`)** — wrapping the whole query to
   change its result shape, over the 18-document corpus: `repo.count` folds a set
   to a number (18 total, 5 substances), `repo.exists` to a boolean, `repo.first`

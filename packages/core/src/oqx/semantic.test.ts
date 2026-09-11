@@ -132,3 +132,23 @@ describe("OQX semantic() — loud misuse", () => {
     );
   });
 });
+
+describe("OQX semantic() — ranking via order by", () => {
+  it("order by semantic(...) desc ranks the topical block first", async () => {
+    const { hits } = await oqxRunAsync(
+      store, repoId,
+      'from blocks where type == "paragraph" order by semantic("kittens purring beside crackling hearth") desc',
+      {}, embed,
+    );
+    expect(hits[0]!.path).toBe("cats.md");
+  });
+
+  it("repo.first + order by semantic returns the single most similar row", async () => {
+    const { hits } = await oqxRunAsync(
+      store, repoId,
+      'repo.first(from blocks where type == "paragraph" order by semantic("network partitions quorum replication") desc)',
+      {}, embed,
+    );
+    expect(hits.map((h) => h.path)).toEqual(["consensus.md"]);
+  });
+});

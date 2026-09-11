@@ -87,16 +87,26 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   // whereParams follow projection params in statement order.
   params.push(...compiled.whereParams);
 
+  // A custom `order by` reorders the result off (path, id), so the keyset cursor
+  // (which resumes by path,id) no longer matches — pagination is disabled for
+  // ordered queries (you get the top `limit`, `truncated` still tells you there
+  // is more). first/single never paginate.
   let cursorClause = "";
-  if (q.consumer === "collect" && opts.cursor) {
+  if (q.consumer === "collect" && !compiled.orderBy && opts.cursor) {
     const { path: cp, id: ci } = decodeCursor(opts.cursor);
     cursorClause = ` AND (d.path > ? OR (d.path = ? AND ${idCol} > ?))`;
     params.push(cp, cp, ci);
   }
 
+  // User order terms sort first; (path, id) always breaks ties to keep a total,
+  // deterministic order. Order params sit textually between WHERE/cursor and
+  // LIMIT, so they bind here — after the cursor params, before `fetch`.
+  const orderPrefix = compiled.orderBy ? `${compiled.orderBy.sql}, ` : "";
+  if (compiled.orderBy) params.push(...compiled.orderBy.params);
+
   // collect fetches limit+1 to detect truncation; first/single fetch exactly cap.
   const fetch = q.consumer === "collect" ? cap + 1 : cap;
-  const sql = `SELECT ${cols.join(", ")} FROM ${compiled.from} WHERE ${compiled.where}${cursorClause} ORDER BY d.path ASC, ${idCol} ASC LIMIT ?`;
+  const sql = `SELECT ${cols.join(", ")} FROM ${compiled.from} WHERE ${compiled.where}${cursorClause} ORDER BY ${orderPrefix}d.path ASC, ${idCol} ASC LIMIT ?`;
   params.push(fetch);
 
   const rows = store.db.prepare(sql).all(...params) as Record<string, unknown>[];
@@ -113,7 +123,9 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   const truncated = rows.length > cap;
   const page = rows.slice(0, cap);
   const last = page[page.length - 1];
-  const cursor = truncated && last ? encodeCursor(String(last.path), String(last.id)) : null;
+  // No keyset cursor for a custom-ordered result (see above): report truncation
+  // but no resumable cursor.
+  const cursor = truncated && last && !compiled.orderBy ? encodeCursor(String(last.path), String(last.id)) : null;
   const hits = page.map((r) => rowToHit(r, compiled));
   return { hits, truncated, cursor, consumer: "collect" };
 }

@@ -95,12 +95,20 @@ export type SelectItem =
  * `all` is reserved but not implemented yet. */
 export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
 
+/** One `order by` term: a scalar VALUE expression (raw CEL, compiled against the
+ * query target — a frontmatter field, `$path`, `semantic("…")`, …) and a
+ * direction. Ordering is what turns semantic()/bm25 scores into a ranking. */
+export interface OrderSpec { source: string; desc: boolean }
+
 /** Top-level OQX query. */
 export interface Query {
   kind: "query";
   target: CelTarget;
   where: WhereExpr | null;
   select: SelectItem[];
+  /** `order by <expr> [asc|desc], …` — applied to collect/first/single (ignored
+   * by count/exists). A custom order disables keyset-cursor pagination. */
+  orderBy?: OrderSpec[];
   /** how the outer result is consumed/shaped; defaults to `collect`. */
   consumer: OqxConsumer;
 }

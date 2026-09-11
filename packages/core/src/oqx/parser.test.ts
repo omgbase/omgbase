@@ -415,3 +415,46 @@ describe("OQX parser + lowering — top-level consumers (repo.<op>)", () => {
     expect(() => parseOqx("repo from docs")).toThrow(/after a top-level `repo`/);
   });
 });
+
+describe("OQX parser + lowering — order by", () => {
+  it("parses a single term, default ascending", () => {
+    const q = parseOqx("from docs order by updated_at");
+    expect(q.orderBy).toEqual([{ source: "updated_at", desc: false }]);
+  });
+
+  it("parses asc/desc directions and multiple terms", () => {
+    const q = parseOqx("from docs order by rank desc, $path asc, title");
+    expect(q.orderBy).toEqual([
+      { source: "rank", desc: true },
+      { source: "$path", desc: false },
+      { source: "title", desc: false },
+    ]);
+  });
+
+  it("orders by a function expression (semantic/bm25 ranking)", () => {
+    const q = parseOqx('from blocks order by semantic("aurora") desc');
+    expect(q.orderBy).toEqual([{ source: 'semantic("aurora")', desc: true }]);
+  });
+
+  it("`order` is still a usable field name when not followed by `by`", () => {
+    const q = parseOqx("from docs where order == 3");
+    expect(q.where).toEqual({ kind: "scalar", source: "order == 3" });
+    expect(q.orderBy).toBeUndefined();
+  });
+
+  it("a select value does not swallow a trailing order by", () => {
+    const q = parseOqx("from docs select p: $path order by $path desc");
+    expect(q.select).toEqual([{ kind: "field", name: "p", source: "$path" }]);
+    expect(q.orderBy).toEqual([{ source: "$path", desc: true }]);
+  });
+
+  it("lowers order by onto the Query, and it survives a consumer wrapper", () => {
+    const q = lowerQuery(parseOqx("repo.first(from docs order by updated_at desc)"));
+    expect(q.consumer).toBe("first");
+    expect(q.orderBy).toEqual([{ source: "updated_at", desc: true }]);
+  });
+
+  it("rejects a duplicate order by clause", () => {
+    expect(() => parseOqx("from docs order by a order by b")).toThrow(/duplicate `order by`/);
+  });
+});
