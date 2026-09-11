@@ -2,7 +2,7 @@
 // lower.ts. Scalar interiors are held as raw source strings; receivers as raw
 // tokens (resolved to structural relations against the enclosing target).
 
-import type { CountRelOp } from "./ir.js";
+import type { CountRelOp, OqxConsumer } from "./ir.js";
 
 export type SurfaceTarget = "docs" | "blocks" | "nodes";
 
@@ -47,4 +47,7 @@ export interface SurfaceQuery {
   from: SurfaceTarget;
   where: SurfaceWhere | null;
   select: SurfaceSelectItem[];
+  /** an explicit top-level consumer wrapping the query (`repo.count(from …)`);
+   * absent in the bare `from …` form, which lowers to the default `collect`. */
+  consumer?: OqxConsumer;
 }

@@ -99,6 +99,13 @@ different sets. Several tests depend on this; keep it fully checked.
     `^me`);
   - `single(...)` / `first(...)` look up each lab note's `subject` process as one
     cardinality-checked record (slug is unique, so `single` is safe).
+- **Top-level consumers (`repo.<op>(from …)`)** — wrapping the whole query to
+  change its result shape, over the 18-document corpus: `repo.count` folds a set
+  to a number (18 total, 5 substances), `repo.exists` to a boolean, `repo.first`
+  to the first document in path order (`index.md`, which sorts before every
+  subdirectory), and `repo.single` to the sole `draft` document
+  (`texts/mutus-liber.md`) — while `repo.single(... layer == "canon")` fails
+  loudly because 13 documents match.
 
 ### Adding to the corpus
 

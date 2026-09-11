@@ -11,12 +11,15 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import type {
   SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceScalar, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
 } from "./ast.js";
-import type { CountRelOp } from "./ir.js";
+import type { CountRelOp, OqxConsumer } from "./ir.js";
 
 const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section", "repo"]);
 const OP_NAMES = new Set(["collect", "exists", "count", "first", "single"]);
 const TARGETS = new Set(["docs", "blocks", "nodes"]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
+// Top-level consumers wrapping the whole query (`repo.<op>(from …)`); the bare
+// `from …` form defaults to `collect`. `all` is reserved but not implemented.
+const TOP_CONSUMERS = new Set(["collect", "count", "exists", "first", "single"]);
 
 export function parseOqx(src: string): SurfaceQuery {
   let tokens: OqxToken[];
@@ -47,6 +50,43 @@ class OqxParser {
   }
 
   parseQuery(): SurfaceQuery {
+    // Optional top-level consumer wrapper: `repo.<op>( <query> )`. At the very
+    // start `repo.` can only be a consumer (a query must otherwise begin with
+    // `from`; the `repo.<target>` ROOT RELATION only appears as a receiver
+    // inside where/select), so there is no ambiguity.
+    const consumer = this.tryParseTopConsumer();
+    const q = this.parseFromQuery(consumer !== null);
+    if (consumer) {
+      q.consumer = consumer;
+      if (!this.at("rparen")) this.fail(`expected ')' to close repo.${consumer}(...)`);
+      this.next();
+    }
+    if (!this.at("eof")) this.fail(`unexpected '${this.peek().value || this.peek().type}' after the query`);
+    return q;
+  }
+
+  // Detect + open a top-level consumer wrapper, consuming `repo . <op> (` and
+  // returning the consumer. Returns null (without consuming) when the source
+  // does not start with `repo`.
+  private tryParseTopConsumer(): OqxConsumer | null {
+    if (!this.at("ident", "repo")) return null;
+    this.next(); // repo
+    if (!this.at("dot")) this.fail("expected `.<consumer>(...)` after a top-level `repo`");
+    this.next();
+    if (!this.at("ident")) this.fail("expected a consumer name after `repo.`");
+    const op = this.next().value;
+    if (op === "all") this.fail("`all` is a reserved top-level consumer but is not implemented yet");
+    if (!TOP_CONSUMERS.has(op)) {
+      this.fail(`unknown top-level consumer 'repo.${op}' — use collect/count/exists/first/single`);
+    }
+    if (!this.at("lparen")) this.fail(`expected '(' after 'repo.${op}'`);
+    this.next();
+    return op as OqxConsumer;
+  }
+
+  // Parse the `from … [where …] [select …]` query body. When `wrapped`, the
+  // body is enclosed in a consumer's parens, so it also terminates at `)`.
+  private parseFromQuery(wrapped: boolean): SurfaceQuery {
     if (!this.at("kw", "from")) this.fail("OQX query must start with `from`");
     this.next();
     const t = this.next();
@@ -57,7 +97,7 @@ class OqxParser {
     const q: SurfaceQuery = { from, where: null, select: [] };
     let sawWhere = false;
     let sawSelect = false;
-    while (!this.at("eof")) {
+    while (!this.at("eof") && !(wrapped && this.at("rparen"))) {
       if (this.at("kw", "where")) {
         if (sawWhere) this.fail("duplicate `where` clause");
         sawWhere = true;

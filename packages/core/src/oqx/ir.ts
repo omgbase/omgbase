@@ -86,10 +86,21 @@ export type SelectItem =
   | { kind: "field"; name: string; source: string; lift?: boolean }
   | { kind: "collect"; name: string; op: CollectionOp };
 
+/** A top-level query consumer: how the whole outer query's result is shaped.
+ * The default (and, before this, only) consumer is `collect` — a hit
+ * collection. `count`/`exists` reduce the query to a scalar; `first`/`single`
+ * to zero-or-one row (`single` errors if the query matches more than one). They
+ * are the SAME consuming operators used on nested collections, applied to the
+ * repository at the top level (see the OQX design note; spelled `repo.<op>(…)`).
+ * `all` is reserved but not implemented yet. */
+export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
+
 /** Top-level OQX query. */
 export interface Query {
   kind: "query";
   target: CelTarget;
   where: WhereExpr | null;
   select: SelectItem[];
+  /** how the outer result is consumed/shaped; defaults to `collect`. */
+  consumer: OqxConsumer;
 }

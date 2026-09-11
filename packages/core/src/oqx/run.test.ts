@@ -176,6 +176,100 @@ describe("OQX end-to-end — pagination", () => {
   });
 });
 
+describe("OQX end-to-end — top-level consumers (repo.<op>)", () => {
+  beforeEach(() => {
+    ingest("canon/a.md", "---\nlayer: canon\n---\n\n# A\n\n- [ ] t\n");
+    ingest("canon/b.md", "---\nlayer: canon\n---\n\n# B\n\nprose\n");
+    ingest("draft/c.md", "---\nlayer: draft\n---\n\n# C\n\nprose\n");
+  });
+
+  it("a bare query defaults to the collect consumer", () => {
+    const r = run("from docs");
+    expect(r.consumer).toBe("collect");
+    expect(r.hits.map((h) => h.path)).toEqual(["canon/a.md", "canon/b.md", "draft/c.md"]);
+  });
+
+  it("repo.collect(...) is explicitly the same as the bare form", () => {
+    const bare = run('from docs where layer == "canon"');
+    const wrapped = run('repo.collect(from docs where layer == "canon")');
+    expect(wrapped.consumer).toBe("collect");
+    expect(wrapped.hits.map((h) => h.path)).toEqual(bare.hits.map((h) => h.path));
+  });
+
+  it("repo.count(...) reduces the query to the matching-row count (no hits)", () => {
+    const r = run('repo.count(from docs where layer == "canon")');
+    expect(r.consumer).toBe("count");
+    expect(r.count).toBe(2);
+    expect(r.hits).toEqual([]);
+    expect(r.cursor).toBeNull();
+  });
+
+  it("repo.count over a correlated where counts docs, not their nodes", () => {
+    // only canon/a.md has a task; the count is of DOCS, one per matching row.
+    const r = run('repo.count(from docs where nodes.exists(where kind == "md:task"))');
+    expect(r.count).toBe(1);
+  });
+
+  it("repo.exists(...) is a boolean over the outer row set", () => {
+    expect(run('repo.exists(from docs where layer == "draft")').exists).toBe(true);
+    expect(run('repo.exists(from docs where layer == "ghost")').exists).toBe(false);
+  });
+
+  it("repo.first(...) returns exactly the first row in path order (with its projections)", () => {
+    const r = run('repo.first(from docs where layer == "canon" select l: layer)');
+    expect(r.consumer).toBe("first");
+    expect(r.hits.length).toBe(1);
+    expect(r.hits[0]!.path).toBe("canon/a.md");
+    expect(r.hits[0]!.l).toBe("canon");
+    expect(r.truncated).toBe(false);
+  });
+
+  it("repo.first(...) over an empty match is zero rows, not an error", () => {
+    expect(run('repo.first(from docs where layer == "ghost")').hits).toEqual([]);
+  });
+
+  it("repo.single(...) returns the one matching row", () => {
+    const r = run('repo.single(from docs where layer == "draft")');
+    expect(r.consumer).toBe("single");
+    expect(r.hits.map((h) => h.path)).toEqual(["draft/c.md"]);
+  });
+
+  it("repo.single(...) fails loudly when more than one row matches", () => {
+    expect(() => run('repo.single(from docs where layer == "canon")')).toThrow(/matched more than one row/);
+  });
+
+  it("repo.single(...) over no match is zero rows (like the nested single)", () => {
+    expect(run('repo.single(from docs where layer == "ghost")').hits).toEqual([]);
+  });
+
+  it("consumers wrap a full query — where + a nested collect projection survive", () => {
+    const r = run('repo.first(from docs where nodes.exists(where kind == "md:task") select tasks: nodes.collect(where kind == "md:task" select v: value))');
+    expect(r.hits[0]!.path).toBe("canon/a.md");
+    expect((r.hits[0]!.tasks as { v: string }[]).map((t) => t.v)).toEqual(["t"]);
+  });
+
+  it("rejects an unknown top-level consumer", () => {
+    expect(() => run("repo.frobnicate(from docs)")).toThrow(/unknown top-level consumer/);
+  });
+
+  it("reserves `all` but reports it unimplemented", () => {
+    expect(() => run("repo.all(from docs)")).toThrow(/not implemented yet/);
+  });
+
+  it("rejects a consumer wrapper with no closing paren", () => {
+    expect(() => run("repo.count(from docs")).toThrow(FilterInvalid);
+  });
+
+  it("a top-level consumer and the repo.<target> ROOT RELATION coexist (same sigil, different roles)", () => {
+    // repo.first(...) is the top-level consumer; repo.docs.collect(...) inside
+    // the select is the root-relation receiver — both parse in one query.
+    const r = run('repo.first(from docs where layer == "draft" select canon: repo.docs.collect(where layer == "canon" select p: $path))');
+    expect(r.consumer).toBe("first");
+    expect(r.hits[0]!.path).toBe("draft/c.md");
+    expect((r.hits[0]!.canon as { p: string }[]).map((x) => x.p).sort()).toEqual(["canon/a.md", "canon/b.md"]);
+  });
+});
+
 describe("OQX end-to-end — count comparisons", () => {
   beforeEach(() => {
     ingest("one.md", "# One\n\n- [ ] a\n");

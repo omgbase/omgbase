@@ -373,3 +373,45 @@ describe("OQX parser + lowering — root relations and first/single", () => {
     );
   });
 });
+
+describe("OQX parser + lowering — top-level consumers (repo.<op>)", () => {
+  it("a bare query lowers to the default collect consumer", () => {
+    expect(lowerQuery(parseOqx("from docs")).consumer).toBe("collect");
+  });
+
+  it("parses each top-level consumer wrapper", () => {
+    for (const op of ["collect", "count", "exists", "first", "single"]) {
+      const sq = parseOqx(`repo.${op}(from docs where layer == "canon")`);
+      expect(sq.consumer).toBe(op);
+      expect(sq.from).toBe("docs");
+      expect(lowerQuery(sq).consumer).toBe(op);
+    }
+  });
+
+  it("the wrapped query keeps its full where/select structure", () => {
+    const q = lowerQuery(parseOqx('repo.first(from docs where layer == "canon" select p: $path)'));
+    expect(q.consumer).toBe("first");
+    expect(q.where).not.toBeNull();
+    expect(q.select[0]!.name).toBe("p");
+  });
+
+  it("rejects an unknown consumer name", () => {
+    expect(() => parseOqx("repo.frobnicate(from docs)")).toThrow(/unknown top-level consumer/);
+  });
+
+  it("reserves `all` but reports it unimplemented", () => {
+    expect(() => parseOqx("repo.all(from docs)")).toThrow(/not implemented yet/);
+  });
+
+  it("requires a closing paren", () => {
+    expect(() => parseOqx("repo.count(from docs")).toThrow(/expected '\)'/);
+  });
+
+  it("rejects trailing input after a wrapped query", () => {
+    expect(() => parseOqx("repo.count(from docs) select p: $path")).toThrow(/after the query/);
+  });
+
+  it("requires `.<op>(` after a leading repo", () => {
+    expect(() => parseOqx("repo from docs")).toThrow(/after a top-level `repo`/);
+  });
+});

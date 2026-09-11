@@ -46,6 +46,7 @@ export function lowerQuery(sq: SurfaceQuery): Query {
     target: SURFACE_TO_CEL[sq.from],
     where: sq.where ? lowerWhere(sq.where, SURFACE_TO_CEL[sq.from], true) : null,
     select: sq.select.map((s) => lowerSelect(s, SURFACE_TO_CEL[sq.from], "normal")),
+    consumer: sq.consumer ?? "collect",
   };
 }
 

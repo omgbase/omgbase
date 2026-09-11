@@ -656,6 +656,42 @@ describe("alchemy corpus — blocks and nodes targets", () => {
   });
 });
 
+describe("alchemy corpus — top-level consumers (repo.<op>)", () => {
+  it("repo.count folds the whole matching set to a number", () => {
+    // 18 documents total; 5 are substances.
+    expect(hits("repo.count(from docs)").count).toBe(18);
+    expect(hits('repo.count(from docs where type == "substance")').count).toBe(5);
+  });
+
+  it("repo.count of a correlated query counts DOCS, not their matched nodes", () => {
+    // docs that contain at least one task node (the lab notes) — a handful of
+    // docs, though they hold many tasks between them.
+    const docsWithTasks = paths('from docs where nodes.exists(where kind == "md:task")');
+    expect(hits('repo.count(from docs where nodes.exists(where kind == "md:task"))').count).toBe(docsWithTasks.length);
+  });
+
+  it("repo.exists answers presence with a boolean", () => {
+    expect(hits('repo.exists(from docs where layer == "draft")').exists).toBe(true);
+    expect(hits('repo.exists(from docs where layer == "nonexistent")').exists).toBe(false);
+  });
+
+  it("repo.first returns the first document in path order, with projections", () => {
+    const r = hits('repo.first(from docs select t: type)');
+    expect(r.hits.length).toBe(1);
+    expect(r.hits[0]!.path).toBe("index.md"); // sorts before every subdirectory
+  });
+
+  it("repo.single fetches the sole draft document (mutus-liber)", () => {
+    const r = hits('repo.single(from docs where layer == "draft")');
+    expect(r.hits.map((h) => h.path)).toEqual(["texts/mutus-liber.md"]);
+  });
+
+  it("repo.single fails loudly when the query matches more than one document", () => {
+    // 13 documents are canon — single must refuse to pick one.
+    expect(() => hits('repo.single(from docs where layer == "canon")')).toThrow(/matched more than one row/);
+  });
+});
+
 describe("alchemy corpus — pagination", () => {
   it("walks the corpus in path order with a keyset cursor", () => {
     const seen: string[] = [];
