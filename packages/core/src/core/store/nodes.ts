@@ -6,6 +6,34 @@ function mintNodeId(docId: string, blockId: string, kind: string, ordinal: numbe
   return "n_" + hashHex(`${docId}|${blockId}|${kind}|${ordinal}`).slice(0, 12);
 }
 
+// Project `md:section` nodes from the derived `sections` table (02 §4). A
+// section node surfaces the outline latent in `sections`: it is anchored to the
+// heading block (a real `b_` id — so unlike adapter-projected nodes it carries a
+// valid block_id), names the heading text, and carries the section's TOP-LEVEL
+// ordinal range + level in attrs. Range containment over these attrs is what
+// OQX's `section.blocks` / `section.subsections` / `block.section` relations
+// correlate on. Derived/rebuildable; not a new source of truth. Non-markdown
+// formats have no heading blocks, so `sections` is empty and this returns [].
+export function projectSectionNodes(db: Database, docId: string): ProjectedNode[] {
+  const rows = db
+    .prepare(
+      `SELECT s.heading_block AS heading_block, s.level AS level,
+              s.first_ordinal AS first_ordinal, s.last_ordinal AS last_ordinal,
+              hb.text AS text
+       FROM sections s
+       JOIN blocks hb ON hb.block_id = s.heading_block AND hb.doc_id = s.doc_id
+       WHERE s.doc_id = ? AND hb.deleted_commit IS NULL
+       ORDER BY s.first_ordinal`,
+    )
+    .all(docId) as { heading_block: string; level: number; first_ordinal: number; last_ordinal: number; text: string }[];
+  return rows.map((r) => ({
+    kind: "md:section",
+    name: r.text,
+    blockId: r.heading_block,
+    attrs: { level: r.level, first_ordinal: r.first_ordinal, last_ordinal: r.last_ordinal },
+  }));
+}
+
 export function deleteDocNodes(db: Database, docId: string): void {
   const rows = db.prepare("SELECT rowid, name, value FROM nodes WHERE doc_id = ?").all(docId) as { rowid: number; name: string | null; value: string | null }[];
   for (const r of rows) {

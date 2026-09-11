@@ -164,3 +164,105 @@ describe("OQX compile — alias hygiene", () => {
     expect(bindings).toContain("nodes n");
   });
 });
+
+describe("OQX compile — boolean where tree", () => {
+  it("compiles || to a SQL OR over CEL leaves", () => {
+    const c = compileSrc('from docs where layer == "canon" || layer == "working"');
+    const l = celCompile(parseFilter('layer == "canon"'), "docs");
+    const r = celCompile(parseFilter('layer == "working"'), "docs");
+    expect(c.where).toContain(`(${l.sql} OR ${r.sql})`);
+  });
+
+  it("compiles a leading ! over a collection op to NOT (EXISTS …)", () => {
+    const c = compileSrc('from docs where !nodes.exists(where kind == "md:task")');
+    expect(c.where).toMatch(/\(NOT \(EXISTS \(SELECT 1 FROM nodes n/);
+  });
+
+  it("mixes scalar and op leaves under one boolean tree, params in order", () => {
+    const c = compileSrc('from docs where layer == "canon" && nodes.exists(where kind == "md:task")');
+    expect(c.where).toContain(" AND ");
+    // repo guard param, then the layer literal, then the nested kind literal.
+    expect(c.whereParams).toEqual(["rp_1", "canon", "md:task"]);
+  });
+});
+
+describe("OQX compile — count comparisons", () => {
+  it("compiles count(...) >= N to a scalar COUNT comparison with the literal bound", () => {
+    const c = compileSrc('from docs where nodes.count(where kind == "md:task") >= 2');
+    expect(c.where).toMatch(/\(SELECT COUNT\(\*\) FROM nodes n WHERE n\.doc_id = d\.doc_id.*\) >= \?/s);
+    expect(c.whereParams).toEqual(["rp_1", "md:task", 2]);
+  });
+});
+
+describe("OQX compile — section relations", () => {
+  it("section.blocks correlates by ordinal-range containment over the section node's attrs", () => {
+    const c = compileSrc('from nodes where section.blocks.exists(where type == "list_item")');
+    expect(c.where).toMatch(/EXISTS \(SELECT 1 FROM blocks b WHERE b\.doc_id = n\.doc_id/);
+    expect(c.where).toContain("json_extract(n.attrs, '$.first_ordinal')");
+    expect(c.where).toContain("json_extract(n.attrs, '$.last_ordinal')");
+  });
+
+  it("block.section reaches nodes and tests the block's top ordinal against the section range", () => {
+    const c = compileSrc('from blocks where section.exists(where kind == "md:section")');
+    expect(c.where).toMatch(/EXISTS \(SELECT 1 FROM nodes n WHERE n\.doc_id = b\.doc_id/);
+    expect(c.where).toContain("n.kind = 'md:section'");
+  });
+});
+
+describe("OQX compile — lifts", () => {
+  it("compiles a where-collect lift to an EXISTS filter plus a resolved json array column", () => {
+    const c = compileSrc(
+      'from docs where nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select open',
+    );
+    // where: the collect acts as a non-empty predicate (EXISTS) on the doc.
+    expect(c.where).toMatch(/EXISTS \(SELECT 1 FROM nodes n WHERE n\.doc_id = d\.doc_id/);
+    // select: the `open` reference resolves to a json_group_array of value.
+    const p = c.projections.find((x) => x.name === "open")!;
+    expect(p.isJson).toBe(true);
+    expect(p.sql).toMatch(/json_group_array\(n\.value\) FROM nodes n WHERE n\.doc_id = d\.doc_id/);
+  });
+
+  it("resolves a lift reference under a renamed select column", () => {
+    const c = compileSrc(
+      'from docs where nodes.collect(^open: value where kind == "md:task") select todos: open',
+    );
+    const p = c.projections.find((x) => x.name === "todos")!;
+    expect(p.isJson).toBe(true);
+    expect(p.sql).toContain("json_group_array(n.value)");
+  });
+
+  it("a non-lift projection stays a plain scalar column (isJson false)", () => {
+    const c = compileSrc("from docs select lay: layer");
+    expect(c.projections[0]!.isJson).toBe(false);
+  });
+});
+
+describe("OQX compile — alias allocation under same-target nesting", () => {
+  it("allocates a distinct inner alias for section.subsections (nodes→nodes)", () => {
+    const c = compileSrc('from nodes where section.subsections.exists(where name.contains("x"))');
+    // outer node is `n`; the nested nodes scope must NOT reuse `n`.
+    expect(c.where).toMatch(/EXISTS \(SELECT 1 FROM nodes n1 WHERE n1\.doc_id = n\.doc_id/);
+    expect(c.where).toContain("n1.kind = 'md:section'");
+  });
+
+  it("nested collect allocates distinct aliases per scope (docs→nodes→blocks)", () => {
+    const c = compileSrc(
+      'from docs select secs: nodes.collect(where kind == "md:section" select heading: name, items: section.blocks.collect(where type == "list_item"))',
+    );
+    const sql = c.projections[0]!.sql;
+    // outer collect over nodes n; inner collect over blocks b, correlated to n.
+    expect(sql).toMatch(/FROM nodes n WHERE n\.doc_id = d\.doc_id/);
+    expect(sql).toMatch(/json_group_array\(json_object\(.*json_group_array/s);
+    expect(sql).toMatch(/FROM blocks b WHERE b\.doc_id = n\.doc_id/);
+  });
+
+  it("a same-target nested collect allocates n1 for the inner nodes scope", () => {
+    // docs → nodes(section) → subsections(nodes): the inner nodes scope needs n1.
+    const c = compileSrc(
+      'from docs select secs: nodes.collect(where kind == "md:section" select subs: section.subsections.collect(where kind == "md:section"))',
+    );
+    const sql = c.projections[0]!.sql;
+    expect(sql).toMatch(/FROM nodes n WHERE n\.doc_id = d\.doc_id/);
+    expect(sql).toMatch(/FROM nodes n1 WHERE n1\.doc_id = n\.doc_id/);
+  });
+});

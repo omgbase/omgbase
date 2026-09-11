@@ -8,7 +8,7 @@ import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
-import { writeDocNodes } from "./store/nodes.js";
+import { writeDocNodes, projectSectionNodes } from "./store/nodes.js";
 import { flattenFrontmatter, flattenComputed, writeDocProperties, type PropertyRow } from "./store/properties.js";
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
@@ -240,8 +240,11 @@ export function ingestFile(
     ftsIndexDoc(db, docId);
     rebuildSections(db, docId);
 
-    // Node projection: adapter-provided semantic features from parsed blocks.
+    // Node projection: adapter-provided semantic features from parsed blocks,
+    // plus engine-derived `md:section` nodes from the (just-rebuilt) sections
+    // table. Written together in one pass (writeDocNodes clears + repopulates).
     const propertyRows: PropertyRow[] = [];
+    const sectionNodes = projectSectionNodes(db, docId);
     if (adapter?.projectNodes) {
       // Zip assigned block ids onto the parsed blocks so projectNodes can anchor
       // each node to its own block (the parsed RawBlocks are pre-identity).
@@ -253,7 +256,7 @@ export function ingestFile(
         ...n,
         blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
       }));
-      writeDocNodes(db, repoId, docId, withIds);
+      writeDocNodes(db, repoId, docId, [...withIds, ...sectionNodes]);
 
       // Inline properties (key:: value) → property rows (source=inline). The
       // authored shape within the inline source drives `card`: a key that occurs
@@ -280,6 +283,9 @@ export function ingestFile(
           ...typedInlineValue(n.value),
         });
       }
+    } else if (sectionNodes.length > 0) {
+      // No adapter node projection, but the document still has sections.
+      writeDocNodes(db, repoId, docId, sectionNodes);
     }
 
     // Frontmatter → property rows (source=frontmatter). Flatten nested maps to

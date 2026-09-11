@@ -1,6 +1,8 @@
-// OQX surface AST (slice 1) — produced by parser.ts, lowered to ir.ts by
+// OQX surface AST (slice 2) — produced by parser.ts, lowered to ir.ts by
 // lower.ts. Scalar interiors are held as raw source strings; receivers as raw
 // tokens (resolved to structural relations against the enclosing target).
+
+import type { CountRelOp } from "./ir.js";
 
 export type SurfaceTarget = "docs" | "blocks" | "nodes";
 
@@ -10,29 +12,39 @@ export interface SurfaceScalar {
   source: string;
 }
 
-/** A receiver-constrained collection op: `<receiver>.<op>( <subquery> )`. */
+/** A receiver-constrained collection op: `<receiver>.<op>( <subquery> )`,
+ * optionally followed by a `<op> <int>` comparison (count only). */
 export interface SurfaceOp {
   kind: "op";
-  receiver: string; // "nodes" | "blocks" | ...
+  receiver: string; // "nodes" | "blocks" | "section" | ...
   op: "collect" | "exists" | "count";
   sub: SurfaceSubquery;
+  /** `count(...) <op> <int>` in where position. */
+  countCmp?: { op: CountRelOp; value: number };
 }
 
-export type SurfaceTerm = SurfaceScalar | SurfaceOp;
+/** The where clause boolean tree: leaves are scalar runs or collection ops,
+ * combined by &&/||/! and grouping which OQX owns at this layer. */
+export type SurfaceWhere =
+  | { kind: "and"; parts: SurfaceWhere[] }
+  | { kind: "or"; parts: SurfaceWhere[] }
+  | { kind: "not"; expr: SurfaceWhere }
+  | SurfaceScalar
+  | SurfaceOp;
 
 /** Body of a nested collection op: optional where + (for collect) projection.
  * Its row type is implied by the receiver relation, so no explicit `from`. */
 export interface SurfaceSubquery {
-  where: SurfaceTerm[];
+  where: SurfaceWhere | null;
   select: SurfaceSelectItem[];
 }
 
 export type SurfaceSelectItem =
-  | { kind: "field"; name: string; source: string }
+  | { kind: "field"; name: string; source: string; lift?: boolean }
   | { kind: "collect"; name: string; op: SurfaceOp };
 
 export interface SurfaceQuery {
   from: SurfaceTarget;
-  where: SurfaceTerm[];
+  where: SurfaceWhere | null;
   select: SurfaceSelectItem[];
 }

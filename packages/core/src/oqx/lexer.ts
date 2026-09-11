@@ -14,6 +14,7 @@ export type OqxTokenType =
   | "rparen"
   | "comma"
   | "colon"
+  | "caret" // ^ — one-scope lift marker on a select item
   | "and" // &&
   | "dot"
   | "op" // any other operator run: == != <= >= < > || ! + - * /
@@ -45,6 +46,7 @@ export function lexOqx(src: string): OqxToken[] {
     if (c === ",") { tokens.push({ type: "comma", value: c, pos: i }); i++; continue; }
     if (c === ":") { tokens.push({ type: "colon", value: c, pos: i }); i++; continue; }
     if (c === ".") { tokens.push({ type: "dot", value: c, pos: i }); i++; continue; }
+    if (c === "^") { tokens.push({ type: "caret", value: c, pos: i }); i++; continue; }
 
     if (c === "&" && src[i + 1] === "&") { tokens.push({ type: "and", value: "&&", pos: i }); i += 2; continue; }
 

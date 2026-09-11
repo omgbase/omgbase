@@ -64,13 +64,12 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   const last = page[page.length - 1];
   const cursor = truncated && last ? encodeCursor(String(last.path), String(last.id)) : null;
 
-  const collectNames = new Set(compiled.projections.filter((_, i) => q.select[i]?.kind === "collect").map((p) => p.name));
-
   const hits: OqxHit[] = page.map((r) => {
     const hit: OqxHit = { id: String(r.id), path: String(r.path) };
     for (const p of compiled.projections) {
       let val = r[p.name];
-      if (collectNames.has(p.name) && typeof val === "string") {
+      // JSON columns (collect arrays, lifted collections) arrive as text.
+      if (p.isJson && typeof val === "string") {
         val = JSON.parse(val) as unknown;
       }
       hit[p.name] = val ?? null;

@@ -1,16 +1,25 @@
-// OQX AST → IR lowering (slice 1). Resolves receiver tokens to structural
-// relations against the enclosing scope's target, classifies a bare
-// where-position collection op as `exists` (narrow truthiness), and enforces
-// the single-scope-per-target constraint that makes CEL-compiler alias reuse
-// safe (see scalar.ts and the plan's Risk section).
+// OQX AST → IR lowering (slice 2 + lifts). Resolves receiver tokens to
+// structural relations against the enclosing scope's target, lowers the
+// where-clause boolean tree, classifies a bare where-position collection op as
+// `exists` (narrow truthiness), threads `count(...) <op> <int>` comparisons, and
+// handles one-scope lifts (`^name:`). Same-target scope nesting is supported
+// (compile.ts allocates a distinct alias per scope); single-valued and
+// data-unavailable relations still fail loudly rather than silently
+// mis-answering.
+//
+// Lift rules (see the OQX design note): a `^name: expr` item is valid ONLY in
+// the body of a `collect` that sits directly in the TOP-LEVEL `where` — that
+// collect both filters (non-empty) and binds each `^name` one scope out (into
+// the top-level select). Such a where-collect body must contain only lifts.
+// Deeper re-lifts and select-position lifts fail loudly (deferred).
 
 import { FilterInvalid } from "../search/cel/parser.js";
 import { RELATIONS } from "./relations.js";
 import type {
-  SurfaceQuery, SurfaceTarget, SurfaceTerm, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
+  SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
 } from "./ast.js";
 import type {
-  Query, NestedQuery, CollectionOp, WhereTerm, SelectItem, CelTarget,
+  Query, NestedQuery, CollectionOp, WhereExpr, SelectItem, CelTarget,
 } from "./ir.js";
 
 const SURFACE_TO_CEL: Record<SurfaceTarget, CelTarget> = {
@@ -19,42 +28,62 @@ const SURFACE_TO_CEL: Record<SurfaceTarget, CelTarget> = {
   nodes: "nodes",
 };
 
-// A receiver token (e.g. "nodes") is resolved to a relation by pairing the
-// enclosing target with the token. The relation key is "<fromNoun>.<token>",
-// where fromNoun is the singular noun for the enclosing target.
 const TARGET_NOUN: Record<CelTarget, string> = {
   docs: "doc",
   blocks: "block",
   nodes: "node",
 };
 
+// A subquery body is lowered in one of two modes: "normal" (a regular body:
+// select-position collect, or an exists/count where-body — no lifts), or
+// "whereLift" (the body of a top-level where-position collect — every select
+// item must be a lift). Both propagate "normal" to any deeper nested op.
+type BodyMode = "normal" | "whereLift";
+
 export function lowerQuery(sq: SurfaceQuery): Query {
-  const target = SURFACE_TO_CEL[sq.from];
-  // The top-level target owns one scope; track live targets so nesting cannot
-  // reuse an alias the CEL compiler would bind to the wrong scope.
-  const live = new Set<CelTarget>([target]);
   return {
     kind: "query",
-    target,
-    where: sq.where.map((t) => lowerTerm(t, target, live)),
-    select: sq.select.map((s) => lowerSelect(s, target, live)),
+    target: SURFACE_TO_CEL[sq.from],
+    where: sq.where ? lowerWhere(sq.where, SURFACE_TO_CEL[sq.from], true) : null,
+    select: sq.select.map((s) => lowerSelect(s, SURFACE_TO_CEL[sq.from], "normal")),
   };
 }
 
-function lowerTerm(t: SurfaceTerm, target: CelTarget, live: Set<CelTarget>): WhereTerm {
-  if (t.kind === "scalar") return { kind: "scalar", source: t.source, target };
-  // A collection op in where-position: bare/`exists`/`count` all constrain the
-  // outer row. `collect` is not a predicate — reject it in where.
-  if (t.op === "collect") {
-    throw new FilterInvalid("collect(...) is a projection; use it in select, or use exists/count in where", "OQX §2");
+// topWhere: is this expression in the TOP-LEVEL where scope (depth 0)? Boolean
+// combinators keep the same scope; an op's subquery does not.
+function lowerWhere(w: SurfaceWhere, target: CelTarget, topWhere: boolean): WhereExpr {
+  switch (w.kind) {
+    case "and": return { kind: "and", parts: w.parts.map((p) => lowerWhere(p, target, topWhere)) };
+    case "or": return { kind: "or", parts: w.parts.map((p) => lowerWhere(p, target, topWhere)) };
+    case "not": return { kind: "not", expr: lowerWhere(w.expr, target, topWhere) };
+    case "scalar": return { kind: "scalar", source: w.source, target };
+    case "op": {
+      if (w.op === "collect") {
+        const hasLift = w.sub.select.some((s) => s.kind === "field" && s.lift);
+        if (!hasLift) {
+          throw new FilterInvalid("collect(...) is a projection; use it in select, or use exists/count in where", "OQX §2");
+        }
+        if (!topWhere) {
+          throw new FilterInvalid(
+            "a lift-bearing collect in where is only supported at the top level (a lift moves exactly one scope; re-lift at the intermediate scope is not supported yet)",
+            "OQX lifts",
+          );
+        }
+        if (w.countCmp) throw new FilterInvalid("collect(...) cannot carry a count comparison", "OQX §2");
+        return lowerOp(w, target, "whereLift");
+      }
+      if (w.countCmp && w.op !== "count") {
+        throw new FilterInvalid(`only count(...) is comparable; '${w.op}(...) <op> N' is not valid`, "OQX §2");
+      }
+      const op = lowerOp(w, target, "normal");
+      if (w.countCmp) op.countCmp = w.countCmp;
+      return op;
+    }
   }
-  return lowerOp(t, target, live);
 }
 
-function lowerOp(o: SurfaceOp, target: CelTarget, live: Set<CelTarget>): CollectionOp {
+function lowerOp(o: SurfaceOp, target: CelTarget, bodyMode: BodyMode): CollectionOp {
   const noun = TARGET_NOUN[target];
-  // Accept both "nodes" (relation token) and an explicit "doc.nodes" style
-  // receiver written from a matching scope. Slice 1: single-token receivers.
   const key = o.receiver.includes(".") ? o.receiver : `${noun}.${o.receiver}`;
   const rel = RELATIONS[key];
   if (!rel) {
@@ -66,50 +95,44 @@ function lowerOp(o: SurfaceOp, target: CelTarget, live: Set<CelTarget>): Collect
   if (rel.from !== target) {
     throw new FilterInvalid(`relation '${key}' is not reachable from ${target}`, "OQX §2");
   }
-  // Single-valued relations (node.doc, node.block) are redundant with the CEL
-  // layer's existing doc.*/block.* reach-through and would collide on the shared
-  // `d` alias. Point users at reach-through rather than a collection op.
   if (rel.singleValued) {
     throw new FilterInvalid(
       `relation '${key}' is single-valued; use ${rel.name.split(".")[1]}.<field> reach-through directly (e.g. doc.layer == "canon")`,
       "OQX §2",
     );
   }
-  // Fail loudly rather than compile a relation that can never match.
   if (rel.unavailable) {
     throw new FilterInvalid(`relation '${key}' is unavailable: ${rel.unavailable}`, "OQX §2");
   }
-  // Single-scope-per-target guard: the nested scope's child target must not
-  // collide with a target already live around this compile() call. (Slice 1's
-  // relations are one hop, so this only trips on same-target nesting.)
-  if (live.has(rel.childTarget)) {
-    throw new FilterInvalid(
-      `nested same-target scope (${rel.childTarget}) not supported in slice 1`,
-      "OQX §2",
-    );
-  }
-  const nestedLive = new Set(live);
-  nestedLive.add(rel.childTarget);
-  const sub = lowerSubquery(o.sub, rel.childTarget, nestedLive);
-  return { kind: "collectionOp", op: o.op, relation: rel, subquery: sub };
+  return { kind: "collectionOp", op: o.op, relation: rel, subquery: lowerSubquery(o.sub, rel.childTarget, bodyMode) };
 }
 
-function lowerSubquery(s: SurfaceSubquery, target: CelTarget, live: Set<CelTarget>): NestedQuery {
+function lowerSubquery(s: SurfaceSubquery, target: CelTarget, bodyMode: BodyMode): NestedQuery {
   return {
     target,
-    where: s.where.map((t) => lowerTerm(t, target, live)),
-    select: s.select.map((sel) => {
-      if (sel.kind === "collect") {
-        throw new FilterInvalid("nested collect(...) inside a collection op is not supported in slice 1", "OQX §2");
-      }
-      return lowerSelect(sel, target, live);
-    }),
+    // Ops inside a subquery are never in the top-level where scope.
+    where: s.where ? lowerWhere(s.where, target, false) : null,
+    select: s.select.map((sel) => lowerSelect(sel, target, bodyMode)),
   };
 }
 
-function lowerSelect(s: SurfaceSelectItem, target: CelTarget, live: Set<CelTarget>): SelectItem {
+function lowerSelect(s: SurfaceSelectItem, target: CelTarget, bodyMode: BodyMode): SelectItem {
   if (s.kind === "collect") {
-    return { kind: "collect", name: s.name, op: lowerOp(s.op, target, live) };
+    if (bodyMode === "whereLift") {
+      throw new FilterInvalid("a where-position collect projects only via ^lift scalar values, not a nested collect", "OQX lifts");
+    }
+    // A select-position collect's own body is a normal projection scope (no lifts).
+    return { kind: "collect", name: s.name, op: lowerOp(s.op, target, "normal") };
+  }
+  if (bodyMode === "whereLift") {
+    if (!s.lift) {
+      throw new FilterInvalid(`a where-position collect projects only via ^lifts — mark '${s.name}' as ^${s.name}`, "OQX lifts");
+    }
+    return { kind: "field", name: s.name, source: s.source, lift: true };
+  }
+  // normal scope: a ^lift here has no enclosing collect to bind out of.
+  if (s.lift) {
+    throw new FilterInvalid(`^${s.name} lift is only valid inside a top-level where-position collect`, "OQX lifts");
   }
   return { kind: "field", name: s.name, source: s.source };
 }

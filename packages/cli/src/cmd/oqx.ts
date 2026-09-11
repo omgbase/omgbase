@@ -5,7 +5,10 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { truncationFooter, EXIT_OK } from "../output.js";
 
-// `omg oqx <source>` — OQX composable query (slice 1: structural navigation).
+// `omg oqx <source>` — OQX composable query (structural + section navigation:
+// receiver-constrained nested queries, a boolean where tree over scalar
+// predicates and collection ops, count comparisons, nestable collect, and
+// one-scope lifts (^name) that filter + capture in a single expression).
 // Coexists with `omg q` (CEL). Source is a positional string or -f file|-.
 // Human output: one hit per line (id + path); --json/--jsonl/--ids as usual.
 
@@ -30,7 +33,9 @@ function runOqx(cli: Cli, args: string[]): number {
   });
   if (values.help) {
     cli.io.out("  oqx <source> [-n N] [--cursor c] [-f file|-]");
-    cli.io.out("  e.g. oqx 'from docs where nodes.exists(where kind == \"md:task\")'");
+    cli.io.out("  e.g. oqx 'from docs where nodes.count(where kind == \"md:task\") >= 2'");
+    cli.io.out("       oqx 'from nodes where kind == \"md:section\" select items: section.blocks.collect(where type == \"list_item\")'");
+    cli.io.out("       oqx 'from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open'");
     return EXIT_OK;
   }
 

@@ -72,7 +72,15 @@ different sets. Several tests depend on this; keep it fully checked.
   of prose bullets (`list_item`), while `processes/magnum-opus.md` has an
   identically-titled section of `- [ ]` checkboxes (block type `task`). This
   makes `under_heading("Open questions")` testable *and* gives the
-  `list_item`-vs-`task` type filter a real discriminator (not luck).
+  `list_item`-vs-`task` type filter a real discriminator (not luck). It also
+  exercises the `md:section` nodes and the `section.blocks` / `block.section`
+  relations (asserted to navigate the same content as `under_heading`).
+- **Lifts (`^name`)** — the open tasks distributed across ten documents (both
+  lab notes, three practitioners, all four processes, mutus-liber) let a single
+  `from docs where nodes.collect(^open: value where kind == "md:task" &&
+  !attrs.checked) select $path, open` both filter to those docs and capture each
+  one's open-task texts. salt's all-checked supply list is the discriminator
+  again: an any-task lift captures salt, an open-task lift drops it.
 
 ### Adding to the corpus
 

@@ -72,7 +72,7 @@ describe("alchemy corpus — shape", () => {
       .prepare("SELECT DISTINCT kind FROM nodes ORDER BY kind")
       .all() as { kind: string }[];
     expect(kinds.map((k) => k.kind)).toEqual([
-      "md:inline_field", "md:link", "md:task", "md:wikilink",
+      "md:inline_field", "md:link", "md:section", "md:task", "md:wikilink",
     ]);
   });
 
@@ -316,6 +316,45 @@ describe("alchemy corpus — correlated block queries", () => {
   });
 });
 
+describe("alchemy corpus — section relations (md:section nodes)", () => {
+  it("projects a section node per heading, named by its text", () => {
+    // Every heading in the corpus becomes an md:section node; the reference
+    // pages carry an "Open questions" section.
+    const openQ = paths('from nodes where kind == "md:section" && name == "Open questions"');
+    expect(openQ.sort()).toEqual([
+      "processes/magnum-opus.md",
+      "substances/philosophers-stone.md",
+      "substances/prima-materia.md",
+    ]);
+  });
+
+  it("section.blocks navigates the same content as under_heading, via section nodes", () => {
+    // The list items OQX finds under an "Open questions" section node (a
+    // node→blocks range-containment relation) are exactly those under_heading()
+    // finds (a blocks structural fn) — two routes to the same section range.
+    const viaSection = hits(
+      'from nodes where kind == "md:section" && name == "Open questions" select items: section.blocks.collect(where type == "list_item" select t: text)',
+    ).hits.flatMap((h) => (h.items as { t: string }[]).map((i) => i.t)).sort();
+    const viaHeading = hits(
+      'from blocks where type == "list_item" && under_heading("Open questions") select text: text',
+    ).hits.map((h) => h.text as string).sort();
+    expect(viaSection).toEqual(viaHeading);
+    expect(viaSection.length).toBe(4); // the two reference pages, two bullets each
+  });
+
+  it("block.section reaches a block's enclosing section (consistent with under_heading)", () => {
+    // A list_item under "Open questions" has an enclosing section node of that
+    // name — block.section (blocks→nodes) agrees with under_heading.
+    const viaSection = paths(
+      'from blocks where type == "list_item" && section.exists(where name == "Open questions")',
+    ).sort();
+    const viaHeading = paths(
+      'from blocks where type == "list_item" && under_heading("Open questions")',
+    ).sort();
+    expect(viaSection).toEqual(viaHeading);
+  });
+});
+
 describe("alchemy corpus — collect() projection", () => {
   it("shapes each lab note's open tasks into a nested list", () => {
     const res = hits(
@@ -362,6 +401,89 @@ describe("alchemy corpus — collect() projection", () => {
     expect(res.hits.map((h) => h.era)).toEqual([1, 2]);
     expect((res.hits[0]!.tasks as unknown[]).length).toBe(7); // January
     expect((res.hits[1]!.tasks as unknown[]).length).toBe(4); // February
+  });
+});
+
+describe("alchemy corpus — lifts (^name: filter + capture in one expression)", () => {
+  // The 10 documents carrying an open task, established by the corpus (see the
+  // fixture README): both lab notebooks, three practitioners, all four
+  // processes, and mutus-liber. salt has tasks but all CHECKED, so it never
+  // appears among open-task results — the discriminator, now via lifts.
+  const WITH_OPEN_TASK = [
+    "lab/2026-01-notes.md",
+    "lab/2026-02-notes.md",
+    "practitioners/jabir-ibn-hayyan.md",
+    "practitioners/newton.md",
+    "practitioners/paracelsus.md",
+    "processes/calcination.md",
+    "processes/coagulation.md",
+    "processes/dissolution.md",
+    "processes/magnum-opus.md",
+    "texts/mutus-liber.md",
+  ];
+
+  it("returns exactly the docs with open work AND carries each doc's open-task texts", () => {
+    // One receiver-constrained subquery does double duty: the where-collect
+    // filters to docs that HAVE an open task, and ^open lifts those tasks' text
+    // into the parent select — no repeated subquery, no post-filter.
+    const res = hits(
+      'from docs where nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select p: $path, open',
+    );
+    expect(res.hits.map((h) => h.p).sort()).toEqual(WITH_OPEN_TASK);
+    // the January lab note's three open items, captured verbatim
+    const jan = res.hits.find((h) => h.p === "lab/2026-01-notes.md")!;
+    expect((jan.open as string[]).sort()).toEqual([
+      "Plot mass gain against heating time",
+      "Repeat the series with copper",
+      "Tabulate the metal sulphides by colour",
+    ]);
+  });
+
+  it("the salt discriminator holds through lifts: any-task lifts salt, open-task excludes it", () => {
+    // salt is the ONLY substance with task nodes, and they are all checked.
+    const anyTask = hits(
+      'from docs where type == "substance" && nodes.collect(^t: value where kind == "md:task") select p: $path, t',
+    );
+    expect(anyTask.hits.map((h) => h.p)).toEqual(["substances/salt.md"]);
+    expect((anyTask.hits[0]!.t as string[]).sort()).toEqual([
+      "Buy more salt of tartar",
+      "Replace the leaching filter papers",
+    ]);
+
+    // Narrowing the lift's own predicate to OPEN tasks empties salt's set, so
+    // the where-collect no longer matches and salt drops out entirely.
+    const openTask = paths(
+      'from docs where type == "substance" && nodes.collect(^t: value where kind == "md:task" && !attrs.checked)',
+    );
+    expect(openTask).toEqual([]);
+  });
+
+  it("composes a lift with a document-level predicate (processes with open work)", () => {
+    const res = paths(
+      'from docs where type == "process" && nodes.collect(^todo: value where kind == "md:task" && !attrs.checked)',
+    );
+    expect(res.sort()).toEqual([
+      "processes/calcination.md",
+      "processes/coagulation.md",
+      "processes/dissolution.md",
+      "processes/magnum-opus.md",
+    ]);
+  });
+
+  it("an unreferenced lift still filters; a renamed reference still resolves", () => {
+    // Not selecting the binding → the collect is a pure non-empty filter.
+    const filtered = paths(
+      'from docs where $path.startsWith("lab/") && nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select $path',
+    );
+    expect(filtered.sort()).toEqual(["lab/2026-01-notes.md", "lab/2026-02-notes.md"]);
+    // Referencing it under a different column name still yields the array.
+    const named = hits(
+      'from docs where $path == "lab/2026-02-notes.md" && nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select todos: open',
+    );
+    expect((named.hits[0]!.todos as string[]).sort()).toEqual([
+      "Assay cycle 1 and cycle 4 crops for iron",
+      "Write the plateau result up for the coagulation note",
+    ]);
   });
 });
 

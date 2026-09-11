@@ -1,17 +1,22 @@
-// OQX structural parser (slice 1). Parses query STRUCTURE (from/where/select +
-// receiver-constrained collection ops) and captures scalar predicate/value
-// interiors verbatim as source slices for the CEL layer. Throws FilterInvalid
-// (from the CEL parser) so MCP/CLI error mapping is uniform.
+// OQX structural parser (slice 2). Parses query STRUCTURE (from/where/select,
+// the where-clause boolean tree, and receiver-constrained collection ops) and
+// captures scalar predicate/value interiors verbatim as source slices for the
+// CEL layer. OQX owns &&/||/!/grouping at the where level so collection ops
+// (invisible to CEL) can compose with scalar predicates; each maximal pure-
+// scalar leaf is handed to CEL untouched. Throws FilterInvalid (from the CEL
+// parser) so MCP/CLI error mapping is uniform.
 
 import { lexOqx, type OqxToken, OqxLexError } from "./lexer.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type {
-  SurfaceQuery, SurfaceTarget, SurfaceTerm, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
+  SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceScalar, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
 } from "./ast.js";
+import type { CountRelOp } from "./ir.js";
 
-const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block"]);
+const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section"]);
 const OP_NAMES = new Set(["collect", "exists", "count"]);
 const TARGETS = new Set(["docs", "blocks", "nodes"]);
+const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 
 export function parseOqx(src: string): SurfaceQuery {
   let tokens: OqxToken[];
@@ -33,6 +38,10 @@ class OqxParser {
     const t = this.peek();
     return t.type === type && (value === undefined || t.value === value);
   }
+  private atOp(value: string): boolean {
+    const t = this.peek();
+    return t.type === "op" && t.value === value;
+  }
   private fail(msg: string): never {
     throw new FilterInvalid(msg, "OQX §1");
   }
@@ -45,7 +54,7 @@ class OqxParser {
     const from = t.value as SurfaceTarget;
     if (!TARGETS.has(from)) this.fail(`unknown target '${t.value}' — use docs|blocks|nodes`);
 
-    const q: SurfaceQuery = { from, where: [], select: [] };
+    const q: SurfaceQuery = { from, where: null, select: [] };
     let sawWhere = false;
     let sawSelect = false;
     while (!this.at("eof")) {
@@ -53,7 +62,7 @@ class OqxParser {
         if (sawWhere) this.fail("duplicate `where` clause");
         sawWhere = true;
         this.next();
-        q.where = this.parseWhereTerms();
+        q.where = this.parseWhereExpr();
       } else if (this.at("kw", "select")) {
         if (sawSelect) this.fail("duplicate `select` clause");
         sawSelect = true;
@@ -66,22 +75,70 @@ class OqxParser {
     return q;
   }
 
-  // where := term { "&&" term }
-  private parseWhereTerms(): SurfaceTerm[] {
-    const terms: SurfaceTerm[] = [this.parseTerm()];
-    while (this.at("and")) {
-      this.next();
-      terms.push(this.parseTerm());
-    }
-    return terms;
+  // ---- where boolean tree: or → and → unary(!) → primary --------------------
+  // Leaves are scalar runs or collection ops; OQX owns &&/||/!/grouping.
+  private parseWhereExpr(): SurfaceWhere {
+    return this.parseOr();
   }
 
-  // A term is a collection op if it begins with a receiver root and its dotted
-  // chain ends in an op keyword followed by '('. Otherwise it is a scalar run.
-  private parseTerm(): SurfaceTerm {
+  private parseOr(): SurfaceWhere {
+    let left = this.parseAnd();
+    if (!this.atOp("||")) return left;
+    const parts: SurfaceWhere[] = [left];
+    while (this.atOp("||")) {
+      this.next();
+      parts.push(this.parseAnd());
+    }
+    return { kind: "or", parts };
+  }
+
+  private parseAnd(): SurfaceWhere {
+    const left = this.parseUnary();
+    if (!this.at("and")) return left;
+    const parts: SurfaceWhere[] = [left];
+    while (this.at("and")) {
+      this.next();
+      parts.push(this.parseUnary());
+    }
+    return { kind: "and", parts };
+  }
+
+  private parseUnary(): SurfaceWhere {
+    if (this.atOp("!")) {
+      this.next();
+      return { kind: "not", expr: this.parseUnary() };
+    }
+    return this.parsePrimary();
+  }
+
+  private parsePrimary(): SurfaceWhere {
+    // Grouping: OQX owns parens at the where level (so a grouped mix of scalars
+    // and ops parses uniformly). A purely-scalar group re-compiles identically.
+    if (this.at("lparen")) {
+      this.next();
+      const e = this.parseWhereExpr();
+      if (!this.at("rparen")) this.fail("expected ')' to close a grouped where expression");
+      this.next();
+      return e;
+    }
     const op = this.tryParseOp();
-    if (op) return op;
-    return this.parseScalarRun();
+    if (op) return this.maybeCountCmp(op);
+    return this.parseScalarLeaf();
+  }
+
+  // `count(...) <op> <int>` in where position (only count is comparable; other
+  // ops rejected in lower.ts). A bare op with no trailing comparison is left as
+  // truthiness (non-empty).
+  private maybeCountCmp(op: SurfaceOp): SurfaceOp {
+    if (this.peek().type === "op" && RELOPS.has(this.peek().value)) {
+      const relop = this.next().value as CountRelOp;
+      if (!this.at("number")) this.fail(`expected an integer after '${op.receiver}.${op.op}(...) ${relop}'`);
+      const numTok = this.next();
+      const value = Number(numTok.value);
+      if (!Number.isInteger(value)) this.fail(`count comparison takes an integer, got '${numTok.value}'`);
+      op.countCmp = { op: relop, value };
+    }
+    return op;
   }
 
   // Detect + parse `<receiver>.<op>( <subquery> )`. Returns null (without
@@ -110,12 +167,12 @@ class OqxParser {
     return { kind: "op", receiver, op: opName as SurfaceOp["op"], sub };
   }
 
-  // Nested query body: optional `where <terms>` then optional `select <items>`.
-  // An implicit leading where is also allowed (bare terms without the keyword),
-  // matching the spec's `nodes.collect(where kind == "x")`. We require the
-  // `where`/`select` keywords for clarity in slice 1.
+  // Nested query body: `where <expr>` and a projection, in any order. The
+  // projection is either the explicit `select <items>` form or a keyword-less
+  // run of leading `^lift:` items (the canonical lift form
+  // `collect(^open: value where P)`).
   private parseSubquery(): SurfaceSubquery {
-    const sub: SurfaceSubquery = { where: [], select: [] };
+    const sub: SurfaceSubquery = { where: null, select: [] };
     let sawWhere = false;
     let sawSelect = false;
     while (!this.at("rparen") && !this.at("eof")) {
@@ -123,14 +180,19 @@ class OqxParser {
         if (sawWhere) this.fail("duplicate `where` in nested query");
         sawWhere = true;
         this.next();
-        sub.where = this.parseWhereTerms();
+        sub.where = this.parseWhereExpr();
       } else if (this.at("kw", "select")) {
-        if (sawSelect) this.fail("duplicate `select` in nested query");
+        if (sawSelect) this.fail("duplicate projection in nested query");
         sawSelect = true;
         this.next();
         sub.select = this.parseSelectItems();
+      } else if (this.at("caret")) {
+        // Keyword-less lift items leading the collect body.
+        if (sawSelect) this.fail("duplicate projection in nested query");
+        sawSelect = true;
+        sub.select = this.parseSelectItems();
       } else {
-        this.fail(`unexpected '${this.peek().value || this.peek().type}' in nested query — expected where/select`);
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' in nested query — expected where/select or a ^lift`);
       }
     }
     return sub;
@@ -147,6 +209,10 @@ class OqxParser {
   }
 
   private parseSelectItem(): SurfaceSelectItem {
+    // A leading `^` marks a one-scope lift (`^name: expr`) — only meaningful in
+    // a where-position collect's body; enforced during lowering.
+    let lift = false;
+    if (this.at("caret")) { this.next(); lift = true; }
     if (!this.at("ident") && !this.at("field")) this.fail("expected a projection name/field");
     const nameTok = this.next();
     if (this.at("colon")) {
@@ -156,21 +222,23 @@ class OqxParser {
       const op = this.tryParseOp();
       if (op) {
         if (op.op !== "collect") this.fail(`select projection '${name}' must use collect(...), not ${op.op}(...)`);
+        if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not collect(...)`);
         return { kind: "collect", name, op };
       }
       const source = this.captureScalarUntilSelectBoundary();
       if (!source) this.fail(`projection '${name}' has no value expression`);
-      return { kind: "field", name, source };
+      return lift ? { kind: "field", name, source, lift } : { kind: "field", name, source };
     }
-    // bare field passthrough: `path`, `kind`, `$path`, …
-    return { kind: "field", name: nameTok.value, source: nameTok.value };
+    // bare field passthrough: `path`, `kind`, `$path`, `^value`, …
+    const bareName = nameTok.value;
+    return lift ? { kind: "field", name: bareName, source: bareName, lift } : { kind: "field", name: bareName, source: bareName };
   }
 
-  // Capture a scalar run (verbatim source) up to the next depth-0 boundary:
-  // `&&`, a where/select keyword, a comma, a ')', or eof.
-  private parseScalarRun(): SurfaceTerm {
+  // A scalar leaf: a maximal verbatim run up to the next depth-0 boolean
+  // boundary (`&&`, `||`), a where/select keyword, a ')', or eof.
+  private parseScalarLeaf(): SurfaceScalar {
     const source = this.captureScalarUntilTermBoundary();
-    if (!source) this.fail("empty predicate term");
+    if (!source) this.fail(`unexpected '${this.peek().value || this.peek().type}' in where — expected a predicate`);
     return { kind: "scalar", source };
   }
 
@@ -183,7 +251,8 @@ class OqxParser {
 
   // Slice raw source from the current token to the stopping token, tracking
   // paren depth so structural chars inside a scalar (e.g. f(a, b), "a && b")
-  // don't end the run prematurely.
+  // don't end the run prematurely. OQX owns depth-0 && / || / ! / grouping, so
+  // a scalar leaf never contains those at depth 0.
   private captureScalar(stopOnComma: boolean): string {
     const startTok = this.peek();
     const startOff = startTok.pos;
@@ -193,6 +262,7 @@ class OqxParser {
       const t = this.peek();
       if (depth === 0) {
         if (t.type === "and") break;
+        if (t.type === "op" && (t.value === "||" || t.value === "!")) break;
         if (t.type === "kw" && (t.value === "where" || t.value === "select")) break;
         if (t.type === "rparen") break;
         if (stopOnComma && t.type === "comma") break;
