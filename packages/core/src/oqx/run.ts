@@ -10,7 +10,14 @@ import { parseOqx } from "./parser.js";
 import { lowerQuery } from "./lower.js";
 import { compileQuery, type CompiledQuery } from "./compile.js";
 import { FilterInvalid } from "../search/cel/parser.js";
+import type { SemanticResolver, SemanticVec } from "../search/cel/compile.js";
+import { float32ToBlob } from "../core/vec.js";
 import type { CelTarget, OqxConsumer } from "./ir.js";
+
+/** Embeds a query phrase to a vector + model — the runner's provider hook for
+ * `semantic("phrase")`. Async and provider-specific; supplied by the caller
+ * (MCP/CLI), never by the query language itself (which stays provider-free). */
+export type EmbedQuery = (text: string) => Promise<{ model: string; vec: Float32Array }>;
 
 export interface OqxHit {
   id: string;
@@ -32,6 +39,10 @@ export interface OqxResult {
 export interface OqxOptions {
   limit?: number;
   cursor?: string | null;
+  /** Pre-computed query vectors for `semantic("phrase")`, keyed by phrase. The
+   * async `oqxRunAsync` fills this (embedding the literals); the sync core stays
+   * provider-free. A `semantic(...)` with no entry here is a loud error. */
+  semanticVectors?: Map<string, SemanticVec>;
 }
 
 const ID_COL: Record<CelTarget, string> = {
@@ -42,7 +53,10 @@ const ID_COL: Record<CelTarget, string> = {
 
 export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOptions = {}): OqxResult {
   const q = lowerQuery(parseOqx(source));
-  const compiled = compileQuery(q, repoId);
+  const semantic: SemanticResolver | undefined = opts.semanticVectors
+    ? (phrase) => opts.semanticVectors!.get(phrase)
+    : undefined;
+  const compiled = compileQuery(q, repoId, semantic);
   const idCol = ID_COL[q.target];
 
   // Scalar reductions ignore projections and pagination entirely: they answer a
@@ -102,6 +116,44 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   const cursor = truncated && last ? encodeCursor(String(last.path), String(last.id)) : null;
   const hits = page.map((r) => rowToHit(r, compiled));
   return { hits, truncated, cursor, consumer: "collect" };
+}
+
+// A sentinel binding used only to DISCOVER which phrases a query embeds: a
+// recording compile pass (collectSemanticPhrases) hands this back for every
+// semantic("…") so compilation succeeds and records the phrase; the SQL it
+// produces is thrown away.
+const RECORD_SENTINEL: SemanticVec = { vec: Buffer.alloc(0), model: "" };
+
+// Distinct phrases referenced by `semantic("…")` in a query, found by compiling
+// once with a recording resolver (the compiler already visits every scalar, so
+// this reuses the real traversal instead of a bespoke AST walk). repoId is
+// irrelevant here — the compiled SQL is discarded.
+export function collectSemanticPhrases(source: string): string[] {
+  const q = lowerQuery(parseOqx(source));
+  const phrases = new Set<string>();
+  const rec: SemanticResolver = (p) => { phrases.add(p); return RECORD_SENTINEL; };
+  compileQuery(q, "rp_record", rec);
+  return [...phrases];
+}
+
+// Async entry point: embed any `semantic("…")` phrases (provider-specific, so
+// async) into query vectors, then run the sync core with them pre-resolved.
+// Queries with no semantic() go straight to the sync path. Keeping the core
+// synchronous means every existing caller/test is untouched.
+export async function oqxRunAsync(
+  store: Store, repoId: string, source: string, opts: OqxOptions = {}, embedQuery?: EmbedQuery,
+): Promise<OqxResult> {
+  const phrases = collectSemanticPhrases(source);
+  if (phrases.length === 0) return oqxRun(store, repoId, source, opts);
+  if (!embedQuery) {
+    throw new FilterInvalid("semantic(...) needs an embedding provider; none is configured", "OQX semantic");
+  }
+  const semanticVectors = new Map<string, SemanticVec>();
+  for (const phrase of phrases) {
+    const { model, vec } = await embedQuery(phrase);
+    semanticVectors.set(phrase, { model, vec: float32ToBlob(vec) });
+  }
+  return oqxRun(store, repoId, source, { ...opts, semanticVectors });
 }
 
 // Map a projected SQL row to a lean hit: parse JSON columns (collect arrays,

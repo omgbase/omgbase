@@ -339,3 +339,27 @@ describe("OQX compile — text() full-text predicate", () => {
     expect(c.where).toContain("n.rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)");
   });
 });
+
+describe("OQX compile — semantic() scalar score", () => {
+  // A stub resolver stands in for the runner's embedder (compile-time shape only).
+  const stub = () => ({ vec: Buffer.alloc(8), model: "m1" });
+
+  it("blocks target: cosine over the block's own embedding, keyed by raw_hash", () => {
+    const c = compileQuery(lowerQuery(parseOqx('from blocks where semantic("x") > 0.5')), "rp_1", stub);
+    expect(c.where).toContain("cosine(e.vec, ?) FROM embeddings e WHERE e.content_hash = b.raw_hash AND e.model = ?");
+    expect(c.whereParams).toContain("m1");
+    expect(c.whereParams).toContain(0.5);
+  });
+
+  it("docs target: cosine over the whole-document vector (doc_embeddings)", () => {
+    const c = compileQuery(lowerQuery(parseOqx('from docs select s: semantic("x")')), "rp_1", stub);
+    const p = c.projections.find((x) => x.name === "s")!;
+    expect(p.sql).toContain("cosine(de.vec, ?) FROM doc_embeddings de WHERE de.doc_id = d.doc_id AND de.model = ?");
+  });
+
+  it("without a resolver, semantic() is a loud unavailable error", () => {
+    expect(() => compileQuery(lowerQuery(parseOqx('from docs where semantic("x") > 0.5')), "rp_1")).toThrow(
+      /needs an embedding provider/,
+    );
+  });
+});

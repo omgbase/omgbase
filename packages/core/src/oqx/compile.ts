@@ -23,7 +23,7 @@
 // correlated-subqueries design note).
 
 import { FilterInvalid } from "../search/cel/parser.js";
-import { defaultCtx, type AliasCtx, type OuterBinding, type OuterResolver } from "../search/cel/compile.js";
+import { defaultCtx, type AliasCtx, type OuterBinding, type OuterResolver, type SemanticResolver } from "../search/cel/compile.js";
 import { compilePredicate, compileValue } from "./scalar.js";
 import type {
   Query, CollectionOp, WhereExpr, SelectItem, CelTarget, NestedQuery, CountRelOp,
@@ -179,10 +179,11 @@ function compileCorrelatedBody(
     guardSql = child === "nodes" ? "1" : `${childAlias}.deleted_commit IS NULL`;
   }
 
-  // The child's scalar leaves see the ENCLOSING scope's bindings via `^name`.
+  // The child's scalar leaves see the ENCLOSING scope's bindings via `^name`,
+  // and the query-global semantic resolver (uniform across scopes) flows down.
   const childCtx: AliasCtx = enclosingBindings
-    ? { self: childAlias, doc: docAlias, outer: enclosingBindings }
-    : { self: childAlias, doc: docAlias };
+    ? { self: childAlias, doc: docAlias, outer: enclosingBindings, ...(outer.semantic ? { semantic: outer.semantic } : {}) }
+    : { self: childAlias, doc: docAlias, ...(outer.semantic ? { semantic: outer.semantic } : {}) };
   // The child's OWN bindings (for its nested ops one scope further in).
   const childBindings = buildBindings(op.subquery, child, childCtx, childInUse, repoId);
 
@@ -387,8 +388,9 @@ function gatherLiftBindings(w: WhereExpr | null): Map<string, LiftBinding> {
   return m;
 }
 
-export function compileQuery(q: Query, repoId: string): CompiledQuery {
+export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolver): CompiledQuery {
   const ctx = defaultCtx(q.target);
+  if (semantic) ctx.semantic = semantic; // query-global; flows to every child ctx
   const inUse = new Set([ctx.self, "d"]);
   const g = guards(q.target, repoId);
   // Bindings the top scope publishes to its nested scopes (its select values /

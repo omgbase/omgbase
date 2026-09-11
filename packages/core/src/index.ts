@@ -59,7 +59,7 @@ export { resolve, type ResolveHit, type ResolveInput } from "./search/resolve.js
 
 // OQX — omgbase Query eXpressions (unified composable query language, slice 1:
 // structural navigation over docs/blocks/nodes). Coexists with query().
-export { oqxRun, parseOqx, type OqxResult, type OqxHit, type OqxOptions } from "./oqx/run.js";
+export { oqxRun, oqxRunAsync, collectSemanticPhrases, parseOqx, type OqxResult, type OqxHit, type OqxOptions, type EmbedQuery } from "./oqx/run.js";
 
 // Embeddings + semantic retrieval (05 §5–6). The provider is a plugin loaded by
 // package name; core carries no ML dependency.

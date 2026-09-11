@@ -1,9 +1,10 @@
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
-import { oqxRun } from "@omgbase/core";
+import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EXIT_OK } from "../output.js";
+import { truncationFooter, EngineErrorLike, EXIT_OK } from "../output.js";
+import { loadEmbedding } from "./_embed.js";
 
 // `omg oqx <source>` — OQX composable query (structural + section navigation +
 // ad-hoc correlation: receiver-constrained nested queries, a boolean where tree
@@ -25,7 +26,7 @@ function readStdin(): string {
   }
 }
 
-function runOqx(cli: Cli, args: string[]): number {
+async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -44,6 +45,7 @@ function runOqx(cli: Cli, args: string[]): number {
     cli.io.out("       oqx 'from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)'");
     cli.io.out("       oqx 'repo.count(from docs where layer == \"canon\")'   # scalar; also repo.exists/first/single(...)");
     cli.io.out("       oqx 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
+    cli.io.out("       oqx 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
     return EXIT_OK;
   }
 
@@ -62,7 +64,27 @@ function runOqx(cli: Cli, args: string[]): number {
   if (values.n) opts.limit = Number(values.n);
   if (values.cursor) opts.cursor = values.cursor;
 
-  const result = oqxRun(ws.store, repo.repoId, source, opts);
+  // A query using semantic("…") needs the embedding provider to turn each
+  // phrase into a query vector; everything else runs on the sync core with no
+  // provider loaded. loadEmbedding is only touched when a phrase is present.
+  const phrases = collectSemanticPhrases(source);
+  let result;
+  if (phrases.length > 0) {
+    const loaded = await loadEmbedding(ws, repo.repoId);
+    if (!loaded) {
+      throw new EngineErrorLike("semantic_unavailable", "semantic(...) needs an embedding provider", {
+        hint: "omg config set embedding.provider <command|url>",
+      });
+    }
+    try {
+      const embed: EmbedQuery = async (t) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(t) });
+      result = await oqxRunAsync(ws.store, repo.repoId, source, opts, embed);
+    } finally {
+      await loaded.close();
+    }
+  } else {
+    result = oqxRun(ws.store, repo.repoId, source, opts);
+  }
 
   // JSON emits the whole result verbatim (incl. consumer + any scalar), so
   // count/exists round-trip without special-casing.

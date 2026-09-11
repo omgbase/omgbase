@@ -26,6 +26,12 @@ export interface AliasCtx {
    * supplies it per nested scope; the base `query` surface leaves it undefined,
    * so a `^name` reaching an absent resolver is a loud error. */
   outer?: OuterResolver;
+  /** Resolver for `semantic("phrase")` — maps the phrase to a pre-computed query
+   * vector (BLOB) + its model. OQX's async runner embeds the literals and
+   * supplies this; when absent (or the phrase is unresolved) `semantic(...)` is a
+   * loud `semantic_unavailable`. The language stays provider-free: the function
+   * takes a string, the runtime supplies the embedding. */
+  semantic?: SemanticResolver;
 }
 
 // A binding visible to a nested scope via `^name`. A parent SELECT value binds a
@@ -37,6 +43,11 @@ export interface OuterBinding {
   collection?: () => { expr: string; params: unknown[] };
 }
 export type OuterResolver = (name: string) => OuterBinding | undefined;
+
+// A resolved query embedding for a `semantic("phrase")` call: the query vector
+// as a bound BLOB plus the model whose stored embeddings it must be compared to.
+export interface SemanticVec { vec: Buffer; model: string }
+export type SemanticResolver = (phrase: string) => SemanticVec | undefined;
 
 function resolveOuter(ctx: AliasCtx, name: string): OuterBinding {
   const b = ctx.outer?.(name);
@@ -330,6 +341,8 @@ function scalarSql(node: Node, target: Target, ctx: AliasCtx): { expr: string; p
   }
   if (node.kind === "call") {
     switch (node.name) {
+      case "semantic":
+        return compileSemantic(argString(node.args, 0), target, ctx);
       case "size": {
         const inner = node.args[0];
         if (inner && inner.kind === "call" && inner.name === "list") {
@@ -548,6 +561,10 @@ function compileCall(name: string, args: Node[], target: Target, ctx: AliasCtx):
     }
     case "size":
       throw new FilterInvalid("size(...) must be compared, e.g. size(list(tags)) > 2", "10 §4");
+    case "semantic":
+      // semantic(...) yields a cosine SCORE, not a boolean; it must be compared
+      // (threshold prune) or projected — e.g. semantic("aurora") > 0.6.
+      throw new FilterInvalid('semantic(...) returns a score; compare it, e.g. semantic("x") > 0.6', "OQX semantic");
     // structural functions (blocks target) — 10 §5
     case "under":
       requireBlocks(target, "under");
@@ -671,6 +688,32 @@ function compileText(terms: string, target: Target, ctx: AliasCtx): Compiled {
     sql: `${ctx.self}.rowid IN (SELECT rowid FROM ${ftsTable} WHERE ${ftsTable} MATCH ?)`,
     params: [match],
   };
+}
+
+// semantic("phrase") — a scalar SCORE: cosine similarity of the current row's
+// embedding to the (pre-computed) query vector, via the `cosine` UDF. A SCORE,
+// not a ranker — usable as a threshold prune (`semantic("x") > 0.6`) or a
+// projection (`select s: semantic("x")`); ORDER BY does the actual ranking.
+// docs score their whole-document vector (doc_embeddings), blocks their own
+// block vector (embeddings, keyed by raw_hash); nodes have no embeddings. A row
+// with no stored vector scores NULL (cosine of a missing BLOB) ⇒ absent, so a
+// threshold comparison excludes it (absence = false). The query vector + model
+// come from ctx.semantic (the runner embedded the literal); absent ⇒ loud.
+function compileSemantic(phrase: string, target: Target, ctx: AliasCtx): { expr: string; params: unknown[] } {
+  if (target === "nodes") {
+    throw new FilterInvalid('semantic(...) is available on the docs and blocks targets (nodes have no embeddings)', "OQX semantic");
+  }
+  const resolved = ctx.semantic?.(phrase);
+  if (!resolved) {
+    throw new FilterInvalid(
+      `semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`,
+      "OQX semantic",
+    );
+  }
+  const expr = target === "docs"
+    ? `(SELECT cosine(de.vec, ?) FROM doc_embeddings de WHERE de.doc_id = ${ctx.self}.doc_id AND de.model = ?)`
+    : `(SELECT cosine(e.vec, ?) FROM embeddings e WHERE e.content_hash = ${ctx.self}.raw_hash AND e.model = ? LIMIT 1)`;
+  return { expr, params: [resolved.vec, resolved.model] };
 }
 
 function compileHasEdge(args: Node[], target: Target, ctx: AliasCtx): Compiled {
