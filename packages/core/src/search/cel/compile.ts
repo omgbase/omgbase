@@ -1,4 +1,4 @@
-import type { Node, FieldRef, Literal, Comparison, RelOp } from "./ast.js";
+import type { Node, FieldRef, Literal, Comparison, RelOp, OuterRef } from "./ast.js";
 import { FilterInvalid } from "./parser.js";
 
 // Compile a CEL AST to a SQL WHERE fragment + bound params for a target
@@ -21,6 +21,31 @@ export type Target = "docs" | "blocks" | "nodes";
 export interface AliasCtx {
   self: string;
   doc: string;
+  /** Resolver for `^name` one-scope-outward references (OQX correlation). OQX
+   * supplies it per nested scope; the base `query` surface leaves it undefined,
+   * so a `^name` reaching an absent resolver is a loud error. */
+  outer?: OuterResolver;
+}
+
+// A binding visible to a nested scope via `^name`. A parent SELECT value binds a
+// `scalar` (its value expression compiled against the parent row); a lift or a
+// parent `collect` binds a `collection` (a json-array subquery). Each is a thunk
+// so it is only compiled when actually referenced.
+export interface OuterBinding {
+  scalar?: () => { expr: string; params: unknown[] };
+  collection?: () => { expr: string; params: unknown[] };
+}
+export type OuterResolver = (name: string) => OuterBinding | undefined;
+
+function resolveOuter(ctx: AliasCtx, name: string): OuterBinding {
+  const b = ctx.outer?.(name);
+  if (!b) {
+    throw new FilterInvalid(
+      `no binding ^${name} one scope outward — a ^ reference reads a name bound in the immediately enclosing query scope`,
+      "OQX ^",
+    );
+  }
+  return b;
 }
 
 export function defaultCtx(target: Target): AliasCtx {
@@ -292,6 +317,16 @@ function literalParam(lit: Literal): unknown {
 // SQL scalar expression + its params.
 function scalarSql(node: Node, target: Target, ctx: AliasCtx): { expr: string; params: unknown[] } {
   if (node.kind === "field") return { expr: fieldSql(node, target, ctx).expr, params: [] };
+  if (node.kind === "outerref") {
+    const b = resolveOuter(ctx, node.name);
+    if (!b.scalar) {
+      throw new FilterInvalid(
+        `^${node.name} is a collection binding; use it as \`<value> in ^${node.name}\`, not as a scalar`,
+        "OQX ^",
+      );
+    }
+    return b.scalar();
+  }
   if (node.kind === "call") {
     switch (node.name) {
       case "size": {
@@ -328,27 +363,44 @@ function scalarSql(node: Node, target: Target, ctx: AliasCtx): { expr: string; p
 }
 
 function compileComparison(cmp: Comparison, target: Target, ctx: AliasCtx): Compiled {
-  let scalar: Node;
-  let litNode: Literal;
-  let op = cmp.op;
-  if (cmp.right.kind === "literal") {
-    scalar = cmp.left; litNode = cmp.right;
-  } else if (cmp.left.kind === "literal") {
-    scalar = cmp.right; litNode = cmp.left; op = flip(op);
-  } else {
-    throw new FilterInvalid("one side of a comparison must be a literal", "10 §3.1");
-  }
-  if (scalar.kind === "call" && scalar.name === "list") {
-    throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
+  const rejectList = (n: Node): void => {
+    if (n.kind === "call" && n.name === "list") {
+      throw new FilterInvalid("list() is only valid inside `in`, size(), .all, .exists", "10 §4");
+    }
+  };
+
+  // Literal-on-one-side: the canonical form, kept byte-identical (a bound `?`).
+  if (cmp.right.kind === "literal" || cmp.left.kind === "literal") {
+    let scalar: Node;
+    let litNode: Literal;
+    let op = cmp.op;
+    if (cmp.right.kind === "literal") {
+      scalar = cmp.left; litNode = cmp.right;
+    } else {
+      scalar = cmp.right; litNode = cmp.left as Literal; op = flip(op);
+    }
+    rejectList(scalar);
+    const s = scalarSql(scalar, target, ctx);
+    // NULL-safe: absent operands yield NULL; `NULL <op> x` is NULL (falsy),
+    // exactly the absence=false rule — including `!=` (10 §3.3 note).
+    return {
+      sql: `(${s.expr} ${SQL_OP[op]} ?) IS 1`,
+      params: [...s.params, coerce(litNode)],
+    };
   }
 
-  const s = scalarSql(scalar, target, ctx);
-  const sqlOp = SQL_OP[op];
-  // NULL-safe: absent operands yield NULL; `NULL <op> x` is NULL (falsy),
-  // exactly the absence=false rule — including `!=` (10 §3.3 note).
+  // Neither side is a literal. This is only reachable via a `^name` correlation
+  // operand (`attrs.id == ^owner_id`) — the base `query` grammar still requires a
+  // literal (field-vs-field stays an error, unchanged behaviour).
+  if (cmp.left.kind !== "outerref" && cmp.right.kind !== "outerref") {
+    throw new FilterInvalid("one side of a comparison must be a literal", "10 §3.1");
+  }
+  rejectList(cmp.left); rejectList(cmp.right);
+  const l = scalarSql(cmp.left, target, ctx);
+  const r = scalarSql(cmp.right, target, ctx);
   return {
-    sql: `(${s.expr} ${sqlOp} ?) IS 1`,
-    params: [...s.params, coerce(litNode)],
+    sql: `(${l.expr} ${SQL_OP[cmp.op]} ${r.expr}) IS 1`,
+    params: [...l.params, ...r.params],
   };
 }
 
@@ -412,6 +464,8 @@ export function compile(node: Node, target: Target, ctx: AliasCtx = defaultCtx(t
       return compileComparison(node, target, ctx);
     case "membership":
       return compileMembership(node.value, node.field, target, ctx);
+    case "outerMembership":
+      return compileOuterMembership(node.value, node.collection, target, ctx);
     case "field":
       return compileBoolField(node, target, ctx);
     case "call":
@@ -441,6 +495,34 @@ function compileMembership(value: Literal, field: FieldRef, target: Target, ctx:
   )`;
   // param order matches expr occurrences: isArray(1), f=?, isArray(1), value, isArray in EXISTS(1), value
   return { sql, params: [coerce(value), coerce(value)] };
+}
+
+// `<value> in ^name`: does the one-scope-outward collection (a json array, e.g.
+// a lift) contain the current scope's value? json_each yields no rows over a
+// NULL/non-array, so absence ⇒ false. The collection expression is resolved from
+// the enclosing scope (it references the parent row's aliases, valid here as a
+// correlated subquery); its params precede the value's in statement order.
+function compileOuterMembership(value: Node, ref: OuterRef, target: Target, ctx: AliasCtx): Compiled {
+  const b = resolveOuter(ctx, ref.name);
+  if (!b.collection) {
+    throw new FilterInvalid(
+      `^${ref.name} is a scalar binding; membership needs a collection (a lift or a parent collect)`,
+      "OQX ^",
+    );
+  }
+  const coll = b.collection();
+  let vExpr: string;
+  let vParams: unknown[];
+  if (value.kind === "literal") {
+    vExpr = "?"; vParams = [coerce(value)];
+  } else {
+    const v = scalarSql(value, target, ctx);
+    vExpr = v.expr; vParams = v.params;
+  }
+  return {
+    sql: `EXISTS (SELECT 1 FROM json_each(${coll.expr}) je WHERE je.value = ${vExpr})`,
+    params: [...coll.params, ...vParams],
+  };
 }
 
 function argField(args: Node[], i: number): FieldRef {

@@ -13,8 +13,8 @@ import type {
 } from "./ast.js";
 import type { CountRelOp } from "./ir.js";
 
-const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section"]);
-const OP_NAMES = new Set(["collect", "exists", "count"]);
+const RECEIVER_ROOTS = new Set(["nodes", "blocks", "doc", "node", "block", "section", "repo"]);
+const OP_NAMES = new Set(["collect", "exists", "count", "first", "single"]);
 const TARGETS = new Set(["docs", "blocks", "nodes"]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 
@@ -221,8 +221,10 @@ class OqxParser {
       // named projection: either a nested collect op, or a scalar value expr.
       const op = this.tryParseOp();
       if (op) {
-        if (op.op !== "collect") this.fail(`select projection '${name}' must use collect(...), not ${op.op}(...)`);
-        if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not collect(...)`);
+        if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
+          this.fail(`select projection '${name}' must use collect(...)/first(...)/single(...), not ${op.op}(...)`);
+        }
+        if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not ${op.op}(...)`);
         return { kind: "collect", name, op };
       }
       const source = this.captureScalarUntilSelectBoundary();

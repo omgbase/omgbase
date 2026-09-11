@@ -237,6 +237,49 @@ describe("OQX compile — lifts", () => {
   });
 });
 
+describe("OQX compile — root relations and ^ correlation", () => {
+  it("repo.docs is an independent repository scan (its own doc alias, repo guard, no correlation)", () => {
+    const c = compileSrc('from docs select ref, books: repo.docs.collect(where slug == ^ref select p: $path)');
+    const p = c.projections.find((x) => x.name === "books")!;
+    // a scan of the whole docs table under a fresh alias, guarded by repo_id.
+    expect(p.sql).toMatch(/FROM docs d1 WHERE 1 AND d1\.repo_id = \?/);
+    expect(p.sql).toContain("d1.deleted_commit IS NULL");
+    expect(p.isJson).toBe(true);
+  });
+
+  it("repo.nodes from docs joins a distinct docs alias for the child's own document", () => {
+    const c = compileSrc('from docs select ns: repo.nodes.collect(where kind == "md:task")');
+    const p = c.projections[0]!;
+    expect(p.sql).toMatch(/FROM nodes n JOIN docs d1 ON d1\.doc_id = n\.doc_id WHERE 1 AND n\.repo_id = \?/);
+  });
+
+  it("a ^ref scalar correlation compiles child-expr <op> parent-expr (the parent's `d` row)", () => {
+    const c = compileSrc('from docs select ref, books: repo.docs.collect(where slug == ^ref select p: $path)');
+    const p = c.projections.find((x) => x.name === "books")!;
+    // child slug (d1) compared to the parent doc's `ref` property (d).
+    expect(p.sql).toContain("p.doc_id = d1.doc_id"); // child slug via properties on d1
+    expect(p.sql).toContain("p.doc_id = d.doc_id"); // parent ref via properties on d
+  });
+
+  it("a repo.docs.exists in where is a correlated semi-join guarded by repo_id", () => {
+    const c = compileSrc('from docs select ref where repo.docs.exists(where slug == ^ref)');
+    expect(c.where).toMatch(/EXISTS \(SELECT 1 FROM docs d1 WHERE 1 AND d1\.repo_id = \?/);
+  });
+
+  it("first compiles to an ordered LIMIT 1 json_object; single to a capped, unwrapped array", () => {
+    const first = compileSrc('from docs select owner, p: repo.docs.first(where slug == ^owner select n: $path)');
+    const fp = first.projections.find((x) => x.name === "p")!;
+    expect(fp.sql).toMatch(/SELECT json_object\(.*\) FROM docs d1 WHERE .* ORDER BY d1\.path, d1\.doc_id LIMIT 1/s);
+    expect(fp.isJson).toBe(true);
+    expect(fp.unwrapSingle).toBeUndefined();
+
+    const single = compileSrc('from docs select owner, p: repo.docs.single(where slug == ^owner select n: $path)');
+    const sp = single.projections.find((x) => x.name === "p")!;
+    expect(sp.sql).toMatch(/json_group_array\(json\(_o\)\) FROM \(SELECT json_object\(.*\) AS _o FROM docs d1 WHERE .* LIMIT 2\)/s);
+    expect(sp.unwrapSingle).toBe(true);
+  });
+});
+
 describe("OQX compile — alias allocation under same-target nesting", () => {
   it("allocates a distinct inner alias for section.subsections (nodes→nodes)", () => {
     const c = compileSrc('from nodes where section.subsections.exists(where name.contains("x"))');

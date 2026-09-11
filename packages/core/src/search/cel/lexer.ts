@@ -4,6 +4,7 @@
 export type TokenType =
   | "ident"
   | "field" // $-prefixed intrinsic, tokenized whole incl. dots
+  | "outer" // ^name — a one-scope-outward binding reference (OQX correlation)
   | "string"
   | "int"
   | "double"
@@ -91,6 +92,19 @@ export function lex(src: string): Token[] {
         while (i < n && src[i]! >= "0" && src[i]! <= "9") i++;
       }
       push(isDouble ? "double" : "int", src.slice(start, i), start);
+      continue;
+    }
+
+    // ^name — a one-scope-outward binding reference (the symmetric read form of
+    // the `^name:` lift). OQX resolves the name against the enclosing query
+    // scope's bindings; a bare `^` with no name is a lex error.
+    if (c === "^") {
+      const start = i;
+      i++;
+      const nameStart = i;
+      while (i < n && /[A-Za-z0-9_]/.test(src[i]!)) i++;
+      if (i === nameStart) throw new LexError(`expected a binding name after '^' at ${start}`);
+      push("outer", src.slice(nameStart, i), start);
       continue;
     }
 

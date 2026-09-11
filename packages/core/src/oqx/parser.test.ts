@@ -333,3 +333,43 @@ describe("OQX lowering", () => {
     ))).toThrow(/lift is only valid/);
   });
 });
+
+describe("OQX parser + lowering — root relations and first/single", () => {
+  it("parses a repo.<target> root receiver", () => {
+    const q = parseOqx('from docs select refs: repo.docs.collect(where slug == ^ref)');
+    const item = q.select[0]!;
+    if (item.kind !== "collect") throw new Error("expected a collect select item");
+    expect(item.op.receiver).toBe("repo.docs");
+    expect(item.op.op).toBe("collect");
+  });
+
+  it("parses first/single select projections", () => {
+    for (const op of ["first", "single"]) {
+      const q = parseOqx(`from docs select x: repo.docs.${op}(where slug == ^ref)`);
+      const item = q.select[0]!;
+      if (item.kind !== "collect") throw new Error("expected a collect select item");
+      expect(item.op.op).toBe(op);
+    }
+  });
+
+  it("lowers a root relation reachable from any target (repo.nodes from docs)", () => {
+    const q = lowerQuery(parseOqx('from docs select ns: repo.nodes.collect(where kind == "md:task")'));
+    const item = q.select[0]!;
+    if (item.kind !== "collect") throw new Error("expected a collect select item");
+    expect(item.op.relation.name).toBe("repo.nodes");
+    expect(item.op.relation.root).toBe(true);
+    expect(item.op.relation.childTarget).toBe("nodes");
+  });
+
+  it("rejects first/single in where position, pointing at exists/count", () => {
+    expect(() => lowerQuery(parseOqx('from docs where repo.docs.first(where slug == "x")'))).toThrow(
+      /select-position lookup/,
+    );
+  });
+
+  it("rejects exists/count as a select projection", () => {
+    expect(() => parseOqx('from docs select x: repo.docs.exists(where slug == "x")')).toThrow(
+      /must use collect\(\.\.\.\)\/first/,
+    );
+  });
+});

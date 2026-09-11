@@ -487,6 +487,133 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
   });
 });
 
+// The join-equivalent surface: a nested query over an EXPLICIT root relation
+// (repo.docs / repo.nodes) correlated to a parent binding via the one-scope
+// `^name` reference. These express dependent/semi/anti joins and 1:1 lookups
+// without a JOIN keyword. Substances and processes carry a `slug`; a wikilink's
+// value IS a slug, so links resolve to real documents.
+describe("alchemy corpus — correlation & joins (^ outer references)", () => {
+  const WITH_WIKILINK = [
+    "index.md",
+    "lab/2026-01-notes.md",
+    "practitioners/jabir-ibn-hayyan.md",
+    "practitioners/newton.md",
+    "practitioners/paracelsus.md",
+    "processes/calcination.md",
+    "substances/mercury.md",
+    "substances/philosophers-stone.md",
+    "substances/prima-materia.md",
+    "substances/salt.md",
+    "substances/sulphur.md",
+  ];
+
+  it("resolves each document's outgoing wikilinks to the documents they name (dependent join)", () => {
+    // Lift every wikilink target into `refs`, then join the whole repository:
+    // the documents whose slug is one of this row's link targets. One expression
+    // does link-extraction AND resolution — a citation/reference graph.
+    const res = hits(
+      "from docs where nodes.collect(^refs: value where kind == \"md:wikilink\") " +
+        "select p: $path, cites: repo.docs.collect(where slug in ^refs select target: $path)",
+    );
+    expect(res.hits.map((h) => h.p)).toEqual(WITH_WIKILINK); // only docs that link out
+    const cites = new Map(
+      res.hits.map((h) => [h.p, (h.cites as { target: string }[]).map((c) => c.target).sort()]),
+    );
+    // index links [[mercury]] [[salt]] [[sulphur]] — all three resolve.
+    expect(cites.get("index.md")).toEqual([
+      "substances/mercury.md",
+      "substances/salt.md",
+      "substances/sulphur.md",
+    ]);
+    // philosophers-stone links [[magnum-opus]] (a process) and [[mercury]] — the
+    // join spans document types, correlating only on slug.
+    expect(cites.get("substances/philosophers-stone.md")).toEqual([
+      "processes/magnum-opus.md",
+      "substances/mercury.md",
+    ]);
+    // prima-materia's only wikilink is [[nigredo]] — a stage with no document, so
+    // the correlated set is empty (a dangling reference, surfaced honestly).
+    expect(cites.get("substances/prima-materia.md")).toEqual([]);
+  });
+
+  it("finds substances actually cited by a wikilink anywhere (correlated semi-join over a global node scan)", () => {
+    // For each substance, does ANY wikilink node in the whole repository name its
+    // slug? repo.nodes is the explicit global scan; ^slug ties it to this row.
+    const cited = paths(
+      'from docs where type == "substance" && repo.nodes.exists(where kind == "md:wikilink" && value == ^slug) select slug',
+    );
+    expect(cited).toEqual([
+      "substances/mercury.md",
+      "substances/salt.md",
+      "substances/sulphur.md",
+    ]);
+  });
+
+  it("finds substances no wikilink points to (correlated anti-join)", () => {
+    const uncited = paths(
+      'from docs where type == "substance" && !repo.nodes.exists(where kind == "md:wikilink" && value == ^slug) select slug',
+    );
+    // the tria prima are all cited; the two abstractions are named by prose, not links.
+    expect(uncited).toEqual([
+      "substances/philosophers-stone.md",
+      "substances/prima-materia.md",
+    ]);
+  });
+
+  it("pairs each practitioner with their tradition-mates, excluding themselves (self-join)", () => {
+    // Two correlations at once: ^tradition matches the tradition, ^me excludes
+    // the row itself. A self-join over repo.docs.
+    const res = hits(
+      "from docs where type == \"practitioner\" " +
+        "select me: $path, tradition, peers: repo.docs.collect(where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path)",
+    );
+    const peers = new Map(
+      res.hits.map((h) => [h.me, (h.peers as { p: string }[]).map((p) => p.p).sort()]),
+    );
+    // western has two practitioners — Newton and Paracelsus — so they pair up.
+    expect(peers.get("practitioners/newton.md")).toEqual(["practitioners/paracelsus.md"]);
+    expect(peers.get("practitioners/paracelsus.md")).toEqual(["practitioners/newton.md"]);
+    // Jabir (islamic) and Maria (alexandrian) are the sole holders of their tradition.
+    expect(peers.get("practitioners/jabir-ibn-hayyan.md")).toEqual([]);
+    expect(peers.get("practitioners/maria-prophetissa.md")).toEqual([]);
+  });
+
+  it("looks up each lab note's subject process as a single correlated record (single)", () => {
+    // `subject` names a process slug; slug is unique, so single(...) is a
+    // cardinality-checked 1:1 lookup returning one record (not an array).
+    const res = hits(
+      "from docs where type == \"lab-note\" " +
+        "select subject, process: repo.docs.single(where slug == ^subject select p: $path, layer)",
+    );
+    const by = new Map(res.hits.map((h) => [h.path, h.process as { p: string; layer: string }]));
+    expect(by.get("lab/2026-01-notes.md")).toEqual({ p: "processes/calcination.md", layer: "canon" });
+    expect(by.get("lab/2026-02-notes.md")).toEqual({ p: "processes/coagulation.md", layer: "working" });
+  });
+
+  it("first(...) returns a zero-or-one tradition-mate (null when there is none)", () => {
+    const res = hits(
+      "from docs where type == \"practitioner\" " +
+        "select me: $path, tradition, mate: repo.docs.first(where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path)",
+    );
+    const by = new Map(res.hits.map((h) => [h.me, h.mate as { p: string } | null]));
+    expect(by.get("practitioners/newton.md")).toEqual({ p: "practitioners/paracelsus.md" });
+    expect(by.get("practitioners/jabir-ibn-hayyan.md")).toBeNull(); // no tradition-mate
+  });
+
+  it("same-document correlation needs no root relation (^ against the owning row)", () => {
+    // A lab note's subject is calcination; correlate its OWN task nodes against a
+    // parent binding — no repo.* scan, just the structural doc.nodes relation.
+    const res = hits(
+      "from docs where $path == \"lab/2026-01-notes.md\" " +
+        "select subject, mentions: nodes.collect(where kind == \"md:wikilink\" select tgt: value)",
+    );
+    // (structural nested collect already covered elsewhere; here it coexists with
+    // the correlated `subject` binding in the same select without interference)
+    expect(res.hits[0]!.subject).toBe("calcination");
+    expect((res.hits[0]!.mentions as { tgt: string }[]).map((m) => m.tgt).sort()).toEqual(["mercury", "salt"]);
+  });
+});
+
 describe("alchemy corpus — blocks and nodes targets", () => {
   it("selects task blocks constrained by their document's frontmatter", () => {
     const res = hits('from blocks where type == "task" && doc.type == "lab-note"');

@@ -76,6 +76,12 @@ class Parser {
     // membership: literal in list(field) — detect the `in` keyword
     if (this.peek().type === "ident" && this.peek().value === "in") {
       this.next();
+      // `<value> in ^name`: membership over a one-scope-outward collection
+      // binding (a lift). The left operand may be any scalar (field/value/lit).
+      if (this.peek().type === "outer") {
+        const ref = this.next();
+        return { kind: "outerMembership", value: left, collection: { kind: "outerref", name: ref.value } };
+      }
       const listCall = this.parsePrimary();
       if (listCall.kind !== "call" || listCall.name !== "list") {
         throw new FilterInvalid("`in` is only allowed as `<literal> in list(field)`", "10 §4");
@@ -178,6 +184,11 @@ class Parser {
     if (t.type === "field") {
       this.next();
       return { kind: "field", segments: [t.value], intrinsic: true };
+    }
+
+    if (t.type === "outer") {
+      this.next();
+      return { kind: "outerref", name: t.value };
     }
 
     if (t.type === "ident") {

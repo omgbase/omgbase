@@ -34,6 +34,8 @@ Every file round-trips byte-identically through the parser (asserted in
 | `verified` | scalar (bool) | 4 documents are `false` |
 | `tags` | **list, except `mercury.md` which is scalar** | exercises `list()` polymorphism |
 | `element`, `stage`, `stages`, `month` | scalar | on the documents where they apply |
+| `slug` | scalar | on every substance and process; equals the filename base, and a `[[wikilink]]`'s value IS a slug — so links resolve to documents by `slug == value` (the join key) |
+| `subject` | scalar | on the two lab notes; a process `slug`, naming the notebook's subject for a 1:1 `single(...)` lookup |
 
 ### Where tasks live (a corpus convention, asserted by the tests)
 
@@ -81,6 +83,22 @@ different sets. Several tests depend on this; keep it fully checked.
   !attrs.checked) select $path, open` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
+- **Correlation & joins (`^name` outer references + `repo.*` roots)** — the
+  wikilink graph is the join fixture. `slug` on every substance/process is the
+  key a `[[wikilink]]` value matches, so:
+  - a *dependent join* resolves each document's outgoing wikilinks to the
+    documents they name (`repo.docs.collect(where slug in ^refs)`), with
+    `prima-materia.md`'s lone `[[nigredo]]` (no target document) as the dangling
+    reference that resolves to `[]`;
+  - a *semi-join* finds the substances any wikilink actually points to —
+    mercury, salt, sulphur — over the global `repo.nodes` scan, and the *anti-join*
+    the two (philosophers-stone, prima-materia) named only in prose;
+  - a *self-join* on `tradition` pairs the two western practitioners (Newton,
+    Paracelsus) while the sole Islamic (Jabir) and Alexandrian (Maria) holders
+    get `[]` — exercising two `^` correlations plus self-exclusion (`^tradition`,
+    `^me`);
+  - `single(...)` / `first(...)` look up each lab note's `subject` process as one
+    cardinality-checked record (slug is unique, so `single` is safe).
 
 ### Adding to the corpus
 
@@ -90,5 +108,8 @@ will fail tests by design — that is the point. If you add a document:
 - put actionable checkboxes in a **lab note**, not on a reference page;
 - keep `salt.md`'s supply list **fully checked** (several tests use it as the
   has-tasks / has-open-tasks discriminator);
+- give a substance/process a `slug` (= filename base) if anything wikilinks it,
+  and keep the wikilink graph in mind — the correlation tests pin exact resolved
+  sets, including `prima-materia.md`'s deliberately dangling `[[nigredo]]`;
 - update the affected expectations, and re-check the task counts in the
   `collect` and blocks-target tests.

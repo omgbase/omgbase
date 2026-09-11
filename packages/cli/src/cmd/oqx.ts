@@ -5,12 +5,14 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { truncationFooter, EXIT_OK } from "../output.js";
 
-// `omg oqx <source>` — OQX composable query (structural + section navigation:
-// receiver-constrained nested queries, a boolean where tree over scalar
-// predicates and collection ops, count comparisons, nestable collect, and
-// one-scope lifts (^name) that filter + capture in a single expression).
-// Coexists with `omg q` (CEL). Source is a positional string or -f file|-.
-// Human output: one hit per line (id + path); --json/--jsonl/--ids as usual.
+// `omg oqx <source>` — OQX composable query (structural + section navigation +
+// ad-hoc correlation: receiver-constrained nested queries, a boolean where tree
+// over scalar predicates and collection ops, count comparisons, nestable
+// collect, one-scope lifts (^name:) that filter + capture, one-scope-outward
+// references (^name) that correlate a nested query to a parent binding, explicit
+// root relations repo.docs/nodes/blocks for join-equivalents, and first/single
+// lookups). Coexists with `omg q` (CEL). Source is a positional string or -f
+// file|-. Human output: one hit per line (id + path); --json/--jsonl/--ids.
 
 function readStdin(): string {
   try {
@@ -36,6 +38,7 @@ function runOqx(cli: Cli, args: string[]): number {
     cli.io.out("  e.g. oqx 'from docs where nodes.count(where kind == \"md:task\") >= 2'");
     cli.io.out("       oqx 'from nodes where kind == \"md:section\" select items: section.blocks.collect(where type == \"list_item\")'");
     cli.io.out("       oqx 'from docs where nodes.collect(^open: value where kind == \"md:task\" && !attrs.checked) select $path, open'");
+    cli.io.out("       oqx 'from docs select owner_id, owner: repo.nodes.single(where kind == \"person\" && attrs.id == ^owner_id)'");
     return EXIT_OK;
   }
 

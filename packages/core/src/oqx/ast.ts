@@ -16,8 +16,8 @@ export interface SurfaceScalar {
  * optionally followed by a `<op> <int>` comparison (count only). */
 export interface SurfaceOp {
   kind: "op";
-  receiver: string; // "nodes" | "blocks" | "section" | ...
-  op: "collect" | "exists" | "count";
+  receiver: string; // "nodes" | "blocks" | "section" | "repo.docs" | ...
+  op: "collect" | "exists" | "count" | "first" | "single";
   sub: SurfaceSubquery;
   /** `count(...) <op> <int>` in where position. */
   countCmp?: { op: CountRelOp; value: number };

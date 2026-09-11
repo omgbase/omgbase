@@ -1,5 +1,6 @@
 ---
 type: process
+slug: coagulation
 layer: working
 tradition: western
 tags: [process, earth]

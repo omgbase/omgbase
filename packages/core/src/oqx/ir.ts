@@ -34,9 +34,18 @@ export interface Relation {
   correlate: (outer: string, inner: string) => string;
   /** child row always shares the outer row's document (see relations.ts). */
   sameDoc: boolean;
+  /** a root/global relation (`repo.docs`, `repo.nodes`, `repo.blocks`): an
+   * UNBOUNDED scan of the whole repository, uncorrelated to the outer row —
+   * correlation is expressed explicitly via `^name` outer references in its
+   * where. Unlike structural relations it allocates its own document scope, so
+   * `correlate` returns no predicate. */
+  root?: boolean;
 }
 
-export type CollectionKind = "collect" | "exists" | "count";
+// `collect` returns an array; `exists`/`count` are where-position predicates;
+// `first`/`single` are select-position zero-or-one / one-to-one lookups that
+// return a single record (`single` errors if it matches more than one row).
+export type CollectionKind = "collect" | "exists" | "count" | "first" | "single";
 
 /** A receiver-constrained nested operation over a structural relation. In
  * where-position a bare op (or `exists`) means "non-empty"; `count` may carry a

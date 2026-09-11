@@ -1,5 +1,6 @@
 ---
 type: process
+slug: dissolution
 layer: canon
 tradition: western
 tags: [process, water]

@@ -1,5 +1,6 @@
 ---
 type: process
+slug: calcination
 layer: canon
 tradition: western
 tags: [process, fire]

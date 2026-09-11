@@ -1,5 +1,6 @@
 ---
 type: substance
+slug: mercury
 layer: canon
 tradition: western
 element: mercury

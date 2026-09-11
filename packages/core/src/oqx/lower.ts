@@ -72,6 +72,12 @@ function lowerWhere(w: SurfaceWhere, target: CelTarget, topWhere: boolean): Wher
         if (w.countCmp) throw new FilterInvalid("collect(...) cannot carry a count comparison", "OQX §2");
         return lowerOp(w, target, "whereLift");
       }
+      if (w.op === "first" || w.op === "single") {
+        throw new FilterInvalid(
+          `${w.op}(...) is a select-position lookup; in where use ${w.receiver}.exists(...) (existence) or ${w.receiver}.count(...) <op> N`,
+          "OQX §2",
+        );
+      }
       if (w.countCmp && w.op !== "count") {
         throw new FilterInvalid(`only count(...) is comparable; '${w.op}(...) <op> N' is not valid`, "OQX §2");
       }
@@ -92,7 +98,9 @@ function lowerOp(o: SurfaceOp, target: CelTarget, bodyMode: BodyMode): Collectio
       "OQX §2",
     );
   }
-  if (rel.from !== target) {
+  // Root relations (repo.<target>) are reachable from any scope; structural
+  // relations are anchored to the target they hang off.
+  if (!rel.root && rel.from !== target) {
     throw new FilterInvalid(`relation '${key}' is not reachable from ${target}`, "OQX §2");
   }
   if (rel.singleValued) {
@@ -138,5 +146,5 @@ function lowerSelect(s: SurfaceSelectItem, target: CelTarget, bodyMode: BodyMode
 }
 
 function relationsFrom(target: CelTarget): string[] {
-  return Object.values(RELATIONS).filter((r) => r.from === target).map((r) => r.name);
+  return Object.values(RELATIONS).filter((r) => r.root || r.from === target).map((r) => r.name);
 }

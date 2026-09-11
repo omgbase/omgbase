@@ -68,9 +68,18 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
     const hit: OqxHit = { id: String(r.id), path: String(r.path) };
     for (const p of compiled.projections) {
       let val = r[p.name];
-      // JSON columns (collect arrays, lifted collections) arrive as text.
+      // JSON columns (collect arrays, lifted collections, first/single records)
+      // arrive as text.
       if (p.isJson && typeof val === "string") {
         val = JSON.parse(val) as unknown;
+      }
+      // `single` returns a capped array; enforce ≤1 and unwrap to the record.
+      if (p.unwrapSingle) {
+        const arr = Array.isArray(val) ? val : [];
+        if (arr.length > 1) {
+          throw new FilterInvalid(`single(...) for '${p.name}' matched ${arr.length} rows`, "OQX §2");
+        }
+        val = arr.length === 1 ? arr[0] : null;
       }
       hit[p.name] = val ?? null;
     }

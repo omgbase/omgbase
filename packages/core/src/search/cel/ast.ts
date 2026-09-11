@@ -6,10 +6,12 @@ export type Node =
   | Not
   | Comparison
   | Membership
+  | OuterMembership
   | Call
   | MethodCall
   | Quantifier
   | FieldRef
+  | OuterRef
   | Literal;
 
 export interface Or { kind: "or"; left: Node; right: Node }
@@ -21,6 +23,15 @@ export interface Comparison { kind: "comparison"; op: RelOp; left: Node; right: 
 
 /** literal in list(field) */
 export interface Membership { kind: "membership"; value: Literal; field: FieldRef }
+
+/** value in ^name — membership over a one-scope-outward collection binding (a
+ * lift). `value` is the current scope's operand (a field/value/literal); the
+ * collection is resolved from the enclosing scope. */
+export interface OuterMembership { kind: "outerMembership"; value: Node; collection: OuterRef }
+
+/** ^name — a reference to a binding one query scope outward (OQX correlation).
+ * Resolved by the compiler against the AliasCtx's outer-binding resolver. */
+export interface OuterRef { kind: "outerref"; name: string }
 
 /** free-standing call: ident(args) — e.g. under("x"), has(field), size(x) */
 export interface Call { kind: "call"; name: string; args: Node[] }
