@@ -20,7 +20,7 @@ import { recordFileStat } from "../sync/freshness.js";
 
 export type Op =
   | { op: "insert"; doc?: string; to: To; markdown: string }
-  | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect }
+  | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect; trivia?: string; childIds?: Record<string, string> }
   | { op: "move"; blocks: string[]; to: To }
   | { op: "remove"; blocks: string[]; expect?: Record<string, Expect> }
   | { op: "split"; block: string; at: number[]; expect?: Expect }
@@ -38,6 +38,15 @@ export interface ApplyRequest {
    * contexts (tests) where the in-process serialization of Store.write suffices.
    */
   omgbaseDir?: string;
+  /**
+   * Document-level frontmatter overrides (doc id → new frontmatter raw incl.
+   * fences + trailing separator, or null to drop it). Frontmatter is a
+   * document-level materialization unit (rendered before the block tree), not a
+   * block the six ops address; the whole-document update planner sets it here
+   * when the proposed content changes the frontmatter. The doc is force-loaded
+   * so a frontmatter-only change still commits.
+   */
+  setFrontmatter?: { doc: string; raw: string | null }[];
 }
 
 export interface OpResult {
@@ -117,6 +126,15 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
     return d;
   };
 
+  // Document-level frontmatter overrides, before the op loop (so a change with
+  // no body ops still loads + commits the doc). Applied to the loaded MutDoc;
+  // renderDoc emits frontmatterRaw verbatim and the commit re-ingest re-derives
+  // properties/edges from the rendered bytes.
+  for (const fm of req.setFrontmatter ?? []) {
+    // ensureDoc captures `before` (pre-mutation render) at load time.
+    ensureDoc(fm.doc).frontmatterRaw = fm.raw;
+  }
+
   req.ops.forEach((rawOp, i) => {
     switch (rawOp.op) {
       case "insert": {
@@ -132,7 +150,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
         const block = resolvePlaceholder(rawOp.block, results);
         const docId = docIdForBlockLoaded(loaded, block) ?? docIdForBlock(store, req.repoId, block);
         if (!docId) throw new MutationError("block_missing", `block ${block} not found`, { op_index: i });
-        results.push(opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect));
+        results.push(opUpdate(ensureDoc(docId), block, i, rawOp.markdown, rawOp.attrs, rawOp.expect, rawOp.trivia, rawOp.childIds));
         break;
       }
       case "move": {

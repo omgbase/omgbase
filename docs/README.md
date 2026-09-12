@@ -21,6 +21,7 @@ This folder is the complete, self-contained input for implementation. It descend
 | `11-cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
 | `12-properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
 | `13-sync-plugins.md` | External source reconciliation: adapter/source/repo/attachment model, the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, engine-owned revision state, `@omgbase/fs-adapter`, repo/source lifecycle | touching `sync/`, the adapter protocol, or writing an adapter |
+| `14-update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
 
 ## Rules for implementation agents
 

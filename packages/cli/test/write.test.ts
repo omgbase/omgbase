@@ -125,6 +125,34 @@ describe("doc-level: new / meta / mv / rm --doc", () => {
   });
 });
 
+describe("update — whole-document reconciliation", () => {
+  it("preserves the untouched paragraph's id across a whole-doc update", () => {
+    const doc = "note.md";
+    omg(["new", doc, "-f", "-"], "# Topic\n\nFirst paragraph, long enough to reconcile across an edit here.\n\nKept paragraph that remains untouched by this whole update.\n");
+    const keep = 'from blocks where text == "Kept paragraph that remains untouched by this whole update."';
+    const before = omg(["oqx", keep, "--ids"]).trim();
+    expect(before).toMatch(/^b_/);
+    omg(["update", doc, "-f", "-"], "# Topic\n\nFirst paragraph, now edited a bit but still recognizable here.\n\nKept paragraph that remains untouched by this whole update.\n");
+    expect(readFileSync(join(vault, doc), "utf8")).toContain("now edited a bit");
+    expect(omg(["oqx", keep, "--ids"]).trim()).toBe(before);
+  });
+
+  it("--plan shows the opset and writes nothing", () => {
+    const doc = "note2.md";
+    omg(["new", doc, "-f", "-"], "# T\n\nParagraph one that is sufficiently long to reconcile here.\n");
+    const before = readFileSync(join(vault, doc), "utf8");
+    const out = omg(["update", doc, "--plan", "-f", "-"], "# T\n\nParagraph one that is sufficiently long to reconcile now.\n");
+    expect(out).toMatch(/preserved:|UPDATE|INSERT/);
+    expect(readFileSync(join(vault, doc), "utf8")).toBe(before);
+  });
+
+  it("dispatches a b_ target to a block replace (polymorphic target)", () => {
+    const id = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim().split("\n")[0]!;
+    omg(["update", id, "-m", "- [ ] wire deploy pipeline"]);
+    expect(readFileSync(join(vault, "hub.md"), "utf8")).toContain("wire deploy pipeline");
+  });
+});
+
 describe("doctor", () => {
   it("passes on a healthy vault (exit 0)", () => {
     expect(omgFails(["doctor"])).toBe(0);

@@ -15,6 +15,8 @@ import { apply, type Op } from "../mutate/apply.js";
 import { MutationError } from "../mutate/tree.js";
 import { tasksComplete, sectionsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
+import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
+import { renderOpsetPlan } from "../mutate/opset.js";
 import { graphTraverse, graphPath } from "../graph/traverse.js";
 import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/history.js";
 import { linksStale } from "../graph/link-health.js";
@@ -562,6 +564,46 @@ export function buildServer(ctx: ServerContext): McpServer {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
         }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_plan_update",
+    {
+      description:
+        "Plan a whole-document update WITHOUT applying it. Given a doc (id or path) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (base revision + content hash); a stale plan is refused at apply. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
+      inputSchema: { doc: z.string(), content: z.string() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const opset = planUpdate(store, repoId, ctx.rootPath, args.doc, args.content);
+        return ok({ opset, plan: renderOpsetPlan(opset) });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_update",
+    {
+      description:
+        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a doc (id or path); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. This is docs_plan_update + apply(opset).",
+      inputSchema: { doc: z.string(), content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { opset, result } = docsUpdate(store, docCtx(), args.doc, args.content, {
+          ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
+          ...(args.reason !== undefined ? { reason: args.reason } : {}),
+        });
+        const payload = { opset, plan: renderOpsetPlan(opset), result };
+        return args.dry_run ? ok(payload) : okMutated(payload);
       } catch (e) {
         return fail(e);
       }

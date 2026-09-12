@@ -86,6 +86,7 @@ export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./
 export { FilterInvalid } from "./search/cel/parser.js";
 export { EngineError, type ErrorCode } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
+export { isValidId, prefixOf } from "./core/ids.js";
 
 // Mutation surface consumed by CLI write commands (11 §5.6).
 export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";
@@ -121,6 +122,27 @@ export {
   type DocOpContext,
   type DocOpResult,
 } from "./mutate/docs.js";
+// Whole-document update: reconcile → opset → inspect/apply.
+export {
+  planUpdate,
+  applyOpset,
+  docsUpdate,
+  type PlanUpdateOptions,
+  type ApplyOpsetRequest,
+  type DocsUpdateContext,
+  type DocsUpdateResult,
+} from "./mutate/plan-update.js";
+export {
+  opsetKernelOps,
+  renderOpsetPlan,
+  serializeOpset,
+  parseOpset,
+  type Opset,
+  type PlanOp,
+  type OpsetSummary,
+  type OpsetPrecondition,
+  type PlanDisposition,
+} from "./mutate/opset.js";
 export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
 export { runGc, type GcResult } from "./core/store/gc.js";
 export { planImport, importDocs, type MrplexDoc, type ImportPlan, type ImportResult } from "./migrate/mrplex.js";

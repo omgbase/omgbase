@@ -27,8 +27,10 @@ interface StoredBlock {
 }
 
 // Rebuild the old tree as positional MatchBlocks straight from stored blocks +
-// blob bytes (so text/hashes match what reconcile expects).
-function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
+// blob bytes (so text/hashes match what reconcile expects). Exported so the
+// whole-document update planner (mutate/plan-update.ts) reconciles against the
+// same old-tree representation the observation path uses.
+export function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
   const rows = db
     .prepare(
       `SELECT block_id, parent_block, ordinal, type, raw_hash
