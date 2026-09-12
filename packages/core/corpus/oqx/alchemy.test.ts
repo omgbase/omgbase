@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
-import { ingestFile } from "../../src/core/ingest.js";
+import { processCheckpoint } from "../../src/sync/checkpoint.js";
 import { parseTree, assertFullCoverage } from "../../src/core/parse/tree.js";
 import { render } from "../../src/core/parse/render.js";
 import { oqxRun } from "../../src/oqx/run.js";
@@ -39,9 +39,12 @@ let repoId: string;
 beforeAll(() => {
   store = new Store({ path: ":memory:" });
   repoId = ensureRepo(store, "alchemy", DIR);
-  for (const file of walk(DIR)) {
-    ingestFile(store, repoId, relative(DIR, file), readFileSync(file, "utf8"));
-  }
+  // Ingest through processCheckpoint (the real sync path) rather than a bare
+  // ingestFile loop, so the authored EDGE graph is extracted — wikilinks and
+  // markdown links resolve to doc→doc `references` edges — which the graph-follow
+  // demos below (`follow doc.out`/`doc.in`) walk. ingestFile alone leaves `edges`
+  // empty. Everything else (docs/blocks/nodes/properties) is identical.
+  processCheckpoint(store, repoId, DIR, walk(DIR).map((f) => ({ path: relative(DIR, f) })));
 });
 afterAll(() => store.close());
 
@@ -772,6 +775,139 @@ describe("alchemy corpus — pagination", () => {
     const all = hits("from docs", 100);
     expect(all.truncated).toBe(false);
     expect(all.cursor).toBeNull();
+  });
+});
+
+// Recursive `follow`: a query closed over its row type walks a type-preserving
+// relation, decorating each reached occurrence with $depth/$stop/$ordinal. The
+// corpus's wikilink + markdown-link graph — extracted to doc→doc `references`
+// edges by the processCheckpoint ingest above — is the CITATION GRAPH the
+// doc.out/doc.in demos walk; the heading outline and block tree exercise the
+// structural relations.
+describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () => {
+  it("doc.out (distinct) = a note's transitive citation closure", () => {
+    // Everything philosophers-stone.md reaches by following references, deduped
+    // to nodes. The dense magnum-opus ⇄ prima-materia cycles are walked safely.
+    const closure = paths('from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out').sort();
+    expect(closure).toEqual([
+      "lab/2026-02-notes.md",
+      "practitioners/jabir-ibn-hayyan.md",
+      "practitioners/newton.md",
+      "processes/calcination.md",
+      "processes/coagulation.md",
+      "processes/dissolution.md",
+      "processes/magnum-opus.md",
+      "substances/philosophers-stone.md",
+      "substances/prima-materia.md",
+      "texts/emerald-tablet.md",
+    ]);
+    // it never cites the other tria prima, nor the index — so they are absent
+    expect(closure).not.toContain("substances/mercury.md");
+    expect(closure).not.toContain("index.md");
+  });
+
+  it("doc.in + a post-walk $depth filter = the documents that directly cite a note", () => {
+    // Backlinks one hop out: who references magnum-opus? (seed@1, citers@2).
+    const citers = paths('from docs where $path == "processes/magnum-opus.md" && $depth == 2 follow doc.in depth 2').sort();
+    expect(citers).toEqual([
+      "index.md",
+      "practitioners/maria-prophetissa.md",
+      "practitioners/newton.md",
+      "substances/philosophers-stone.md",
+      "substances/prima-materia.md",
+    ]);
+  });
+
+  it("cyclic citations are safe — a revisit is admitted once as $stop == 'cycle'", () => {
+    // paracelsus references index, which references paracelsus back. The return
+    // to paracelsus is admitted as a single cycle occurrence, not an infinite loop.
+    const cyc = paths('from docs where $path == "practitioners/paracelsus.md" && $stop == "cycle" follow doc.out depth 3');
+    expect(cyc).toContain("practitioners/paracelsus.md");
+    // the whole walk terminates: a bounded number of rows, no runaway.
+    const all = hits('from docs where $path == "practitioners/paracelsus.md" follow doc.out depth 3');
+    expect(all.hits.length).toBeGreaterThan(0);
+    expect(all.hits.length).toBeLessThan(200);
+  });
+
+  it("default keeps per-path occurrences; `distinct` collapses to reached nodes", () => {
+    const occ = hits('repo.count(from docs where $path == "substances/philosophers-stone.md" follow doc.out)').count!;
+    const dist = hits('repo.count(from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out)').count!;
+    expect(dist).toBe(10);
+    expect(occ).toBeGreaterThan(dist); // the dense graph reaches nodes by many distinct paths
+  });
+
+  it("`frontier` cuts the walk at a class of documents", () => {
+    // Explore citations, but treat practitioner biographies as the edge of the
+    // walk: they are reported but never expanded through.
+    const res = hits('from docs where $path == "index.md" select p: $path, ty: type, s: $stop follow doc.out frontier type == "practitioner"');
+    const practitioners = res.hits.filter((h) => h.ty === "practitioner");
+    expect(practitioners.length).toBeGreaterThan(0);
+    expect(practitioners.every((h) => h.s === "frontier")).toBe(true);
+  });
+
+  it("`by <expr>` re-keys node identity — walk until a document TYPE repeats", () => {
+    // Identity = type, so revisiting any type is a cycle. From a substance the
+    // walk reaches a process, then stops the moment a type would repeat.
+    const res = hits('from docs where $path == "substances/philosophers-stone.md" select p: $path, s: $stop follow doc.out by type');
+    const stopByPath = new Map(res.hits.map((h) => [h.p as string, h.s]));
+    // prima-materia is a substance — the seed's type — so it is an immediate cycle
+    expect(stopByPath.get("substances/prima-materia.md")).toBe("cycle");
+    // far smaller than the id-identity closure (10): types repeat almost at once
+    expect(res.hits.length).toBeLessThan(10);
+  });
+});
+
+describe("alchemy corpus — follow: the heading outline & block tree", () => {
+  const OPUS_SUBS = ["Open questions", "Operations", "The four stages", "Why colour"];
+
+  it("section.children walks the heading outline one level per hop", () => {
+    const res = hits(
+      'from nodes where kind == "md:section" && name == "The magnum opus" ' +
+        "select n: name, d: $depth, s: $stop follow section.children",
+    );
+    const root = res.hits.find((h) => h.d === 1)!;
+    expect(root.n).toBe("The magnum opus");
+    expect(root.s).toBe("interior");
+    const subs = res.hits.filter((h) => h.d === 2);
+    expect(subs.map((h) => h.n as string).sort()).toEqual(OPUS_SUBS);
+    expect(subs.every((h) => h.s === "leaf")).toBe(true); // 2-level outline
+  });
+
+  it("a post-walk $leaf filter keeps just the terminal sections", () => {
+    const leaves = hits(
+      'from nodes where kind == "md:section" && name == "The magnum opus" && $leaf select n: name follow section.children',
+    );
+    expect(leaves.hits.map((h) => h.n as string).sort()).toEqual(OPUS_SUBS);
+  });
+
+  it("$ordinal is a deterministic 1..N rank over the walk (seed first)", () => {
+    const res = hits(
+      'from nodes where kind == "md:section" && name == "The magnum opus" ' +
+        "select n: name, o: $ordinal order by $ordinal follow section.children",
+    );
+    expect(res.hits.map((h) => h.o)).toEqual([1, 2, 3, 4, 5]);
+    expect(res.hits[0]!.n).toBe("The magnum opus");
+  });
+
+  it("block.children walks a bullet list down to its items", () => {
+    // The "Open questions" sections hold bullet lists; from each list block the
+    // walk reaches its list_items / tasks (depth 2).
+    const res = hits('from blocks where type == "list" && under_heading("Open questions") select t: type, d: $depth follow block.children');
+    expect(res.hits.some((h) => h.t === "list" && h.d === 1)).toBe(true); // the seed lists
+    const items = res.hits.filter((h) => h.d === 2);
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((h) => h.t === "list_item" || h.t === "task")).toBe(true);
+  });
+
+  it("a nested follow-collect projects each document's outline as a subtree", () => {
+    const res = hits(
+      'from docs where type == "process" ' +
+        'select p: $path, outline: nodes.collect(where kind == "md:section" && attrs.level == 1 select n: name, d: $depth follow section.children)',
+    );
+    const mo = res.hits.find((h) => (h.p as string).includes("magnum-opus"))!;
+    const outline = mo.outline as { n: string; d: number }[];
+    expect(outline.find((o) => o.d === 1)!.n).toBe("The magnum opus");
+    expect(outline.filter((o) => o.d === 2).map((o) => o.n).sort()).toEqual(OPUS_SUBS);
   });
 });
 

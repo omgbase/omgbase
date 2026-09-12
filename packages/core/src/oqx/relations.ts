@@ -63,6 +63,17 @@ export const RELATIONS: Record<string, RelationDef> = {
     singleValued: true, sameDoc: true,
   },
 
+  // `block.children` — the immediate child blocks of a block (blocks→blocks via
+  // the `parent_block` FK the ingest tree-flattener populates). A clean
+  // single-hop, type-preserving self-relation: the ready `follow` target for
+  // recursing a block subtree (nested list items, quotes, sub-sections' content
+  // blocks). Indexed by idx_blocks_doc(doc_id, parent_block, …).
+  "block.children": {
+    name: "block.children", from: "blocks", childTarget: "blocks",
+    correlate: (o, i) => `${i}.parent_block = ${o}.block_id`,
+    singleValued: false, sameDoc: true,
+  },
+
   // ---- section relations (md:section nodes; range/level containment) --------
   // `section.blocks` — the content blocks under a section node, transitively
   // including deeper headings (the range spans them). Reaches nodes→blocks.
@@ -80,6 +91,25 @@ export const RELATIONS: Record<string, RelationDef> = {
       `${i}.doc_id = ${o}.doc_id AND ${i}.kind = 'md:section' AND ${first(i)} >= ${first(o)} AND ${last(i)} <= ${last(o)} AND ${level(i)} > ${level(o)}`,
     singleValued: false, sameDoc: true,
   },
+  // `section.children` — the IMMEDIATE child sections of this section (one
+  // outline level down), as opposed to `section.subsections` which is the whole
+  // transitive sub-tree. A section `i` is an immediate child of `o` iff it is
+  // contained in `o`'s range, deeper than `o`, and no intervening section `m`
+  // (deeper than `o`, shallower than `i`) also contains it — i.e. `o` is `i`'s
+  // nearest enclosing section. This is the clean single-hop relation that gives
+  // `follow section.children` a true outline depth ladder ($depth == outline
+  // depth), where `follow section.subsections` would flatten every descendant to
+  // depth 2. nodes→nodes.
+  "section.children": {
+    name: "section.children", from: "nodes", childTarget: "nodes",
+    correlate: (o, i) =>
+      `${i}.doc_id = ${o}.doc_id AND ${i}.kind = 'md:section' AND ${level(i)} > ${level(o)} ` +
+      `AND ${first(i)} >= ${first(o)} AND ${last(i)} <= ${last(o)} ` +
+      `AND NOT EXISTS (SELECT 1 FROM nodes m WHERE m.doc_id = ${o}.doc_id AND m.kind = 'md:section' ` +
+      `AND ${level("m")} > ${level(o)} AND ${level("m")} < ${level(i)} ` +
+      `AND ${first("m")} <= ${first(i)} AND ${last(i)} <= ${last("m")})`,
+    singleValued: false, sameDoc: true,
+  },
   // `block.section` — the section node(s) whose range contains this block (all
   // enclosing sections, outermost to innermost). Reaches blocks→nodes.
   "block.section": {
@@ -87,6 +117,29 @@ export const RELATIONS: Record<string, RelationDef> = {
     correlate: (o, i) =>
       `${i}.doc_id = ${o}.doc_id AND ${i}.kind = 'md:section' AND ${topOrdinal(o)} >= ${first(i)} AND ${topOrdinal(o)} <= ${last(i)}`,
     singleValued: false, sameDoc: true,
+  },
+
+  // ---- graph edge relations (doc→doc via the authored edge graph) -----------
+  // `doc.out` — documents this one links TO (an open authored edge from o to i);
+  // `doc.in` — documents that link to this one (backlinks). Both are doc→doc and
+  // type-preserving, so they are followable: `from docs where … follow doc.out`
+  // walks the citation graph (which may CYCLE — the walk admits a revisit as a
+  // `$stop == "cycle"` occurrence and does not re-expand it). Cross-document
+  // (sameDoc: false): each reached doc is guarded on its own tombstone. The join
+  // to `docs i` restricts successors to real documents (edges to phantom/external
+  // nodes match no docs row, so they are naturally skipped). Any authored
+  // predicate counts (predicate filtering is not exposed yet).
+  "doc.out": {
+    name: "doc.out", from: "docs", childTarget: "docs",
+    correlate: (o, i) =>
+      `EXISTS (SELECT 1 FROM edges e WHERE e.src_doc = ${o}.doc_id AND e.dst_node = ${i}.doc_id AND e.to_commit IS NULL)`,
+    singleValued: false, sameDoc: false,
+  },
+  "doc.in": {
+    name: "doc.in", from: "docs", childTarget: "docs",
+    correlate: (o, i) =>
+      `EXISTS (SELECT 1 FROM edges e WHERE e.src_doc = ${i}.doc_id AND e.dst_node = ${o}.doc_id AND e.to_commit IS NULL)`,
+    singleValued: false, sameDoc: false,
   },
 
   // ---- root/global relations (repo.<target>) --------------------------------

@@ -26,13 +26,14 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import { defaultCtx, type AliasCtx, type OuterBinding, type OuterResolver, type SemanticResolver } from "../search/cel/compile.js";
 import { compilePredicate, compileValue } from "./scalar.js";
 import type {
-  Query, CollectionOp, WhereExpr, SelectItem, CelTarget, NestedQuery, CountRelOp,
+  Query, CollectionOp, WhereExpr, SelectItem, CelTarget, NestedQuery, CountRelOp, FollowSpec,
 } from "./ir.js";
 
 export interface CompiledSql { sql: string; params: unknown[] }
 
 const ALIAS_BASE: Record<CelTarget, string> = { docs: "d", blocks: "b", nodes: "n" };
 const TABLE: Record<CelTarget, string> = { docs: "docs", blocks: "blocks", nodes: "nodes" };
+const ID_COLUMN: Record<CelTarget, string> = { docs: "doc_id", blocks: "block_id", nodes: "node_id" };
 const SQL_OP: Record<CountRelOp, string> = {
   "==": "=", "!=": "<>", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 };
@@ -64,17 +65,30 @@ function fromClause(target: CelTarget): string {
   return "nodes n JOIN docs d ON d.doc_id = n.doc_id";
 }
 
-/** repo + not-deleted guards for the outermost target's row (nodes have no
- * deleted_commit; they are pruned by their owning doc's tombstone via the d
- * join). */
-function guards(target: CelTarget, repoId: string): CompiledSql {
+/** repo + not-deleted guards for a target's row at an explicit (row, doc) alias
+ * pair (nodes have no deleted_commit; they are pruned by their owning doc's
+ * tombstone via the doc join). Alias-parameterized so it composes with the
+ * follow CTE's fresh scopes (s/sd, c/cd, x/xd) as well as the canonical row. */
+function guardsFor(target: CelTarget, rowAlias: string, docAlias: string, repoId: string): CompiledSql {
   if (target === "docs") {
-    return { sql: `d.repo_id = ? AND d.deleted_commit IS NULL`, params: [repoId] };
+    return { sql: `${rowAlias}.repo_id = ? AND ${rowAlias}.deleted_commit IS NULL`, params: [repoId] };
   }
   if (target === "blocks") {
-    return { sql: `b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL`, params: [repoId] };
+    return { sql: `${rowAlias}.repo_id = ? AND ${rowAlias}.deleted_commit IS NULL AND ${docAlias}.deleted_commit IS NULL`, params: [repoId] };
   }
-  return { sql: `n.repo_id = ? AND d.deleted_commit IS NULL`, params: [repoId] };
+  return { sql: `${rowAlias}.repo_id = ? AND ${docAlias}.deleted_commit IS NULL`, params: [repoId] };
+}
+
+/** repo + not-deleted guards for the outermost target's canonical row/doc. */
+function guards(target: CelTarget, repoId: string): CompiledSql {
+  return guardsFor(target, ALIAS_BASE[target], "d", repoId);
+}
+
+/** FROM fragment for a target row at (rowAlias, docAlias). On docs the row IS
+ * the doc, so no separate docs join (callers pass docAlias === rowAlias). */
+function rowSource(target: CelTarget, rowAlias: string, docAlias: string): string {
+  if (target === "docs") return `${TABLE.docs} ${rowAlias}`;
+  return `${TABLE[target]} ${rowAlias} JOIN docs ${docAlias} ON ${docAlias}.doc_id = ${rowAlias}.doc_id`;
 }
 
 // Compile a where boolean tree over the current scope (ctx). Leaves are scalar
@@ -262,6 +276,57 @@ function buildBindings(
 
 interface CompiledExpr { expr: string; params: unknown[]; isJson: boolean; unwrapSingle?: boolean }
 
+// A select-position `collect` with a nested `follow`: recurse within the
+// subquery. The collect's receiver relation seeds the walk (correlated to the
+// current/outer row + the collect `where`); the nested `follow` relation
+// recurses; the collect's `select` projects each reached occurrence (with
+// $depth/$stop/… available). A fresh row alias `y` is used in the final
+// projection so nothing shadows the correlated outer row; the walk scaffolding
+// aliases are reserved so nested ops in the collect body don't collide.
+function compileFollowCollect(
+  op: CollectionOp, follow: FollowSpec, outer: AliasCtx, inUse: Set<string>, repoId: string,
+  enclosingBindings: OuterResolver | undefined,
+): CompiledExpr {
+  const childTarget = op.relation.childTarget;
+  const isDocs = childTarget === "docs";
+  const dOf = (r: string): string => (isDocs ? r : `${r}d`);
+  const semCtx = outer.semantic ? { semantic: outer.semantic } : {};
+  const id = ID_COLUMN[childTarget];
+  const childInUse = new Set<string>([
+    ...inUse, "s", "sd", "c", "cd", "pw", "pd", "w", "x", "xd", "c2", "cd2", "w2", "y", "yd", "walk", "walked",
+  ]);
+
+  // seed: the receiver relation correlated to the outer row + the collect `where`.
+  const seedCtx: AliasCtx = {
+    self: "s", doc: dOf("s"),
+    ...(enclosingBindings ? { outer: enclosingBindings } : {}), ...semCtx,
+  };
+  const seedGuard = guardsFor(childTarget, "s", dOf("s"), repoId);
+  const seedWhere = op.subquery.where
+    ? compileWhere(op.subquery.where, seedCtx, childInUse, repoId, enclosingBindings)
+    : { sql: "1", params: [] as unknown[] };
+  const cte = buildWalkCte(childTarget, follow, repoId, semCtx, rowSource(childTarget, "s", dOf("s")), {
+    sql: `${op.relation.correlate(outer.self, "s")} AND ${seedGuard.sql} AND (${seedWhere.sql})`,
+    params: [...seedGuard.params, ...seedWhere.params],
+  });
+
+  // final projection over the walk (fresh alias `y`), ordered by walk path.
+  const yCtx: AliasCtx = {
+    self: "y", doc: dOf("y"), recur: recurCtx(),
+    ...(enclosingBindings ? { outer: enclosingBindings } : {}), ...semCtx,
+  };
+  const yGuard = guardsFor(childTarget, "y", dOf("y"), repoId);
+  const yBindings = buildBindings(op.subquery, childTarget, yCtx, childInUse, repoId);
+  const obj = collectObject(op.subquery.select, childTarget, yCtx, childInUse, repoId, yBindings);
+  // json(_o) restores the object subtype lost through the AS column, so
+  // json_group_array embeds objects (not quoted strings); ORDER BY walk path.
+  const expr =
+    `(${cte.sql} SELECT json_group_array(json(_o)) FROM (` +
+    `SELECT ${obj.expr} AS _o FROM ${rowSource(childTarget, "y", dOf("y"))} JOIN walked ON walked.wid = y.${id} ` +
+    `WHERE ${yGuard.sql} ORDER BY walked.wpath))`;
+  return { expr, params: [...cte.params, ...obj.params, ...yGuard.params], isJson: true };
+}
+
 // A select-position collection op compiled to a scalar subquery expression
 // (without the `AS "name"`, so it can nest inside an enclosing json_object).
 // `collect` → json array; `first` → the ordered first record or NULL; `single`
@@ -269,6 +334,9 @@ interface CompiledExpr { expr: string; params: unknown[]; isJson: boolean; unwra
 function compileSelectOp(
   op: CollectionOp, outer: AliasCtx, inUse: Set<string>, repoId: string, enclosingBindings: OuterResolver | undefined,
 ): CompiledExpr {
+  // A nested `follow` collect recurses within the subquery via its own bounded
+  // WITH RECURSIVE, seeded from the receiver relation correlated to the outer row.
+  if (op.subquery.follow) return compileFollowCollect(op, op.subquery.follow, outer, inUse, repoId, enclosingBindings);
   const body = compileCorrelatedBody(op, outer, inUse, repoId, enclosingBindings);
   const obj = collectObject(op.subquery.select, body.childTarget, body.childCtx, body.childInUse, repoId, body.childBindings);
   if (op.op === "collect") {
@@ -359,6 +427,11 @@ export interface CompiledQuery {
   /** compiled `order by` terms ("expr DIR, …"), without the (path,id) tiebreak;
    * present only when the query has an order clause. */
   orderBy?: { sql: string; params: unknown[] };
+  /** a `WITH RECURSIVE walk … , walked …` prefix for a `follow` query. When
+   * present, `from` is the walk-joined row source, `where` is just the guards
+   * (membership was gated inside the CTE), and run.ts prepends this SQL + its
+   * params to every consumer statement and orders/paginates by `walked.wpath`. */
+  cte?: { sql: string; params: unknown[] };
 }
 
 // A lifted binding: a `^name` inside a top-level where-position collect. The
@@ -393,7 +466,193 @@ function gatherLiftBindings(w: WhereExpr | null): Map<string, LiftBinding> {
   return m;
 }
 
+// The recursion-intrinsic column expressions exposed to the post-walk scope of a
+// follow query (all param-free refs into the `walked` CTE). $frontier folds the
+// depth/budget-cutoff causes into the same "there is unfollowed graph beyond me"
+// signal; $cycle is a distinct sugar.
+function recurCtx(): { depth: string; stop: string; leaf: string; frontier: string; ordinal: string } {
+  return {
+    depth: "walked.wdepth",
+    stop: "walked.wstop",
+    leaf: "(walked.wstop = 'leaf')",
+    frontier: "(walked.wstop IN ('frontier','depth'))",
+    ordinal: "walked.wordinal",
+  };
+}
+
+// Compile a recursive (`follow`) query to a bounded WITH RECURSIVE. The walk is
+// closed over the query row type T. The query `where` is the SEED predicate
+// (level 1 only); the follow relation yields successors; the follow-local
+// successor `where` shapes which successors keep participating at every hop
+// (running out → `$stop == "leaf"`) and `frontier` cuts a relation that could
+// otherwise continue. (Seed-vs-successor are two orthogonal knobs: the top
+// `where` is NOT re-applied during recursion — that is exactly what the
+// follow-local `where` expresses, without which single-root subtree walks would
+// be impossible.) The non-recursive `walked` CTE materializes each occurrence's
+// depth + categorical `$stop` as columns so the final SELECT can project/filter
+// them param-free.
+// Build the `WITH RECURSIVE walk … , walked …` prefix for a follow over
+// `target`. The base is caller-supplied: `seedFrom` is its row source and
+// `seedPred` its WHERE (guards + either the top-level seed `where`, or — for a
+// nested follow-collect — the collect relation's correlation to the outer row +
+// the collect `where`). The step (follow relation), stop precedence, cycle
+// admission, leaf refinement, distinct and $ordinal are identical either way.
+// The fixed scaffolding aliases (s/c/pw/x/walk/walked) do not collide with the
+// canonical row aliases (d/b/n) or allocAlias output (n1,…), and SQLite scopes
+// CTE names per (sub)query, so this composes inside a correlated subquery.
+function buildWalkCte(
+  target: CelTarget, follow: FollowSpec, repoId: string, semCtx: { semantic?: SemanticResolver },
+  seedFrom: string, seedPred: { sql: string; params: unknown[] },
+): { sql: string; params: unknown[] } {
+  const id = ID_COLUMN[target];
+  const tbl = TABLE[target];
+  const rel = follow.relation;
+  const maxDepth = follow.maxDepth;
+  const isDocs = target === "docs";
+  const dOf = (row: string): string => (isDocs ? row : `${row}d`);
+
+  const stopExpr = (frontierSql: string | null, depthExpr: string, cycleExpr?: string): string => {
+    const branches: string[] = [];
+    if (cycleExpr) branches.push(`WHEN ${cycleExpr} THEN 'cycle'`);
+    if (frontierSql) branches.push(`WHEN (${frontierSql}) THEN 'frontier'`);
+    branches.push(`WHEN ${depthExpr} >= ${maxDepth} THEN 'depth'`);
+    return `CASE ${branches.join(" ")} ELSE 'interior' END`;
+  };
+  // Node identity for cycle detection + `distinct` dedup: the entity id by
+  // default, or a `by <expr>` field/intrinsic. Two rows with the same key are the
+  // same node — a revisit of a key on the path is a cycle; `distinct` keeps one
+  // per key. The row id (not the key) is always what rejoins the row. Keys must
+  // be param-free (a field/intrinsic), so they inline safely into the path.
+  const keyExpr = (alias: string): string => {
+    if (!follow.by) return `${alias}.${id}`;
+    const v = compileValue(follow.by.source, target, { self: alias, doc: dOf(alias), ...semCtx });
+    if (v.params.length > 0) {
+      throw new FilterInvalid("follow `by <expr>` must be a field/intrinsic identity (no bound parameters)", "OQX follow");
+    }
+    return v.expr;
+  };
+  const keyS = keyExpr("s");
+  const keyC = keyExpr("c");
+
+  // ---- base: caller-supplied seed rows, depth 1 -----------------------------
+  const seedCtx: AliasCtx = { self: "s", doc: dOf("s"), ...semCtx };
+  const frontierSeed = follow.frontier ? compilePredicate(follow.frontier, seedCtx) : null;
+  const seedStop = stopExpr(frontierSeed ? frontierSeed.sql : null, "1");
+  const baseSql =
+    `SELECT s.${id}, 1, '/' || ${keyS} || '/', ${seedStop}, ${keyS} FROM ${seedFrom} WHERE ${seedPred.sql}`;
+  const baseParams = [...(frontierSeed ? frontierSeed.params : []), ...seedPred.params];
+
+  // ---- step: only 'interior' rows expand; cyclic children are ADMITTED -------
+  const childCtx: AliasCtx = { self: "c", doc: dOf("c"), ...semCtx };
+  const frontierChild = follow.frontier ? compilePredicate(follow.frontier, childCtx) : null;
+  const succStep = follow.successorWhere ? compilePredicate(follow.successorWhere, childCtx) : null;
+  const childGuard = guardsFor(target, "c", dOf("c"), repoId);
+  const childStop = stopExpr(frontierChild ? frontierChild.sql : null, "w.depth + 1", `instr(w.path, '/' || ${keyC} || '/') > 0`);
+  const childDocJoin = !isDocs ? ` JOIN docs ${dOf("c")} ON ${dOf("c")}.doc_id = c.doc_id` : "";
+  const stepConds: string[] = [`w.stop = 'interior'`, childGuard.sql];
+  const stepWhereParams: unknown[] = [...childGuard.params];
+  if (succStep) { stepConds.push(`(${succStep.sql})`); stepWhereParams.push(...succStep.params); }
+  const stepSql =
+    `SELECT c.${id}, w.depth + 1, w.path || ${keyC} || '/', ${childStop}, ${keyC} ` +
+    `FROM walk w JOIN ${tbl} pw ON pw.${id} = w.id ` +
+    `JOIN ${tbl} c ON ${rel.correlate("pw", "c")}${childDocJoin} ` +
+    `WHERE ${stepConds.join(" AND ")}`;
+  const stepParams = [...(frontierChild ? frontierChild.params : []), ...stepWhereParams];
+
+  // ---- walked: refine 'interior' rows to leaf/interior; pass terminal stops --
+  const c2Ctx: AliasCtx = { self: "c2", doc: dOf("c2"), ...semCtx };
+  const c2Guard = guardsFor(target, "c2", dOf("c2"), repoId);
+  const succLeaf = follow.successorWhere ? compilePredicate(follow.successorWhere, c2Ctx) : null;
+  const leafConds = [rel.correlate("x", "c2"), c2Guard.sql];
+  const leafParams: unknown[] = [...c2Guard.params];
+  if (succLeaf) { leafConds.push(`(${succLeaf.sql})`); leafParams.push(...succLeaf.params); }
+  const leafExists = `NOT EXISTS (SELECT 1 FROM ${rowSource(target, "c2", dOf("c2"))} WHERE ${leafConds.join(" AND ")})`;
+  const wstopCase = `CASE WHEN walk.stop <> 'interior' THEN walk.stop WHEN ${leafExists} THEN 'leaf' ELSE 'interior' END`;
+
+  const xGuard = guardsFor(target, "x", dOf("x"), repoId);
+  const walkedParams: unknown[] = [...leafParams, ...xGuard.params];
+  // `distinct` keeps the minimal (depth, path) occurrence per IDENTITY (walk.key
+  // — the entity id by default, or the `by` key). Default key == id, so this is
+  // byte-identical to id-dedup when `by` is absent.
+  const distinctClause = follow.distinct
+    ? ` AND NOT EXISTS (SELECT 1 FROM walk w2 WHERE w2.key = walk.key AND (w2.depth < walk.depth OR (w2.depth = walk.depth AND w2.path < walk.path)))`
+    : "";
+  const walkedSql =
+    `SELECT x.${id} AS wid, walk.depth AS wdepth, walk.path AS wpath, ${wstopCase} AS wstop, ` +
+    `ROW_NUMBER() OVER (ORDER BY walk.depth, walk.path) AS wordinal ` +
+    `FROM ${rowSource(target, "x", dOf("x"))} JOIN walk ON x.${id} = walk.id ` +
+    `WHERE ${xGuard.sql}${distinctClause}`;
+
+  return {
+    sql: `WITH RECURSIVE walk(id, depth, path, stop, key) AS (\n${baseSql}\nUNION ALL\n${stepSql}\n), walked AS (\n${walkedSql}\n)`,
+    params: [...baseParams, ...stepParams, ...walkedParams],
+  };
+}
+
+function compileFollowQuery(q: Query, follow: FollowSpec, repoId: string, semantic?: SemanticResolver): CompiledQuery {
+  const target = q.target;
+  const id = ID_COLUMN[target];
+  const isDocs = target === "docs";
+  const semCtx = semantic ? { semantic } : {};
+  const dOf = (row: string): string => (isDocs ? row : `${row}d`);
+  const reserved = new Set<string>([
+    "d", ALIAS_BASE[target], "walk", "walked",
+    "s", "sd", "c", "cd", "pw", "pd", "w", "x", "xd", "c2", "cd2", "w2",
+  ]);
+
+  // Top-level seed: guards + the seed `where`, over all rows of the target.
+  const seedCtx: AliasCtx = { self: "s", doc: dOf("s"), ...semCtx };
+  const seedGuard = guardsFor(target, "s", dOf("s"), repoId);
+  const seedBindings = buildBindings(q, target, seedCtx, reserved, repoId);
+  const seedWhere = q.where
+    ? compileWhere(q.where, seedCtx, reserved, repoId, seedBindings)
+    : { sql: "1", params: [] as unknown[] };
+  const cte = buildWalkCte(target, follow, repoId, semCtx, rowSource(target, "s", dOf("s")), {
+    sql: `${seedGuard.sql} AND (${seedWhere.sql})`,
+    params: [...seedGuard.params, ...seedWhere.params],
+  });
+  const cteSql = cte.sql;
+  const cteParams = cte.params;
+
+  // ---- final SELECT: canonical row joined to `walked`, recur intrinsics live -
+  const finalCtx: AliasCtx = { ...defaultCtx(target), recur: recurCtx(), ...semCtx };
+  const g = guards(target, repoId);
+  const from = `${fromClause(target)} JOIN walked ON walked.wid = ${ALIAS_BASE[target]}.${id}`;
+  const topBindings = buildBindings(q, target, finalCtx, reserved, repoId);
+  const lifts = gatherLiftBindings(q.where);
+  const projections = q.select.map((s) => compileProjection(s, target, finalCtx, reserved, repoId, topBindings, lifts));
+
+  // Post-walk result filter: the `where` conjuncts that reference recursion
+  // intrinsics ($depth/$stop/…), compiled against `walked` via finalCtx.recur.
+  const post = q.postWhere ? compileWhere(q.postWhere, finalCtx, reserved, repoId, topBindings) : null;
+  const whereSql = post ? `${g.sql} AND (${post.sql})` : g.sql;
+  const whereParams = post ? [...g.params, ...post.params] : g.params;
+
+  let orderBy: { sql: string; params: unknown[] } | undefined;
+  if (q.orderBy && q.orderBy.length > 0) {
+    const parts: string[] = [];
+    const oparams: unknown[] = [];
+    for (const o of q.orderBy) {
+      const v = compileValue(o.source, target, finalCtx);
+      parts.push(`${v.expr} ${o.desc ? "DESC" : "ASC"}`);
+      oparams.push(...v.params);
+    }
+    orderBy = { sql: parts.join(", "), params: oparams };
+  }
+
+  return {
+    from,
+    where: whereSql,
+    whereParams,
+    projections,
+    target,
+    cte: { sql: cteSql, params: cteParams },
+    ...(orderBy ? { orderBy } : {}),
+  };
+}
+
 export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolver): CompiledQuery {
+  if (q.follow) return compileFollowQuery(q, q.follow, repoId, semantic);
   const ctx = defaultCtx(q.target);
   if (semantic) ctx.semantic = semantic; // query-global; flows to every child ctx
   const inUse = new Set([ctx.self, "d"]);

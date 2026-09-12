@@ -32,6 +32,24 @@ export interface AliasCtx {
    * loud `semantic_unavailable`. The language stays provider-free: the function
    * takes a string, the runtime supplies the embedding. */
   semantic?: SemanticResolver;
+  /** Recursion-intrinsic columns for a `follow` query's post-walk scope. When
+   * set, `$depth`/`$stop`/`$leaf`/`$frontier` resolve to these PARAM-FREE column
+   * expressions (references into the `walked` CTE) instead of the per-target
+   * meaning — so recursion metadata is queryable in select/order by. On the
+   * blocks target this shadows `$depth` (which otherwise means block nesting
+   * depth). OQX only sets it for the post-walk scope of a follow query. */
+  recur?: RecurCtx;
+}
+
+/** SQL-expression strings for the recursion intrinsics (all param-free column
+ * references into the `walked` CTE). See AliasCtx.recur. */
+export interface RecurCtx {
+  depth: string;
+  stop: string;
+  leaf: string;
+  frontier: string;
+  /** deterministic rank over admitted occurrences, ordered by (depth, path). */
+  ordinal: string;
 }
 
 // A binding visible to a nested scope via `^name`. A parent SELECT value binds a
@@ -230,6 +248,22 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
   const head = segs[0]!;
   const self = ctx.self;
   const doc = ctx.doc;
+
+  // Recursion intrinsics ($depth/$stop/$leaf/$frontier) resolve to the walk's
+  // materialized columns when a follow query's post-walk scope is active. Routed
+  // before the per-target intrinsic switch so `$depth` means RECURSION depth here
+  // (shadowing block-nesting depth). Only a bare intrinsic (`$stop`, not
+  // `$stop.x`) is a recursion column. Param-free, so the field param invariant holds.
+  if (field.intrinsic && ctx.recur && segs.length === 1) {
+    switch (head) {
+      case "$depth": return { expr: ctx.recur.depth };
+      case "$stop": return { expr: ctx.recur.stop };
+      case "$leaf": return { expr: ctx.recur.leaf };
+      case "$frontier": return { expr: ctx.recur.frontier };
+      case "$ordinal": return { expr: ctx.recur.ordinal };
+      default: break;
+    }
+  }
 
   if (field.intrinsic) {
     if (target === "docs") {

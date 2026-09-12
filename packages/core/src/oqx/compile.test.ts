@@ -375,3 +375,73 @@ describe("OQX compile — order by", () => {
     expect(compileSrc("from docs").orderBy).toBeUndefined();
   });
 });
+
+describe("OQX compile — follow (recursive CTE shape)", () => {
+  it("emits a bounded WITH RECURSIVE walk + a walked CTE, joined by the final select", () => {
+    const c = compileSrc("from blocks follow block.children");
+    expect(c.cte).toBeTruthy();
+    expect(c.cte!.sql).toMatch(/^WITH RECURSIVE walk\(id, depth, path, stop, key\) AS \(/);
+    expect(c.cte!.sql).toContain("UNION ALL");
+    expect(c.cte!.sql).toContain("walked AS (");
+    // final select joins the canonical row onto walked (so run.ts's id/path resolve)
+    expect(c.from).toContain("JOIN walked ON walked.wid = b.block_id");
+  });
+
+  it("the step joins the relation, only expands interior rows, and admits cycles", () => {
+    const c = compileSrc("from blocks follow block.children");
+    // block.children correlate: child.parent_block = parent.block_id
+    expect(c.cte!.sql).toContain("c.parent_block = pw.block_id");
+    expect(c.cte!.sql).toContain("w.stop = 'interior'"); // only interior rows expand
+    expect(c.cte!.sql).toContain("w.depth + 1 >= 8"); // default hard cap, inlined
+    // a cyclic child is admitted with $stop = 'cycle' (not excluded)
+    expect(c.cte!.sql).toContain("instr(w.path, '/' || c.block_id || '/') > 0 THEN 'cycle'");
+  });
+
+  it("depth <n> inlines the cap in the base + step $stop CASE", () => {
+    const c = compileSrc("from blocks follow block.children depth 3");
+    expect(c.cte!.sql).toContain("1 >= 3 THEN 'depth'");        // seed row
+    expect(c.cte!.sql).toContain("w.depth + 1 >= 3 THEN 'depth'"); // step child
+  });
+
+  it("the per-row $stop CASE orders cycle → frontier → depth; walked refines leaf/interior", () => {
+    const c = compileSrc('from blocks follow block.children frontier type == "list"');
+    const step = c.cte!.sql.slice(c.cte!.sql.indexOf("UNION ALL"));
+    const iC = step.indexOf("'cycle'");
+    const iF = step.indexOf("'frontier'");
+    const iD = step.indexOf("'depth'");
+    expect(iC).toBeGreaterThanOrEqual(0);
+    expect(iC).toBeLessThan(iF);
+    expect(iF).toBeLessThan(iD);
+    // leaf/interior refinement happens post-walk (in the `walked` CTE)
+    const walked = c.cte!.sql.slice(c.cte!.sql.indexOf("walked AS ("));
+    expect(walked).toContain("THEN 'leaf'");
+    expect(walked).toContain("ELSE 'interior'");
+  });
+
+  it("`follow distinct` adds the min-occurrence dedup guard; the default does not", () => {
+    expect(compileSrc("from blocks follow distinct block.children").cte!.sql)
+      .toMatch(/NOT EXISTS \(SELECT 1 FROM walk w2 WHERE w2\.key = walk\.key/);
+    expect(compileSrc("from blocks follow block.children").cte!.sql).not.toContain("walk w2");
+  });
+
+  it("recursion intrinsics in select compile to param-free walked columns", () => {
+    const c = compileSrc("from blocks select d: $depth, s: $stop follow block.children");
+    const proj = c.projections.map((p) => p.sql).join(" | ");
+    expect(proj).toContain("walked.wdepth");
+    expect(proj).toContain("walked.wstop");
+    // param-free: the projection carries no bound params of its own
+    expect(c.projections.flatMap((p) => p.params)).toEqual([]);
+  });
+
+  it("threads CTE params before the guard params (statement order)", () => {
+    const c = compileSrc('from blocks where type == "list_item" follow block.children frontier type == "list"');
+    // seed where + frontier literals live in the CTE; the final where is just guards
+    expect(c.cte!.params).toContain("list_item");
+    expect(c.cte!.params).toContain("list");
+    expect(c.whereParams).toEqual(["rp_1"]); // final select: guards only
+  });
+
+  it("a non-follow query is unchanged (no cte)", () => {
+    expect(compileSrc('from blocks where type == "task"').cte).toBeUndefined();
+  });
+});

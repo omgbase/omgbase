@@ -9,7 +9,7 @@
 import { lexOqx, type OqxToken, OqxLexError } from "./lexer.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type {
-  SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceScalar, SurfaceOp, SurfaceSubquery, SurfaceSelectItem,
+  SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceScalar, SurfaceOp, SurfaceSubquery, SurfaceSelectItem, SurfaceFollow,
 } from "./ast.js";
 import type { CountRelOp, OqxConsumer, OrderSpec } from "./ir.js";
 
@@ -99,7 +99,13 @@ class OqxParser {
     let sawSelect = false;
     let sawOrder = false;
     while (!this.at("eof") && !(wrapped && this.at("rparen"))) {
-      if (this.at("kw", "where")) {
+      if (this.atFollow()) {
+        // `follow …` makes the query recursive and is TERMINAL: it consumes its
+        // own sub-clauses (where/frontier/depth) up to the query/consumer
+        // boundary, so nothing else may follow it.
+        q.follow = this.parseFollowClause();
+        break;
+      } else if (this.at("kw", "where")) {
         if (sawWhere) this.fail("duplicate `where` clause");
         sawWhere = true;
         this.next();
@@ -115,10 +121,96 @@ class OqxParser {
         this.next(); this.next(); // `order` `by`
         q.orderBy = this.parseOrderSpecs();
       } else {
-        this.fail(`unexpected '${this.peek().value || this.peek().type}' — expected where/select/order by`);
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' — expected where/select/order by/follow`);
       }
     }
     return q;
+  }
+
+  // `follow` is a contextual keyword (an ordinary ident elsewhere); it marks the
+  // recursive clause only in clause position.
+  private atFollow(): boolean {
+    return this.at("ident", "follow");
+  }
+
+  // follow := "follow" ["distinct"] <receiver> { "where" <expr> | "frontier"
+  // <expr> | "depth" <int> }.  `distinct`/`frontier`/`depth` are contextual
+  // keywords here; the successor/boundary predicate interiors are captured
+  // verbatim (full CEL, incl. &&/||) up to the next follow sub-clause boundary.
+  private parseFollowClause(): SurfaceFollow {
+    this.next(); // `follow`
+    let distinct = false;
+    if (this.at("ident", "distinct")) { this.next(); distinct = true; }
+    if (!this.at("ident")) this.fail("expected a relation name after `follow`");
+    const segments = [this.next().value];
+    while (this.at("dot")) {
+      this.next();
+      if (!this.at("ident")) this.fail("expected an identifier after '.' in the follow receiver");
+      segments.push(this.next().value);
+    }
+    const follow: SurfaceFollow = {
+      distinct, receiver: segments.join("."), where: null, frontier: null, depth: null, by: null,
+    };
+    while (!this.at("eof") && !this.at("rparen")) {
+      if (this.at("kw", "where")) {
+        if (follow.where !== null) this.fail("duplicate `where` in follow clause");
+        this.next();
+        const src = this.captureFollowExpr();
+        if (!src) this.fail("expected a successor predicate after `follow … where`");
+        follow.where = src;
+      } else if (this.at("ident", "by")) {
+        if (follow.by !== null) this.fail("duplicate `by` in follow clause");
+        this.next();
+        const src = this.captureFollowExpr();
+        if (!src) this.fail("expected an identity expression after `by`");
+        follow.by = src;
+      } else if (this.at("ident", "frontier")) {
+        if (follow.frontier !== null) this.fail("duplicate `frontier` in follow clause");
+        this.next();
+        const src = this.captureFollowExpr();
+        if (!src) this.fail("expected a boundary predicate after `frontier`");
+        follow.frontier = src;
+      } else if (this.at("ident", "depth")) {
+        if (follow.depth !== null) this.fail("duplicate `depth` in follow clause");
+        this.next();
+        if (!this.at("number")) this.fail("expected an integer after `depth`");
+        const numTok = this.next();
+        const value = Number(numTok.value);
+        if (!Number.isInteger(value) || value < 1 || value > 8) {
+          this.fail(`follow depth must be an integer between 1 and 8, got '${numTok.value}'`);
+        }
+        follow.depth = value;
+      } else {
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' in follow clause — expected where/frontier/depth`);
+      }
+    }
+    return follow;
+  }
+
+  // Capture a follow successor/boundary predicate verbatim: a maximal run up to
+  // the next follow sub-clause keyword (`frontier`/`depth`) at depth 0, a ')',
+  // or eof — tracking paren depth so the predicate's own parens don't end it.
+  // Unlike a where-leaf, &&/|| do NOT end it: the whole boolean expression is
+  // handed to CEL as one scalar (follow predicates carry no OQX collection ops).
+  private captureFollowExpr(): string {
+    const startOff = this.peek().pos;
+    let depth = 0;
+    let endOff = startOff;
+    while (!this.at("eof")) {
+      const t = this.peek();
+      if (depth === 0) {
+        if (t.type === "rparen") break;
+        if (t.type === "ident" && (t.value === "frontier" || t.value === "depth" || t.value === "by")) break;
+        // a keyword (a second `where`, or a stray select/from) ends the run — it
+        // cannot appear inside a CEL scalar, so it marks the next sub-clause.
+        if (t.type === "kw") break;
+      }
+      if (t.type === "lparen") depth++;
+      else if (t.type === "rparen") depth--;
+      endOff = t.pos + t.value.length;
+      this.next();
+    }
+    return this.src.slice(startOff, endOff).trim();
   }
 
   // `order` and `by` are NOT reserved keywords — only the adjacent pair marks the
@@ -252,7 +344,11 @@ class OqxParser {
     let sawWhere = false;
     let sawSelect = false;
     while (!this.at("rparen") && !this.at("eof")) {
-      if (this.at("kw", "where")) {
+      if (this.atFollow()) {
+        // A nested `follow` makes this collect recursive; terminal within the
+        // subquery (it consumes its own sub-clauses up to the closing ')').
+        sub.follow = this.parseFollowClause();
+      } else if (this.at("kw", "where")) {
         if (sawWhere) this.fail("duplicate `where` in nested query");
         sawWhere = true;
         this.next();
@@ -268,7 +364,7 @@ class OqxParser {
         sawSelect = true;
         sub.select = this.parseSelectItems();
       } else {
-        this.fail(`unexpected '${this.peek().value || this.peek().type}' in nested query — expected where/select or a ^lift`);
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' in nested query — expected where/select/follow or a ^lift`);
       }
     }
     return sub;
@@ -346,6 +442,15 @@ class OqxParser {
         if (t.type === "ident" && t.value === "order") {
           const nx = this.tokens[this.pos + 1];
           if (nx && nx.type === "ident" && nx.value === "by") break;
+        }
+        // a trailing `follow` clause likewise ends a where-leaf / select value /
+        // order expression — but only in CLAUSE position (`follow <receiver>`),
+        // i.e. when the next token is an ident (the receiver or `distinct`). This
+        // keeps `follow`/`depth`/`frontier` usable as ordinary field names when
+        // they are operands (`follow == 1`, `x == frontier`).
+        if (t.type === "ident" && t.value === "follow") {
+          const nx = this.tokens[this.pos + 1];
+          if (nx && nx.type === "ident") break;
         }
         if (t.type === "rparen") break;
         if (stopOnComma && t.type === "comma") break;

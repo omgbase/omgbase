@@ -59,19 +59,26 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
     : undefined;
   const compiled = compileQuery(q, repoId, semantic);
   const idCol = ID_COL[q.target];
+  // A `follow` query carries a WITH RECURSIVE prefix: prepend it to every
+  // statement, bind its params FIRST, and order/paginate by the unique walk path
+  // (walked.wpath) rather than (path, id). Cursor pagination is disabled for
+  // follow (like a custom order-by): truncation is still reported.
+  const isFollow = !!compiled.cte;
+  const ctePrefix = compiled.cte ? `${compiled.cte.sql} ` : "";
+  const cteParams = compiled.cte ? compiled.cte.params : [];
 
   // Scalar reductions ignore projections and pagination entirely: they answer a
-  // single question about the outer row set. Only whereParams are bound.
+  // single question about the outer row set. Only cte + whereParams are bound.
   if (q.consumer === "count") {
     const row = store.db
-      .prepare(`SELECT COUNT(*) AS n FROM ${compiled.from} WHERE ${compiled.where}`)
-      .get(...compiled.whereParams) as { n: number };
+      .prepare(`${ctePrefix}SELECT COUNT(*) AS n FROM ${compiled.from} WHERE ${compiled.where}`)
+      .get(...cteParams, ...compiled.whereParams) as { n: number };
     return { hits: [], truncated: false, cursor: null, consumer: "count", count: row.n };
   }
   if (q.consumer === "exists") {
     const row = store.db
-      .prepare(`SELECT EXISTS(SELECT 1 FROM ${compiled.from} WHERE ${compiled.where}) AS e`)
-      .get(...compiled.whereParams) as { e: number };
+      .prepare(`${ctePrefix}SELECT EXISTS(SELECT 1 FROM ${compiled.from} WHERE ${compiled.where}) AS e`)
+      .get(...cteParams, ...compiled.whereParams) as { e: number };
     return { hits: [], truncated: false, cursor: null, consumer: "exists", exists: row.e === 1 };
   }
 
@@ -80,7 +87,7 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   const cap = q.consumer === "first" ? 1 : q.consumer === "single" ? 2 : (opts.limit ?? 50);
 
   const cols = [`${idCol} AS id`, `d.path AS path`];
-  const params: unknown[] = [];
+  const params: unknown[] = [...cteParams]; // CTE prefix binds first
   for (const p of compiled.projections) {
     cols.push(p.sql); // already `<expr> AS "name"`
     params.push(...p.params);
@@ -91,23 +98,25 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   // A custom `order by` reorders the result off (path, id), so the keyset cursor
   // (which resumes by path,id) no longer matches — pagination is disabled for
   // ordered queries (you get the top `limit`, `truncated` still tells you there
-  // is more). first/single never paginate.
+  // is more). first/single never paginate; follow queries order by walked.wpath
+  // (a total order per occurrence) and likewise disable the cursor for slice 1.
   let cursorClause = "";
-  if (q.consumer === "collect" && !compiled.orderBy && opts.cursor) {
+  if (q.consumer === "collect" && !compiled.orderBy && !isFollow && opts.cursor) {
     const { path: cp, id: ci } = decodeCursor(opts.cursor);
     cursorClause = ` AND (d.path > ? OR (d.path = ? AND ${idCol} > ?))`;
     params.push(cp, cp, ci);
   }
 
-  // User order terms sort first; (path, id) always breaks ties to keep a total,
-  // deterministic order. Order params sit textually between WHERE/cursor and
-  // LIMIT, so they bind here — after the cursor params, before `fetch`.
+  // User order terms sort first; a total-order tiebreak follows — (path, id) for a
+  // flat query, or the unique walk path for a follow query. Order params sit
+  // textually between WHERE/cursor and LIMIT, so they bind here.
   const orderPrefix = compiled.orderBy ? `${compiled.orderBy.sql}, ` : "";
   if (compiled.orderBy) params.push(...compiled.orderBy.params);
+  const orderTail = isFollow ? "walked.wpath ASC" : `d.path ASC, ${idCol} ASC`;
 
   // collect fetches limit+1 to detect truncation; first/single fetch exactly cap.
   const fetch = q.consumer === "collect" ? cap + 1 : cap;
-  const sql = `SELECT ${cols.join(", ")} FROM ${compiled.from} WHERE ${compiled.where}${cursorClause} ORDER BY ${orderPrefix}d.path ASC, ${idCol} ASC LIMIT ?`;
+  const sql = `${ctePrefix}SELECT ${cols.join(", ")} FROM ${compiled.from} WHERE ${compiled.where}${cursorClause} ORDER BY ${orderPrefix}${orderTail} LIMIT ?`;
   params.push(fetch);
 
   const rows = store.db.prepare(sql).all(...params) as Record<string, unknown>[];
@@ -126,7 +135,7 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
   const last = page[page.length - 1];
   // No keyset cursor for a custom-ordered result (see above): report truncation
   // but no resumable cursor.
-  const cursor = truncated && last && !compiled.orderBy ? encodeCursor(String(last.path), String(last.id)) : null;
+  const cursor = truncated && last && !compiled.orderBy && !isFollow ? encodeCursor(String(last.path), String(last.id)) : null;
   const hits = page.map((r) => rowToHit(r, compiled, store));
   return { hits, truncated, cursor, consumer: "collect" };
 }

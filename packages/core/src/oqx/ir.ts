@@ -65,6 +65,11 @@ export interface NestedQuery {
   target: CelTarget;
   where: WhereExpr | null;
   select: SelectItem[];
+  /** a nested `follow` making a select-position collect recursive: `where` seeds
+   * (via the receiver relation, correlated to the current row), `follow` recurses
+   * over a type-preserving relation. Recursion intrinsics are queryable in the
+   * collect's `select`. */
+  follow?: FollowSpec;
 }
 
 /** The where clause is a boolean tree whose leaves are scalar predicates or
@@ -100,6 +105,26 @@ export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
  * direction. Ordering is what turns semantic()/bm25 scores into a ranking. */
 export interface OrderSpec { source: string; desc: boolean }
 
+/** The recursive `follow` clause (see the OQX traversal-semantics note). A query
+ * with a `follow` is closed over its row type `T`: the query `where` selects the
+ * SEED rows (level 1); `relation` (type-preserving, childTarget == target) yields
+ * each row's successors; `successorWhere` shapes which successors keep
+ * participating at every hop (running out → `$stop == "leaf"`); `frontier` cuts a
+ * relation that could otherwise continue (→ `$stop == "frontier"`); `maxDepth`
+ * bounds the walk (→ `$stop == "depth"`). `distinct` dedups reached rows by
+ * identity (default keeps one occurrence per distinct walk path). */
+export interface FollowSpec {
+  relation: Relation;
+  distinct: boolean;
+  successorWhere: ScalarPredicate | null;
+  frontier: ScalarPredicate | null;
+  /** hard-capped at 8 (mirrors graph_traverse's HARD_DEPTH_CAP). */
+  maxDepth: number;
+  /** `by <expr>` — identity for cycle detection + `distinct` dedup (a param-free
+   * field/intrinsic scalar); absent = the entity id. */
+  by: ScalarPredicate | null;
+}
+
 /** Top-level OQX query. */
 export interface Query {
   kind: "query";
@@ -111,4 +136,11 @@ export interface Query {
   orderBy?: OrderSpec[];
   /** how the outer result is consumed/shaped; defaults to `collect`. */
   consumer: OqxConsumer;
+  /** `follow …` — present iff the query is recursive (a bounded WITH RECURSIVE). */
+  follow?: FollowSpec;
+  /** follow queries only: the top-level `where` conjuncts that reference
+   * recursion intrinsics ($depth/$stop/$leaf/$frontier). They filter the walk's
+   * RESULT post-walk (compiled against `walked`), separate from `where` (the
+   * seed predicate). Absent for non-follow queries. */
+  postWhere?: WhereExpr;
 }

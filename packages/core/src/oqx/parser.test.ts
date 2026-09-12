@@ -458,3 +458,95 @@ describe("OQX parser + lowering — order by", () => {
     expect(() => parseOqx("from docs order by a order by b")).toThrow(/duplicate `order by`/);
   });
 });
+
+describe("OQX parser — follow (recursive clause)", () => {
+  it("parses a bare follow with a receiver", () => {
+    const q = parseOqx("from blocks follow block.children");
+    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: null, by: null });
+  });
+
+  it("parses distinct + successor where + frontier + depth (in order), capturing predicates verbatim", () => {
+    const q = parseOqx('from nodes follow distinct subsections where level > 1 frontier attrs.kind == "x" depth 3 by name');
+    expect(q.follow).toEqual({
+      distinct: true,
+      receiver: "subsections",
+      where: "level > 1",
+      frontier: 'attrs.kind == "x"',
+      depth: 3,
+      by: "name",
+    });
+  });
+
+  it("does NOT let a successor where swallow the trailing frontier/depth", () => {
+    const q = parseOqx('from blocks follow block.children where type != "paragraph" depth 2');
+    expect(q.follow!.where).toBe('type != "paragraph"');
+    expect(q.follow!.depth).toBe(2);
+    expect(q.follow!.frontier).toBeNull();
+  });
+
+  it("captures a boolean successor predicate whole (follow-local where is CEL, not an OQX boolean tree)", () => {
+    const q = parseOqx('from blocks follow block.children where type == "list_item" && !attrs.done');
+    expect(q.follow!.where).toBe('type == "list_item" && !attrs.done');
+  });
+
+  it("keeps a top-level where/select as the seed, with follow terminal after them", () => {
+    const q = parseOqx('from blocks where type == "list" select t: text follow block.children');
+    expect(q.where).toEqual({ kind: "scalar", source: 'type == "list"' });
+    expect(q.select).toEqual([{ kind: "field", name: "t", source: "text" }]);
+    expect(q.follow!.receiver).toBe("block.children");
+  });
+
+  it("a top-level where does not swallow the follow clause", () => {
+    const q = parseOqx('from blocks where type == "list_item" follow block.children');
+    expect(q.where).toEqual({ kind: "scalar", source: 'type == "list_item"' });
+    expect(q.follow!.receiver).toBe("block.children");
+  });
+
+  it("follow/frontier/depth stay usable as ordinary field names outside clause position", () => {
+    const q = parseOqx('from docs where follow == 1 && depth == 2 && frontier == 3');
+    expect(q.follow).toBeUndefined();
+    expect(q.where).toEqual({
+      kind: "and",
+      parts: [
+        { kind: "scalar", source: "follow == 1" },
+        { kind: "scalar", source: "depth == 2" },
+        { kind: "scalar", source: "frontier == 3" },
+      ],
+    });
+  });
+
+  it("works inside a top-level consumer wrapper", () => {
+    const q = parseOqx("repo.count(from blocks follow block.children depth 4)");
+    expect(q.consumer).toBe("count");
+    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: 4, by: null });
+  });
+
+  it("rejects a duplicate follow sub-clause", () => {
+    expect(() => parseOqx("from blocks follow block.children where a where b")).toThrow(/duplicate `where`/);
+  });
+
+  it("rejects a non-integer / out-of-range depth", () => {
+    expect(() => parseOqx("from blocks follow block.children depth 0")).toThrow(/between 1 and 8/);
+    expect(() => parseOqx("from blocks follow block.children depth 9")).toThrow(/between 1 and 8/);
+  });
+
+  it("lowers follow onto the Query: resolves the relation and defaults the depth cap", () => {
+    const q = lowerQuery(parseOqx("from blocks follow block.children"));
+    expect(q.follow!.relation.name).toBe("block.children");
+    expect(q.follow!.maxDepth).toBe(8);
+    expect(q.follow!.distinct).toBe(false);
+  });
+
+  it("rejects a non-type-preserving follow relation at lowering", () => {
+    expect(() => lowerQuery(parseOqx("from blocks follow section"))).toThrow(/preserve the row type/);
+  });
+
+  it("rejects a root relation as a follow target at lowering", () => {
+    expect(() => lowerQuery(parseOqx("from docs follow repo.docs"))).toThrow(/root|per-row/);
+  });
+
+  it("resolves the graph edge relations doc.out / doc.in (docs→docs, type-preserving)", () => {
+    expect(lowerQuery(parseOqx("from docs follow doc.out")).follow!.relation.name).toBe("doc.out");
+    expect(lowerQuery(parseOqx("from docs follow doc.in")).follow!.relation.name).toBe("doc.in");
+  });
+});

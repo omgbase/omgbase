@@ -111,6 +111,21 @@ different sets. Several tests depend on this; keep it fully checked.
   subdirectory), and `repo.single` to the sole `draft` document
   (`texts/mutus-liber.md`) — while `repo.single(... layer == "canon")` fails
   loudly because 13 documents match.
+- **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
+  (the real sync path) so the wikilink/markdown-link graph is extracted to
+  doc→doc `references` edges (64 of them), which the **citation-graph** demos
+  walk: `follow doc.out` (outgoing), `follow doc.in` (backlinks). It exercises
+  every follow feature — `distinct` (philosophers-stone's 10-document transitive
+  citation closure) vs default per-path occurrences (56), a post-walk `$depth`
+  filter (the 5 documents that directly cite magnum-opus), **cyclic-safety**
+  (`$stop == "cycle"` — paracelsus ⇄ index is admitted once, never looped),
+  `frontier type == "practitioner"` (biographies as the edge of the walk),
+  `by type` (re-keying identity so the walk stops when a document *type*
+  repeats), and `$ordinal`. The **structural** relations ride the heading
+  outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
+  and the block tree (`block.children` — a bullet list down to its items),
+  including a **nested follow-collect** projecting each process document's
+  outline as a subtree.
 
 ### Adding to the corpus
 
@@ -121,7 +136,9 @@ will fail tests by design — that is the point. If you add a document:
 - keep `salt.md`'s supply list **fully checked** (several tests use it as the
   has-tasks / has-open-tasks discriminator);
 - give a substance/process a `slug` (= filename base) if anything wikilinks it,
-  and keep the wikilink graph in mind — the correlation tests pin exact resolved
-  sets, including `prima-materia.md`'s deliberately dangling `[[nigredo]]`;
+  and keep the wikilink graph in mind — the correlation AND `follow doc.out/in`
+  tests pin exact resolved sets (the graph is extracted to `references` edges by
+  the `processCheckpoint` ingest), including `prima-materia.md`'s deliberately
+  dangling `[[nigredo]]`;
 - update the affected expectations, and re-check the task counts in the
   `collect` and blocks-target tests.

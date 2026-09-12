@@ -12,8 +12,11 @@ import { loadEmbedding } from "./_embed.js";
 // collect, one-scope lifts (^name:) that filter + capture, one-scope-outward
 // references (^name) that correlate a nested query to a parent binding, explicit
 // root relations repo.docs/nodes/blocks for join-equivalents, first/single
-// lookups, full-text text(...) + embedding-score semantic(...) predicates, and
-// `order by <expr> [asc|desc]` ranking). Wrap the whole query in a top-level consumer to change its result
+// lookups, full-text text(...) + embedding-score semantic(...) predicates,
+// `order by <expr> [asc|desc]` ranking, and recursive `follow [distinct] <rel>
+// [by <expr>] [where …] [frontier …] [depth n]` traversal over a type-preserving
+// relation with $depth/$stop/$ordinal recursion metadata + post-walk filtering).
+// Wrap the whole query in a top-level consumer to change its result
 // shape: repo.count(...)/repo.exists(...) reduce to a scalar, repo.first(...)/
 // repo.single(...) to zero-or-one row (bare = repo.collect). Coexists with
 // `omg q` (CEL). Source is a positional string or -f file|-. Human output: one
@@ -48,6 +51,10 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
+    cli.io.out("       query 'from blocks where $id == \"b_x\" select t: text, d: $depth, s: $stop follow block.children'   # recursive walk ($depth/$stop metadata)");
+    cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections depth 3'   # follow [distinct] <rel> [where …] [frontier …] [depth n]");
+    cli.io.out("       query 'from docs where $path == \"index.md\" select p: $path, d: $depth, s: $stop follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
+    cli.io.out("       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
     return EXIT_OK;
   }
 
