@@ -17,12 +17,11 @@ import { tasksComplete, sectionsAppend, linksRetarget, linksRepair, nodeSet } fr
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
-import { graphTraverse, graphPath } from "../graph/traverse.js";
 import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/history.js";
 import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
-import { QUERY_SYNTAX, GRAPH_SYNTAX } from "./reference.js";
+import { QUERY_SYNTAX } from "./reference.js";
 
 // MCP server (06-mcp-api). The full tool surface wired to the engine: read
 // (docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
@@ -218,7 +217,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "nodes_get",
     {
-      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. The raw and full resolutions include the block's `content_hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict. Use this to expand the lean ids returned by query/resolve/graph_traverse. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
+      description: "Hydrate one block subtree at a resolution (skeleton|outline|text|raw|full). Pass a block `id`; `doc`/`path` are optional — the owning document is inferred from the block id when omitted. The raw and full resolutions include the block's `content_hash` (its own raw hash) — the value update/split need in expect.content_hash, so you can fetch it before editing rather than reading it back from a conflict. Use this to expand the lean ids returned by query/resolve. To read a whole document in one call, use docs_read (nodes_get on a doc/heading id returns only that block, not the document).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -272,16 +271,6 @@ export function buildServer(ctx: ServerContext): McpServer {
       inputSchema: {},
     },
     async () => ok({ syntax: QUERY_SYNTAX }),
-  );
-
-  server.registerTool(
-    "graph_syntax",
-    {
-      description:
-        "Reference: the full `graph_traverse` / `graph_path` syntax — the doc-grain seed rule, predicates/direction/depth, `select` node projection, temporal as_of, and how to compose traversal with `query`. Call this before a non-trivial traversal. No arguments.",
-      inputSchema: {},
-    },
-    async () => ok({ syntax: GRAPH_SYNTAX }),
   );
 
   server.registerTool(
@@ -604,51 +593,6 @@ export function buildServer(ctx: ServerContext): McpServer {
         });
         const payload = { opset, plan: renderOpsetPlan(opset), result };
         return args.dry_run ? ok(payload) : okMutated(payload);
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.registerTool(
-    "graph_traverse",
-    {
-      description: "Frontier-expand the authored edge graph from seed nodes. Seeds accept document ids (d_…), block ids (b_…, auto-normalized to owning doc), document paths (resolved to doc id), or phantom/external ids. direction out|in|both; depth ≤ 8; budget caps nodes/edges; as_of (commit seq) for temporal queries. `select` projects per-node metadata into `nodeInfo` (e.g. [\"$path\",\"type\",\"layer\"]) so nodes are actionable without hydrating each id; phantom/external nodes carry their target path/uri. Returns nodes, edges, nodeInfo?, truncated.",
-      inputSchema: {
-        from: z.array(z.string()),
-        via: z.array(z.string()).optional(),
-        direction: z.enum(["out", "in", "both"]).optional(),
-        depth: z.number().int().optional(),
-        select: z.array(z.string()).optional(),
-        as_of: z.number().int().nullable().optional(),
-      },
-    },
-    async (args) => {
-      try {
-        return ok(graphTraverse(store, {
-          from: args.from,
-          repoId,
-          ...(args.via ? { via: args.via } : {}),
-          ...(args.direction ? { direction: args.direction } : {}),
-          ...(args.depth !== undefined ? { depth: args.depth } : {}),
-          ...(args.select ? { select: args.select } : {}),
-          ...(args.as_of !== undefined ? { asOf: args.as_of } : {}),
-        }));
-      } catch (e) {
-        return fail(e);
-      }
-    },
-  );
-
-  server.registerTool(
-    "graph_path",
-    {
-      description: "Up to k shortest paths between two nodes via BFS over authored edges. Seeds accept document ids, block ids, or document paths. max_len ≤ 8, k ≤ 5.",
-      inputSchema: { from: z.string(), to: z.string(), via: z.array(z.string()).optional(), max_len: z.number().int().optional(), k: z.number().int().optional() },
-    },
-    async (args) => {
-      try {
-        return ok(graphPath(store, { from: args.from, to: args.to, repoId, ...(args.via ? { via: args.via } : {}), ...(args.max_len !== undefined ? { maxLen: args.max_len } : {}), ...(args.k !== undefined ? { k: args.k } : {}) }));
       } catch (e) {
         return fail(e);
       }

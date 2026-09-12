@@ -2,7 +2,7 @@ import type { Cli } from "./context.js";
 
 // Command registry (11 §8: the catalog is data in the router). Each command is a
 // pure function (Cli, residual args) → exit code. CLI-A ships the read surface +
-// bootstrap + sync; CLI-B adds the write surface, graph, run, watch, mcp, admin.
+// bootstrap + sync; CLI-B adds the write surface, run, watch, mcp, admin.
 
 export interface Command {
   name: string;
@@ -33,7 +33,6 @@ import { cmdRetarget } from "./cmd/retarget.js";
 import { cmdNode } from "./cmd/node.js";
 import { cmdNew, cmdMv, cmdMeta } from "./cmd/docs.js";
 import { cmdUpdateDoc } from "./cmd/update.js";
-import { cmdGraph } from "./cmd/graph.js";
 import { cmdRun } from "./cmd/run.js";
 import { cmdWatch, cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
 import { cmdHelp } from "./cmd/help.js";
@@ -68,7 +67,6 @@ export const COMMANDS: Command[] = [
   cmdNew,
   cmdMv,
   cmdMeta,
-  cmdGraph,
   cmdRun,
   cmdSync,
   cmdWatch,

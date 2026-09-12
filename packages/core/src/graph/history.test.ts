@@ -6,7 +6,7 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { historyNode, diffBlocks, changesSince, docHistory } from "./history.js";
-import { graphTraverse } from "./traverse.js";
+import { oqxRun } from "../oqx/run.js";
 import { docsDelete } from "../mutate/docs.js";
 
 let dir: string;
@@ -161,11 +161,11 @@ describe("docHistory (version-history listing)", () => {
   });
 });
 
-describe("exit gate: block-grain backlinks + temporal edge query", () => {
-  it("backlinks: which docs reference a target (in-direction traversal)", () => {
+describe("exit gate: backlinks via OQX follow doc.in", () => {
+  it("backlinks: which docs reference a target (incoming edge walk)", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\nrefers to [target](/target.md)\n");
-    const back = graphTraverse(store, { from: [docId("target.md")], via: ["references"], direction: "in", depth: 1 });
-    expect(back.nodes).toContain(docId("src.md"));
+    const hits = oqxRun(store, repoId, 'from docs where $path == "target.md" follow doc.in', { limit: 100 }).hits;
+    expect(hits.map((h) => h.path)).toContain("src.md");
   });
 });

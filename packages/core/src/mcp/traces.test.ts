@@ -98,14 +98,13 @@ describe("trace suite", () => {
     expect(turns).toBe(1);
   });
 
-  it("T4 — which paragraphs reference a doc (1 turn)", async () => {
+  it("T4 — which docs reference a doc (1 turn)", async () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\ncites [target](/target.md) in this paragraph\n");
     await connect();
-    const targetId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='target.md'").get() as { doc_id: string }).doc_id;
-    const { payload } = await call("graph_traverse", { from: [targetId], via: ["references"], direction: "in", depth: 1 });
-    const srcId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='src.md'").get() as { doc_id: string }).doc_id;
-    expect(arr(payload.nodes)).toContain(srcId);
+    // Backlinks via OQX `follow doc.in`: seed the target, walk incoming edges.
+    const { payload } = await call("query", { query: 'from docs where $path == "target.md" follow doc.in' });
+    expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("src.md");
     expect(turns).toBe(1);
   });
 

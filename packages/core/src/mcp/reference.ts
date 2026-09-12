@@ -1,9 +1,8 @@
-// Agent-facing syntax references, surfaced as MCP tools (query_syntax,
-// graph_syntax). mrplex ships a query_syntax reference tool; agents lean on it
-// heavily before writing a non-trivial filter. These are condensed, example-led
-// distillations of docs/10-query-language.md and docs/05-graph-and-query.md —
-// enough to compose a correct call without reading the normative specs. Kept in
-// one place so the two tool handlers stay thin.
+// Agent-facing syntax reference, surfaced as the query_syntax MCP tool. Agents
+// lean on it heavily before writing a non-trivial filter. It is a condensed,
+// example-led distillation of docs/10-query-language.md — enough to compose a
+// correct call without reading the normative spec. Kept in one place so the
+// tool handler stays thin.
 
 export const QUERY_SYNTAX = `# query — syntax reference
 
@@ -147,62 +146,4 @@ within notes. text/filter prune the candidate set (AND); they never reweight.
 Common mistake: writing \`path.startsWith(...)\` (bare) meant the intrinsic. This
 now fails loud (bare \`path\` collides with the intrinsic base name) with a hint
 to use \`$path\` — no more misleading empty result. Use the intrinsic \`$path\`.
-`;
-
-export const GRAPH_SYNTAX = `# graph_traverse / graph_path — syntax reference
-
-Traverse the authored edge graph (links, metadata relations, inline fields — in
-markdown, metadata relations come from frontmatter).
-
-## Grain — the #1 gotcha
-
-Traversal is DOC-GRAIN: nodes are documents, edges are keyed by source document.
-Seeds in \`from\` should be document ids (d_...). A BLOCK id (b_...) is
-auto-normalized to its owning document, so ids straight from query/docs_outline
-work. Unknown ids simply touch no edges (empty result, not an error).
-
-Node ids you'll see:
-  d_......      a document
-  phantom:PATH  a link target with no file yet (dangling) — the path is in the id
-  x_......      an external node (URL); resolve its uri via select
-
-## graph_traverse { from, via?, direction?, depth?, select?, as_of? }
-
-  from        array of seed ids (doc or block; blocks normalize to their doc)
-  via         predicates to follow; omit = any authored predicate. Common
-              predicates are authored: "references" (plain links), "embeds"
-              (images), plus any metadata/inline-field key ("project",
-              "type", "depends_on", ...; frontmatter keys in markdown).
-  direction   "out" (default) | "in" (backlinks) | "both"
-  depth       hops, ≤ 8 (default 3)
-  select      project per-node metadata into result.nodeInfo (see below)
-  as_of       commit seq — traverse the graph as it was at that point in time
-  budget      { maxNodes, maxEdges } — caps; result.truncated flags a cutoff
-
-Returns: { nodes: id[], edges: {src,predicate,dst}[], nodeInfo?, truncated, frontier }
-
-## select — make nodes actionable without hydrating each id
-
-Without select the result is opaque ids. With it, result.nodeInfo maps each node
-id → metadata:
-  "$path"      the doc path (or phantom target path, or external uri)
-  "$kind"      always present: "document" | "phantom" | "external"
-  bare key     a metadata value from that node's document ("type","layer",...)
-
-Example:
-  graph_traverse from=["d_abc"] via=["references"] direction="both" depth=2
-                 select=["$path","type","layer"]
-  → nodeInfo: { "d_def": { kind:"document", path:"guides/x.md", type:"guide", layer:"working" }, ... }
-
-## graph_path { from, to, via?, direction?, max_len?, k? }
-
-Up to k shortest paths (BFS) between two node ids. max_len ≤ 8, k ≤ 5 (default 1).
-from/to accept block ids (normalized to docs) just like traverse.
-
-## Composing with query
-
-To do "expand from these blocks, keep targets where layer=='canon'": use \`query\`
-to find the seed blocks, then graph_traverse from their ids with select=["layer"]
-and filter the returned nodeInfo. Traversal has no CEL filter of its own — the
-node projection is how you triage the frontier.
 `;

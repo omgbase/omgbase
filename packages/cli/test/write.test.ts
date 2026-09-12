@@ -159,11 +159,12 @@ describe("doctor", () => {
   });
 });
 
-describe("graph", () => {
-  it("traverse resolves a path seed to its doc and finds the edge", () => {
-    const res = JSON.parse(omg(["graph", "traverse", "--from", "hub.md", "--dir", "both", "--json"])) as {
-      edges: { predicate: string }[];
+describe("traversal (OQX follow doc.out)", () => {
+  it("walks the citation graph from a seed doc to its linked doc", () => {
+    // hub.md links to old.md — `follow doc.out` reaches it across the edge graph.
+    const res = JSON.parse(omg(["oqx", 'from docs where $path == "hub.md" follow doc.out', "--json"])) as {
+      hits: { path: string }[];
     };
-    expect(res.edges.some((e) => e.predicate === "references")).toBe(true);
+    expect(res.hits.map((h) => h.path)).toContain("old.md");
   });
 });

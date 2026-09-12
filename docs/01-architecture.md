@@ -151,7 +151,7 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 11. MCP surface (summary; full spec in `06-mcp-api.md`)
 
-Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query`, `pipeline`, `graph_traverse/path/subgraph`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos_*`, `sync_status/flush`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
+Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator), `pipeline`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos_*`, `sync_status/flush`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
 
 ## 12. Storage (summary; DDL in `02-data-model.md`)
 

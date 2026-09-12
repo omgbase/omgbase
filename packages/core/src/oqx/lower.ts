@@ -22,7 +22,7 @@ import type {
   Query, NestedQuery, CollectionOp, WhereExpr, SelectItem, CelTarget, FollowSpec,
 } from "./ir.js";
 
-// Hard cap on follow recursion depth (mirrors graph_traverse's HARD_DEPTH_CAP).
+// Hard cap on follow recursion depth.
 const HARD_DEPTH_CAP = 8;
 
 // Recursion intrinsics ($depth/$stop/$leaf/$frontier) are RESULT metadata,

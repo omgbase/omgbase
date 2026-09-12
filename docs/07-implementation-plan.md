@@ -93,6 +93,7 @@ Goal: a usable read-side engine — already a better mrplex for agents. No ident
 | 4.1 | Extraction x1 (links, wikilinks, frontmatter fields, inline fields, URLs, images; phantom targets) | Extraction fixture matrix |
 | 4.2 | Interval maintenance + doc_edges rollup in commit txn | Edit-removes-link closes row (test); rollup equivalence vs full rebuild |
 | 4.3 | `graph_traverse` (frontier expansion, budgets, as_of), `graph_path` (BFS k-paths), `graph_subgraph` | Depth/budget/truncation tests; temporal as_of test |
+| | _Update: this structured traversal API was later removed; traversal is now the OQX `follow` operator (see 05 §3, 10)._ | |
 | 4.4 | `history_node`, `diff` (block-grain + unified), `changes_since` digests | Digest golden tests incl. origin/confidence rendering |
 
 **Exit gate:** block-grain backlinks, temporal edge query, and T4/T5 traces (06-… §7) pass.

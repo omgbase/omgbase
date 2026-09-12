@@ -3,14 +3,10 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { EmbeddingWorker, contextPrefix, type EmbeddingProvider, type EmbedTask } from "./embeddings.js";
-import { resolve, pipeline } from "./resolve.js";
+import { resolve } from "./resolve.js";
 import { hybridSearch } from "./rrf.js";
 import { textSearch } from "./text.js";
 import { sha256 } from "../core/hash.js";
-import { processCheckpoint } from "../sync/checkpoint.js";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 let store: Store;
 let repoId: string;
@@ -57,42 +53,6 @@ describe("resolve", () => {
     expect(hits[0]!.id).toMatch(/^b_/);
     expect(hits[0]!.locator).toContain("a.md#");
     expect(hits[0]!.preview.length).toBeGreaterThan(0);
-  });
-});
-
-describe("pipeline (seed → expand → hydrate, one call)", () => {
-  it("T7-style: seed by text, hydrate text within budget", () => {
-    ingestFile(store, repoId, "design.md", "# Design\n\nthe rationale for stable block identity is that reconciliation errors must never corrupt the graph\n");
-    const res = pipeline(store, {
-      repoId,
-      seed: { text: "stable identity rationale", limit: 4 },
-      hydrate: { budgetTokens: 4000 },
-    });
-    expect(res.seeds.length).toBeGreaterThan(0);
-    expect(res.content!.blocks.length).toBeGreaterThan(0);
-    expect(res.content!.blocks[0]!.text).toContain("identity");
-  });
-
-  it("expands the graph from seed documents", () => {
-    // Seed via processCheckpoint so edges are extracted (the checkpoint path
-    // supplies the reconciling resolver + edge extractor).
-    const dir = mkdtempSync(join(tmpdir(), "omgbase-pipe-"));
-    const rRepo = ensureRepo(store, "pipe", dir);
-    writeFileSync(join(dir, "a.md"), "# A\n\nseed paragraph mentioning identity links to [b](/b.md) here\n");
-    writeFileSync(join(dir, "b.md"), "# B\n\ntarget doc\n");
-    processCheckpoint(store, rRepo, dir, [{ path: "a.md" }, { path: "b.md" }]);
-    try {
-      const res = pipeline(store, {
-        repoId: rRepo,
-        seed: { text: "identity", limit: 4 },
-        expand: { via: ["references"], direction: "out", depth: 1 },
-      });
-      expect(res.graph).toBeTruthy();
-      const bId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='b.md' AND repo_id=?").get(rRepo) as { doc_id: string }).doc_id;
-      expect(res.graph!.nodes).toContain(bId);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
   });
 });
 

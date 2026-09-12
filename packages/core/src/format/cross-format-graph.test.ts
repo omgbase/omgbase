@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { graphTraverse } from "../graph/traverse.js";
+import { oqxRun } from "../oqx/run.js";
 import { docLinks } from "../graph/links.js";
 import "../format/index.js"; // register adapters
 
@@ -32,6 +32,13 @@ function save(path: string, content: string): void {
 
 function docId(path: string): string {
   return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
+}
+// Reachable doc paths from a seed via OQX `follow doc.out|doc.in` — the traversal
+// replacement for the retired graph_traverse. Default depth (8) covers these
+// short chains; the walk crosses format boundaries because edges are doc-grain.
+function reachable(seed: string, dir: "out" | "in"): string[] {
+  const hits = oqxRun(store, repoId, `from docs where $path == "${seed}" follow doc.${dir}`, { limit: 100 }).hits;
+  return hits.map((h) => h.path as string);
 }
 
 describe("cross-format graph: markdown → yaml → json", () => {
@@ -69,69 +76,35 @@ describe("cross-format graph: markdown → yaml → json", () => {
     expect(schemaEdge!.node).toBe(docId("config/schemas/db.json"));
   });
 
-  it("graph_traverse crosses markdown → yaml boundary", () => {
-    const res = graphTraverse(store, {
-      from: [docId("docs/readme.md")],
-      via: ["references"],
-      direction: "out",
-      depth: 1,
-    });
-    expect(res.nodes).toContain(docId("config/database.yaml"));
+  it("follow doc.out crosses markdown → yaml boundary", () => {
+    expect(reachable("docs/readme.md", "out")).toContain("config/database.yaml");
   });
 
-  it("graph_traverse crosses yaml → yaml (extends) at depth 2", () => {
-    const res = graphTraverse(store, {
-      from: [docId("docs/readme.md")],
-      via: ["references", "extends"],
-      direction: "out",
-      depth: 2,
-    });
-    expect(res.nodes).toContain(docId("config/database.yaml"));
-    expect(res.nodes).toContain(docId("config/base.yaml"));
+  it("follow doc.out crosses yaml → yaml (extends)", () => {
+    const paths = reachable("docs/readme.md", "out");
+    expect(paths).toContain("config/database.yaml");
+    expect(paths).toContain("config/base.yaml");
   });
 
-  it("graph_traverse crosses yaml → json (schema) at depth 2", () => {
-    const res = graphTraverse(store, {
-      from: [docId("docs/readme.md")],
-      via: ["references", "schema"],
-      direction: "out",
-      depth: 2,
-    });
-    expect(res.nodes).toContain(docId("config/database.yaml"));
-    expect(res.nodes).toContain(docId("config/schemas/db.json"));
+  it("follow doc.out crosses yaml → json (schema)", () => {
+    const paths = reachable("docs/readme.md", "out");
+    expect(paths).toContain("config/database.yaml");
+    expect(paths).toContain("config/schemas/db.json");
   });
 
-  it("full 3-hop traversal: md → yaml → yaml + json", () => {
-    const res = graphTraverse(store, {
-      from: [docId("docs/readme.md")],
-      via: ["references", "extends", "schema"],
-      direction: "out",
-      depth: 3,
-    });
-    const nodeSet = new Set(res.nodes);
-    expect(nodeSet.has(docId("config/database.yaml"))).toBe(true);
-    expect(nodeSet.has(docId("config/base.yaml"))).toBe(true);
-    expect(nodeSet.has(docId("config/schemas/db.json"))).toBe(true);
+  it("full traversal: md → yaml → yaml + json", () => {
+    const paths = new Set(reachable("docs/readme.md", "out"));
+    expect(paths.has("config/database.yaml")).toBe(true);
+    expect(paths.has("config/base.yaml")).toBe(true);
+    expect(paths.has("config/schemas/db.json")).toBe(true);
   });
 
-  it("inbound traversal: who references the YAML config?", () => {
-    const res = graphTraverse(store, {
-      from: [docId("config/database.yaml")],
-      via: ["references"],
-      direction: "in",
-      depth: 1,
-    });
-    expect(res.nodes).toContain(docId("docs/readme.md"));
+  it("follow doc.in: who references the YAML config?", () => {
+    expect(reachable("config/database.yaml", "in")).toContain("docs/readme.md");
   });
 
-  it("inbound traversal: who extends base.yaml?", () => {
-    const res = graphTraverse(store, {
-      from: [docId("config/base.yaml")],
-      via: ["extends"],
-      direction: "in",
-      depth: 1,
-    });
-    expect(res.nodes).toContain(docId("config/database.yaml"));
+  it("follow doc.in: who extends base.yaml?", () => {
+    expect(reachable("config/base.yaml", "in")).toContain("config/database.yaml");
   });
 });
 
@@ -151,13 +124,8 @@ describe("cross-format graph: json $ref chains", () => {
   });
 
   it("follows json $ref chain across files", () => {
-    const res = graphTraverse(store, {
-      from: [docId("schemas/main.json")],
-      via: ["references"],
-      direction: "out",
-      depth: 2,
-    });
-    expect(res.nodes).toContain(docId("schemas/types.json"));
-    expect(res.nodes).toContain(docId("schemas/primitives.json"));
+    const paths = reachable("schemas/main.json", "out");
+    expect(paths).toContain("schemas/types.json");
+    expect(paths).toContain("schemas/primitives.json");
   });
 });

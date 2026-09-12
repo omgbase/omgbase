@@ -62,9 +62,7 @@ pipeline { seed?, expand?, hydrate? }                         // §7 there
 
 ### Graph
 
-```
-graph_traverse { … }   graph_path { … }   graph_subgraph { … }   // 05-… §3
-```
+Traversal is the OQX `follow` operator on the `query` tool (05-… §3, 10-… OQX `follow`), not a dedicated tool: `query { query: 'from docs where $path == "x.md" follow doc.out' }`. The structured `graph_traverse`/`graph_path`/`graph_subgraph` tools were removed.
 
 ### History
 
@@ -141,7 +139,7 @@ Budget: 2 turns, < 1k tokens total.
 1. `query { from:"blocks", filter:"has_edge('depends_on','d_x') || has_edge('references','d_x')" }` — 1 turn.
 
 **T5 — "Everything downstream of this assumption."**
-1. `graph_traverse { from:["d_assum"], via:["depends_on","references"], direction:"in", depth:4 }` — 1 turn.
+1. `query { query: 'from docs where $path == "assumptions.md" follow doc.in depth 4' }` — 1 turn. (`follow doc.in` walks incoming edges — who depends on / references the seed.)
 
 **T6 — "Refactor this long note into three notes, provenance intact."**
 1. `docs_outline` → 2. `apply { docs_create ×2 + move runs }` (moves carry identity across docs) → 3. optional `links_retarget`. ≤ 3 turns.

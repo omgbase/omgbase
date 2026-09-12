@@ -36,6 +36,7 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 **Status:** proposed
 **Decision:** Edges live in interval-valid relational tables; traversal = frontier expansion/recursive CTE with budgets; public API is structured JSON specs (`graph_traverse/path/subgraph`). Inferred edges quarantined in a separate table, opt-in at query time.
 **Consequences:** one store for graph+content+FTS+vectors; no Cypher injection/unbounded-query surface; analytics via `graph_subgraph` export.
+**Update:** the "no graph query language / bounded traversal" principle holds, but the structured `graph_traverse/path/subgraph` specs were removed in favor of the OQX `follow` operator on the one `query` surface (recursive CTE, depth cap 8; see 05 §3, 10). The `graph_subgraph` analytics export was dropped with no replacement.
 
 ## ADR-007 — Splice rendering; block-level raw retention; no CST engine
 **Status:** proposed

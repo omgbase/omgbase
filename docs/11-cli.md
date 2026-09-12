@@ -156,11 +156,10 @@ Defaults: `--from blocks`; `--docs` is sugar for `--from docs`. Human output: on
 | Command | Does |
 |---|---|
 | `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open edges touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain. Backlinks = `omg links <node> --in`. |
-| `omg graph traverse [-f spec.json] [--from id,… \| -] [--via p,p] [--dir out\|in\|both] [--depth n] [--as-of c] [--filter cel] [--max-nodes n] [--max-edges n]` | `graph_traverse`. Seeds from stdin (`-`) compose with `--ids`. |
-| `omg graph path --from a --to b [--via p,p] [--max-len n] [-k n]` | `graph_path`. |
-| `omg graph subgraph --seeds id,… [--radius n]` | `graph_subgraph` — the analytics export; usually with `--json`. |
 
-There is no `pipeline` command: **the pipeline is the pipe.** `omg q … --ids | omg graph traverse - --via references | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
+Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
+
+There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where $path == "x.md" follow doc.out' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
 
 ### 5.5 History
 
@@ -222,8 +221,8 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q … --ids |
 | `nodes_get` / `nodes_get_many` | `show` / `cat` (many: stdin IDs) |
 | `resolve` | `find` |
 | `query` | `query` |
-| `pipeline` | shell pipes (`q --ids \| graph traverse - \| show -`) |
-| `graph_traverse` / `graph_path` / `graph_subgraph` | `graph traverse/path/subgraph` |
+| `pipeline` | shell pipes (`q '… follow doc.out' --ids \| show -`) |
+| traversal (`follow`) | `query`/`q`/`oqx` — OQX `follow` (no dedicated `graph` command) |
 | `changes_since` / `history_node` / `diff` | `log` / `hist` / `diff` |
 | `apply` | `apply` |
 | `tasks_complete` / `sections_append` / `sections_rename` / `sections_move` / `lists_insert_item` / `links_retarget` | `done` / `append` / `update` (heading) / `move --section` / `insert` (list parent) / `retarget` |

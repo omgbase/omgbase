@@ -133,7 +133,7 @@ On the `docs` target, `has_edge(pred[, target])` is also available and means "an
 - `$links()` / `$backlinks()` — collections; usable only with `.size()`, `.exists(d, pred)`, `.all(d, pred)`; inside, `d.<key>` reads the other doc's metadata and `d.$path`/`d.$updated_at`/`d.$body` its intrinsics.
 - **`_static` variants** (`$in_static`, `$has_static`, `$links_static()`, `$backlinks_static()`): authored links only, now and forever. The bare forms are identical in v1 and **transparently widen to include projected membership edges when projected queries ship** (ADR-011) — this carries forward mrplex's own reserved widening semantics, so queries written today keep meaning what they say. `_dyn` forms remain reserved and rejected.
 
-`$degrees` exists only inside `graph_traverse`'s `node_filter` (visibility semantics, per 05 §3); in `query` it is `filter_invalid`.
+`$degrees` is not a query intrinsic — it is `filter_invalid`. (It was a `graph_traverse` `node_filter` visibility helper; that structured traversal API was removed in favor of OQX `follow`, whose walk metadata is `$depth`/`$stop`/`$ordinal`.)
 
 ## 7. `order`, `select`, pagination
 

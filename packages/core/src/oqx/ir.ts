@@ -118,7 +118,7 @@ export interface FollowSpec {
   distinct: boolean;
   successorWhere: ScalarPredicate | null;
   frontier: ScalarPredicate | null;
-  /** hard-capped at 8 (mirrors graph_traverse's HARD_DEPTH_CAP). */
+  /** hard-capped at 8. */
   maxDepth: number;
   /** `by <expr>` — identity for cycle detection + `distinct` dedup (a param-free
    * field/intrinsic scalar); absent = the entity id. */

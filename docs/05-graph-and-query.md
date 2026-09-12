@@ -31,28 +31,18 @@ Run per touched document inside the commit transaction:
 
 ## 3. Traversal API
 
-Structured specs only; no graph query language (ADR-006).
+**Update:** the structured `graph_traverse` / `graph_path` / `graph_subgraph` specs (and the `omg graph` CLI command) were **removed**. Traversal is now the OQX `follow` operator, part of the one `query` surface — no separate graph query language, still (ADR-006).
 
-```jsonc
-// graph_traverse
-{
-  "from": ["b_k7z2p9q"],                    // node ids (blocks, docs, external, collections)
-  "via": ["references", "depends_on"],      // authored predicates and/or structural pseudo-predicates
-  "direction": "out",                       // out | in | both
-  "depth": 4,                               // max hops, hard cap 8
-  "node_filter": "kind != 'external'",      // CEL over node projections, applied per step
-  "include_inferred": false,
-  "as_of": null,                            // commit id or ISO time → interval-filtered traversal
-  "budget": { "max_nodes": 200, "max_edges": 800 },
-  "return": { "resolution": "outline", "include_edges": true }
-}
-// → { nodes: […], edges: […], truncated: false, budget_spent: { nodes, edges }, frontier: [ids…] }
-```
+`follow` makes a query recursive over a **type-preserving relation** (the relation's successor type equals the query target). The `where` seeds the walk; `follow <relation>` expands each hop. Relations today:
 
-- `graph_path { from, to, via, direction?, max_len (≤8), k (≤5, default 1), as_of? }` → up to k shortest paths (BFS; ties by commit recency).
-- `graph_subgraph { seeds[], via?, radius (≤3), budget }` → induced subgraph export (nodes + edges), the designated escape hatch for external analytics.
-- Doc-grain traversal (`from` a document with `grain:"doc"`, default when all seeds are docs) runs against `doc_edges`; block-grain against `edges`.
-- Implementation: iterative frontier expansion in SQL (`WHERE dst/src IN frontier AND predicate IN via AND to_commit IS NULL`), visited set in memory, budgets enforced per step. Recursive CTEs MAY be used for `graph_path`; either way results must respect budgets and set `truncated` honestly.
+- `doc.out` / `doc.in` (docs→docs) — the authored citation graph: outgoing links / backlinks. Replaces `direction: "out"|"in"` traversal of the edge graph.
+- `block.children` (blocks→blocks) — the block subtree.
+- `section.children` (nodes→nodes) — immediate child `md:section` nodes (the outline depth ladder); `section.subsections` — the whole transitive sub-tree.
+
+Knobs: `follow <rel> where <pred>` filters which successors keep participating (running out ⇒ a leaf); `frontier <pred>` cuts a relation that would otherwise continue; `depth <n>` bounds the walk (1..8, default 8); `follow distinct` dedups by identity; `follow … by <expr>` sets the identity used for cycle detection + dedup. Each reached row carries recursion metadata `$depth` (seed = 1), `$stop` (interior|leaf|frontier|depth|cycle, with `$leaf`/`$frontier` sugar), and `$ordinal` (deterministic walk rank) — queryable in `select`/`order by` and filterable post-walk in the top-level `where`. Cyclic graphs are safe: a revisited node is admitted once as `$stop == "cycle"` and never re-expanded. See `10-query-language.md` (OQX `follow`) for the full grammar.
+
+- The induced-subgraph analytics export (`graph_subgraph`) has no OQX equivalent and was dropped with the rest.
+- Extraction, the edge tables, and interval validity (§1–§2) are unchanged — only the query-time traversal surface moved.
 
 ## 4. Query
 

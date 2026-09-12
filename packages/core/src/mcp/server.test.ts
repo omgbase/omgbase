@@ -51,18 +51,15 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "graph_traverse", "graph_path", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
 
-  it("query_syntax and graph_syntax return reference docs", async () => {
+  it("query_syntax returns the reference doc", async () => {
     const { payload: q } = (await call("query_syntax", {})) as { payload: { syntax: string } };
     expect(q.syntax).toContain("$path.startsWith");
     expect(q.syntax).toContain("select");
-    const { payload: g } = (await call("graph_syntax", {})) as { payload: { syntax: string } };
-    expect(g.syntax).toContain("DOC-GRAIN");
-    expect(g.syntax).toContain("nodeInfo");
   });
 
   it("docs_outline returns the outline with full block ids inline", async () => {

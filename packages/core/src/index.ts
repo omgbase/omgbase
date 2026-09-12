@@ -103,17 +103,7 @@ export {
   type RetargetHit,
 } from "./mutate/macros.js";
 
-// Graph traversal (11 §5.4) + admin/maintenance (11 §5.9).
-export {
-  graphTraverse,
-  graphPath,
-  graphSubgraph,
-  type TraverseSpec,
-  type PathSpec,
-  type SubgraphSpec,
-  type TraverseResult,
-  type Direction,
-} from "./graph/traverse.js";
+// Admin/maintenance (11 §5.9). Graph traversal is OQX `follow` now (see oqx/).
 export {
   docsCreate,
   docsMove,

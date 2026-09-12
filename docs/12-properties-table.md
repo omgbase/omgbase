@@ -38,8 +38,8 @@ surface for frontmatter**, used by:
 - CEL filters + `doc.<key>` reach-through (`compile.ts:69/85/108`) — the only
   path frontmatter filtering exists on.
 - `query` select projection (`query.ts`), semantic-path projection.
-- `graph_traverse` nodeInfo (`traverse.ts:202`), RRF hydration (`rrf.ts:50`),
-  task docTitle (`tasks.ts:89`), `findDoc`/`docs_read`/`show` (`reader.ts:103`).
+- RRF hydration (`rrf.ts:50`), task docTitle (`tasks.ts:89`),
+  `findDoc`/`docs_read`/`show` (`reader.ts:103`).
 
 It is a **denormalized parse cache**: the authoritative bytes are the
 frontmatter blob; `metadata` is pre-parsed JSON so filters don't `parseYaml`
@@ -255,7 +255,6 @@ Every current reader of `docs.metadata` is repointed at `properties`:
 |---|---|---|
 | CEL filter / `doc.<k>` (`compile.ts`) | `json_extract(d.metadata,…)` | `properties` seek (§4) |
 | `query` select (`query.ts`) | parse `metadata` JSON | `properties` projection |
-| `graph_traverse` nodeInfo (`traverse.ts`) | parse `metadata` | batched `properties` join |
 | RRF hydrate (`rrf.ts`), task title (`tasks.ts`) | parse `metadata` | `properties` lookup / `computed.title` |
 | `findDoc`/`docs_read`/`show` (`reader.ts`) | `metadata` object | `properties` grouped-by-source |
 
