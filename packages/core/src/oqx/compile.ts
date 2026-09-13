@@ -31,9 +31,12 @@ import type {
 
 export interface CompiledSql { sql: string; params: unknown[] }
 
-const ALIAS_BASE: Record<CelTarget, string> = { docs: "d", blocks: "b", nodes: "n" };
-const TABLE: Record<CelTarget, string> = { docs: "docs", blocks: "blocks", nodes: "nodes" };
-const ID_COLUMN: Record<CelTarget, string> = { docs: "doc_id", blocks: "block_id", nodes: "node_id" };
+const ALIAS_BASE: Record<CelTarget, string> = { docs: "d", blocks: "b", nodes: "n", edges: "e" };
+const TABLE: Record<CelTarget, string> = { docs: "docs", blocks: "blocks", nodes: "nodes", edges: "edges" };
+const ID_COLUMN: Record<CelTarget, string> = { docs: "doc_id", blocks: "block_id", nodes: "node_id", edges: "edge_id" };
+// The column on a target's row that keys its owning document. `edges` link via
+// src_doc (their SOURCE document); every other target via doc_id.
+const DOC_JOIN_COL: Record<CelTarget, string> = { docs: "doc_id", blocks: "doc_id", nodes: "doc_id", edges: "src_doc" };
 const SQL_OP: Record<CountRelOp, string> = {
   "==": "=", "!=": "<>", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 };
@@ -53,6 +56,7 @@ function allocAlias(target: CelTarget, inUse: Set<string>): string {
 function childOrder(target: CelTarget, ctx: AliasCtx): string {
   if (target === "docs") return `${ctx.self}.path, ${ctx.self}.doc_id`;
   if (target === "blocks") return `${ctx.self}.ordinal, ${ctx.self}.block_id`;
+  if (target === "edges") return `${ctx.self}.predicate, ${ctx.self}.edge_id`;
   return `${ctx.self}.node_id`;
 }
 
@@ -62,6 +66,7 @@ function childOrder(target: CelTarget, ctx: AliasCtx): string {
 function fromClause(target: CelTarget): string {
   if (target === "docs") return "docs d";
   if (target === "blocks") return "blocks b JOIN docs d ON d.doc_id = b.doc_id";
+  if (target === "edges") return "edges e JOIN docs d ON d.doc_id = e.src_doc";
   return "nodes n JOIN docs d ON d.doc_id = n.doc_id";
 }
 
@@ -75,6 +80,11 @@ function guardsFor(target: CelTarget, rowAlias: string, docAlias: string, repoId
   }
   if (target === "blocks") {
     return { sql: `${rowAlias}.repo_id = ? AND ${rowAlias}.deleted_commit IS NULL AND ${docAlias}.deleted_commit IS NULL`, params: [repoId] };
+  }
+  if (target === "edges") {
+    // edges have no deleted_commit; an edge is live while its interval is open
+    // (to_commit IS NULL) and its source document is not tombstoned.
+    return { sql: `${rowAlias}.repo_id = ? AND ${rowAlias}.to_commit IS NULL AND ${docAlias}.deleted_commit IS NULL`, params: [repoId] };
   }
   return { sql: `${rowAlias}.repo_id = ? AND ${docAlias}.deleted_commit IS NULL`, params: [repoId] };
 }
@@ -143,7 +153,7 @@ function chainedFrom(q: Query, repoId: string): { from: string; guards: Compiled
  * the doc, so no separate docs join (callers pass docAlias === rowAlias). */
 function rowSource(target: CelTarget, rowAlias: string, docAlias: string): string {
   if (target === "docs") return `${TABLE.docs} ${rowAlias}`;
-  return `${TABLE[target]} ${rowAlias} JOIN docs ${docAlias} ON ${docAlias}.doc_id = ${rowAlias}.doc_id`;
+  return `${TABLE[target]} ${rowAlias} JOIN docs ${docAlias} ON ${docAlias}.doc_id = ${rowAlias}.${DOC_JOIN_COL[target]}`;
 }
 
 // Compile a where boolean tree over the current scope (ctx). Leaves are scalar
@@ -226,17 +236,28 @@ function compileCorrelatedBody(
     if (child === "docs") {
       docAlias = childAlias;
       from = `${TABLE.docs} ${childAlias}`;
-      guardSql = `${childAlias}.repo_id = ? AND ${childAlias}.deleted_commit IS NULL`;
     } else {
       docAlias = allocAlias("docs", childInUse);
       childInUse = new Set([...childInUse, docAlias]);
-      from = `${TABLE[child]} ${childAlias} JOIN docs ${docAlias} ON ${docAlias}.doc_id = ${childAlias}.doc_id`;
-      guardSql = child === "blocks"
-        ? `${childAlias}.repo_id = ? AND ${childAlias}.deleted_commit IS NULL AND ${docAlias}.deleted_commit IS NULL`
-        : `${childAlias}.repo_id = ? AND ${docAlias}.deleted_commit IS NULL`;
+      from = rowSource(child, childAlias, docAlias);
     }
+    const g = guardsFor(child, childAlias, docAlias, repoId);
+    guardSql = g.sql;
+    guardParams = g.params;
     correlation = "1";
-    guardParams = [repoId];
+  } else if (child === "edges") {
+    // An edge's document is its src_doc, which may differ from the outer scope's
+    // document (e.g. doc.in_edges — backlinks — where the edge originates in a
+    // DIFFERENT doc). Always join the edge's own source-doc alias so $path/doc.*
+    // inside resolve against the SOURCE document, and guard the edge on its open
+    // interval + source-doc tombstone.
+    docAlias = allocAlias("docs", childInUse);
+    childInUse = new Set([...childInUse, docAlias]);
+    from = rowSource("edges", childAlias, docAlias);
+    correlation = rel.correlate(outer.self, childAlias);
+    const g = guardsFor("edges", childAlias, docAlias, repoId);
+    guardSql = g.sql;
+    guardParams = g.params;
   } else {
     // A structural (sameDoc) relation: the outer query's `d` binding is already
     // the correct document for the child row (see the alias contract), so we do
@@ -451,6 +472,10 @@ function collectObject(
 }
 
 function defaultCollectSelect(target: CelTarget): SelectItem[] {
+  if (target === "edges") return [
+    { kind: "field", name: "predicate", source: "predicate" },
+    { kind: "field", name: "dst", source: "$dst" },
+  ];
   if (target === "nodes") return [
     { kind: "field", name: "id", source: "$node_id" },
     { kind: "field", name: "name", source: "name" },
@@ -589,6 +614,17 @@ function buildWalkCte(
   const keyS = keyExpr("s");
   const keyC = keyExpr("c");
 
+  // `via` — an edge-scoped predicate (compiled against the `edges` target, alias
+  // `e`) spliced into the edge-backed relation's EXISTS. It gates the STEP and
+  // LEAF hops (never the seed: nothing precedes level 1). Compiled once per hop
+  // scope so `doc.*` inside reaches that hop's successor doc (`c`/`c2`); each use
+  // is a separate EXISTS, so `e` never collides. Only edge-backed relations
+  // (`rel.edgeCorrelate`) accept it — lower.ts already rejects `via` elsewhere.
+  const viaStep = follow.via ? compilePredicate(follow.via, { self: "e", doc: "c", ...semCtx }) : null;
+  const viaLeaf = follow.via ? compilePredicate(follow.via, { self: "e", doc: "c2", ...semCtx }) : null;
+  const stepCorrelate = (o: string, i: string, via: { sql: string } | null): string =>
+    via && rel.edgeCorrelate ? rel.edgeCorrelate(o, i, via.sql) : rel.correlate(o, i);
+
   // ---- base: caller-supplied seed rows, depth 1 -----------------------------
   const seedCtx: AliasCtx = { self: "s", doc: dOf("s"), ...semCtx };
   const frontierSeed = follow.frontier ? compilePredicate(follow.frontier, seedCtx) : null;
@@ -610,16 +646,19 @@ function buildWalkCte(
   const stepSql =
     `SELECT c.${id}, w.depth + 1, w.path || ${keyC} || '/', ${childStop}, ${keyC} ` +
     `FROM walk w JOIN ${tbl} pw ON pw.${id} = w.id ` +
-    `JOIN ${tbl} c ON ${rel.correlate("pw", "c")}${childDocJoin} ` +
+    `JOIN ${tbl} c ON ${stepCorrelate("pw", "c", viaStep)}${childDocJoin} ` +
     `WHERE ${stepConds.join(" AND ")}`;
-  const stepParams = [...(frontierChild ? frontierChild.params : []), ...stepWhereParams];
+  // Param order = textual order: frontierChild (SELECT), viaStep (JOIN), WHERE.
+  const stepParams = [...(frontierChild ? frontierChild.params : []), ...(viaStep ? viaStep.params : []), ...stepWhereParams];
 
   // ---- walked: refine 'interior' rows to leaf/interior; pass terminal stops --
   const c2Ctx: AliasCtx = { self: "c2", doc: dOf("c2"), ...semCtx };
   const c2Guard = guardsFor(target, "c2", dOf("c2"), repoId);
   const succLeaf = follow.successorWhere ? compilePredicate(follow.successorWhere, c2Ctx) : null;
-  const leafConds = [rel.correlate("x", "c2"), c2Guard.sql];
-  const leafParams: unknown[] = [...c2Guard.params];
+  // The correlate is the first WHERE conjunct of the leaf NOT EXISTS, so viaLeaf
+  // params lead (they sit inside that correlate's EXISTS).
+  const leafConds = [stepCorrelate("x", "c2", viaLeaf), c2Guard.sql];
+  const leafParams: unknown[] = [...(viaLeaf ? viaLeaf.params : []), ...c2Guard.params];
   if (succLeaf) { leafConds.push(`(${succLeaf.sql})`); leafParams.push(...succLeaf.params); }
   const leafExists = `NOT EXISTS (SELECT 1 FROM ${rowSource(target, "c2", dOf("c2"))} WHERE ${leafConds.join(" AND ")})`;
   const wstopCase = `CASE WHEN walk.stop <> 'interior' THEN walk.stop WHEN ${leafExists} THEN 'leaf' ELSE 'interior' END`;

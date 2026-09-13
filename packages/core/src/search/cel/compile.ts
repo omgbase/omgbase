@@ -6,7 +6,7 @@ import { sanitizeFtsQuery } from "../fts-query.js";
 // (10 §8). Absence semantics (10 §3.3) are encoded directly in SQL: a missing
 // key never matches a comparison; !absent-bool is true.
 
-export type Target = "docs" | "blocks" | "nodes";
+export type Target = "docs" | "blocks" | "nodes" | "edges";
 
 // ---- alias context (OQX alias-parameterization seam) ------------------------
 // A scope's row is referenced by a SQL alias. The base `query` surface always
@@ -81,6 +81,7 @@ function resolveOuter(ctx: AliasCtx, name: string): OuterBinding {
 export function defaultCtx(target: Target): AliasCtx {
   if (target === "docs") return { self: "d", doc: "d" };
   if (target === "blocks") return { self: "b", doc: "d" };
+  if (target === "edges") return { self: "e", doc: "d" };
   return { self: "n", doc: "d" };
 }
 
@@ -289,6 +290,22 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
         case "$path": return { expr: `${doc}.path` };
         default: throw new FilterInvalid(`unknown intrinsic ${head} on nodes`, "10 §2");
       }
+    } else if (target === "edges") {
+      switch (head) {
+        case "$id": return { expr: `${self}.edge_id` };
+        case "$src": return { expr: `${self}.src_doc` };
+        case "$dst": return { expr: `${self}.dst_node` };
+        case "$src_block": return { expr: `${self}.src_block` };
+        case "$via": return { expr: `${self}.via_node` };
+        case "$from_commit": return { expr: `${self}.from_commit` };
+        case "$path": return { expr: `${doc}.path` }; // source document's path
+        // Meaningful destination, resolved per dst_kind (cheap correlated lookups,
+        // NULL when not applicable): the target document's path, or the external
+        // node's URI. Lets `from edges` show real targets, not opaque node ids.
+        case "$dst_path": return { expr: `(SELECT dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)` };
+        case "$dst_uri": return { expr: `(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)` };
+        default: throw new FilterInvalid(`unknown intrinsic ${head} on edges`, "10 §2");
+      }
     } else {
       switch (head) {
         case "$id": return { expr: `${self}.block_id` };
@@ -335,6 +352,26 @@ function fieldSql(field: FieldRef, target: Target, ctx: AliasCtx): { expr: strin
       throw new FilterInvalid(`unknown block field '${rest.join(".")}' on nodes`, "10 §2");
     }
     throw new FilterInvalid(`unknown field '${segs.join(".")}' on nodes`, "10 §2");
+  }
+
+  if (target === "edges") {
+    if (head === "predicate") return { expr: `${self}.predicate` };
+    if (head === "provenance") return { expr: `${self}.provenance` };
+    if (head === "dst_kind") return { expr: `${self}.dst_kind` };
+    if (head === "anchor") return { expr: `${self}.anchor` };
+    if (head === "src_field") return { expr: `${self}.src_field` };
+    if (head === "doc") {
+      // reach-through to the SOURCE document (edges join docs on src_doc).
+      const rest = segs.slice(1);
+      if (rest[0]?.startsWith("$")) {
+        return fieldSql({ kind: "field", segments: rest, intrinsic: true }, "docs", { self: doc, doc });
+      }
+      if (rest[0] === "format") return { expr: `${doc}.format` };
+      const ref = propRef(field, target);
+      if (ref) return { expr: propScalarExpr(ref, ctx) };
+      return { expr: `json_extract(${doc}.metadata, ${jsonPath(rest)})` };
+    }
+    throw new FilterInvalid(`unknown field '${segs.join(".")}' on edges`, "10 §2");
   }
 
   // blocks target
@@ -711,6 +748,7 @@ function compileWithin(target: string, ctx: AliasCtx): Compiled {
 // match their own row; docs match when any of their blocks does; nodes use the
 // node FTS index. Aliased by the scope so it works under OQX's per-scope aliases.
 function compileText(terms: string, target: Target, ctx: AliasCtx): Compiled {
+  if (target === "edges") throw new FilterInvalid("text(...) is not available on the edges target (edges carry no text index)", "10 §5");
   const match = sanitizeFtsQuery(terms);
   if (match === "") return { sql: "(1 = 0)", params: [] };
   if (target === "docs") {
@@ -736,8 +774,8 @@ function compileText(terms: string, target: Target, ctx: AliasCtx): Compiled {
 // threshold comparison excludes it (absence = false). The query vector + model
 // come from ctx.semantic (the runner embedded the literal); absent ⇒ loud.
 function compileSemantic(phrase: string, target: Target, ctx: AliasCtx): { expr: string; params: unknown[] } {
-  if (target === "nodes") {
-    throw new FilterInvalid('semantic(...) is available on the docs and blocks targets (nodes have no embeddings)', "OQX semantic");
+  if (target === "nodes" || target === "edges") {
+    throw new FilterInvalid('semantic(...) is available on the docs and blocks targets (nodes/edges have no embeddings)', "OQX semantic");
   }
   const resolved = ctx.semantic?.(phrase);
   if (!resolved) {

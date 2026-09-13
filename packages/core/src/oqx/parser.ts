@@ -221,7 +221,7 @@ class OqxParser {
     let distinct = false;
     if (this.at("ident", "distinct")) { this.next(); distinct = true; }
     const receiver = this.parseNavExpr();
-    const follow: SurfaceFollow = { distinct, receiver, where: null, frontier: null, depth: null, by: null };
+    const follow: SurfaceFollow = { distinct, receiver, where: null, frontier: null, depth: null, by: null, via: null };
     if (!this.at("lbrace")) return follow; // bare follow, no sub-clauses
     this.next(); // '{'
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -237,6 +237,12 @@ class OqxParser {
         const src = this.captureFollowExpr();
         if (!src) this.fail("expected an identity expression after `by`");
         follow.by = src;
+      } else if (this.at("ident", "via")) {
+        if (follow.via !== null) this.fail("duplicate `via` in follow clause");
+        this.next();
+        const src = this.captureFollowExpr();
+        if (!src) this.fail("expected an edge predicate after `via`");
+        follow.via = src;
       } else if (this.at("ident", "frontier")) {
         if (follow.frontier !== null) this.fail("duplicate `frontier` in follow clause");
         this.next();
@@ -254,7 +260,7 @@ class OqxParser {
         }
         follow.depth = value;
       } else {
-        this.fail(`unexpected '${this.peek().value || this.peek().type}' in follow block — expected where/frontier/depth/by`);
+        this.fail(`unexpected '${this.peek().value || this.peek().type}' in follow block — expected where/frontier/depth/by/via`);
       }
     }
     if (!this.at("rbrace")) this.fail("expected '}' to close the follow block");
@@ -275,7 +281,7 @@ class OqxParser {
       const t = this.peek();
       if (depth === 0) {
         if (t.type === "rbrace") break;
-        if (t.type === "ident" && (t.value === "frontier" || t.value === "depth" || t.value === "by")) break;
+        if (t.type === "ident" && (t.value === "frontier" || t.value === "depth" || t.value === "by" || t.value === "via")) break;
         // a keyword (a second `where`, or a stray select/from) ends the run — it
         // cannot appear inside a CEL scalar, so it marks the next sub-clause.
         if (t.type === "kw") break;

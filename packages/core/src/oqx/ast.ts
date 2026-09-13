@@ -72,6 +72,9 @@ export interface SurfaceFollow {
   /** `by <expr>` — the identity expression for cycle detection + `distinct`
    * dedup (default: the entity id). A field/intrinsic scalar. */
   by: string | null;
+  /** `via <edge predicate>` — an edge-scoped predicate filtering which authored
+   * edges license each hop (edge-backed relations only). Captured verbatim. */
+  via: string | null;
 }
 
 export interface SurfaceQuery {

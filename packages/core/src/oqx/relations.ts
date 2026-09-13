@@ -21,6 +21,13 @@ interface RelationDef extends Relation {
   unavailable?: string;
 }
 
+// An open authored edge from document `src` to document `dst`, optionally
+// filtered by a follow-`via` edge predicate (compiled against the `edges` target,
+// referencing the local edge alias `e`). Backs `doc.out`/`doc.in` + their
+// `edgeCorrelate`; each call is its own EXISTS subquery so `e` never collides.
+const edgeExists = (src: string, dst: string, via: string | null): string =>
+  `EXISTS (SELECT 1 FROM edges e WHERE e.src_doc = ${src}.doc_id AND e.dst_node = ${dst}.doc_id AND e.to_commit IS NULL${via ? ` AND (${via})` : ""})`;
+
 // json_extract of a section node's range/level attr (populated by the md:section
 // projection in core/ingest).
 const first = (a: string): string => `json_extract(${a}.attrs, '$.first_ordinal')`;
@@ -127,19 +134,51 @@ export const RELATIONS: Record<string, RelationDef> = {
   // `$stop == "cycle"` occurrence and does not re-expand it). Cross-document
   // (sameDoc: false): each reached doc is guarded on its own tombstone. The join
   // to `docs i` restricts successors to real documents (edges to phantom/external
-  // nodes match no docs row, so they are naturally skipped). Any authored
-  // predicate counts (predicate filtering is not exposed yet).
+  // nodes match no docs row, so they are naturally skipped). `edgeCorrelate`
+  // exposes the underlying `edges` EXISTS so `follow … { via <edge predicate> }`
+  // can splice a predicate/provenance filter onto the licensing edge.
   "doc.out": {
     name: "doc.out", from: "docs", childTarget: "docs",
-    correlate: (o, i) =>
-      `EXISTS (SELECT 1 FROM edges e WHERE e.src_doc = ${o}.doc_id AND e.dst_node = ${i}.doc_id AND e.to_commit IS NULL)`,
+    correlate: (o, i) => edgeExists(o, i, null),
+    edgeCorrelate: (o, i, via) => edgeExists(o, i, via),
     singleValued: false, sameDoc: false,
   },
   "doc.in": {
     name: "doc.in", from: "docs", childTarget: "docs",
-    correlate: (o, i) =>
-      `EXISTS (SELECT 1 FROM edges e WHERE e.src_doc = ${i}.doc_id AND e.dst_node = ${o}.doc_id AND e.to_commit IS NULL)`,
+    correlate: (o, i) => edgeExists(i, o, null),
+    edgeCorrelate: (o, i, via) => edgeExists(i, o, via),
     singleValued: false, sameDoc: false,
+  },
+
+  // ---- edges as a target (docs/blocks → their authored edges) ---------------
+  // The read side of the edge graph as first-class rows: predicate, provenance,
+  // dst_kind, anchor, src_field + $src/$dst/$dst_path/$dst_uri intrinsics, with
+  // source-document reach-through (`doc.*`/`$path`). `doc.out_edges` — the open
+  // edges LEAVING a doc (the edge's src_doc IS the outer doc, sameDoc). `doc.in_edges`
+  // — the edges ARRIVING at a doc (backlinks as edges; the edge's source doc
+  // differs, so cross-document). `block.out_edges` — the edges from one block.
+  "doc.out_edges": {
+    name: "doc.out_edges", from: "docs", childTarget: "edges",
+    correlate: (o, i) => `${i}.src_doc = ${o}.doc_id`,
+    singleValued: false, sameDoc: true,
+  },
+  "doc.in_edges": {
+    name: "doc.in_edges", from: "docs", childTarget: "edges",
+    correlate: (o, i) => `${i}.dst_node = ${o}.doc_id`,
+    singleValued: false, sameDoc: false,
+  },
+  // block.out_edges is modeled but NOT usable: the sync edge-extraction path does
+  // not thread real block ids, so `edges.src_block` is universally empty — the
+  // same root cause that grounds `has_edge` on the blocks target and the
+  // `block.nodes` relation. Reaching a doc's edges works (doc.out_edges, keyed on
+  // the populated src_doc); block-grain edge provenance awaits src_block being
+  // populated at extraction time. Failing loudly beats a silent empty result.
+  "block.out_edges": {
+    name: "block.out_edges", from: "blocks", childTarget: "edges",
+    correlate: (o, i) => `${i}.src_block = ${o}.block_id`,
+    singleValued: false, sameDoc: true,
+    unavailable:
+      "edges.src_block is not populated by the sync path yet (block ids are not threaded into edge extraction), so this relation cannot match. Use `doc.out_edges` for a document's edges, or query `from edges` directly.",
   },
 
   // ---- root/global relations (repo.<target>) --------------------------------
@@ -161,6 +200,10 @@ export const RELATIONS: Record<string, RelationDef> = {
   },
   "repo.nodes": {
     name: "repo.nodes", from: "nodes", childTarget: "nodes",
+    correlate: () => "1", singleValued: false, sameDoc: false, root: true,
+  },
+  "repo.edges": {
+    name: "repo.edges", from: "edges", childTarget: "edges",
     correlate: () => "1", singleValued: false, sameDoc: false, root: true,
   },
 };

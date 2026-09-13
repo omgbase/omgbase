@@ -47,6 +47,21 @@ blocks:
   - doc reach-through= doc.<key> reads the CONTAINING doc's properties
                        (e.g. doc.layer == "canon"); doc.$path / doc.$title etc. work
 
+edges:  (the authored link graph as first-class rows — one row per open edge)
+  - bare fields      = predicate ("references"/"depends_on"/… — freeform, or the
+                       reserved "references"/"embeds"), provenance
+                       ("link"/"frontmatter"/"inline_field"/…), dst_kind
+                       ("document"/"external"/"collection"), anchor, src_field
+  - intrinsics       = $id (edge id), $src (source doc id), $dst (raw target node
+                       id), $dst_path (target DOCUMENT's path, NULL if unresolved
+                       / external — dangling links show NULL), $dst_uri (external
+                       URL, NULL if not external), $src_block, $via, $from_commit
+  - $path / doc.<key>= reach the SOURCE document (edges scan joins their src_doc):
+                       $path is the source path; doc.layer reads its frontmatter
+  - relations        = a doc's edges via doc.out_edges / doc.in_edges (backlinks);
+                       predicate-filter a follow walk with follow doc.out { via
+                       predicate == "depends_on" }. text()/semantic() are N/A here.
+
 ## CEL subset
 
   comparisons  ==  !=  <  <=  >  >=      (one side must be a literal)
@@ -142,6 +157,9 @@ within notes. text/filter prune the candidate set (AND); they never reweight.
   from=blocks     filter: type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")
   from=blocks     semantic: "identity preservation across edits"   select: ["$ordinal","$semantic_score"]
+  from=edges      filter: predicate == "depends_on"     select: ["$src","$dst_path"]
+  from=edges      filter: dst_kind == "external"        select: ["$dst_uri"]
+  from=edges      filter: dst_kind == "document" && provenance == "link"   (dangling ⇒ $dst_path is null)
 
 Common mistake: writing \`path.startsWith(...)\` (bare) meant the intrinsic. This
 now fails loud (bare \`path\` collides with the intrinsic base name) with a hint

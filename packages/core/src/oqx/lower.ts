@@ -35,14 +35,15 @@ const TARGET_NOUN: Record<CelTarget, string> = {
   docs: "doc",
   blocks: "block",
   nodes: "node",
+  edges: "edge",
 };
 
 // The bare root collections a top-level `from` (or a top-level consumer receiver)
 // may select — the implicit repository root's `docs`/`blocks`/`nodes` properties,
 // spellable either bare or via the explicit `repo.<target>` root relation.
 const TOP_BASE: Record<string, CelTarget> = {
-  docs: "docs", blocks: "blocks", nodes: "nodes",
-  "repo.docs": "docs", "repo.blocks": "blocks", "repo.nodes": "nodes",
+  docs: "docs", blocks: "blocks", nodes: "nodes", edges: "edges",
+  "repo.docs": "docs", "repo.blocks": "blocks", "repo.nodes": "nodes", "repo.edges": "edges",
 };
 
 // Resolve the top-level source chain (`from docs` / `repo.nodes from doc` / …):
@@ -63,6 +64,16 @@ function resolveSourceChain(from: string[]): { baseTarget: CelTarget; sourceRela
     const rel = resolveFromRelation(nav, target);
     sourceRelations.push(rel);
     target = rel.childTarget;
+  }
+  // The `edges` target is a first-class base (`from edges …`) but not yet a
+  // participant in a multi-hop `from` chain: an edge's document is its src_doc
+  // (not doc_id), which the chained-JOIN builder does not thread. Query
+  // `from edges` directly, or reach a doc's edges via `doc.out_edges` collect.
+  if (sourceRelations.length > 0 && (baseTarget === "edges" || sourceRelations.some((r) => r.childTarget === "edges"))) {
+    throw new FilterInvalid(
+      "the `edges` target is not usable inside a multi-hop `from` chain yet; query `from edges` directly, or collect a doc's edges with `doc.out_edges`",
+      "OQX from",
+    );
   }
   return { baseTarget, sourceRelations, target };
 }
@@ -222,6 +233,18 @@ function lowerFollow(sf: SurfaceFollow, target: CelTarget): FollowSpec {
   if (sf.where) assertNoRecurIntrinsics(sf.where, "a follow successor `where`");
   if (sf.frontier) assertNoRecurIntrinsics(sf.frontier, "a follow `frontier`");
   if (sf.by) assertNoRecurIntrinsics(sf.by, "a follow `by` identity");
+  // `via` filters the authored EDGE that licenses each hop — an edge-scoped
+  // predicate (compiled against the `edges` target), valid only on edge-backed
+  // relations (`doc.out`/`doc.in`), which expose `edgeCorrelate`.
+  if (sf.via) {
+    if (!rel.edgeCorrelate) {
+      throw new FilterInvalid(
+        `\`via\` filters an authored edge predicate; it is only valid on the edge-backed relations doc.out / doc.in, not '${key}'`,
+        "OQX follow",
+      );
+    }
+    assertNoRecurIntrinsics(sf.via, "a follow `via` edge predicate");
+  }
   return {
     relation: rel,
     distinct: sf.distinct,
@@ -229,6 +252,7 @@ function lowerFollow(sf: SurfaceFollow, target: CelTarget): FollowSpec {
     frontier: sf.frontier ? { kind: "scalar", source: sf.frontier, target } : null,
     maxDepth: sf.depth ?? HARD_DEPTH_CAP,
     by: sf.by ? { kind: "scalar", source: sf.by, target } : null,
+    via: sf.via ? { kind: "scalar", source: sf.via, target: "edges" } : null,
   };
 }
 

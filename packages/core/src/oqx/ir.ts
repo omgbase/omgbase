@@ -32,6 +32,11 @@ export interface Relation {
   childTarget: CelTarget;
   /** build the correlation predicate for the assigned outer/inner aliases. */
   correlate: (outer: string, inner: string) => string;
+  /** edge-backed doc→doc relations (`doc.out`/`doc.in`) only: build the same
+   * correlation but with an optional follow-`via` predicate spliced into the
+   * `edges` EXISTS (referencing edge alias `e`). Presence marks the relation as
+   * supporting `follow … { via <edge predicate> }`. */
+  edgeCorrelate?: (outer: string, inner: string, viaSql: string | null) => string;
   /** child row always shares the outer row's document (see relations.ts). */
   sameDoc: boolean;
   /** a root/global relation (`repo.docs`, `repo.nodes`, `repo.blocks`): an
@@ -128,6 +133,12 @@ export interface FollowSpec {
   /** `by <expr>` — identity for cycle detection + `distinct` dedup (a param-free
    * field/intrinsic scalar); absent = the entity id. */
   by: ScalarPredicate | null;
+  /** `via <edge predicate>` — an edge-scoped predicate (compiled against the
+   * `edges` target) that filters which authored edges license each hop. Valid
+   * ONLY on edge-backed relations (`doc.out`/`doc.in`); gates the step + leaf
+   * hops, never the seed. Distinct from `successorWhere`, which filters the
+   * successor row (the reached doc). */
+  via: ScalarPredicate | null;
 }
 
 /** Top-level OQX query. */

@@ -35,7 +35,7 @@ Run per touched document inside the commit transaction:
 
 `follow` makes a query recursive over a **type-preserving relation** (the relation's successor type equals the query target). The `where` seeds the walk; `follow <relation>` expands each hop. Relations today:
 
-- `doc.out` / `doc.in` (docs→docs) — the authored citation graph: outgoing links / backlinks. Replaces `direction: "out"|"in"` traversal of the edge graph.
+- `doc.out` / `doc.in` (docs→docs) — the authored citation graph: outgoing links / backlinks. Replaces `direction: "out"|"in"` traversal of the edge graph. **Predicate-filtered** via `follow doc.out { via <edge predicate> }` — an edge-scoped predicate (compiled against the `edges` target, e.g. `via predicate == "depends_on"`) filtering which authored edges license each hop, distinct from the successor `where` (which filters the reached doc).
 - `block.children` (blocks→blocks) — the block subtree.
 - `section.children` (nodes→nodes) — immediate child `md:section` nodes (the outline depth ladder); `section.subsections` — the whole transitive sub-tree.
 
@@ -60,7 +60,7 @@ Knobs go in a `{ … }` block after the relation (a bare `follow <rel>` carries 
 
 **The query language is normatively specified in `10-query-language.md`** (envelope, targets, CEL subset grammar, absence semantics, structural functions, ordering, compilation contract). Summary only here:
 
-- **Targets:** `docs` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics) and `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
+- **Targets:** `docs` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics), `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`), and `edges` — the open authored edge rows themselves (`predicate`/`provenance`/`dst_kind`/`anchor`/`src_field`; `$src`/`$dst`/`$dst_path`/`$dst_uri`; source-doc reach-through via `$path`/`doc.<key>`), so the graph is queryable directly rather than only via `has_edge`/`$links`/`follow` (10 §2). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
 - **Structural functions (blocks target),** compiled to indexed SQL: `under()`, `under_heading()`, `within()`, `has_edge()`, `has_anchor()`, `parent_type()`, `child_count()` (final set per 10-… §5 — object-returning `parent()`/`ancestors()` were dropped as not worth their compiler).
 - **Link-graph predicates (docs target),** mrplex-compatible: `$in(glob)`, `$has(glob)`, `$links()`, `$backlinks()` + `_static` variants with the reserved widening semantics (10-… §6).
 - Modes intersect (AND). Order: semantic score if present, else text rank, else `$updated_at` desc.

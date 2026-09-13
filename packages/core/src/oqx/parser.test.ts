@@ -567,7 +567,7 @@ describe("OQX parser + lowering — order by", () => {
 describe("OQX parser — follow (recursive clause)", () => {
   it("parses a bare follow with a receiver", () => {
     const q = parseOqx("from blocks follow block.children");
-    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: null, by: null });
+    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: null, by: null, via: null });
   });
 
   it("parses distinct + successor where + frontier + depth + by (in a block), capturing predicates verbatim", () => {
@@ -579,6 +579,7 @@ describe("OQX parser — follow (recursive clause)", () => {
       frontier: 'attrs.kind == "x"',
       depth: 3,
       by: "name",
+      via: null,
     });
   });
 
@@ -592,6 +593,16 @@ describe("OQX parser — follow (recursive clause)", () => {
   it("captures a boolean successor predicate whole (follow-local where is CEL, not an OQX boolean tree)", () => {
     const q = parseOqx('from blocks follow block.children { where type == "list_item" && !attrs.done }');
     expect(q.follow!.where).toBe('type == "list_item" && !attrs.done');
+  });
+
+  it("parses a `via` edge-predicate sub-clause distinct from the successor where", () => {
+    const q = parseOqx('from docs follow doc.out { where layer == "canon" via predicate == "depends_on" }');
+    expect(q.follow!.where).toBe('layer == "canon"');
+    expect(q.follow!.via).toBe('predicate == "depends_on"');
+    // `via` does not swallow a trailing depth
+    const q2 = parseOqx('from docs follow doc.out { via provenance == "frontmatter" depth 2 }');
+    expect(q2.follow!.via).toBe('provenance == "frontmatter"');
+    expect(q2.follow!.depth).toBe(2);
   });
 
   it("keeps a top-level where/select as the seed, with follow terminal after them", () => {
@@ -623,7 +634,7 @@ describe("OQX parser — follow (recursive clause)", () => {
   it("works inside a top-level consumer directive", () => {
     const q = parseOqx("repo.blocks count { follow block.children { depth 4 } }");
     expect(q.consumer).toBe("count");
-    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: 4, by: null });
+    expect(q.follow).toEqual({ distinct: false, receiver: "block.children", where: null, frontier: null, depth: 4, by: null, via: null });
   });
 
   it("rejects a duplicate follow sub-clause", () => {

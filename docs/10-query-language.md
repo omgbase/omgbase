@@ -50,6 +50,13 @@ Nodes are the addressable structural/semantic units a format adapter projects fr
 - **Block reach-through:** `block.type`, `block.text` read the source block the node was projected from.
 - Structural functions (§5) are **not** available on `nodes` (they are block-tree operations); compose owning-block/doc predicates via `block.*` / `doc.*` instead.
 
+### `edges`
+The authored link graph (05-graph-and-query §1–2) as **first-class rows** — one row per open edge (`to_commit IS NULL`), for direct inspection/filtering the existence tests (`has_edge`, `$links`) cannot express. Inferred edges are excluded (they stay quarantined).
+- **Bare fields:** `predicate` (`references`/`embeds` reserved, else freeform snake_case from the field/key), `provenance` (`link`/`frontmatter`/`inline_field`/`projected`/`yaml_*`/`json_*`), `dst_kind` (`document`/`external`/`collection` — v1 resolves block-anchor targets to `document`, preserving the `anchor`), `anchor`, `src_field`.
+- **Intrinsics:** `$id` (edge id), `$src` (source doc id), `$dst` (raw target node id), `$dst_path` (the target **document's** path — `null` when the target is external or an unresolved/dangling internal link), `$dst_uri` (the **external** URL — `null` otherwise), `$src_block`, `$via`, `$from_commit`.
+- **Source-document reach-through:** `$path` is the **source** document's path; `doc.<key>` / `doc.$path` read the source doc's metadata (the scan joins each edge to its `src_doc`). Same scope-not-selection semantics as blocks/nodes.
+- **Relations:** a document's edges are reachable as `doc.out_edges` (outgoing) / `doc.in_edges` (incoming/backlinks) collections; `text()`/`semantic()` are not available (edges carry no text/embedding). Dangling internal links are `dst_kind == "document"` rows with a `null` `$dst_path`.
+
 ## 3. CEL subset
 
 ### 3.1 Grammar (EBNF)
@@ -183,5 +190,9 @@ project: list(ref)
 | Blocks about a concept (semantic) | `from: blocks · semantic: "identity preservation across edits"` |
 | Code fences in TypeScript under Examples | `from: blocks · filter: type == "code_fence" && attrs.lang == "ts" && under_heading("Examples")` |
 | Anchored blocks in one doc | `from: blocks · filter: within("projects/foo.md") && has_anchor()` |
+| Every `depends_on` edge, both endpoints | `from: edges · filter: predicate == "depends_on" · select: ["$src", "$dst_path"]` |
+| External links (URLs) in the vault | `from: edges · filter: dst_kind == "external" · select: ["$dst_uri"]` |
+| Dangling internal links | `from: edges · filter: dst_kind == "document" · select: ["$path", "$dst"]` (dangling ⇒ `$dst_path` is null) |
+| Edges authored in frontmatter (not body links) | `from: edges · filter: provenance == "frontmatter"` |
 
 The brief's compound sketch — *paragraphs, traverse `references`, keep targets where `layer == "canon"`* — is deliberately **not** a filter: traversal composes in `pipeline` (`seed` these blocks → `expand` via `references` with `node_filter: "layer == 'canon'"`), keeping the filter language closed and compilable.

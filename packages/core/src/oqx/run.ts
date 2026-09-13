@@ -50,6 +50,7 @@ const ID_COL: Record<CelTarget, string> = {
   docs: "d.doc_id",
   blocks: "b.block_id",
   nodes: "n.node_id",
+  edges: "e.edge_id",
 };
 
 export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOptions = {}): OqxResult {
