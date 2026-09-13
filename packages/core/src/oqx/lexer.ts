@@ -12,6 +12,8 @@ export type OqxTokenType =
   | "field" // $-intrinsic ($path, $updated_at, …) — only meaningful inside scalar runs
   | "lparen"
   | "rparen"
+  | "lbrace" // { — opens an OQX query block (consumer/follow body)
+  | "rbrace" // }
   | "comma"
   | "colon"
   | "caret" // ^ — one-scope lift marker on a select item
@@ -43,6 +45,8 @@ export function lexOqx(src: string): OqxToken[] {
 
     if (c === "(") { tokens.push({ type: "lparen", value: c, pos: i }); i++; continue; }
     if (c === ")") { tokens.push({ type: "rparen", value: c, pos: i }); i++; continue; }
+    if (c === "{") { tokens.push({ type: "lbrace", value: c, pos: i }); i++; continue; }
+    if (c === "}") { tokens.push({ type: "rbrace", value: c, pos: i }); i++; continue; }
     if (c === ",") { tokens.push({ type: "comma", value: c, pos: i }); i++; continue; }
     if (c === ":") { tokens.push({ type: "colon", value: c, pos: i }); i++; continue; }
     if (c === ".") { tokens.push({ type: "dot", value: c, pos: i }); i++; continue; }

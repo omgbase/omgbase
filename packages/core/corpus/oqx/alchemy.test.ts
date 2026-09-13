@@ -161,19 +161,19 @@ describe("alchemy corpus — correlated node queries", () => {
   ];
 
   it("finds documents that contain a task node", () => {
-    expect(paths('from docs where nodes.exists(where kind == "md:task")')).toEqual(WITH_ANY_TASK);
+    expect(paths('from docs where nodes exists { where kind == "md:task" }')).toEqual(WITH_ANY_TASK);
   });
 
   it("narrows to documents with an OPEN task — salt.md drops out", () => {
     // salt.md carries only a checked supply list. It is the discriminator
     // proving the nested predicate is evaluated per document, not corpus-wide.
-    const open = paths('from docs where nodes.exists(where kind == "md:task" && !attrs.checked)');
+    const open = paths('from docs where nodes exists { where kind == "md:task" && !attrs.checked }');
     expect(open).toEqual(WITH_ANY_TASK.filter((p) => p !== "substances/salt.md"));
     expect(open).not.toContain("substances/salt.md");
   });
 
   it("is correlated, not a global scan — task-free documents never match", () => {
-    const any = paths('from docs where nodes.exists(where kind == "md:task")');
+    const any = paths('from docs where nodes exists { where kind == "md:task" }');
     // Seven documents carry no tasks at all; a global (uncorrelated) subquery
     // would have returned every document in the corpus.
     for (const p of [
@@ -191,7 +191,7 @@ describe("alchemy corpus — correlated node queries", () => {
   });
 
   it("composes a document-level predicate with a node-level one", () => {
-    expect(paths('from docs where type == "lab-note" && nodes.exists(where kind == "md:task" && !attrs.checked)')).toEqual([
+    expect(paths('from docs where type == "lab-note" && nodes exists { where kind == "md:task" && !attrs.checked }')).toEqual([
       "lab/2026-01-notes.md",
       "lab/2026-02-notes.md",
     ]);
@@ -201,8 +201,8 @@ describe("alchemy corpus — correlated node queries", () => {
     // Actionable work lives in the lab notebooks; substance pages state open
     // questions as prose. salt.md is the one exception and its list is a
     // fully-checked supply order, not outstanding work.
-    expect(paths('from docs where type == "substance" && nodes.exists(where kind == "md:task" && !attrs.checked)')).toEqual([]);
-    expect(paths('from docs where type == "substance" && nodes.exists(where kind == "md:task")')).toEqual([
+    expect(paths('from docs where type == "substance" && nodes exists { where kind == "md:task" && !attrs.checked }')).toEqual([]);
+    expect(paths('from docs where type == "substance" && nodes exists { where kind == "md:task" }')).toEqual([
       "substances/salt.md",
     ]);
   });
@@ -211,7 +211,7 @@ describe("alchemy corpus — correlated node queries", () => {
     // Regression guard: an inner `JOIN docs d` here would shadow the outer `d`
     // and make the correlation a tautology, silently matching every document.
     const workingOpen = paths(
-      'from docs where nodes.exists(where kind == "md:task" && !attrs.checked && doc.layer == "working")',
+      'from docs where nodes exists { where kind == "md:task" && !attrs.checked && doc.layer == "working" }',
     );
     expect(workingOpen).toEqual([
       "lab/2026-01-notes.md",
@@ -225,28 +225,28 @@ describe("alchemy corpus — correlated node queries", () => {
   });
 
   it("finds documents that link out via wikilinks", () => {
-    const linked = paths('from docs where nodes.exists(where kind == "md:wikilink")');
+    const linked = paths('from docs where nodes exists { where kind == "md:wikilink" }');
     expect(linked).toContain("index.md");
     expect(linked).toContain("substances/sulphur.md");
     expect(linked).not.toContain("texts/emerald-tablet.md"); // markdown links only
   });
 
   it("finds documents carrying a named inline field node", () => {
-    expect(paths('from docs where nodes.exists(where kind == "md:inline_field" && name == "operator")')).toEqual([
+    expect(paths('from docs where nodes exists { where kind == "md:inline_field" && name == "operator" }')).toEqual([
       "lab/2026-01-notes.md",
       "lab/2026-02-notes.md",
     ]);
   });
 
-  it("count() in where position means non-empty", () => {
-    expect(paths('from docs where nodes.count(where kind == "md:task" && !attrs.checked)'))
-      .toEqual(paths('from docs where nodes.exists(where kind == "md:task" && !attrs.checked)'));
+  it("count { … } in where position means non-empty", () => {
+    expect(paths('from docs where nodes count { where kind == "md:task" && !attrs.checked }'))
+      .toEqual(paths('from docs where nodes exists { where kind == "md:task" && !attrs.checked }'));
   });
 });
 
 describe("alchemy corpus — correlated block queries", () => {
   it("finds documents containing a code fence", () => {
-    expect(paths('from docs where blocks.exists(where type == "code_fence")')).toEqual([
+    expect(paths('from docs where blocks exists { where type == "code_fence" }')).toEqual([
       "lab/2026-01-notes.md",
       "lab/2026-02-notes.md",
       "processes/calcination.md",
@@ -256,7 +256,7 @@ describe("alchemy corpus — correlated block queries", () => {
   });
 
   it("finds documents containing a table", () => {
-    expect(paths('from docs where blocks.exists(where type == "table")')).toEqual([
+    expect(paths('from docs where blocks exists { where type == "table" }')).toEqual([
       "index.md",
       "lab/2026-01-notes.md",
       "lab/2026-02-notes.md",
@@ -266,7 +266,7 @@ describe("alchemy corpus — correlated block queries", () => {
   });
 
   it("finds documents quoting a source (blockquote)", () => {
-    expect(paths('from docs where blocks.exists(where type == "blockquote")')).toEqual([
+    expect(paths('from docs where blocks exists { where type == "blockquote" }')).toEqual([
       "practitioners/maria-prophetissa.md",
       "practitioners/paracelsus.md",
       "substances/prima-materia.md",
@@ -275,7 +275,7 @@ describe("alchemy corpus — correlated block queries", () => {
   });
 
   it("combines a block predicate with a document predicate", () => {
-    expect(paths('from docs where type == "process" && blocks.exists(where type == "table")')).toEqual([
+    expect(paths('from docs where type == "process" && blocks exists { where type == "table" }')).toEqual([
       "processes/magnum-opus.md",
     ]);
   });
@@ -300,10 +300,10 @@ describe("alchemy corpus — correlated block queries", () => {
     // magnum-opus.md also has an "Open questions" section, but its items are
     // `- [ ]` checkboxes (block type task), not plain list_items — so the
     // list_item filter excludes it. This is the type discriminator, not luck.
-    const anyBlock = paths('from docs where blocks.exists(where under_heading("Open questions"))');
+    const anyBlock = paths('from docs where blocks exists { where under_heading("Open questions") }');
     expect(anyBlock).toContain("processes/magnum-opus.md"); // it HAS such a section
 
-    const listItems = paths('from docs where blocks.exists(where type == "list_item" && under_heading("Open questions"))');
+    const listItems = paths('from docs where blocks exists { where type == "list_item" && under_heading("Open questions") }');
     expect(listItems).toEqual([
       "substances/philosophers-stone.md",
       "substances/prima-materia.md",
@@ -335,7 +335,7 @@ describe("alchemy corpus — section relations (md:section nodes)", () => {
     // node→blocks range-containment relation) are exactly those under_heading()
     // finds (a blocks structural fn) — two routes to the same section range.
     const viaSection = hits(
-      'from nodes where kind == "md:section" && name == "Open questions" select items: section.blocks.collect(where type == "list_item" select t: text)',
+      'from nodes where kind == "md:section" && name == "Open questions" select items: section.blocks collect { where type == "list_item" select t: text }',
     ).hits.flatMap((h) => (h.items as { t: string }[]).map((i) => i.t)).sort();
     const viaHeading = hits(
       'from blocks where type == "list_item" && under_heading("Open questions") select text: text',
@@ -348,7 +348,7 @@ describe("alchemy corpus — section relations (md:section nodes)", () => {
     // A list_item under "Open questions" has an enclosing section node of that
     // name — block.section (blocks→nodes) agrees with under_heading.
     const viaSection = paths(
-      'from blocks where type == "list_item" && section.exists(where name == "Open questions")',
+      'from blocks where type == "list_item" && section exists { where name == "Open questions" }',
     ).sort();
     const viaHeading = paths(
       'from blocks where type == "list_item" && under_heading("Open questions")',
@@ -357,10 +357,10 @@ describe("alchemy corpus — section relations (md:section nodes)", () => {
   });
 });
 
-describe("alchemy corpus — collect() projection", () => {
+describe("alchemy corpus — collect { … } projection", () => {
   it("shapes each lab note's open tasks into a nested list", () => {
     const res = hits(
-      'from docs where type == "lab-note" select open: nodes.collect(where kind == "md:task" && !attrs.checked select text: value)',
+      'from docs where type == "lab-note" select open: nodes collect { where kind == "md:task" && !attrs.checked select text: value }',
     );
     expect(res.hits.map((h) => h.path)).toEqual(["lab/2026-01-notes.md", "lab/2026-02-notes.md"]);
     expect(res.hits[0]!.open).toEqual([
@@ -375,7 +375,7 @@ describe("alchemy corpus — collect() projection", () => {
   });
 
   it("projects without filtering — task-free documents still appear, with []", () => {
-    const res = hits('from docs where type == "substance" select tasks: nodes.collect(where kind == "md:task")');
+    const res = hits('from docs where type == "substance" select tasks: nodes collect { where kind == "md:task" }');
     const byPath = new Map(res.hits.map((h) => [h.path, h.tasks as unknown[]]));
     expect([...byPath.keys()]).toEqual(SUBSTANCES); // every substance is a hit
     // only salt.md carries a (checked, supply) list; the rest project []
@@ -387,7 +387,7 @@ describe("alchemy corpus — collect() projection", () => {
 
   it("filters and shapes in one query", () => {
     const res = hits(
-      'from docs where type == "process" && nodes.exists(where kind == "md:task" && !attrs.checked) select open: nodes.collect(where kind == "md:task" && !attrs.checked select text: value)',
+      'from docs where type == "process" && nodes exists { where kind == "md:task" && !attrs.checked } select open: nodes collect { where kind == "md:task" && !attrs.checked select text: value }',
     );
     expect(res.hits.map((h) => h.path)).toEqual([
       "processes/calcination.md",
@@ -399,10 +399,97 @@ describe("alchemy corpus — collect() projection", () => {
   });
 
   it("projects a named scalar alongside a collection", () => {
-    const res = hits('from docs where type == "lab-note" select era: month, tasks: nodes.collect(where kind == "md:task")');
+    const res = hits('from docs where type == "lab-note" select era: month, tasks: nodes collect { where kind == "md:task" }');
     expect(res.hits.map((h) => h.era)).toEqual([1, 2]);
     expect((res.hits[0]!.tasks as unknown[]).length).toBe(7); // January
     expect((res.hits[1]!.tasks as unknown[]).length).toBe(4); // February
+  });
+});
+
+describe("alchemy corpus — shorthand vs longhand clause forms", () => {
+  // A query body may spell its clauses explicitly (`where …`, `select …`) OR
+  // lean on the implicit-clause shorthand: a LEADING predicate-shaped expression
+  // is an implicit `where`, and a leading reference / `name: value` list is an
+  // implicit `select`. The two spellings must lower to the same query — these
+  // pair a longhand form against its shorthand and assert an identical result
+  // (plus a concrete expectation, so a shared bug can't pass as "equal").
+
+  it("nested implicit `where` (leading predicate) equals the explicit `where`", () => {
+    const longhand = paths('from docs where nodes exists { where kind == "md:task" }');
+    const shorthand = paths('from docs where nodes exists { kind == "md:task" }');
+    expect(shorthand).toEqual(longhand);
+    expect(shorthand.length).toBe(11); // the 11 documents that carry any task node
+    expect(shorthand).toContain("lab/2026-01-notes.md");
+  });
+
+  it("top-level implicit `where` equals the explicit `where`", () => {
+    const longhand = paths('from docs where type == "substance"');
+    const shorthand = paths('from docs type == "substance"');
+    expect(shorthand).toEqual(longhand);
+    expect(shorthand).toEqual(SUBSTANCES);
+  });
+
+  it("a leading `&&` boolean expression is still an implicit `where`", () => {
+    const longhand = paths(
+      'from docs where type == "lab-note" && nodes exists { where kind == "md:task" && !attrs.checked }',
+    );
+    const shorthand = paths(
+      'from docs type == "lab-note" && nodes exists { kind == "md:task" && !attrs.checked }',
+    );
+    expect(shorthand).toEqual(longhand);
+    expect(shorthand).toEqual(["lab/2026-01-notes.md", "lab/2026-02-notes.md"]);
+  });
+
+  it("mixes forms: an implicit `where` + an explicit `select` inside one collect", () => {
+    const shape = (src: string) =>
+      hits(src).hits.map((h) => ({ path: h.path, open: h.open }));
+    const longhand = shape(
+      'from docs where type == "lab-note" select open: nodes collect { where kind == "md:task" && !attrs.checked select text: value }',
+    );
+    const shorthand = shape(
+      'from docs type == "lab-note" select open: nodes collect { kind == "md:task" && !attrs.checked select text: value }',
+    );
+    expect(shorthand).toEqual(longhand);
+    expect(shorthand[0]!.open).toEqual([
+      { text: "Repeat the series with copper" },
+      { text: "Plot mass gain against heating time" },
+      { text: "Tabulate the metal sulphides by colour" },
+    ]);
+  });
+
+  it("the readable both-clauses idiom: a leading projection, then an explicit `where`", () => {
+    // `{ value where P }` — projection leads (implicit select, stopping at the
+    // `where` keyword), then the explicit filter. This is the sensible implicit
+    // shape when a block both projects AND filters (unlike `{ P value }`, where
+    // the predicate would swallow the trailing reference).
+    const shape = (src: string) =>
+      hits(src).hits.map((h) => ({ path: h.path, open: h.open }));
+    const longhand = shape(
+      'from docs where type == "lab-note" select open: nodes collect { where kind == "md:task" && !attrs.checked select text: value }',
+    );
+    const projFirst = shape(
+      'from docs where type == "lab-note" select open: nodes collect { text: value where kind == "md:task" && !attrs.checked }',
+    );
+    expect(projFirst).toEqual(longhand);
+    expect(projFirst[0]!.open).toEqual([
+      { text: "Repeat the series with copper" },
+      { text: "Plot mass gain against heating time" },
+      { text: "Tabulate the metal sulphides by colour" },
+    ]);
+  });
+
+  it("an implicit `select` (bare reference) equals the explicit `select` projection", () => {
+    // A collect body that is JUST a projection: implicit `{ value }` vs the
+    // explicit `{ select value }`. (An implicit select cannot trail a `where`
+    // without the `select` keyword to delimit it — the predicate scalar would
+    // absorb the bare reference — so the shorthand shines when it stands alone.)
+    const shape = (src: string) =>
+      hits(src).hits.map((h) => ({ path: h.path, vals: h.vals }));
+    const longhand = shape('from docs where type == "lab-note" select vals: nodes collect { select value }');
+    const shorthand = shape('from docs where type == "lab-note" select vals: nodes collect { value }');
+    expect(shorthand).toEqual(longhand);
+    // every node's value projects (no filtering) — the lab notes are non-empty
+    expect((shorthand[0]!.vals as unknown[]).length).toBeGreaterThan(0);
   });
 });
 
@@ -429,7 +516,7 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
     // filters to docs that HAVE an open task, and ^open lifts those tasks' text
     // into the parent select — no repeated subquery, no post-filter.
     const res = hits(
-      'from docs where nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select p: $path, open',
+      'from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked } select p: $path, open',
     );
     expect(res.hits.map((h) => h.p).sort()).toEqual(WITH_OPEN_TASK);
     // the January lab note's three open items, captured verbatim
@@ -444,7 +531,7 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
   it("the salt discriminator holds through lifts: any-task lifts salt, open-task excludes it", () => {
     // salt is the ONLY substance with task nodes, and they are all checked.
     const anyTask = hits(
-      'from docs where type == "substance" && nodes.collect(^t: value where kind == "md:task") select p: $path, t',
+      'from docs where type == "substance" && nodes collect { ^t: value where kind == "md:task" } select p: $path, t',
     );
     expect(anyTask.hits.map((h) => h.p)).toEqual(["substances/salt.md"]);
     expect((anyTask.hits[0]!.t as string[]).sort()).toEqual([
@@ -455,14 +542,14 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
     // Narrowing the lift's own predicate to OPEN tasks empties salt's set, so
     // the where-collect no longer matches and salt drops out entirely.
     const openTask = paths(
-      'from docs where type == "substance" && nodes.collect(^t: value where kind == "md:task" && !attrs.checked)',
+      'from docs where type == "substance" && nodes collect { ^t: value where kind == "md:task" && !attrs.checked }',
     );
     expect(openTask).toEqual([]);
   });
 
   it("composes a lift with a document-level predicate (processes with open work)", () => {
     const res = paths(
-      'from docs where type == "process" && nodes.collect(^todo: value where kind == "md:task" && !attrs.checked)',
+      'from docs where type == "process" && nodes collect { ^todo: value where kind == "md:task" && !attrs.checked }',
     );
     expect(res.sort()).toEqual([
       "processes/calcination.md",
@@ -475,12 +562,12 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
   it("an unreferenced lift still filters; a renamed reference still resolves", () => {
     // Not selecting the binding → the collect is a pure non-empty filter.
     const filtered = paths(
-      'from docs where $path.startsWith("lab/") && nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select $path',
+      'from docs where $path.startsWith("lab/") && nodes collect { ^open: value where kind == "md:task" && !attrs.checked } select $path',
     );
     expect(filtered.sort()).toEqual(["lab/2026-01-notes.md", "lab/2026-02-notes.md"]);
     // Referencing it under a different column name still yields the array.
     const named = hits(
-      'from docs where $path == "lab/2026-02-notes.md" && nodes.collect(^open: value where kind == "md:task" && !attrs.checked) select todos: open',
+      'from docs where $path == "lab/2026-02-notes.md" && nodes collect { ^open: value where kind == "md:task" && !attrs.checked } select todos: open',
     );
     expect((named.hits[0]!.todos as string[]).sort()).toEqual([
       "Assay cycle 1 and cycle 4 crops for iron",
@@ -514,8 +601,8 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // the documents whose slug is one of this row's link targets. One expression
     // does link-extraction AND resolution — a citation/reference graph.
     const res = hits(
-      "from docs where nodes.collect(^refs: value where kind == \"md:wikilink\") " +
-        "select p: $path, cites: repo.docs.collect(where slug in ^refs select target: $path)",
+      "from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" } " +
+        "select p: $path, cites: repo.docs collect { where slug in ^refs select target: $path }",
     );
     expect(res.hits.map((h) => h.p)).toEqual(WITH_WIKILINK); // only docs that link out
     const cites = new Map(
@@ -542,7 +629,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // For each substance, does ANY wikilink node in the whole repository name its
     // slug? repo.nodes is the explicit global scan; ^slug ties it to this row.
     const cited = paths(
-      'from docs where type == "substance" && repo.nodes.exists(where kind == "md:wikilink" && value == ^slug) select slug',
+      'from docs where type == "substance" && repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
     );
     expect(cited).toEqual([
       "substances/mercury.md",
@@ -553,7 +640,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("finds substances no wikilink points to (correlated anti-join)", () => {
     const uncited = paths(
-      'from docs where type == "substance" && !repo.nodes.exists(where kind == "md:wikilink" && value == ^slug) select slug',
+      'from docs where type == "substance" && !repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
     );
     // the tria prima are all cited; the two abstractions are named by prose, not links.
     expect(uncited).toEqual([
@@ -567,7 +654,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // the row itself. A self-join over repo.docs.
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, peers: repo.docs.collect(where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path)",
+        "select me: $path, tradition, peers: repo.docs collect { where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path }",
     );
     const peers = new Map(
       res.hits.map((h) => [h.me, (h.peers as { p: string }[]).map((p) => p.p).sort()]),
@@ -585,17 +672,17 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // cardinality-checked 1:1 lookup returning one record (not an array).
     const res = hits(
       "from docs where type == \"lab-note\" " +
-        "select subject, process: repo.docs.single(where slug == ^subject select p: $path, layer)",
+        "select subject, process: repo.docs single { where slug == ^subject select p: $path, layer }",
     );
     const by = new Map(res.hits.map((h) => [h.path, h.process as { p: string; layer: string }]));
     expect(by.get("lab/2026-01-notes.md")).toEqual({ p: "processes/calcination.md", layer: "canon" });
     expect(by.get("lab/2026-02-notes.md")).toEqual({ p: "processes/coagulation.md", layer: "working" });
   });
 
-  it("first(...) returns a zero-or-one tradition-mate (null when there is none)", () => {
+  it("first { … } returns a zero-or-one tradition-mate (null when there is none)", () => {
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, mate: repo.docs.first(where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path)",
+        "select me: $path, tradition, mate: repo.docs first { where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path }",
     );
     const by = new Map(res.hits.map((h) => [h.me, h.mate as { p: string } | null]));
     expect(by.get("practitioners/newton.md")).toEqual({ p: "practitioners/paracelsus.md" });
@@ -607,7 +694,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // parent binding — no repo.* scan, just the structural doc.nodes relation.
     const res = hits(
       "from docs where $path == \"lab/2026-01-notes.md\" " +
-        "select subject, mentions: nodes.collect(where kind == \"md:wikilink\" select tgt: value)",
+        "select subject, mentions: nodes collect { where kind == \"md:wikilink\" select tgt: value }",
     );
     // (structural nested collect already covered elsewhere; here it coexists with
     // the correlated `subject` binding in the same select without interference)
@@ -687,7 +774,7 @@ describe("alchemy corpus — text() full-text", () => {
     // ~ coagulation's "Recrystallize alum" task, and the Feb lab note's
     // "recrystallization cycles" task). The flat query tool has no way to express
     // "a task node matching this text".
-    expect(paths('from docs where nodes.exists(where kind == "md:task" && text("recrystallization"))'))
+    expect(paths('from docs where nodes exists { where kind == "md:task" && text("recrystallization") }'))
       .toEqual(["lab/2026-02-notes.md", "processes/coagulation.md"]);
   });
 });
@@ -708,44 +795,44 @@ describe("alchemy corpus — order by", () => {
   });
 
   it("repo.first + order by era desc is the latest practitioner (Newton)", () => {
-    const r = hits('repo.first(from docs where type == "practitioner" order by era desc)');
+    const r = hits('repo.docs first { where type == "practitioner" order by era desc }');
     expect(r.hits.map((h) => h.path)).toEqual([`${P}newton.md`]);
   });
 });
 
-describe("alchemy corpus — top-level consumers (repo.<op>)", () => {
+describe("alchemy corpus — top-level consumers (repo.<target> <op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.
-    expect(hits("repo.count(from docs)").count).toBe(18);
-    expect(hits('repo.count(from docs where type == "substance")').count).toBe(5);
+    expect(hits("repo.docs count { }").count).toBe(18);
+    expect(hits('repo.docs count { where type == "substance" }').count).toBe(5);
   });
 
   it("repo.count of a correlated query counts DOCS, not their matched nodes", () => {
     // docs that contain at least one task node (the lab notes) — a handful of
     // docs, though they hold many tasks between them.
-    const docsWithTasks = paths('from docs where nodes.exists(where kind == "md:task")');
-    expect(hits('repo.count(from docs where nodes.exists(where kind == "md:task"))').count).toBe(docsWithTasks.length);
+    const docsWithTasks = paths('from docs where nodes exists { where kind == "md:task" }');
+    expect(hits('repo.docs count { where nodes exists { where kind == "md:task" } }').count).toBe(docsWithTasks.length);
   });
 
   it("repo.exists answers presence with a boolean", () => {
-    expect(hits('repo.exists(from docs where layer == "draft")').exists).toBe(true);
-    expect(hits('repo.exists(from docs where layer == "nonexistent")').exists).toBe(false);
+    expect(hits('repo.docs exists { where layer == "draft" }').exists).toBe(true);
+    expect(hits('repo.docs exists { where layer == "nonexistent" }').exists).toBe(false);
   });
 
   it("repo.first returns the first document in path order, with projections", () => {
-    const r = hits('repo.first(from docs select t: type)');
+    const r = hits('repo.docs first { select t: type }');
     expect(r.hits.length).toBe(1);
     expect(r.hits[0]!.path).toBe("index.md"); // sorts before every subdirectory
   });
 
   it("repo.single fetches the sole draft document (mutus-liber)", () => {
-    const r = hits('repo.single(from docs where layer == "draft")');
+    const r = hits('repo.docs single { where layer == "draft" }');
     expect(r.hits.map((h) => h.path)).toEqual(["texts/mutus-liber.md"]);
   });
 
   it("repo.single fails loudly when the query matches more than one document", () => {
     // 13 documents are canon — single must refuse to pick one.
-    expect(() => hits('repo.single(from docs where layer == "canon")')).toThrow(/matched more than one row/);
+    expect(() => hits('repo.docs single { where layer == "canon" }')).toThrow(/matched more than one row/);
   });
 });
 
@@ -808,7 +895,7 @@ describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () 
 
   it("doc.in + a post-walk $depth filter = the documents that directly cite a note", () => {
     // Backlinks one hop out: who references magnum-opus? (seed@1, citers@2).
-    const citers = paths('from docs where $path == "processes/magnum-opus.md" && $depth == 2 follow doc.in depth 2').sort();
+    const citers = paths('from docs where $path == "processes/magnum-opus.md" && $depth == 2 follow doc.in { depth 2 }').sort();
     expect(citers).toEqual([
       "index.md",
       "practitioners/maria-prophetissa.md",
@@ -821,17 +908,17 @@ describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () 
   it("cyclic citations are safe — a revisit is admitted once as $stop == 'cycle'", () => {
     // paracelsus references index, which references paracelsus back. The return
     // to paracelsus is admitted as a single cycle occurrence, not an infinite loop.
-    const cyc = paths('from docs where $path == "practitioners/paracelsus.md" && $stop == "cycle" follow doc.out depth 3');
+    const cyc = paths('from docs where $path == "practitioners/paracelsus.md" && $stop == "cycle" follow doc.out { depth 3 }');
     expect(cyc).toContain("practitioners/paracelsus.md");
     // the whole walk terminates: a bounded number of rows, no runaway.
-    const all = hits('from docs where $path == "practitioners/paracelsus.md" follow doc.out depth 3');
+    const all = hits('from docs where $path == "practitioners/paracelsus.md" follow doc.out { depth 3 }');
     expect(all.hits.length).toBeGreaterThan(0);
     expect(all.hits.length).toBeLessThan(200);
   });
 
   it("default keeps per-path occurrences; `distinct` collapses to reached nodes", () => {
-    const occ = hits('repo.count(from docs where $path == "substances/philosophers-stone.md" follow doc.out)').count!;
-    const dist = hits('repo.count(from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out)').count!;
+    const occ = hits('repo.docs count { where $path == "substances/philosophers-stone.md" follow doc.out }').count!;
+    const dist = hits('repo.docs count { where $path == "substances/philosophers-stone.md" follow distinct doc.out }').count!;
     expect(dist).toBe(10);
     expect(occ).toBeGreaterThan(dist); // the dense graph reaches nodes by many distinct paths
   });
@@ -839,7 +926,7 @@ describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () 
   it("`frontier` cuts the walk at a class of documents", () => {
     // Explore citations, but treat practitioner biographies as the edge of the
     // walk: they are reported but never expanded through.
-    const res = hits('from docs where $path == "index.md" select p: $path, ty: type, s: $stop follow doc.out frontier type == "practitioner"');
+    const res = hits('from docs where $path == "index.md" select p: $path, ty: type, s: $stop follow doc.out { frontier type == "practitioner" }');
     const practitioners = res.hits.filter((h) => h.ty === "practitioner");
     expect(practitioners.length).toBeGreaterThan(0);
     expect(practitioners.every((h) => h.s === "frontier")).toBe(true);
@@ -848,7 +935,7 @@ describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () 
   it("`by <expr>` re-keys node identity — walk until a document TYPE repeats", () => {
     // Identity = type, so revisiting any type is a cycle. From a substance the
     // walk reaches a process, then stops the moment a type would repeat.
-    const res = hits('from docs where $path == "substances/philosophers-stone.md" select p: $path, s: $stop follow doc.out by type');
+    const res = hits('from docs where $path == "substances/philosophers-stone.md" select p: $path, s: $stop follow doc.out { by type }');
     const stopByPath = new Map(res.hits.map((h) => [h.p as string, h.s]));
     // prima-materia is a substance — the seed's type — so it is an immediate cycle
     expect(stopByPath.get("substances/prima-materia.md")).toBe("cycle");
@@ -902,7 +989,7 @@ describe("alchemy corpus — follow: the heading outline & block tree", () => {
   it("a nested follow-collect projects each document's outline as a subtree", () => {
     const res = hits(
       'from docs where type == "process" ' +
-        'select p: $path, outline: nodes.collect(where kind == "md:section" && attrs.level == 1 select n: name, d: $depth follow section.children)',
+        'select p: $path, outline: nodes collect { where kind == "md:section" && attrs.level == 1 select n: name, d: $depth follow section.children }',
     );
     const mo = res.hits.find((h) => (h.p as string).includes("magnum-opus"))!;
     const outline = mo.outline as { n: string; d: number }[];
@@ -913,19 +1000,19 @@ describe("alchemy corpus — follow: the heading outline & block tree", () => {
 
 describe("alchemy corpus — failure modes are loud", () => {
   it("rejects an unavailable relation instead of returning nothing", () => {
-    expect(() => paths('from blocks where nodes.exists(where kind == "md:link")')).toThrow(/unavailable/);
+    expect(() => paths('from blocks where nodes exists { where kind == "md:link" }')).toThrow(/unavailable/);
   });
 
-  it("rejects collect() used as a predicate", () => {
-    expect(() => paths('from docs where nodes.collect(where kind == "md:task")')).toThrow(/projection/);
+  it("rejects collect { … } used as a predicate", () => {
+    expect(() => paths('from docs where nodes collect { where kind == "md:task" }')).toThrow(/projection/);
   });
 
   it("rejects a relation that does not exist from the target", () => {
-    expect(() => paths('from nodes where blocks.exists(where type == "task")')).toThrow(FilterInvalid);
+    expect(() => paths('from nodes where blocks exists { where type == "task" }')).toThrow(FilterInvalid);
   });
 
   it("surfaces CEL errors from inside a nested query", () => {
-    expect(() => paths("from docs where nodes.exists(where kind + 1)")).toThrow(/arithmetic/);
+    expect(() => paths("from docs where nodes exists { where kind + 1 }")).toThrow(/arithmetic/);
   });
 
   it("rejects a bare identifier that shadows an intrinsic", () => {

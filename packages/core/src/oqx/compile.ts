@@ -84,6 +84,61 @@ function guards(target: CelTarget, repoId: string): CompiledSql {
   return guardsFor(target, ALIAS_BASE[target], "d", repoId);
 }
 
+/** Row-source FROM + guards for a top-level query whose source is re-projected
+ * by one or more `from E` relations (a typed flatMap over host-model
+ * navigation). The FINAL row uses the canonical alias (d/b/n) + doc `d` so
+ * run.ts/CEL resolve unchanged; each preceding relation in the chain contributes
+ * a JOIN correlated within the shared document. All source relations are
+ * same-document today (a cross-document `from` chain is a loud error). */
+function chainedFrom(q: Query, repoId: string): { from: string; guards: CompiledSql } {
+  const finalTarget = q.target;
+  const finalAlias = ALIAS_BASE[finalTarget];
+  const inUse = new Set<string>(["d", finalAlias]);
+  const joins: string[] = [];
+  const guardSqls: string[] = [];
+  const guardParams: unknown[] = [];
+  const fg = guards(finalTarget, repoId);
+  guardSqls.push(fg.sql);
+  guardParams.push(...fg.params);
+
+  // The row type after applying sourceRelations[0..i-1]: targets[i] is the
+  // parent of sourceRelations[i], targets[i+1] its child (== q.target at the end).
+  const targets: CelTarget[] = [q.baseTarget];
+  for (const r of q.sourceRelations) targets.push(r.childTarget);
+
+  // Walk the chain backward: sourceRelations[i] connects parent(targets[i]) →
+  // child(targets[i+1]); the last relation's child is the final canonical row.
+  let childAlias = finalAlias;
+  for (let i = q.sourceRelations.length - 1; i >= 0; i--) {
+    const rel = q.sourceRelations[i]!;
+    if (!rel.sameDoc) {
+      throw new FilterInvalid(
+        `source projection '${rel.name}' crosses documents; a cross-document \`from\` chain is not supported yet`,
+        "OQX from",
+      );
+    }
+    const parentTarget = targets[i]!;
+    const parentAlias = allocAlias(parentTarget, inUse);
+    inUse.add(parentAlias);
+    if (parentTarget === "docs") {
+      joins.push(`JOIN docs ${parentAlias} ON ${rel.correlate(parentAlias, childAlias)}`);
+      guardSqls.push(`${parentAlias}.repo_id = ? AND ${parentAlias}.deleted_commit IS NULL`);
+      guardParams.push(repoId);
+    } else {
+      // A non-docs parent shares the final row's document `d` (same-document).
+      joins.push(`JOIN ${TABLE[parentTarget]} ${parentAlias} ON ${rel.correlate(parentAlias, childAlias)}`);
+      const g = guardsFor(parentTarget, parentAlias, "d", repoId);
+      guardSqls.push(g.sql);
+      guardParams.push(...g.params);
+    }
+    childAlias = parentAlias;
+  }
+  return {
+    from: joins.length ? `${fromClause(finalTarget)} ${joins.join(" ")}` : fromClause(finalTarget),
+    guards: { sql: guardSqls.join(" AND "), params: guardParams },
+  };
+}
+
 /** FROM fragment for a target row at (rowAlias, docAlias). On docs the row IS
  * the doc, so no separate docs join (callers pass docAlias === rowAlias). */
 function rowSource(target: CelTarget, rowAlias: string, docAlias: string): string {
@@ -656,7 +711,12 @@ export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolv
   const ctx = defaultCtx(q.target);
   if (semantic) ctx.semantic = semantic; // query-global; flows to every child ctx
   const inUse = new Set([ctx.self, "d"]);
-  const g = guards(q.target, repoId);
+  // A re-projected source (`from docs from nodes` / `repo.nodes … { from doc }`)
+  // builds a JOIN chain ending in the canonical row; a simple source is today's
+  // single-table FROM.
+  const chained = q.sourceRelations.length > 0 ? chainedFrom(q, repoId) : null;
+  const g = chained ? chained.guards : guards(q.target, repoId);
+  const fromSql = chained ? chained.from : fromClause(q.target);
   // Bindings the top scope publishes to its nested scopes (its select values /
   // collects and its where lifts). The top scope itself has no enclosing scope,
   // so its own scalar leaves carry no outer resolver — a top-level `^name` is a
@@ -684,7 +744,7 @@ export function compileQuery(q: Query, repoId: string, semantic?: SemanticResolv
   }
 
   return {
-    from: fromClause(q.target),
+    from: fromSql,
     where: whereSql,
     whereParams: [...g.params, ...w.params],
     projections,

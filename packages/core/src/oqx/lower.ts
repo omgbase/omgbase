@@ -16,10 +16,10 @@
 import { FilterInvalid } from "../search/cel/parser.js";
 import { RELATIONS } from "./relations.js";
 import type {
-  SurfaceQuery, SurfaceTarget, SurfaceWhere, SurfaceOp, SurfaceSubquery, SurfaceSelectItem, SurfaceFollow,
+  SurfaceQuery, SurfaceWhere, SurfaceOp, SurfaceSubquery, SurfaceSelectItem, SurfaceFollow,
 } from "./ast.js";
 import type {
-  Query, NestedQuery, CollectionOp, WhereExpr, SelectItem, CelTarget, FollowSpec,
+  Query, NestedQuery, CollectionOp, WhereExpr, SelectItem, CelTarget, FollowSpec, Relation,
 } from "./ir.js";
 
 // Hard cap on follow recursion depth.
@@ -31,17 +31,67 @@ const HARD_DEPTH_CAP = 8;
 // pre/mid-walk). Detected on the verbatim scalar source.
 const RECUR_INTRINSIC = /\$(?:stop|leaf|frontier|depth|ordinal)\b/;
 
-const SURFACE_TO_CEL: Record<SurfaceTarget, CelTarget> = {
-  docs: "docs",
-  blocks: "blocks",
-  nodes: "nodes",
-};
-
 const TARGET_NOUN: Record<CelTarget, string> = {
   docs: "doc",
   blocks: "block",
   nodes: "node",
 };
+
+// The bare root collections a top-level `from` (or a top-level consumer receiver)
+// may select — the implicit repository root's `docs`/`blocks`/`nodes` properties,
+// spellable either bare or via the explicit `repo.<target>` root relation.
+const TOP_BASE: Record<string, CelTarget> = {
+  docs: "docs", blocks: "blocks", nodes: "nodes",
+  "repo.docs": "docs", "repo.blocks": "blocks", "repo.nodes": "nodes",
+};
+
+// Resolve the top-level source chain (`from docs` / `repo.nodes from doc` / …):
+// the first entry selects a root collection; each further entry re-projects it
+// through a structural relation (a typed flatMap over host-model navigation).
+function resolveSourceChain(from: string[]): { baseTarget: CelTarget; sourceRelations: Relation[]; target: CelTarget } {
+  const first = from[0]!;
+  const baseTarget = TOP_BASE[first];
+  if (!baseTarget) {
+    throw new FilterInvalid(
+      `top-level \`from ${first}\` must select a root collection: docs, blocks, or nodes (spellable as repo.<target>)`,
+      "OQX from",
+    );
+  }
+  let target = baseTarget;
+  const sourceRelations: Relation[] = [];
+  for (const nav of from.slice(1)) {
+    const rel = resolveFromRelation(nav, target);
+    sourceRelations.push(rel);
+    target = rel.childTarget;
+  }
+  return { baseTarget, sourceRelations, target };
+}
+
+// Resolve a body-level `from E` source projection to a structural relation,
+// advancing the row type. Unlike a collection-op receiver, a `from` MAY be
+// single-valued (a scalar/optional relation contributes zero-or-one row); it may
+// NOT be a repository-wide root scan (that is not a per-row projection).
+function resolveFromRelation(nav: string, fromTarget: CelTarget): Relation {
+  const noun = TARGET_NOUN[fromTarget];
+  const key = nav.includes(".") ? nav : `${noun}.${nav}`;
+  const rel = RELATIONS[key];
+  if (!rel) {
+    throw new FilterInvalid(
+      `no navigable relation '${nav}' from ${fromTarget} (have: ${relationsFrom(fromTarget).join(", ")})`,
+      "OQX from",
+    );
+  }
+  if (rel.root) {
+    throw new FilterInvalid(`'${key}' is a repository-wide root relation; \`from\` re-projects per row, not a global scan`, "OQX from");
+  }
+  if (rel.from !== fromTarget) {
+    throw new FilterInvalid(`relation '${key}' is not reachable from ${fromTarget}`, "OQX from");
+  }
+  if (rel.unavailable) {
+    throw new FilterInvalid(`relation '${key}' is unavailable: ${rel.unavailable}`, "OQX from");
+  }
+  return rel;
+}
 
 // A subquery body is lowered in one of two modes: "normal" (a regular body:
 // select-position collect, or an exists/count where-body — no lifts), or
@@ -50,7 +100,10 @@ const TARGET_NOUN: Record<CelTarget, string> = {
 type BodyMode = "normal" | "whereLift";
 
 export function lowerQuery(sq: SurfaceQuery): Query {
-  const target = SURFACE_TO_CEL[sq.from];
+  const { baseTarget, sourceRelations, target } = resolveSourceChain(sq.from);
+  if (sourceRelations.length > 0 && sq.follow) {
+    throw new FilterInvalid("a re-projected source (`from E`) combined with `follow` is not supported yet", "OQX from");
+  }
   // In a follow query the top-level `where` has two phases: SEED conjuncts
   // (evaluated in the CTE base, before recursion metadata exists — no recursion
   // intrinsics) and RESULT conjuncts that reference recursion intrinsics
@@ -66,6 +119,8 @@ export function lowerQuery(sq: SurfaceQuery): Query {
   return {
     kind: "query",
     target,
+    baseTarget,
+    sourceRelations,
     where: seedWhere ? lowerWhere(seedWhere, target, true) : null,
     select: sq.select.map((s) => lowerSelect(s, target, "normal")),
     consumer: sq.consumer ?? "collect",
@@ -256,7 +311,19 @@ function lowerOp(o: SurfaceOp, target: CelTarget, bodyMode: BodyMode): Collectio
   return { kind: "collectionOp", op: o.op, relation: rel, subquery: lowerSubquery(o.sub, rel.childTarget, bodyMode) };
 }
 
-function lowerSubquery(s: SurfaceSubquery, target: CelTarget, bodyMode: BodyMode): NestedQuery {
+function lowerSubquery(s: SurfaceSubquery, receiverTarget: CelTarget, bodyMode: BodyMode): NestedQuery {
+  // A body-level `from E` re-projection inside a NESTED consumer (a collect/
+  // exists/… within a where/select) is not supported yet — top-level relative
+  // `from` (the common case) is. The receiver relation already establishes the
+  // block's row type; re-projecting it further nests a correlated JOIN chain
+  // that the correlated-body compiler does not build yet.
+  if (s.from.length > 0) {
+    throw new FilterInvalid(
+      "a `from` source projection inside a nested consumer block is not supported yet; re-project at the top level (e.g. `repo.docs collect { from nodes … }`)",
+      "OQX from",
+    );
+  }
+  const target = receiverTarget;
   const nq: NestedQuery = {
     target,
     // Ops inside a subquery are never in the top-level where scope.

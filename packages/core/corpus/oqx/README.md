@@ -47,8 +47,8 @@ every page that ever raised a question.
 The one exception is `substances/salt.md`, which carries a short **supply** list
 ("buy more salt of tartar") — and every item is checked. That makes it the
 deliberate **discriminator**: it is the only substance page with task nodes, and
-it has no *open* ones, so `nodes.exists(where kind == "md:task")` and
-`nodes.exists(where kind == "md:task" && !attrs.checked)` return provably
+it has no *open* ones, so `nodes exists { where kind == "md:task" }` and
+`nodes exists { where kind == "md:task" && !attrs.checked }` return provably
 different sets. Several tests depend on this; keep it fully checked.
 
 ### Structure the corpus exercises
@@ -79,15 +79,15 @@ different sets. Several tests depend on this; keep it fully checked.
   relations (asserted to navigate the same content as `under_heading`).
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
-  `from docs where nodes.collect(^open: value where kind == "md:task" &&
-  !attrs.checked) select $path, open` both filter to those docs and capture each
+  `from docs where nodes collect { ^open: value where kind == "md:task" &&
+  !attrs.checked } select $path, open` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
 - **Correlation & joins (`^name` outer references + `repo.*` roots)** — the
   wikilink graph is the join fixture. `slug` on every substance/process is the
   key a `[[wikilink]]` value matches, so:
   - a *dependent join* resolves each document's outgoing wikilinks to the
-    documents they name (`repo.docs.collect(where slug in ^refs)`), with
+    documents they name (`repo.docs collect { where slug in ^refs }`), with
     `prima-materia.md`'s lone `[[nigredo]]` (no target document) as the dangling
     reference that resolves to `[]`;
   - a *semi-join* finds the substances any wikilink actually points to —
@@ -97,20 +97,21 @@ different sets. Several tests depend on this; keep it fully checked.
     Paracelsus) while the sole Islamic (Jabir) and Alexandrian (Maria) holders
     get `[]` — exercising two `^` correlations plus self-exclusion (`^tradition`,
     `^me`);
-  - `single(...)` / `first(...)` look up each lab note's `subject` process as one
+  - `single { … }` / `first { … }` look up each lab note's `subject` process as one
     cardinality-checked record (slug is unique, so `single` is safe).
 - **Order by (`order by <expr> [asc|desc]`)** — the four practitioners have
   distinct `era` values (250 / 800 / 1530 / 1680), so `order by era` sorts them
   Maria → Jabir → Paracelsus → Newton (numeric, not lexical), `desc` reverses,
-  and `repo.first(… order by era desc)` is Newton. Ranking is how `semantic()` /
+  and `repo.docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
   bm25 scores become a top-K.
-- **Top-level consumers (`repo.<op>(from …)`)** — wrapping the whole query to
-  change its result shape, over the 18-document corpus: `repo.count` folds a set
-  to a number (18 total, 5 substances), `repo.exists` to a boolean, `repo.first`
-  to the first document in path order (`index.md`, which sorts before every
-  subdirectory), and `repo.single` to the sole `draft` document
-  (`texts/mutus-liber.md`) — while `repo.single(... layer == "canon")` fails
-  loudly because 13 documents match.
+- **Top-level consumers (`repo.<target> <op> { … }`)** — a postfix directive over
+  a root receiver shapes the whole result, over the 18-document corpus:
+  `repo.docs count` folds a set to a number (18 total, 5 substances),
+  `repo.docs exists` to a boolean, `repo.docs first` to the first document in path
+  order (`index.md`, which sorts before every subdirectory), and `repo.docs single`
+  to the sole `draft` document (`texts/mutus-liber.md`) — while
+  `repo.docs single { where layer == "canon" }` fails loudly because 13 documents
+  match.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
   doc→doc `references` edges (64 of them), which the **citation-graph** demos

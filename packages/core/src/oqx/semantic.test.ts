@@ -146,7 +146,7 @@ describe("OQX semantic() — ranking via order by", () => {
   it("repo.first + order by semantic returns the single most similar row", async () => {
     const { hits } = await oqxRunAsync(
       store, repoId,
-      'repo.first(from blocks where type == "paragraph" order by semantic("network partitions quorum replication") desc)',
+      'repo.blocks first { where type == "paragraph" order by semantic("network partitions quorum replication") desc }',
       {}, embed,
     );
     expect(hits.map((h) => h.path)).toEqual(["consensus.md"]);

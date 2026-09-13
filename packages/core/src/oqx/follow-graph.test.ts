@@ -74,13 +74,13 @@ describe("follow doc.out — outgoing citation graph (cross-document, cyclic)", 
   it("`follow distinct` collapses the cycle; depth 1 keeps only the seed", () => {
     const dist = run('from docs where $path == "a.md" follow distinct doc.out').hits;
     expect(dist.map((h) => h.path).sort()).toEqual(["a.md", "b.md", "c.md", "d.md"]);
-    const seedOnly = run('from docs where $path == "a.md" follow doc.out depth 1').hits;
+    const seedOnly = run('from docs where $path == "a.md" follow doc.out { depth 1 }').hits;
     expect(seedOnly.map((h) => h.path)).toEqual(["a.md"]);
   });
 
   it("repo.count counts occurrences over the cyclic walk", () => {
     // a(1), b(2), d(2), c(3), a-cycle(4) = 5 occurrences
-    expect(run('repo.count(from docs where $path == "a.md" follow doc.out)').count).toBe(5);
+    expect(run('repo.docs count { where $path == "a.md" follow doc.out }').count).toBe(5);
   });
 
   it("`by <expr>` changes node identity for cycle detection", () => {
@@ -97,7 +97,7 @@ describe("follow doc.out — outgoing citation graph (cross-document, cyclic)", 
 
     // identity by `group`: g2 shares g1's group (X) → reached as a cycle, so g3
     // (behind g2) is never expanded to.
-    const byGroup = run('from docs where $path == "g1.md" select p: $path, s: $stop follow doc.out by group').hits
+    const byGroup = run('from docs where $path == "g1.md" select p: $path, s: $stop follow doc.out { by group }').hits
       .filter((h) => (h.p as string).startsWith("g"));
     expect(byGroup.map((h) => h.p).sort()).toEqual(["g1.md", "g2.md"]);
     expect(byGroup.find((h) => h.p === "g2.md")!.s).toBe("cycle");

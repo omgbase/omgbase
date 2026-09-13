@@ -59,10 +59,15 @@ export interface CollectionOp {
   countCmp?: { op: CountRelOp; value: number };
 }
 
-/** A nested query: an optional where + (for collect) a projection. Its row type
- * is fixed by the receiver relation's childTarget. */
+/** A nested query: an optional leading `from` source-projection chain, an
+ * optional where, and (for collect) a projection. Its row type starts at the
+ * receiver relation's childTarget and is re-projected by each `from` relation;
+ * `target` is the FINAL row type (== childTarget when `from` is empty). */
 export interface NestedQuery {
   target: CelTarget;
+  /** body-level `from E` source projections beyond the receiver relation, in
+   * order. Each re-projects the current rows through a structural relation. */
+  from?: Relation[];
   where: WhereExpr | null;
   select: SelectItem[];
   /** a nested `follow` making a select-position collect recursive: `where` seeds
@@ -128,7 +133,15 @@ export interface FollowSpec {
 /** Top-level OQX query. */
 export interface Query {
   kind: "query";
+  /** the FINAL row type the query produces (after any source projection). */
   target: CelTarget;
+  /** the base root collection the source chain starts from (docs|blocks|nodes).
+   * Equals `target` unless `sourceRelations` re-projects it. */
+  baseTarget: CelTarget;
+  /** top-level `from E` source projections beyond the base root collection, in
+   * order (empty for the simple `from docs` / `repo.docs …` forms). Each
+   * re-projects the current rows through a structural relation. */
+  sourceRelations: Relation[];
   where: WhereExpr | null;
   select: SelectItem[];
   /** `order by <expr> [asc|desc], …` — applied to collect/first/single (ignored
