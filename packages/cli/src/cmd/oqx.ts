@@ -106,6 +106,12 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     result = oqxRun(ws.store, repo.repoId, source, opts);
   }
 
+  // Shell capture (typed result before formatting): a scalar for count/exists,
+  // else the whole result (its .hits become the addressable frame).
+  cli.capture?.(
+    result.consumer === "count" ? result.count : result.consumer === "exists" ? result.exists : result,
+  );
+
   // JSON emits the whole result verbatim (incl. consumer + any scalar), so
   // count/exists round-trip without special-casing.
   if (cli.flags.mode === "json") {

@@ -47,6 +47,7 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
     }
   }
   const hits = resolveThing(ws.store, input);
+  cli.capture?.(hits); // shell: the ranked hits become the addressable frame
 
   // -1: bare top id.
   if (values.one) {

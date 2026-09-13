@@ -145,6 +145,24 @@ omg edit b_k7z2p9q                       # $EDITOR round-trip, CAS pinned
 
 Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.
 
+### Interactive shell
+
+`omg shell` opens a persistent in-process session: one workspace/store stays open, so the per-command startup cost is paid once. Beyond speed it adds **ephemeral typed session bindings** over results — a command's structured result (the same object `--json` emits) is captured *before* rendering and becomes addressable with `@`. Filtering, traversal, and projection stay in OQX; the shell just stores and dereferences.
+
+```
+omg> query 'from docs where layer == "canon"'
+d_a83f  projects/foo.md
+d_194c  projects/bar.md
+  2 rows — address with @1..@2
+omg> show @1                       # @N = row N of the last displayed collection (1-based)
+omg> let canon = query 'from docs where layer == "canon"'   # let binds a snapshot, not a live query
+omg> show @canon[1]                # @name[i] / @name.field — shallow addressing only
+omg> query 'from nodes where kind == "md:task" && !attrs.checked'
+omg> done @1                       # references substitute into any command's args
+```
+
+`@_` is the previous result; `bindings` lists them, `unset x` drops one, `exit` (or Ctrl-D) leaves. On a TTY it's a readline REPL; with piped stdin it runs one command per line (`#` comments and blanks ignored) — the same `ShellSession` runtime that a Markdown CLI-session test would drive. Full reference: `docs/11-cli.md` §5.7a.
+
 ### MCP server
 
 `omg mcp` serves the full engine tool surface over stdio, with an in-process watcher so the session stays fresh. The host (Claude Code, Cursor, …) owns the process lifetime — the one-line integration:

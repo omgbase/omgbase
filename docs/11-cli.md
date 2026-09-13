@@ -1,6 +1,6 @@
 # omgbase — CLI Surface (`omg`)
 
-**Status:** normative design, `proposed` (ADR-012). As-built: implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `new`/`mv`/`rm --doc`/`meta`), `graph`, `run`, `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
+**Status:** normative design, `proposed` (ADR-012). As-built: implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `new`/`mv`/`rm --doc`/`meta`), `graph`, `run`, the persistent session `shell` (§5.7a), `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
 **Depends on:** `01-architecture.md` §11–12; `02-data-model.md` §2, §6; `04-mutation-and-concurrency.md` §6; `06-mcp-api.md` (tool semantics); `10-query-language.md` (envelope, fenced form).
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
@@ -192,6 +192,49 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 ### 5.7 CAS ergonomics
 
 `update` requires `expect.content_hash` (04 §1). Scripted callers pass `--expect <hash>` pinned from an earlier read — real CAS. Interactive callers omit it: the CLI reads the block, prints `updating <locator>: "<current first line…>"`, and applies with the just-read hash. That is read-then-CAS collapsed into one process — the protection against *concurrent* edits is fully intact; what's waived is protection against edits since a read the caller never made. `omg edit` always pins the hash from the text it opened in the editor, so a mid-edit change by someone else is a clean `stale_expectation` (with current truth printed), never a lost write.
+
+### 5.7a Session (`omg shell`)
+
+`omg shell` is a persistent in-process session (as-built). One workspace/store stays open for the session's lifetime — every command runs in-process, so the per-invocation startup cost is paid once, not per command. Beyond speed it adds **ephemeral typed session bindings** over command results (the interactive analogue of shell pipes): a command's structured library result — the same object `--json` emits — is captured *before* terminal formatting, and becomes addressable.
+
+References all use `@` (OQX owns `$…` for intrinsics like `$depth`/`$leaf`):
+
+| Reference | Resolves to |
+|---|---|
+| `@1`, `@2`, … | Row *N* (**1-based**, matching the `[1] [2]` display selectors) of the most recent **displayed collection frame**. A command that shows a single thing (a card, bytes) updates `@_` but leaves the frame intact; the next command that emits a collection replaces it. |
+| `@_` | The previous command's typed result. |
+| `@name` | A named binding. |
+| `@name[i]` | Item *i* (1-based) of a bound/collection value. |
+| `@name.field`, `@1.field`, `@_[i].field` | A shallow field on the addressed value — one `[i]` then one `.field`, and no deeper. As soon as you want `.where(…).map(…)`, the answer is: **use OQX.** The shell provides storage and dereferencing, not a second query language. |
+
+Bindings are **snapshots**, not live queries: `let open = query '…'` captures the results *now*; using `@open` later does not re-run anything (stored executable queries would be a different concept — aliases/macros — and don't belong in basic bindings).
+
+| Builtin | Does |
+|---|---|
+| `let <name> = <command>` | Run the command quietly and bind a snapshot of its typed result. |
+| `let <name> = <@ref>` | Bind a snapshot of an existing reference. |
+| `unset <name>` | Drop a binding. |
+| `bindings` | List bindings. |
+| `<@ref>` (alone) | Inspect a reference; a collection reference becomes the addressable frame. |
+| `exit` / `quit` | Leave the shell (Ctrl-D also exits). |
+
+A reference token is substituted into an ordinary command's argv, coerced to the value the command expects where a node is named (an id/locator); a bare collection reference is refused with a hint to pick a row with `[i]` — the shell never flattens a collection into one argument.
+
+```
+omg> query 'from docs where layer == "canon"'
+d_a83f  projects/foo.md
+d_194c  projects/bar.md
+  2 rows — address with @1..@2
+omg> show @1
+omg> let canon = query 'from docs where layer == "canon"'
+omg> show @canon[1]
+omg> query 'from nodes where kind == "md:task" && !attrs.checked'
+omg> done @1
+```
+
+Scope and lifetime: bindings and numbered selections are **ephemeral session state only** — not persisted into the repository, not part of OQX semantics, not stable across shell processes. Opaque OMG entity identities remain authoritative underneath them. The `ShellSession` runtime is drivable programmatically (`session.exec(line)`), so the same layer can power a future Markdown CLI-session test runner: interactive convenience and replayable testing share one session-binding layer.
+
+Two drive modes: an interactive readline REPL on a TTY, and a **script runner** when stdin is piped (one command per line; `#` comments and blank lines are ignored) — the latter is what a piped test harness or a Markdown session test feeds. As a v1 simplification the numbered selectors are not rendered inline as `[n]` beside each command's own output; instead the shell prints a one-line `N rows — address with @1..@N` hint after a frame-producing command.
 
 ### 5.8 Sync & serve
 

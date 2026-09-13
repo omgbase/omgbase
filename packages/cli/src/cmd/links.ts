@@ -37,6 +37,7 @@ function runLinks(cli: Cli, args: string[]): number {
   if (values.pred) opts.predicates = values.pred.split(",").map((s) => s.trim());
   if (values.blocks) opts.blocks = true;
   const result = docLinks(ws.store, resolved.docId, opts);
+  cli.capture?.(result); // shell: edges (out+in) become the addressable frame
 
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify(result));

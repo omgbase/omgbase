@@ -13,6 +13,7 @@ const GROUPS: { title: string; names: string[] }[] = [
   { title: "history & links", names: ["log", "hist", "diff", "links"] },
   { title: "mutate", names: ["apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge"] },
   { title: "documents", names: ["new", "mv", "meta"] },
+  { title: "session", names: ["shell"] },
   { title: "sync & serve", names: ["sync", "watch", "mcp"] },
   { title: "admin", names: ["rebuild-index", "gc", "doctor", "config", "import", "embed"] },
 ];

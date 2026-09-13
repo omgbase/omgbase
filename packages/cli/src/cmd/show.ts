@@ -31,6 +31,7 @@ function runShow(cli: Cli, args: string[]): number {
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
     const properties = docPropertiesMerged(ws.store.db, resolved.docId);
     const payload = { kind: "document", id: info.docId, path: info.path, properties, edges: links };
+    cli.capture?.(payload); // shell: the doc card (a single entity → @_, frame intact)
     if (cli.flags.mode !== "human") {
       cli.io.out(JSON.stringify(payload));
       return EXIT_OK;
@@ -42,6 +43,7 @@ function runShow(cli: Cli, args: string[]): number {
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
   const history = include.includes("history") ? historyNode(ws.store, resolved.blockId!, { limit: 5 }) : undefined;
+  cli.capture?.({ ...node, ...(history ? { history } : {}) }); // shell: block card (single entity)
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify({ ...node, ...(history ? { history } : {}) }));
     return EXIT_OK;

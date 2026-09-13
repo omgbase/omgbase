@@ -35,6 +35,7 @@ import { cmdNew, cmdMv, cmdMeta } from "./cmd/docs.js";
 import { cmdUpdateDoc } from "./cmd/update.js";
 import { cmdRun } from "./cmd/run.js";
 import { cmdWatch, cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
+import { cmdShell } from "./cmd/shell.js";
 import { cmdHelp } from "./cmd/help.js";
 
 export const COMMANDS: Command[] = [
@@ -68,6 +69,7 @@ export const COMMANDS: Command[] = [
   cmdMv,
   cmdMeta,
   cmdRun,
+  cmdShell,
   cmdSync,
   cmdWatch,
   cmdMcp,

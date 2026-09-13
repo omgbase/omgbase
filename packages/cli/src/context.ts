@@ -26,25 +26,41 @@ export interface Cli {
   style: Style;
   render: Renderer;
   cwd: string;
+  /**
+   * Optional typed-result sink (11 shell). When present, a command calls it with
+   * its structured library result — the same object `--json` would emit — before
+   * terminal formatting. The interactive shell installs a sink to capture typed
+   * bindings (`@_`, `@1`, `let x = …`); one-shot CLI leaves it undefined (no-op).
+   */
+  capture?: (value: unknown) => void;
   /** Resolve the workspace (walk up from cwd/-C). Throws repo_not_found if none. */
   workspace(): Workspace;
   /** Resolve the active repo within the workspace, honoring --repo. */
   repo(ws: Workspace): RepoRow;
 }
 
-export function makeCli(flags: GlobalFlags, io: IO): Cli {
-  const cwd = flags.directory ? resolveDir(flags.directory) : process.cwd();
+/** Optional overrides for makeCli — the shell reuses one open Workspace across
+ *  commands and installs a capture sink; one-shot CLI passes nothing. */
+export interface CliOptions {
+  workspace?: Workspace;
+  capture?: (value: unknown) => void;
+  cwd?: string;
+}
+
+export function makeCli(flags: GlobalFlags, io: IO, opts: CliOptions = {}): Cli {
+  const cwd = opts.cwd ?? (flags.directory ? resolveDir(flags.directory) : process.cwd());
   const noColor = flags.noColor || !io.stdoutTTY || process.env.NO_COLOR != null;
   const style = new Style({ noColor, isTTY: io.stdoutTTY });
   const render = new Renderer(style);
 
-  let cachedWs: Workspace | null = null;
+  let cachedWs: Workspace | null = opts.workspace ?? null;
   return {
     flags,
     io,
     style,
     render,
     cwd,
+    ...(opts.capture ? { capture: opts.capture } : {}),
     workspace(): Workspace {
       if (cachedWs) return cachedWs;
       const ws = Workspace.find(cwd);
@@ -78,6 +94,7 @@ function resolveDir(dir: string): string {
 // Which commands may run without a workspace (11 §2.1).
 export const NO_WORKSPACE_OK = new Set(["init", "attach", "help", "version"]);
 // Commands that manage sync themselves — skip the freshness sweep (11 §3.3).
-export const SKIP_FRESHNESS = new Set(["sync", "watch", "mcp", "init", "attach", "help", "version"]);
+// `shell` is exempt because each line it runs sweeps on its own.
+export const SKIP_FRESHNESS = new Set(["sync", "watch", "mcp", "init", "attach", "help", "version", "shell"]);
 
 export { CliUsageError };

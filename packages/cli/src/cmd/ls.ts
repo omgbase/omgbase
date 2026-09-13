@@ -31,6 +31,7 @@ function runLs(cli: Cli, args: string[]): number {
        ORDER BY d.path`,
     )
     .all(repo.repoId, like) as DocRow[];
+  cli.capture?.(rows); // shell: docs become the addressable frame (ref = path)
 
   if (cli.flags.mode === "ids") {
     for (const r of rows) cli.io.out(r.path);

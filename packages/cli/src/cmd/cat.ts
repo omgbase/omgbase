@@ -35,6 +35,7 @@ function runCat(cli: Cli, args: string[]): number {
     // trivia and mangled spacing).
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
+    cli.capture?.(res.content); // shell: the bytes (a string; @_ only)
     if (cli.flags.mode === "json") {
       cli.io.out(JSON.stringify({ doc: res.docId, path: res.path, content: res.content }));
     } else {
@@ -45,6 +46,7 @@ function runCat(cli: Cli, args: string[]): number {
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
+  cli.capture?.(node); // shell: the block (single entity)
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify(node));
     return EXIT_OK;

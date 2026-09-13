@@ -118,6 +118,7 @@ export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: 
   };
 
   const result = apply(ws.store, req);
+  cli.capture?.(result); // shell: ApplyResult — its minted/affected ids are the frame
 
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify(result));
