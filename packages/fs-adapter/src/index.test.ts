@@ -55,6 +55,7 @@ describe("FsAdapter", () => {
     const batches: string[][] = [];
     const sub = fs.watch((paths) => batches.push(paths));
     await new Promise((r) => setTimeout(r, 200)); // let chokidar's initial scan settle
+    batches.length = 0; // discard spurious startup events (macOS FSEvents re-reports existing files)
     writeFileSync(join(root, "c.md"), "# C\n");
     writeFileSync(join(root, "a.md"), "# A\n\nchanged\n");
     await new Promise((r) => setTimeout(r, 300));
