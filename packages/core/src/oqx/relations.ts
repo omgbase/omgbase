@@ -48,16 +48,15 @@ export const RELATIONS: Record<string, RelationDef> = {
     correlate: (o, i) => `${i}.doc_id = ${o}.doc_id`,
     singleValued: false, sameDoc: true,
   },
-  // block.nodes is modeled but NOT usable: no format adapter populates a real
-  // `b_` block id on projected nodes (projectNodes receives RawBlocks, whose ids
-  // are not minted yet), so `nodes.block_id` is universally NULL and this
-  // relation would match nothing. Failing loudly beats a silent empty result.
+  // block.nodes — the projected nodes anchored to a block. Ingest zips the
+  // assigned block ids onto the parsed tree before projectNodes (ingest.ts
+  // zipAssignedIds), and writeDocNodes persists the `b_` id, so `nodes.block_id`
+  // is populated for block-anchored nodes (links, tasks, sections, …). Nodes with
+  // no block anchor keep a NULL block_id and simply don't match here.
   "block.nodes": {
     name: "block.nodes", from: "blocks", childTarget: "nodes",
     correlate: (o, i) => `${i}.block_id = ${o}.block_id`,
     singleValued: false, sameDoc: true,
-    unavailable:
-      "node→block anchoring is not populated yet (nodes.block_id is always NULL), so this relation cannot match. Query `from nodes` with doc.* reach-through instead.",
   },
   "node.doc": {
     name: "node.doc", from: "nodes", childTarget: "docs",
@@ -167,18 +166,16 @@ export const RELATIONS: Record<string, RelationDef> = {
     correlate: (o, i) => `${i}.dst_node = ${o}.doc_id`,
     singleValued: false, sameDoc: false,
   },
-  // block.out_edges is modeled but NOT usable: the sync edge-extraction path does
-  // not thread real block ids, so `edges.src_block` is universally empty — the
-  // same root cause that grounds `has_edge` on the blocks target and the
-  // `block.nodes` relation. Reaching a doc's edges works (doc.out_edges, keyed on
-  // the populated src_doc); block-grain edge provenance awaits src_block being
-  // populated at extraction time. Failing loudly beats a silent empty result.
+  // block.out_edges — the open edges leaving one block (blocks→edges via
+  // src_block). Edge extraction threads the block's assigned id (markdown
+  // extractEdges over id-assigned blocks; collectRawBlocks carries blockId), so
+  // `edges.src_block` is populated for body-link/inline-field edges. Frontmatter
+  // edges have a NULL src_block (doc-grain) and don't match here — use
+  // doc.out_edges for a document's whole out-edge set.
   "block.out_edges": {
     name: "block.out_edges", from: "blocks", childTarget: "edges",
     correlate: (o, i) => `${i}.src_block = ${o}.block_id`,
     singleValued: false, sameDoc: true,
-    unavailable:
-      "edges.src_block is not populated by the sync path yet (block ids are not threaded into edge extraction), so this relation cannot match. Use `doc.out_edges` for a document's edges, or query `from edges` directly.",
   },
 
   // ---- root/global relations (repo.<target>) --------------------------------

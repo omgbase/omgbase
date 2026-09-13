@@ -44,15 +44,21 @@ export const markdownAdapter: FormatAdapter = {
 
   extractEdges(blocks: RawBlock[], metadata?: Record<string, unknown>): AdapterEdge[] {
     const edges: AdapterEdge[] = [];
-    for (const block of blocks) {
-      if (!block.outLinks) continue;
-      const blockEdges = extractFromBlock(
-        "", // srcBlock id filled in by the caller after id assignment
-        block.type,
-        block.raw,
-      );
-      for (const e of blockEdges) edges.push(toAdapterEdge(e));
-    }
+    // Walk every block (recursing into list/blockquote/table nesting) and scan
+    // its raw for links. srcBlock is the block's OWN assigned id — the caller
+    // passes id-assigned blocks (blockId zipped on), mirroring projectNodes; a
+    // block-grain edge without it is useless, so fall back to "" only for the
+    // pre-identity callers. extractFromBlock returns [] for link-free blocks, so
+    // no per-block gate is needed (matches the non-adapter fallback path).
+    const walk = (list: RawBlock[]): void => {
+      for (const block of list) {
+        for (const e of extractFromBlock(block.blockId ?? "", block.type, block.raw)) {
+          edges.push(toAdapterEdge(e));
+        }
+        if (block.children.length > 0) walk(block.children);
+      }
+    };
+    walk(blocks);
     if (metadata) {
       for (const e of extractFromFrontmatter(metadata)) edges.push(toAdapterEdge(e));
     }

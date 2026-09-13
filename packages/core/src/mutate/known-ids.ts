@@ -46,13 +46,21 @@ function assignFromMut(blocks: RawBlock[], byKey: Map<string, string>): TreeInpu
   return walk(blocks, null);
 }
 
-function collectRawBlocks(blocks: TreeInputBlock[]): { blockId: string; type: string; raw: string }[] {
-  const out: { blockId: string; type: string; raw: string }[] = [];
-  const walk = (list: TreeInputBlock[]): void => {
-    for (const b of list) { out.push({ blockId: b.blockId, type: b.type, raw: b.raw }); walk(b.children); }
-  };
-  walk(blocks);
-  return out;
+// Rebuild id-assigned blocks as RawBlock-shaped inputs for adapter edge
+// extraction, threading each block's blockId so extractEdges can set src_block.
+function collectRawBlocks(blocks: TreeInputBlock[]): RawBlock[] {
+  return blocks.map((b) => ({
+    type: b.type,
+    span: { start: 0, end: 0 },
+    raw: b.raw,
+    text: "",
+    attrs: b.attrs,
+    children: collectRawBlocks(b.children),
+    trivia: b.trivia,
+    anchors: [],
+    outLinks: [],
+    blockId: b.blockId,
+  }));
 }
 
 function collectIds(blocks: TreeInputBlock[]): string[] {
@@ -101,7 +109,7 @@ export function makeKnownIdResolver(
       const out: ResolvedEdgeRow[] = [];
       if (adapter?.extractEdges) {
         const raw = collectRawBlocks(assigned);
-        for (const e of adapter.extractEdges(raw as never, metadata)) out.push(resolveAdapterEdge(db, repoId, thisDocId, e));
+        for (const e of adapter.extractEdges(raw, metadata)) out.push(resolveAdapterEdge(db, repoId, thisDocId, e));
       } else {
         const walk = (blocks: TreeInputBlock[]): void => {
           for (const b of blocks) {

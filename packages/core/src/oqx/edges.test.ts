@@ -153,10 +153,15 @@ describe("doc/block → edges relations", () => {
       .map((h) => h.path)).toEqual(["a.md"]);
   });
 
-  it("block.out_edges fails loudly (src_block unpopulated in the sync path)", () => {
-    // block-grain edge provenance is not wired yet (edges.src_block is empty),
-    // so the relation is marked unavailable rather than silently matching nothing.
-    expect(() => run('from blocks select es: block.out_edges collect { p: predicate }')).toThrow(FilterInvalid);
+  it("block.out_edges exposes an individual block's out-edges (src_block populated)", () => {
+    // Body-link + inline-field edges are block-grain (src_block populated), so
+    // block.out_edges reaches them: a.md's paragraph carries four `references`
+    // links, b.md's carries one `related` inline field. The frontmatter
+    // depends_on edge is doc-grain (NULL src_block) and is correctly excluded.
+    const preds = run('from blocks select es: block.out_edges collect { p: predicate }').hits
+      .flatMap((h) => (h.es as { p: string }[]).map((e) => e.p))
+      .sort();
+    expect(preds).toEqual(["references", "references", "references", "references", "related"].sort());
   });
 
   it("repo.edges is a root scan", () => {

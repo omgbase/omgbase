@@ -294,10 +294,8 @@ describe("OQX lowering", () => {
     expect(inner.op.relation.name).toBe("section.blocks");
   });
 
-  it("fails loudly on block.nodes rather than compiling a relation that cannot match", () => {
-    expect(() => lowerQuery(parseOqx('from blocks where nodes exists { where kind == "md:link" }'))).toThrow(
-      /unavailable.*block_id is always NULL/s,
-    );
+  it("lowers block.nodes (nodes.block_id is populated by ingest)", () => {
+    expect(() => lowerQuery(parseOqx('from blocks where nodes exists { where kind == "md:link" }'))).not.toThrow();
   });
 
   it("tags scalar leaves with the enclosing target", () => {

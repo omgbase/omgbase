@@ -79,8 +79,11 @@ describe("OQX end-to-end — blocks and nodes targets", () => {
     expect(withTasks.hits.map((h) => h.path).sort()).toEqual(["a.md", "b.md"]);
   });
 
-  it("fails loudly on block.nodes instead of returning an empty result", () => {
-    expect(() => run('from blocks where nodes exists { where kind == "md:link" }')).toThrow(/unavailable/);
+  it("filters blocks by a correlated node predicate (block.nodes)", () => {
+    // nodes.block_id is populated (ingest zips assigned ids onto projected nodes),
+    // so block.nodes reaches a block's own nodes: only a.md's link-bearing block.
+    const { hits } = run('from blocks where nodes exists { where kind == "md:link" }');
+    expect(hits.map((h) => h.path)).toEqual(["a.md"]);
   });
 
   it("filters nodes with doc reach-through", () => {

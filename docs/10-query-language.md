@@ -55,7 +55,7 @@ The authored link graph (05-graph-and-query §1–2) as **first-class rows** —
 - **Bare fields:** `predicate` (`references`/`embeds` reserved, else freeform snake_case from the field/key), `provenance` (`link`/`frontmatter`/`inline_field`/`projected`/`yaml_*`/`json_*`), `dst_kind` (`document`/`external`/`collection` — v1 resolves block-anchor targets to `document`, preserving the `anchor`), `anchor`, `src_field`.
 - **Intrinsics:** `$id` (edge id), `$src` (source doc id), `$dst` (raw target node id), `$dst_path` (the target **document's** path — `null` when the target is external or an unresolved/dangling internal link), `$dst_uri` (the **external** URL — `null` otherwise), `$src_block`, `$via`, `$from_commit`.
 - **Source-document reach-through:** `$path` is the **source** document's path; `doc.<key>` / `doc.$path` read the source doc's metadata (the scan joins each edge to its `src_doc`). Same scope-not-selection semantics as blocks/nodes.
-- **Relations:** a document's edges are reachable as `doc.out_edges` (outgoing) / `doc.in_edges` (incoming/backlinks) collections; `text()`/`semantic()` are not available (edges carry no text/embedding). Dangling internal links are `dst_kind == "document"` rows with a `null` `$dst_path`.
+- **Relations:** a document's edges are reachable as `doc.out_edges` (outgoing) / `doc.in_edges` (incoming/backlinks) collections; a single block's outgoing edges (body links + inline fields, which carry a populated `src_block`) as `block.out_edges` — frontmatter edges are doc-grain (`src_block` NULL) and appear only under `doc.out_edges`. `text()`/`semantic()` are not available (edges carry no text/embedding). Dangling internal links are `dst_kind == "document"` rows with a `null` `$dst_path`.
 
 ## 3. CEL subset
 

@@ -999,8 +999,11 @@ describe("alchemy corpus — follow: the heading outline & block tree", () => {
 });
 
 describe("alchemy corpus — failure modes are loud", () => {
-  it("rejects an unavailable relation instead of returning nothing", () => {
-    expect(() => paths('from blocks where nodes exists { where kind == "md:link" }')).toThrow(/unavailable/);
+  it("resolves block.nodes end-to-end (nodes.block_id populated by ingest)", () => {
+    // block.nodes was formerly marked unavailable; ingest now anchors projected
+    // nodes to their block, so a block-grain node query returns real blocks.
+    const blocks = paths('from blocks where nodes exists { where kind == "md:wikilink" }');
+    expect(blocks.length).toBeGreaterThan(0);
   });
 
   it("rejects collect { … } used as a predicate", () => {

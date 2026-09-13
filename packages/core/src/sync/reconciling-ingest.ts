@@ -243,6 +243,7 @@ function collectRawBlocks(blocks: TreeInputBlock[]): RawBlock[] {
     trivia: b.trivia,
     anchors: [],
     outLinks: [],
+    blockId: b.blockId, // thread the assigned id so extractEdges can set src_block
   }));
 }
 

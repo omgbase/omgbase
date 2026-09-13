@@ -140,4 +140,21 @@ describe("apply — changesets", () => {
     expect(readFileSync(join(dir, "a.md"), "utf8")).not.toContain("movable paragraph");
     expect(readFileSync(join(dir, "b.md"), "utf8")).toContain("movable paragraph");
   });
+
+  it("edge extraction on the mutation path anchors body links to their block (src_block)", () => {
+    const docId = seed("a.md", "# Title\n\nplain body\n");
+    const bId = blockByText(docId, "plain");
+    const res = apply(store, {
+      repoId, rootPath: dir,
+      ops: [{ op: "update", block: bId, markdown: "See [target](/t.md).", expect: { content_hash: hashOf(bId) } }],
+      origin: { actor: "agent:test" },
+    });
+    expect(res.committed).toBe(true);
+    const edge = store.db
+      .prepare("SELECT src_block, predicate FROM edges WHERE src_doc = ? AND provenance = 'link' AND to_commit IS NULL")
+      .get(docId) as { src_block: string | null; predicate: string } | undefined;
+    expect(edge?.predicate).toBe("references");
+    // The fix: src_block is the edited block's real id, not "" — so block.out_edges resolves.
+    expect(edge?.src_block).toBe(bId);
+  });
 });
