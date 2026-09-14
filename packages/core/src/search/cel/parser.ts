@@ -7,7 +7,7 @@ import type { Node, Literal, RelOp } from "./ast.js";
 export class FilterInvalid extends Error {
   reason: string;
   hint: string;
-  constructor(reason: string, hint = "see 10-query-language.md §3") {
+  constructor(reason: string, hint = "see query-language.md §3") {
     super(reason);
     this.reason = reason;
     this.hint = hint;

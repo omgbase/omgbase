@@ -99,7 +99,7 @@ function jsonPath(segs: string[]): string {
   return `'$.${segs.join(".")}'`;
 }
 
-// ---- properties routing (12-properties-table) -------------------------------
+// ---- properties routing (properties-table) -------------------------------
 // Documents-target fields (and doc.<k> reach-through from blocks/nodes) resolve
 // against the indexed `properties` table instead of json_extract over a JSON
 // blob. A field access is one of: a scalar-value expression (comparisons), or

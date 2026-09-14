@@ -1,6 +1,6 @@
 # omgbase — Architecture
 
-**Status:** normative design (As-built, verified against `packages/core/src` on 2026-09-14). Deviations require an ADR (see `08-decisions.md`).
+**Status:** normative design (As-built, verified against `packages/core/src` on 2026-09-14). Deviations require an ADR (see `decisions.md`).
 **Audience:** implementation agents and reviewers. Read `README.md` first for the doc map and glossary.
 
 omgbase (Open Markdown Graph Base) is a versioned, addressable graph of authored Markdown structure. Ordinary Markdown files remain the human representation and interchange format; the engine adds stable identity, block-level history, a typed knowledge graph, hybrid retrieval, and a safe structural mutation API for agents.
@@ -62,11 +62,11 @@ API mutations are writes **to the file through the engine** (apply ops → rende
 
 ### 2.1 The write-write race
 
-Before writing a file, the engine MUST verify the file's current hash equals the rendered hash of the revision the mutation was computed against. On mismatch: abort, ingest the human edit (new revision), **replay** the block ops against the new revision (block preconditions re-checked), and only then write. One automatic replay attempt; after that, return a typed conflict to the caller. Protocol details: `04-mutation-and-concurrency.md` §6.
+Before writing a file, the engine MUST verify the file's current hash equals the rendered hash of the revision the mutation was computed against. On mismatch: abort, ingest the human edit (new revision), **replay** the block ops against the new revision (block preconditions re-checked), and only then write. One automatic replay attempt; after that, return a typed conflict to the caller. Protocol details: `mutation-and-concurrency.md` §6.
 
 ## 3. Kernel concepts
 
-Seven concepts. Five durable, two derived. Concepts are not tables — see `02-data-model.md` for physical schema.
+Seven concepts. Five durable, two derived. Concepts are not tables — see `data-model.md` for physical schema.
 
 | Concept | Definition | Mutability |
 |---|---|---|
@@ -113,7 +113,7 @@ Seven concepts. Five durable, two derived. Concepts are not tables — see `02-d
 
 Disposition kinds: `same`, `edited`, `moved`, `edited_moved`, `inserted`, `deleted`, `split_from`, `merged_into`, `copied_from`, `resurrected`, plus document-scoped `bulk_rewrite`.
 
-## 5. Reconciliation (summary; full spec in `03-reconciliation-spec.md`)
+## 5. Reconciliation (summary; full spec in `reconciliation-spec.md`)
 
 GumTree-class matching adapted to prose, in phases of strictly decreasing certainty: exact raw-hash lock → normalized-hash lock → context propagation (locked neighbors/parents vouch for strangers) → order-constrained scored assignment → compound classification (split / merge / copy / cross-doc move / resurrection). Asymmetric thresholds: **when in doubt, mint a new ID** and record the near-miss. Every carried identity records `confidence`, `reason`, `matcher_version`. Deliberate give-ups: bulk rewrites, tiny blocks, many-to-many ambiguity.
 
@@ -127,7 +127,7 @@ GumTree-class matching adapted to prose, in phases of strictly decreasing certai
 
 Every block retains its **exact raw source bytes** (and span) from parse time. Rendering a revision = splicing: untouched blocks emit retained bytes verbatim; inserted/updated blocks emit their new text; inter-block trivia (blank lines, HTML comments) attaches to a neighboring block by fixed policy (trailing-attach; spec in `03-…` §2.3) and survives with it. The renderer MUST NOT re-serialize untouched content from the AST. `remark-stringify` (or any canonicalizing serializer) MUST NOT be used for existing content.
 
-## 8. Graph (summary; full spec in `05-graph-and-query.md`)
+## 8. Graph (summary; full spec in `graph-and-query.md`)
 
 - Authored edges are **extracted fresh from parsed content at every revision** — a pure function of `(content, extraction_version)`. Identity threads their history (validity intervals), never their existence.
 - Edge sources: Markdown links/wikilinks (block-grain `references`), frontmatter relation fields (doc-grain, field recorded), Dataview-style inline fields `key:: [[target]]` (block-grain typed edges), bare URLs (external nodes).
@@ -137,25 +137,25 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 - Doc-level edges are a materialized rollup: `GROUP BY (src_doc, predicate, dst)` with count + sample source blocks.
 - Storage: relational + recursive CTEs. **No graph database. No Cypher/Gremlin.** (ADR-006.)
 
-## 9. Query & retrieval (summary; full spec in `05-graph-and-query.md`)
+## 9. Query & retrieval (summary; full spec in `graph-and-query.md`)
 
 - CEL filters over two targets: `docs` and `blocks` (block filters may reach doc frontmatter via `doc.`). Structural functions (`under()`, `under_heading()`, `within()`, `has_edge()`, …) compile to indexed lookups.
 - Hybrid retrieval: FTS5 + vectors fused by **reciprocal-rank fusion**, then explainable multiplicative boosts (title/heading/path match, epistemic layer, recency). Every hit returns its evidence.
 - Embeddings attach to blocks: input = `doc title · path · heading chain · block type` + block text; key = `(content_hash, ctx_hash, model)`; async recompute.
 - The `pipeline` call composes seed → expand → hydrate in one round trip.
 
-## 10. Mutation & concurrency (summary; full spec in `04-mutation-and-concurrency.md`)
+## 10. Mutation & concurrency (summary; full spec in `mutation-and-concurrency.md`)
 
 - Kernel of six ops: `insert`, `update`, `move`, `remove`, `split`, `merge` — over contiguous sibling runs, in atomic cross-document **changesets** with per-op expectations (content-hash CAS on update; existence checks; opt-in order CAS).
 - Everything else is a **server-side macro** (`tasks_complete`, `sections_append`, `links_retarget`, …) expanding deterministically to kernel ops, reported in kernel vocabulary.
 - Plain OCC; no CRDTs, no OT (ADR-008). Conflicts are typed objects that **carry current truth** (live hash, live markdown, live revision, invalidating commit) so agents retry without a read.
 - `dry_run: true` validates and returns rendered diffs without committing.
 
-## 11. MCP surface (summary; full spec in `06-mcp-api.md`)
+## 11. MCP surface (summary; full spec in `mcp-api.md`)
 
 Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator), `pipeline`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos_*`, `sync_status/flush`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
 
-## 12. Storage (summary; DDL in `02-data-model.md`)
+## 12. Storage (summary; DDL in `data-model.md`)
 
 v1 embeds **SQLite** (WAL) under `.omgbase/` — FTS5 lexical, brute-force cosine over Float32 embedding BLOBs (the `embeddings`/`doc_embeddings` tables + a `cosine` SQL UDF; `core/vec.ts`, `search/vector.ts`), recursive CTE traversal. No vector-index extension is built in v1; sqlite-vec (and PostgreSQL + pgvector) are the pressure valve when brute force hits its ceiling, adopted only when a genuinely multi-user server exists (ADR-001). Keep the SQL boring enough that both stay true.
 

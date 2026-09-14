@@ -1,11 +1,11 @@
 import type { Database } from "better-sqlite3";
 import { hashHex } from "../hash.js";
 
-// Properties store (12-properties-table). Flattens document properties —
+// Properties store (properties-table). Flattens document properties —
 // frontmatter, inline (key:: value), computed ($title/$tags) — into typed,
 // indexed rows. `card` records the authored shape so scalar comparisons match
 // only scalar-authored rows while list() sees all. Deterministic ordering:
-// source rank, then authored order (ord), then key — see docs/12 §9.
+// source rank, then authored order (ord), then key — see docs/properties-table.md §9.
 
 export type PropertySource = "frontmatter" | "inline" | "computed";
 export type PropertyCard = "scalar" | "list";
@@ -109,7 +109,7 @@ function decode(r: StoredRow): unknown {
 
 // Collapse a key's rows to the authored shape: a lone scalar row → the scalar;
 // anything else (list rows, or multiple values) → an array in (source-rank,
-// ord) order. Deterministic — see docs/12 §9.
+// ord) order. Deterministic — see docs/properties-table.md §9.
 const SOURCE_RANK: Record<PropertySource, number> = { frontmatter: 0, inline: 1, computed: 2 };
 
 function shapeValues(rows: StoredRow[]): unknown {

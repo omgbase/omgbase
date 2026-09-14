@@ -29,7 +29,7 @@ export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
 export { attachRepo, type AttachResult } from "./sync/attach.js";
 export { walkMarkdown, walkMarkdownAsync } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
-// External sync-adapter seam (13-sync-plugins): a SyncSource is the in-engine
+// External sync-adapter seam (sync-plugins): a SyncSource is the in-engine
 // handle to an external adapter process; createExternalSource spawns one and
 // speaks the stdio protocol; the driver reconciles a repo against any source.
 export type {

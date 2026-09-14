@@ -1,4 +1,4 @@
-// Full DDL — 02-data-model §3 (durable) + §4 (derived). SQLite dialect.
+// Full DDL — data-model §3 (durable) + §4 (derived). SQLite dialect.
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
@@ -18,14 +18,14 @@ CREATE TABLE IF NOT EXISTS file_stats (
 );
 `;
 
-// properties (12-properties-table). One indexed row per property value: the
+// properties (properties-table). One indexed row per property value: the
 // unified query surface for frontmatter, inline (key:: value), and computed
 // ($title/$tags) document properties, superseding the docs.metadata JSON
 // blob. `card` records the authored shape (scalar vs list) so scalar ==/!=/<
 // match only scalar-authored rows while list() sees all — reproducing the
 // json_extract scalar-vs-array distinction. Current-state, maintained
 // transactionally at ingest alongside blocks (repopulated by re-ingest, not by
-// rebuild-index — see docs/12 §6).
+// rebuild-index — see docs/properties-table.md §6).
 export const PROPERTIES_DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS properties (
   prop_id        TEXT PRIMARY KEY,
@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_props_key_num  ON properties(repo_id, key, val_nu
 CREATE INDEX IF NOT EXISTS idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
 `;
 
-// Sync adapters/sources/attachments (13-sync-plugins §2). A workspace-level
+// Sync adapters/sources/attachments (sync-plugins §2). A workspace-level
 // registry: adapters map a name → external command; sources name an adapter +
 // config (rendered to flags at spawn); attachments join repo ⇄ source (m:n).
 // sync_state holds engine-owned per-attachment change-tracking (revision per

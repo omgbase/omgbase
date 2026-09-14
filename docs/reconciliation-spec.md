@@ -1,7 +1,7 @@
 # omgbase — Parsing, Round-Trip, and Reconciliation Spec
 
 **Status:** normative. This is the correctness-critical component; its eval harness (§9) is a first-class deliverable with release gates.
-**Depends on:** `01-architecture.md` §3.2, §5, §7; `02-data-model.md`.
+**Depends on:** `architecture.md` §3.2, §5, §7; `data-model.md`.
 
 ---
 
@@ -13,16 +13,16 @@
 
 ```ts
 interface RawBlock {
-  type: BlockKind;              // format-qualified string (01-architecture §3.3)
+  type: BlockKind;              // format-qualified string (architecture §3.3)
   span: { start: number; end: number };   // half-open offsets into the source string
   raw: string;                  // exact source slice (excludes trailing trivia)
-  text: string;                 // normalized visible text (02-data-model §5.2)
+  text: string;                 // normalized visible text (data-model §5.2)
   attrs: Record<string, unknown>;         // checked, lang, level, info, …
   children: RawBlock[];         // parser nesting only (lists, quotes, tables)
   trivia: string;               // trailing inter-block trivia attached to this block (§2.3)
   dirty?: boolean;              // set by ops: serialize (§2.2) rather than splice verbatim
   anchors: string[];            // authored ^block-refs found on this block
-  outLinks: ExtractedLink[];    // for edge extraction (05-graph-and-query §2)
+  outLinks: ExtractedLink[];    // for edge extraction (graph-and-query §2)
 }
 ```
 
@@ -62,7 +62,7 @@ Inter-block bytes (blank lines, HTML comments between blocks, stray whitespace) 
 
 ## 3. Reconciliation: problem statement
 
-Given: the last persisted `BlockTree` (with block IDs) for a document, and new file bytes. Produce: a new tree where every node either **carries** an existing `block_id` or is **minted**, plus a disposition list (`02-data-model.md` dispositions table) describing each carry/mint with kind, confidence, reason.
+Given: the last persisted `BlockTree` (with block IDs) for a document, and new file bytes. Produce: a new tree where every node either **carries** an existing `block_id` or is **minted**, plus a disposition list (`data-model.md` dispositions table) describing each carry/mint with kind, confidence, reason.
 
 Hard rules:
 
@@ -144,7 +144,7 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 ## 8. Sync pipeline placement
 
 ```
-checkpoint (debounced saves, per 01-architecture §6)
+checkpoint (debounced saves, per architecture §6)
   → for each changed file:
       parse → BlockTree
       if doc unknown: whole-file raw-hash match against deleted/moved docs → rename else create

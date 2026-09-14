@@ -91,7 +91,7 @@ export class Store {
     }
   }
 
-  // v9 (13-sync-plugins): add the adapters/sources/attachments/sync_state tables.
+  // v9 (sync-plugins): add the adapters/sources/attachments/sync_state tables.
   // repos.root_path is relaxed to nullable in the base DDL for fresh dbs; an
   // existing NOT NULL column still accepts all prior (non-null) rows, so no table
   // rebuild is needed to migrate — new nullable inserts only happen on fresh dbs.

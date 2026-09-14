@@ -3,7 +3,7 @@ import { join, relative, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import chokidar, { type FSWatcher } from "chokidar";
 
-// @omgbase/fs-adapter — the filesystem sync source (13-sync-plugins §7), a
+// @omgbase/fs-adapter — the filesystem sync source (sync-plugins §7), a
 // standalone process the engine spawns and speaks the stdio protocol to (see
 // bin.ts). It owns chokidar + all node:fs access for live sync, so omgbase core
 // carries no filesystem-watch dependency. This module is the transport-free

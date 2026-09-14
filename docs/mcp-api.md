@@ -11,7 +11,7 @@ These four rules apply to every tool and are non-negotiable:
 
 1. **Explicit incompleteness.** Every list-shaped result carries `truncated: boolean` and, when true, `cursor`. An agent must never have to guess whether it saw everything.
 2. **Budgets are first-class.** Hydrating tools (`docs_get_many`, `nodes_get_many`, …) accept `budget_tokens` (server estimates ~4 chars/token, truncates at block boundaries, sets `truncated`). Traversals bound the walk instead: `query`'s OQX `follow … { depth n }` / `where $ordinal <= N` and the `graph` tool's `degrees`/`max_documents`.
-3. **Conflicts carry current truth.** See `04-mutation-and-concurrency.md` §4.
+3. **Conflicts carry current truth.** See `mutation-and-concurrency.md` §4.
 4. **Uniform resolution ladder** on every reader:
    - `skeleton` — ids + types + one-line labels (~6 tokens/block)
    - `outline` — skeleton + heading text + first ~10 words per block
@@ -67,7 +67,7 @@ query_syntax {}                                              // returns the full
 text_search { q, limit? }                                    // FTS5 bm25 keyword search
 resolve { query, limit? }                                    // hybrid ranker → {id, locator, preview, evidence}
 ```
-`query` takes a single **OQX string** (not a `{from, filter, …}` envelope) — composable structural navigation, correlated subqueries, `select` projection, and bounded recursive traversal (`follow`) in one expression (see 05-graph-and-query.md §4 and 10-oqx). `limit`/`cursor` page the lean hits `{id, path, …projections}`; a `count`/`exists` consumer returns a scalar. `query_syntax` (no args) returns that whole reference — call it before writing a non-trivial filter. `text_search` is a plain-words FTS5 search box (words ANDed, `"quoted phrases"` adjacent, no DSL). `resolve` is the "give me the id of the thing I mean" hybrid ranker (FTS + semantic when a provider is configured); it has no `scope`/`kinds` param.
+`query` takes a single **OQX string** (not a `{from, filter, …}` envelope) — composable structural navigation, correlated subqueries, `select` projection, and bounded recursive traversal (`follow`) in one expression (see graph-and-query.md §4 and 10-oqx). `limit`/`cursor` page the lean hits `{id, path, …projections}`; a `count`/`exists` consumer returns a scalar. `query_syntax` (no args) returns that whole reference — call it before writing a non-trivial filter. `text_search` is a plain-words FTS5 search box (words ANDed, `"quoted phrases"` adjacent, no DSL). `resolve` is the "give me the id of the thing I mean" hybrid ranker (FTS + semantic when a provider is configured); it has no `scope`/`kinds` param.
 
 ### Graph
 

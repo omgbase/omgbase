@@ -85,7 +85,7 @@ Block kinds use a colon-separated format qualifier for non-markdown formats: `ya
 
 ### Document properties
 
-Document-level properties live in one indexed `properties` table (design in `docs/12-properties-table.md`), unifying three sources under a single query surface — no per-document JSON blob:
+Document-level properties live in one indexed `properties` table (design in `docs/properties-table.md`), unifying three sources under a single query surface — no per-document JSON blob:
 
 - **frontmatter** — the parsed YAML fence (markdown), or the whole parsed object (YAML/JSON files);
 - **inline** — dataview-style `key:: value` fields in body text, accumulating across occurrences;
@@ -95,7 +95,7 @@ A CEL bare key (`layer == "canon"`) queries the authored union (frontmatter + in
 
 ### Structural query functions
 
-In addition to the core CEL filter language (see `docs/10-query-language.md`), the query system provides format-aware structural functions for the `blocks` target:
+In addition to the core CEL filter language (see `docs/query-language.md`), the query system provides format-aware structural functions for the `blocks` target:
 
 - `under_heading("Setup")` — markdown blocks under a heading (section range)
 - `under_kind("yaml:mapping_entry", "database")` — blocks nested under an ancestor of the given kind
@@ -104,12 +104,12 @@ In addition to the core CEL filter language (see `docs/10-query-language.md`), t
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/11-cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
 
 **Workspace, repo, config — the three things to know first.**
 
 - A **workspace** is the `.omgbase/` directory + its SQLite database. It is *not* the content — it can live in a project root, a notes directory, or `$HOME`. Commands find it by walking up from the cwd.
-- A **repo** is a named, synced scope *inside* a workspace. One workspace can hold many. Today a repo is backed by a filesystem directory (its `root_path`); the sync layer is being generalized to external adapters (git/GitHub/Linear — see `docs/13-sync-plugins.md`).
+- A **repo** is a named, synced scope *inside* a workspace. One workspace can hold many. Today a repo is backed by a filesystem directory (its `root_path`); the sync layer is being generalized to external adapters (git/GitHub/Linear — see `docs/sync-plugins.md`).
 - **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* that every repo inherits; a repo can *override* any key. This is why an embedder is set once for the whole workspace (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
 
 ```bash
@@ -161,7 +161,7 @@ omg> query 'from nodes where kind == "md:task" && !attrs.checked'
 omg> done @1                       # references substitute into any command's args
 ```
 
-`@_` is the previous result; `bindings` lists them, `unset x` drops one, `exit` (or Ctrl-D) leaves. On a TTY it's a readline REPL; with piped stdin it runs one command per line (`#` comments and blanks ignored) — the same `ShellSession` runtime that a Markdown CLI-session test would drive. Full reference: `docs/11-cli.md` §5.7a.
+`@_` is the previous result; `bindings` lists them, `unset x` drops one, `exit` (or Ctrl-D) leaves. On a TTY it's a readline REPL; with piped stdin it runs one command per line (`#` comments and blanks ignored) — the same `ShellSession` runtime that a Markdown CLI-session test would drive. Full reference: `docs/cli.md` §5.7a.
 
 ### MCP server
 
@@ -189,7 +189,7 @@ const store = new Store({ path: "/path/to/vault/.omgbase/omgbase.db" });
 // Walk a directory tree: ingest every file (md/yaml/json), thread identity, extract edges.
 const { repoId } = attachRepo(store, "my-vault", "/path/to/vault");
 
-// CEL query over blocks (see docs/10-query-language.md for the full language).
+// CEL query over blocks (see docs/query-language.md for the full language).
 const { hits } = query(store, repoId, {
   from: "blocks",
   filter: 'type == "task" && !attrs.checked && under_heading("Launch")',
@@ -216,7 +216,7 @@ console.log(outline.text);
 
 ### Watch for human edits
 
-Live watching runs in an **external adapter process** — chokidar lives in `@omgbase/fs-adapter` (spoken to over a stdio protocol), so the engine core carries no filesystem-watch dependency. The engine wraps the spawned adapter as a `SyncSource` and reconciles the batches it streams (design in `docs/13-sync-plugins.md`).
+Live watching runs in an **external adapter process** — chokidar lives in `@omgbase/fs-adapter` (spoken to over a stdio protocol), so the engine core carries no filesystem-watch dependency. The engine wraps the spawned adapter as a `SyncSource` and reconciles the batches it streams (design in `docs/sync-plugins.md`).
 
 ```ts
 import { Watcher, createExternalSource } from "@omgbase/core";
@@ -300,7 +300,7 @@ const hits = hybridSearch(store, { repoId, text: "identity", vector: { model: my
 
 ## Reading the design
 
-Start with `docs/README.md`, then the numbered documents. They are normative: where code and docs disagree, the docs win until an ADR (`docs/08-decisions.md`) says otherwise.
+Start with `docs/README.md`, then the numbered documents. They are normative: where code and docs disagree, the docs win until an ADR (`docs/decisions.md`) says otherwise.
 
 ## License
 

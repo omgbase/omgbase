@@ -3,7 +3,7 @@ import { createExternalSource, type SyncSource } from "@omgbase/core";
 import { fsAdapterBinPath } from "@omgbase/fs-adapter";
 import type { Cli } from "../context.js";
 
-// Resolve a repo's live sync source(s) for `omg watch`/`omg mcp` (13-sync-plugins).
+// Resolve a repo's live sync source(s) for `omg watch`/`omg mcp` (sync-plugins).
 // v1: a filesystem repo (one with a root_path) is served by spawning the
 // @omgbase/fs-adapter process — chokidar lives there, not in the engine. The
 // adapter/source/attachment tables (schema v9) will drive multi-source repos in

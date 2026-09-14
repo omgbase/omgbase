@@ -1,4 +1,4 @@
-// Block model — 01-architecture §3.3, 03-reconciliation-spec §1.
+// Block model — architecture §3.3, reconciliation-spec §1.
 //
 // As-built note: the design (03 §1) types spans as byte offsets and `raw` as
 // Uint8Array. We work in string space instead — mdast/micromark positions are

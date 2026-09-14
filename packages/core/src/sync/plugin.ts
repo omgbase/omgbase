@@ -1,4 +1,4 @@
-// Sync source contract (13-sync-plugins). A SyncSource abstracts an external
+// Sync source contract (sync-plugins). A SyncSource abstracts an external
 // source scope (filesystem, git, GitHub, Linear, …) behind enumerate/fetch/watch
 // keyed on a cheap `revision` change-token. Sources are EXTERNAL PROCESSES spoken
 // to over stdio (see external-source.ts); this interface is the in-engine view of

@@ -1,7 +1,7 @@
 # omgbase — CLI Surface (`omg`)
 
 **Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
-**Depends on:** `01-architecture.md` §11–12; `02-data-model.md` §2, §6; `04-mutation-and-concurrency.md` §6; `06-mcp-api.md` (tool semantics); `10-query-language.md` (envelope, fenced form).
+**Depends on:** `architecture.md` §11–12; `data-model.md` §2, §6; `mutation-and-concurrency.md` §6; `mcp-api.md` (tool semantics); `query-language.md` (envelope, fenced form).
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
 
@@ -308,7 +308,7 @@ Two stages, sequential exit gates (07 conventions):
 - **Layout:** `src/cli/main.ts` (router) + `src/cli/cmd/<name>.ts`, each command a pure function `(store | workspace, args, io) → exit code` — testable without spawning; the spawn tests cover wiring and the traces.
 - **Wiring:** `package.json` gains `"bin": {"omg": "./dist/cli/main.js"}`. The package is `private: true` and unlicensed — distribution is `pnpm link` / local install until licensing is decided; publishing is out of scope here.
 - **Shell completions:** generated (static bash/zsh/fish) from the command catalog table, which is data in the router. SHOULD ship with CLI-B.
-- **Docs-win rule:** shipping CLI-A updates `02-data-model.md` §4 (add `file_stats`) and the repo README's quickstart; `06-mcp-api.md` is untouched (the CLI adds no tools).
+- **Docs-win rule:** shipping CLI-A updates `data-model.md` §4 (add `file_stats`) and the repo README's quickstart; `mcp-api.md` is untouched (the CLI adds no tools).
 
 ## 9. Deferred (not in v1; listed so their absence is a decision)
 

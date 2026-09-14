@@ -10,7 +10,7 @@ import type {
   WatchListener,
 } from "./plugin.js";
 
-// External source bridge (13-sync-plugins §4). Spawns an adapter command and
+// External source bridge (sync-plugins §4). Spawns an adapter command and
 // speaks the newline-delimited JSON protocol, presenting the process as a
 // SyncSource. Mirrors the embedder bridge (search/external.ts): a handshake
 // line, then id-matched request/response — with one extension, an unsolicited

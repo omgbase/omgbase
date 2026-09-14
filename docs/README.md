@@ -8,23 +8,23 @@ These documents are maintained as **as-built** references to the implementation 
 
 | Doc | Contents | You need it when… |
 |---|---|---|
-| `01-architecture.md` | System shape, canonicality, kernel concepts, identity rules, all subsystem summaries | always — read first |
-| `02-data-model.md` | ID/hash conventions, full SQLite DDL, canonical serializations, rebuild & GC rules | touching `core/` or any storage |
-| `03-reconciliation-spec.md` | Parser contract, round-trip law, trivia policy, matcher phases/thresholds, eval harness, sync pipeline | touching `core/parse`, `reconcile/`, `sync/` |
-| `04-mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |
-| `05-graph-and-query.md` | Edge extraction rules, intervals, traversal specs, CEL query surface, RRF retrieval, embeddings | touching `graph/`, `search/` |
-| `06-mcp-api.md` | Tool surface, resources/URIs, resolution ladder, error codes, outline format, acceptance traces | touching `mcp/` |
-| `08-decisions.md` | ADRs (binding), the authoritative cut list, experiments, open questions | before proposing any deviation |
-| `10-query-language.md` | OQX query language: the query-string surface, targets/fields, the CEL predicate subset (grammar, absence truth table, structural functions), ordering, compilation contract | touching `oqx/` or `search/` (the CEL compiler), or writing any filter in tests/fixtures |
-| `11-cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
-| `12-properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
-| `13-sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry tables are reserved but not yet wired | touching `sync/`, the adapter protocol, or writing an adapter |
-| `14-update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
+| `architecture.md` | System shape, canonicality, kernel concepts, identity rules, all subsystem summaries | always — read first |
+| `data-model.md` | ID/hash conventions, full SQLite DDL, canonical serializations, rebuild & GC rules | touching `core/` or any storage |
+| `reconciliation-spec.md` | Parser contract, round-trip law, trivia policy, matcher phases/thresholds, eval harness, sync pipeline | touching `core/parse`, `reconcile/`, `sync/` |
+| `mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |
+| `graph-and-query.md` | Edge extraction rules, intervals, traversal specs, CEL query surface, RRF retrieval, embeddings | touching `graph/`, `search/` |
+| `mcp-api.md` | Tool surface, resources/URIs, resolution ladder, error codes, outline format, acceptance traces | touching `mcp/` |
+| `decisions.md` | ADRs (binding), the authoritative cut list, experiments, open questions | before proposing any deviation |
+| `query-language.md` | OQX query language: the query-string surface, targets/fields, the CEL predicate subset (grammar, absence truth table, structural functions), ordering, compilation contract | touching `oqx/` or `search/` (the CEL compiler), or writing any filter in tests/fixtures |
+| `cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
+| `properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
+| `sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry tables are reserved but not yet wired | touching `sync/`, the adapter protocol, or writing an adapter |
+| `update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
 
 ## Rules for implementation agents
 
 1. **Invariants below are non-negotiable.** If a task appears to require violating one, stop and flag it — do not improvise.
-2. **The cut list in `08-decisions.md` is authoritative.** Do not add cut items "while you're in there."
+2. **The cut list in `decisions.md` is authoritative.** Do not add cut items "while you're in there."
 3. Rendering is **splice only** — `remark-stringify` (or any canonicalizing serializer) must never touch existing content. A lint rule enforces this; don't disable it.
 4. `reconcile/` is deterministic: no clock, no RNG; every disposition stamps `matcher_v`.
 5. New frontmatter conventions, predicates, or tool parameters require an ADR entry, not just code.

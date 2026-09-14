@@ -1,7 +1,7 @@
 # omgbase — Data Model & Storage Schema
 
 **Status:** normative. SQLite dialect (v1). Column types use SQLite affinities; a future Postgres dialect maps 1:1 (ADR-001).
-**Depends on:** `01-architecture.md` §3–4, §12.
+**Depends on:** `architecture.md` §3–4, §12.
 
 > **As-built (verified 2026-09-14).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 12`), which remains the authoritative schema.
 
@@ -196,11 +196,11 @@ CREATE TABLE resurrection_pool (
   expires_ts     TEXT NOT NULL             -- default now + 30 days (config)
 );
 
--- Property index (12-properties-table). One row per property value; the unified
+-- Property index (properties-table). One row per property value; the unified
 -- query surface for frontmatter, inline (key:: value), and computed ($title/$tags)
 -- document properties, superseding the former docs.metadata blob. Current-state,
 -- maintained transactionally at ingest alongside blocks (repopulated by re-ingest,
--- NOT by rebuild-index — see docs/12 §6), hence durable rather than derived.
+-- NOT by rebuild-index — see docs/properties-table.md §6), hence durable rather than derived.
 CREATE TABLE properties (
   prop_id        TEXT PRIMARY KEY,
   repo_id        TEXT NOT NULL,
@@ -223,7 +223,7 @@ CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text) WHERE dele
 CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num)  WHERE deleted_commit IS NULL;
 CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
 
--- Sync adapters/sources/attachments (13-sync-plugins §2). Workspace-level registry:
+-- Sync adapters/sources/attachments (sync-plugins §2). Workspace-level registry:
 -- adapters map a name → external command; sources name an adapter + config; attachments
 -- join repo ⇄ source (m:n). sync_state holds engine-owned per-attachment change tracking.
 CREATE TABLE adapters (

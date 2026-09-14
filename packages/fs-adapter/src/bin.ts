@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 import { FsAdapter } from "./index.js";
 
-// omgbase-fs-adapter — a stdio filesystem sync source (13-sync-plugins §4). The
+// omgbase-fs-adapter — a stdio filesystem sync source (sync-plugins §4). The
 // engine spawns this with the source config rendered to flags and speaks NDJSON:
 //
 //   handshake  → {"protocol":1,"capabilities":{identity,writeThrough,watch}}

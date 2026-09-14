@@ -215,7 +215,7 @@ export interface DocsReadAtResult {
   renderedHashMatch: boolean;
   /**
    * Properties as they are CURRENTLY (not at `rev`): the properties table is
-   * current-state only (12-properties-table), so historical property values are
+   * current-state only (properties-table), so historical property values are
    * not recoverable. Included as best-effort context, flagged by
    * `propertiesAreCurrent: true`.
    */

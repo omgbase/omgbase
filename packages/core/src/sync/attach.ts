@@ -10,7 +10,7 @@ import { walkMarkdown } from "./fs-util.js";
 // reconciling resolver so identity threads AND edges are extracted on the
 // initial walk. This is the synchronous one-shot ingest fast-path used by the
 // CLI (omg init/attach) and tests; live watching goes through the external
-// adapter seam (13-sync-plugins). core/attach stays the resolver-less primitive.
+// adapter seam (sync-plugins). core/attach stays the resolver-less primitive.
 
 export interface AttachResult {
   repoId: string;

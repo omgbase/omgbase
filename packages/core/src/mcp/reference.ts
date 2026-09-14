@@ -1,6 +1,6 @@
 // Agent-facing syntax reference, surfaced as the query_syntax MCP tool. Agents
 // lean on it heavily before writing a non-trivial filter. It is a condensed,
-// example-led distillation of docs/10-query-language.md — enough to compose a
+// example-led distillation of docs/query-language.md — enough to compose a
 // correct call without reading the normative spec. Kept in one place so the
 // tool handler stays thin.
 

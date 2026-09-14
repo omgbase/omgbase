@@ -1,4 +1,4 @@
-// Reconciliation types (03-reconciliation-spec). The matcher takes the last
+// Reconciliation types (reconciliation-spec). The matcher takes the last
 // persisted block tree (blocks carrying ids) and the newly parsed tree (blocks
 // without ids) and produces an assignment: each new block either CARRIES an
 // existing id or is MINTED, plus a disposition per carry/mint.

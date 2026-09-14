@@ -4,7 +4,7 @@ import { join, relative, sep } from "node:path";
 
 // Shared filesystem walk for the in-process one-shot/reconcile paths (attach,
 // checkpoint, freshness). This is NOT the live watcher — chokidar lives only in
-// the external @omgbase/fs-adapter (13-sync-plugins). node:fs (a builtin) reads
+// the external @omgbase/fs-adapter (sync-plugins). node:fs (a builtin) reads
 // are retained here for the one-shot ingest/freshness fast-path.
 
 const IGNORED_DIRS = new Set([".omgbase", ".git", "node_modules"]);

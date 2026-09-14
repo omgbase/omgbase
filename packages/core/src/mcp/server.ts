@@ -24,7 +24,7 @@ import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
-// MCP server (06-mcp-api). The full tool surface wired to the engine: read
+// MCP server (mcp-api). The full tool surface wired to the engine: read
 // (docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
 // + macros), graph (traverse, path), history (history_node, diff,
 // changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
@@ -474,7 +474,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_append",
     {
       description:
-        "Macro: append markdown at the END of a whole document — the journal/log/running-note primitive (the document-root peer of sections_append, which appends inside a heading's section). ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW top-level blocks after the document's existing ones, so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see 06-mcp-api). Expands to a single insert op at the document top level (position end); commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Target the document with `doc` (id OR path) or `path`. The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this). To append inside a specific heading section instead, use sections_append.",
+        "Macro: append markdown at the END of a whole document — the journal/log/running-note primitive (the document-root peer of sections_append, which appends inside a heading's section). ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW top-level blocks after the document's existing ones, so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Expands to a single insert op at the document top level (position end); commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Target the document with `doc` (id OR path) or `path`. The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this). To append inside a specific heading section instead, use sections_append.",
       inputSchema: { doc: z.string().optional(), path: z.string().optional(), text: z.string() },
     },
     async (args) => {

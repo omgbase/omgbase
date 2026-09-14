@@ -12,7 +12,7 @@ import { walkMarkdown } from "./fs-util.js";
 // observed checkpoint. At the envelope (≤10⁴ docs) the no-change case is a
 // directory walk plus stats — tens of milliseconds.
 //
-// This is the filesystem source's durable change-detection cache (13-sync-plugins
+// This is the filesystem source's durable change-detection cache (sync-plugins
 // §7): file_stats is the persisted form of the source's `revision` token. It is
 // a derived table, rebuildable by a re-stat (rebuildFileStats); the durable
 // convergence signal remains docs.file_hash.

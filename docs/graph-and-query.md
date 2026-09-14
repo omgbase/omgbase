@@ -2,7 +2,7 @@
 
 **Status:** normative.
 **As-built (verified 2026-09-14).**
-**Depends on:** `01-architecture.md` §8–9; `02-data-model.md` §3–4.
+**Depends on:** `architecture.md` §8–9; `data-model.md` §3–4.
 
 ---
 
@@ -48,7 +48,7 @@ Knobs go in a `{ … }` block after the relation (a bare `follow <rel>` carries 
 
 ## 4. Query
 
-The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts`) — not a structured JSON envelope. OQX (omgbase Query eXpressions) covers targets (`docs`/`blocks`/`nodes`/`edges`), dot navigation, whitespace query directives (`collect`/`exists`/`count`/`first`/`single`), correlated subqueries (the `^` sigil), `follow` recursion (§3), and `order by` ranking (including `semantic(…)`/`text(…)` predicates). It is **normatively specified in `10-query-language.md`** and summarized in the `query` tool's own description. Alongside it: the `graph` neighborhood macro (§3) and `text_search` (FTS5 keyword search over block text). A `semantic(…)` clause with no embedding provider configured fails `semantic_unavailable`; a malformed query fails `filter_invalid` (reason + hint).
+The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts`) — not a structured JSON envelope. OQX (omgbase Query eXpressions) covers targets (`docs`/`blocks`/`nodes`/`edges`), dot navigation, whitespace query directives (`collect`/`exists`/`count`/`first`/`single`), correlated subqueries (the `^` sigil), `follow` recursion (§3), and `order by` ranking (including `semantic(…)`/`text(…)` predicates). It is **normatively specified in `query-language.md`** and summarized in the `query` tool's own description. Alongside it: the `graph` neighborhood macro (§3) and `text_search` (FTS5 keyword search over block text). A `semantic(…)` clause with no embedding provider configured fails `semantic_unavailable`; a malformed query fails `filter_invalid` (reason + hint).
 
 ## 5. Hybrid retrieval & ranking
 

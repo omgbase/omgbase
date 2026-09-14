@@ -10,7 +10,7 @@ import { tombstoneObservedDeletion } from "./tombstone.js";
 import type { SyncSource } from "./plugin.js";
 import type { FileChange, CheckpointResult } from "./checkpoint.js";
 
-// Source-agnostic reconciliation driver (13-sync-plugins §5, §10). One loop for
+// Source-agnostic reconciliation driver (sync-plugins §5, §10). One loop for
 // every EXTERNAL source: fetch each changed member through the SyncSource (a pipe
 // to an adapter process), engine-hash the bytes for the authoritative echo gate,
 // and reconcile+commit non-echoes as one checkpoint. Everything here is

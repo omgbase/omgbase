@@ -1,4 +1,4 @@
-// AST for the CEL subset (10-query-language §3.1).
+// AST for the CEL subset (query-language §3.1).
 
 export type Node =
   | Or

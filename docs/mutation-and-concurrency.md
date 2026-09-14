@@ -2,7 +2,7 @@
 
 **Status:** normative.
 **As-built (verified 2026-09-14).**
-**Depends on:** `01-architecture.md` §2, §10; `02-data-model.md`; `03-reconciliation-spec.md` §2.
+**Depends on:** `architecture.md` §2, §10; `data-model.md`; `reconciliation-spec.md` §2.
 
 ---
 
@@ -29,7 +29,7 @@ type To = {
 ```
 - `parent: { doc: true }` means top level of the document.
 - `scope:"section"` resolves against the derived section range: `at:"end"` = before the next peer/higher heading.
-- Ordering uses fractional keys internally (`02-data-model.md` §5.3); the API never exposes keys, only ordinals.
+- Ordering uses fractional keys internally (`data-model.md` §5.3); the API never exposes keys, only ordinals.
 
 ### 1.2 Expectations (CAS vocabulary)
 
@@ -152,4 +152,4 @@ Crash safety: the file is written (step 5) before the commit is recorded (step 6
 - `remove` tombstones blocks (`deleted_commit`) and inserts into `resurrection_pool` (TTL 30d).
 - Document delete = `docs_delete` (doc-level op): file is deleted on disk, document tombstoned, blocks pooled.
 - Observed file deletion: same, via checkpoint.
-- Nothing is hard-deleted by the engine in v1 except expired pool rows; GC of unreachable objects ships dark (02-data-model §7).
+- Nothing is hard-deleted by the engine in v1 except expired pool rows; GC of unreachable objects ships dark (data-model §7).

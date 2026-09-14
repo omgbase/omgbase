@@ -1,4 +1,4 @@
-// Lexer for the CEL subset (10-query-language §3.1). Produces a flat token
+// Lexer for the CEL subset (query-language §3.1). Produces a flat token
 // stream for the recursive-descent parser.
 
 export type TokenType =

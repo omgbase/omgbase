@@ -1,7 +1,7 @@
 # omgbase — Whole-Document Update Opsets
 
 **Status:** normative (as-built, 2026-09-11).
-**Depends on:** `03-reconciliation-spec.md` (matcher), `04-mutation-and-concurrency.md` (kernel, CAS, write protocol), `01-architecture.md` §2 (convergence, identity).
+**Depends on:** `reconciliation-spec.md` (matcher), `mutation-and-concurrency.md` (kernel, CAS, write protocol), `architecture.md` §2 (convergence, identity).
 
 ---
 

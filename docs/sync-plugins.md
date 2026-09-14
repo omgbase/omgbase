@@ -1,7 +1,7 @@
 # omgbase — Sync Adapters (External Source Reconciliation)
 
 **Status:** normative design, `proposed`. As-built: an interim *in-process* `SyncSource` seam shipped first (commit `2850b28`); this document supersedes it with the **external-adapter** model — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`). The `@omgbase/fs-adapter` package is the first adapter.
-**Depends on:** `01-architecture.md` §6 (checkpoints), `03-reconciliation-spec.md` §8 (sync pipeline placement), `02-data-model.md` §3 (repos), `11-cli.md` §3.3 (freshness sweep, watch lease). **Parallels:** `05-graph-and-query.md` §6 + `packages/core/src/search/external.ts` (the embedder external-process pattern this mirrors).
+**Depends on:** `architecture.md` §6 (checkpoints), `reconciliation-spec.md` §8 (sync pipeline placement), `data-model.md` §3 (repos), `cli.md` §3.3 (freshness sweep, watch lease). **Parallels:** `graph-and-query.md` §6 + `packages/core/src/search/external.ts` (the embedder external-process pattern this mirrors).
 
 ---
 
