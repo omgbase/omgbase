@@ -3,7 +3,7 @@
 **Status:** normative. SQLite dialect (v1). Column types use SQLite affinities; a future Postgres dialect maps 1:1 (ADR-001).
 **Depends on:** `01-architecture.md` §3–4, §12.
 
-> **Partially drifted — verify against code.** Trust `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 12`) as the authoritative schema. The `docs` and `blocks` listings below are stale: `docs.metadata` was superseded by a separate `properties` table (docs/12), `docs` gained `leading_trivia`/`frontmatter_trivia`, `blocks` gained a `trivia_hash` column, and `repos.root_path` is now **nullable**. Several tables are missing here entirely: `properties`, `doc_embeddings`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`. The §1 ID-prefix list is also incomplete (edges `e_`, repos `rp_`, and the reserved projection `v_` prefix are omitted). See `AGENTS.md` for the docs trust index.
+> **As-built (verified 2026-09-14).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 12`), which remains the authoritative schema.
 
 ---
 
@@ -18,6 +18,9 @@
 | External node | `x_` | same | `x_3fq0d8n` |
 | Collection | `col_` | same | `col_9a2mmvc` |
 | Checkpoint | `cp_` | same | `cp_207bb1e` |
+| Edge | `e_` | same | `e_5m1q0zt` |
+| Repo | `rp_` | same | `rp_a30f9kd` |
+| Projection (reserved) | `v_` | same | `v_1c8bb0p` |
 
 - Mint with retry on unique-constraint violation. IDs are repo-scoped, never reused, never re-assigned.
 - Content hashes are **sha256** stored as 32-byte BLOBs; displayed truncated to 16 hex chars. Two hash flavors per block:
@@ -40,7 +43,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE repos (
   repo_id      TEXT PRIMARY KEY,          -- 'rp_' + base32
   slug         TEXT NOT NULL UNIQUE,
-  root_path    TEXT NOT NULL,             -- absolute path of the working tree
+  root_path    TEXT,                      -- absolute working-tree path; NULL for sourceless/non-fs repos (13 §7)
   settings     TEXT NOT NULL DEFAULT '{}' -- JSON: sync.quiescence_ms, matcher thresholds, embedding config…
 );
 
@@ -49,13 +52,16 @@ CREATE TABLE docs (
   repo_id       TEXT NOT NULL REFERENCES repos(repo_id),
   path          TEXT NOT NULL,             -- repo-relative, canonical (no leading slash)
   format        TEXT NOT NULL DEFAULT 'markdown', -- adapter format: 'markdown', 'yaml', 'json', …
-  metadata      TEXT NOT NULL DEFAULT '{}',-- JSON, adapter-extracted property bag (frontmatter for md, full structure for yaml/json)
   current_rev   TEXT,                      -- REFERENCES revisions(rev_id) (nullable during create)
   file_hash     BLOB,                      -- sha256 of file bytes at last sync (convergence check)
   conflicted    INTEGER NOT NULL DEFAULT 0,-- git conflict markers present; mutations refused
+  leading_trivia TEXT NOT NULL DEFAULT '', -- bytes before the first block (document-leading trivia; 03 §2.3)
+  frontmatter_trivia TEXT,                 -- separator between frontmatter and first body block (NULL = no frontmatter)
   deleted_commit TEXT,                     -- tombstone; NULL = live
   UNIQUE (repo_id, path)
 );
+-- Adapter-extracted properties (frontmatter, inline key:: value, computed $title/$tags)
+-- live in the separate `properties` table below, superseding the former docs.metadata JSON blob.
 
 -- Current-state block table (the hot table; fully rebuildable from current revisions,
 -- but maintained transactionally for query speed).
@@ -73,6 +79,7 @@ CREATE TABLE blocks (
   text          TEXT NOT NULL,             -- normalized visible text (query/FTS source)
   raw_hash      BLOB NOT NULL,             -- REFERENCES blobs(hash)
   norm_hash     BLOB NOT NULL,
+  trivia_hash   BLOB,                      -- trailing-trivia blob hash (NULL = no trivia)
   created_commit TEXT NOT NULL,
   deleted_commit TEXT                      -- tombstone; NULL = live
 );
@@ -188,6 +195,72 @@ CREATE TABLE resurrection_pool (
   deleted_commit TEXT NOT NULL,
   expires_ts     TEXT NOT NULL             -- default now + 30 days (config)
 );
+
+-- Property index (12-properties-table). One row per property value; the unified
+-- query surface for frontmatter, inline (key:: value), and computed ($title/$tags)
+-- document properties, superseding the former docs.metadata blob. Current-state,
+-- maintained transactionally at ingest alongside blocks (repopulated by re-ingest,
+-- NOT by rebuild-index — see docs/12 §6), hence durable rather than derived.
+CREATE TABLE properties (
+  prop_id        TEXT PRIMARY KEY,
+  repo_id        TEXT NOT NULL,
+  doc_id         TEXT NOT NULL,
+  block_id       TEXT,                     -- NULL = document-scoped (frontmatter, computed)
+  source         TEXT NOT NULL CHECK (source IN ('frontmatter','inline','computed')),
+  key            TEXT NOT NULL,            -- dotted, flattened: 'layer','meta.owner'; computed carry '$title'
+  card           TEXT NOT NULL CHECK (card IN ('scalar','list')), -- authored shape (scalar ==/</> vs list())
+  ord            INTEGER NOT NULL DEFAULT 0,
+  val_text       TEXT,
+  val_num        REAL,
+  val_bool       INTEGER,
+  val_json       TEXT,
+  type           TEXT NOT NULL CHECK (type IN ('string','number','bool','null','json')),
+  created_commit TEXT NOT NULL,
+  deleted_commit TEXT
+);
+CREATE INDEX idx_props_doc      ON properties(doc_id)                 WHERE deleted_commit IS NULL;
+CREATE INDEX idx_props_key_text ON properties(repo_id, key, val_text) WHERE deleted_commit IS NULL;
+CREATE INDEX idx_props_key_num  ON properties(repo_id, key, val_num)  WHERE deleted_commit IS NULL;
+CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)   WHERE deleted_commit IS NULL;
+
+-- Sync adapters/sources/attachments (13-sync-plugins §2). Workspace-level registry:
+-- adapters map a name → external command; sources name an adapter + config; attachments
+-- join repo ⇄ source (m:n). sync_state holds engine-owned per-attachment change tracking.
+CREATE TABLE adapters (
+  name    TEXT PRIMARY KEY,                -- workspace-unique adapter name (e.g. 'fs')
+  command TEXT NOT NULL,                   -- argv[0] to spawn (e.g. 'omgbase-fs-adapter')
+  args    TEXT NOT NULL DEFAULT '[]'       -- fixed leading args (JSON string[])
+);
+
+CREATE TABLE sources (
+  source_id TEXT PRIMARY KEY,
+  name      TEXT NOT NULL UNIQUE,          -- workspace-unique source name
+  adapter   TEXT NOT NULL REFERENCES adapters(name),
+  config    TEXT NOT NULL DEFAULT '{}',    -- JSON object → rendered to flags (13 §3.1)
+  env       TEXT NOT NULL DEFAULT '{}'     -- JSON object → spawn env (secrets; 13 §3.2)
+);
+
+CREATE TABLE attachments (
+  repo_id   TEXT NOT NULL REFERENCES repos(repo_id),
+  source_id TEXT NOT NULL REFERENCES sources(source_id),
+  PRIMARY KEY (repo_id, source_id)
+);
+
+CREATE TABLE sync_state (
+  repo_id   TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  path      TEXT NOT NULL,                 -- '' reserved for the attachment-level cursor row
+  revision  TEXT,                          -- last-observed source revision for this path
+  cursor    TEXT,                          -- last poll/webhook cursor (attachment-level row)
+  PRIMARY KEY (repo_id, source_id, path)
+);
+
+-- Workspace-default settings (config scope). Singleton row (id = 0) holding a JSON
+-- blob with the SAME shape as repos.settings; a repo's own settings deep-merge on top.
+CREATE TABLE workspace_settings (
+  id       INTEGER PRIMARY KEY CHECK (id = 0),
+  settings TEXT NOT NULL DEFAULT '{}'
+);
 ```
 
 ## 4. DDL — derived tables (rebuildable; dropping them loses nothing)
@@ -234,7 +307,7 @@ CREATE TABLE inferred_edges (
   PRIMARY KEY (src_node, dst_node, predicate, method)
 );
 
--- Embedding cache, keyed by content so identity errors cannot poison it.
+-- Block-embedding cache, keyed by content so identity errors cannot poison it.
 CREATE TABLE embeddings (
   content_hash BLOB NOT NULL,              -- block raw_hash
   ctx_hash     BLOB NOT NULL,              -- sha256 of the context prefix string
@@ -242,6 +315,21 @@ CREATE TABLE embeddings (
   dim          INTEGER NOT NULL,
   vec          BLOB NOT NULL,              -- float32 array
   PRIMARY KEY (content_hash, ctx_hash, model)
+);
+
+-- Doc-grain embedding cache (one vector per document, for `from=docs semantic`).
+-- input_hash is the freshness key: sha256 of the exact bytes that produced the
+-- vector; a row whose input_hash no longer matches the current doc is re-embedded.
+-- method: 'whole' = whole-document embed; 'pooled' = token-weighted mean of block
+-- vectors, used only when the embed input exceeds the provider's max input length.
+CREATE TABLE doc_embeddings (
+  doc_id     TEXT NOT NULL,
+  model      TEXT NOT NULL,
+  input_hash BLOB NOT NULL,
+  method     TEXT NOT NULL CHECK (method IN ('whole','pooled')),
+  dim        INTEGER NOT NULL,
+  vec        BLOB NOT NULL,                -- float32 array
+  PRIMARY KEY (doc_id, model)
 );
 
 -- FTS5 external-content index over current block text.
@@ -285,9 +373,10 @@ CREATE TABLE file_stats (
   PRIMARY KEY (repo_id, path)
 );
 
--- sqlite-vec index (loaded as extension) for current block vectors:
--- CREATE VIRTUAL TABLE block_vec USING vec0(block_id TEXT PRIMARY KEY, embedding float[<dim>]);
--- Rebuilt/updated async by the embedding worker; brute-force acceptable to ~10^5 vectors.
+-- Vector search (v1) is brute-force cosine over the `embeddings`/`doc_embeddings`
+-- caches (Float32 BLOBs) joined to current blocks/docs — see search/vector.ts.
+-- Acceptable to ~10^5 vectors; there is NO vec0/sqlite-vec virtual table (that
+-- extension, or pgvector, is the future pressure valve, not built in v1).
 ```
 
 ## 5. Canonical serializations
@@ -322,4 +411,4 @@ Base-62 fractional indexing (Figma-style). `key_between(a, b)` MUST return a key
 
 ## 8. Postgres dialect notes (deferred; do not build in v1)
 
-BLOB→bytea, TEXT JSON→jsonb, FTS5→tsvector+GIN, sqlite-vec→pgvector(HNSW), fractional keys unchanged, recursive CTEs unchanged. The repository layer isolates dialect; nothing above the storage module may contain dialect-specific SQL.
+BLOB→bytea, TEXT JSON→jsonb, FTS5→tsvector+GIN, brute-force Float32 vectors→pgvector(HNSW), fractional keys unchanged, recursive CTEs unchanged. The repository layer isolates dialect; nothing above the storage module may contain dialect-specific SQL.
