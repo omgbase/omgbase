@@ -3,6 +3,8 @@
 **Status:** normative.
 **Depends on:** `01-architecture.md` §2, §10; `02-data-model.md`; `03-reconciliation-spec.md` §2.
 
+> **Partially drifted — verify against code.** The six-op kernel algebra (§1–§3) is canon. Aspirational bits: `Expect.doc_revision` (§1.2) is unimplemented — `Expect` is only `{ content_hash, parent_children_hash }` (`packages/core/src/mutate/ops.ts`). The conflict object's `revision`/`changed_by` fields (§4) are never populated; the live `current` payload carries only `content_hash` and `markdown` (`changed_by` exists nowhere in code). And the "ingest → auto-replay ops once → success" behavior (§4 scenario table, §6 step 4) is **not** built: on a file-CAS mismatch the engine re-ingests the on-disk file and throws a retriable `sync_conflict` for the caller to retry (`packages/core/src/mutate/apply.ts`). See `AGENTS.md` for the docs trust index.
+
 ---
 
 ## 1. The kernel: six operations

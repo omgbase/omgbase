@@ -5,6 +5,8 @@
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
 
+> **Partially drifted — verify against code.** Mostly as-built; verify specific commands/flags against `packages/cli/src/cmd/`. Known drift: the line-3 intro lists a `graph` command that does **not** exist (traversal is OQX `follow`, run via `query`/`oqx`); `find` has no `--scope`/`--kind` flags (only `-n`/`-1`/`-v`/`--no-semantic`); `--budget-tokens` (§4) is unimplemented in the CLI; the writer/watch locks are O_EXCL pidfiles, **not** `flock(2)` (§3.2/§3.4); `eval-matcher` and `parse` (§5.9) are library-only, not CLI subcommands; and the `node` command is implemented but undocumented here. See `AGENTS.md` for the docs trust index.
+
 ---
 
 ## 1. Purpose and audiences
