@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
-import { docsRead, readDocumentAtRevision } from "../core/read/document.js";
+import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
@@ -207,6 +207,30 @@ export function buildServer(ctx: ServerContext): McpServer {
         const docId = resolveDocId(args);
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
         if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args)}`);
+        return ok(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_get_many",
+    {
+      description:
+        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`content` = complete file bytes verbatim, `properties` grouped by source, plus `path`/`docId`/`rev`, and — with include_ids:true — the document's ordered block `ids`); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it. Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
+      inputSchema: {
+        docs: z.array(z.string()),
+        include_ids: z.boolean().optional(),
+        budget_tokens: z.number().int().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const res = docsReadMany(store, repoId, args.docs, {
+          ...(args.include_ids ? { includeIds: true } : {}),
+          ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
+        });
         return ok(res);
       } catch (e) {
         return fail(e);

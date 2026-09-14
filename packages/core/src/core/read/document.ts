@@ -1,6 +1,6 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../store/store.js";
-import { findDoc, loadDocBlocks, type BlockNode } from "./reader.js";
+import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
 import { docPropertiesGrouped } from "../store/properties.js";
 import { sha256 } from "../hash.js";
 
@@ -124,6 +124,83 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
     result.ids = ids;
   }
   return result;
+}
+
+// Batch whole-document read (the hydrate half of query→hydrate). The batch
+// analog of docsRead: given several doc refs (each an id OR a path, via the
+// shared findDocByRef dispatch), it returns `items` (the full reads, identical
+// in shape to docsRead) alongside `errors` (per-ref misses). A miss NEVER fails
+// the whole call — mirrors nodes_getMany's tolerance of unknown ids, but made
+// explicit as an errors array so a caller can tell which refs didn't resolve.
+// Duplicate refs collapse first-seen (a repeated ref yields one item). Capped
+// at MANY_DOCS_CAP refs per call (matching nodesGetMany's 100), with the same
+// budget-token truncation and `truncated` flag.
+
+/** Max doc refs honored per docsReadMany call (matches nodesGetMany's cap). */
+export const MANY_DOCS_CAP = 100;
+
+export interface DocsReadManyError {
+  /** The original ref (id or path) that failed to resolve. */
+  ref: string;
+  /** Stable error code — currently always doc_not_found (unresolvable ref). */
+  error: "doc_not_found";
+}
+
+export interface DocsReadManyResult {
+  /** Full reads, one per resolved (deduped) ref, same shape as docsRead. */
+  items: DocsReadResult[];
+  /** Per-ref misses; present but empty when every ref resolved. */
+  errors: DocsReadManyError[];
+  /** True when refs exceeded the cap or the token budget cut the batch short. */
+  truncated: boolean;
+}
+
+/**
+ * Read many whole documents by ref (id or path) in one call. Found docs land in
+ * `items` (each a full docsRead projection); unresolvable refs land in `errors`
+ * without failing the call. Duplicate refs collapse first-seen. The raw list is
+ * capped at MANY_DOCS_CAP (excess ⇒ truncated); an optional token budget stops
+ * the batch early (also ⇒ truncated).
+ */
+export function docsReadMany(
+  store: Store,
+  repoId: string,
+  refs: string[],
+  opts: { includeIds?: boolean; budgetTokens?: number } = {},
+): DocsReadManyResult {
+  const capped = refs.slice(0, MANY_DOCS_CAP);
+  let truncated = refs.length > MANY_DOCS_CAP;
+  const budget = opts.budgetTokens ?? Infinity;
+  const readOpts: DocsReadOptions = opts.includeIds ? { includeIds: true } : {};
+
+  const items: DocsReadResult[] = [];
+  const errors: DocsReadManyError[] = [];
+  const seen = new Set<string>();
+  let tokens = 0;
+
+  for (const ref of capped) {
+    // First-seen wins: a repeated ref (same literal string) is collapsed.
+    if (seen.has(ref)) continue;
+    seen.add(ref);
+
+    const info = findDocByRef(store, repoId, ref);
+    // Unresolvable ref (or a d_-shaped id with no doc) → a per-ref miss, never
+    // a thrown error. reconstructContent returning null is the same miss.
+    const read = info ? docsRead(store, info.docId, readOpts) : null;
+    if (!read) {
+      errors.push({ ref, error: "doc_not_found" });
+      continue;
+    }
+
+    const cost = Math.ceil(JSON.stringify(read).length / 4);
+    if (tokens + cost > budget) {
+      truncated = true;
+      break;
+    }
+    tokens += cost;
+    items.push(read);
+  }
+  return { items, errors, truncated };
 }
 
 export interface DocsReadAtResult {

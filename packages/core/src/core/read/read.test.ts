@@ -3,7 +3,7 @@ import { Store } from "../store/store.js";
 import { ensureRepo } from "../attach.js";
 import { ingestFile } from "../ingest.js";
 import { docsOutline } from "./outline.js";
-import { docsRead, readDocumentAtRevision } from "./document.js";
+import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "./document.js";
 import { nodesGet, nodesGetMany } from "./nodes.js";
 import { loadDocBlocks, findDocByRef } from "./reader.js";
 import { sha256 } from "../hash.js";
@@ -94,6 +94,81 @@ describe("docsRead — whole-document read", () => {
   it("round-trips a document with no frontmatter byte-for-byte", () => {
     const { docId } = ingest(SAMPLE);
     expect(docsRead(store!, docId)?.content).toBe(SAMPLE);
+  });
+});
+
+describe("docsReadMany — batch whole-document read", () => {
+  // A dedicated multi-doc store: the top-level `ingest` helper makes a fresh
+  // store per call, but the batch reader needs several docs in ONE repo.
+  function ingestMany(docs: { path: string; content: string }[]): { repoId: string } {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "t", "/tmp");
+    for (const d of docs) ingestFile(store, repoId, d.path, d.content);
+    return { repoId };
+  }
+
+  it("hydrates several docs by path in one call, same shape as docsRead", () => {
+    const { repoId } = ingestMany([
+      { path: "a.md", content: "# A\n\nalpha body\n" },
+      { path: "b.md", content: "---\nlayer: canon\n---\n\n# B\n\nbeta body\n" },
+    ]);
+    const res = docsReadMany(store!, repoId, ["a.md", "b.md"]);
+    expect(res.errors).toEqual([]);
+    expect(res.truncated).toBe(false);
+    expect(res.items.map((i) => i.path)).toEqual(["a.md", "b.md"]);
+    expect(res.items[0]!.content).toBe("# A\n\nalpha body\n");
+    expect(res.items[1]!.properties.frontmatter).toEqual({ layer: "canon" });
+  });
+
+  it("accepts doc ids too (id-or-path symmetry) and honors include_ids", () => {
+    const { repoId } = ingestMany([{ path: "a.md", content: "# A\n\nalpha body\n" }]);
+    const docId = (store!.db.prepare("SELECT doc_id FROM docs WHERE path='a.md'").get() as { doc_id: string }).doc_id;
+    const res = docsReadMany(store!, repoId, [docId], { includeIds: true });
+    expect(res.items).toHaveLength(1);
+    expect(res.items[0]!.docId).toBe(docId);
+    expect(res.items[0]!.ids!.length).toBeGreaterThan(0);
+    expect(res.items[0]!.ids![0]).toMatch(/^b_/);
+  });
+
+  it("puts unresolvable refs in errors without failing the call", () => {
+    const { repoId } = ingestMany([{ path: "a.md", content: "# A\n\nalpha body\n" }]);
+    const res = docsReadMany(store!, repoId, ["a.md", "missing.md", "d_0000000"]);
+    expect(res.items.map((i) => i.path)).toEqual(["a.md"]);
+    expect(res.errors).toEqual([
+      { ref: "missing.md", error: "doc_not_found" },
+      { ref: "d_0000000", error: "doc_not_found" },
+    ]);
+  });
+
+  it("collapses duplicate refs first-seen (one item per ref)", () => {
+    const { repoId } = ingestMany([
+      { path: "a.md", content: "# A\n\nalpha body\n" },
+      { path: "b.md", content: "# B\n\nbeta body\n" },
+    ]);
+    const res = docsReadMany(store!, repoId, ["a.md", "b.md", "a.md", "a.md"]);
+    expect(res.items.map((i) => i.path)).toEqual(["a.md", "b.md"]);
+  });
+
+  it("caps the ref list and flags truncation", () => {
+    const { repoId } = ingestMany([{ path: "a.md", content: "# A\n\nalpha body\n" }]);
+    // One real doc plus enough distinct misses to exceed the cap.
+    const refs = ["a.md", ...Array.from({ length: MANY_DOCS_CAP }, (_, i) => `miss-${i}.md`)];
+    const res = docsReadMany(store!, repoId, refs);
+    expect(res.truncated).toBe(true);
+    // Only MANY_DOCS_CAP refs are considered — the last miss is dropped.
+    expect(res.items.length + res.errors.length).toBe(MANY_DOCS_CAP);
+  });
+
+  it("stops early under a token budget and flags truncation", () => {
+    const big = "# Big\n\n" + Array.from({ length: 40 }, (_, i) => `paragraph number ${i} with a fair amount of words here`).join("\n\n") + "\n";
+    const { repoId } = ingestMany([
+      { path: "a.md", content: big },
+      { path: "b.md", content: big },
+      { path: "c.md", content: big },
+    ]);
+    const res = docsReadMany(store!, repoId, ["a.md", "b.md", "c.md"], { budgetTokens: 20 });
+    expect(res.truncated).toBe(true);
+    expect(res.items.length).toBeLessThan(3);
   });
 });
 

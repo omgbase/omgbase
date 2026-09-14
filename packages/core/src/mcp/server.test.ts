@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "nodes_get", "nodes_get_many", "query", "query_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -91,6 +91,27 @@ describe("MCP server skeleton", () => {
     const { payload, isError } = (await call("docs_read", { path: "nope.md" })) as { payload: { error: string }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("doc_missing");
+  });
+
+  it("docs_get_many hydrates several docs and lands misses in errors", async () => {
+    ingestFile(store, repoId, "guide.md", "# Guide\n\nread me first\n");
+    const { payload, isError } = (await call("docs_get_many", { docs: ["notes.md", "guide.md", "nope.md"] })) as {
+      payload: { items: { path: string; content: string }[]; errors: { ref: string; error: string }[]; truncated: boolean };
+      isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.items.map((i) => i.path)).toEqual(["notes.md", "guide.md"]);
+    expect(payload.items[1]!.content).toBe("# Guide\n\nread me first\n");
+    expect(payload.errors).toEqual([{ ref: "nope.md", error: "doc_not_found" }]);
+    expect(payload.truncated).toBe(false);
+  });
+
+  it("docs_get_many collapses duplicate refs and supports include_ids", async () => {
+    const { payload } = (await call("docs_get_many", { docs: ["notes.md", "notes.md"], include_ids: true })) as {
+      payload: { items: { path: string; ids: string[] }[] };
+    };
+    expect(payload.items.map((i) => i.path)).toEqual(["notes.md"]);
+    expect(payload.items[0]!.ids.length).toBeGreaterThan(0);
   });
 
   it("docs_read_at time-travels to an earlier revision's exact bytes", async () => {
