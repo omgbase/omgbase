@@ -14,7 +14,7 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
-    "rlink": "for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm add -g .); done"
+    "rlink": "pnpm -r build && for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm add -g .); done"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
