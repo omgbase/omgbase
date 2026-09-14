@@ -1,11 +1,9 @@
 # omgbase — CLI Surface (`omg`)
 
-**Status:** normative design, `proposed` (ADR-012). As-built: implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `new`/`mv`/`rm --doc`/`meta`), `graph`, `run`, the persistent session `shell` (§5.7a), `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
+**Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
 **Depends on:** `01-architecture.md` §11–12; `02-data-model.md` §2, §6; `04-mutation-and-concurrency.md` §6; `06-mcp-api.md` (tool semantics); `10-query-language.md` (envelope, fenced form).
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
-
-> **Partially drifted — verify against code.** Mostly as-built; verify specific commands/flags against `packages/cli/src/cmd/`. Known drift: the line-3 intro lists a `graph` command that does **not** exist (traversal is OQX `follow`, run via `query`/`oqx`); `find` has no `--scope`/`--kind` flags (only `-n`/`-1`/`-v`/`--no-semantic`); `--budget-tokens` (§4) is unimplemented in the CLI; the writer/watch locks are O_EXCL pidfiles, **not** `flock(2)` (§3.2/§3.4); `eval-matcher` and `parse` (§5.9) are library-only, not CLI subcommands; and the `node` command is implemented but undocumented here. See `AGENTS.md` for the docs trust index.
 
 ---
 
@@ -72,9 +70,9 @@ Read commands open their own connection and see a consistent WAL snapshot. Alway
 
 ### 3.2 Writers: the cross-process writer lock
 
-The per-repo writer lock in the write protocol (04 §6 step 1) is today an in-process mutex. The CLI generalizes it: **an advisory `flock` on `<workspace>/.omgbase/writer.lock`**, held for steps 2–7 of the protocol. All writers — one-shot CLI mutations, the watcher's checkpoint ingests, `omg mcp` applies — acquire it. This is a small library change (lock acquisition becomes flock-based), not a protocol change; the file-CAS + ingest-and-replay behavior is unchanged.
+The write protocol's per-repo writer lock (04 §6 step 1) is a **cross-process advisory lock on `<workspace>/.omgbase/writer.lock`**, held for steps 2–7 of the protocol. All writers — one-shot CLI mutations, the watcher's checkpoint ingests, `omg mcp` applies — acquire it. Node exposes no `flock(2)` and the design forbids new runtime deps (§8), so the lock is an **O_EXCL lockfile** (`sync/writer-lock.ts`): exclusive creation is atomic on local filesystems, the holder writes its pid into the file for liveness, and a lockfile whose pid is dead is stolen — no daemon, no lease sweeper. The file-CAS + ingest-and-replay behavior (04 §6) is unchanged.
 
-With the flock in place, a one-shot `omg` mutation while `omg watch` runs is safe end-to-end: the mutation writes file + DB under the lock; the watcher then observes a file whose hash equals `current_revision.rendered_hash` and records a no-op (echo suppression is hash-based, so it works cross-process for free).
+With the lock in place, a one-shot `omg` mutation while `omg watch` runs is safe end-to-end: the mutation writes file + DB under the lock; the watcher then observes a file whose hash equals `current_revision.rendered_hash` and records a no-op (echo suppression is hash-based, so it works cross-process for free).
 
 ### 3.3 Freshness: reads are current by default
 
@@ -82,9 +80,9 @@ Without a watcher, the database lags human edits made since the last ingest. A C
 
 > Before executing, a command runs a **freshness sweep** — unless `--stale` is given, a live watcher holds the watch lease (§3.4), or the command is itself `sync`/`watch`/`mcp`.
 
-The sweep: walk the repo's `*.md` files, `stat` each, compare `(mtime_ns, size)` against the `file_stats` cache; hash only the changed candidates; ingest non-convergent files as one observed checkpoint (under the writer flock). At the envelope (≤10⁴ docs) the no-change case is a directory walk plus stats — tens of milliseconds.
+The sweep: walk the repo's `*.md` files, `stat` each, compare `(mtime_ns, size)` against the `file_stats` cache; hash only the changed candidates; ingest non-convergent files as one observed checkpoint (under the writer lock). At the envelope (≤10⁴ docs) the no-change case is a directory walk plus stats — tens of milliseconds.
 
-`file_stats` is a new **derived** table (rebuildable by a full re-stat; joins the 02 §4 family, and 02 MUST be updated to as-built when this ships):
+`file_stats` is a **derived** table (rebuildable by a full re-stat; part of the 02 §4 family), shipped in the schema (`core/store/schema.ts`):
 
 ```sql
 CREATE TABLE file_stats (
@@ -99,7 +97,7 @@ CREATE TABLE file_stats (
 
 ### 3.4 The watch lease
 
-`omg watch` holds an advisory flock on `<workspace>/.omgbase/watch.lock` for its lifetime. Liveness probing is the flock itself (try-acquire non-blocking; acquirable ⇒ no live watcher) — no heartbeats, no PID files, no stale-lease sweeper. Commands use the probe to skip the freshness sweep; `omg status` reports it (`watcher: live` / `watcher: none`).
+`omg watch` (and `omg mcp`'s in-process watcher) holds an advisory lock on `<workspace>/.omgbase/watch.lock` for its lifetime — the same O_EXCL lockfile substitution as the writer lock (`sync/watch-lease.ts`). The holder records its pid in the file; liveness is a pid check (read the holder pid, `kill(pid, 0)`), and a lockfile whose holder pid is dead is stolen — no heartbeats, no stale-lease sweeper. Commands use the probe to skip the freshness sweep; `omg status` reports it (`watcher: live` / `watcher: none`).
 
 ### 3.5 Semantic staleness
 
@@ -111,7 +109,7 @@ Semantic search from a one-shot process serves whatever vectors exist; hits back
 2. **Human format by default**, when stdout is a TTY: aligned columns, `$id` always paired with `$locator` (06 §2 — locators are for eyes, IDs are for follow-ups), checkbox glyphs for tasks, the outline wire format (06 §6) for outlines — the CLI renders the same inline-`b_`-id text the MCP tool returns.
 3. **`--json` is the library's result object, verbatim.** The CLI MUST NOT invent shapes: `QueryResult`, `ApplyResult`, `CommitDigest`, conflict objects — same fields as the MCP surface. `--jsonl` flattens list results to one object per line; `--ids` to bare IDs.
 4. **Truncation is loud.** Any truncated result prints a stderr footer: `… truncated; continue with --cursor <c>`. Exit code stays 0.
-5. **Budgets exist here too.** Hydrating commands accept `--budget-tokens` (for agent-with-shell use); list commands accept `-n/--limit` and `--cursor`.
+5. **List paging.** List commands accept `-n` (limit) and `--cursor`; a truncated result stays exit 0 and prints the continuation footer (item 4).
 
 ## 5. Command catalog
 
@@ -134,7 +132,7 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 | `omg outline <doc\|path> [--depth n] [--section <loc>] [--annotate tasks,edges,updated,confidence]` | `docs_outline`, frozen wire format. Alias: `omg ol`. |
 | `omg cat <node> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. |
 | `omg show <node> [--include children,ancestors,edges,history,section]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. |
-| `omg find <text> [--scope glob] [--kind block\|document] [-n N] [-1]` | `resolve` — ranked `{id, locator, preview, evidence}`. `-1` prints the top hit's ID alone: `omg cat $(omg find "risks" -1)`. |
+| `omg find <text> [-n N] [-1] [-v] [--no-semantic]` | `resolve` — ranked `{id, locator, preview, evidence}`. Hybrid (FTS + vector) by default when an embedding provider is configured; `--no-semantic` forces FTS-only; `-v` prints per-hit evidence. `-1` prints the top hit's ID alone: `omg cat $(omg find "risks" -1)`. |
 
 ### 5.3 Query
 
@@ -180,6 +178,7 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 | `omg insert <to> [--at end\|start\|before X\|after X] (-m md \| -f file \| -)` | `insert` |
 | `omg update <block> (-m md \| -f file \| -) [--expect hash]` | `update` (CAS: §5.7) |
 | `omg edit <block>` | read → `$EDITOR` on the raw markdown → `update` with the pre-read hash as CAS. The human structural-edit loop for when opening the whole file is the slower path. |
+| `omg node set <nodeId> <prop> <value>` / `omg node props <nodeId>` | Surgically set one editable property of a projected node (e.g. a link's target/text, a task's `checked`) via the adapter's registered editor — expands to a single `update` op. `node props` lists a node's editable properties (`editablePropsFor`). |
 | `omg move <blocks…\|-> --to <parent> [--at …]` / `omg move --section <heading> --to …` | `move` / `sections_move` |
 | `omg rm <blocks…\|->` | `remove` (resurrection pool catches regret) |
 | `omg done <blocks…\|-> [--undo]` | `tasks_complete` (`--undo` ⇒ `update attrs.checked=false`) |
@@ -256,7 +255,6 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | `omg doctor` | Cheap invariant sweep: per-doc convergence, FTS row count vs live blocks, dangling `current_rev`, orphaned blobs sample, `PRAGMA integrity_check`, lock/lease sanity. Non-zero exit on any violation — CI-able. |
 | `omg config [get k \| set k v \| list]` | Read/write `repos.settings` JSON paths (`sync.quiescence_ms`, `embedding.provider`, `query.timeout_ms`, `gc.enabled`, …). Unknown namespaces warn. |
 | `omg embed [status\|drain]` | Embedding queue depth / process the queue now (requires a configured provider; egress note printed — 05 §6). |
-| `omg eval-matcher [--n N] [--size s] [--intensity i]` | Existing dev command (07 task 2.6), kept; exits non-zero when release gates fail. Hidden from default help along with `omg parse <file>` (round-trip + block-table debug dump). |
 
 ### 5.10 MCP ↔ CLI correspondence (completeness audit)
 
@@ -301,8 +299,8 @@ These traces become the CLI test suite's fixtures (spawn the built binary agains
 
 Two stages, sequential exit gates (07 conventions):
 
-- **CLI-A — read surface + freshness.** Scaffold (`bin` wiring, discovery, global flags, output contract, error rendering), `init/attach/repos/status/ls/outline/cat/show/find/query/log/hist/diff/links/sync`, `file_stats` + freshness sweep, writer-lock flock refactor in the library. **Gate:** C1/C3/C4 pass as spawned-binary tests; freshness test (edit file out-of-band → query sees it without a watcher); `--json` shape parity with library types.
-- **CLI-B — write surface + serve + admin.** `apply` + all sugar, `edit`, `graph`, `run`, `watch`, `mcp`, `rebuild-index/gc/import/doctor/config/embed`. **Gate:** full C1–C7 suite; concurrent-writer torture (live `omg watch` + one-shot mutations under flock — the 04 §5 scenarios re-run cross-process); `omg mcp` drives the existing Stage-6 trace suite over stdio unchanged.
+- **CLI-A — read surface + freshness.** Scaffold (`bin` wiring, discovery, global flags, output contract, error rendering), `init/attach/repos/status/ls/outline/cat/show/find/query/log/hist/diff/links/sync`, `file_stats` + freshness sweep, cross-process writer-lock (O_EXCL lockfile) in the library. **Gate:** C1/C3/C4 pass as spawned-binary tests; freshness test (edit file out-of-band → query sees it without a watcher); `--json` shape parity with library types.
+- **CLI-B — write surface + serve + admin.** `apply` + all sugar, `edit`, `node`, `run`, `watch`, `mcp`, `rebuild-index/gc/import/doctor/config/embed`. **Gate:** full C1–C7 suite; concurrent-writer torture (live `omg watch` + one-shot mutations under the writer lock — the 04 §5 scenarios re-run cross-process); `omg mcp` drives the existing Stage-6 trace suite over stdio unchanged.
 
 ## 8. Implementation notes
 
