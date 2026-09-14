@@ -1,6 +1,6 @@
 # omgbase — Architecture
 
-**Status:** normative design. Deviations require an ADR (see `08-decisions.md`).
+**Status:** normative design (As-built, verified against `packages/core/src` on 2026-09-14). Deviations require an ADR (see `08-decisions.md`).
 **Audience:** implementation agents and reviewers. Read `README.md` first for the doc map and glossary.
 
 omgbase (Open Markdown Graph Base) is a versioned, addressable graph of authored Markdown structure. Ordinary Markdown files remain the human representation and interchange format; the engine adds stable identity, block-level history, a typed knowledge graph, hybrid retrieval, and a safe structural mutation API for agents.
@@ -73,7 +73,7 @@ Seven concepts. Five durable, two derived. Concepts are not tables — see `02-d
 | **Node** | A durable addressable thing: repository, document, block, collection, external entity. Minted opaque ID + kind. | Identity immutable; current state mutable |
 | **Blob** | Content-addressed immutable bytes (a block's raw Markdown source; a frontmatter text). | Immutable |
 | **Revision** | One document's state at a point in history: root of a Merkle tree of `(block_id, blob_hash, …)` entries + frontmatter blob + rendered-file hash. Linear chain per document. | Immutable, append-only |
-| **Commit** | The atomic transaction: ≥1 revisions across documents + origin (`api` or `observed`) + actor + operations/dispositions. Totally ordered per repo. The commit log **is** the change feed. | Immutable, append-only |
+| **Commit** | The atomic transaction: ≥1 revisions across documents + origin (`api`, `observed`, `import`, or `projection`) + actor + operations/dispositions. Totally ordered per repo. The commit log **is** the change feed. | Immutable, append-only |
 | **Placement** | Where a block sits: parent block, order key, containing document. Versioned implicitly via revisions; current state materialized. | Mutable via commits |
 | **Edge** | Typed relationship between nodes, originating from a block (or frontmatter field), with provenance and a commit-time validity interval. | Append-only, interval-closed |
 | **Index** | Derived acceleration: FTS, vectors, section ranges, doc-level edge rollups, block-history projection. | Disposable, rebuildable |
@@ -106,6 +106,8 @@ Seven concepts. Five durable, two derived. Concepts are not tables — see `02-d
 - The commit's `origin` determines the legal history claim:
   - `api` commits record **operations** — real intent, with actor and reason. Replayable.
   - `observed` commits record **dispositions** — beliefs about correspondence, each with `kind`, `confidence`, `reason`, and `matcher_version`.
+  - `import` commits record **operations** too — bulk migration ingest (e.g. mrplex) with freshly minted ids and explicitly no retro-inferred block history.
+  - `projection` commits are engine-authored writes that materialize a projection (ADR-011).
 - Dispositions are immutable. A better future matcher MUST NOT rewrite past dispositions.
 - Event sourcing is rejected as the storage model (ADR-003): the snapshot chain is the source of truth; the commit log is the change feed — an output of committed state.
 
@@ -155,7 +157,7 @@ Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `
 
 ## 12. Storage (summary; DDL in `02-data-model.md`)
 
-v1 embeds **SQLite** (WAL) under `.omgbase/` — FTS5 lexical, sqlite-vec vectors, recursive CTE traversal. PostgreSQL (+pgvector) is the same logical schema behind a dialect layer, adopted only when a genuinely multi-user server exists (ADR-001). Keep the SQL boring enough that both stay true.
+v1 embeds **SQLite** (WAL) under `.omgbase/` — FTS5 lexical, brute-force cosine over Float32 embedding BLOBs (the `embeddings`/`doc_embeddings` tables + a `cosine` SQL UDF; `core/vec.ts`, `search/vector.ts`), recursive CTE traversal. No vector-index extension is built in v1; sqlite-vec (and PostgreSQL + pgvector) are the pressure valve when brute force hits its ceiling, adopted only when a genuinely multi-user server exists (ADR-001). Keep the SQL boring enough that both stay true.
 
 ## 13. Scale envelope & non-goals
 
