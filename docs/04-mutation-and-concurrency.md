@@ -1,9 +1,8 @@
 # omgbase — Mutation Algebra, Concurrency, and the Write Protocol
 
 **Status:** normative.
+**As-built (verified 2026-09-14).**
 **Depends on:** `01-architecture.md` §2, §10; `02-data-model.md`; `03-reconciliation-spec.md` §2.
-
-> **Partially drifted — verify against code.** The six-op kernel algebra (§1–§3) is canon. Aspirational bits: `Expect.doc_revision` (§1.2) is unimplemented — `Expect` is only `{ content_hash, parent_children_hash }` (`packages/core/src/mutate/ops.ts`). The conflict object's `revision`/`changed_by` fields (§4) are never populated; the live `current` payload carries only `content_hash` and `markdown` (`changed_by` exists nowhere in code). And the "ingest → auto-replay ops once → success" behavior (§4 scenario table, §6 step 4) is **not** built: on a file-CAS mismatch the engine re-ingests the on-disk file and throws a retriable `sync_conflict` for the caller to retry (`packages/core/src/mutate/apply.ts`). See `AGENTS.md` for the docs trust index.
 
 ---
 
@@ -17,18 +16,18 @@ All mutation flows through `apply(changeset)`. The kernel ops:
 | `update` | `{ block, markdown? , attrs?, expect }` | Content and/or typed attrs of one block. Placement untouched. Supplying `markdown` on a container replaces its subtree (children re-minted unless supplied markdown is a pure text edit of a leaf). | `expect.content_hash` **required** |
 | `move` | `{ blocks[], to }` | Placement only; content untouched. `blocks` MUST be a contiguous sibling run (length ≥ 1). May cross documents. | all blocks exist · target parent exists · target not inside the moved subtree (`cycle_move`) |
 | `remove` | `{ blocks[], expect? }` | Deletes subtree(s); deleted blocks enter the resurrection pool. | blocks exist · optional `expect.content_hash` per block |
-| `split` | `{ block, at: [byte_offsets…], expect }` | One block becomes N (same type where syntactically valid, else paragraphs). Authored lineage `split_into` recorded. First fragment carries the ID (authored intent — unlike inferred splits, no dominance test). | `expect.content_hash` required |
+| `split` | `{ block, at: [byte_offsets…], expect }` | One block becomes N (same type where syntactically valid, else paragraphs). Fragments after the first carry a `split_from` lineage disposition. First fragment carries the ID (authored intent — unlike inferred splits, no dominance test). | `expect.content_hash` required |
 | `merge` | `{ blocks[], separator? , expect? }` | Contiguous same-type siblings become one. First block carries the ID; others recorded `merged_into`. | contiguous · same type |
 
 ### 1.1 Placement addressing
 
 ```ts
 type To = {
-  parent: BlockId | DocId | { heading: BlockId, scope: "section" },
+  parent: BlockId | { doc: true } | { heading: BlockId, scope: "section" },
   at: "start" | "end" | { before: BlockId } | { after: BlockId }
 }
 ```
-- `parent: DocId` means top level of the document.
+- `parent: { doc: true }` means top level of the document.
 - `scope:"section"` resolves against the derived section range: `at:"end"` = before the next peer/higher heading.
 - Ordering uses fractional keys internally (`02-data-model.md` §5.3); the API never exposes keys, only ordinals.
 
@@ -36,8 +35,7 @@ type To = {
 
 ```ts
 type Expect = {
-  content_hash?: Hex,          // block's current raw_hash (update/remove/split)
-  doc_revision?: RevId,        // whole-doc strictness (rarely needed)
+  content_hash?: Hex,          // block's current raw_hash (update/remove/split/merge)
   parent_children_hash?: Hex,  // hash over ordered child ids of a parent — opt-in order CAS
 }
 ```
@@ -66,8 +64,8 @@ Semantics:
 - **Atomic across documents.** All ops apply or none. One commit; one revision per touched doc; each touched file rendered and written once.
 - Ops apply **in order** within the changeset; later ops see earlier ops' effects (the update above targets the moved block).
 - Minted IDs from earlier ops are referenceable by later ops via `"$0.ids[1]"`-style placeholders (op index + result path).
-- **`dry_run: true`** runs full validation + render and returns per-file unified diffs and the would-be results, committing nothing.
-- Response: `{ commit, results: [per-op: {ids…}], revisions: [{doc, rev, path}], rendered_diffs? }`.
+- **`dry_run: true`** runs full validation + render and returns per-file `{ before, after }` diffs and the would-be results, committing nothing.
+- Response: `{ results: [per-op: {ids}], revisions: [{doc, path}], diffs?: {path → {before, after}}, committed }` (`ApplyResult` in `apply.ts`); `diffs` is populated on a dry run.
 
 ## 3. Macros (conveniences, not primitives)
 
@@ -94,15 +92,15 @@ Every conflict is a typed error **carrying current truth** so the caller can ret
   "expected_content_hash": "9f2c…",
   "current": {
     "content_hash": "b71e…",
-    "markdown": "the block's live markdown",
-    "revision": "r_90ttx4e",
-    "changed_by": "c_812acfd"           // the commit that invalidated the expectation
+    "markdown": "the block's live markdown"
   },
   "retriable": true
 }
 ```
 
-Error codes (shared with `06-mcp-api.md` §5): `stale_expectation`, `parent_missing { deleted_in }`, `target_missing`, `block_missing`, `doc_missing`, `cycle_move`, `opaque_block`, `not_contiguous`, `type_mismatch`, `conflicted_document`, `path_taken`, `ambiguous_locator { candidates[] }`, `filter_invalid`, `budget_exceeded (partial result)`, `semantic_unavailable`, `sync_conflict`.
+The `current` payload is op-specific: `checkContentHash` throws `{ content_hash, markdown }`; a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, content_hash }` (`ops.ts`, `plan-update.ts`).
+
+Error codes actually thrown by the write path (codes are stable per `mcp/errors.ts`): `stale_expectation`, `block_missing`, `target_missing` (anchor/placeholder not found), `parent_missing`, `doc_missing`, `cycle_move`, `not_contiguous`, `type_mismatch`, `path_taken` (`docs_create`/`docs_rename`), `ambiguous_heading` (a `{heading}` locator matching >1 heading), `node_not_editable` (a macro targeting a node with no editable block), `stale_plan` (the doc changed since the plan was computed), and `sync_conflict` (file changed on disk — retriable).
 
 ## 5. Concurrency model
 
@@ -114,33 +112,40 @@ Required behaviors (torture-test suite, Stage 3 exit gate):
 |---|---|
 | Two agents `insert at:"end"` in one section | Both succeed; deterministic order by arrival; fractional keys, no renumber |
 | Agent A `move` block; agent B `update` same block | Both succeed (content CAS unaffected by placement change) |
-| Agent A `remove` section; agent B `insert` into it | B fails `parent_missing { deleted_in: c_A }` |
-| Human saves file while agent changeset in flight | File-CAS abort → ingest → auto-replay ops (once) → success if preconditions hold, else typed conflict |
+| Agent A `remove` section; agent B `insert` into it | B fails `parent_missing` |
+| Human saves file while agent changeset in flight | File-CAS mismatch → the on-disk file is ingested (observed) → a retriable `sync_conflict` is thrown; the caller re-plans/re-applies against the new revision |
 | Two agents reorder same siblings | Last writer wins unless `parent_children_hash` supplied → `stale_expectation` |
-| Agent updates block deleted by human's save | `block_missing` with resurrection-pool hint if present |
+| Agent updates block deleted by human's save | `block_missing` (`{op_index, block}`; the deleted block is snapshotted into the resurrection pool for reconciliation, but the error carries no pool hint) |
 
 ## 6. The file write protocol (API path)
 
 ```
 apply(changeset):
- 1. acquire repo writer lock
- 2. resolve all references; validate all preconditions against current state
- 3. for each touched doc:
-      a. tree′ = apply ops to current revision tree
-      b. bytes = render(tree′)                        # splice (03-… §2.2)
- 4. for each touched file:
-      assert sha256(file_on_disk) == current_revision.rendered_hash
-        on mismatch → release lock, ingest that file (observed commit),
-                      re-resolve + re-validate ops against new revision (ONE retry),
-                      else return typed conflict
- 5. write temp file → fsync → atomic rename → fsync dir
- 6. register expected-hash with watcher (echo suppression)
- 7. single DB transaction: blobs, tree_nodes, revisions, commit, dispositions(api),
-    edge extraction, index maintenance
- 8. release lock; return results
+ 1. load every touched doc; resolve references and apply ops IN MEMORY in order,
+    validating preconditions as each op runs — any failure throws before a byte
+    is written (atomic: all ops apply or none)
+ 2. render each touched doc's mutated tree to bytes                # splice (03-… §2.2)
+ 3. dry_run:true stops here, returning per-file { before, after } diffs
+ --- commit phase, per touched file (under the cross-process writer lock when a
+     workspace .omgbase/ dir is supplied; else the Store's in-process serialization) ---
+ 4. file-CAS: assert sha256(file_on_disk) == the doc's stored file_hash
+      on mismatch → a human edit landed first: ingest the on-disk file
+        (reconciling resolver, observed commit), refresh the stat cache, and
+        throw a RETRIABLE `sync_conflict` — the caller re-plans/re-applies
+ 5. atomic write: temp file → rename
+ 6. re-ingest the rendered bytes as a commit with origin:"import" and a KNOWN-ID
+    resolver: the mutated tree already carries deterministic ids (ops keep/mint
+    them), so identity threads onto the re-parsed tree and intent dispositions
+    are recorded at confidence 1.0 — never re-derived from the bytes by the
+    probabilistic matcher. This ingest persists blobs, tree_nodes, the
+    revision + commit, edge extraction, and index maintenance.
+ 7. refresh the freshness stat cache (recordFileStat) so a later sweep won't
+    re-hash the engine's own write; the watcher's content-hash echo gate
+    suppresses re-ingesting it
+ 8. return results
 ```
 
-Crash safety: steps 5 and 7 are ordered file-first; on startup the engine reconciles any file whose hash ≠ its recorded rendered_hash (normal ingest path heals a crash between 5 and 7 — the write is simply observed).
+Crash safety: the file is written (step 5) before the commit is recorded (step 6); on startup / the next freshness sweep the engine reconciles any file whose content hash ≠ its stored `file_hash` (the normal ingest path heals a crash between the write and the commit — the write is simply observed).
 
 ## 7. Deletion semantics
 
