@@ -8,6 +8,7 @@ import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
+import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
@@ -319,6 +320,34 @@ export function buildServer(ctx: ServerContext): McpServer {
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
         }, ctx.embedQuery));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "graph",
+    {
+      description:
+        "Neighborhood macro: the bounded graph AROUND one or more root documents in ONE call — { documents, edges, frontier } — so you can orient without hand-writing an OQX `follow`. This is a CONVENIENCE WRAPPER, not a new engine: it compiles its args into an OQX `follow doc.out`/`doc.in` query and runs it through the same `query` path (the returned `queries` field is the exact follow query it generated). It does NOT replace `follow` or `from edges` — reach for the `query` tool directly when you need successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, cross-document correlation, or the edge scan with its own projections. `roots` are one or more doc refs (paths and/or ids); they are depth 0. `degrees` is the max hop distance (root = 0; maps to `follow { depth degrees+1 }`, capped so degrees+1 ≤ 8; default 1). `direction` is `out` (outgoing links), `in` (backlinks), or `both` (default). `predicate` restricts the walk to edges with that predicate (maps to `follow { via predicate == … }`). `select` adds document projections (OQX select expressions, e.g. \"layer\", \"$path\"). `max_documents` caps the distinct document set (default 200) with a `truncated` flag. Returns: `documents` (each with `id`/`path`/`degree` = min hops from a root/`frontier` bool + your projections), `edges` (the traversed edges with full provenance — `predicate`/`provenance`/`dst_kind`/`anchor`/`src_field` + `src`/`dst`/`dst_path`/`dst_uri`; external `x_…` and dangling phantom endpoints are preserved as edge stubs, exactly as `from edges` surfaces them), and `frontier` (the documents on the outer boundary — min degree == degrees; at degrees 0 that is the roots themselves).",
+      inputSchema: {
+        roots: z.array(z.string()).min(1),
+        degrees: z.number().int().optional(),
+        direction: z.enum(["in", "out", "both"]).optional(),
+        predicate: z.string().optional(),
+        select: z.array(z.string()).optional(),
+        max_documents: z.number().int().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        // A `select` using semantic(...) needs a provider — surface the specific
+        // code, mirroring the `query` tool.
+        if (!ctx.embedQuery && (args.select ?? []).some((s) => collectSemanticPhrases(`from docs select x: ${s}`).length > 0)) {
+          throw new EngineError("semantic_unavailable", "no embedding provider configured for this server");
+        }
+        return ok(await graphNeighborhood(store, repoId, args, ctx.embedQuery));
       } catch (e) {
         return fail(e);
       }
