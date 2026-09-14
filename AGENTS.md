@@ -33,7 +33,7 @@ Always run `pnpm build && pnpm test` before considering a change done.
 Prefer these over prose docs — they cannot drift because they *are* the implementation:
 
 - **MCP tool surface** (names, params, behavior): the registrations and inline tool descriptions in `packages/core/src/mcp/server.ts`. This is the definitive list of tools, not `docs/06`.
-- **Query language (OQX)**: the `query` tool's description in `packages/core/src/mcp/server.ts`, the engine in `packages/core/src/oqx/`, and the runnable examples in `packages/core/corpus/oqx/README.md`. OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`); the old structured `graph_traverse/path/subgraph` tools were removed. The CEL *scalar-predicate* sublanguage inside OQX is specced in `docs/10` §3–§5 (that part is accurate).
+- **Query language (OQX)**: the `query` tool's description in `packages/core/src/mcp/server.ts`, the engine in `packages/core/src/oqx/`, and the runnable examples in `packages/core/corpus/oqx/README.md`. OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`); the old structured `graph_traverse/path/subgraph` tools were removed. `docs/10-query-language.md` specs the language (reconciled to as-built).
 - **SQLite schema**: `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION` + migrations). Definitive over `docs/02`.
 - **Mutation kernel** (the six ops + macros + whole-doc reconciliation): `packages/core/src/mutate/`.
 
@@ -49,11 +49,11 @@ Each file is labeled by how much you can trust it as-is. **canon** = matches the
 | `docs/03-reconciliation-spec.md` | canon | matcher pipeline + thresholds verified as-built |
 | `docs/04-mutation-and-concurrency.md` | partially-drifted | six-op algebra is canon; conflict-object fields, `Expect.doc_revision`, and "auto-replay" retry are unbuilt |
 | `docs/05-graph-and-query.md` | partially-drifted | §1–3, §5–6 canon; §4 shows the pre-OQX query envelope; §7 `pipeline` and §8 `collections`/`member_of` were never built |
-| `docs/06-mcp-api.md` | partially-drifted (heavy) | tool roster is stale both ways (phantom tools + missing shipped tools). Use `mcp/server.ts` for the real surface; the cross-cutting rules/error-codes are still sound |
+| `docs/06-mcp-api.md` | canon | rewritten 2026-09-14 to match `mcp/server.ts` (31 tools); `server.ts` remains the ultimate source if they ever diverge |
 | `docs/historical/07-implementation-plan.md` | historical | the original staged plan; all stages shipped, layout/CLI/query sections superseded |
 | `docs/08-decisions.md` | canon-rationale | the ADR log ("why"); all 12 are still `Status: proposed`. ADR-006's body predates the OQX-follow pivot (its own "Update" corrects it); ADR-011 overstates which projected-query seams shipped |
 | `docs/09-projected-queries.md` | historical (design) | deferred feature, self-labeled "DO NOT BUILD in v1" — accurate as forward-looking design; only schema enum/`v_`-prefix reservations landed |
-| `docs/10-query-language.md` | partially-drifted (high) | §3–5 (CEL predicate grammar) are canon; §1 envelope, §6 `$in`/`$has`/`$links`/`$backlinks` link predicates, and §9 `include_projected` are NOT wired. Trust OQX sources above |
+| `docs/10-query-language.md` | canon | reconciled 2026-09-14 to as-built OQX (single query-string surface; the never-wired link predicates removed). The OQX sources above remain the live reference |
 | `docs/11-cli.md` | partially-drifted | overwhelmingly as-built; a few stale items (no `graph` command, `find` flags, `--budget-tokens`, flock is really an O_EXCL pidfile). Trust `packages/cli/src/cmd/` |
 | `docs/12-properties-table.md` | canon | fully implemented despite the "RFC / not yet normative" header; `SCHEMA_VERSION` is 12, not v8 |
 | `docs/13-sync-plugins.md` | partially-drifted | the stdio protocol + fs-adapter + async driver are shipped/canon; the adapter/source/attachment registry tables and the `adapter`/`source`/`repo` CLI verbs are not built |
