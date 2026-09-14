@@ -37,26 +37,22 @@ Prefer these over prose docs — they cannot drift because they *are* the implem
 - **SQLite schema**: `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION` + migrations). Definitive over `docs/02`.
 - **Mutation kernel** (the six ops + macros + whole-doc reconciliation): `packages/core/src/mutate/`.
 
-## docs/ trust index
+## docs/ index
 
-Each file is labeled by how much you can trust it as-is. **canon** = matches the code, safe to rely on. **partially-drifted** = mostly right, with specific stale sections — verify against code before relying. **historical** = describes plans/features that changed or were never built; read for background only, never as current.
+Every doc here is maintained as an **as-built** description of the code (last verified 2026-09-14). They are references, not scripture: if a doc ever disagrees with the code, the code wins — fix the doc (or flag it) rather than coding to the doc. If you change behavior, update the relevant doc in the same change.
 
-| File | Trust | Notes |
-| --- | --- | --- |
-| `docs/README.md` | canon | docs index, invariants, glossary |
-| `docs/01-architecture.md` | canon | conceptual overview; sqlite-vec is aspirational (vectors are brute-force BLOBs) |
-| `docs/02-data-model.md` | partially-drifted | schema is mostly right, but the `docs`/`blocks` table listings are stale and several tables are missing — trust `store/schema.ts` |
-| `docs/03-reconciliation-spec.md` | canon | matcher pipeline + thresholds verified as-built |
-| `docs/04-mutation-and-concurrency.md` | partially-drifted | six-op algebra is canon; conflict-object fields, `Expect.doc_revision`, and "auto-replay" retry are unbuilt |
-| `docs/05-graph-and-query.md` | partially-drifted | §1–3, §5–6 canon; §4 shows the pre-OQX query envelope; §7 `pipeline` and §8 `collections`/`member_of` were never built |
-| `docs/06-mcp-api.md` | canon | rewritten 2026-09-14 to match `mcp/server.ts` (31 tools); `server.ts` remains the ultimate source if they ever diverge |
-| `docs/historical/07-implementation-plan.md` | historical | the original staged plan; all stages shipped, layout/CLI/query sections superseded |
-| `docs/08-decisions.md` | canon-rationale | the ADR log ("why"); all 12 are still `Status: proposed`. ADR-006's body predates the OQX-follow pivot (its own "Update" corrects it); ADR-011 overstates which projected-query seams shipped |
-| `docs/09-projected-queries.md` | historical (design) | deferred feature, self-labeled "DO NOT BUILD in v1" — accurate as forward-looking design; only schema enum/`v_`-prefix reservations landed |
-| `docs/10-query-language.md` | canon | reconciled 2026-09-14 to as-built OQX (single query-string surface; the never-wired link predicates removed). The OQX sources above remain the live reference |
-| `docs/11-cli.md` | partially-drifted | overwhelmingly as-built; a few stale items (no `graph` command, `find` flags, `--budget-tokens`, flock is really an O_EXCL pidfile). Trust `packages/cli/src/cmd/` |
-| `docs/12-properties-table.md` | canon | fully implemented despite the "RFC / not yet normative" header; `SCHEMA_VERSION` is 12, not v8 |
-| `docs/13-sync-plugins.md` | partially-drifted | the stdio protocol + fs-adapter + async driver are shipped/canon; the adapter/source/attachment registry tables and the `adapter`/`source`/`repo` CLI verbs are not built |
-| `docs/14-update-opsets.md` | canon | as-built spec for the whole-document reconciliation planner (`docs_update`/`docs_plan_update`) |
-
-When you rely on a `partially-drifted` doc, confirm the specific claim against the code path it names before acting on it.
+| File | Covers |
+| --- | --- |
+| `docs/README.md` | docs index, CI-enforced invariants, glossary |
+| `docs/01-architecture.md` | system shape, kernel concepts, identity/canonicality rules |
+| `docs/02-data-model.md` | SQLite DDL, ID/hash conventions, rebuild/GC rules (authoritative schema is `core/store/schema.ts`) |
+| `docs/03-reconciliation-spec.md` | parser contract, round-trip law, matcher phases/thresholds |
+| `docs/04-mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
+| `docs/05-graph-and-query.md` | edge extraction, OQX traversal, RRF retrieval, embeddings |
+| `docs/06-mcp-api.md` | MCP tool surface, resources, error codes (`mcp/server.ts` is the ultimate source) |
+| `docs/08-decisions.md` | the ADR log ("why"); all 12 remain `Status: proposed` |
+| `docs/10-query-language.md` | OQX query language: the query-string surface + CEL predicate grammar |
+| `docs/11-cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
+| `docs/12-properties-table.md` | the properties table + unified property query surface |
+| `docs/13-sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter` (registry tables reserved, not yet wired) |
+| `docs/14-update-opsets.md` | whole-document update planner (`docs_update`/`docs_plan_update`, `omg update`) |

@@ -173,27 +173,11 @@ There is no projected-membership widening and no `_static`/`_dyn` distinction to
 - Evaluation is deterministic: same corpus revision + same query ⇒ same results and order (no clock functions; §3.1).
 - Errors: `filter_invalid` with `data.reason` (what failed to parse/compile) and `data.hint` (what to consult). Stable codes, prose free to improve.
 
-## 9. `include_projected` — never built
+## 9. Not part of the query surface
 
-The `query` tool has no `include_projected` argument (nor a `resolution` argument); neither appears anywhere in the OQX code. The idea was: when projected queries ship, `include_projected: true` would let ref/copy projections become hits, while `false` kept base + novel derived facts. That widening was never implemented — there are no projected-query semantics to opt into today (see also §6). The rationale is retained in `09-projected-queries.md` §6 for whenever projected queries are designed; this document reserves the name only.
+The `query` tool takes only an OQX string plus `limit`/`cursor` (§1). There is **no** `include_projected` argument, **no** `resolution` argument, and **no** fenced ```` ```omg ```` projected-query form — none of these exist in the OQX code. (Projected queries are an unbuilt, deferred concept; the former design lives in git history.)
 
-## 10. The fenced form (proposed; not as-built)
-
-> **Not implemented.** The ```` ```omg ```` fenced projected-query form below is a `09-projected-queries.md` design sketch, not a shipped surface. It predates OQX and shows the old flat YAML envelope (`filter`/`order` keys); it does **not** describe the `query` tool, which takes an OQX string (§1). When/if the fence ships it is expected to carry an OQX expression, not this envelope. Kept for the projection-only keys it introduces.
-
-The ```` ```omg ```` fence body was sketched as the envelope as YAML (one language everywhere; the fence is just another client), plus the projection-only keys from 09 (`project`, `reads`, `materialize`, `on_human_edit`, `backs`).
-
-```markdown
-​```omg
-from: blocks
-filter: type == "task" && !attrs.checked && under_heading("Launch")
-order: ["$path", "$ordinal"]
-limit: 200
-project: list(ref)
-```
-```
-
-## 11. Canonical examples
+## 10. Canonical examples
 
 | Intent | OQX |
 |---|---|

@@ -18,7 +18,7 @@ The files are always the source of truth for *content*; the engine's database ow
 
 ## Status
 
-All stages of the implementation plan (`docs/07-implementation-plan.md`) are complete: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening. See `docs/` for the full normative design.
+The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
 
 ## Install
 

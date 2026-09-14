@@ -2,7 +2,7 @@
 
 **omgbase** (Open Markdown Graph Base) is the successor to mrplex: a versioned, addressable graph of authored Markdown structure. Ordinary Markdown files stay the human representation — usable by editors, Obsidian, Git, and shell tools — while the engine adds stable block identity, block-grain history, a typed knowledge graph, hybrid retrieval, and a safe structural mutation API built for autonomous agents.
 
-This folder is the complete, self-contained input for implementation. It descends from the architecture review of 2026-09-02 (Claude artifact: *omgbase Architecture Review*); where that document argues, these documents specify.
+These documents are maintained as **as-built** references to the implementation (last verified 2026-09-14). They descend from the architecture review of 2026-09-02 (Claude artifact: *omgbase Architecture Review*), but where a doc and the code disagree, the code is authoritative — fix the doc. See the repo-root `AGENTS.md` for orientation and where authoritative truth lives per surface.
 
 ## Doc map (read in this order)
 
@@ -14,24 +14,21 @@ This folder is the complete, self-contained input for implementation. It descend
 | `04-mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |
 | `05-graph-and-query.md` | Edge extraction rules, intervals, traversal specs, CEL query surface, RRF retrieval, embeddings | touching `graph/`, `search/` |
 | `06-mcp-api.md` | Tool surface, resources/URIs, resolution ladder, error codes, outline format, acceptance traces | touching `mcp/` |
-| `07-implementation-plan.md` | Repo layout, stack, staged tasks with acceptance criteria and exit gates, risks | planning any work |
 | `08-decisions.md` | ADRs (binding), the authoritative cut list, experiments, open questions | before proposing any deviation |
-| `09-projected-queries.md` | Deferred design: embedded queries projecting materialized-acting content (strata, budgets, virtual-first) — **v1 builds only its §8 reservations** | touching the parser fence map, edges DDL, or query-planner seams |
-| `10-query-language.md` | Normative query syntax: envelope, targets/fields, CEL subset grammar, absence truth table, structural functions, link-graph predicates, ordering, compilation contract, fence form | touching `search/` (the CEL compiler), or writing any filter in tests/fixtures |
+| `10-query-language.md` | OQX query language: the query-string surface, targets/fields, the CEL predicate subset (grammar, absence truth table, structural functions), ordering, compilation contract | touching `oqx/` or `search/` (the CEL compiler), or writing any filter in tests/fixtures |
 | `11-cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
 | `12-properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
-| `13-sync-plugins.md` | External source reconciliation: adapter/source/repo/attachment model, the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, engine-owned revision state, `@omgbase/fs-adapter`, repo/source lifecycle | touching `sync/`, the adapter protocol, or writing an adapter |
+| `13-sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry tables are reserved but not yet wired | touching `sync/`, the adapter protocol, or writing an adapter |
 | `14-update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
 
 ## Rules for implementation agents
 
 1. **Invariants below are non-negotiable.** If a task appears to require violating one, stop and flag it — do not improvise.
 2. **The cut list in `08-decisions.md` is authoritative.** Do not add cut items "while you're in there."
-3. Stage exit gates (`07-implementation-plan.md`) are sequential. Green the gate before starting the next stage.
-4. Rendering is **splice only** — `remark-stringify` (or any canonicalizing serializer) must never touch existing content. A lint rule enforces this; don't disable it.
-5. `reconcile/` is deterministic: no clock, no RNG; every disposition stamps `matcher_v`.
-6. New frontmatter conventions, predicates, or tool parameters require an ADR entry, not just code.
-7. When these docs and code disagree, the docs win until an ADR says otherwise; update docs to as-built at each stage close.
+3. Rendering is **splice only** — `remark-stringify` (or any canonicalizing serializer) must never touch existing content. A lint rule enforces this; don't disable it.
+4. `reconcile/` is deterministic: no clock, no RNG; every disposition stamps `matcher_v`.
+5. New frontmatter conventions, predicates, or tool parameters require an ADR entry, not just code.
+6. When these docs and code disagree, **the code wins** — update the doc to as-built (do not code to a stale doc).
 
 ## Invariants (testable; CI-enforced)
 
