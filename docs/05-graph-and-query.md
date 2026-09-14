@@ -1,9 +1,8 @@
 # omgbase — Graph, Query, and Retrieval Spec
 
 **Status:** normative.
+**As-built (verified 2026-09-14).**
 **Depends on:** `01-architecture.md` §8–9; `02-data-model.md` §3–4.
-
-> **Partially drifted — verify against code.** Trust §1–3 (edge model, extraction) and §5–6 (retrieval, embeddings); §3 accurately describes OQX `follow`. Drift: §4's structured JSON query envelope is superseded — the real `query` tool takes a single OQX string (see docs/10 and the `query` tool in `packages/core/src/mcp/server.ts`). The §7 `pipeline` tool was never built (the pipe / `follow` cover it). §8 `collections`/`member_of` pseudo-edges are not implemented — only a `collections` table stub exists. See `AGENTS.md` for the docs trust index.
 
 ---
 
@@ -11,8 +10,8 @@
 
 1. **Derived from content, never inherited through identity.** Extraction is a pure function of `(revision content, extraction_version)`. Block identity threads only the validity intervals (edge history).
 2. **Block-grain truth, doc-grain speed.** `edges` rows originate from blocks (or frontmatter); `doc_edges` is a materialized rollup.
-3. **Inferred is quarantined.** `inferred_edges` is a separate table; excluded from every query/traversal unless `include_inferred: true`; every row carries method/score/model_v.
-4. **Structural relations are not edges.** parent/child/next/prev live in Placement; the traversal API presents them as pseudo-predicates (`contains`, `contained_by`, `next`, `prev`) dispatched to the blocks table.
+3. **Inferred is quarantined.** `inferred_edges` is a separate table (each row carries `method`/`score`/`model_v`/`computed_at`), excluded from every query and traversal by construction. As-built it is a schema stub — no writer or reader is wired to it yet.
+4. **Structural relations are not edges.** parent/child/sibling order live in Placement, not the edge tables; OQX navigates them through relations (`block.children`, `section.children`/`section.subsections`, `section`, `section.blocks`) and the `follow` operator (§3), not through edge rows.
 
 ## 2. Extraction rules (extraction_version: x1)
 
@@ -43,63 +42,32 @@ Run per touched document inside the commit transaction:
 
 Knobs go in a `{ … }` block after the relation (a bare `follow <rel>` carries none): `follow <rel> { where <pred> }` filters which successors keep participating (running out ⇒ a leaf); `{ frontier <pred> }` cuts a relation that would otherwise continue; `{ depth <n> }` bounds the walk (1..8, default 8); `follow distinct` dedups by identity; `follow <rel> { by <expr> }` sets the identity used for cycle detection + dedup — e.g. `follow doc.out { where layer != "draft" frontier layer == "canon" depth 4 }`. Each reached row carries recursion metadata `$depth` (seed = 1), `$stop` (interior|leaf|frontier|depth|cycle, with `$leaf`/`$frontier` sugar), and `$ordinal` (deterministic walk rank) — queryable in `select`/`order by` and filterable post-walk in the top-level `where`. Cyclic graphs are safe: a revisited node is admitted once as `$stop == "cycle"` and never re-expanded.
 
-- The induced-subgraph analytics export (`graph_subgraph`) has no OQX equivalent and was dropped with the rest.
+- A `graph` **convenience tool** now exists (`mcp/server.ts`): a neighborhood macro that takes `roots` + `degrees`/`direction`/`predicate`/`select` and compiles to an OQX `follow doc.out`/`doc.in` query run through the same `query` path, returning `{ documents, edges, frontier }` (the generated follow query is echoed in a `queries` field). It is a wrapper, not a new engine — reach for `query` directly for successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, correlation, or the `edges` scan.
+- The induced-subgraph analytics export (`graph_subgraph`) has no OQX equivalent and was dropped.
 - Extraction, the edge tables, and interval validity (§1–§2) are unchanged — only the query-time traversal surface moved.
 
 ## 4. Query
 
-```jsonc
-{
-  "from": "blocks",                          // "docs" | "blocks"
-  "filter": "type == 'task' && !attrs.checked && under_heading('Launch') && doc.layer == 'working'",
-  "text": "deploy",                          // FTS5 over block text (docs: over doc text)
-  "semantic": "deployment readiness",        // optional; requires embedding hook
-  "select": ["$id", "$doc", "$path", "$locator", "$text"],
-  "resolution": "text",
-  "limit": 50, "cursor": null
-}
-```
-
-**The query language is normatively specified in `10-query-language.md`** (envelope, targets, CEL subset grammar, absence semantics, structural functions, ordering, compilation contract). Summary only here:
-
-- **Targets:** `docs` (metadata keys bare — frontmatter in markdown, the parsed object for YAML/JSON; `$`-intrinsics), `blocks` (`type`, `attrs.*`, `text`; `$id`/`$doc`/`$path`/`$locator`/`$ordinal`/`$depth`/`$updated_at`; doc metadata via `doc.<key>`), and `edges` — the open authored edge rows themselves (`predicate`/`provenance`/`dst_kind`/`anchor`/`src_field`; `$src`/`$dst`/`$dst_path`/`$dst_uri`; source-doc reach-through via `$path`/`doc.<key>`), so the graph is queryable directly rather than only via `has_edge`/`$links`/`follow` (10 §2). mrplex CEL semantics carry over (missing key never matches; `list()` polymorphism; string fns; `_static` link-predicate variants).
-- **Structural functions (blocks target),** compiled to indexed SQL: `under()`, `under_heading()`, `within()`, `has_edge()`, `has_anchor()`, `parent_type()`, `child_count()` (final set per 10-… §5 — object-returning `parent()`/`ancestors()` were dropped as not worth their compiler).
-- **Link-graph predicates (docs target),** mrplex-compatible: `$in(glob)`, `$has(glob)`, `$links()`, `$backlinks()` + `_static` variants with the reserved widening semantics (10-… §6).
-- Modes intersect (AND). Order: semantic score if present, else text rank, else `$updated_at` desc.
-- CEL compilation: compile the supported subset to SQL WHERE; anything else evaluates as a post-filter over candidate rows (correct first, fast where it matters). `filter_invalid` errors carry reason + hint.
+The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts`) — not a structured JSON envelope. OQX (omgbase Query eXpressions) covers targets (`docs`/`blocks`/`nodes`/`edges`), dot navigation, whitespace query directives (`collect`/`exists`/`count`/`first`/`single`), correlated subqueries (the `^` sigil), `follow` recursion (§3), and `order by` ranking (including `semantic(…)`/`text(…)` predicates). It is **normatively specified in `10-query-language.md`** and summarized in the `query` tool's own description. Alongside it: the `graph` neighborhood macro (§3) and `text_search` (FTS5 keyword search over block text). A `semantic(…)` clause with no embedding provider configured fails `semantic_unavailable`; a malformed query fails `filter_invalid` (reason + hint).
 
 ## 5. Hybrid retrieval & ranking
 
 - Lexical: FTS5 (`bm25()`), block grain.
-- Vector: sqlite-vec over current block embeddings.
+- Vector: **brute-force cosine** over the current block embeddings (`search/vector.ts`); sqlite-vec/pgvector are the deferred pressure valve, not v1.
 - Fusion: **RRF** — `score(d) = Σ 1/(60 + rank_i(d))` over the active rankers.
-- Boosts (multiplicative, explainable, config): title match ×1.25, heading-chain match ×1.15, path segment match ×1.10, layer (`canon` ×1.30, `working` ×1.15, `proposed` ×1.0, `draft` ×0.85), recency half-life 180d ×[0.9–1.1].
-- Every hit returns `evidence: { fts_rank?, cosine?, boosts: {…} }`.
+- Boosts (multiplicative, explainable): title match ×1.25, heading-chain match ×1.15, path-segment match ×1.10, layer (`canon` ×1.30, `working` ×1.15, `proposed` ×1.0, `draft` ×0.85). A `recency` multiplier slot exists in the boost struct but is not yet computed (`search/rrf.ts`).
+- Every hit returns `evidence: { rrf, boosts, ftsRank?, vectorRank?, cosine? }`.
 - No learned ranker in v1 (ADR-009).
 
 ## 6. Embeddings
 
-- **Unit:** paragraphs, list items/tasks, table rows, headings; blocks < 24 tokens roll into their section aggregate instead of embedding alone.
+- **Unit:** individual blocks (paragraphs, list items/tasks, table rows, headings). Blocks under 24 tokens (`shouldEmbed`, `search/embeddings.ts`) are not embedded on their own — they still feed the token-weighted doc-level pooled vector.
 - **Input text:** `"{doc title} · {path} · {heading chain} · {block type}\n{block text}"`. Queries embed bare.
 - **Key:** `(content_hash, ctx_hash, model)` — pure content addressing; identity errors cannot poison the cache.
-- **Worker:** async queue; recompute on content or ancestry-context change (heading rename invalidates its subtree's contexts — batched); retrieval serves stale vectors flagged `stale: true` until drained.
-- **Hook:** embedding provider is a configured hook (HTTP or local); config names the provider explicitly (`embedding.provider`, `embedding.egress_note`) because vault text leaves the machine. No provider configured ⇒ `semantic_unavailable`.
-- Doc-level embedding: title + first paragraph. Section/RAPTOR rollups: experimental flag, off by default.
+- **Worker:** async queue; recomputes on content or ancestry-context change (a heading rename shifts its subtree's `ctx_hash`). Because vectors are keyed by `(content_hash, ctx_hash, model)`, a changed block simply misses the cache until the worker drains — semantic recall degrades silently for not-yet-embedded blocks rather than serving a stale vector (`search/drain.ts`).
+- **Hook:** the embedding provider is a plugin named in repo settings — `embedding.provider` (a package exporting `createProvider`), with optional `embedding.model` / `dim` / `maxInputTokens` (`search/provider.ts`). The dynamic import lives in the application (the CLI), so core carries no ML dependency; `@omgbase/embedder` is the default local provider and a remote HTTP provider is the same contract behind a different package name. No provider configured ⇒ `semantic_unavailable`. (The CLI prints an egress notice before embedding, since vault text leaves the machine.)
+- Doc-level embedding (`method: "whole" | "pooled"`): the whole-document input — a header line + reconstructed body — is embedded when it fits the token budget (the provider's/config's `maxInputTokens`, else `DEFAULT_DOC_TOKEN_BUDGET` = 512); over budget it falls back to a token-weighted pooled mean of the doc's already-cached block vectors (zero embedding calls). Its sha256 is the freshness key for both strategies.
 
-## 7. The pipeline call
+## 7. Collections
 
-One round trip for seed → expand → hydrate; each stage optional; stages share budgets.
-
-```jsonc
-{
-  "seed":    { "from": "blocks", "semantic": "stable identity across edits", "limit": 8 },
-  "expand":  { "via": ["references","depends_on"], "direction": "both", "depth": 2,
-               "budget": { "max_nodes": 60 } },
-  "hydrate": { "resolution": "text", "budget_tokens": 4000 }
-}
-// → { seeds: [hits+evidence], graph: {nodes, edges, truncated}, content: {blocks…, truncated} }
-```
-
-## 8. Collections
-
-A collection node is either an explicit member list, a stored query, or both (`spec` JSON). Membership materializes as `member_of` pseudo-edges at read time for explicit members; stored-query collections evaluate lazily (never persisted as edges). Collections are addressable in `within()`, traversal seeds, and `sections_move` targets are NOT (they're doc structure).
+As-built, collections are only a schema stub: a `collections` table (`node_id`, `repo_id`, `name`, `spec`) in `packages/core/src/core/store/schema.ts`, with no writer or reader wired up. The aspirational `member_of` pseudo-edges, read-time membership materialization, and `within()`/traversal-seed addressing are **not** implemented — `within()` resolves only a doc id, exact path, or glob (`search/cel/compile.ts`).
