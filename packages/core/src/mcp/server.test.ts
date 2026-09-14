@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -520,5 +520,71 @@ describe("apply op schema + sections_append heading resolution", () => {
     };
     expect(isError).toBe(true);
     expect(payload.error).toBe("parent_missing");
+  });
+
+  it("docs_append appends to the end of the document, preserving every existing block id", async () => {
+    const { payload: before } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: string[]; content: string };
+    };
+    const { payload, isError } = (await call("docs_append", { path: "notes.md", text: "a fresh trailing note\n" })) as {
+      payload: { committed: boolean; results: { ids: string[] }[]; revisions: { doc: string; path: string }[] }; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.committed).toBe(true);
+    // sibling-macro shape: revision(s) + the single inserted block id
+    expect(payload.revisions[0]!.path).toBe("notes.md");
+    expect(payload.results[0]!.ids).toHaveLength(1);
+    const newId = payload.results[0]!.ids[0]!;
+
+    const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: string[]; content: string };
+    };
+    // IDENTITY STABILITY: every pre-existing block id is still present and in the
+    // same leading order; the appended block id is new (not one of the old ones).
+    expect(after.ids.slice(0, before.ids.length)).toEqual(before.ids);
+    expect(before.ids).not.toContain(newId);
+    expect(after.ids).toContain(newId);
+    expect(after.ids.length).toBe(before.ids.length + 1);
+    // additive, not a whole-body replace: the prior body is intact, new text after
+    expect(after.content.startsWith(before.content.trimEnd())).toBe(true);
+    expect(after.content).toContain("a fresh trailing note");
+    expect(after.content.indexOf("a fresh trailing note")).toBeGreaterThan(after.content.indexOf("launch note"));
+  });
+
+  it("docs_append inserts MULTI-block markdown as multiple new top-level blocks, none re-minted", async () => {
+    const { payload: before } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
+    const { payload, isError } = (await call("docs_append", { path: "notes.md", text: "## New Section\n\nfirst para\n\nsecond para\n" })) as {
+      payload: { committed: boolean; results: { ids: string[] }[] }; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    // three new top-level blocks: heading + two paragraphs
+    expect(payload.results[0]!.ids.length).toBe(3);
+    const { payload: after } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[]; content: string } };
+    // no existing block was re-minted (all still present, in order)
+    expect(after.ids.slice(0, before.ids.length)).toEqual(before.ids);
+    for (const id of payload.results[0]!.ids) expect(before.ids).not.toContain(id);
+    expect(after.ids.length).toBe(before.ids.length + 3);
+    expect(after.content).toContain("## New Section");
+    expect(after.content).toContain("first para");
+    expect(after.content).toContain("second para");
+  });
+
+  it("docs_append accepts a d_ id in `doc`", async () => {
+    const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
+    const { isError } = (await call("docs_append", { doc: docId, text: "by-id append\n" })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("by-id append");
+  });
+
+  it("docs_append on a missing doc errors doc_missing (never auto-creates)", async () => {
+    const { payload, isError } = (await call("docs_append", { path: "does-not-exist.md", text: "x\n" })) as {
+      payload: { error: string }; isError: boolean;
+    };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("doc_missing");
+    // and no document was created at that path
+    const row = store.db.prepare("SELECT 1 FROM docs WHERE path = 'does-not-exist.md'").get();
+    expect(row).toBeUndefined();
   });
 });

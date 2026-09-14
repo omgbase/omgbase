@@ -13,7 +13,7 @@ import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
 import { apply, type Op } from "../mutate/apply.js";
 import { MutationError } from "../mutate/tree.js";
-import { tasksComplete, sectionsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
+import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
@@ -435,6 +435,29 @@ export function buildServer(ctx: ServerContext): McpServer {
         const headingId = resolveHeadingId(args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
         const ops = sectionsAppend(headingId, args.markdown);
         return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_append",
+    {
+      description:
+        "Macro: append markdown at the END of a whole document — the journal/log/running-note primitive (the document-root peer of sections_append, which appends inside a heading's section). ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW top-level blocks after the document's existing ones, so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see 06-mcp-api). Expands to a single insert op at the document top level (position end); commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Target the document with `doc` (id OR path) or `path`. The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this). To append inside a specific heading section instead, use sections_append.",
+      inputSchema: { doc: z.string().optional(), path: z.string().optional(), text: z.string() },
+    },
+    async (args) => {
+      try {
+        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        // Resolve the ref to a live doc id FIRST — a missing doc is doc_missing
+        // (resolveDocId throws it), never an auto-create. Then expand to the
+        // single top-level insert-at-end op and apply it (existing blocks keep
+        // their ids; only the appended blocks are minted).
+        const docId = resolveDocId({ ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
+        const ops = docsAppend(docId, args.text);
+        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } }));
       } catch (e) {
         return fail(e);
       }

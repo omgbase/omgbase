@@ -33,6 +33,23 @@ export function sectionsAppend(heading: string, markdown: string): Op[] {
   return [{ op: "insert", to, markdown }];
 }
 
+/**
+ * docs_append: insert markdown at the END of a whole document — the
+ * document-root peer of sections_append (which appends within a heading's
+ * section). ADDITIVE, not a whole-body replace: it parses `markdown` into new
+ * blocks and inserts them as fresh top-level blocks after the document's
+ * existing ones, so every existing block keeps its stable `b_` id. Expands to a
+ * single insert op targeting the document top level (`{ doc: true }`, `at:
+ * "end"`) with an explicit `doc` — the kernel then threads the new blocks in
+ * without touching any prior block. The doc must already exist; resolving the
+ * ref is the caller's job (a missing doc is doc_missing — creation belongs to
+ * docs_create, never here).
+ */
+export function docsAppend(docId: string, markdown: string): Op[] {
+  const to: To = { parent: { doc: true }, at: "end" };
+  return [{ op: "insert", doc: docId, to, markdown }];
+}
+
 /** sections_rename: update the heading block's markdown to a new title. */
 export function sectionsRename(store: Store, heading: string, title: string): Op[] {
   const raw = rawOfBlock(store, heading) ?? "";

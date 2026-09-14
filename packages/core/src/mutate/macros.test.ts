@@ -6,7 +6,7 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { apply } from "./apply.js";
-import { tasksComplete, sectionsAppend, sectionsRename, linksRetarget } from "./macros.js";
+import { tasksComplete, sectionsAppend, docsAppend, sectionsRename, linksRetarget } from "./macros.js";
 
 let dir: string;
 let store: Store;
@@ -67,6 +67,34 @@ describe("macros expand to kernel ops (visible)", () => {
     const text = readFileSync(join(dir, "g.md"), "utf8");
     expect(text).toContain("trailing paragraph.\n\n## Analysis");
     expect(text).not.toContain("trailing paragraph.\n## Analysis");
+  });
+
+  it("docs_append expands to one top-level insert-at-end op and appends to the doc", () => {
+    const docId = seed("d.md", "# Journal\n\nfirst entry\n");
+    const ops = docsAppend(docId, "second entry\n");
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ op: "insert", doc: docId, to: { parent: { doc: true }, at: "end" }, markdown: "second entry\n" });
+    const res = apply(store, { repoId, rootPath: dir, ops, origin: { actor: "agent:test" } });
+    expect(res.committed).toBe(true);
+    const text = readFileSync(join(dir, "d.md"), "utf8");
+    // appended AFTER the existing body (end of document), not inside a section
+    expect(text.indexOf("second entry")).toBeGreaterThan(text.indexOf("first entry"));
+    expect(text.trimEnd().endsWith("second entry")).toBe(true);
+  });
+
+  it("docs_append preserves existing block ids and only mints the appended block", () => {
+    const docId = seed("j.md", "# Journal\n\nexisting paragraph\n");
+    const before = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+    const res = apply(store, { repoId, rootPath: dir, ops: docsAppend(docId, "appended paragraph\n"), origin: { actor: "agent:test" } });
+    expect(res.committed).toBe(true);
+    const after = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+    // every prior id is still live (none re-minted) and exactly one new block added
+    for (const id of before) expect(after).toContain(id);
+    expect(after.length).toBe(before.length + 1);
+    // the op reports exactly the newly minted block id (not any existing one)
+    expect(res.results[0]!.ids).toHaveLength(1);
+    expect(before).not.toContain(res.results[0]!.ids[0]);
+    expect(after).toContain(res.results[0]!.ids[0]);
   });
 
   it("sections_rename rewrites the heading, preserving level", () => {
