@@ -1,5 +1,7 @@
 # omgbase — Implementation Plan
 
+> **HISTORICAL — archived.** This is the original pre-build staged plan. All stages shipped; the repo layout, CLI catalog, and query-surface sections here are superseded by the as-built code and by OQX (which this doc predates and never mentions). Kept for provenance only — do not treat as current. See `AGENTS.md` for the authoritative orientation and the `docs/` trust index.
+
 **Status:** working plan. Stages are sequential; tasks within a stage parallelize where dependencies allow. Each task is sized for one focused agent session and has acceptance criteria ("AC"). Do not start a stage before the previous stage's **exit gate** is green.
 
 **Stack (ADR-001):** TypeScript 5.x · Node 22 LTS · better-sqlite3 · unified/remark (+gfm, +frontmatter, wiki-link & inline-field extensions) · sqlite-vec · @modelcontextprotocol/sdk · chokidar · vitest (+fast-check for property tests).

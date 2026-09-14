@@ -1,0 +1,1 @@
+See [AGENTS.md](./AGENTS.md) for the agent guide: orientation, build/verify commands, where authoritative truth lives per surface, and the `docs/` trust index (which design docs are canon vs drifted).
