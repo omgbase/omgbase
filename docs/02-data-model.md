@@ -3,6 +3,8 @@
 **Status:** normative. SQLite dialect (v1). Column types use SQLite affinities; a future Postgres dialect maps 1:1 (ADR-001).
 **Depends on:** `01-architecture.md` §3–4, §12.
 
+> **Partially drifted — verify against code.** Trust `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 12`) as the authoritative schema. The `docs` and `blocks` listings below are stale: `docs.metadata` was superseded by a separate `properties` table (docs/12), `docs` gained `leading_trivia`/`frontmatter_trivia`, `blocks` gained a `trivia_hash` column, and `repos.root_path` is now **nullable**. Several tables are missing here entirely: `properties`, `doc_embeddings`, `adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`. The §1 ID-prefix list is also incomplete (edges `e_`, repos `rp_`, and the reserved projection `v_` prefix are omitted). See `AGENTS.md` for the docs trust index.
+
 ---
 
 ## 1. Identifier and hash conventions

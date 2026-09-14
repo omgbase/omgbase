@@ -3,6 +3,8 @@
 **Status:** normative.
 **Depends on:** `01-architecture.md` §8–9; `02-data-model.md` §3–4.
 
+> **Partially drifted — verify against code.** Trust §1–3 (edge model, extraction) and §5–6 (retrieval, embeddings); §3 accurately describes OQX `follow`. Drift: §4's structured JSON query envelope is superseded — the real `query` tool takes a single OQX string (see docs/10 and the `query` tool in `packages/core/src/mcp/server.ts`). The §7 `pipeline` tool was never built (the pipe / `follow` cover it). §8 `collections`/`member_of` pseudo-edges are not implemented — only a `collections` table stub exists. See `AGENTS.md` for the docs trust index.
+
 ---
 
 ## 1. Edge principles

@@ -1,7 +1,10 @@
 # omgbase — Properties Table (design proposal)
 
-**Status:** proposal / RFC. Not yet normative. Supersedes the ad-hoc split between
-`docs.metadata` (JSON blob) and the `nodes` table for property-shaped data.
+**Status:** as-built / normative. The `properties` table shipped (schema migration 8;
+current `SCHEMA_VERSION = 12`) and supersedes the removed `docs.metadata` JSON blob for
+property-shaped data.
+
+> **As-built / normative — verified against code.** This design is fully implemented: schema migration 8 added the `properties` table (current `SCHEMA_VERSION = 12` — the "Schema v8" in §7 is the migration that introduced it, not the current version); `docs.metadata` was dropped; and `docs_read` returns properties grouped by source (`{ frontmatter, inline, computed }`) exactly as §4 describes — confirmed in `packages/core/src/core/read/document.ts` and `store/properties.ts`. (Caveat: the MCP `docs_read` **tool description string** still mentions `metadata`, but the returned shape is the grouped one.) See `AGENTS.md` for the docs trust index.
 
 ---
 

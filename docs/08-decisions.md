@@ -2,6 +2,8 @@
 
 Format: one ADR per decision; status is `proposed` until Brendan ratifies (`accepted`), after which changes require a superseding ADR. Implementation agents MUST treat `proposed` ADRs as binding defaults and MUST NOT silently deviate.
 
+> **Partially drifted — verify against code.** All 12 ADRs remain `Status: proposed` (unratified binding defaults, not `accepted`). ADR-011's "v1 reserves the seams" summary overstates what shipped: only the schema-enum reservations (`origin='projection'`, `provenance='projected'`, reserved `via_node`/`col_` handling) and the `v_` id-prefix landed; the `attrs.generated` matcher-skip guard and the `projections.*` config namespace were **not** built (`omg` query fences round-trip inert and are previewable via `omg run`, but no projection/materialization machinery exists). ADR-006's Decision has been folded to match code (see its Update note). See `AGENTS.md` for the docs trust index.
+
 ---
 
 ## ADR-001 — TypeScript + SQLite embedded engine
@@ -34,9 +36,9 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 
 ## ADR-006 — Relational graph; no graph database; no graph query language
 **Status:** proposed
-**Decision:** Edges live in interval-valid relational tables; traversal = frontier expansion/recursive CTE with budgets; public API is structured JSON specs (`graph_traverse/path/subgraph`). Inferred edges quarantined in a separate table, opt-in at query time.
-**Consequences:** one store for graph+content+FTS+vectors; no Cypher injection/unbounded-query surface; analytics via `graph_subgraph` export.
-**Update:** the "no graph query language / bounded traversal" principle holds, but the structured `graph_traverse/path/subgraph` specs were removed in favor of the OQX `follow` operator on the one `query` surface (recursive CTE, depth cap 8; see 05 §3, 10). The `graph_subgraph` analytics export was dropped with no replacement.
+**Decision:** Edges live in interval-valid relational tables; traversal = frontier expansion/recursive CTE with budgets (depth cap 8). There is no separate graph query language (no Cypher/Gremlin): the traversal surface is the OQX `follow` operator on the one `query` surface (see 05 §3, 10). Inferred edges quarantined in a separate table, opt-in at query time.
+**Consequences:** one store for graph+content+FTS+vectors; no Cypher injection/unbounded-query surface. (The originally-specified `graph_subgraph` analytics export was dropped with no replacement.)
+**Update (provenance — superseded pre-OQX API):** the original Decision specified structured JSON traversal specs (`graph_traverse`/`graph_path`/`graph_subgraph`) as the public API. These were removed in favor of OQX `follow` (now folded into the Decision above), and `graph_subgraph` was dropped with no replacement. The "no graph query language / bounded traversal" principle is unchanged; only the surface moved.
 
 ## ADR-007 — Splice rendering; block-level raw retention; no CST engine
 **Status:** proposed
