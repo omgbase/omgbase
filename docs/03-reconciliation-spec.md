@@ -8,17 +8,19 @@
 ## 1. Parser
 
 - **Stack:** unified/remark — `remark-parse` + `remark-gfm` + `remark-frontmatter` + a wiki-link micromark extension + an inline-field (Dataview `key:: value`) extraction pass. (ADR-001. If the core ever moves to Rust, comrak replaces this layer behind the same `BlockTree` interface.)
-- The parser layer's ONLY job is to produce a `BlockTree` with **byte spans**. Nothing downstream may touch mdast directly.
+- The parser layer's ONLY job is to produce a `BlockTree` with **spans**. Nothing downstream may touch mdast directly.
+- As-built (see `packages/core/src/core/parse/types.ts`), the parser works in **string space**, not bytes: spans are half-open `[start, end)` offsets into the decoded source string and `raw`/`trivia` are string slices. Byte-identical round-trip follows from deterministic UTF-8 re-encoding of equal strings; hashing (02 §5) encodes UTF-8 at hash time.
 
 ```ts
 interface RawBlock {
-  type: BlockType;              // 01-architecture §3.3
-  span: { start: number; end: number };   // byte offsets into the source buffer
-  raw: Uint8Array;              // exact source slice (owned copy)
+  type: BlockKind;              // format-qualified string (01-architecture §3.3)
+  span: { start: number; end: number };   // half-open offsets into the source string
+  raw: string;                  // exact source slice (excludes trailing trivia)
   text: string;                 // normalized visible text (02-data-model §5.2)
   attrs: Record<string, unknown>;         // checked, lang, level, info, …
   children: RawBlock[];         // parser nesting only (lists, quotes, tables)
-  trivia: Uint8Array;           // trailing inter-block trivia attached to this block (§2.3)
+  trivia: string;               // trailing inter-block trivia attached to this block (§2.3)
+  dirty?: boolean;              // set by ops: serialize (§2.2) rather than splice verbatim
   anchors: string[];            // authored ^block-refs found on this block
   outLinks: ExtractedLink[];    // for edge extraction (05-graph-and-query §2)
 }
@@ -56,7 +58,7 @@ Inter-block bytes (blank lines, HTML comments between blocks, stray whitespace) 
 
 ### 2.4 Round-trip corpus
 
-`corpus/roundtrip/`: the CommonMark spec examples, GFM spec examples, plus ≥ 50 real-world files (Obsidian vault exports, READMEs, worknotes-style notes with frontmatter/wikilinks/inline fields/tasks, files with conflict markers, CRLF files, files with trailing no-newline). CI gate: 100% byte-identity.
+`packages/core/corpus/roundtrip/`: the CommonMark spec examples, GFM spec examples, plus ≥ 50 real-world files (Obsidian vault exports, READMEs, worknotes-style notes with frontmatter/wikilinks/inline fields/tasks, files with conflict markers, CRLF files, files with trailing no-newline). CI gate: 100% byte-identity.
 
 ## 3. Reconciliation: problem statement
 
@@ -156,10 +158,9 @@ Engine-authored writes are echo-suppressed by expected-hash match at the watcher
 
 ## 9. Eval harness (deliverable, Stage 2 exit gate)
 
-`corpus/matcher/` + `omg eval-matcher`:
+`packages/core/corpus/matcher/` + `omg eval-matcher` (runs `runEval` in `reconcile/eval/`):
 
-- **Synthetic suite:** a generator applies scripted edit sequences (edit / insert / delete / move / reorder / split / merge / copy / cross-doc move / bulk rewrite, parameterized by intensity) to corpus documents. Ground truth is exact by construction.
-- **Git-history suite:** replay consecutive versions of real Markdown files from public repos + the worknotes repo; label the unambiguous transitions (hash-identical, single-region edits) automatically; hand-label a small hard set.
+- **Synthetic suite:** a generator applies scripted edit sequences (edit / insert / delete / move / reorder / split / merge / copy / cross-doc move / bulk rewrite, parameterized by intensity) to corpus documents. Ground truth is exact by construction. This is the only suite built in v1.
 - **Metrics per edit class:** identity precision (carried pairs that are true pairs), identity recall (true pairs carried), split/merge F1, mean confidence calibration error.
 - **Release gates (v1):** precision ≥ 0.995 overall and ≥ 0.98 per class; recall ≥ 0.95 for edit/move/reorder classes; recall for split/merge ≥ 0.75. Precision is the non-negotiable side (R4).
 - Harness output feeds threshold tuning; tuned defaults are committed to config with the harness run ID in the commit message.
@@ -184,4 +185,4 @@ Stable block identity is quite difficult.
 
 Another paragraph.
 ```
-Required output: heading and "Another paragraph." carry via `exact_hash`; "Stable block identity is quite difficult." carries the old paragraph's id via Phase 4/5 (`confidence ≥ 0.9`); "A newly inserted paragraph." is minted `inserted`. The insertion MUST NOT capture the edited paragraph's identity (order constraint + first-match). This exact case is `corpus/matcher/fixtures/brief-example/` and runs in CI.
+Required output: heading and "Another paragraph." carry via `exact_hash`; "Stable block identity is quite difficult." carries the old paragraph's id via Phase 4/5 (`confidence ≥ 0.9`); "A newly inserted paragraph." is minted `inserted`. The insertion MUST NOT capture the edited paragraph's identity (order constraint + first-match). This exact case is `packages/core/corpus/matcher/fixtures/brief-example/` and runs in CI.
