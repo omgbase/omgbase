@@ -292,7 +292,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "query_syntax",
     {
       description:
-        "Reference: the full `query` syntax — targets, the CEL filter subset, absence semantics, structural + link-graph functions, `select` projection, and worked examples. Call this before writing a non-trivial filter. No arguments.",
+        "Reference: the full `query` syntax — targets, the CEL filter subset, absence semantics, structural functions, link-graph traversal (OQX `follow`), `select` projection, and worked examples. Call this before writing a non-trivial filter. No arguments.",
       inputSchema: {},
     },
     async () => ok({ syntax: QUERY_SYNTAX }),

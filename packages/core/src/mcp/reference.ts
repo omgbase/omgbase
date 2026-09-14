@@ -36,7 +36,10 @@ docs:
                        key: $title is the H1, title is the frontmatter value.
   - intrinsics       = $id, $path, $repo, $updated_at (ISO-8601, sorts
                        chronologically), $body, $content_hash
-  - link-graph       = $in(glob), $has(glob), $links(), $backlinks() (+ _static)
+  - link-graph       = there are NO CEL link predicates. Traverse the authored
+                       link graph with OQX \`follow doc.out\` / \`follow doc.in\`
+                       (see "Link-graph traversal" below), or query the \`edges\`
+                       target / the doc.out_edges / doc.in_edges relations.
 
 blocks:
   - bare fields      = type, text, attrs.<key> (attrs.checked, attrs.lang, ...)
@@ -79,7 +82,9 @@ edges:  (the authored link graph as first-class rows — one row per open edge)
                size(x)                    string length / list length
                contains/startsWith/endsWith  free or method form:
                  $path.startsWith("guides/")   x.contains("s")
-               matches("^re$")            RE2 (post-filter; pair with an indexed term)
+               matches("^re$")            RE2 regex — NOT yet wired (errors
+                                         filter_invalid); use contains/startsWith/
+                                         endsWith for indexed substring matches
                text("terms")             full-text (FTS5) match — a PRUNING predicate,
                                          not a ranker; blocks/nodes match their own
                                          text, docs match when any block does
@@ -110,13 +115,26 @@ A missing key NEVER matches and NEVER errors:
   parent_type() == "x"        parent block's type (must be compared)
   child_count() > 0           number of direct children (must be compared)
 
-## Link-graph predicates (docs target)
+## Link-graph traversal (OQX \`follow\`, not CEL predicates)
 
-  $in("moc/**")               some doc matching the glob links TO this doc
-  $has("guides/*")            this doc links to a target matching the glob
-  $links().size() == 0        leaf docs (no outgoing links)
-  $backlinks().exists(d, d.layer == "draft")   quantify over linking docs;
-                              inside, d.<key> reads the other doc's metadata
+There are NO CEL link predicates: $in / $has / $links / $backlinks are NOT
+wired — they error as filter_invalid (unknown function). Walk the authored
+citation graph with the OQX \`follow\` operator over the doc→doc relations
+\`doc.out\` / \`doc.in\`, or read the edges directly:
+
+  from docs where <seed> follow doc.out    docs the seed links TO (outgoing)
+  from docs where <seed> follow doc.in     docs that link to the seed (backlinks)
+    follow doc.out { depth N }              bound the walk (1..8, default 8)
+    follow doc.out { via predicate == "depends_on" }   restrict the licensing
+                                            edge by predicate/provenance
+    follow doc.out { where layer == "canon" }   keep only matching successors
+  from edges filter: $dst_path == "notes/x.md"   inbound edges to a doc (as rows)
+  from edges filter: predicate == "depends_on"    the edge graph directly
+
+A doc's own edges are also reachable as relations: doc.out_edges (leaving) /
+doc.in_edges (arriving/backlinks), e.g. \`doc.in_edges exists { }\` tests for any
+backlink. (The \`graph\` tool is a convenience wrapper that compiles to a
+\`follow doc.out\`/\`doc.in\` query for the neighborhood around root docs.)
 
 ## select — projection (avoids N hydration round-trips)
 
@@ -153,7 +171,8 @@ within notes. text/filter prune the candidate set (AND); they never reweight.
   from=docs       filter: inline.owner == "alice"       (only inline key:: fields)
   from=docs       filter: $title == "Q3 Plan"           (computed: first H1)
   from=docs       filter: "urgent" in list($tags)       (computed: body #hashtags)
-  from=docs       filter: !$in("**")                    (orphans)
+  from docs       where !doc.in_edges exists { }        (orphans — nothing links in)
+  from docs       where $id == "d_92aaaaa" follow doc.out   (walk outgoing links)
   from=blocks     filter: type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"
   from=blocks     filter: type == "paragraph" && has_edge("references", "d_92aaaaa")
   from=blocks     semantic: "identity preservation across edits"   select: ["$ordinal","$semantic_score"]
