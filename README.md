@@ -1,4 +1,4 @@
-# oqx
+# @omgbase/oqx
 
 **Generic Object Query eXpression engine for JavaScript.**
 
@@ -9,7 +9,7 @@ the OQX language semantics separated from any particular data model, exposed as 
 JavaScript tagged template.
 
 ```js
-import { oqx } from "oqx";
+import { oqx } from "@omgbase/oqx";
 
 const people = [
   { name: "Bob", id: 124, title: "Engineer",
@@ -336,7 +336,7 @@ When you don't need interpolation, `execute` runs a plain string query against a
 **data context** of named roots:
 
 ```js
-import { execute } from "oqx";
+import { execute } from "@omgbase/oqx";
 
 execute("name from people where age >= 18", { people });
 // `from people` resolves the `people` root
@@ -370,7 +370,7 @@ compute identity. Implement it to query an ORM graph, a remote API, or lazily
 loaded relations — the query *semantics* stay in OQX:
 
 ```js
-import { parse, run } from "oqx";
+import { parse, run } from "@omgbase/oqx";
 
 const graph = {
   root: (name) => name === "tree" ? [nodes.get(1)] : undefined,
@@ -391,14 +391,14 @@ likes and stay correct. Two adapters ship:
 
 - `IndexedCollection` — hash-indexes a collection and answers equality predicates
   from the index instead of scanning, leaving other predicates as residual.
-- `oqx/sqlite` — real pushdown to a `node:sqlite` database: the flat query core
+- `@omgbase/oqx/sqlite` — real pushdown to a `node:sqlite` database: the flat query core
   (scan + translatable conjunctive predicates, `LIMIT` for unordered
   `first`/`single`) becomes SQL; `matches()`, nested consumer ops, `follow`, etc.
   fall back to the in-memory residual.
 
 ```js
-import { parse, PlannedEngine } from "oqx";
-import { SqliteTable } from "oqx/sqlite";
+import { parse, PlannedEngine } from "@omgbase/oqx";
+import { SqliteTable } from "@omgbase/oqx/sqlite";
 
 const planner = new SqliteTable(db, "emp", { columns: ["id", "name", "dept", "level"] });
 new PlannedEngine(planner).run(parse('name from emp where dept == "eng" && level >= 5'), []);
