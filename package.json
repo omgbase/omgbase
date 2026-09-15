@@ -1,5 +1,5 @@
 {
-  "name": "oqx",
+  "name": "@omgbase/oqx",
   "version": "0.1.0",
   "description": "Generic Object Query eXpression engine for JavaScript",
   "license": "ISC",
