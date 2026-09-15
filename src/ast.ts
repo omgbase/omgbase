@@ -14,6 +14,7 @@ export type RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
 export type Expr =
   | { kind: "lit"; value: string | number | boolean | null }
   | { kind: "ident"; name: string } // bare property of the current row (climbs scopes)
+  | { kind: "outer"; levels: number; name: string } // `^name` — read `levels` scopes out
   | { kind: "binding"; index: number } // a ${…} interpolated host value
   | { kind: "member"; recv: Expr; name: string } // .prop navigation (no climb)
   | { kind: "index"; recv: Expr; index: Expr } // [expr] navigation
@@ -31,7 +32,9 @@ export interface OrderSpec {
 /** One projection item: a named scalar/navigation value, or a named nested
  * collection consumer. `lift` marks a `^name` one-scope lift. */
 export type SelectItem =
-  | { kind: "field"; name: string; expr: Expr; lift: boolean }
+  // `lift` is the number of `^` carets: 0 = an ordinary projection, N = a lift
+  // that binds this value N scopes out (see the engine's flatten-append).
+  | { kind: "field"; name: string; expr: Expr; lift: number }
   | { kind: "collect"; name: string; op: OpNode };
 
 /** A postfix consumer directive over a receiver collection:

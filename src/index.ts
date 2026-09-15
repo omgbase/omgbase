@@ -9,24 +9,37 @@
 //   `;
 //
 // Interpolations cross the host/OQX boundary as typed VALUE bindings, never as
-// source text (prepared-statement semantics): a `${…}` source resolves to the
-// collection queried; a `${…}` in a predicate is an ordinary host value.
+// source text (prepared-statement semantics).
 //
-// For string queries with named roots (a data context) use `execute`:
-//
-//   execute("name from people where age >= 18", { people });
+// The engine is layered so OQX can be a foundation for other query systems:
+//   • tier 1 — `InMemoryEngine` over a `DataContext` (this file's default);
+//   • tier 2 — a custom `DataContext` binds any data model (ORM, remote, …);
+//   • tier 3 — a `QueryPlanner` pushes work into a store (see `oqx/sqlite`),
+//     with `PlannedEngine` finishing the residual in-memory.
+// All backends must obey the scalar rules in `./semantics.ts` (the conformance
+// suite verifies this).
 
 import type { Query } from "./ast.ts";
 import { parseTemplate, parseString } from "./parser.ts";
-import { runQuery, type OqxResult } from "./evaluate.ts";
+import type { Engine, OqxResult } from "./engine.ts";
+import { InMemoryEngine, runQuery } from "./engine.ts";
+import type { DataContext } from "./context.ts";
+import { DefaultContext } from "./context.ts";
 
 export { OqxError } from "./errors.ts";
-export type { OqxResult } from "./evaluate.ts";
+export type { OqxResult, Engine } from "./engine.ts";
+export { InMemoryEngine, runQuery } from "./engine.ts";
+export type { DataContext, CallResult } from "./context.ts";
+export { DefaultContext } from "./context.ts";
+export type { QueryPlanner, Plan } from "./planner.ts";
+export { PlannedEngine } from "./planner.ts";
+export { IndexedCollection } from "./adapters/indexed.ts";
+export { ROWS_ROOT, partitionPushable, residualQuery, asEquality, isConst, constValue } from "./plan.ts";
+export * as semantics from "./semantics.ts";
 export type * from "./ast.ts";
 
 // Compiled-query cache keyed by the template's stable `strings` identity, so the
-// same call site parses once and re-runs with fresh bindings (the host-bindings
-// note's caching rule).
+// same call site parses once and re-runs with fresh bindings.
 const templateCache = new WeakMap<TemplateStringsArray, Query>();
 
 /** The OQX tagged template. Returns the query result shaped by its consumer:
@@ -41,7 +54,7 @@ export function oqx(strings: TemplateStringsArray, ...values: unknown[]): unknow
   return unwrap(runQuery(query, values, undefined));
 }
 
-/** Parse a query (string or tagged-template fragments) into a reusable AST. */
+/** Parse a query string into a reusable AST. */
 export function parse(source: string): Query {
   return parseString(source);
 }
@@ -52,10 +65,17 @@ export function execute(source: string, roots?: Record<string, unknown>): unknow
   return unwrap(runQuery(parseString(source), [], roots));
 }
 
-/** Run a pre-parsed query with explicit bindings and/or named roots, returning
- * the full discriminated result (the consumer and its value). */
-export function run(query: Query, opts: { values?: readonly unknown[]; roots?: Record<string, unknown> } = {}): OqxResult {
-  return runQuery(query, opts.values ?? [], opts.roots);
+/** Run a pre-parsed query with explicit bindings and/or a backend, returning the
+ * full discriminated result. Provide `engine` (any `Engine`), or `context` (a
+ * `DataContext`, run in-memory), or `roots` (plain-object named roots). */
+export function run(
+  query: Query,
+  opts: { values?: readonly unknown[]; roots?: Record<string, unknown>; context?: DataContext; engine?: Engine } = {},
+): OqxResult {
+  const values = opts.values ?? [];
+  if (opts.engine) return opts.engine.run(query, values);
+  const context = opts.context ?? new DefaultContext(opts.roots ?? {});
+  return new InMemoryEngine(context).run(query, values);
 }
 
 function unwrap(result: OqxResult): unknown {

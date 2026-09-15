@@ -272,8 +272,9 @@ class Parser {
   }
 
   private parseSelectItem(): SelectItem {
-    let lift = false;
-    if (this.at("caret")) { this.next(); lift = true; }
+    // Leading `^`s mark a lift; the count is how many scopes out it binds.
+    let lift = 0;
+    while (this.at("caret")) { this.next(); lift++; }
     if (!this.at("ident")) this.fail("expected a projection name");
     const nameTok = this.next();
     if (this.at("colon")) {
@@ -354,7 +355,7 @@ class Parser {
       this.fail(`${op.op} { … } is a select-position lookup; in where use exists { … } or count { … } <op> N`);
     }
     if (op.op === "collect") {
-      const allLift = op.sub.select.length > 0 && op.sub.select.every((s) => s.kind === "field" && s.lift);
+      const allLift = op.sub.select.length > 0 && op.sub.select.every((s) => s.kind === "field" && s.lift > 0);
       if (!allLift) this.fail("collect { … } in where must project only ^lift values (else use exists/count)");
     }
     if (this.peek().type === "op" && RELOPS.has(this.peek().value)) {
@@ -484,6 +485,16 @@ class Parser {
 
   private parsePrimary(): Expr {
     const t = this.peek();
+    // `^name` / `^^name` — an outer reference reading `levels` scopes out. (As a
+    // select-item head `^name:` is a lift, handled in parseSelectItem; here, in
+    // expression position, `^` reads an enclosing row's field even when the
+    // current row shadows the name.)
+    if (t.type === "caret") {
+      let levels = 0;
+      while (this.at("caret")) { this.next(); levels++; }
+      if (!this.at("ident")) this.fail("expected an identifier after '^' (an outer reference)");
+      return { kind: "outer", levels, name: this.next().value };
+    }
     if (t.type === "number") { this.next(); return { kind: "lit", value: Number(t.value) }; }
     if (t.type === "string") { this.next(); return { kind: "lit", value: t.value }; }
     if (t.type === "binding") { this.next(); return { kind: "binding", index: t.index! }; }

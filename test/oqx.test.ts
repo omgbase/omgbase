@@ -66,6 +66,18 @@ test("named projections and value expressions", () => {
   assert.deepEqual(out, [{ label: "Bob", decade: 41 }]);
 });
 
+test("the optional `select` keyword is accepted (hook for future `select distinct`)", () => {
+  const explicit = oqx`select name, id from ${people} where name == "Bob"`;
+  const implicit = oqx`name, id from ${people} where name == "Bob"`;
+  assert.deepEqual(explicit, [{ name: "Bob", id: 124 }]);
+  assert.deepEqual(explicit, implicit);
+});
+
+test("`select` works after `from` too (order-flexible clauses)", () => {
+  const out = oqx`from ${people} select name where age > 50`;
+  assert.deepEqual(out, [{ name: "Alice" }]);
+});
+
 // ---- bindings as values -----------------------------------------------------
 
 test("binding used as a scalar predicate value", () => {
@@ -125,6 +137,26 @@ test("nested predicate can reference an outer-row field", () => {
   assert.deepEqual(out.map((r) => r.owner), ["x", "y"]);
 });
 
+test("^ outer reference reaches an enclosing row even when the name is shadowed", () => {
+  const family = [
+    { name: "Ada", parent: "Pat" },
+    { name: "Ben", parent: "Pat" },
+    { name: "Cy", parent: "Sam" },
+  ];
+  // Both the outer person and each inner candidate have `parent`; `^parent` /
+  // `^name` reach the outer row that the inner row would otherwise shadow.
+  const out = oqx`
+    name,
+    siblings: ${family} collect { name where parent == ^parent && name != ^name }
+    from ${family}
+  `;
+  assert.deepEqual(out, [
+    { name: "Ada", siblings: [{ name: "Ben" }] },
+    { name: "Ben", siblings: [{ name: "Ada" }] },
+    { name: "Cy", siblings: [] },
+  ]);
+});
+
 // ---- top-level consumers ----------------------------------------------------
 
 test("top-level exists / count directives", () => {
@@ -157,6 +189,40 @@ test("^lift binds a per-row collection from a where-position collect", () => {
     { name: "Bob", currentEmployers: ["Globocorp"] },
     { name: "Carol", currentEmployers: ["Globocorp"] },
   ]);
+});
+
+test("^^ multi-level lift binds N scopes out and flatten-appends", () => {
+  const departments = [
+    { name: "Eng", teams: [
+      { id: "t1", members: [{ name: "Ada" }, { name: "Ben" }] },
+      { id: "t2", members: [{ name: "Cy" }] },
+    ] },
+    { name: "Sales", teams: [{ id: "t3", members: [{ name: "Dee" }] }] },
+  ];
+  // ^teamIds binds one scope out (the dept); ^^allMembers binds two scopes out,
+  // accumulating every team's members into one flat list per department.
+  const out = oqx`
+    name, teamIds, allMembers
+    from ${departments}
+    where teams collect { ^teamIds: id where members collect { ^^allMembers: name } }
+  `;
+  assert.deepEqual(out, [
+    { name: "Eng", teamIds: ["t1", "t2"], allMembers: ["Ada", "Ben", "Cy"] },
+    { name: "Sales", teamIds: ["t3"], allMembers: ["Dee"] },
+  ]);
+});
+
+test("^^^ lift exports three scopes out", () => {
+  const orgs = [{ name: "Acme", divisions: [
+    { d: "D1", teams: [{ members: [{ name: "Ada" }] }, { members: [{ name: "Ben" }] }] },
+    { d: "D2", teams: [{ members: [{ name: "Cy" }] }] },
+  ] }];
+  const out = oqx`
+    name, everyone
+    from ${orgs}
+    where divisions collect { ^divs: d where teams collect { ^^tc: 1 where members collect { ^^^everyone: name } } }
+  `;
+  assert.deepEqual(out, [{ name: "Acme", everyone: ["Ada", "Ben", "Cy"] }]);
 });
 
 // ---- data-context (string) API ----------------------------------------------
