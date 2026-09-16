@@ -69,11 +69,11 @@ describe("@N frame + show", () => {
   });
 });
 
-describe("named bindings via let", () => {
+describe("named bindings via @name =", () => {
   it("binds a query result and dereferences a row with @name[i]", () => {
     const { stdout, code } = shell(
       [
-        "let tasks = query 'from blocks where type == \"task\"'",
+        "@tasks = query 'from blocks where type == \"task\"'",
         "bindings",
         "cat @tasks[1]",
         "exit",
@@ -89,7 +89,7 @@ describe("named bindings via let", () => {
     const { stdout, code } = shell(
       [
         "query 'from blocks where type == \"task\"'",
-        "let first = @1",
+        "@first = @1",
         "cat @first",
         "exit",
       ].join("\n"),
@@ -166,17 +166,17 @@ describe("frame semantics", () => {
     expect(stdout).toMatch(/- \[[ x]\] (wire the deploy pipeline|write the readme)/);
   });
 
-  it("let runs quietly and does not clobber the numbered frame", () => {
+  it("a binding assignment runs quietly and does not clobber the numbered frame", () => {
     const { stdout, code } = shell(
       [
         "query 'from blocks where type == \"task\"'", // frame = tasks
-        "let d = find deploy", // quiet; must not become the frame
+        "@d = find deploy", // quiet; must not become the frame
         "cat @1", // still the first task
         "exit",
       ].join("\n"),
     );
     expect(code).toBe(0);
-    // `let` is quiet: the find hits are not printed as data.
+    // assignment is quiet: the find hits are not printed as data.
     expect(stdout).not.toMatch(/#task\[/);
     expect(stdout).toMatch(/- \[[ x]\]/);
   });
@@ -192,11 +192,11 @@ describe("frame semantics", () => {
 });
 
 describe("bindings management", () => {
-  it("bindings is empty until let, and unset drops a binding", () => {
+  it("bindings is empty until an assignment, and unset drops a binding", () => {
     const { stdout, stderr, code } = shell(
       [
         "bindings",
-        "let x = show hub.md",
+        "@x = show hub.md",
         "bindings",
         "unset x",
         "bindings",
@@ -204,7 +204,7 @@ describe("bindings management", () => {
       ].join("\n"),
     );
     expect(code).toBe(0);
-    // Two "no bindings" notices (before let, after unset) on stderr; one listing
+    // Two "no bindings" notices (before the assignment, after unset) on stderr; one listing
     // of @x on stdout in between.
     expect(stderr.match(/no bindings/g)?.length).toBe(2);
     expect(stdout).toContain("@x");
@@ -212,7 +212,7 @@ describe("bindings management", () => {
 
   it("reads a field off a named binding", () => {
     const { stdout, code } = shell(
-      ["let d = show hub.md", "@d.path", "exit"].join("\n"),
+      ["@d = show hub.md", "@d.path", "exit"].join("\n"),
     );
     expect(code).toBe(0);
     expect(stdout).toContain("hub.md");
@@ -229,7 +229,7 @@ describe("errors", () => {
   it("passing a bare collection binding as an argument is refused", () => {
     const { code, stderr } = shell(
       [
-        "let tasks = query 'from blocks where type == \"task\"'",
+        "@tasks = query 'from blocks where type == \"task\"'",
         "show @tasks", // a collection can't be one argument
       ].join("\n"),
     );
@@ -253,5 +253,33 @@ describe("errors", () => {
   it("comments and blank lines are ignored", () => {
     const { code } = shell(["# just a comment", "", "exit"].join("\n"));
     expect(code).toBe(0);
+  });
+
+  // `--prompt` makes piped mode emit a prompt (no trailing newline) on stdout
+  // before each line, so a driver (e.g. recital's prompt mode) can sync on its
+  // reappearance. Two commands ⇒ an initial prompt plus one after each.
+  it("--prompt emits the prompt before each line, ordered with output", () => {
+    const r = spawnSync("node", [BIN, "-C", vault, "shell", "--prompt", "omg> "], {
+      input: ["query 'from blocks where type == \"task\"'", "bindings", "exit"].join("\n"),
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    const stdout = r.stdout ?? "";
+    // Prompt up front, and it precedes the command's row output (not the reverse).
+    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}hub\.md/);
+    // One prompt initially, then one after each of the two commands.
+    expect((stdout.match(/omg> /g) ?? []).length).toBe(3);
+  });
+
+  it("the prompt can also come from $OMG_SHELL_PROMPT (no --prompt flag)", () => {
+    const r = spawnSync("node", [BIN, "-C", vault, "shell"], {
+      input: ["query 'from blocks where type == \"task\"'", "exit"].join("\n"),
+      encoding: "utf8",
+      env: { ...process.env, NO_COLOR: "1", OMG_SHELL_PROMPT: "omg> " },
+    });
+    const stdout = r.stdout ?? "";
+    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}hub\.md/);
+    // initial prompt + one after the query (exit ends the session, no prompt).
+    expect((stdout.match(/omg> /g) ?? []).length).toBe(2);
   });
 });

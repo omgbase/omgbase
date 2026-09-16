@@ -5,8 +5,9 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { truncationFooter, EngineErrorLike, EXIT_OK } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { readStdin } from "./_mutate.js";
 
-// `omg oqx <source>` — OQX composable query. Dot navigation belongs to the host
+// `omg query <source>` — OQX composable query. Dot navigation belongs to the host
 // object model (`doc.layer`, `section.blocks`); whitespace query directives
 // belong to OQX (`<receiver> collect|exists|count|first|single { <block> }`).
 // `from E` selects + flattens a relation relative to the current source scope
@@ -31,14 +32,6 @@ import { loadEmbedding } from "./_embed.js";
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
 // string or -f file|-. Human output: one hit per line (id + path), or the scalar
 // for count/exists; --json/--jsonl/--ids.
-
-function readStdin(): string {
-  try {
-    return readFileSync(0, "utf8");
-  } catch {
-    return "";
-  }
-}
 
 async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -75,7 +68,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     ? (values.file === "-" ? readStdin() : readFileSync(values.file, "utf8"))
     : positionals.join(" ").trim();
   if (!source) {
-    cli.io.err(cli.style.dim("  usage: oqx <source>  (or -f file|-)"));
+    cli.io.err(cli.style.dim("  usage: query <source>  (or -f file|-)"));
     return EXIT_OK;
   }
 
@@ -151,11 +144,12 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   return EXIT_OK;
 }
 
-// `query` (alias `q`) is the single query surface; `oqx` stays as an alias since
-// the engine keeps that name. The command impl lives in this file (oqx.ts).
+// `query` (alias `q`) is the single, default query surface — the OQX engine.
+// (The `oqx` alias was removed: OQX *is* the query experience, so `query`/`q`
+// name it. The impl lives in this file, still named oqx.ts after the engine.)
 export const cmdOqx: Command = {
   name: "query",
-  aliases: ["q", "oqx"],
-  summary: "Composable query (OQX engine: from/where/select + collection ops)",
+  aliases: ["q"],
+  summary: "Composable query (OQX: from/where/select + collection ops)",
   run: (cli, a) => runOqx(cli, a),
 };

@@ -19,5 +19,8 @@
     "@omgbase/core": "workspace:*",
     "@omgbase/fs-adapter": "workspace:*",
     "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@simplebrains/recital": "^0.8.0"
   }
 }

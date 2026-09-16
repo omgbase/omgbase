@@ -67,10 +67,10 @@ describe("concurrent-writer torture (live watch + one-shot mutations)", () => {
 
       // Every appended entry is present exactly once.
       for (let i = 0; i < N; i++) {
-        const hits = omg(["oqx", 'from blocks where type == "list_item" && text("entry")', "--ids"]).trim();
+        const hits = omg(["query", 'from blocks where type == "list_item" && text("entry")', "--ids"]).trim();
         expect(hits.length).toBeGreaterThan(0);
       }
-      const items = omg(["oqx", 'from blocks where type == "list_item"', "--ids"]).trim().split("\n").filter(Boolean);
+      const items = omg(["query", 'from blocks where type == "list_item"', "--ids"]).trim().split("\n").filter(Boolean);
       // seed entry + N appended
       expect(items.length).toBe(N + 1);
 

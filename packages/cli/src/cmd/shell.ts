@@ -13,11 +13,22 @@ import { ShellSession } from "../shell/session.js";
 // latter is also what a Markdown CLI-session test would feed.
 
 async function runShell(cli: Cli, args: string[]): Promise<number> {
-  const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { help: { type: "boolean" }, prompt: { type: "string" } },
+  });
   if (values.help) {
-    cli.io.out("  shell  — persistent session with typed bindings (@1/@_/@name; let/unset/bindings)");
+    cli.io.out("  shell [--prompt <str>]  — persistent session with typed bindings (@1/@_/@name; unset/bindings)");
+    cli.io.out("    --prompt <str>  emit <str> before reading each piped line, so a driver (e.g. recital) can sync on it");
+    cli.io.out("    (also read from $OMG_SHELL_PROMPT; --prompt wins)");
     return EXIT_OK;
   }
+
+  // An explicit prompt string, if any: --prompt wins, else $OMG_SHELL_PROMPT.
+  // In piped mode this switches on the prompt-emitting line runner; on a TTY it
+  // overrides the interactive prompt. (An empty env value is treated as unset.)
+  const promptOpt = values.prompt ?? (process.env.OMG_SHELL_PROMPT || undefined);
 
   // Resolve the workspace once and hold it open for the session's lifetime.
   const ws = cli.workspace();
@@ -30,8 +41,11 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
 
   const interactive = cli.io.stdoutTTY && Boolean(process.stdin.isTTY);
   if (!interactive) {
-    // Piped/script mode: run every line, stop on `exit`. Exit code is the last
-    // non-zero code (so a failing line in a test script surfaces).
+    // Piped mode. With a prompt configured, act like the interactive REPL for a
+    // machine driver: emit the prompt (no trailing newline) before each line so
+    // a tool like recital can treat its reappearance as the end-of-command
+    // signal. Without one, keep the batch script runner (read all, run all).
+    if (promptOpt !== undefined) return await runPromptedScript(cli, session, promptOpt);
     const script = await readAll();
     let code = EXIT_OK;
     for (const line of script.split(/\r?\n/)) {
@@ -42,8 +56,9 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
     return code;
   }
 
-  // Interactive REPL.
-  const prompt = cli.style.tier === "plain" ? "omg> " : cli.style.accent("omg") + cli.style.dim("> ");
+  // Interactive REPL. A configured prompt overrides the default prompt string.
+  const prompt =
+    promptOpt ?? (cli.style.tier === "plain" ? "omg> " : cli.style.accent("omg") + cli.style.dim("> "));
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt });
   cli.io.err(cli.style.dim("  omg shell — type `?` for session-binding help, `exit` to leave"));
   rl.prompt();
@@ -67,6 +82,57 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
     rl.on("close", () => {
       cli.io.err("");
       resolve(EXIT_OK);
+    });
+  });
+}
+
+/**
+ * Piped session that emits `promptStr` before each line, so a machine driver
+ * (e.g. recital's prompt mode) can sync on the prompt reappearing. The prompt is
+ * written straight to stdout with no trailing newline; command output flows
+ * through the normal IO in between. Ends on stdin EOF or an `exit` command.
+ */
+function runPromptedScript(cli: Cli, session: ShellSession, promptStr: string): Promise<number> {
+  const rl = createInterface({ input: process.stdin });
+  const queue: string[] = [];
+  let processing = false;
+  let inputClosed = false;
+  let code = EXIT_OK;
+
+  return new Promise<number>((resolve) => {
+    // Serialize command execution: `readline` can emit several buffered `line`
+    // events before any pause takes hold, so run one command fully — output and
+    // the next prompt — before starting the next, whatever pace lines arrive at.
+    const pump = async (): Promise<void> => {
+      if (processing) return;
+      processing = true;
+      while (queue.length > 0) {
+        const line = queue.shift()!;
+        try {
+          const c = await session.exec(line);
+          if (c !== EXIT_OK) code = c;
+        } catch (err) {
+          cli.io.err(cli.style.err(String((err as Error)?.message ?? err)));
+        }
+        if (session.exited) {
+          rl.close();
+          resolve(code);
+          return;
+        }
+        process.stdout.write(promptStr);
+      }
+      processing = false;
+      if (inputClosed) resolve(code);
+    };
+
+    process.stdout.write(promptStr);
+    rl.on("line", (line) => {
+      queue.push(line);
+      void pump();
+    });
+    rl.on("close", () => {
+      inputClosed = true;
+      if (!processing && queue.length === 0) resolve(code);
     });
   });
 }

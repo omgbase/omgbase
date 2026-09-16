@@ -12,6 +12,7 @@ import {
   RefError,
   type Row,
   type Captured,
+  type ParsedRef,
 } from "./refs.js";
 
 // The persistent shell runtime (11 shell). One open Workspace/store is reused
@@ -20,7 +21,7 @@ import {
 //
 //   @1 … @N   rows of the most recent displayed collection frame
 //   @_        the previous command's typed result
-//   @name     a named binding created with `let`
+//   @name     a named binding created with `@name = <command | @ref>`
 //
 // A binding is a snapshot of a typed value, never a live query (the note): using
 // it later does not re-run anything. The shell stores and dereferences; all data
@@ -78,20 +79,22 @@ export class ShellSession {
         case "quit":
           this.exited = true;
           return EXIT_OK;
-        case "let":
-          return await this.doLet(tokens.slice(1));
         case "unset":
           return this.doUnset(tokens.slice(1));
         case "bindings":
           return this.doBindings();
         case "?":
           return this.doShellHelp();
-        default:
-          // A bare reference on its own line inspects the value (and, if it's a
-          // collection, makes it the addressable frame). Anything else is a
-          // normal omg command line with `@refs` substituted into its argv.
-          if (tokens.length === 1 && parseRef(head)) return this.inspect(head);
+        default: {
+          const ref = parseRef(head); // null unless `@…`; throws on a malformed `@…`
+          // `@name = <command | @ref>` binds a snapshot (the command runs
+          // quietly). A bare reference on its own line inspects the value (and,
+          // if it's a collection, makes it the addressable frame). Anything else
+          // is a normal omg command line with `@refs` substituted into its argv.
+          if (ref && tokens[1] === "=") return await this.doAssign(ref, tokens.slice(2));
+          if (ref && tokens.length === 1) return this.inspect(head);
           return await this.runLine(tokens);
+        }
       }
     } catch (err) {
       if (err instanceof RefError || err instanceof CliUsageError || err instanceof TokenizeError) {
@@ -103,24 +106,28 @@ export class ShellSession {
 
   // ---- builtins -------------------------------------------------------------
 
-  private async doLet(rest: string[]): Promise<number> {
-    const name = rest[0];
-    if (!name || rest[1] !== "=") {
-      return this.usage("let <name> = <command | @ref>");
+  /**
+   * `@name = <command | @ref>` — bind a snapshot of a result under `name`.
+   * A command runs quietly (stdout suppressed); a bare `@ref` copies its value.
+   * The target must be a plain name (no `[i]`/`.field`, not `@_`/`@N`).
+   */
+  private async doAssign(target: ParsedRef, rhs: string[]): Promise<number> {
+    const name = target.base;
+    if (target.index !== undefined || target.field !== undefined) {
+      return this.usage("cannot assign to @name[i] or @name.field — bind a whole result to @name");
     }
     if (!/^[A-Za-z][\w-]*$/.test(name) || name === "_") {
-      return this.usage(`bad binding name '${name}' (use a letter-led identifier)`);
+      return this.usage(`bad binding name '@${name}' (use a letter-led identifier)`);
     }
-    const rhs = rest.slice(2);
-    if (rhs.length === 0) return this.usage("let <name> = <command | @ref>");
+    if (rhs.length === 0) return this.usage("@name = <command | @ref>");
 
     let captured: Captured;
     if (rhs.length === 1 && parseRef(rhs[0]!)) {
-      // let x = @ref  — snapshot the referenced value.
+      // @x = @ref  — snapshot the referenced value.
       const { value } = this.resolveRef(rhs[0]!);
       captured = { value, rows: deriveRows(value) };
     } else {
-      // let x = <command>  — run it quietly (stdout suppressed) and snapshot the
+      // @x = <command>  — run it quietly (stdout suppressed) and snapshot the
       // typed result. Diagnostics/errors still reach the user via stderr.
       const substituted = this.substitute(rhs);
       let value: unknown;
@@ -131,7 +138,7 @@ export class ShellSession {
 
     this.bindings.set(name, captured);
     this.last = { value: captured.value };
-    this.io.err(this.style.dim(`  let @${name} = ${this.summary(captured)}`));
+    this.io.err(this.style.dim(`  @${name} = ${this.summary(captured)}`));
     return EXIT_OK;
   }
 
@@ -166,7 +173,7 @@ export class ShellSession {
     line(`${style.accent("@_")}         ${style.dim("the previous command's result")}`);
     line(`${style.accent("@name")}      ${style.dim("a named binding (also @name[i], @name.field)")}`);
     line("");
-    line(`${style.accent("let x = <cmd|@ref>")}   ${style.dim("bind a snapshot of a result")}`);
+    line(`${style.accent("@x = <cmd|@ref>")}      ${style.dim("bind a snapshot of a result")}`);
     line(`${style.accent("unset x")}              ${style.dim("drop a binding")}`);
     line(`${style.accent("bindings")}             ${style.dim("list bindings")}`);
     line(`${style.accent("exit")} / ${style.accent("quit")}          ${style.dim("leave the shell")}`);

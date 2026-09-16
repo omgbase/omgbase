@@ -40,6 +40,19 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
 }
 
 // Entry point.
+//
+// Exit quietly when a downstream consumer closes our stdout early (`omg … | head`,
+// or `… --ids | omg done -` where `done` stops reading): a broken-pipe write
+// otherwise surfaces as an unhandled 'error' event and crashes with a stack
+// trace. Standard pipe-friendly behavior for a CLI that advertises composing
+// with grep/head/xargs (§1).
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") process.exit(0);
+    throw err;
+  });
+}
+
 run(process.argv.slice(2)).then(
   (code) => {
     process.exitCode = code;

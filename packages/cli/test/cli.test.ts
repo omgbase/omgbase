@@ -117,19 +117,19 @@ describe("C4 — dependency query (has_edge)", () => {
 
 describe("query (oqx)", () => {
   it("OQX filter over tasks, --ids emits bare ids (pipe fuel)", () => {
-    const { stdout } = omg(["oqx", 'from blocks where type == "task"', "--ids"]);
+    const { stdout } = omg(["query", 'from blocks where type == "task"', "--ids"]);
     const ids = stdout.trim().split("\n").filter(Boolean);
     expect(ids).toHaveLength(2);
     for (const id of ids) expect(id).toMatch(/^b_/);
   });
 
   it("unchecked-task filter narrows the set", () => {
-    const { stdout } = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]);
+    const { stdout } = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]);
     expect(stdout.trim().split("\n").filter(Boolean)).toHaveLength(1);
   });
 
   it("a select clause projects fields onto each hit", () => {
-    const { stdout } = omg(["oqx", 'from blocks where type == "task" select p: $path, t: type', "--json"]);
+    const { stdout } = omg(["query", 'from blocks where type == "task" select p: $path, t: type', "--json"]);
     const { hits } = JSON.parse(stdout) as { hits: Record<string, unknown>[] };
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {
@@ -141,7 +141,7 @@ describe("query (oqx)", () => {
 
 describe("freshness (§3.3): reads are current without a watcher", () => {
   it("an out-of-band edit is visible on the next command", () => {
-    const before = omg(["oqx", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const before = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(before).toHaveLength(2);
 
     writeFileSync(
@@ -166,7 +166,7 @@ describe("freshness (§3.3): reads are current without a watcher", () => {
     const future = Date.now() / 1000 + 5;
     utimesSync(join(vault, "hub.md"), future, future);
 
-    const after = omg(["oqx", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
+    const after = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout.trim().split("\n").filter(Boolean);
     expect(after).toHaveLength(3);
   });
 });
@@ -196,6 +196,20 @@ describe("errors + exit codes (§2.4)", () => {
       code = (err as { status?: number }).status ?? 0;
     }
     expect(code).toBe(2);
+  });
+
+  it("the `oqx` alias is gone — OQX is `query` / `q`", () => {
+    // `omg oqx …` used to alias the query command; it was removed (OQX *is* the
+    // default query experience, so `query`/`q` name it). It's now unknown.
+    let code = 0;
+    try {
+      execFileSync("node", [BIN, "-C", vault, "oqx", "from docs"], { encoding: "utf8", stdio: "pipe" });
+    } catch (err) {
+      code = (err as { status?: number }).status ?? 0;
+    }
+    expect(code).toBe(2);
+    // …while `q` still works.
+    expect(omg(["q", "from docs", "--ids"]).code).toBe(0);
   });
 });
 

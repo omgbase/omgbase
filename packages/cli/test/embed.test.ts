@@ -59,7 +59,7 @@ describe("embed with no provider configured", () => {
   });
 
   it("oqx semantic() without a provider → semantic_unavailable, exit 1", () => {
-    const { code, stderr } = omgFails(["oqx", 'from blocks where semantic("durability") > 0', "--json"]);
+    const { code, stderr } = omgFails(["query", 'from blocks where semantic("durability") > 0', "--json"]);
     expect(code).toBe(1);
     expect(stderr).toContain("semantic_unavailable");
   });
@@ -90,7 +90,7 @@ describe("embed via external stdio provider (fake embedder)", () => {
 
   it("oqx order by semantic() returns ranked hits after draining", () => {
     omg(["embed", "drain"]);
-    const res = JSON.parse(omg(["oqx", 'from blocks order by semantic("database durability and crash safety") desc', "--json"])) as { hits: { path: string }[] };
+    const res = JSON.parse(omg(["query", 'from blocks order by semantic("database durability and crash safety") desc', "--json"])) as { hits: { path: string }[] };
     expect(res.hits.length).toBeGreaterThan(0);
   });
 

@@ -208,12 +208,12 @@ References all use `@` (OQX owns `$…` for intrinsics like `$depth`/`$leaf`):
 | `@name[i]` | Item *i* (1-based) of a bound/collection value. |
 | `@name.field`, `@1.field`, `@_[i].field` | A shallow field on the addressed value — one `[i]` then one `.field`, and no deeper. As soon as you want `.where(…).map(…)`, the answer is: **use OQX.** The shell provides storage and dereferencing, not a second query language. |
 
-Bindings are **snapshots**, not live queries: `let open = query '…'` captures the results *now*; using `@open` later does not re-run anything (stored executable queries would be a different concept — aliases/macros — and don't belong in basic bindings).
+Bindings are **snapshots**, not live queries: `@open = query '…'` captures the results *now*; using `@open` later does not re-run anything (stored executable queries would be a different concept — aliases/macros — and don't belong in basic bindings).
 
 | Builtin | Does |
 |---|---|
-| `let <name> = <command>` | Run the command quietly and bind a snapshot of its typed result. |
-| `let <name> = <@ref>` | Bind a snapshot of an existing reference. |
+| `@name = <command>` | Run the command quietly and bind a snapshot of its typed result. |
+| `@name = <@ref>` | Bind a snapshot of an existing reference. |
 | `unset <name>` | Drop a binding. |
 | `bindings` | List bindings. |
 | `<@ref>` (alone) | Inspect a reference; a collection reference becomes the addressable frame. |
@@ -227,7 +227,7 @@ d_a83f  projects/foo.md
 d_194c  projects/bar.md
   2 rows — address with @1..@2
 omg> show @1
-omg> let canon = query 'from docs where layer == "canon"'
+omg> @canon = query 'from docs where layer == "canon"'
 omg> show @canon[1]
 omg> query 'from nodes where kind == "md:task" && !attrs.checked'
 omg> done @1
@@ -236,6 +236,8 @@ omg> done @1
 Scope and lifetime: bindings and numbered selections are **ephemeral session state only** — not persisted into the repository, not part of OQX semantics, not stable across shell processes. Opaque OMG entity identities remain authoritative underneath them. The `ShellSession` runtime is drivable programmatically (`session.exec(line)`), so the same layer can power a future Markdown CLI-session test runner: interactive convenience and replayable testing share one session-binding layer.
 
 Two drive modes: an interactive readline REPL on a TTY, and a **script runner** when stdin is piped (one command per line; `#` comments and blank lines are ignored) — the latter is what a piped test harness or a Markdown session test feeds. As a v1 simplification the numbered selectors are not rendered inline as `[n]` beside each command's own output; instead the shell prints a one-line `N rows — address with @1..@N` hint after a frame-producing command.
+
+`omg shell --prompt <str>` (or the `$OMG_SHELL_PROMPT` env var; the flag wins) makes the piped script runner emit `<str>` (verbatim, no trailing newline) on stdout before reading each line — the prompt a machine driver can treat as the end-of-command signal. This lets a prompt-driven harness (e.g. recital's REPL mode) drive the session interactively, one command at a time, instead of feeding the whole script up front; on a TTY it simply overrides the interactive prompt string. The env form is what lets a bare `omg shell` show its `omg> ` prompt under such a harness (matching the interactive-terminal experience). Without a prompt configured, piped mode stays the batch runner (read all, run every line).
 
 ### 5.8 Sync & serve
 
@@ -265,7 +267,7 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | `resolve` | `find` |
 | `query` | `query` |
 | `pipeline` | shell pipes (`q '… follow doc.out' --ids \| show -`) |
-| traversal (`follow`) | `query`/`q`/`oqx` — OQX `follow` (no dedicated `graph` command) |
+| traversal (`follow`) | `query`/`q` — OQX `follow` (no dedicated `graph` command) |
 | `changes_since` / `history_node` / `diff` | `log` / `hist` / `diff` |
 | `apply` | `apply` |
 | `tasks_complete` / `sections_append` / `sections_rename` / `sections_move` / `lists_insert_item` / `links_retarget` | `done` / `append` / `update` (heading) / `move --section` / `insert` (list parent) / `retarget` |

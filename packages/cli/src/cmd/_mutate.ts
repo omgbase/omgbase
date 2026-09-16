@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readSync } from "node:fs";
 import { userInfo } from "node:os";
 import { apply, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
 import type { Cli } from "../context.js";
@@ -59,11 +59,27 @@ export function extractContentOpts(args: string[]): { m?: string; f?: string; re
 }
 
 export function readStdin(): string {
-  try {
-    return readFileSync(0, "utf8");
-  } catch {
-    return "";
+  // Read fd 0 to EOF synchronously. `readFileSync(0)` is not enough: when stdin
+  // is a pipe whose writer hasn't produced data yet (the common `… | omg done -`
+  // case) the fd is non-blocking and the read throws EAGAIN — swallowing that as
+  // "" is why the piped idiom used to lose its input. Loop with an EAGAIN retry
+  // so we actually block for the upstream command's output.
+  const chunks: Buffer[] = [];
+  const buf = Buffer.alloc(65536);
+  for (;;) {
+    let n: number;
+    try {
+      n = readSync(0, buf, 0, buf.length, null);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EAGAIN") continue; // pipe not ready yet — retry
+      if (code === "EOF") break; // some platforms signal EOF this way
+      break; // fd not readable (no stdin) — treat as empty
+    }
+    if (n === 0) break; // clean EOF
+    chunks.push(Buffer.from(buf.subarray(0, n)));
   }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /** Read a list of ids from stdin (one per line), for `-` block-list args. */

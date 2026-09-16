@@ -47,10 +47,10 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("C2 — complete unchecked tasks via pipe (resulting commit)", () => {
   it("done - consumes ids from stdin and checks the boxes on disk", () => {
-    const ids = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
+    const ids = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
     expect(ids.split("\n").filter(Boolean)).toHaveLength(2);
     omg(["done", "-"], ids + "\n");
-    const after = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
+    const after = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim();
     expect(after).toBe("");
     // and it's persisted in the file
     expect(readFileSync(join(vault, "hub.md"), "utf8")).not.toContain("- [ ] wire deploy");
@@ -101,7 +101,7 @@ describe("C7 — fence authoring (run, inert)", () => {
     const out = omg(["run", "q.md", "--ids"]).trim().split("\n").filter(Boolean);
     expect(out.length).toBe(3); // three tasks in hub.md
     // fence stayed inert: the code_fence block is still just a fence
-    const fenceQuery = omg(["oqx", 'from blocks where type == "code_fence"', "--ids"]).trim();
+    const fenceQuery = omg(["query", 'from blocks where type == "code_fence"', "--ids"]).trim();
     expect(fenceQuery.split("\n").filter(Boolean)).toHaveLength(1);
   });
 });
@@ -130,11 +130,11 @@ describe("update — whole-document reconciliation", () => {
     const doc = "note.md";
     omg(["new", doc, "-f", "-"], "# Topic\n\nFirst paragraph, long enough to reconcile across an edit here.\n\nKept paragraph that remains untouched by this whole update.\n");
     const keep = 'from blocks where text == "Kept paragraph that remains untouched by this whole update."';
-    const before = omg(["oqx", keep, "--ids"]).trim();
+    const before = omg(["query", keep, "--ids"]).trim();
     expect(before).toMatch(/^b_/);
     omg(["update", doc, "-f", "-"], "# Topic\n\nFirst paragraph, now edited a bit but still recognizable here.\n\nKept paragraph that remains untouched by this whole update.\n");
     expect(readFileSync(join(vault, doc), "utf8")).toContain("now edited a bit");
-    expect(omg(["oqx", keep, "--ids"]).trim()).toBe(before);
+    expect(omg(["query", keep, "--ids"]).trim()).toBe(before);
   });
 
   it("--plan shows the opset and writes nothing", () => {
@@ -147,7 +147,7 @@ describe("update — whole-document reconciliation", () => {
   });
 
   it("dispatches a b_ target to a block replace (polymorphic target)", () => {
-    const id = omg(["oqx", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim().split("\n")[0]!;
+    const id = omg(["query", 'from blocks where type == "task" && !attrs.checked', "--ids"]).trim().split("\n")[0]!;
     omg(["update", id, "-m", "- [ ] wire deploy pipeline"]);
     expect(readFileSync(join(vault, "hub.md"), "utf8")).toContain("wire deploy pipeline");
   });
@@ -162,7 +162,7 @@ describe("doctor", () => {
 describe("traversal (OQX follow doc.out)", () => {
   it("walks the citation graph from a seed doc to its linked doc", () => {
     // hub.md links to old.md — `follow doc.out` reaches it across the edge graph.
-    const res = JSON.parse(omg(["oqx", 'from docs where $path == "hub.md" follow doc.out', "--json"])) as {
+    const res = JSON.parse(omg(["query", 'from docs where $path == "hub.md" follow doc.out', "--json"])) as {
       hits: { path: string }[];
     };
     expect(res.hits.map((h) => h.path)).toContain("old.md");

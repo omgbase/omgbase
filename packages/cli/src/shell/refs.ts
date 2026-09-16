@@ -4,7 +4,7 @@
 // Three reference roots, all written with `@` (OQX already owns `$…`):
 //   @N        row N (1-based) of the most recent displayed collection frame
 //   @_        the previous command's typed result
-//   @name     a named binding (`let name = …`)
+//   @name     a named binding (`@name = …`)
 // Each may carry a shallow tail: an optional `[i]` (1-based collection index)
 // then an optional `.field`. That is the whole grammar — deeper access is a
 // signal to use OQX instead.

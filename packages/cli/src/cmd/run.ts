@@ -7,7 +7,7 @@ import { loadEmbedding } from "./_embed.js";
 
 // `omg run <locator|path>` (11 §5.3) — evaluate the first ```omg fence in a doc
 // (or the fence at a block locator) and print its results. The fence body is an
-// OQX source string (the same language `omg oqx` runs). Strictly read-and-print:
+// OQX source string (the same language `omg query` runs). Strictly read-and-print:
 // fences stay INERT in the corpus (ADR-011 §8) — nothing is projected or written.
 
 function firstOmgFence(roots: BlockNode[]): BlockNode | null {
@@ -69,7 +69,7 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
   const source = fenceBody(fenceRaw).trim();
   if (!source) throw new EngineErrorLike("target_missing", `the omg fence in ${ref} is empty`);
 
-  // Same execution path as `omg oqx`: load the embedder only when the fence uses
+  // Same execution path as `omg query`: load the embedder only when the fence uses
   // semantic(...); everything else runs on the sync core.
   const phrases = collectSemanticPhrases(source);
   let result;

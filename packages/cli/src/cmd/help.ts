@@ -9,7 +9,7 @@ import { EXIT_OK } from "../output.js";
 const GROUPS: { title: string; names: string[] }[] = [
   { title: "bootstrap", names: ["init", "attach", "repos"] },
   { title: "orient & read", names: ["status", "ls", "outline", "cat", "show", "find"] },
-  { title: "query", names: ["query", "oqx", "run"] },
+  { title: "query", names: ["query", "run"] },
   { title: "history & links", names: ["log", "hist", "diff", "links"] },
   { title: "mutate", names: ["apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge"] },
   { title: "documents", names: ["new", "mv", "meta"] },
