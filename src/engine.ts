@@ -57,21 +57,22 @@ export class InMemoryEngine implements Engine {
 
     if (query.follow) return this.runFollow(query, rows, root);
 
-    // Consumer-directed short-circuits.
-    if (query.consumer === "exists") {
+    // Consumer-directed short-circuits (skipped under `distinct`, which must
+    // materialize + dedup by projection before reducing).
+    if (!query.distinct && query.consumer === "exists") {
       for (const r of rows) if (this.matches(query.where, r, root)) return { consumer: "exists", exists: true };
       return { consumer: "exists", exists: false };
     }
-    if (query.consumer === "count") {
+    if (!query.distinct && query.consumer === "count") {
       let count = 0;
       for (const r of rows) if (this.matches(query.where, r, root)) count++;
       return { consumer: "count", count };
     }
 
-    const cap = !query.orderBy && query.consumer === "first" ? 1
-      : !query.orderBy && query.consumer === "single" ? 2
+    const cap = !query.orderBy && !query.distinct && query.consumer === "first" ? 1
+      : !query.orderBy && !query.distinct && query.consumer === "single" ? 2
       : Infinity;
-    const kept: Scope[] = [];
+    let kept: Scope[] = [];
     for (const r of rows) {
       const s: Scope = { row: r, parent: root, bindings, lifts: {} };
       if (!query.where || this.evalWhere(query.where, s)) {
@@ -80,6 +81,7 @@ export class InMemoryEngine implements Engine {
       }
     }
     this.sortScopes(kept, query.orderBy);
+    if (query.distinct) kept = this.dedupByProjection(kept, query.select);
     return this.shape(query.consumer, kept, query.select);
   }
 
@@ -106,7 +108,25 @@ export class InMemoryEngine implements Engine {
     let scopes: Scope[] = occ.map((o) => ({ row: o.row, parent: root, bindings: root.bindings, lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
+    if (query.distinct) scopes = this.dedupByProjection(scopes, query.select);
     return this.shape(query.consumer, scopes, query.select);
+  }
+
+  // Dedup scopes by their PROJECTED value (`distinct`): keep the first scope per
+  // distinct projection, preserving order. An empty projection dedups by row
+  // identity (so `count distinct { }` counts distinct rows).
+  private dedupByProjection(scopes: Scope[], select: SelectItem[]): Scope[] {
+    const seen = new Set<string>();
+    const out: Scope[] = [];
+    for (const s of scopes) {
+      const key = select.length === 0
+        ? `i:${String(this.ctx.identity(s.row))}`
+        : `p:${stableStringify(this.projectRow(select, s))}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(s);
+    }
+    return out;
   }
 
   // A bounded, per-path recursive walk. Each occurrence carries recursion
@@ -240,7 +260,9 @@ export class InMemoryEngine implements Engine {
       return matched.length > 0;
     }
     if (op.op === "count") {
-      const n = this.matchRows(op, scope).length;
+      let rows = this.matchRows(op, scope);
+      if (op.distinct) rows = this.dedupByProjection(rows, op.sub.select);
+      const n = rows.length;
       return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
     }
     return this.matchRows(op, scope).length > 0;
@@ -278,6 +300,7 @@ export class InMemoryEngine implements Engine {
       scopes = this.matchRows(op, scope);
     }
     this.sortScopes(scopes, sub.orderBy);
+    if (op.distinct) scopes = this.dedupByProjection(scopes, sub.select);
     switch (op.op) {
       case "collect": return scopes.map((s) => this.projectRow(sub.select, s));
       case "first": return scopes.length > 0 ? this.projectRow(sub.select, scopes[0]!) : null;
@@ -394,6 +417,19 @@ interface Occurrence { row: unknown; meta: Record<string, unknown>; }
 
 function isRelOp(op: string): boolean {
   return op === "==" || op === "!=" || op === "<" || op === "<=" || op === ">" || op === ">=";
+}
+
+// Deterministic stringify for `distinct` dedup keys: object keys are emitted in
+// sorted order so two projections that are equal-by-value collide regardless of
+// key insertion order. `undefined` normalizes to null (like an absent value).
+function stableStringify(v: unknown): string {
+  if (v === undefined || v === null) return "null";
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(v);
 }
 
 function compareCount(n: number, cmp: { op: string; value: number }): boolean {

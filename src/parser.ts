@@ -42,6 +42,7 @@ interface BodyClauses {
   select: SelectItem[];
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
+  distinct: boolean;
 }
 
 class Parser {
@@ -81,6 +82,7 @@ class Parser {
         orderBy: directive.sub.orderBy,
         consumer: directive.op,
         follow: directive.sub.follow,
+        distinct: directive.distinct ?? false,
       };
     }
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
@@ -99,6 +101,7 @@ class Parser {
       orderBy: body.orderBy,
       consumer: "collect",
       follow: body.follow,
+      distinct: body.distinct,
     };
   }
 
@@ -114,6 +117,7 @@ class Parser {
     let select: SelectItem[] = [];
     let orderBy: OrderSpec[] | null = null;
     let follow: Follow | null = null;
+    let distinct = false;
     let sawWhere = false, sawSelect = false, sawOrder = false;
 
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -137,7 +141,7 @@ class Parser {
       if (this.at("kw", "select") || this.at("caret")) {
         if (sawSelect) this.fail("duplicate projection");
         sawSelect = true;
-        if (this.at("kw")) this.next(); // consume `select`; a leading `^` is part of the item
+        if (this.at("kw")) { this.next(); if (this.at("ident", "distinct")) { this.next(); distinct = true; } } // consume `select` + optional `distinct`; a leading `^` is part of the item
         select = this.parseSelectItems();
         continue;
       }
@@ -162,7 +166,7 @@ class Parser {
       }
       this.fail(`unexpected ${this.tokDesc()} — expected from/where/select${orderByAllowed ? "/order by" : ""}/follow`);
     }
-    return { froms, where, select, orderBy, follow };
+    return { froms, where, select, orderBy, follow, distinct };
   }
 
   // Decide, by syntactic shape only, whether a leading unkeyworded run is a
@@ -175,19 +179,27 @@ class Parser {
     let depth = 0;
     for (let i = this.pos; i < this.tokens.length; i++) {
       const t = this.tokens[i]!;
-      if (t.type === "eof" || t.type === "rbrace") break;
+      if (t.type === "eof") break;
+      // Skip nested `{ … }` consumer blocks and `( … )` groups: a keyword/select
+      // inside them is not part of the top-level shape (e.g. `count { select x } == N`).
+      if (t.type === "lbrace" || t.type === "lparen") { depth++; continue; }
+      if (t.type === "rbrace" || t.type === "rparen") { if (depth === 0) break; depth--; continue; }
       if (depth === 0) {
         if (t.type === "colon" || t.type === "comma") return false;
         if (t.type === "kw") break;
         if (t.type === "op" && (CMP_OPS.has(t.value) || t.value === "&&" || t.value === "||")) return true;
         if (t.type === "ident" && t.value === "in") return true;
+        // A consumer directive in where position (`… exists { … }`, `… count { … }`,
+        // optionally `count distinct { … }`) is a predicate.
+        if (t.type === "ident" && CONSUMERS.has(t.value)) {
+          const nx = this.tokens[i + 1];
+          if (nx && (nx.type === "lbrace" || (nx.type === "ident" && nx.value === "distinct"))) return true;
+        }
         if (t.type === "ident" && (t.value === "order" || t.value === "follow")) {
           const nx = this.tokens[i + 1];
           if (nx && nx.type === "ident") break;
         }
       }
-      if (t.type === "lparen") depth++;
-      else if (t.type === "rparen") { if (depth === 0) break; depth--; }
     }
     return false;
   }
@@ -378,21 +390,29 @@ class Parser {
     else if (this.at("ident")) receiver = this.parseNavFrom(this.next()).expr;
     else return null;
 
-    if (this.at("ident") && CONSUMERS.has(this.peek().value) && this.peekAt(1)?.type === "lbrace") {
-      const op = this.next().value as Consumer;
-      this.next(); // '{'
-      const sub = this.parseSubquery();
-      if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
-      this.next();
-      return { kind: "op", receiver, op, sub };
+    if (this.at("ident") && CONSUMERS.has(this.peek().value)) {
+      const after = this.peekAt(1);
+      // `<op> { … }` or `<op> distinct { … }`.
+      const opThenBrace = after?.type === "lbrace";
+      const opDistinctBrace = after?.type === "ident" && after.value === "distinct" && this.peekAt(2)?.type === "lbrace";
+      if (opThenBrace || opDistinctBrace) {
+        const op = this.next().value as Consumer;
+        let distinct = false;
+        if (this.at("ident", "distinct")) { this.next(); distinct = true; }
+        this.next(); // '{'
+        const { sub, distinct: bodyDistinct } = this.parseSubquery();
+        if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
+        this.next();
+        return { kind: "op", receiver, op, sub, distinct: distinct || bodyDistinct };
+      }
     }
     this.pos = start;
     return null;
   }
 
-  private parseSubquery(): Subquery {
+  private parseSubquery(): { sub: Subquery; distinct: boolean } {
     const body = this.parseBody(true);
-    return { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow };
+    return { sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow }, distinct: body.distinct };
   }
 
   // ---- expression Pratt parser ----------------------------------------------

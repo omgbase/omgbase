@@ -230,6 +230,18 @@ A relation is just an expression evaluated on the row and coerced to a collectio
 so nested blocks compose to any depth and can navigate dotted paths
 (`author.books collect { … }`).
 
+**`distinct`** dedups the rows a consumer sees by their **projected value**, so
+counts and collections are over distinct projections rather than raw rows. Spell
+it after the consumer (`count distinct { … }`) or inside via `select distinct`:
+
+```js
+oqx`from ${jobs} select distinct employer`;            // distinct employers
+oqx`n: jobs collect distinct { select employer } from ${people}`; // per person, unique employers
+oqx`name from ${people} where jobs count distinct { select employer } == 1`; // worked at exactly one employer
+```
+
+An empty projection dedups by row identity (`count distinct { }` = distinct rows).
+
 ### 7. Lifts (`^`)
 
 Sometimes you want to filter by a nested collection *and* keep a value from it.

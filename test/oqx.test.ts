@@ -300,6 +300,36 @@ test("follow distinct collapses per-path occurrences to reached nodes", () => {
   assert.deepEqual(out.map((r) => r.id), [1, 2]);
 });
 
+// ---- distinct ---------------------------------------------------------------
+
+test("select distinct dedups top-level result rows by projection", () => {
+  const dupes = [{ id: 1 }, { id: 1 }, { id: 2 }];
+  const rows = oqx`from ${dupes} select distinct id` as { id: number }[];
+  assert.deepEqual(rows.map((r) => r.id), [1, 2]);
+});
+
+test("collect distinct dedups a nested relation's projected rows", () => {
+  const bob = people[0]!; // two jobs, both at Globocorp
+  const employers = oqx`from ${bob.jobs} select distinct employer` as { employer: string }[];
+  assert.deepEqual(employers.map((r) => r.employer), ["Globocorp"]); // 2 rows → 1 distinct
+
+  const collected = oqx`from ${[bob]} select n: jobs collect distinct { select employer }` as Array<{ n: unknown[] }>;
+  assert.equal(collected[0]!.n.length, 1);
+});
+
+test("count distinct { … } counts distinct projections (meaningful counts)", () => {
+  const bob = people[0]!; // 2 job rows, both Globocorp → 1 distinct employer
+  assert.equal(oqx`${[bob]} exists { jobs count distinct { select employer } == 1 }` as boolean, true);
+  assert.equal(oqx`${[bob]} exists { jobs count { select employer } == 2 }` as boolean, true); // without distinct: 2 rows
+});
+
+test("distinct is also spellable inside the block via `select distinct`", () => {
+  const bob = people[0]!;
+  const a = oqx`from ${[bob]} select n: jobs collect distinct { select employer }` as Array<{ n: unknown[] }>;
+  const b = oqx`from ${[bob]} select n: jobs collect { select distinct employer }` as Array<{ n: unknown[] }>;
+  assert.deepEqual(a, b);
+});
+
 // ---- errors -----------------------------------------------------------------
 
 test("a missing source is a parse error", () => {

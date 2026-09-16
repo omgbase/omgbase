@@ -45,6 +45,11 @@ export interface OpNode {
   op: Consumer;
   sub: Subquery;
   countCmp?: { op: RelOp; value: number };
+  /** `distinct` — dedup the rows this directive consumes by their projected
+   * value (the `select`), so `count distinct { … }` counts distinct projections
+   * and `collect distinct { … }` yields distinct rows. Empty select ⇒ dedup by
+   * row identity. Spellable as `<op> distinct { … }` or `{ select distinct … }`. */
+  distinct?: boolean;
 }
 
 /** The recursive `follow` clause. */
@@ -84,4 +89,6 @@ export interface Query {
   orderBy: OrderSpec[] | null;
   consumer: Consumer;
   follow: Follow | null;
+  /** `distinct` — dedup the result rows by their projected value (see OpNode). */
+  distinct?: boolean;
 }
