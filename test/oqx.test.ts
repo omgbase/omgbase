@@ -273,18 +273,30 @@ test("follow depth cap and $stop intrinsic", () => {
     order by id
   ` as Array<Record<string, unknown>>;
   const byId = Object.fromEntries(out.map((r) => [r.id, r.stop]));
-  assert.equal(byId["root"], "continue");
+  assert.equal(byId["root"], "interior");
   assert.equal(byId["a"], "depth"); // hit the cap
   assert.equal(byId["b"], "depth");
   assert.equal(out.find((r) => r.id === "a1"), undefined); // never reached
 });
 
-test("follow cycles terminate via identity dedup", () => {
+test("follow cycles terminate: a revisit is admitted once as $stop == 'cycle'", () => {
   const n1: Record<string, unknown> = { id: 1 };
   const n2: Record<string, unknown> = { id: 2 };
   n1.next = [n2];
   n2.next = [n1];
-  const out = oqx`id from ${[n1]} follow next order by id` as Array<Record<string, unknown>>;
+  const out = oqx`id, stop: $stop from ${[n1]} follow next order by $ordinal` as Array<Record<string, unknown>>;
+  // seed 1 (interior) → 2 (interior) → back to 1, admitted once as a cycle and
+  // never re-expanded, so the walk terminates.
+  assert.deepEqual(out.map((r) => r.id), [1, 2, 1]);
+  assert.deepEqual(out.map((r) => r.stop), ["interior", "interior", "cycle"]);
+});
+
+test("follow distinct collapses per-path occurrences to reached nodes", () => {
+  const n1: Record<string, unknown> = { id: 1 };
+  const n2: Record<string, unknown> = { id: 2 };
+  n1.next = [n2];
+  n2.next = [n1];
+  const out = oqx`id from ${[n1]} follow distinct next order by id` as Array<Record<string, unknown>>;
   assert.deepEqual(out.map((r) => r.id), [1, 2]);
 });
 

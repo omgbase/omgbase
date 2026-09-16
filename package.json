@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/oqx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Generic Object Query eXpression engine for JavaScript",
   "license": "ISC",
   "author": "",

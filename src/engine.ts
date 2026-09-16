@@ -109,35 +109,76 @@ export class InMemoryEngine implements Engine {
     return this.shape(query.consumer, scopes, query.select);
   }
 
+  // A bounded, per-path recursive walk. Each occurrence carries recursion
+  // metadata: `$depth` (seed = 1), a categorical `$stop`, and a deterministic
+  // `$ordinal`. Semantics:
+  //   • per-path — a node reached by N distinct paths yields N occurrences
+  //     (unless `distinct`, which keeps the minimal (depth, path) per identity);
+  //   • cycles are safe — revisiting a key already on the current path admits ONE
+  //     occurrence with `$stop == "cycle"` and does not expand it (no runaway);
+  //   • `$stop` ∈ interior | leaf | frontier | depth | cycle, with precedence
+  //     cycle > frontier > depth > leaf > interior; only `interior` rows expand;
+  //   • `$leaf` = (stop == leaf); `$frontier` = (stop ∈ {frontier, depth}) — the
+  //     "there is unfollowed graph beyond me" signal;
+  //   • identity for cycle detection + `distinct` is `by <expr>` when given, else
+  //     `ctx.identity(row)`.
   private followWalk(seedRows: unknown[], follow: Follow, parent: Scope): Occurrence[] {
     const cap = follow.depth ?? HARD_DEPTH_CAP;
-    const idOf = (row: unknown): unknown =>
-      follow.by ? this.evalExpr(follow.by, { row, parent, bindings: parent.bindings }) : this.ctx.identity(row);
-    const occ: Occurrence[] = [];
-    const seen = new Set<unknown>();
-    let level: { row: unknown; depth: number }[] = seedRows.map((r) => ({ row: r, depth: 1 }));
+    const scopeFor = (row: unknown): Scope => ({ row, parent, bindings: parent.bindings });
+    const keyOf = (row: unknown): string =>
+      String(follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(row));
+    const succOf = (row: unknown): unknown[] => {
+      const raw = this.rowsOf(this.evalExpr(follow.receiver, scopeFor(row)));
+      return follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, scopeFor(x)))) : raw;
+    };
+    const frontierHit = (row: unknown): boolean =>
+      follow.frontier ? truthy(this.evalExpr(follow.frontier, scopeFor(row))) : false;
 
-    while (level.length > 0) {
-      const next: { row: unknown; depth: number }[] = [];
-      for (const cur of level) {
-        const key = idOf(cur.row);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const s: Scope = { row: cur.row, parent, bindings: parent.bindings };
-        const raw = this.rowsOf(this.evalExpr(follow.receiver, s));
-        const succ = follow.where
-          ? raw.filter((x) => truthy(this.evalExpr(follow.where!, { row: x, parent, bindings: parent.bindings })))
-          : raw;
-        const atCap = cur.depth >= cap;
-        const frontierHit = follow.frontier ? truthy(this.evalExpr(follow.frontier, s)) : false;
-        const isLeaf = succ.length === 0;
-        const stop = frontierHit ? "frontier" : atCap ? "depth" : isLeaf ? "leaf" : "continue";
-        occ.push({ row: cur.row, meta: { $depth: cur.depth, $stop: stop, $leaf: isLeaf, $frontier: frontierHit } });
-        if (!atCap && !frontierHit && !isLeaf) for (const x of succ) next.push({ row: x, depth: cur.depth + 1 });
+    interface Walked { row: unknown; depth: number; path: string; key: string; stop: string; }
+    const walked: Walked[] = [];
+
+    const visit = (row: unknown, depth: number, ancestors: string[]): void => {
+      const key = keyOf(row);
+      const path = `/${[...ancestors, key].join("/")}/`;
+      let stop: string;
+      if (ancestors.includes(key)) stop = "cycle";
+      else if (frontierHit(row)) stop = "frontier";
+      else if (depth >= cap) stop = "depth";
+      else {
+        const succ = succOf(row);
+        if (succ.length === 0) stop = "leaf";
+        else {
+          walked.push({ row, depth, path, key, stop: "interior" });
+          for (const s of succ) visit(s, depth + 1, [...ancestors, key]);
+          return;
+        }
       }
-      level = next;
+      walked.push({ row, depth, path, key, stop });
+    };
+    for (const r of seedRows) visit(r, 1, []);
+
+    let rows = walked;
+    if (follow.distinct) {
+      // keep the minimal (depth, path) occurrence per identity key.
+      const best = new Map<string, Walked>();
+      for (const w of rows) {
+        const prev = best.get(w.key);
+        if (!prev || w.depth < prev.depth || (w.depth === prev.depth && w.path < prev.path)) best.set(w.key, w);
+      }
+      rows = [...best.values()];
     }
-    return occ;
+    // $ordinal: a deterministic 1..N rank over (depth, path).
+    rows = rows.slice().sort((a, b) => a.depth - b.depth || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return rows.map((w, i) => ({
+      row: w.row,
+      meta: {
+        $depth: w.depth,
+        $stop: w.stop,
+        $leaf: w.stop === "leaf",
+        $frontier: w.stop === "frontier" || w.stop === "depth",
+        $ordinal: i + 1,
+      },
+    }));
   }
 
   // ---- consumer shaping -----------------------------------------------------

@@ -301,21 +301,29 @@ oqx`id, depth: $depth from ${tree} follow children order by $depth, id`;
 ```
 
 Reached rows expose recursion **intrinsics** in `select` / `order by`:
-`$depth` (1-based), `$leaf` (no successors), `$frontier` (hit a boundary), and
-`$stop` (`"continue"` / `"leaf"` / `"depth"` / `"frontier"`). Options go in a
-trailing block:
+`$depth` (1-based), `$leaf` (no successors), `$frontier` (there is unfollowed
+graph beyond — a boundary or the depth cap), `$ordinal` (a deterministic 1..N
+rank over the walk, ordered by depth then path), and `$stop`
+(`"interior"` / `"leaf"` / `"frontier"` / `"depth"` / `"cycle"`, precedence
+cycle > frontier > depth > leaf > interior — only `interior` rows expand). Options
+go in a trailing block:
 
 ```js
-oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by id`;
+oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by $ordinal`;
 // a1 is never reached; a and b report stop:"depth"
 ```
 
+The walk is **per-path**: a node reached by N distinct paths yields N
+occurrences, and revisiting an identity already on the current path is admitted
+**once** as `$stop == "cycle"` and never re-expanded, so cycles terminate without
+runaway. `follow distinct` collapses occurrences to reached nodes (the minimal
+`(depth, path)` per identity).
+
 The block accepts: `where <succ>` (which successors keep participating),
 `frontier <pred>` (cut a relation that could continue), `depth <n>` (1–8), and
-`by <expr>` (the identity used for cycle/duplicate detection — default `.id` or the
-object reference). Reached rows are de-duplicated by that identity, so cycles
-terminate. Give `follow` a stable identity (`.id` or `by`) when your relation
-returns fresh objects rather than shared references.
+`by <expr>` (the identity used for cycle detection + `distinct` — default `.id`
+or the object reference). Give `follow` a stable identity (`.id` or `by`) when
+your relation returns fresh objects rather than shared references.
 
 ### Cheat-sheet
 
