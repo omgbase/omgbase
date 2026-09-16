@@ -253,7 +253,18 @@ export class InMemoryEngine implements Engine {
     if (!orderBy || orderBy.length === 0) return;
     scopes.sort((a, b) => {
       for (const spec of orderBy) {
-        const c = compareForSort(this.evalExpr(spec.expr, a), this.evalExpr(spec.expr, b));
+        const av = this.evalExpr(spec.expr, a);
+        const bv = this.evalExpr(spec.expr, b);
+        // Absent (null/undefined) sorts LAST regardless of direction: `desc`
+        // reverses the ordering of PRESENT values only, and must not hoist rows
+        // that lack the sort key to the top. (Negating the direction over
+        // `compareForSort`'s absent-handling result would flip absent-last to
+        // absent-first under `desc` — the bug this guards against.)
+        const an = av == null, bn = bv == null;
+        if (an && bn) continue;
+        if (an) return 1;
+        if (bn) return -1;
+        const c = compareForSort(av, bv);
         if (c !== 0) return spec.desc ? -c : c;
       }
       return 0;
