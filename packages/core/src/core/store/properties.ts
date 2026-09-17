@@ -30,13 +30,55 @@ function propId(docId: string, source: string, key: string, ord: number): string
   return "p_" + hashHex(`${docId}|${source}|${key}|${ord}`).slice(0, 12);
 }
 
+// A Ruby-style range value detected in a scalar string (`1..5`, `1...5`, `..5`,
+// `5..`, or an ISO-8601 date range). YAML has no range type, so such values
+// arrive as plain strings; we keep the verbatim string (round-trip + display +
+// equality + FTS) and carry the parsed bounds in val_json as a query side channel
+// (see decodeProp in oqx-js/context.ts, which turns them into a range value so
+// `<point> in <prop>` tests coverage). Bounds are numbers for a numeric range or
+// ISO-8601 strings for a date range (compared lexically, like $updated_at).
+export interface RangeValue { lo: number | string | null; hi: number | string | null; exclusiveEnd: boolean; }
+
+const RANGE_NUM = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+const RANGE_ISO = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+
+/** Parse a string as a range value, or null if it is not a well-formed range.
+ * Strict on purpose (both bounds must share a scalar domain — numeric or ISO
+ * date) so ordinary strings that merely contain dots are never mis-promoted. */
+export function detectRange(s: string): RangeValue | null {
+  // The operator is a maximal run of exactly 2 (`..`) or 3 (`...`) dots. A single
+  // dot is a decimal point and stays part of a bound; a run of 4+ is not a range.
+  const m = /^(.*?)(\.\.\.?)(.*)$/.exec(s);
+  if (!m) return null;
+  const loRaw = m[1]!, dots = m[2]!, hiRaw = m[3]!;
+  if (loRaw.endsWith(".") || hiRaw.startsWith(".")) return null; // adjacent dot ⇒ non-maximal run
+  const lo = loRaw.length ? loRaw : null;
+  const hi = hiRaw.length ? hiRaw : null;
+  if (lo === null && hi === null) return null; // `..` with no bounds is meaningless
+  const exclusiveEnd = dots.length === 3;
+  const present = [lo, hi].filter((b): b is string => b !== null);
+  if (present.every((b) => RANGE_NUM.test(b))) {
+    return { lo: lo === null ? null : Number(lo), hi: hi === null ? null : Number(hi), exclusiveEnd };
+  }
+  if (present.every((b) => RANGE_ISO.test(b))) {
+    return { lo, hi, exclusiveEnd }; // keep ISO strings; lexical ordering is chronological
+  }
+  return null; // mixed domains or non-scalar bounds ⇒ an ordinary string
+}
+
 // Classify a single JSON scalar into a typed column. Objects/arrays are not
 // scalars — callers flatten those before reaching here.
 function typedValue(v: unknown): Pick<PropertyRow, "valText" | "valNum" | "valBool" | "valJson" | "type"> {
   if (v === null || v === undefined) return { valText: null, valNum: null, valBool: null, valJson: null, type: "null" };
   if (typeof v === "boolean") return { valText: null, valNum: null, valBool: v ? 1 : 0, valJson: null, type: "bool" };
   if (typeof v === "number") return { valText: null, valNum: v, valBool: null, valJson: null, type: "number" };
-  if (typeof v === "string") return { valText: v, valNum: null, valBool: null, valJson: null, type: "string" };
+  if (typeof v === "string") {
+    const range = detectRange(v);
+    // A range stays type='string' (verbatim in val_text so hydration, equality,
+    // and FTS are unchanged); the parsed bounds ride in val_json for querying.
+    if (range) return { valText: v, valNum: null, valBool: null, valJson: JSON.stringify({ __range: true, ...range }), type: "string" };
+    return { valText: v, valNum: null, valBool: null, valJson: null, type: "string" };
+  }
   // object / array that resisted flattening: escape hatch.
   return { valText: null, valNum: null, valBool: null, valJson: JSON.stringify(v), type: "json" };
 }

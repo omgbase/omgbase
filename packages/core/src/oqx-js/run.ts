@@ -59,6 +59,8 @@ function rewriteExpr(e: Expr): Expr {
     case "unary": return { ...e, expr: rewriteExpr(e.expr) };
     case "binary": case "logical": case "in":
       return { ...e, left: rewriteExpr(e.left), right: rewriteExpr(e.right) };
+    case "range":
+      return { ...e, lo: e.lo ? rewriteExpr(e.lo) : null, hi: e.hi ? rewriteExpr(e.hi) : null };
     case "call": {
       const recv = e.recv ? rewriteExpr(e.recv) : null;
       const args = e.args.map(rewriteExpr);
@@ -132,6 +134,7 @@ export function collectSemanticPhrases(source: string): string[] {
       case "index": visitExpr(e.recv); visitExpr(e.index); return;
       case "unary": visitExpr(e.expr); return;
       case "binary": case "logical": case "in": visitExpr(e.left); visitExpr(e.right); return;
+      case "range": if (e.lo) visitExpr(e.lo); if (e.hi) visitExpr(e.hi); return;
       default: return;
     }
   };

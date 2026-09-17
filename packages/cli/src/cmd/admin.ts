@@ -78,13 +78,23 @@ async function runWatch(cli: Cli, args: string[]): Promise<number> {
 
   await new Promise<void>((resolve) => {
     const stop = (): void => {
+      // Graceful shutdown closes the child fs-adapter process, the drainer, and
+      // the embedder. Any of those could stall (a wedged child, a slow flush) —
+      // and `watch` must never become unkillable by a signal, or Ctrl-C hangs
+      // the terminal and a supervising process (a test's SIGTERM) leaks it. A
+      // watchdog force-exits if graceful cleanup doesn't finish promptly.
+      const watchdog = setTimeout(() => process.exit(EXIT_OK), 3000);
       void (async () => {
-        await watcher.stop();
-        await source.close();
-        if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
-        if (embedding) await embedding.close();
-        lease.release();
-        resolve();
+        try {
+          await watcher.stop();
+          await source.close();
+          if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
+          if (embedding) await embedding.close();
+          lease.release();
+        } finally {
+          clearTimeout(watchdog);
+          resolve();
+        }
       })();
     };
     process.once("SIGINT", stop);

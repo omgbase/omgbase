@@ -89,9 +89,10 @@ a scalar expression evaluated by `@omgbase/oqx`'s `semantics.ts`.
 
 ### 3.1 Grammar
 Comparisons (`== != < <= > >=`), boolean `&& || !` + grouping, `in`, arithmetic
-(`+ - * / %`), method calls (`x.contains("s")`), free functions (`list(x)`,
-`size(x)`, `has(x)` + omgbase's domain functions §5), field/intrinsic access with
-`.`/`[…]` navigation, and outer references (`^name`, `^^name`).
+(`+ - * / %`), Ruby-style range literals (`lo..hi`, `lo...hi`, `..hi`, `lo..`;
+§3.5), method calls (`x.contains("s")`), free functions (`list(x)`, `size(x)`,
+`has(x)` + omgbase's domain functions §5), field/intrinsic access with `.`/`[…]`
+navigation, and outer references (`^name`, `^^name`).
 **[was CEL: arithmetic, ternary, and `in` without `list()` were rejected — now
 arithmetic and general `in` are supported.]**
 
@@ -117,7 +118,30 @@ arithmetic and general `in` are supported.]**
   CASE-SENSITIVE** — use `.lower()`/`.upper()` to fold. **[was CEL: `LIKE`-based
   ops were case-insensitive and `matches` was unimplemented.]**
 - `x in y`: array → typed membership (`"5" in [5]` is false); string → substring;
-  object → key existence.
+  object → key existence; **range → interval coverage** (§3.5).
+
+### 3.5 Ranges
+A Ruby-style range is a value, used most often as the right side of `in`:
+- `lo..hi` includes both bounds; `lo...hi` excludes the high bound; `..hi` and
+  `lo..` are open-ended (a missing bound is unbounded on that side).
+- `x in lo..hi` is coverage: `lo <= x` (if `lo` present) and `x <= hi` / `x < hi`
+  (if `hi` present), using the same ordering as `<`/`<=`. An absent `x`, or one
+  that doesn't order against a bound, is not covered (never throws). So ranges
+  work over numbers **and ISO-8601 date/time strings** (lexical = chronological).
+- **A frontmatter value can hold a range**, but it is stored as a **plain
+  string** — `window: 2026-01-01..2026-01-31` compares, projects, and displays as
+  text like any string. Wrap it in **`range(s)`** to read it as an interval:
+  `where "2026-02-01" in range(window)` selects docs whose window covers that
+  date. `range(...)` is the explicit opt-in — a value that merely looks rangey
+  (`version: "1..4"`) is never silently reinterpreted, and `version == "1..4"`
+  works normally. A non-range string yields an absent range, so
+  `x in range(bad)` is false. Range-vs-range containment/overlap is not yet a
+  surface.
+  - The store still **autopromotes** a recognized range string into cached
+    bounds (`detectRange` → `val_json`; see properties-table.md) — but purely as
+    an index substrate for a future pushdown of `in range(prop)`, never changing
+    an answer. So the promotion is safe: meaning is set by `range(...)`, not by
+    what the value happens to look like.
 
 ### 3.4 Correlation (`^`) and lifts
 - **`^name` reads a name `N` scopes outward** (`^` = one scope, `^^` = two) — it

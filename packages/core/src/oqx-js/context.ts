@@ -15,6 +15,7 @@
 import type { DataContext, CallResult } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
+import { detectRange } from "../core/store/properties.js";
 import { docsRead } from "../core/read/document.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
@@ -97,6 +98,13 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (typeof v !== "string") return v ?? undefined;
     try { return JSON.parse(v); } catch { return v; }
   };
+  // A property decodes to a plain scalar. A range-valued string (a frontmatter
+  // `1..5` / `2026-01-01..2026-01-31`) stays a STRING here — range behavior is
+  // opt-in via the `range(prop)` function (see callFunction), so a value that
+  // merely looks rangey is never silently reinterpreted, and projection/equality
+  // see the authored text. The store still caches the parsed bounds in val_json
+  // (see properties.ts detectRange) as an index substrate; it does not change
+  // this decode.
   const decodeProp = (r: Record<string, unknown>): unknown => {
     switch (r.type) {
       case "number": return r.val_num;
@@ -482,9 +490,19 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       if (t === "edges") return (row as Row).edge_id;
       return row;
     },
-    // Free functions: only oqx-js builtins (list/size/has) are free — the
-    // row-scoped domain functions are rewritten to `$self.fn(…)` methods upstream.
+    // Free functions: oqx-js builtins (list/size/has) plus `range(s)`, which
+    // coerces a string value to a range so `<point> in range(prop)` tests
+    // coverage. range() is the explicit opt-in over the store's plain string;
+    // it delegates here (rather than only to the oqx-js builtin) so a future
+    // pushdown can serve the property's autopromoted/cached bounds — see
+    // detectRange + val_json in store/properties.ts.
     callFunction(name: string, args: unknown[]): CallResult {
+      if (name === "range") {
+        const s = args[0];
+        if (semantics.isRange(s)) return { handled: true, value: s };
+        const rv = typeof s === "string" ? detectRange(s) : null;
+        return { handled: true, value: rv ? semantics.makeRange(rv.lo, rv.hi, rv.exclusiveEnd) : null };
+      }
       const fn = semantics.BUILTIN_FUNCTIONS[name];
       return fn ? { handled: true, value: fn(args) } : { handled: false };
     },

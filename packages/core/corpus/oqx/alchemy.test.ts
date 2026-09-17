@@ -144,6 +144,80 @@ describe("alchemy corpus — scalar filtering (CEL reused inside OQX)", () => {
   });
 });
 
+// Ruby-style range membership: `where <scalar> in lo..hi`. The `era` frontmatter
+// (a year) is a number, so a range reads as a closed/half-open interval over the
+// same ordering as `<`/`<=`. eras: maria 250, jabir 800, emerald-tablet 800,
+// paracelsus 1530, mutus-liber 1677, newton 1680.
+describe("alchemy corpus — range membership (in lo..hi)", () => {
+  it("`in lo..hi` is an inclusive interval on both endpoints", () => {
+    expect(paths("from docs where era in 800..1680")).toEqual([
+      "practitioners/jabir-ibn-hayyan.md", // 800 (low endpoint, included)
+      "practitioners/newton.md", // 1680 (high endpoint, included)
+      "practitioners/paracelsus.md", // 1530
+      "texts/emerald-tablet.md", // 800
+      "texts/mutus-liber.md", // 1677
+    ]);
+  });
+
+  it("`in lo...hi` excludes the high endpoint", () => {
+    expect(paths("from docs where era in 800...1680")).toEqual([
+      "practitioners/jabir-ibn-hayyan.md", // 800 still included (low is inclusive)
+      "practitioners/paracelsus.md", // 1530
+      "texts/emerald-tablet.md", // 800
+      "texts/mutus-liber.md", // 1677
+      // newton (1680) drops out — the high endpoint is excluded
+    ]);
+  });
+
+  it("open-ended `lo..` matches everything at or above the low bound", () => {
+    expect(paths("from docs where era in 1600..")).toEqual([
+      "practitioners/newton.md", // 1680
+      "texts/mutus-liber.md", // 1677
+    ]);
+  });
+
+  it("open-ended `..hi` matches everything at or below the high bound", () => {
+    expect(paths("from docs where era in ..300")).toEqual([
+      "practitioners/maria-prophetissa.md", // 250
+    ]);
+  });
+});
+
+// A frontmatter value can itself hold a range. YAML has no range type, so
+// `window: 2026-01-01..2026-01-31` / `stage_range: 1..4` are plain strings; wrap
+// the property in `range(...)` to read it as an interval and test whether a
+// point falls inside. The two lab notes carry a month `window` (an ISO-date
+// range); magnum-opus carries a numeric `stage_range`. A bare reference stays a
+// string (range() is the explicit opt-in — no silent reinterpretation).
+describe("alchemy corpus — range-valued frontmatter (point in range(prop))", () => {
+  it("a date falls inside a note's ISO-date window", () => {
+    expect(paths('from docs where "2026-01-15" in range(window)')).toEqual(["lab/2026-01-notes.md"]);
+    expect(paths('from docs where "2026-02-14" in range(window)')).toEqual(["lab/2026-02-notes.md"]);
+  });
+
+  it("the window endpoints are inclusive", () => {
+    expect(paths('from docs where "2026-01-31" in range(window)')).toEqual(["lab/2026-01-notes.md"]);
+    expect(paths('from docs where "2026-02-01" in range(window)')).toEqual(["lab/2026-02-notes.md"]);
+  });
+
+  it("a date outside every window matches nothing", () => {
+    expect(paths('from docs where "2026-03-15" in range(window)')).toEqual([]);
+  });
+
+  it("a numeric point falls inside a numeric range-valued property", () => {
+    expect(paths("from docs where 2 in range(stage_range)")).toEqual(["processes/magnum-opus.md"]); // 1..4
+    expect(paths("from docs where 4 in range(stage_range)")).toEqual(["processes/magnum-opus.md"]); // inclusive high
+    expect(paths("from docs where 5 in range(stage_range)")).toEqual([]); // above the range
+  });
+
+  it("a bare range-valued property is a plain string (range() is the opt-in)", () => {
+    // No silent reinterpretation: projection and equality see the authored text.
+    const w = hits('from docs where $path == "lab/2026-01-notes.md" select w: window').hits[0]!.w;
+    expect(w).toBe("2026-01-01..2026-01-31");
+    expect(paths('from docs where window == "2026-01-01..2026-01-31"')).toEqual(["lab/2026-01-notes.md"]);
+  });
+});
+
 // The headline capability: a nested query bounded by the current row's own
 // relation, so "documents that contain a matching node" is one expression.
 describe("alchemy corpus — correlated node queries", () => {

@@ -6,6 +6,7 @@ tradition: western
 tags: [process, framework]
 verified: false
 stages: 4
+stage_range: 1..4
 ---
 
 # The magnum opus

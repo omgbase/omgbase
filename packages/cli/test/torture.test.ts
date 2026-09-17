@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync } from "./spawn.js";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -50,6 +51,7 @@ describe("concurrent-writer torture (live watch + one-shot mutations)", () => {
       stdio: ["ignore", "ignore", "ignore"],
       env: { ...process.env, NO_COLOR: "1" },
     });
+    watcher.unref(); // never let a stray watcher keep this worker alive
     try {
       await sleep(400); // let the watcher take the lease + settle
 
@@ -77,9 +79,16 @@ describe("concurrent-writer torture (live watch + one-shot mutations)", () => {
       // The document converged (file bytes == rendered revision) and invariants hold.
       expect(omgExit(["doctor"])).toBe(0);
     } finally {
+      // Reap the watcher for real: SIGTERM, wait for exit, then SIGKILL. (Don't
+      // trust `watcher.killed` — it flips true the instant a signal is SENT, not
+      // when the process dies, so it can't gate a fallback kill.)
       watcher.kill("SIGTERM");
-      await sleep(150);
-      if (!watcher.killed) watcher.kill("SIGKILL");
+      const exited = await new Promise<boolean>((res) => {
+        if (watcher.exitCode !== null || watcher.signalCode !== null) return res(true);
+        const t = setTimeout(() => res(false), 3000);
+        watcher.once("exit", () => { clearTimeout(t); res(true); });
+      });
+      if (!exited) { watcher.kill("SIGKILL"); await sleep(200); }
     }
   }, 20000);
 });

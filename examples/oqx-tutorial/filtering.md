@@ -48,6 +48,73 @@ d_9px29y1  practitioners/maria-prophetissa.md
 d_wc1napn  texts/emerald-tablet.md
 ```
 
+## Ranges
+
+A Ruby-style range tests membership in an interval. `lo..hi` includes both ends;
+`lo...hi` (three dots) excludes the high end. So the eras from Jabir (800)
+through Newton (1680), inclusive:
+
+```console
+$ omg query 'from docs where era in 800..1680'
+d_nzb61j9  practitioners/jabir-ibn-hayyan.md
+d_rw4ygr0  practitioners/newton.md
+d_t5nvj1g  practitioners/paracelsus.md
+d_wc1napn  texts/emerald-tablet.md
+d_f7w5k26  texts/mutus-liber.md
+```
+
+Make the high end exclusive with `...` and Newton (exactly 1680) drops out:
+
+```console
+$ omg query 'from docs where era in 800...1680'
+d_nzb61j9  practitioners/jabir-ibn-hayyan.md
+d_t5nvj1g  practitioners/paracelsus.md
+d_wc1napn  texts/emerald-tablet.md
+d_f7w5k26  texts/mutus-liber.md
+```
+
+Either end may be omitted for an open-ended range — `1600..` is "1600 and up",
+`..300` is "up to and including 300":
+
+```console
+$ omg query 'from docs where era in 1600..'
+d_rw4ygr0  practitioners/newton.md
+d_f7w5k26  texts/mutus-liber.md
+$ omg query 'from docs where era in ..300'
+d_9px29y1  practitioners/maria-prophetissa.md
+```
+
+Ranges order by the same rule as `<`/`<=`, so they work over ISO-8601 date
+strings too — `where published in "2026-01-01".."2026-03-31"` selects a quarter.
+
+## A frontmatter value can be a range
+
+The range can also live in the document. A frontmatter value written as a range
+— `window: 2026-01-01..2026-01-31`, `stage_range: 1..4` — is stored as text;
+wrap it in `range(...)` to read it as an interval and ask which document's range
+**contains** a point. The two lab notes carry a monthly `window`:
+
+```console
+$ omg query 'from docs where "2026-01-15" in range(window)'
+d_labjan1  lab/2026-01-notes.md
+$ omg query 'from docs where "2026-02-10" in range(window)'
+d_labfeb1  lab/2026-02-notes.md
+```
+
+It reads as "is this date inside the note's window". Numeric range values work
+the same — magnum-opus records `stage_range: 1..4`, so stage 2 is inside it but
+stage 5 is past the end:
+
+```console
+$ omg query 'from docs where 2 in range(stage_range)'
+d_magnop1  processes/magnum-opus.md
+$ omg query 'from docs where 5 in range(stage_range)'
+```
+
+`range(...)` is the explicit opt-in: a bare `window` is just its string, so a
+value that only looks rangey (`version: "1..4"`) keeps string behavior until you
+ask for a range.
+
 ## Booleans, and absence
 
 A bare field name is a boolean test; `!` negates it. A **missing** key counts as

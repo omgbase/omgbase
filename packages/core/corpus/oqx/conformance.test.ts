@@ -42,6 +42,17 @@ const QUERIES: string[] = [
   'from docs where type == "substance"',
   'from docs where layer == "canon"',
   'from docs where era < 1000',
+  // range membership (declined by the planner → in-memory both ways, must agree)
+  'from docs where era in 800..1680',
+  'from docs where era in 800...1680',
+  'from docs where era in 1600..',
+  'from docs where era in ..300',
+  'from docs where era in 1600..1700 && type == "practitioner"', // mixed: type pushed to SQL, range left residual
+  // range-VALUED frontmatter (window: ISO-date range, stage_range: numeric range)
+  'from docs where "2026-01-15" in range(window)', // range() coerces → residual, in-memory both ways
+  'from docs where 2 in range(stage_range)',
+  'from docs where window == "2026-01-01..2026-01-31"', // a bare range-valued prop is a plain string → pushable, agrees
+  'from docs where stage_range == "1..4"',
   'from docs where !verified',
   'from docs where nodes exists { where kind == "md:task" && !attrs.checked }',
   'from blocks where type == "task" && doc.type == "lab-note"',

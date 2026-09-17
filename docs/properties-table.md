@@ -115,6 +115,22 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
   `card='scalar'` rows — so `tags == "a"` on a YAML list is false (unchanged
   from today), and `"a" in list(tags)` is the indexed `EXISTS`. This is how the
   row model reproduces `json_extract`'s scalar-vs-array distinction.
+- **Range-valued strings are autopromoted into cached bounds — for indexing,
+  not meaning.** YAML has no range type, so a frontmatter value written as a
+  Ruby-style range (`window: 2026-01-01..2026-01-31`, `qty: 1..5`) is a plain
+  string. Ingest recognizes the range shape (`detectRange`, strict: both bounds
+  numeric, or both ISO-8601 dates) and keeps the row `type='string'` with the
+  **verbatim** text in `val_text` — so hydration, display, equality, FTS, and
+  round-trip are exactly a string's — while caching the parsed bounds
+  `{lo,hi,exclusiveEnd}` in `val_json`. That cache is **semantics-neutral**: a
+  bare property is a string everywhere; range behavior is opt-in via the
+  `range(prop)` query function (query-language.md §3.5), which reads the string
+  as an interval. Because the promotion never changes an answer, it is safe
+  regardless of whether the author *meant* a range. The cache exists as the
+  substrate for a future tier-3 pushdown of `in range(prop)` onto indexed bounds
+  (not yet wired — `range()` currently parses at query time). The same pattern
+  generalizes to other string-encoded types (e.g. a future `date(s)`/`time(s)`
+  with a cached normalized/epoch form).
 - **`source` is the provenance delineation.** `frontmatter` / `inline` /
   `computed` as a filterable column — no `$frontmatter`/`$inline` reserved keys
   in content-space. Bare keys span the *authored* sources; computed values are

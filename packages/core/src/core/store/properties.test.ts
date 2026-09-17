@@ -2,19 +2,19 @@ import { describe, it, expect, afterEach } from "vitest";
 import { Store } from "./store.js";
 import { ensureRepo } from "../attach.js";
 import { ingestFile } from "../ingest.js";
-import { flattenFrontmatter } from "./properties.js";
+import { flattenFrontmatter, detectRange } from "./properties.js";
 
 let store: Store | undefined;
 afterEach(() => { store?.close(); store = undefined; });
 
-interface Row { source: string; key: string; card: string; ord: number; val_text: string | null; val_num: number | null; val_bool: number | null; type: string; }
+interface Row { source: string; key: string; card: string; ord: number; val_text: string | null; val_num: number | null; val_bool: number | null; val_json: string | null; type: string; }
 
 function props(content: string): Row[] {
   store = new Store({ path: ":memory:" });
   const repoId = ensureRepo(store, "t", "/tmp");
   const { docId } = ingestFile(store, repoId, "a.md", content);
   return store.db.prepare(
-    "SELECT source, key, card, ord, val_text, val_num, val_bool, type FROM properties WHERE doc_id = ? ORDER BY source, key, ord",
+    "SELECT source, key, card, ord, val_text, val_num, val_bool, val_json, type FROM properties WHERE doc_id = ? ORDER BY source, key, ord",
   ).all(docId) as Row[];
 }
 
@@ -44,6 +44,52 @@ describe("flattenFrontmatter", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.type).toBe("json");
     expect(rows[0]!.card).toBe("list");
+  });
+});
+
+describe("detectRange", () => {
+  it("parses numeric ranges (inclusive / exclusive / open-ended)", () => {
+    expect(detectRange("1..5")).toEqual({ lo: 1, hi: 5, exclusiveEnd: false });
+    expect(detectRange("1...5")).toEqual({ lo: 1, hi: 5, exclusiveEnd: true });
+    expect(detectRange("..5")).toEqual({ lo: null, hi: 5, exclusiveEnd: false });
+    expect(detectRange("1..")).toEqual({ lo: 1, hi: null, exclusiveEnd: false });
+    expect(detectRange("1.5..2.5")).toEqual({ lo: 1.5, hi: 2.5, exclusiveEnd: false });
+    expect(detectRange("-5..5")).toEqual({ lo: -5, hi: 5, exclusiveEnd: false });
+  });
+
+  it("parses ISO-8601 date/datetime ranges, keeping the strings", () => {
+    expect(detectRange("2026-01-01..2026-01-31")).toEqual({ lo: "2026-01-01", hi: "2026-01-31", exclusiveEnd: false });
+    expect(detectRange("2026-01-01...2026-02-01")).toEqual({ lo: "2026-01-01", hi: "2026-02-01", exclusiveEnd: true });
+    expect(detectRange("..2026-01-31")).toEqual({ lo: null, hi: "2026-01-31", exclusiveEnd: false });
+  });
+
+  it("rejects non-ranges and mis-shapen inputs (no false promotion)", () => {
+    expect(detectRange("hello")).toBeNull();
+    expect(detectRange("a..z")).toBeNull(); // bounds not a scalar domain
+    expect(detectRange("1..2026-01-01")).toBeNull(); // mixed domains
+    expect(detectRange("1.2.3..4.5.6")).toBeNull(); // bounds aren't numbers
+    expect(detectRange("../foo")).toBeNull(); // a relative path, not a range
+    expect(detectRange("1....5")).toBeNull(); // 4-dot run is not an operator
+    expect(detectRange("..")).toBeNull(); // no bounds
+    expect(detectRange("3.14")).toBeNull(); // a plain decimal, no operator
+  });
+});
+
+describe("range-valued frontmatter → properties rows", () => {
+  it("stores a range as type='string' with verbatim val_text and bounds in val_json", () => {
+    const rows = props("---\nwindow: 2026-01-01..2026-01-31\nqty: 1..5\n---\n\n# H\n");
+    const win = rows.find((r) => r.key === "window")!;
+    expect(win).toMatchObject({ card: "scalar", type: "string", val_text: "2026-01-01..2026-01-31" });
+    expect(JSON.parse(win.val_json!)).toEqual({ __range: true, lo: "2026-01-01", hi: "2026-01-31", exclusiveEnd: false });
+    const qty = rows.find((r) => r.key === "qty")!;
+    expect(qty).toMatchObject({ type: "string", val_text: "1..5" });
+    expect(JSON.parse(qty.val_json!)).toEqual({ __range: true, lo: 1, hi: 5, exclusiveEnd: false });
+  });
+
+  it("keeps an ordinary dotted string a plain string (no val_json side channel)", () => {
+    const rows = props("---\nversion: alpha..omega\n---\n\n# H\n");
+    const v = rows.find((r) => r.key === "version")!;
+    expect(v).toMatchObject({ type: "string", val_text: "alpha..omega", val_json: null });
   });
 });
 

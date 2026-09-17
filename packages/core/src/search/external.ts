@@ -85,12 +85,21 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
   const cmd = parts[0]!;
   const args = parts.slice(1);
 
-  let child: ChildProcessByStdio<Writable, Readable, null>;
+  // stderr is PIPED (not inherited) and forwarded manually. Inheriting would give
+  // the child a duplicate of our own stderr fd; when our process is itself the
+  // child of a synchronous spawn (execFileSync/spawnSync, as the CLI tests use),
+  // that captured pipe only reaches EOF once every holder closes it — so a
+  // lingering embedder would keep the grandparent's execFileSync blocked forever
+  // even after we exit. A private pipe we own severs that coupling.
+  let child: ChildProcessByStdio<Writable, Readable, Readable>;
   try {
-    child = spawn(cmd, args, { stdio: ["pipe", "pipe", "inherit"] });
+    child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
   } catch (err) {
     throw new Error(`embedding command '${settings.provider}' failed to spawn: ${(err as Error).message}`);
   }
+  child.stderr.pipe(process.stderr);
+  // Don't let a still-running embedder keep our own event loop alive on exit.
+  child.unref();
 
   const rl = createInterface({ input: child.stdout });
   const lines = lineQueue(rl);
@@ -98,6 +107,9 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
     child.once("error", (err) => reject(new Error(`embedding command '${cmd}' failed to spawn: ${err.message}`)));
     child.once("exit", (code) => reject(new Error(`embedding command '${cmd}' exited early (code ${code ?? "?"})`)));
   });
+  // The race consumers below observe this rejection; guard the reference itself
+  // so that a benign post-close `exit` doesn't surface as an unhandled rejection.
+  spawnFailed.catch(() => {});
 
   // Handshake: first stdout line carries model + dim (+ optional maxInputTokens).
   const handshakeRaw = await Promise.race([lines.next(), spawnFailed]);
@@ -137,8 +149,16 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
 
   const close = async (): Promise<void> => {
     rl.close();
-    child.stdin.end();
-    if (!child.killed) child.kill("SIGTERM");
+    child.stderr.unpipe(process.stderr);
+    try { child.stdin.end(); } catch { /* already closed */ }
+    if (child.exitCode !== null || child.signalCode !== null) return; // already gone
+    // Reap the child before returning: SIGTERM, wait briefly, then SIGKILL. This
+    // keeps a wedged provider from outliving us and holding pipes open.
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* gone */ } resolve(); }, 2000);
+      child.once("exit", () => { clearTimeout(t); resolve(); });
+      try { child.kill("SIGTERM"); } catch { clearTimeout(t); resolve(); }
+    });
   };
   return { provider, close };
 }
