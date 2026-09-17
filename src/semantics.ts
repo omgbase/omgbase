@@ -14,8 +14,8 @@
 //     throws, never orders). Numbers and strings order naturally; mixed types do
 //     not order (false).
 //   • Truthiness: JavaScript truthiness of the value.
-//   • `in`: membership in an array (by ==), substring in a string, or key in an
-//     object.
+//   • `in`: membership in an array (by ==), substring in a string, key in an
+//     object, or coverage by a range (lo..hi / lo...hi / open-ended).
 
 /** Equality with absence-normalization (undefined ≡ null) and strict typing. */
 export function equals(a: unknown, b: unknown): boolean {
@@ -55,10 +55,44 @@ export function arith(op: string, a: unknown, b: unknown): unknown {
 
 export function membership(needle: unknown, haystack: unknown): boolean {
   if (haystack == null) return false;
+  if (isRange(haystack)) return rangeCovers(haystack, needle);
   if (Array.isArray(haystack)) return haystack.some((x) => equals(x, needle));
   if (typeof haystack === "string") return haystack.includes(String(needle));
   if (typeof haystack === "object") return String(needle) in (haystack as object);
   return false;
+}
+
+/** A Ruby-style range value produced by a `lo..hi` / `lo...hi` expression. A
+ * null bound is an open end (`..hi` / `lo..`). `exclusiveEnd` marks the `...`
+ * form (hi is excluded). Tagged so `membership`/`in` can recognize it among
+ * plain objects. */
+export interface OqxRange {
+  readonly __oqxRange: true;
+  readonly lo: unknown;
+  readonly hi: unknown;
+  readonly exclusiveEnd: boolean;
+}
+
+/** Construct a range value (absent bounds normalized to null → open end). */
+export function makeRange(lo: unknown, hi: unknown, exclusiveEnd: boolean): OqxRange {
+  return { __oqxRange: true, lo: lo ?? null, hi: hi ?? null, exclusiveEnd };
+}
+
+/** Whether a value is a range produced by `makeRange`. */
+export function isRange(v: unknown): v is OqxRange {
+  return typeof v === "object" && v !== null && (v as { __oqxRange?: unknown }).__oqxRange === true;
+}
+
+/** Whether `x` falls within `range`: `lo <= x` (when lo is present) and either
+ * `x <= hi` (inclusive) or `x < hi` (exclusive end) (when hi is present). Bound
+ * checks go through `relate`, so an absent `x` — or one that doesn't order
+ * against a bound (mixed types) — is simply not covered (never throws). This
+ * also makes date/time ranges work over ISO-8601 strings or `Date` values,
+ * whose natural ordering `relate` already honors. */
+export function rangeCovers(range: OqxRange, x: unknown): boolean {
+  const geLo = range.lo == null || relate(">=", x, range.lo);
+  const leHi = range.hi == null || relate(range.exclusiveEnd ? "<" : "<=", x, range.hi);
+  return geLo && leHi;
 }
 
 export function truthy(v: unknown): boolean {

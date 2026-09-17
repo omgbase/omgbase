@@ -65,6 +65,22 @@ test("sqlite: binding values become SQL parameters", { skip: !DatabaseSync }, ()
   assert.deepEqual((res as { rows: Array<{ name: string }> }).rows.map((r) => r.name), ["Alice", "Bob", "Carol"]);
 });
 
+test("sqlite: a range membership stays residual and matches the in-memory engine", { skip: !DatabaseSync }, () => {
+  const db = makeDb();
+  const planner = new SqliteTable!(db, "emp", opts);
+  // `in` (incl. a range RHS) is not translatable → the whole predicate is
+  // residual; SQL returns all rows and the in-memory engine applies coverage.
+  const q = parse("name from emp where level in 4..6 order by name");
+  const plan = planner.plan(q, []);
+  assert.ok(plan);
+  assert.equal([...plan!.rows()].length, 4); // nothing pushed → all rows returned
+  assert.notEqual(plan!.residual.where, null); // the range membership remains as residual
+  const sql = new PlannedEngine(planner).run(q, []);
+  const mem = run(q, { roots: { emp: employees } });
+  assert.deepEqual(sql, mem);
+  assert.deepEqual((sql as { rows: Array<{ name: string }> }).rows.map((r) => r.name), ["Bob", "Carol"]); // levels 5 and 4
+});
+
 test("sqlite: unordered first pushes a LIMIT", { skip: !DatabaseSync }, () => {
   const db = makeDb();
   const planner = new SqliteTable!(db, "emp", opts);

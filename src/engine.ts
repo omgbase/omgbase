@@ -14,7 +14,7 @@ import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  equals, relate, arith, membership, truthy, toNumber, compareForSort,
+  equals, relate, arith, membership, truthy, toNumber, compareForSort, makeRange,
 } from "./semantics.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
@@ -370,6 +370,10 @@ export class InMemoryEngine implements Engine {
         return truthy(l) ? l : this.evalExpr(e.right, scope);
       }
       case "in": return membership(this.evalExpr(e.left, scope), this.evalExpr(e.right, scope));
+      case "range": return makeRange(
+        e.lo == null ? null : this.evalExpr(e.lo, scope),
+        e.hi == null ? null : this.evalExpr(e.hi, scope),
+        e.exclusiveEnd);
     }
   }
 
@@ -483,6 +487,7 @@ function exprHasRecur(e: Expr): boolean {
     case "call": return (e.recv ? exprHasRecur(e.recv) : false) || e.args.some(exprHasRecur);
     case "unary": return exprHasRecur(e.expr);
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
+    case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     default: return false;
   }
 }

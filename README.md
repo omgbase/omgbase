@@ -121,6 +121,24 @@ oqx`name from ${people} where !active`;            // → Carol
 Equality is **typed and strict** (`5 == "5"` is false); a comparison against an
 absent (`null`/`undefined`) field is simply false rather than an error.
 
+**Ranges.** A Ruby-style range `lo..hi` (inclusive) or `lo...hi` (exclusive high
+end) is a value, used most often as the right side of `in`. Either bound may be
+omitted for an open-ended range (`..hi`, `lo..`). Bounds compare with the same
+ordering rules as `<`/`<=`, so ranges work over numbers and over ISO-8601
+date/time strings alike:
+
+```js
+oqx`name from ${people} where age in 40..50`;   // 40 ≤ age ≤ 50
+oqx`name from ${people} where age in 40...50`;  // 40 ≤ age < 50 (excludes 50)
+oqx`name from ${people} where age in 40..`;     // 40 and up
+oqx`name from ${people} where age in ..29`;     // up to and including 29
+oqx`label from ${events} where on in "2026-01-01".."2026-03-31"`;   // dates in Q1
+```
+
+Bounds may be interpolated (`where age in ${lo}..${hi}`). A range membership is
+not pushed into a storage backend — it is finished in-memory over the rows the
+backend returns — so it always evaluates by the rules above.
+
 **Interpolations are always values, never syntax.** `where name == ${x}` compares
 against the value of `x`; a string in `x` can't inject operators or identifiers.
 
@@ -343,6 +361,7 @@ your relation returns fresh objects rather than shared references.
 name, alias: expr, nested: rel collect { … }   projection (select optional)
 from ${source}                                  source collection
 where a == b && rel exists { … } || !c          predicate tree + nested ops
+where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 ^name / ^^name                                   read an outer row's field (N scopes out)
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 order by expr desc, expr2                        ordering

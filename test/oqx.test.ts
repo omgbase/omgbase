@@ -330,6 +330,60 @@ test("distinct is also spellable inside the block via `select distinct`", () => 
   assert.deepEqual(a, b);
 });
 
+// ---- ranges -----------------------------------------------------------------
+
+const names = (rows: unknown): unknown[] => (rows as Array<{ name: unknown }>).map((r) => r.name);
+
+test("range: `in lo..hi` is inclusive membership", () => {
+  // ages: Bob 41, Alice 52, Carol 29
+  assert.deepEqual(names(oqx`name from ${people} where age in 30..50`), ["Bob"]);
+  assert.deepEqual(names(oqx`name from ${people} where age in 29..52`), ["Bob", "Alice", "Carol"]);
+});
+
+test("range: `in lo...hi` excludes the high endpoint", () => {
+  assert.deepEqual(names(oqx`name from ${people} where age in 29...52`), ["Bob", "Carol"]); // 52 excluded
+  assert.deepEqual(names(oqx`name from ${people} where age in 41...52`), ["Bob"]); // 41 ≤ x < 52 → only Bob(41)
+});
+
+test("range: open-ended `lo..` and `..hi`", () => {
+  assert.deepEqual(names(oqx`name from ${people} where age in 41..`), ["Bob", "Alice"]); // 41 and up
+  assert.deepEqual(names(oqx`name from ${people} where age in ..29`), ["Carol"]); // up to and incl 29
+  assert.deepEqual(names(oqx`name from ${people} where age in ..28`), []); // up to but excluding Carol
+});
+
+test("range: an open-ended bound does not swallow a following clause", () => {
+  // `41..` is open-high; the `order by` that follows must not be read as its bound.
+  const out = oqx`name from ${people} where age in 40.. order by age`;
+  assert.deepEqual(names(out), ["Bob", "Alice"]); // 41 then 52, ascending
+});
+
+test("range: bounds may be interpolated bindings", () => {
+  const lo = 30, hi = 50;
+  assert.deepEqual(names(oqx`name from ${people} where age in ${lo}..${hi}`), ["Bob"]);
+});
+
+test("range: date/time membership over ISO-8601 strings", () => {
+  const events = [
+    { label: "kickoff", on: "2026-01-15" },
+    { label: "review", on: "2026-04-02" },
+    { label: "launch", on: "2026-03-31" },
+  ];
+  const inQ1 = oqx`label from ${events} where on in "2026-01-01".."2026-03-31"` as Array<{ label: string }>;
+  assert.deepEqual(inQ1.map((e) => e.label), ["kickoff", "launch"]);
+});
+
+test("range: parses to a range node with the exclusive-end flag", () => {
+  const q = parse("from xs where n in 1...5");
+  assert.deepEqual(q.where, {
+    kind: "scalar",
+    expr: {
+      kind: "in",
+      left: { kind: "ident", name: "n" },
+      right: { kind: "range", lo: { kind: "lit", value: 1 }, hi: { kind: "lit", value: 5 }, exclusiveEnd: true },
+    },
+  });
+});
+
 // ---- errors -----------------------------------------------------------------
 
 test("a missing source is a parse error", () => {

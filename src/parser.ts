@@ -21,6 +21,12 @@ import type {
 } from "./ast.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "count", "first", "single"]);
+// Contextual clause words lexed as bare idents; an open-ended range must stop
+// before them rather than consume them as its high bound.
+const CLAUSE_WORDS = new Set<string>([
+  "collect", "exists", "count", "first", "single",
+  "order", "by", "asc", "desc", "follow", "distinct", "frontier", "depth", "in",
+]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const ADD_OPS = new Set<string>(["+", "-"]);
@@ -434,13 +440,45 @@ class Parser {
   // Comparison / membership (also the entry point for a where scalar leaf, so a
   // where leaf never swallows the where-tree's && / ||).
   private parseCmp(): Expr {
-    let left = this.parseAdd();
+    let left = this.parseRange();
     if (this.peek().type === "op" && CMP_OPS.has(this.peek().value)) {
       const op = this.next().value;
-      return { kind: "binary", op, left, right: this.parseAdd() };
+      return { kind: "binary", op, left, right: this.parseRange() };
     }
-    if (this.at("ident", "in")) { this.next(); return { kind: "in", left, right: this.parseAdd() }; }
+    if (this.at("ident", "in")) { this.next(); return { kind: "in", left, right: this.parseRange() }; }
     return left;
+  }
+
+  // Range literal: `lo..hi` / `lo...hi` and the open-ended forms `..hi`, `lo..`.
+  // Binds looser than arithmetic (so `1+1..2*3` is the range 2..6) but tighter
+  // than comparison / `in` (so `n in 1..5` reads as `n in (1..5)`). A leading
+  // `..`/`...` opens the low end; a trailing `..`/`...` with no following value
+  // opens the high end.
+  private parseRange(): Expr {
+    if (this.at("range")) {
+      const exclusiveEnd = this.next().value === "...";
+      return { kind: "range", lo: null, hi: this.parseAdd(), exclusiveEnd };
+    }
+    const lo = this.parseAdd();
+    if (this.at("range")) {
+      const exclusiveEnd = this.next().value === "...";
+      const hi = this.canStartValue() ? this.parseAdd() : null;
+      return { kind: "range", lo, hi, exclusiveEnd };
+    }
+    return lo;
+  }
+
+  // Whether the current token can begin a value expression — used to tell an
+  // open-ended range (`5..` followed by a clause boundary) from a bounded one.
+  // Clause-continuation words (`order`, `by`, `follow`, `asc/desc`, `distinct`,
+  // consumers, …) are lexed as bare idents, so they must NOT count as a value
+  // start, or `where age in 18.. order by name` would read `order` as the bound.
+  private canStartValue(): boolean {
+    const t = this.peek();
+    if (t.type === "ident") return !CLAUSE_WORDS.has(t.value);
+    if (t.type === "number" || t.type === "string" ||
+        t.type === "binding" || t.type === "lparen" || t.type === "caret") return true;
+    return t.type === "op" && (t.value === "-" || t.value === "!");
   }
 
   private parseAdd(): Expr {

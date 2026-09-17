@@ -27,6 +27,7 @@ export type TokType =
   | "colon"
   | "caret" // ^ — one-scope lift marker
   | "dot"
+  | "range" // `..` (inclusive) or `...` (exclusive end) — a Ruby-style range operator (value carries which)
   | "op" // == != <= >= < > && || ! + - * / %  (value carries the operator)
   | "binding" // a ${…} interpolation; `index` names the value slot
   | "eof";
@@ -99,6 +100,14 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     if (c === ":") { push("colon", c, i); i++; continue; }
     if (c === "^") { push("caret", c, i); i++; continue; }
 
+    // range operator — `...` (exclusive end) or `..` (inclusive), longest first.
+    // Scanned before the dot rule so `a..b` never looks like member navigation,
+    // and before the number rule so the bounds lex as separate numbers.
+    if (c === "." && src[i + 1] === ".") {
+      if (src[i + 2] === ".") { push("range", "...", i); i += 3; continue; }
+      push("range", "..", i); i += 2; continue;
+    }
+
     // `.` is a dot only when not the leading part of a number (.5) — but OQX has
     // no leading-dot numerals, so a bare `.` is always navigation.
     if (c === "." && !isDigit(src[i + 1] ?? "")) { push("dot", c, i); i++; continue; }
@@ -128,7 +137,9 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     if (isDigit(c) || (c === "." && isDigit(src[i + 1] ?? ""))) {
       const start = i;
       while (i < n && isDigit(src[i]!)) i++;
-      if (src[i] === ".") { i++; while (i < n && isDigit(src[i]!)) i++; }
+      // A `.` is a decimal point only when a digit follows; otherwise it belongs
+      // to a range operator (`1..5`) or navigation, so the number stops here.
+      if (src[i] === "." && isDigit(src[i + 1] ?? "")) { i++; while (i < n && isDigit(src[i]!)) i++; }
       if (src[i] === "e" || src[i] === "E") {
         i++;
         if (src[i] === "+" || src[i] === "-") i++;

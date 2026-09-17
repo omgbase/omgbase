@@ -22,7 +22,11 @@ export type Expr =
   | { kind: "unary"; op: "!" | "-"; expr: Expr }
   | { kind: "binary"; op: string; left: Expr; right: Expr } // arithmetic + comparison
   | { kind: "logical"; op: "&&" | "||"; left: Expr; right: Expr }
-  | { kind: "in"; left: Expr; right: Expr };
+  | { kind: "in"; left: Expr; right: Expr }
+  // A Ruby-style range value. `lo`/`hi` are null for the open-ended forms
+  // (`..5` / `5..`); `exclusiveEnd` distinguishes `1...5` from `1..5`. Evaluates
+  // to a runtime range value (see semantics.makeRange); primarily the RHS of `in`.
+  | { kind: "range"; lo: Expr | null; hi: Expr | null; exclusiveEnd: boolean };
 
 export interface OrderSpec {
   expr: Expr;
