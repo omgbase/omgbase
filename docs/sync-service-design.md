@@ -247,14 +247,18 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
    still writes `root_path` (Stage 5 makes it populate the registry). `Store` is
    now exported from core. FK on `sources.adapter` is enforced, so the built-in
    `fs` adapter row is seeded (`ensureFsAdapter`) before an fs source is created.
-4. **Stage 4 — `@omgbase/sync` package.** First collapse the duplicated reconcile
-   logic (`sync/checkpoint.ts processCheckpoint` and `sync/driver.ts
-   reconcileChanges`) onto the single `observeFile` primitive (Stage 1) — this is
-   the real drift-killer (§10 D2). Then lift the coordinator out to `@omgbase/
-   sync`: an MCP client + the source-adapter protocol, `sync_state`-backed echo
-   bookkeeping, fs export direction. Local `omg watch`/`mcp` keep calling
-   `observeFile` in-process (same primitive, no self-MCP-loop); remote uses the
-   `observe` tool. Add `observe_many` (batch) beside `observe`.
+4. **Stage 4 — `@omgbase/sync` package.**
+   - ✅ **D2 done** — `checkpoint.ts processCheckpoint` and `driver.ts
+     reconcileChanges` now both route through the single `observeOne` primitive
+     (`sync/observe.ts`); the echo/conflict/reconcile algorithm has one
+     implementation. Behavior-preserving (all sync tests green).
+   - ✅ **D3 done** — `observe_many` MCP tool + `observeMany` core, sharing
+     `observeOne`.
+   - ⏳ **Remaining** — lift the coordinator out to `@omgbase/sync`: an
+     `EngineClient` seam (in-process for local/tests; MCP-client for remote) +
+     source-adapter protocol, `sync_state`-backed echo bookkeeping, fs export
+     direction. Local `omg watch`/`mcp` keep calling `observeOne` in-process (same
+     primitive, no self-MCP-loop); remote uses the `observe` tool.
 5. **Stage 5 — `attach` as sugar.** Reroute `attach` to source-add + sync;
    retire the duplicate attach impls. `root_path` now derived from the fs source.
 6. **Stage 6 — remove `root_path` (LAST, breaking).** Table-rebuild migration;

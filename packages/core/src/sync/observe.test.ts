@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
-import { observeFile } from "./observe.js";
+import { observeFile, observeMany } from "./observe.js";
 import { changesSince } from "../graph/history.js";
 
 let store: Store;
@@ -64,6 +64,26 @@ describe("observeFile", () => {
     expect(res.conflicted).toBe(true);
     const doc = store.db.prepare("SELECT conflicted FROM docs WHERE doc_id = ?").get(res.docId) as { conflicted: number };
     expect(doc.conflicted).toBe(1);
+  });
+});
+
+describe("observeMany (batch)", () => {
+  it("observes several files in one call, echo-gating each", () => {
+    const results = observeMany(store, repoId, [
+      { path: "a.md", content: "# A\n" },
+      { path: "b.md", content: "# B\n" },
+    ]);
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => !r.echo && r.rev !== null)).toBe(true);
+    expect((store.db.prepare("SELECT count(*) c FROM docs WHERE deleted_commit IS NULL").get() as { c: number }).c).toBe(2);
+
+    // Re-observing an unchanged file in the batch is an echo; a changed one commits.
+    const second = observeMany(store, repoId, [
+      { path: "a.md", content: "# A\n" }, // unchanged
+      { path: "b.md", content: "# B edited\n" }, // changed
+    ]);
+    expect(second[0]!.echo).toBe(true);
+    expect(second[1]!.echo).toBe(false);
   });
 });
 

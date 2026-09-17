@@ -1,10 +1,9 @@
 import type { Store } from "../core/store/store.js";
-import { sha256 } from "../core/hash.js";
 import { mintId } from "../core/ids.js";
 import { ingestFile } from "../core/ingest.js";
 import { ensureRepo } from "../core/attach.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
-import { hasConflictMarkers } from "./git-heuristics.js";
+import { observeOne } from "./observe.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
 import { tombstoneObservedDeletion } from "./tombstone.js";
 import type { SyncSource } from "./plugin.js";
@@ -34,7 +33,6 @@ export async function reconcileChanges(
   opts: { ts?: string; gitHead?: string | null } = {},
 ): Promise<CheckpointResult> {
   const ts = opts.ts ?? new Date().toISOString();
-  const inferred = source.capabilities().identity === "inferred";
   const checkpointId = mintId("cp");
   const ingested: string[] = [];
   const suppressed: string[] = [];
@@ -43,54 +41,29 @@ export async function reconcileChanges(
   const fileEntries: [string, string | null, string | null][] = [];
 
   for (const change of changes) {
-    const existing = store.db
-      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
-      .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
-    const oldHex = existing?.file_hash?.toString("hex") ?? null;
-
     const item = await source.fetch(change.path);
     if (item === null) {
       // Member left the source scope (deleted/moved out): tombstone the live doc
       // (drop FTS, tombstone blocks + doc, pool blocks) so it stops being served.
+      const existing = store.db
+        .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+        .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
       if (existing) {
         tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
         deleted.push(change.path);
       }
-      fileEntries.push([change.path, oldHex, null]);
+      fileEntries.push([change.path, existing?.file_hash?.toString("hex") ?? null, null]);
       continue;
     }
 
-    const content = item.content;
-    const diskHash = sha256(content);
-
-    if (existing && existing.file_hash && existing.file_hash.equals(diskHash)) {
-      // Echo: the source's current bytes already match the stored revision.
-      suppressed.push(change.path);
-      fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
-      continue;
-    }
-
-    // Identity-inferred sources reconcile block identity against the prior
-    // revision (dispositions); a borne-identity source would map ids directly
-    // (v1: no borne source exists, so this is always the reconciling path).
-    const resolveIds = inferred
-      ? makeReconcilingResolver(store, repoId, { ts, path: change.path })
-      : undefined;
-
-    // Git conflict markers: flag the doc conflicted (mutations refused until
-    // clean) but still ingest the marker soup as opaque so the file tracks.
-    if (hasConflictMarkers(content)) {
-      ingestFile(store, repoId, change.path, content, { ts, ...(resolveIds ? { resolveIds } : {}) });
-      store.db.prepare("UPDATE docs SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
-      conflicted.push(change.path);
-      fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
-      continue;
-    }
-
-    ingestFile(store, repoId, change.path, content, { ts, ...(resolveIds ? { resolveIds } : {}) });
-    store.db.prepare("UPDATE docs SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
-    ingested.push(change.path);
-    fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
+    // Reconcile the fetched bytes through the shared observe primitive — the one
+    // implementation of echo gate + identity threading + conflict flagging (D2).
+    // (v1 sources are identity-inferred; borne identity is deferred, ADR-010/D4.)
+    const r = observeOne(store, repoId, change.path, item.content, ts);
+    if (r.echo) suppressed.push(change.path);
+    else if (r.conflicted) conflicted.push(change.path);
+    else ingested.push(change.path);
+    fileEntries.push([change.path, r.oldHashHex, r.newHashHex]);
   }
 
   store.db

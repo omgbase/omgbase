@@ -22,7 +22,7 @@ import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/hist
 import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
-import { observeFile } from "../sync/observe.js";
+import { observeFile, observeMany } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
@@ -686,6 +686,22 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         return okMutated(observeFile(store, repoId, args.path, args.content));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "observe_many",
+    {
+      description:
+        "BATCH sync ingest (ADR-014): observe several files at once — the batch form of `observe`. Give `files` as an array of `{path, content}`; each is echo-gated and reconciled independently, all under one timestamp and a single resurrection-pool sweep (cheaper than N `observe` calls for an initial walk or a large checkpoint). Returns one result per input file (same shape as `observe`). Mirror deletions with `docs_delete`.",
+      inputSchema: { files: z.array(z.object({ path: z.string(), content: z.string() })) },
+    },
+    async (args) => {
+      try {
+        return okMutated(observeMany(store, repoId, args.files));
       } catch (e) {
         return fail(e);
       }
