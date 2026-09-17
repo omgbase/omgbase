@@ -242,27 +242,44 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
    CRUD + `attach`/`detach`; `_source.ts openFsSource` reads `sources`/
    `attachments` instead of `root_path`. `root_path` still written for
    back-compat.
-4. **Stage 4 — `@omgbase/sync` package.** Lift `driver.ts` out of core; MCP
-   client; coordinator loop; `sync_state`-backed echo bookkeeping; fs export
-   direction. `omg sync`/`watch`/`mcp` delegate to it (or keep the in-proc
-   fast-path and add the service as the remote option).
+4. **Stage 4 — `@omgbase/sync` package.** First collapse the duplicated reconcile
+   logic (`sync/checkpoint.ts processCheckpoint` and `sync/driver.ts
+   reconcileChanges`) onto the single `observeFile` primitive (Stage 1) — this is
+   the real drift-killer (§10 D2). Then lift the coordinator out to `@omgbase/
+   sync`: an MCP client + the source-adapter protocol, `sync_state`-backed echo
+   bookkeeping, fs export direction. Local `omg watch`/`mcp` keep calling
+   `observeFile` in-process (same primitive, no self-MCP-loop); remote uses the
+   `observe` tool. Add `observe_many` (batch) beside `observe`.
 5. **Stage 5 — `attach` as sugar.** Reroute `attach` to source-add + sync;
    retire the duplicate attach impls. `root_path` now derived from the fs source.
 6. **Stage 6 — remove `root_path` (LAST, breaking).** Table-rebuild migration;
    migrate the ~117 call sites to resolve the fs root from the attached source
    (most via a single `repoFsRoot(repo)` helper). Drop the column.
 
-## 10. Open questions for Brendan
+## 10. Decisions (resolved 2026-09-17)
 
-- **`subscribe` in v1, or poll-only first?** Poll (`changes_since`) is enough for
-  correctness; streaming is a latency upgrade.
-- **Keep the in-process fs fast-path** (today's `omg sync`/watcher) alongside the
-  MCP-client service, or route *everything* through `@omgbase/sync`? Keeping the
-  fast-path avoids an MCP hop for the common local case; routing everything is
-  simpler conceptually.
-- **`observe` batching** (`observe_many`) for the initial-walk and large
-  checkpoints — worth it in v1?
-- Does this warrant **superseding ADR-010** (multi-engine identity non-goal)?
-  Peer-syncing two omgbase repos over MCP re-raises cross-engine identity; v1
-  sync is one-directional-per-path and does not mint across engines, so ADR-010
-  likely stands — but worth ratifying.
+- **D1 — `subscribe`: poll-only in v1.** `changes_since(cursor)` on an interval is
+  correct and simple; local change volume is low and the MCP hop is not a concern.
+  When latency matters, add `subscribe` as **MCP resource-update notifications**
+  (NOT a streaming tool — tools are request/response): expose the change feed as a
+  resource, client `resources/subscribe`s, the server emits a payload-less
+  `notifications/resources/updated` on commit, and the client pulls via
+  `changes_since`. Works on stdio and Streamable-HTTP (SSE) transports.
+- **D2 — one reconcile path; drift lives in the algorithm, not the transport.** The
+  real drift risk is the duplicated reconcile logic in `checkpoint.ts` vs
+  `driver.ts`; collapse both onto the single `observeFile` primitive (Stage 1) so
+  there is exactly one implementation. `@omgbase/sync` is then the single
+  coordinator. Local `watch`/`mcp` call `observeFile` in-process (shared primitive,
+  so no behavior drift — and no awkward self-MCP-loop); remote uses the `observe`
+  tool. (Revisit if a single-transport-everything policy is later preferred.)
+- **D3 — add `observe_many`.** Batch form beside single `observe`; both loop the
+  same `observeFile` primitive (one ts + one resurrection sweep + one writer-lock
+  acquisition for the batch). Non-batch `observe` stays.
+- **D4 — ADR-010 untouched.** Multi-engine identity is raised ONLY by omgbase↔
+  omgbase *peer* sync where both sides mint independent opaque `b_` ids (IDs live
+  in the DB, never in files — ADR-002); for *mirrors* that "should" share identity,
+  the (deferred) path is the reserved `borne` source-identity capability + an
+  identity-exchange protocol. The v1 target (filesystem ↔ omgbase) is one engine,
+  one identity space, and never raises it. Aggregating genuinely-different (non-
+  mirror) sources expects no shared identity. So: no supersession now; revisit
+  ADR-010 only if omgbase↔omgbase mirror sync with shared block identity is pursued.
