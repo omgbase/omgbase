@@ -22,6 +22,7 @@ import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/hist
 import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
+import { observeFile } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
@@ -676,6 +677,22 @@ export function buildServer(ctx: ServerContext): McpServer {
   );
 
   server.registerTool(
+    "observe",
+    {
+      description:
+        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use docs_delete. Returns doc/path/rev plus a disposition summary (how identity threaded).",
+      inputSchema: { path: z.string(), content: z.string() },
+    },
+    async (args) => {
+      try {
+        return okMutated(observeFile(store, repoId, args.path, args.content));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     "history_node",
     {
       description: "A block's biography: the commits that touched it with disposition kind/confidence/reason, newest first.",
@@ -772,7 +789,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "changes_since",
     {
-      description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Poll with your last cursor to cheaply re-orient after time away.",
+      description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Each digest's `revisions[]` carries `{doc, path, contentHash}` (contentHash = hex of the revision's rendered file hash), so a synchronizer can decide 'changed vs echo' without a follow-up docs_read. Filter by `origin` (api/observed/import) to ignore commits a given writer produced. Poll with your last cursor to cheaply re-orient after time away.",
       inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional() },
     },
     async (args) => {

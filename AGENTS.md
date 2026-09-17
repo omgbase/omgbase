@@ -59,4 +59,5 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |
 | `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter` (registry tables reserved, not yet wired) |
+| `docs/sync-service-design.md` | **DESIGN, not as-built** (ADR-014): the `@omgbase/sync` migration — sync as a standalone MCP-client service, `DocStore` seam, `observe` tool, `attach`-as-sugar, `root_path` removal |
 | `docs/update-opsets.md` | whole-document update planner (`docs_update`/`docs_plan_update`, `omg update`) |

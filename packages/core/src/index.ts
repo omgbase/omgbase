@@ -43,6 +43,7 @@ export type {
 } from "./sync/plugin.js";
 export { createExternalSource, type ExternalSourceSpec } from "./sync/external-source.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
+export { observeFile, type ObserveResult } from "./sync/observe.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
