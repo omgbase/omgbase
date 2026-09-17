@@ -13,6 +13,7 @@ export { docPropertiesMerged, docPropertiesGrouped, writeDocProperties, flattenF
 import "./format/index.js";
 
 // Workspace + sync surface used by the CLI (second client, 11 §1).
+export { Store, type StoreOptions } from "./core/store/store.js";
 export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js";
 export {
   resolveSettings,
@@ -42,6 +43,20 @@ export type {
   WatchListener,
 } from "./sync/plugin.js";
 export { createExternalSource, type ExternalSourceSpec } from "./sync/external-source.js";
+export {
+  ensureAdapter,
+  listAdapters,
+  createSource,
+  deleteSource,
+  listSources,
+  getSourceByName,
+  attachSourceToRepo,
+  detachSourceFromRepo,
+  sourcesForRepo,
+  renderConfigFlags,
+  type AdapterRow,
+  type SourceRow,
+} from "./sync/sources.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
 export { observeFile, type ObserveResult } from "./sync/observe.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";

@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 // Minted, opaque, repo-scoped IDs (01 §3.1, 02 §1): prefix + 7 chars lowercase
 // Crockford base32 from a CSPRNG, collision-checked at mint by the caller.
 
-export type IdPrefix = "d" | "b" | "c" | "r" | "x" | "col" | "cp" | "e" | "rp" | "v";
+export type IdPrefix = "d" | "b" | "c" | "r" | "x" | "col" | "cp" | "e" | "rp" | "v" | "src";
 
 // Crockford base32 alphabet, lowercased (no i, l, o, u).
 const ALPHABET = "0123456789abcdefghjkmnpqrstvwxyz";

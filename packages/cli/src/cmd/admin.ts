@@ -26,7 +26,7 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
 import { loadEmbedding, drainEmbeddings } from "./_embed.js";
-import { openFsSource } from "./_source.js";
+import { openRepoSource } from "./_source.js";
 
 // watch + admin/maintenance (11 §5.8–5.9).
 
@@ -55,7 +55,7 @@ async function runWatch(cli: Cli, args: string[]): Promise<number> {
 
   // Live watching runs in the external fs-adapter process (chokidar lives there,
   // not in the engine). A sourceless repo has nothing to watch.
-  const source = await openFsSource(repo);
+  const source = await openRepoSource(ws.store, repo);
   if (!source) {
     cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to watch`));
     lease.release();

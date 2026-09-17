@@ -238,10 +238,15 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
    optional `rootPath?`, defaulting to `FsDocStore(rootPath)`. Behavior-preserving
    (all existing callers untouched); headless path proven by a `NullDocStore`
    test. See §5.
-3. **Stage 3 — wire the source tables.** Seed the `fs` adapter; `source`
-   CRUD + `attach`/`detach`; `_source.ts openFsSource` reads `sources`/
-   `attachments` instead of `root_path`. `root_path` still written for
-   back-compat.
+3. **Stage 3 — wire the source tables. ✅ DONE.** `sync/sources.ts` registry
+   CRUD (`ensureAdapter`/`createSource`/`attachSourceToRepo`/`sourcesForRepo`/
+   `renderConfigFlags`, `src_` id prefix); `cli/cmd/source.ts` (`omg source
+   list/add/attach/detach/rm`); `_source.ts` renamed `openFsSource`→
+   `openRepoSource(store, repo)`, which resolves the repo's fs source from the
+   registry and **falls back to `root_path`** when none is registered. `attach`
+   still writes `root_path` (Stage 5 makes it populate the registry). `Store` is
+   now exported from core. FK on `sources.adapter` is enforced, so the built-in
+   `fs` adapter row is seeded (`ensureFsAdapter`) before an fs source is created.
 4. **Stage 4 — `@omgbase/sync` package.** First collapse the duplicated reconcile
    logic (`sync/checkpoint.ts processCheckpoint` and `sync/driver.ts
    reconcileChanges`) onto the single `observeFile` primitive (Stage 1) — this is
