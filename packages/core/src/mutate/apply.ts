@@ -1,5 +1,3 @@
-import { writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
-import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { isValidId } from "../core/ids.js";
@@ -11,7 +9,7 @@ import { loadMutDoc } from "./load.js";
 import { renderDoc, MutationError, type MutDoc, type MutBlock } from "./tree.js";
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
-import { recordFileStat } from "../sync/freshness.js";
+import { resolveDocStore, type DocStore } from "./doc-store.js";
 
 // Changeset application (04 §2, §6). Ops apply in order across documents; later
 // ops see earlier effects; minted ids are referenceable via "$n.ids[i]"
@@ -28,7 +26,11 @@ export type Op =
 
 export interface ApplyRequest {
   repoId: string;
-  rootPath: string;
+  /** Working-tree root for the default filesystem write target. Omit only when
+   *  supplying an explicit `docStore` (e.g. a headless NullDocStore). */
+  rootPath?: string;
+  /** Write target (ADR-014 §5); defaults to a filesystem store at `rootPath`. */
+  docStore?: DocStore;
   ops: Op[];
   origin: { actor: string; reason?: string };
   dryRun?: boolean;
@@ -210,28 +212,27 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   // threads (the ops already assigned ids; reconciliation confirms carries).
   // Steps 2–7 run under the cross-process writer lock when a workspace dir is
   // supplied (11 §3.2); otherwise the Store's in-process serialization suffices.
+  const docStore = resolveDocStore(req);
   const commitPhase = (): void => {
     const ts = new Date().toISOString();
     for (const [docId, d] of loaded) {
       const rendered = renderDoc(d);
-      const abs = join(req.rootPath, d.path);
 
       // File-CAS: on-disk bytes must equal the revision we computed against.
       const current = store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(docId) as { file_hash: Buffer | null } | undefined;
-      if (existsSync(abs) && current?.file_hash) {
-        const onDisk = sha256(readFileSync(abs, "utf8"));
+      const onDiskContent = docStore.read(d.path);
+      if (onDiskContent !== null && current?.file_hash) {
+        const onDisk = sha256(onDiskContent);
         if (!onDisk.equals(current.file_hash)) {
           // A human edit landed first: ingest it, then the caller must retry.
-          ingestFile(store, req.repoId, d.path, readFileSync(abs, "utf8"), { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
-          if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(readFileSync(abs, "utf8")));
+          ingestFile(store, req.repoId, d.path, onDiskContent, { ts, resolveIds: makeReconcilingResolver(store, req.repoId, { ts, path: d.path }) });
+          if (req.omgbaseDir) docStore.recordStat(store, req.repoId, d.path, onDiskContent);
           throw new MutationError("sync_conflict", `file ${d.path} changed on disk; re-ingested — retry`, { retriable: true });
         }
       }
 
-      // Atomic write: temp file → rename.
-      const tmp = `${abs}.omgtmp`;
-      writeFileSync(tmp, rendered);
-      renameSync(tmp, abs);
+      // Atomic write through the DocStore (no-op for a headless NullDocStore).
+      docStore.write(d.path, rendered);
 
       // Commit (INTENT path): persist the ops' tree with its KNOWN block ids —
       // never re-derive identity from the rendered bytes. The mutated MutDoc `d`
@@ -247,7 +248,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a
       // later sweep (echo suppression already covers correctness; this avoids work).
-      if (req.omgbaseDir) recordFileStat(store, req.repoId, d.path, abs, sha256(rendered));
+      if (req.omgbaseDir) docStore.recordStat(store, req.repoId, d.path, rendered);
     }
   };
 

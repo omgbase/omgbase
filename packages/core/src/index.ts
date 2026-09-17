@@ -91,6 +91,7 @@ export { isValidId, prefixOf } from "./core/ids.js";
 
 // Mutation surface consumed by CLI write commands (11 §5.6).
 export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";
+export { type DocStore, FsDocStore, NullDocStore, resolveDocStore } from "./mutate/doc-store.js";
 export { type To, type At, type Expect } from "./mutate/ops.js";
 export {
   tasksComplete,

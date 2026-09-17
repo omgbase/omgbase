@@ -142,25 +142,34 @@ ship poll-only (`changes_since` + client interval) and add `subscribe` when
 latency matters. The watcher already produces the events in-process
 (`onCheckpoint`); this exposes them to MCP clients.
 
-## 5. `apply` file-write via a `DocStore` seam
+## 5. `apply` file-write via a `DocStore` seam — **AS-BUILT (Stage 2)**
 
-`mutate/apply.ts` calls `node:fs` directly (`join(rootPath, path)`,
-`readFileSync`, `writeFileSync`+`rename`, `existsSync`). Extract a `DocStore`
-interface so the write target follows the *repo's binding*, not a hardcoded FS:
+`mutate/apply.ts` and `mutate/docs.ts` called `node:fs` directly (`join(rootPath,
+path)`, `readFileSync`, `writeFileSync`+`rename`, `existsSync`, `unlinkSync`) plus
+the freshness stat-cache (`recordFileStat` / `file_stats`). These are now behind
+`mutate/doc-store.ts` `DocStore`, keyed on repo-relative paths (the store joins
+its root internally):
 
 ```ts
 interface DocStore {
-  read(path: string): string | null;   // for the file-CAS check
-  hash(path: string): Buffer | null;    // on-disk hash, or null if absent
-  write(path: string, bytes: string): void;  // atomic
-  remove(path: string): void;
+  exists(path): boolean;
+  read(path): string | null;                 // for the file-CAS check
+  write(path, bytes): void;                   // atomic tmp+rename, mkdir -p
+  rename(from, to): void;
+  remove(path): void;
+  recordStat(store, repoId, path, bytes): void;  // freshness cache (fs-mtime concern)
+  clearStat(store, repoId, path): void;
 }
 ```
 
-Implementations: `FsDocStore(root)` (today's behavior), `NullDocStore` (headless
-DB-canonical repo — write is a no-op; DB *is* the artifact). `apply` receives a
-`DocStore` instead of a `rootPath` string; the file-CAS + atomic-write steps call
-through it. This is the same seam `root_path` removal needs, so it lands early.
+Implementations: `FsDocStore(root)` (today's behavior exactly), `NullDocStore`
+(headless DB-canonical repo — every fs op is a no-op; the DB *is* the artifact).
+`ApplyRequest`/`DocOpContext` gained an optional `docStore?` and made `rootPath?`
+optional; when `docStore` is absent it defaults to `FsDocStore(rootPath)` via
+`resolveDocStore`, so **every existing caller is unchanged** and the filesystem
+path is byte-for-byte identical. Headless callers pass a `NullDocStore` and no
+`rootPath`. The freshness `recordStat`/`clearStat` calls stay gated on
+`omgbaseDir` exactly as before. This is the same seam `root_path` removal needs.
 
 ## 6. Loop prevention & origin semantics
 
@@ -220,13 +229,15 @@ the source path. A sourceless (DB-canonical) repo is created by `init`/an explic
 
 Additive → structural → breaking. Every stage ends green on `pnpm build && pnpm test`.
 
-1. **Stage 1 — additive MCP surface (no behavior change).**
-   `observe` tool + `changes_since` `contentHash` enrichment (+ optional
-   `subscribe`). New tests. Nothing existing changes. *Lowest risk; unblocks the
-   service.*
-2. **Stage 2 — `DocStore` seam in `apply`.** Extract the interface; `FsDocStore`
-   reproduces today's behavior exactly; `apply` takes a `DocStore`. Pure
-   refactor, all existing tests stay green.
+1. **Stage 1 — additive MCP surface (no behavior change). ✅ DONE.**
+   `observe` tool + `changes_since` `contentHash` enrichment. New tests.
+   Nothing existing changes. (`subscribe` deferred — open question §10.)
+2. **Stage 2 — `DocStore` seam in `apply` + `docs` ops. ✅ DONE.** `mutate/
+   doc-store.ts` (`DocStore`, `FsDocStore`, `NullDocStore`); `apply`/`docs` ops
+   route their fs + freshness-cache calls through it; optional `docStore?` +
+   optional `rootPath?`, defaulting to `FsDocStore(rootPath)`. Behavior-preserving
+   (all existing callers untouched); headless path proven by a `NullDocStore`
+   test. See §5.
 3. **Stage 3 — wire the source tables.** Seed the `fs` adapter; `source`
    CRUD + `attach`/`detach`; `_source.ts openFsSource` reads `sources`/
    `attachments` instead of `root_path`. `root_path` still written for
