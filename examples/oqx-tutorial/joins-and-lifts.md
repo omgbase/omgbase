@@ -73,12 +73,13 @@ d_prj3j7a  substances/prima-materia.md
 
 ## Self-join
 
-Two correlations at once — `^tradition` matches the tradition, `^me` excludes the
-row itself — pairs each practitioner with their tradition-mates. Only the two
-Western practitioners have any:
+Two correlations at once — `^tradition` matches the tradition, `^$path` excludes
+the row itself (`^` reads a field/intrinsic of the outer row) — pairs each
+practitioner with their tradition-mates. Only the two Western practitioners have
+any:
 
 ```console
-$ omg query 'from docs where type == "practitioner" select me: $path, tradition, peers: repo.docs collect { where type == "practitioner" && tradition == ^tradition && $path != ^me select p: $path }' --jsonl
+$ omg query 'from docs where type == "practitioner" select me: $path, tradition, peers: repo.docs collect { where type == "practitioner" && tradition == ^tradition && $path != ^$path select p: $path }' --jsonl
 {"id":"d_nzb61j9","path":"practitioners/jabir-ibn-hayyan.md","me":"practitioners/jabir-ibn-hayyan.md","tradition":"islamic","peers":[]}
 {"id":"d_9px29y1","path":"practitioners/maria-prophetissa.md","me":"practitioners/maria-prophetissa.md","tradition":"alexandrian","peers":[]}
 {"id":"d_rw4ygr0","path":"practitioners/newton.md","me":"practitioners/newton.md","tradition":"western","peers":[{"p":"practitioners/paracelsus.md"}]}

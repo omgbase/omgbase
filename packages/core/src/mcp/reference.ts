@@ -61,9 +61,9 @@ edges:  (the authored link graph as first-class rows — one row per open edge)
                        URL, NULL if not external), $src_block, $via, $from_commit
   - $path / doc.<key>= reach the SOURCE document (edges scan joins their src_doc):
                        $path is the source path; doc.layer reads its frontmatter
-  - relations        = a doc's edges via doc.out_edges / doc.in_edges (backlinks);
-                       predicate-filter a follow walk with follow doc.out { via
-                       predicate == "depends_on" }. text()/semantic() are N/A here.
+  - relations        = a doc's edges as rows via doc.out_edges / doc.in_edges
+                       (backlinks), filtered by a plain where on predicate/etc.
+                       text()/semantic() are N/A here.
 
 ## CEL subset
 
@@ -125,8 +125,6 @@ citation graph with the OQX \`follow\` operator over the doc→doc relations
   from docs where <seed> follow doc.out    docs the seed links TO (outgoing)
   from docs where <seed> follow doc.in     docs that link to the seed (backlinks)
     follow doc.out { depth N }              bound the walk (1..8, default 8)
-    follow doc.out { via predicate == "depends_on" }   restrict the licensing
-                                            edge by predicate/provenance
     follow doc.out { where layer == "canon" }   keep only matching successors
   from edges filter: $dst_path == "notes/x.md"   inbound edges to a doc (as rows)
   from edges filter: predicate == "depends_on"    the edge graph directly

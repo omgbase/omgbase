@@ -33,7 +33,7 @@ function save(path: string, content: string): void {
 function docId(path: string): string {
   return (store.db.prepare("SELECT doc_id FROM docs WHERE path=?").get(path) as { doc_id: string }).doc_id;
 }
-// Reachable doc paths from a seed via OQX `follow doc.out|doc.in` — the traversal
+// Reachable doc paths from a seed via OQX `follow doc.out|in` — the traversal
 // replacement for the retired graph_traverse. Default depth (8) covers these
 // short chains; the walk crosses format boundaries because edges are doc-grain.
 function reachable(seed: string, dir: "out" | "in"): string[] {

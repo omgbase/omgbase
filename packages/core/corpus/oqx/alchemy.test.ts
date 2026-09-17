@@ -8,7 +8,6 @@ import { processCheckpoint } from "../../src/sync/checkpoint.js";
 import { parseTree, assertFullCoverage } from "../../src/core/parse/tree.js";
 import { render } from "../../src/core/parse/render.js";
 import { oqxRun } from "../../src/oqx/run.js";
-import { FilterInvalid } from "../../src/search/cel/parser.js";
 import "../../src/format/index.js"; // registers format adapters (node projection)
 
 // High-level OQX behaviour over a realistic interlinked corpus: an alchemy
@@ -17,9 +16,11 @@ import "../../src/format/index.js"; // registers format adapters (node projectio
 // fields (`key:: value`), wikilinks, markdown links, tasks, tables, code fences,
 // and blockquotes.
 //
-// These are capability demonstrations, not unit tests: each case is a query a
-// user would plausibly write, asserted against the exact documents it must
-// return. Unit-level coverage lives in src/oqx/*.test.ts.
+// These are capability demonstrations AND the behavioral acceptance gate for the
+// OQX engine (now the external @omgbase/oqx, bound to the store via
+// src/oqx-js/): each case is a query a user would plausibly write, asserted
+// against the exact documents it must return. Scalar-translator unit coverage
+// lives in src/oqx-js/sql/translate.test.ts.
 
 const DIR = fileURLToPath(new URL("./fixtures/alchemy/", import.meta.url));
 
@@ -42,7 +43,7 @@ beforeAll(() => {
   // Ingest through processCheckpoint (the real sync path) rather than a bare
   // ingestFile loop, so the authored EDGE graph is extracted — wikilinks and
   // markdown links resolve to doc→doc `references` edges — which the graph-follow
-  // demos below (`follow doc.out`/`doc.in`) walk. ingestFile alone leaves `edges`
+  // demos below (`follow doc.out`/`in`) walk. ingestFile alone leaves `edges`
   // empty. Everything else (docs/blocks/nodes/properties) is identical.
   processCheckpoint(store, repoId, DIR, walk(DIR).map((f) => ({ path: relative(DIR, f) })));
 });
@@ -654,7 +655,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // the row itself. A self-join over repo.docs.
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, peers: repo.docs collect { where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path }",
+        "select me: $path, tradition, peers: repo.docs collect { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
     );
     const peers = new Map(
       res.hits.map((h) => [h.me, (h.peers as { p: string }[]).map((p) => p.p).sort()]),
@@ -682,7 +683,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
   it("first { … } returns a zero-or-one tradition-mate (null when there is none)", () => {
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, mate: repo.docs first { where type == \"practitioner\" && tradition == ^tradition && $path != ^me select p: $path }",
+        "select me: $path, tradition, mate: repo.docs first { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
     );
     const by = new Map(res.hits.map((h) => [h.me, h.mate as { p: string } | null]));
     expect(by.get("practitioners/newton.md")).toEqual({ p: "practitioners/paracelsus.md" });
@@ -832,7 +833,7 @@ describe("alchemy corpus — top-level consumers (repo.<target> <op>)", () => {
 
   it("repo.single fails loudly when the query matches more than one document", () => {
     // 13 documents are canon — single must refuse to pick one.
-    expect(() => hits('repo.docs single { where layer == "canon" }')).toThrow(/matched more than one row/);
+    expect(() => hits('repo.docs single { where layer == "canon" }')).toThrow(/matched \d+ rows/);
   });
 });
 
@@ -869,10 +870,33 @@ describe("alchemy corpus — pagination", () => {
 // relation, decorating each reached occurrence with $depth/$stop/$ordinal. The
 // corpus's wikilink + markdown-link graph — extracted to doc→doc `references`
 // edges by the processCheckpoint ingest above — is the CITATION GRAPH the
-// doc.out/doc.in demos walk; the heading outline and block tree exercise the
+// out/in demos walk; the heading outline and block tree exercise the
 // structural relations.
-describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () => {
-  it("doc.out (distinct) = a note's transitive citation closure", () => {
+describe("alchemy corpus — distinct (dedup by projection)", () => {
+  it("select distinct dedups top-level projections to the value set", () => {
+    const all = hits('from docs select type').hits.map((h) => h.type);
+    const uniq = hits('from docs select distinct type').hits.map((h) => h.type);
+    expect(uniq.length).toBeLessThan(all.length); // duplicates collapsed
+    expect(new Set(uniq).size).toBe(uniq.length); // no duplicate values remain
+    expect(new Set(uniq)).toEqual(new Set(all)); // same set of values
+  });
+
+  it("collect distinct — a document's unique node kinds", () => {
+    const h = hits('from docs where $path == "processes/magnum-opus.md" select kinds: nodes collect distinct { select kind }').hits[0]!;
+    const kinds = (h.kinds as { kind: string }[]).map((k) => k.kind).sort();
+    expect(kinds).toEqual(["md:link", "md:section", "md:task"]); // 16 nodes → 3 kinds
+  });
+
+  it("count distinct in where — documents whose nodes span exactly three kinds", () => {
+    const three = paths('from docs where nodes count distinct { select kind } == 3');
+    expect(three).toContain("processes/magnum-opus.md");
+    // the raw (non-distinct) node count is far higher, so `== 3` only holds for distinct kinds
+    expect(paths('from docs where nodes count { } == 3')).not.toContain("processes/magnum-opus.md");
+  });
+});
+
+describe("alchemy corpus — follow: the citation graph (out / in)", () => {
+  it("out (distinct) = a note's transitive citation closure", () => {
     // Everything philosophers-stone.md reaches by following references, deduped
     // to nodes. The dense magnum-opus ⇄ prima-materia cycles are walked safely.
     const closure = paths('from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out').sort();
@@ -893,7 +917,7 @@ describe("alchemy corpus — follow: the citation graph (doc.out / doc.in)", () 
     expect(closure).not.toContain("index.md");
   });
 
-  it("doc.in + a post-walk $depth filter = the documents that directly cite a note", () => {
+  it("in + a post-walk $depth filter = the documents that directly cite a note", () => {
     // Backlinks one hop out: who references magnum-opus? (seed@1, citers@2).
     const citers = paths('from docs where $path == "processes/magnum-opus.md" && $depth == 2 follow doc.in { depth 2 }').sort();
     expect(citers).toEqual([
@@ -1007,15 +1031,19 @@ describe("alchemy corpus — failure modes are loud", () => {
   });
 
   it("rejects collect { … } used as a predicate", () => {
-    expect(() => paths('from docs where nodes collect { where kind == "md:task" }')).toThrow(/projection/);
+    expect(() => paths('from docs where nodes collect { where kind == "md:task" }')).toThrow(/project/);
   });
 
-  it("rejects a relation that does not exist from the target", () => {
-    expect(() => paths('from nodes where blocks exists { where type == "task" }')).toThrow(FilterInvalid);
+  // ADR-013: under the @omgbase/oqx semantics, an unknown navigation resolves to
+  // no rows rather than a loud error, and arithmetic is a supported operator
+  // (string `+` concatenates) — so these no longer throw. (Both were CEL-era
+  // loudness the new engine trades for uniform navigation/arithmetic semantics.)
+  it("an unknown navigation from a target yields no rows (no longer a loud error)", () => {
+    expect(() => paths('from nodes where section.subsections exists { where kind == "md:section" }')).not.toThrow();
   });
 
-  it("surfaces CEL errors from inside a nested query", () => {
-    expect(() => paths("from docs where nodes exists { where kind + 1 }")).toThrow(/arithmetic/);
+  it("arithmetic in a nested query is evaluated, not rejected", () => {
+    expect(() => paths("from docs where nodes exists { where kind + 1 }")).not.toThrow();
   });
 
   it("rejects a bare identifier that shadows an intrinsic", () => {

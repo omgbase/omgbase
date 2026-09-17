@@ -135,14 +135,19 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(r.edges.some((e) => e.dst_path === "c.md")).toBe(false);
   });
 
-  it("predicate filter — maps to follow `{ via … }` and keeps only that edge", async () => {
+  // `predicate` restricts the NEIGHBORHOOD to predicate-reachable docs (recomputed
+  // over the walk's collected edges; no `via` clause emitted). a → b is the only
+  // depends_on edge and b has no depends_on out-edge, so c (reached only via
+  // `references`) is correctly excluded.
+  it("predicate filter — restricts the neighborhood to predicate-reachable docs", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 2, direction: "out", predicate: "depends_on" });
-    expect(r.queries[0]).toContain('via predicate == "depends_on"');
-    // Only a → b is a depends_on edge; the walk stops at b (b has no depends_on out).
+    expect(r.queries[0]).not.toContain("via"); // no via clause is emitted
     expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md"]);
     expect(r.edges).toHaveLength(1);
     expect(r.edges[0]!.predicate).toBe("depends_on");
     expect(r.edges[0]!.dst_path).toBe("b.md");
+    // c is reachable only via `references`, so it is NOT in a depends_on neighborhood.
+    expect(r.documents.map((d) => d.path)).not.toContain("c.md");
   });
 
   it("select — projects extra document fields", async () => {

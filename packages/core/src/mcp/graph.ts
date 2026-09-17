@@ -13,7 +13,8 @@
 //   roots      → the seed `where $id == … || …` (refs resolved to doc ids first)
 //   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
 //   direction  → `follow doc.out` | `doc.in` | both (two walks, unioned)
-//   predicate  → `follow … { via predicate == "…" }` (edge-scoped filter)
+//   predicate  → restricts the neighborhood to docs reachable via that predicate
+//                (recomputed over the walk's collected edges; no `via` clause)
 //   select     → extra doc projections spliced into the walk's `select`
 //   max_documents → a post-walk cap on the distinct document set
 //
@@ -41,7 +42,8 @@ export interface GraphArgs {
   degrees?: number | undefined;
   /** which edges to follow: outgoing links, backlinks, or both. Default "both". */
   direction?: GraphDirection | undefined;
-  /** restrict the walk to edges with this predicate (maps to follow `{ via }`). */
+  /** restrict the neighborhood to documents reachable from a root via edges of
+   * this predicate, within `degrees` (both the docs and the edges are filtered). */
   predicate?: string | undefined;
   /** extra document projections (OQX select expressions, e.g. "layer", "$path"). */
   select?: string[] | undefined;
@@ -128,12 +130,12 @@ const EDGE_COLLECT =
   "{ id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, " +
   "dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field }";
 
-function buildQuery(seed: string, dir: "out" | "in", depth: number, via: string, userSelect: string): string {
+function buildQuery(seed: string, dir: "out" | "in", depth: number, userSelect: string): string {
   const edgesRel = dir === "out" ? "doc.out_edges" : "doc.in_edges";
   return (
     `from docs where ${seed} ` +
     `select _depth: $depth, _stop: $stop, _edges: ${edgesRel} collect ${EDGE_COLLECT}${userSelect} ` +
-    `follow distinct doc.${dir} { depth ${depth}${via} }`
+    `follow distinct doc.${dir} { depth ${depth} }`
   );
 }
 
@@ -170,7 +172,6 @@ export async function graphNeighborhood(
   const dirs: ("out" | "in")[] = direction === "both" ? ["out", "in"] : [direction];
 
   const seed = rootIds.map((id) => `$id == ${JSON.stringify(id)}`).join(" || ");
-  const via = args.predicate ? ` via predicate == ${JSON.stringify(args.predicate)}` : "";
   const { clause: userSelect, outNames } = buildUserSelect(args.select);
 
   const queries: string[] = [];
@@ -179,7 +180,7 @@ export async function graphNeighborhood(
   let queryTruncated = false;
 
   for (const dir of dirs) {
-    const q = buildQuery(seed, dir, depth, via, userSelect);
+    const q = buildQuery(seed, dir, depth, userSelect);
     queries.push(q);
     // Fetch one more than the cap to detect truncation of a single scan; `follow
     // distinct` yields one row per reached node so the row count == node count.
@@ -204,6 +205,43 @@ export async function graphNeighborhood(
     }
   }
 
+  // Predicate filter restricts the NEIGHBORHOOD, not just the edge list: a doc is
+  // in-neighborhood only if reachable from a root by edges of that predicate
+  // within `degrees`. The unrestricted walk already collected every edge in the
+  // wider neighborhood (and any predicate-P path of length ≤ degrees stays inside
+  // it, since each prefix is reachable at ≤ that depth), so we recompute
+  // reachability over the P-filtered edges rather than issuing more queries.
+  if (args.predicate) {
+    const P = args.predicate;
+    const adj = new Map<string, string[]>();
+    const link = (from: string, to: string): void => { (adj.get(from) ?? adj.set(from, []).get(from)!).push(to); };
+    for (const e of edgeMap.values()) {
+      if (e.predicate !== P) continue;
+      if (dirs.includes("out")) link(e.src, e.dst); // forward
+      if (dirs.includes("in")) link(e.dst, e.src); // backward
+    }
+    const depthOf = new Map<string, number>(rootIds.map((id) => [id, 0]));
+    let wave = [...rootIds];
+    for (let lvl = 1; lvl <= effectiveDegrees && wave.length > 0; lvl++) {
+      const next: string[] = [];
+      for (const from of wave) {
+        for (const to of adj.get(from) ?? []) {
+          // Only traverse to real reached documents (external/phantom targets stay
+          // edge stubs, handled below — never in-neighborhood nodes).
+          if (docMap.has(to) && !depthOf.has(to)) { depthOf.set(to, lvl); next.push(to); }
+        }
+      }
+      wave = next;
+    }
+    const restricted = new Map<string, GraphDoc>();
+    for (const [id, d] of depthOf) {
+      const orig = docMap.get(id);
+      if (orig) restricted.set(id, { ...orig, degree: d });
+    }
+    docMap.clear();
+    for (const [id, d] of restricted) docMap.set(id, d);
+  }
+
   // Cap the distinct document set (nearest-first), then bound edges to it.
   const allDocs = [...docMap.values()].sort((a, b) => a.degree - b.degree || a.path.localeCompare(b.path));
   const capped = allDocs.length > maxDocuments;
@@ -222,8 +260,9 @@ export async function graphNeighborhood(
 
   // Keep the induced-subgraph edges (both endpoints in the neighborhood) plus
   // dangling stubs to external/phantom targets, so external (x_…) and phantom
-  // endpoints survive the way `from edges` surfaces them. When a predicate
-  // filter is set only that predicate's edges count as traversed.
+  // endpoints survive the way `from edges` surfaces them. A `predicate` filter
+  // keeps only that predicate's edges (the neighborhood was already restricted to
+  // predicate-reachable docs above).
   const edges: GraphEdge[] = [];
   for (const e of edgeMap.values()) {
     if (args.predicate && e.predicate !== args.predicate) continue;

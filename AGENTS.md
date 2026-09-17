@@ -8,10 +8,14 @@ omgbase ("Open Markdown Graph Base") is a versioned, addressable **graph layer o
 
 If you change behavior, update the relevant doc in the same change. If you find a doc claim that no longer matches the code, fix the doc (or flag it) rather than coding to the doc.
 
+## Reaching Brendan (`lmk`)
+
+When you hit a stopping point — work is done, or you're blocked and need input — ping Brendan's phone: `lmk 'short message'` (a `~/bin/lmk` shim that posts to an ntfy.sh topic). Use it for genuine handoffs (a review is ready, a long build finished, you need a decision), not routine progress. Keep the message one line and specific.
+
 ## Orientation
 
 - **Monorepo** (pnpm workspace, Node ≥ 22, pnpm 12). Packages:
-  - `packages/core` — the engine. Everything of substance lives here: `parse/`, `reconcile/`, `mutate/`, `oqx/` + `search/`, `graph/`, `core/store/` (SQLite schema), `mcp/`.
+  - `packages/core` — the engine. Everything of substance lives here: `parse/`, `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`) + `search/`, `graph/`, `core/store/` (SQLite schema), `mcp/`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
   - `packages/embedder` — transformers.js / all-MiniLM-L6-v2 embeddings.
   - `packages/fs-adapter` — chokidar-based filesystem sync adapter (stdio).
@@ -33,7 +37,7 @@ Always run `pnpm build && pnpm test` before considering a change done.
 Prefer these over prose docs — they cannot drift because they *are* the implementation:
 
 - **MCP tool surface** (names, params, behavior): the registrations and inline tool descriptions in `packages/core/src/mcp/server.ts`. This is the definitive list of tools, not `docs/mcp-api.md`.
-- **Query language (OQX)**: the `query` tool's description in `packages/core/src/mcp/server.ts`, the engine in `packages/core/src/oqx/`, and the runnable examples in `packages/core/corpus/oqx/README.md`. OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`); the old structured `graph_traverse/path/subgraph` tools were removed. `docs/query-language.md` specs the language (reconciled to as-built).
+- **Query language (OQX)**: OQX is now the external **`@omgbase/oqx`** package (parser + engine + semantics); omgbase binds it to the store via `packages/core/src/oqx-js/` (a `DataContext` in `context.ts` + the `oqxRun` wrapper in `run.ts`; `packages/core/src/oqx/run.ts` is a thin re-export kept for import stability). The former in-tree compiler was removed (ADR-013). Authoritative surface: the `query` tool description in `packages/core/src/mcp/server.ts`, the runnable examples in `packages/core/corpus/oqx/README.md`, and the behavioral gate `corpus/oqx/alchemy.test.ts` (+ `corpus/oqx/conformance.test.ts`, which proves the tier-3 pushdown planner equals pure in-memory). OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`). **Scalar semantics follow `@omgbase/oqx`, not the old CEL layer** — `docs/query-language.md` is rewritten to as-built (ADR-013 behavior changes: `!=`/negation over absent matches, case-sensitive string ops + `.lower()`/regex `matches()`, absent sorts last, arithmetic supported, `select/collect/count distinct`). `packages/core/src/search/cel/` remains only as a helper the store-context reuses (FTS sanitizer, `FilterInvalid`, vec types).
 - **SQLite schema**: `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION` + migrations). Definitive over `docs/data-model.md`.
 - **Mutation kernel** (the six ops + macros + whole-doc reconciliation): `packages/core/src/mutate/`.
 
@@ -50,7 +54,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
 | `docs/graph-and-query.md` | edge extraction, OQX traversal, RRF retrieval, embeddings |
 | `docs/mcp-api.md` | MCP tool surface, resources, error codes (`mcp/server.ts` is the ultimate source) |
-| `docs/decisions.md` | the ADR log ("why"); all 12 remain `Status: proposed` |
+| `docs/decisions.md` | the ADR log ("why"); all 13 remain `Status: proposed` |
 | `docs/query-language.md` | OQX query language: the query-string surface + CEL predicate grammar |
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |

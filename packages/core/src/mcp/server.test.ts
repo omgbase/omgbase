@@ -261,10 +261,12 @@ describe("MCP server skeleton", () => {
   });
 
   it("maps a bad filter to filter_invalid with reason + hint", async () => {
-    const { payload, isError } = (await call("query", { query: "from docs where a + b == 1" })) as { payload: { error: string; data: { hint: string } }; isError: boolean };
+    // A genuine syntax error (unclosed consumer block). (ADR-013: arithmetic like
+    // `a + b == 1` is now a valid supported expression, no longer a loud error.)
+    const { payload, isError } = (await call("query", { query: "from docs where nodes count {" })) as { payload: { error: string; data: { hint: string } }; isError: boolean };
     expect(isError).toBe(true);
     expect(payload.error).toBe("filter_invalid");
-    expect(payload.data.hint).toContain("10");
+    expect(payload.data.hint).toContain("OQX");
   });
 
   it("maps a missing doc to doc_missing", async () => {

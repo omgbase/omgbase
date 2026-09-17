@@ -36,7 +36,7 @@ Run per touched document inside the commit transaction:
 
 `follow` makes a query recursive over a **type-preserving relation** (the relation's successor type equals the query target). The `where` seeds the walk; `follow <relation>` expands each hop. Relations today:
 
-- `doc.out` / `doc.in` (docs→docs) — the authored citation graph: outgoing links / backlinks. Replaces `direction: "out"|"in"` traversal of the edge graph. **Predicate-filtered** via `follow doc.out { via <edge predicate> }` — an edge-scoped predicate (compiled against the `edges` target, e.g. `via predicate == "depends_on"`) filtering which authored edges license each hop, distinct from the successor `where` (which filters the reached doc).
+- `doc.out` / `doc.in` (docs→docs) — the authored citation graph: outgoing links / backlinks. Replaces `direction: "out"|"in"` traversal of the edge graph. To inspect the licensing edges (predicate/provenance/anchor), read a doc's edges as rows via `doc.out_edges`/`doc.in_edges` and filter with a plain `where`. (There is no edge-predicate-filtered walk clause — ADR-013 dropped `via`; the query dialect is exactly `@omgbase/oqx`.)
 - `block.children` (blocks→blocks) — the block subtree.
 - `section.children` (nodes→nodes) — immediate child `md:section` nodes (the outline depth ladder); `section.subsections` — the whole transitive sub-tree.
 

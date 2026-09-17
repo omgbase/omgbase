@@ -1,202 +1,212 @@
-# omgbase — Query Language Spec
+# omgbase — Query Language Spec (OQX)
 
-**As-built (2026-09):** the shipped query language is **OQX** (omgbase Query eXpressions). This document is normative for the **CEL scalar-predicate sublanguage** OQX embeds (§3–§8 — grammar, absence semantics, `list()`, structural functions, targets), compiled by `packages/core/src/search/cel/compile.ts`. For the OQX **surface syntax** (`from … where … select … order by … follow …`, nested queries, correlation, traversal) the live reference is the `query` tool description and its `query_syntax` companion in `packages/core/src/mcp/server.ts`, with runnable, corpus-backed examples in `packages/core/corpus/oqx/README.md`. Where this spec and those sources disagree, the sources win.
+**As-built (2026-09):** the query language is **OQX** (omgbase Query eXpressions),
+now the external **`@omgbase/oqx`** package (parser + engine + scalar-semantics
+contract), bound to omgbase's SQLite store by `packages/core/src/oqx-js/`
+(a `DataContext` in `context.ts`, the `oqxRun` wrapper in `run.ts`, and a tier-3
+pushdown planner in `planner.ts`). See **ADR-013**. This document specs the
+language as-built; the **behavioral ground truth** is the corpus
+(`packages/core/corpus/oqx/alchemy.test.ts` + `conformance.test.ts`), then the
+`query` tool description in `packages/core/src/mcp/server.ts`. Where this doc and
+those disagree, they win.
 
-**Status:** normative for the predicate sublanguage; the sketches in `graph-and-query.md` §4 defer to it.
-**Compatibility:** on the `docs` target the CEL subset, absence rule, and `list()` polymorphism follow mrplex's documented query language (its `query_syntax` reference, 2026-09). omgbase adds the `blocks`, `nodes`, and `edges` targets, structural functions, block-grain and node-grain intrinsics, and owning-entity reach-through (`doc.*`, `block.*`). mrplex's flat JSON query envelope and its link-graph *predicates* (`$in`/`$has`/`$links()`/`$backlinks()`) are **not** carried over — omgbase folds those concerns into the OQX expression (§1) and does link traversal via OQX `follow` (§6).
+> **Scalar semantics changed with ADR-013** (there were no active users). This
+> replaces the former CEL sublanguage; the notable differences from the retired
+> CEL rules are called out inline as **[was CEL: …]**.
 
 ---
 
 ## 1. OQX — one expression
 
-The `query` MCP tool takes a single OQX **string** plus pagination — nothing else. Its input schema is exactly:
+The `query` MCP tool takes a single OQX **string** plus pagination:
 
 ```jsonc
-{
-  "query": "<OQX expression>",   // required
-  "limit": 50,                   // optional
-  "cursor": null                 // optional; opaque, same-query only
-}
+{ "query": "<OQX expression>", "limit": 50, "cursor": null }
 ```
 
-There is **no** flat `{from, filter, text, semantic, select, order, resolution, include_projected}` envelope (an earlier design; never built). Every one of those concerns folds into the OQX expression itself:
-
-| Earlier envelope key | OQX form |
-|---|---|
-| `from` | `from docs\|blocks\|nodes\|edges` (top-level source projection) |
-| `filter` | `where <predicate>` |
-| `text` | `text("terms")` — an FTS pruning predicate inside `where` |
-| `semantic` | `semantic("phrase")` — a cosine score, compared (`> 0.6`) or projected |
-| `select` | `select <expr>, name: <expr>, …` |
-| `order` | `order by <expr> [asc\|desc], …` |
-| `limit` / `cursor` | the tool's `limit` / `cursor` arguments (unchanged) |
-| `resolution` / `include_projected` | not part of OQX (see §9) |
-
-The smallest query is `from docs where layer == "working"`. Beyond that OQX adds receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`), correlation and joins (the `^` sigil with `repo.docs`/`repo.nodes`/`repo.blocks` roots), and bounded recursive traversal (`follow`). Those constructs are specified in the `query` tool description (`packages/core/src/mcp/server.ts`) and demonstrated in `packages/core/corpus/oqx/README.md`; this document covers the scalar predicates OQX embeds in each `where`/`select` scope (§3 onward).
-
-Modes **intersect** (AND). Only current state is searched (history via `history_node` / `as_of` traversal). Results are lean projected hits (`{id, path, …projections}`, or a `count`/`exists` scalar for those consumers), never full documents — hydrate by id afterward (mrplex's projection-then-hydrate pattern, kept).
+Every concern folds into the expression: `from docs|blocks|nodes|edges` (source),
+`where <predicate>`, `select <expr>, name: <expr>, …`, `order by <expr> [asc|desc]`,
+receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
+correlation/joins (the `^` sigil with `repo.docs`/`repo.nodes`/`repo.blocks`
+roots), and bounded traversal (`follow`). Results are lean projected hits
+(`{id, path, …projections}`), or a `count`/`exists` scalar — never full
+documents; hydrate by id afterward.
 
 ## 2. Targets and field namespaces
 
-The sigil rule (mrplex, kept): anything kernel-owned carries `$`; bare identifiers are content territory. On the closed-namespace `blocks`/`nodes` targets an unknown bare field is `filter_invalid`. On the open-namespace `docs` target (and the `doc.<key>` reach-through), a bare key is normally free content — but a bare first segment that collides with an intrinsic **base name** (`id`, `path`, `repo`, `updated_at`, `content_hash`, `body`) is `filter_invalid` with a *"did you mean `$X`?"* hint, because it almost always is a typo for the intrinsic and would otherwise silently read an absent frontmatter key and match nothing. Force the property with the source-scoped `frontmatter.<k>` form. The exceptions are `title`/`tags` (see Computed intrinsics below): their `$`-forms are computed and do not shadow authored frontmatter, so bare `title`/`tags` stay property access.
+The sigil rule: kernel-owned things carry `$`; bare identifiers are content. On
+the closed `blocks`/`nodes`/`edges` targets an unknown bare field simply reads as
+absent; on the open `docs` target a bare key is a document property, except a
+bare first segment colliding with an intrinsic base name
+(`id`/`path`/`repo`/`updated_at`/`content_hash`/`body`) is a loud error (a typo
+guard — use `$path` or `frontmatter.path`).
 
 ### `docs`
-- **Bare identifiers** = a document **property** key, resolved against the indexed `properties` table (properties-table). A bare key spans the **authored** sources — frontmatter and inline (dataview-style `key:: value`) — unioned. For **markdown** a bare key is usually a frontmatter key; **YAML/JSON** docs expose the parsed object's keys the same way. Nested maps flatten to dotted keys (`meta.owner`). Values may be scalar or list — `==`/`!=`/`<` compare the value only when the key is **single-valued in scope** (one scalar-authored value), `list()` is the multi-value accessor (§4); a scalar comparison against a list-authored key, a repeated key, or a bare key that collides across frontmatter and inline is false (use `list()`). A lone inline `key:: value` is scalar-comparable.
-- **Source-scoped:** `frontmatter.<k>` / `inline.<k>` narrow a bare key to one authored source (e.g. `inline.owner == "alice"`).
-- **Computed intrinsics:** `$title` (first H1 text), `$tags` (body `#hashtags`) — engine-derived, in the `$`-namespace. They do **not** shadow authored `title`/`tags`: `$title` is the H1, bare `title` is the frontmatter value.
-- **Intrinsics:** `$id`, `$path`, `$repo`, `$updated_at` (ISO-8601 UTC string; compares lexicographically = chronologically), `$body`, `$content_hash`.
-- **Link graph:** traversed via OQX `follow doc.out` / `follow doc.in` and inspected via the `edges` target — see §6.
+- **Bare identifiers** = a document **property** (frontmatter + inline `key:: value`,
+  unioned), resolved against the indexed `properties` table. Nested maps flatten
+  to dotted keys (`meta.owner`), and a bare `logging` reconstructs the nested
+  object so `logging.level` navigates it. A value is scalar-comparable only when
+  the key is **single-valued and scalar-authored** in scope; a list/repeated/
+  collided key compares unequal — use `list()` (§4).
+- **Source-scoped:** `frontmatter.<k>` / `inline.<k>`.
+- **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
+- **Intrinsics:** `$id`, `$path`, `$repo`, `$updated_at` (ISO-8601 UTC, compares
+  lexicographically = chronologically), `$body`, `$content_hash`, `format`.
+- **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
+  `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
 
 ### `blocks`
-- **Bare fields:** `type` (block type enum), `text` (normalized text), `attrs.<key>` (typed attrs: `attrs.checked`, `attrs.lang`, `attrs.level`, …).
-- **Intrinsics:** `$id`, `$doc` (containing doc id), `$path` (containing doc's path), `$locator`, `$ordinal`, `$depth`, `$updated_at` (timestamp of the last commit that touched this block, from `block_changes`).
-- **Doc reach-through:** `doc.<key>` reads the containing document's metadata (`doc.layer == "canon"`); `doc.$path`, `doc.$updated_at`, `doc.format` reach the owning document's intrinsics/format (`$path` is the shortcut for `doc.$path`). Reach-through is **scope, not selection**: `doc.layer == "canon"` constrains which blocks are eligible; it does not copy the doc's metadata onto the block row. The engine resolves it as an indexed correlated subquery against the owning document (the `properties` table for authored keys), preserving normalization.
-- **Structural functions:** §5.
+- **Bare fields:** `type`, `text`, `attrs.<key>` (`attrs.checked`, `attrs.lang`, …).
+- **Intrinsics:** `$id`, `$doc`, `$path`, `$ordinal`, `$depth`, `$content_hash`,
+  `$body` (the block text), `$updated_at`.
+- **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.format` constrain by the
+  owning document (scope, not selection).
+- **Relations:** `block.children`, `block.nodes`, `block.out_edges`, `section`
+  (enclosing `md:section` node(s)). **Structural functions:** §5.
 
 ### `nodes`
-Nodes are the addressable structural/semantic units a format adapter projects from blocks (markdown tasks/links/headings, YAML mapping entries, …). A node query composes a node-grain predicate with owning-Block and owning-Doc predicates in one expression.
-- **Bare fields:** `kind` (node kind, adapter-namespaced: `md:task`, `md:link`, `yaml:env_var`, …), `name`, `value`, `attrs.<key>` (node-specific typed attrs: `attrs.checked`, …).
-- **Intrinsics:** `$id` (= `$node_id`), `$node_id`, `$doc_id`, `$block_id`, `$path` (owning doc's path).
-- **Doc reach-through:** `doc.<key>` reads the owning document's metadata (`doc.layer == "canon"`); `doc.$path`, `doc.$updated_at`, `doc.format` reach its intrinsics/format — same scope-not-selection semantics as the blocks target above.
-- **Block reach-through:** `block.type`, `block.text` read the source block the node was projected from.
-- Structural functions (§5) are **not** available on `nodes` (they are block-tree operations); compose owning-block/doc predicates via `block.*` / `doc.*` instead.
+- **Bare fields:** `kind` (`md:task`/`md:link`/`yaml:…`), `name`, `value`,
+  `attrs.<key>`.
+- **Intrinsics:** `$id`(=`$node_id`), `$node_id`, `$doc_id`, `$block_id`, `$path`.
+- **Reach-through:** `doc.<key>`, `block.type`/`block.text`.
+- **Section relations:** `section.blocks` (content under an `md:section` node's
+  heading), `section.children` (immediate child sections), `section.subsections`
+  (all contained sections).
 
 ### `edges`
-The authored link graph (graph-and-query §1–2) as **first-class rows** — one row per open edge (`to_commit IS NULL`), for direct inspection/filtering the existence tests (`has_edge`, `$links`) cannot express. Inferred edges are excluded (they stay quarantined).
-- **Bare fields:** `predicate` (`references`/`embeds` reserved, else freeform snake_case from the field/key), `provenance` (`link`/`frontmatter`/`inline_field`/`projected`/`yaml_*`/`json_*`), `dst_kind` (`document`/`external`/`collection` — v1 resolves block-anchor targets to `document`, preserving the `anchor`), `anchor`, `src_field`.
-- **Intrinsics:** `$id` (edge id), `$src` (source doc id), `$dst` (raw target node id), `$dst_path` (the target **document's** path — `null` when the target is external or an unresolved/dangling internal link), `$dst_uri` (the **external** URL — `null` otherwise), `$src_block`, `$via`, `$from_commit`.
-- **Source-document reach-through:** `$path` is the **source** document's path; `doc.<key>` / `doc.$path` read the source doc's metadata (the scan joins each edge to its `src_doc`). Same scope-not-selection semantics as blocks/nodes.
-- **Relations:** a document's edges are reachable as `doc.out_edges` (outgoing) / `doc.in_edges` (incoming/backlinks) collections; a single block's outgoing edges (body links + inline fields, which carry a populated `src_block`) as `block.out_edges` — frontmatter edges are doc-grain (`src_block` NULL) and appear only under `doc.out_edges`. `text()`/`semantic()` are not available (edges carry no text/embedding). Dangling internal links are `dst_kind == "document"` rows with a `null` `$dst_path`.
+The authored link graph as first-class rows (open edges, `to_commit IS NULL`).
+- **Bare fields:** `predicate`, `provenance`, `dst_kind`, `anchor`, `src_field`.
+- **Intrinsics:** `$id`, `$src`, `$dst`, `$dst_path` (target doc's path; null when
+  external/dangling), `$dst_uri` (external URL; null otherwise), `$src_block`,
+  `$via`, `$from_commit`, `$path` (the **source** document's path).
+- Source-document reach-through: `doc.<key>` / `doc.$path`. `text()`/`semantic()`
+  are unavailable (edges carry no text/embedding).
 
-## 3. CEL subset
+## 3. Scalar semantics (`@omgbase/oqx` contract)
 
-### 3.1 Grammar (EBNF)
+Everything inside `where`/`select`/`order by` that isn't structural navigation is
+a scalar expression evaluated by `@omgbase/oqx`'s `semantics.ts`.
 
-```
-expr        = or ;
-or          = and { "||" and } ;
-and         = unary { "&&" unary } ;
-unary       = [ "!" ] primary ;
-primary     = comparison | membership | call | field | literal | "(" expr ")" ;
-comparison  = operand relop operand ;
-relop       = "==" | "!=" | "<" | "<=" | ">" | ">=" ;
-membership  = literal "in" "list" "(" field ")" ;
-call        = ident "(" [ args ] ")"                     (* free-standing *)
-            | operand "." ident "(" [ args ] ")" ;       (* method form *)
-field       = ident { "." ident } | "$" ident { "." ident } ;
-literal     = string | int | double | "true" | "false" | "null" ;
-string      = single- or double-quoted, backslash escapes ;
-```
+### 3.1 Grammar
+Comparisons (`== != < <= > >=`), boolean `&& || !` + grouping, `in`, arithmetic
+(`+ - * / %`), method calls (`x.contains("s")`), free functions (`list(x)`,
+`size(x)`, `has(x)` + omgbase's domain functions §5), field/intrinsic access with
+`.`/`[…]` navigation, and outer references (`^name`, `^^name`).
+**[was CEL: arithmetic, ternary, and `in` without `list()` were rejected — now
+arithmetic and general `in` are supported.]**
 
-**Not supported (rejected with `filter_invalid`):** arithmetic (`+ - * /`), ternary, list/struct literals, `in` without `list()`, `now()` or any clock/random function (determinism is load-bearing — projected queries and `as_of` evaluation depend on it; callers supply literal timestamps).
+### 3.2 Equality, comparison, absence — the normative rules
+- **`==` / `!=` are strict, typed, and absence-normalized.** No cross-type
+  coercion (`5 == "5"` is false). `null` and a missing field are the same
+  "absent" value, and two absent values are **equal**. Therefore **`absent != v`
+  is true.** **[was CEL: a missing key made *every* comparison false, including
+  `!=` — that "absence collapses `!=`" rule is gone.]**
+- **Relational `< <= > >=`:** if either operand is absent, the result is **false**
+  (never orders, never throws). Present operands compare with native ordering
+  (numbers numerically, strings lexicographically).
+- **Truthiness (`where <expr>`, `!x`):** JavaScript truthiness — falsy is
+  `false`, `0`, `""`, `null`, `undefined`, `NaN`; everything else (including `[]`,
+  `{}`, and the non-empty string `"false"`) is truthy. **[was CEL: the string
+  `"false"` was falsy.]**
+- **Arithmetic:** `+` concatenates when either side is a string, else numeric;
+  other operators coerce via `Number()`.
 
-### 3.2 Functions
+### 3.3 Strings and `in`
+- `contains` / `startsWith` / `endsWith` / `matches` / `size` / `lower` / `upper`
+  as methods; `matches` is a real **regexp**. **All string ops are
+  CASE-SENSITIVE** — use `.lower()`/`.upper()` to fold. **[was CEL: `LIKE`-based
+  ops were case-insensitive and `matches` was unimplemented.]**
+- `x in y`: array → typed membership (`"5" in [5]` is false); string → substring;
+  object → key existence.
 
-| Function | Forms | Meaning |
-|---|---|---|
-| `contains` | `contains(x, "s")` / `x.contains("s")` | substring |
-| `startsWith` / `endsWith` | method or free | prefix/suffix |
-| `matches` | `x.matches("^re$")` | RE2 regular expression — **not wired.** The compiler rejects it with `filter_invalid` (`compile.ts` `compileMethod`: *"matches() requires post-filter (not yet wired); use contains/startsWith for indexed queries"*). Use `contains`/`startsWith`/`endsWith` instead. |
-| `size` | `size(x)` | string length / list length |
-| `has` | `has(field)` | field exists (the explicit absence test) |
-| `list` | `list(field)` | scalar-or-list coercion, §4 |
-| `.exists` / `.all` | `list(f).exists(v, pred)` | quantifiers over `list()` and graph collections |
+### 3.4 Correlation (`^`) and lifts
+- **`^name` reads a name `N` scopes outward** (`^` = one scope, `^^` = two) — it
+  resolves against the enclosing **row's fields/intrinsics/lifts**, not the outer
+  query's select aliases. To reference the outer row's path write `^$path` (not a
+  `me: $path` alias). **[was CEL/omgbase: `^name` read a bound select value; that
+  binding indirection is gone — read the field directly.]**
+- **`^name:` in a select** *lifts* the value `N` scopes out (flatten-append),
+  binding it into the enclosing scope while the collect filters (§ lifts).
 
-### 3.3 Absence semantics (normative truth table)
+## 4. `list()` / `size()` / `has()`
+`list(f)` coerces scalar-or-list to an array (absent → `[]`); legal anywhere,
+canonically inside `in`/`size`. `size(x)` = string/array length or object key
+count. `has(f)` = the field is present (not null). A list-authored key is not
+scalar-comparable (`tags == "x"` is false); use `"x" in list(tags)`.
 
-mrplex's rule — *a missing key never matches; the predicate is false, not an error* — formalized:
+## 5. Domain functions (omgbase extensions)
+omgbase registers these on the `DataContext` (they are not part of the generic
+`@omgbase/oqx` builtins); they compose like any predicate, including inside
+nested/correlated scopes:
+- `text("terms")` — FTS5 pruning predicate (docs match via their blocks; nodes via
+  the node index). Prunes; ranking is separate (`order by`).
+- `semantic("phrase")` — embedding cosine **score** (docs/blocks), for a threshold
+  (`semantic("x") > 0.6`) or projection; needs an embedding provider.
+- **blocks-target structural functions:** `under(id_or_heading)`,
+  `under_heading("s")` (case-insensitive), `within(doc|path|glob)`,
+  `under_kind(type[, name])`, `yaml_path("a.b")`, `json_pointer("#/a/b")`,
+  `has_edge(pred[, target])`, `has_anchor()`, `parent_type()`, `child_count()`.
 
-| Expression | Field absent ⇒ |
-|---|---|
-| `f == v`, `f != v`, `f < v`, … (any comparison) | **false** (note: `!=` too — deliberately not classical negation) |
-| `f` in boolean position (`f`, `f && …`) | coerces to **false** |
-| `!f` in boolean position | **true** (negation of the coercion — so `!attrs.checked` matches tasks whose box is unchecked or attr-absent) |
-| `"v" in list(f)` | false (`list(missing)` = `[]`) |
-| `size(list(f))` | `0` |
-| `f.contains(...)` and other string fns | false |
-| `has(f)` | false — use this when you need existence itself |
-
-Absence never errors and never propagates as an error. Type mismatches (comparing a string field to an int literal) behave as absence: false, not error. This table governs *genuinely unknown* keys — a bare `layer` where no such frontmatter key exists still silently yields false. The one exception is a bare key whose first segment collides with an intrinsic base name (`id`/`path`/`repo`/`updated_at`/`content_hash`/`body`; see §2): that is rejected at compile time with a hint, since a silent empty there is far more likely a typo for `$path` than a real absent-key query.
-
-## 4. `list()` — scalar-or-list metadata (mrplex, verbatim)
-
-A metadata key like `tags` may be scalar or list (in markdown, a frontmatter value written either way). `list(field)` coerces both shapes to a list (missing/null ⇒ `[]`) and is legal **only** inside `in`, `size(...)`, `.all`, `.exists`. A bare `list(tags) == "x"` is `filter_invalid`.
-
-```
-"pricing" in list(tags)
-size(list(tags)) > 2
-list(authors).exists(a, a == "alice")
-```
-
-## 5. Structural functions (`blocks` target only)
-
-All compile to indexed SQL (§8). This list supersedes the sketch in 05 §4 (`parent()`, `ancestors()` as object-returning functions are dropped — join-shaped accessors are not worth their compiler; `under()` covers the real uses).
-
-| Function | Meaning | Compiled against |
-|---|---|---|
-| `under(id_or_locator)` | block lies in the containment subtree of the target; when the target is a heading, in its **section range** | `ancestor_path` prefix / `sections` range |
-| `under_heading(s)` | some ancestor section's heading text contains `s` (case-insensitive substring) | `sections` join |
-| `within(target)` | containing doc matches: doc id, exact path, path glob, or collection id | `docs` / collection membership |
-| `has_edge(pred [, target])` | an open authored edge with predicate `pred` originates from this block (optionally to `target` id/path) | `edges` |
-| `has_anchor()` | block carries an authored `^ref` | `blocks` |
-| `parent_type()` | the parent block's type, as a string (`parent_type() == "blockquote"`) | self-join |
-| `child_count()` | number of direct children | aggregate |
-| `under_kind(type [, name])` | some ancestor block has the given `type`, optionally with `name` matching its text (substring) or its `attrs.key` | `ancestor_path` join on `blocks` |
-| `yaml_path("a.b.c")` | block is the YAML mapping entry at the dotted key path (`type LIKE 'yaml:%'`, matched by `attrs.key`; multi-segment paths walk `parent_block` upward) | `blocks` key-path chain |
-| `json_pointer("#/a/b")` | block is the JSON node at the pointer (`type LIKE 'json:%'`; leading `#`/`/` stripped, segments split on `/`; multi-segment walks `parent_block`) | `blocks` key-path chain |
-
-On the `docs` target, `has_edge(pred[, target])` is also available and means "any block or metadata edge from this doc" (in markdown, metadata edges come from frontmatter fields).
-
-## 6. The link graph — `follow` and the `edges` target
-
-The mrplex link-graph *predicates* — `$in`/`$has`/`$links()`/`$backlinks()`, their `_static`/`_dyn` variants, and `$degrees` — are **not implemented** in omgbase. They live only in mrplex's own doc-strings; omgbase's compiler has no case for them and rejects any such call with `filter_invalid` (`unknown function`). The link graph is worked in two OQX ways instead:
-
-- **Traversal — OQX `follow`.** `doc.out` (documents this one links to) and `doc.in` (backlinks) are type-preserving `docs→docs` relations, so a query can recurse over them: `from docs where $path == "index.md" follow doc.out` walks the outgoing citation graph; `follow doc.in` walks backlinks. Each reached row carries walk metadata (`$depth` seeded at 1, categorical `$stop`, `$leaf`/`$frontier`, `$ordinal`); a follow-local `{ via <edge predicate> }` restricts the walk to matching edges. Defined in `packages/core/src/oqx/relations.ts` (`doc.out`/`doc.in`); see the `query` tool description and `corpus/oqx/README.md` for the full traversal surface.
-
-- **Existence / correlation — nested queries.** A receiver-constrained nested query over `doc.in`/`doc.out` (or the `doc.out_edges`/`doc.in_edges` edge relations) expresses the old predicates as ordinary OQX: "some `moc/**` page links here" is `doc.in exists { where $path.startsWith("moc/") }`; "no outgoing links" (a leaf) is `doc.out_edges count { } == 0`; "no backlinks" (an orphan) is `doc.in_edges count { } == 0`.
-
-- **Inspection — the `edges` target.** `from edges …` scans the authored link graph as first-class rows (§2 `edges`) for direct filtering the existence tests cannot express.
-
-There is no projected-membership widening and no `_static`/`_dyn` distinction to preserve — omgbase never shipped those semantics.
+## 6. `follow`, the edge graph, and `distinct`
+- **Traversal:** `follow <relation>` recurses over a type-preserving relation
+  (`doc.out`/`doc.in`, `block.children`, `section.children`/`section.subsections`).
+  Per-path: a node reached by N paths yields N occurrences; `follow distinct`
+  keeps one per identity (`by <expr>` sets that identity). Each occurrence carries
+  `$depth` (seed = 1), `$stop` (`interior|leaf|frontier|depth|cycle`) with
+  `$leaf`/`$frontier` sugar, and `$ordinal` (deterministic 1..N over the walk).
+  A follow-local `{ where <succ> }` shapes participating successors, `{ frontier
+  <pred> }` cuts, `{ depth <n> }` bounds (1..8). A revisited identity on the path
+  is admitted once as `$stop == "cycle"` and never re-expanded. Recursion
+  intrinsics are result metadata (valid in `select`/`order by` and the top-level
+  post-walk `where`), not in the successor `where`/`frontier`.
+- **Edges as rows:** `from edges …`, or a doc's `doc.out_edges`/`doc.in_edges`.
+- **`distinct`** on any consumer dedups the rows it reduces by their **projected
+  value**: `select distinct type`, `nodes collect distinct { select kind }`,
+  `nodes count distinct { select kind } == 3`. Empty projection → dedup by
+  identity.
 
 ## 7. `order by`, `select`, pagination
+- **`order by <expr> [asc|desc], …`:** orders by intrinsics, bare fields,
+  `doc.<key>`, or a `semantic(…)` score. **Absent values sort last** (ascending).
+  Ties break by `(path, id)` for a stable keyset cursor; a custom `order by`
+  disables the cursor (you get the top `limit` with `truncated`). **[was CEL/
+  SQLite: NULLs sorted first ascending.]**
+- **`select`:** default hit is `{id, path}`; add `name: <expr>` fields and nested
+  `collect { … }` / `first { … }` / `single { … }`.
+- **`cursor`:** opaque, keyset on `(path, id)`, valid for the same query only.
 
-- **`order by`:** a comma-separated list of expressions, each optionally `asc`/`desc` (`order by $path, $ordinal`; `order by $updated_at desc`; `order by semantic("…") desc` for a score top-K). Orderable: intrinsics, bare scalar fields, `doc.<key>`, and score expressions. Default when absent: text/semantic rank when a `text(…)`/`semantic(…)` predicate is present, else `$updated_at` desc. Ties always break by `(path, id)` — a total order is required for stable cursors; a custom `order by` disables the keyset cursor (you still get the top `limit` with `truncated`).
-- **`select` defaults:** docs ⇒ `$path`; blocks ⇒ `$id` + `$locator`; nodes ⇒ `id` + `path` + `kind` and any present `name`/`value`. `$semantic_score` and `$evidence` (RRF/boost breakdown, 05 §5) available when relevant. Bodies/text travel only when explicitly selected.
-- **`cursor`:** opaque; valid for the same query only; results carry `truncated` + `cursor` per the API rules.
-
-## 8. Compilation contract
-
-- MUST compile to indexed SQL: comparisons and boolean combinations over metadata (JSON1 extraction on `docs.metadata`), `type`, `attrs.*`, all intrinsics; `startsWith` on `$path`; `under`/`under_heading`/`within`/`has_edge`; `text` (FTS5); `semantic` (vec).
-- MAY post-filter over the SQL candidate set: `.exists`/`.all` bodies, `list()` membership on unindexed keys. (`matches` is the reserved post-filter case, but its post-filter path is **not yet wired** — it is rejected at compile time today; §3.2.) Post-filtering is bounded by `query.max_candidates` (default 10,000) — beyond it the query fails `filter_invalid` with hint "add an indexed predicate."
-- Statement timeout `query.timeout_ms` (default 2,000).
-- Evaluation is deterministic: same corpus revision + same query ⇒ same results and order (no clock functions; §3.1).
-- Errors: `filter_invalid` with `data.reason` (what failed to parse/compile) and `data.hint` (what to consult). Stable codes, prose free to improve.
+## 8. Execution model
+- OQX parses to the `@omgbase/oqx` AST and runs on the in-memory engine over a
+  store-backed `DataContext` (`context.ts`), which resolves fields/intrinsics/
+  relations and the domain functions against SQLite.
+- A **tier-3 pushdown planner** (`planner.ts`) translates a query's pushable
+  top-level `where` conjuncts into one guarded SQL `SELECT` (via
+  `sql/translate.ts`), reducing the scanned row set; everything it declines is a
+  **residual** finished in-memory. The translator is **semantics-faithful** — e.g.
+  `==`/`!=` → SQLite `IS`/`IS NOT` (null-safe), string ops → case-sensitive
+  `substr`/`instr` (never `LIKE`). **[was CEL: the whole query compiled to a
+  single SQL statement; now it is pushdown + residual.]**
+- **Correctness is guaranteed** by the residual fallback and verified by the
+  differential conformance suite (`corpus/oqx/conformance.test.ts`): every query
+  returns identical results planned vs. pure in-memory.
+- Evaluation is deterministic (no clock/random functions).
+- Errors surface as `filter_invalid` (the library's `OqxError` is normalized).
 
 ## 9. Not part of the query surface
-
-The `query` tool takes only an OQX string plus `limit`/`cursor` (§1). There is **no** `include_projected` argument, **no** `resolution` argument, and **no** fenced ```` ```omg ```` projected-query form — none of these exist in the OQX code. (Projected queries are an unbuilt, deferred concept; the former design lives in git history.)
+The `query` tool takes only an OQX string + `limit`/`cursor`. There is no flat
+`{from, filter, …}` envelope, no `include_projected`/`resolution`, and no
+projected-query fence (ADR-011, deferred).
 
 ## 10. Canonical examples
-
 | Intent | OQX |
 |---|---|
 | Working-layer docs | `from docs where layer == "working"` |
 | Guides, recently touched | `from docs where $path.startsWith("guides/") && $updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
-| Leaf docs (no outgoing links) | `from docs where doc.out_edges count { } == 0` |
-| Orphans (no backlinks) | `from docs where doc.in_edges count { } == 0` |
-| Everything a MOC references, minus one | `from docs where doc.in exists { where $path.startsWith("moc/") } && !doc.in exists { where $path == "moc/contractors.md" }` |
-| Unchecked tasks under Launch in working docs | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
-| Task nodes only from canon docs in one namespace | `from nodes where kind == "md:task" && !attrs.checked && doc.layer == "canon" && doc.$path.startsWith("canon/")` |
-| Paragraphs citing a specific doc | `from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")` |
+| Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
+| Distinct doc types | `from docs select distinct type` |
+| Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
+| Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
-| Code fences in TypeScript under Examples | `from blocks where type == "code_fence" && attrs.lang == "ts" && under_heading("Examples")` |
-| Anchored blocks in one doc | `from blocks where within("projects/foo.md") && has_anchor()` |
+| Everything a note transitively cites | `from docs where $path == "index.md" follow doc.out` |
 | Every `depends_on` edge, both endpoints | `from edges where predicate == "depends_on" select $src, $dst_path` |
-| External links (URLs) in the vault | `from edges where dst_kind == "external" select $dst_uri` |
-| Dangling internal links | `from edges where dst_kind == "document" select $path, $dst` (dangling ⇒ `$dst_path` is null) |
-| Edges authored in frontmatter (not body links) | `from edges where provenance == "frontmatter"` |
-| Docs and everything they transitively cite | `from docs where $path == "index.md" follow doc.out` |
-
-The brief's compound sketch — *paragraphs, traverse `references`, keep targets where `layer == "canon"`* — composes as a recursive OQX query: seed with a `where`, expand with `follow doc.out { via predicate == "references" }`, and constrain the reached rows with a post-walk `where layer == "canon"`. Traversal is a first-class OQX construct (`follow`), not a separate pipeline stage.
