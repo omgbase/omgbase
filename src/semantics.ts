@@ -142,11 +142,39 @@ export function compareForSort(a: unknown, b: unknown): number {
   return 0;
 }
 
+/** Parse a string as a range value (`1..5`, `1...5`, `..5`, `5..`, or an
+ * ISO-8601 date range), or null if it is not a well-formed range. The operator
+ * is a maximal run of 2 (`..`) or 3 (`...`) dots; a single dot is a decimal
+ * point. Bounds must share a scalar domain — both numeric, or both ISO-8601 —
+ * so an ordinary string is never mis-read. This is the runtime counterpart of
+ * the `lo..hi` literal, for ranges that arrive as string data. */
+export function parseRangeString(s: string): OqxRange | null {
+  const m = /^(.*?)(\.\.\.?)(.*)$/.exec(s);
+  if (!m) return null;
+  const loRaw = m[1]!, dots = m[2]!, hiRaw = m[3]!;
+  if (loRaw.endsWith(".") || hiRaw.startsWith(".")) return null; // non-maximal dot run
+  const lo = loRaw.length ? loRaw : null;
+  const hi = hiRaw.length ? hiRaw : null;
+  if (lo === null && hi === null) return null;
+  const exclusiveEnd = dots.length === 3;
+  const present = [lo, hi].filter((b): b is string => b !== null);
+  const NUM = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+  const ISO = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/;
+  if (present.every((b) => NUM.test(b))) {
+    return makeRange(lo === null ? null : Number(lo), hi === null ? null : Number(hi), exclusiveEnd);
+  }
+  if (present.every((b) => ISO.test(b))) return makeRange(lo, hi, exclusiveEnd);
+  return null;
+}
+
 /** Free functions callable as `name(args)`. */
 export const BUILTIN_FUNCTIONS: Record<string, (args: unknown[]) => unknown> = {
   list: (args) => toList(args[0]),
   size: (args) => sizeOf(args[0]),
   has: (args) => args[0] != null,
+  // Coerce a string to a range value (or pass a range through); anything else,
+  // or a non-range string, is absent so `x in range(bad)` is simply false.
+  range: (args) => (isRange(args[0]) ? args[0] : typeof args[0] === "string" ? parseRangeString(args[0]) : null),
 };
 
 /** Methods callable as `recv.name(args)`. */

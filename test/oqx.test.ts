@@ -384,6 +384,25 @@ test("range: parses to a range node with the exclusive-end flag", () => {
   });
 });
 
+test("range(s) coerces a string field to a range for membership", () => {
+  // ranges that arrive as string DATA (not written as a literal in the query)
+  const rows = [
+    { label: "jan", window: "2026-01-01..2026-01-31" },
+    { label: "feb", window: "2026-02-01..2026-02-28" },
+    { label: "q1", span: "1..3" },
+  ];
+  assert.deepEqual(
+    (oqx`label from ${rows} where "2026-01-15" in range(window)` as Array<{ label: string }>).map((r) => r.label),
+    ["jan"],
+  );
+  assert.deepEqual(
+    (oqx`label from ${rows} where 2 in range(span)` as Array<{ label: string }>).map((r) => r.label),
+    ["q1"],
+  );
+  // a bare (unparsed) field is still just its string — range() is the opt-in
+  assert.deepEqual(oqx`from ${rows} where window == "2026-01-01..2026-01-31"`, [rows[0]]);
+});
+
 // ---- errors -----------------------------------------------------------------
 
 test("a missing source is a parse error", () => {

@@ -1,7 +1,7 @@
 // The scalar-semantics contract every backend must obey (see src/semantics.ts).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { equals, relate, membership, arith, compareForSort, coerceCollection, makeRange, isRange, rangeCovers } from "../src/semantics.ts";
+import { equals, relate, membership, arith, compareForSort, coerceCollection, makeRange, isRange, rangeCovers, parseRangeString, BUILTIN_FUNCTIONS } from "../src/semantics.ts";
 
 test("equality is typed and strict; absence normalizes", () => {
   assert.equal(equals(5, 5), true);
@@ -64,6 +64,29 @@ test("membership routes a range RHS to coverage", () => {
   assert.equal(membership(3, makeRange(1, 5, false)), true);
   assert.equal(membership(5, makeRange(1, 5, true)), false); // exclusive end
   assert.equal(membership("2026-02-01", makeRange("2026-01-01", "2026-12-31", false)), true);
+});
+
+test("parseRangeString parses numeric / date / open-ended ranges", () => {
+  assert.deepEqual(parseRangeString("1..5"), makeRange(1, 5, false));
+  assert.deepEqual(parseRangeString("1...5"), makeRange(1, 5, true));
+  assert.deepEqual(parseRangeString("..5"), makeRange(null, 5, false));
+  assert.deepEqual(parseRangeString("1.."), makeRange(1, null, false));
+  assert.deepEqual(parseRangeString("2026-01-01..2026-01-31"), makeRange("2026-01-01", "2026-01-31", false));
+  // not ranges → null, so `x in range(s)` is simply false
+  assert.equal(parseRangeString("hello"), null);
+  assert.equal(parseRangeString("a..z"), null);
+  assert.equal(parseRangeString("1..2026-01-01"), null); // mixed domains
+  assert.equal(parseRangeString("../foo"), null);
+});
+
+test("the range(s) builtin coerces a string to a range value (and passes ranges through)", () => {
+  const r = BUILTIN_FUNCTIONS.range!(["1..5"]);
+  assert.equal(isRange(r), true);
+  assert.equal(rangeCovers(r as ReturnType<typeof makeRange>, 3), true);
+  assert.equal(membership(3, BUILTIN_FUNCTIONS.range!(["1..5"])), true);
+  assert.equal(membership(9, BUILTIN_FUNCTIONS.range!(["1..5"])), false);
+  assert.equal(BUILTIN_FUNCTIONS.range!(["not a range"]), null);
+  assert.equal(isRange(BUILTIN_FUNCTIONS.range!([makeRange(1, 5, false)])), true); // pass-through
 });
 
 test("arithmetic: + concatenates when either side is a string", () => {

@@ -139,6 +139,13 @@ Bounds may be interpolated (`where age in ${lo}..${hi}`). A range membership is
 not pushed into a storage backend — it is finished in-memory over the rows the
 backend returns — so it always evaluates by the rules above.
 
+When a range arrives as string **data** rather than as a literal, `range(s)`
+coerces it: `where "2026-02-14" in range(window)` reads `window`'s string
+(`"2026-01-01..2026-01-31"`) as a range and tests coverage. A bare field stays a
+plain string (`window == "…"` compares text) — `range(...)` is the explicit
+opt-in, so a value that merely looks rangey is never silently reinterpreted. A
+non-range string yields an absent range, so `x in range(bad)` is just false.
+
 **Interpolations are always values, never syntax.** `where name == ${x}` compares
 against the value of `x`; a string in `x` can't inject operators or identifiers.
 
@@ -362,6 +369,7 @@ name, alias: expr, nested: rel collect { … }   projection (select optional)
 from ${source}                                  source collection
 where a == b && rel exists { … } || !c          predicate tree + nested ops
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
+where x in range(field)                          coerce a string field to a range, then test coverage
 ^name / ^^name                                   read an outer row's field (N scopes out)
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 order by expr desc, expr2                        ordering
