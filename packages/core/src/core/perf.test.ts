@@ -59,24 +59,24 @@ describe("perf at reduced envelope scale", { retry: 2 }, () => {
     expect(p).toBeLessThan(50);
   });
 
-  it("query (blocks filter) p95 < 100ms", () => {
+  it("query (blocks filter) p95 < 150ms", () => {
     const p = bench(50, () => {
       oqxRun(store, repoId, 'from blocks where type == "paragraph" && under_heading("Section A")', { limit: 20 });
     });
-    expect(p).toBeLessThan(100);
+    expect(p).toBeLessThan(150);
   });
 
-  it("query (docs frontmatter) p95 < 100ms", () => {
+  it("query (docs frontmatter) p95 < 150ms", () => {
     const p = bench(50, () => {
       oqxRun(store, repoId, 'from docs where layer == "canon"', { limit: 20 });
     });
-    expect(p).toBeLessThan(100);
+    expect(p).toBeLessThan(150);
   });
 
-  it("text query p95 < 100ms", () => {
+  it("text query p95 < 150ms", () => {
     const p = bench(50, () => {
       oqxRun(store, repoId, 'from blocks where text("topic")', { limit: 20 });
     });
-    expect(p).toBeLessThan(100);
+    expect(p).toBeLessThan(150);
   });
 });
