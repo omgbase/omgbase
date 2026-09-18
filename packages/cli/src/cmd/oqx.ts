@@ -1,10 +1,11 @@
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
-import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery } from "@omgbase/core";
+import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { truncationFooter, EngineErrorLike, EXIT_OK } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
 
 // `omg query <source>` — OQX composable query. Dot navigation belongs to the host
@@ -72,33 +73,41 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
 
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-
   const opts: { limit?: number; cursor?: string } = {};
   if (values.n) opts.limit = Number(values.n);
   if (values.cursor) opts.cursor = values.cursor;
 
-  // A query using semantic("…") needs the embedding provider to turn each
-  // phrase into a query vector; everything else runs on the sync core with no
-  // provider loaded. loadEmbedding is only touched when a phrase is present.
-  const phrases = collectSemanticPhrases(source);
-  let result;
-  if (phrases.length > 0) {
-    const loaded = await loadEmbedding(ws, repo.repoId);
-    if (!loaded) {
-      throw new EngineErrorLike("semantic_unavailable", "semantic(...) needs an embedding provider", {
-        hint: "omg config set embedding.provider <command|url>",
-      });
-    }
-    try {
-      const embed: EmbedQuery = async (t) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(t) });
-      result = await oqxRunAsync(ws.store, repo.repoId, source, opts, embed);
-    } finally {
-      await loaded.close();
-    }
+  let result: OqxResult;
+  if (cli.flags.server) {
+    // Remote: the `query` MCP tool returns the same OqxResult; render unchanged.
+    result = await remoteCall<OqxResult>(cli, "query", {
+      query: source,
+      ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+      ...(opts.cursor !== undefined ? { cursor: opts.cursor } : {}),
+    });
   } else {
-    result = oqxRun(ws.store, repo.repoId, source, opts);
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    // A query using semantic("…") needs the embedding provider to turn each
+    // phrase into a query vector; everything else runs on the sync core with no
+    // provider loaded. loadEmbedding is only touched when a phrase is present.
+    const phrases = collectSemanticPhrases(source);
+    if (phrases.length > 0) {
+      const loaded = await loadEmbedding(ws, repo.repoId);
+      if (!loaded) {
+        throw new EngineErrorLike("semantic_unavailable", "semantic(...) needs an embedding provider", {
+          hint: "omg config set embedding.provider <command|url>",
+        });
+      }
+      try {
+        const embed: EmbedQuery = async (t) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(t) });
+        result = await oqxRunAsync(ws.store, repo.repoId, source, opts, embed);
+      } finally {
+        await loaded.close();
+      }
+    } else {
+      result = oqxRun(ws.store, repo.repoId, source, opts);
+    }
   }
 
   // Shell capture (typed result before formatting): a scalar for count/exists,

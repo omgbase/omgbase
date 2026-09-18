@@ -19,7 +19,10 @@ interface ToolResult {
 export class McpEngineClient implements EngineClient {
   constructor(private readonly client: Client) {}
 
-  private async callJson<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  /** Call any MCP tool and return its parsed JSON result. Throws on a tool
+   *  error (the message carries the engine error code) or non-JSON output. The
+   *  general-purpose call the CLI's `--server` mode uses for arbitrary tools. */
+  async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
     const res = (await this.client.callTool({ name, arguments: args })) as ToolResult;
     const text = res.content?.find((c) => c.type === "text")?.text ?? "";
     let body: unknown;
@@ -36,15 +39,15 @@ export class McpEngineClient implements EngineClient {
   }
 
   observeMany(files: { path: string; content: string }[]): Promise<ObserveResult[]> {
-    return this.callJson<ObserveResult[]>("observe_many", { files });
+    return this.callTool<ObserveResult[]>("observe_many", { files });
   }
 
   observeDelete(path: string): Promise<ObserveDeleteResult> {
-    return this.callJson<ObserveDeleteResult>("observe_delete", { path });
+    return this.callTool<ObserveDeleteResult>("observe_delete", { path });
   }
 
   changesSince(cursor?: number, opts?: { origin?: "api" | "observed" | "import"; limit?: number }): Promise<ChangesPage> {
-    return this.callJson<ChangesPage>("changes_since", {
+    return this.callTool<ChangesPage>("changes_since", {
       ...(cursor !== undefined ? { cursor } : {}),
       ...(opts?.origin ? { origin: opts.origin } : {}),
       ...(opts?.limit !== undefined ? { limit: opts.limit } : {}),
@@ -53,7 +56,7 @@ export class McpEngineClient implements EngineClient {
 
   async readDoc(path: string): Promise<DocBytes | null> {
     try {
-      const res = await this.callJson<{ content: string }>("docs_read", { path });
+      const res = await this.callTool<{ content: string }>("docs_read", { path });
       return { content: res.content, contentHash: createHash("sha256").update(res.content, "utf8").digest("hex") };
     } catch {
       // doc_missing (or any read failure) → treat as absent.

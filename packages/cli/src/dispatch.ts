@@ -130,8 +130,9 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
 
   try {
     // Freshness sweep (11 §3.3): current-by-default, unless --stale, a live
-    // watcher holds the lease, or the command manages sync itself.
-    if (!cli.flags.stale && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
+    // watcher holds the lease, remote (`--server`) mode (no local tree to sweep),
+    // or the command manages sync itself.
+    if (!cli.flags.stale && cli.flags.server === undefined && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
       const ws = cli.workspace();
       if (!watchLeaseLive(ws.omgbaseDir)) {
         // Best-effort: a workspace with no attached repo (or an unresolvable
