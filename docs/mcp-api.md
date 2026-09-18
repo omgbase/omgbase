@@ -7,8 +7,9 @@
 
 ## 1. Cross-cutting response rules
 
-These four rules apply to every tool and are non-negotiable:
+These rules apply to every tool and are non-negotiable:
 
+0. **Multi-repo (ADR-014).** Every repo-scoped tool accepts an optional `repo` (a slug); omitting it uses the server's bound default repo, so single-repo clients are unchanged. An unknown slug is a loud `repo_not_found`. Discover slugs with the `repos` tool; per-repo counts/convergence via `repos_status { repo }`. Mutators resolve the *target* repo's working-tree root, so a write always lands in the right tree.
 1. **Explicit incompleteness.** Every list-shaped result carries `truncated: boolean` and, when true, `cursor`. An agent must never have to guess whether it saw everything.
 2. **Budgets are first-class.** Hydrating tools (`docs_get_many`, `nodes_get_many`, …) accept `budget_tokens` (server estimates ~4 chars/token, truncates at block boundaries, sets `truncated`). Traversals bound the walk instead: `query`'s OQX `follow … { depth n }` / `where $ordinal <= N` and the `graph` tool's `degrees`/`max_documents`.
 3. **Conflicts carry current truth.** See `mutation-and-concurrency.md` §4.
@@ -121,10 +122,11 @@ changes_since { cursor?, origin?: "api"|"observed"|"import", limit? }  // repo-w
 ### Admin
 
 ```
-repos_status {}               // repo counts (docs/blocks/commits/open edges/unconverged) + on-disk drift
-sync_status {}                // watcher/sync state: last commit seq, last checkpoint, convergent?
+repos {}                      // list the workspace's repos: { repos: [{ slug, hasSource }] }
+repos_status { repo? }        // repo counts (docs/blocks/commits/open edges/unconverged) + on-disk drift
+sync_status { repo? }         // watcher/sync state: last commit seq, last checkpoint, convergent?
 ```
-Both take no arguments and report on the server's single configured repo. `repos_status.disk` is a read-only working-tree scan (`changed`/`deleted`/`untracked`/`checked`). `sync_status.convergent` is true ONLY when the DB is converged AND a working-tree scan ran and found no drift — never green while disk freshness is unverified. There are no `repos_list`/`repos_create`/`sync_flush` tools on this surface (repo lifecycle lives in the CLI/store, not the MCP server).
+`repos` enumerates the workspace's repos so a client can pick a `repo` slug for any tool (ADR-014). `repos_status`/`sync_status` report on the addressed repo (or the bound default). `repos_status.disk` is a read-only working-tree scan (`changed`/`deleted`/`untracked`/`checked`). `sync_status.convergent` is true ONLY when the DB is converged AND a working-tree scan ran and found no drift — never green while disk freshness is unverified. There are no `repos_create`/`sync_flush` tools on this surface (repo lifecycle lives in the CLI/store, not the MCP server).
 
 ## 4. Tool-description contracts (write these into the MCP descriptions)
 

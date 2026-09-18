@@ -139,7 +139,7 @@ An in-process `fetch()` returns bytes synchronously; over a pipe it is a round-t
 
 ## 11. Multi-repo is the payoff
 
-One workspace DB holds many repos (`02 §3`) — today each is filesystem-backed from its `root_path` or sourceless; backing a repo with a different adapter is the deferred registry (§2). The prize is **cross-repo edges** — a Linear issue → a GitHub PR → a markdown doc in one OQX `follow`. That needs a cross-repo query surface, which today's `query(store, repoId, …)` hard-scopes against and the MCP server binds one repo per session. Cross-repo query is out of scope here (a query/MCP change, not a sync change) but is the reason this seam matters.
+One workspace DB holds many repos (`02 §3`) — each backed by its attached fs source(s) or sourceless; backing a repo with a different adapter is the deferred registry (§2). The MCP surface is now **multi-repo**: every tool takes an optional `repo` slug (ADR-014), so a client can address any repo in the workspace over one connection (the `repos` tool lists them). Still out of scope: a single query that spans repos in one `follow` (cross-repo edges — a Linear issue → a GitHub PR → a markdown doc); each `query` is still scoped to one repo. That's a query-engine change, not a sync change, but it's the reason this seam matters.
 
 ## 12. Invariants (unchanged)
 

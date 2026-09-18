@@ -33,9 +33,12 @@ import { QUERY_SYNTAX } from "./reference.js";
 
 export interface ServerContext {
   store: Store;
-  /** default repo for calls that omit one (single-repo v1 convenience). */
+  /** The DEFAULT repo for calls that omit `repo` (ADR-014). Tools accept an
+   *  optional `repo` slug to address any repo in the workspace; this is the
+   *  fallback when none is given. */
   repoId: string;
-  /** working-tree root, required for mutation tools that write files. */
+  /** Default repo's working-tree root (for mutations that omit `repo`); a
+   *  `repo`-scoped call derives the target repo's root from its fs source. */
   rootPath?: string;
   /**
    * Embed a query string to a vector for semantic search. Absent ⇒ the `query`
@@ -100,7 +103,33 @@ function fail(err: unknown): { content: { type: "text"; text: string }[]; isErro
 
 export function buildServer(ctx: ServerContext): McpServer {
   const server = new McpServer({ name: "omgbase", version: "0.0.0" });
-  const { store, repoId } = ctx;
+  const { store } = ctx;
+
+  // Multi-repo (ADR-014): every tool accepts an optional `repo` slug. Resolve it
+  // to a repo id + its (derived) working-tree root per call; omitting it uses the
+  // server's bound default repo, so single-repo clients are unchanged. rootPath
+  // is derived from the repo's attached `fs` source (the root_path column is
+  // gone). An unknown slug is a loud repo_not_found.
+  function repoScope(slug?: string): { repoId: string; rootPath: string | undefined } {
+    if (slug === undefined) return { repoId: ctx.repoId, rootPath: ctx.rootPath };
+    const row = store.db.prepare("SELECT repo_id FROM repos WHERE slug = ?").get(slug) as { repo_id: string } | undefined;
+    if (!row) throw new EngineError("repo_not_found", `no repo '${slug}' in this workspace`, { data: { repo: slug } });
+    const cfg = store.db
+      .prepare("SELECT s.config AS config FROM sources s JOIN attachments a ON a.source_id = s.source_id WHERE a.repo_id = ? AND s.adapter = 'fs' LIMIT 1")
+      .get(row.repo_id) as { config: string } | undefined;
+    let rootPath: string | undefined;
+    if (cfg) {
+      try {
+        const r = (JSON.parse(cfg.config) as { root?: unknown }).root;
+        if (typeof r === "string" && r) rootPath = r;
+      } catch { /* malformed config → no root */ }
+    }
+    return { repoId: row.repo_id, rootPath };
+  }
+  // Every repo-scoped tool adds `...REPO_ARG` to its inputSchema and opens with
+  // `const { repoId, rootPath } = repoScope(args.repo);` — omitting `repo` uses
+  // the bound default repo (single-repo clients unchanged).
+  const REPO_ARG = { repo: z.string().optional() };
 
   // Wrap a successful write's result: notify the host so it can schedule a
   // background embed drain. onMutation must be cheap/non-blocking (see
@@ -121,7 +150,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // owning doc. An unresolvable ref throws doc_missing (loud), never a silent
   // empty — including a d_-shaped id that doesn't exist (findDocByRef won't fall
   // through to a path lookup for it).
-  function resolveDocId(ref: { doc?: string | undefined; path?: string | undefined; block?: string | undefined }): string {
+  function resolveDocId(repoId: string, ref: { doc?: string | undefined; path?: string | undefined; block?: string | undefined }): string {
     if (ref.doc) {
       const info = findDocByRef(store, repoId, ref.doc);
       if (info) return info.docId;
@@ -142,13 +171,13 @@ export function buildServer(ctx: ServerContext): McpServer {
   // block is returned as-is; otherwise it's matched as heading text (normalized
   // the same way the parser stores block.text), scoped to a doc/path when given.
   // Repo-wide text that isn't unique fails ambiguous_heading with candidate ids.
-  function resolveHeadingId(heading: string, scope: { doc?: string; path?: string }): string {
+  function resolveHeadingId(repoId: string, heading: string, scope: { doc?: string; path?: string }): string {
     const asBlock = store.db
       .prepare("SELECT block_id FROM blocks WHERE block_id = ? AND type = 'heading' AND deleted_commit IS NULL")
       .get(heading) as { block_id: string } | undefined;
     if (asBlock) return asBlock.block_id;
 
-    const wantDoc = scope.doc || scope.path ? resolveDocId(scope) : undefined;
+    const wantDoc = scope.doc || scope.path ? resolveDocId(repoId, scope) : undefined;
     const needle = normalizeVisibleText(heading, "heading");
     const rows = (wantDoc
       ? store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND doc_id = ? AND deleted_commit IS NULL")
@@ -176,11 +205,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         resolution: z.enum(["skeleton", "outline"]).optional(),
         depth: z.number().int().optional(),
         budget_tokens: z.number().int().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        const docId = resolveDocId(args);
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, args);
         const res = docsOutline(store, docId, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.depth !== undefined ? { depth: args.depth } : {}),
@@ -202,11 +233,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         doc: z.string().optional(),
         path: z.string().optional(),
         include_ids: z.boolean().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        const docId = resolveDocId(args);
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, args);
         const res = docsRead(store, docId, args.include_ids ? { includeIds: true } : {});
         if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args)}`);
         return ok(res);
@@ -225,10 +258,12 @@ export function buildServer(ctx: ServerContext): McpServer {
         docs: z.array(z.string()),
         include_ids: z.boolean().optional(),
         budget_tokens: z.number().int().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         const res = docsReadMany(store, repoId, args.docs, {
           ...(args.include_ids ? { includeIds: true } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
@@ -249,11 +284,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         path: z.string().optional(),
         id: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        const docId = resolveDocId({ doc: args.doc, path: args.path, block: args.id });
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, { doc: args.doc, path: args.path, block: args.id });
         const node = nodesGet(store, docId, args.id, args.resolution ? { resolution: args.resolution } : {});
         if (!node) throw new EngineError("block_missing", `no block ${args.id}`);
         return ok(node);
@@ -273,11 +310,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         ids: z.array(z.string()),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
         budget_tokens: z.number().int().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        const docId = resolveDocId({ doc: args.doc, path: args.path, block: args.ids[0] });
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, { doc: args.doc, path: args.path, block: args.ids[0] });
         const res = nodesGetMany(store, docId, args.ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
@@ -308,10 +347,12 @@ export function buildServer(ctx: ServerContext): McpServer {
         query: z.string(),
         limit: z.number().int().optional(),
         cursor: z.string().nullable().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         // A `semantic(...)` query with no provider is semantic_unavailable (not a
         // generic filter error) — surface that specific code, mirroring resolve.
         if (!ctx.embedQuery && collectSemanticPhrases(args.query).length > 0) {
@@ -339,10 +380,12 @@ export function buildServer(ctx: ServerContext): McpServer {
         predicate: z.string().optional(),
         select: z.array(z.string()).optional(),
         max_documents: z.number().int().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         // A `select` using semantic(...) needs a provider — surface the specific
         // code, mirroring the `query` tool.
         if (!ctx.embedQuery && (args.select ?? []).some((s) => collectSemanticPhrases(`from docs select x: ${s}`).length > 0)) {
@@ -359,10 +402,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "text_search",
     {
       description: "Full-text (FTS5, bm25-ranked) keyword search over block text. Input is treated as a search box — plain words are ANDed, \"quoted phrases\" match adjacency, punctuation like / is safe (no query DSL). For structured filtering or frontmatter projection use `query` instead (see query_syntax).",
-      inputSchema: { q: z.string(), limit: z.number().int().optional() },
+      inputSchema: { q: z.string(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return ok(textSearch(store, repoId, args.q, args.limit !== undefined ? { limit: args.limit } : {}));
       } catch (e) {
         return fail(e);
@@ -374,10 +418,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "resolve",
     {
       description: "Resolve a name/title/concept to the concrete blocks it refers to — 'the id of the thing I mean'. Hybrid ranker (FTS + semantic when a provider is configured); best on short, entity-shaped inputs (a title, term, or phrase). Returns ranked {id, locator, preview, evidence}; prefer the returned ids in follow-up calls. For open natural-language questions or passage retrieval, use `query` with `semantic` instead.",
-      inputSchema: { query: z.string(), limit: z.number().int().optional() },
+      inputSchema: { query: z.string(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         const input: Parameters<typeof resolveThing>[1] = { repoId, query: args.query, ...(args.limit !== undefined ? { limit: args.limit } : {}) };
         // Hybrid: fuse the query vector into the ranking when a provider is
         // configured (mirrors CLI `omg find`). Absent ⇒ FTS-only.
@@ -398,13 +443,15 @@ export function buildServer(ctx: ServerContext): McpServer {
         ops: z.array(opSchema),
         reason: z.string().optional(),
         dry_run: z.boolean().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const res = apply(store, {
-          repoId, rootPath: ctx.rootPath,
+          repoId, rootPath,
           ops: args.ops as Op[],
           origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
@@ -421,13 +468,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     "tasks_complete",
     {
       description: "Macro: mark the given task blocks checked. Expands to update(attrs:{checked:true}) per block; the expansion is applied via the same changeset machinery.",
-      inputSchema: { blocks: z.array(z.string()) },
+      inputSchema: { blocks: z.array(z.string()), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const ops = tasksComplete(store, args.blocks);
-        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
+        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
       } catch (e) {
         return fail(e);
       }
@@ -439,13 +487,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). Takes the node id (from query from:nodes), a property, and its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor.",
-      inputSchema: { node: z.string(), prop: z.string(), value: z.string() },
+      inputSchema: { node: z.string(), prop: z.string(), value: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const ops = nodeSet(store, args.node, args.prop, args.value);
-        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "node_set" } }));
+        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "node_set" } }));
       } catch (e) {
         return fail(e);
       }
@@ -457,14 +506,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Macro: append markdown at the end of a heading's section range. `heading` accepts the heading's block id (preferred, from docs_outline) OR its text — text is resolved to an id, scoped to `doc`/`path` when given. Heading text without a doc scope is repo-wide and errors ambiguous_heading (with candidate ids) when it isn't unique. Expands to a single insert op.",
-      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional() },
+      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
-        const headingId = resolveHeadingId(args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        const headingId = resolveHeadingId(repoId, args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
         const ops = sectionsAppend(headingId, args.markdown);
-        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
+        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
       } catch (e) {
         return fail(e);
       }
@@ -476,18 +526,19 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Macro: append markdown at the END of a whole document — the journal/log/running-note primitive (the document-root peer of sections_append, which appends inside a heading's section). ADDITIVE and identity-preserving, NOT a whole-body replace: the `text` is parsed into blocks and inserted as NEW top-level blocks after the document's existing ones, so every existing block keeps its stable `b_` id (omgbase deliberately has no whole-body `docs_put` — see mcp-api). Expands to a single insert op at the document top level (position end); commits atomically through the same kernel path as `apply`, returning the new revision(s) and the inserted block ids. Target the document with `doc` (id OR path) or `path`. The document must already exist — a missing doc errors `doc_missing` (creating one is docs_create's job, never this). To append inside a specific heading section instead, use sections_append.",
-      inputSchema: { doc: z.string().optional(), path: z.string().optional(), text: z.string() },
+      inputSchema: { doc: z.string().optional(), path: z.string().optional(), text: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         // Resolve the ref to a live doc id FIRST — a missing doc is doc_missing
         // (resolveDocId throws it), never an auto-create. Then expand to the
         // single top-level insert-at-end op and apply it (existing blocks keep
         // their ids; only the appended blocks are minted).
-        const docId = resolveDocId({ ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
+        const docId = resolveDocId(repoId, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
         const ops = docsAppend(docId, args.text);
-        return okMutated(apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } }));
+        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } }));
       } catch (e) {
         return fail(e);
       }
@@ -498,14 +549,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_retarget",
     {
       description: "Macro: rewrite a link/reference destination across all blocks that contain it. ALWAYS call with dry_run:true first to preview the hits, then dry_run:false to apply.",
-      inputSchema: { from_target: z.string(), to_target: z.string(), dry_run: z.boolean().optional() },
+      inputSchema: { from_target: z.string(), to_target: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const { ops, hits } = linksRetarget(store, repoId, args.from_target, args.to_target);
         if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
         return okMutated({ hits, applied: true, ...res });
       } catch (e) {
         return fail(e);
@@ -518,10 +570,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the human-readable missing path, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated`. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single). Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
-      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional() },
+      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return ok(linksStale(store, repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
@@ -542,11 +595,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         from_target: z.string().optional(),
         to_target: z.string().optional(),
         dry_run: z.boolean().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
         const repairs = args.repairs
           ? args.repairs
           : args.from_target !== undefined && args.to_target !== undefined
@@ -557,7 +612,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         }
         const { ops, hits } = linksRepair(store, repoId, repairs);
         if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath: ctx.rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" } });
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" } });
         return okMutated({ hits, applied: true, ...res });
       } catch (e) {
         return fail(e);
@@ -568,20 +623,20 @@ export function buildServer(ctx: ServerContext): McpServer {
   // Doc-level operations (06 §API). The MCP server serializes writes in-process,
   // so these pass no omgbaseDir (the flock is for cross-process CLI writers);
   // MCP-originated writes are actor agent:mcp.
-  const docCtx = () => {
-    if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
-    return { repoId, rootPath: ctx.rootPath, actor: "agent:mcp" };
+  const docCtx = (scope: { repoId: string; rootPath: string | undefined }) => {
+    if (!scope.rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp" };
   };
 
   server.registerTool(
     "docs_create",
     {
       description: "Create a new document at `path` from complete file bytes (`markdown`), with optional structured `frontmatter`. Fails path_taken if it already exists.",
-      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional() },
+      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsCreate(store, docCtx(), args.path, args.markdown, args.frontmatter));
+        return okMutated(docsCreate(store, docCtx(repoScope(args.repo)), args.path, args.markdown, args.frontmatter));
       } catch (e) {
         return fail(e);
       }
@@ -592,11 +647,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_move",
     {
       description: "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists.",
-      inputSchema: { doc: z.string(), to_path: z.string() },
+      inputSchema: { doc: z.string(), to_path: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsMove(store, docCtx(), args.doc, args.to_path));
+        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path));
       } catch (e) {
         return fail(e);
       }
@@ -607,11 +662,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_delete",
     {
       description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Requires the explicit doc id/path.",
-      inputSchema: { doc: z.string() },
+      inputSchema: { doc: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsDelete(store, docCtx(), args.doc));
+        return okMutated(docsDelete(store, docCtx(repoScope(args.repo)), args.doc));
       } catch (e) {
         return fail(e);
       }
@@ -622,11 +677,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_set_meta",
     {
       description: "Surgical frontmatter patch: set the given keys and/or unset named keys, re-ingesting the document. Other frontmatter is preserved.",
-      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional() },
+      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsSetMeta(store, docCtx(), args.doc, {
+        return okMutated(docsSetMeta(store, docCtx(repoScope(args.repo)), args.doc, {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
         }));
@@ -641,12 +696,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Plan a whole-document update WITHOUT applying it. Given a doc (id or path) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (base revision + content hash); a stale plan is refused at apply. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
-      inputSchema: { doc: z.string(), content: z.string() },
+      inputSchema: { doc: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
-        const opset = planUpdate(store, repoId, ctx.rootPath, args.doc, args.content);
+        const { repoId, rootPath } = repoScope(args.repo);
+        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        const opset = planUpdate(store, repoId, rootPath, args.doc, args.content);
         return ok({ opset, plan: renderOpsetPlan(opset) });
       } catch (e) {
         return fail(e);
@@ -659,12 +715,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a doc (id or path); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. This is docs_plan_update + apply(opset).",
-      inputSchema: { doc: z.string(), content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional() },
+      inputSchema: { doc: z.string(), content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        if (!ctx.rootPath) throw new EngineError("repo_not_found", "server has no rootPath; mutation disabled");
-        const { opset, result } = docsUpdate(store, docCtx(), args.doc, args.content, {
+        const { opset, result } = docsUpdate(store, docCtx(repoScope(args.repo)), args.doc, args.content, {
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
           ...(args.reason !== undefined ? { reason: args.reason } : {}),
         });
@@ -681,10 +736,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use docs_delete. Returns doc/path/rev plus a disposition summary (how identity threaded).",
-      inputSchema: { path: z.string(), content: z.string() },
+      inputSchema: { path: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return okMutated(observeFile(store, repoId, args.path, args.content));
       } catch (e) {
         return fail(e);
@@ -697,10 +753,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "BATCH sync ingest (ADR-014): observe several files at once — the batch form of `observe`. Give `files` as an array of `{path, content}`; each is echo-gated and reconciled independently, all under one timestamp and a single resurrection-pool sweep (cheaper than N `observe` calls for an initial walk or a large checkpoint). Returns one result per input file (same shape as `observe`). Mirror deletions with `docs_delete`.",
-      inputSchema: { files: z.array(z.object({ path: z.string(), content: z.string() })) },
+      inputSchema: { files: z.array(z.object({ path: z.string(), content: z.string() })), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return okMutated(observeMany(store, repoId, args.files));
       } catch (e) {
         return fail(e);
@@ -713,10 +770,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "SYNC DELETE (ADR-014): record that `path` left the source scope — tombstone the live doc as an OBSERVED deletion (its blocks are pooled for resurrection if the path reappears; no file is removed, since it is already gone from the source). The deletion counterpart to `observe`, for a synchronizer mirroring an external delete. Idempotent: a path with no live doc is a no-op (`deleted:false`). Contrast `docs_delete` — an api-origin, intentional, non-pooled removal that also unlinks the working-tree file.",
-      inputSchema: { path: z.string() },
+      inputSchema: { path: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return okMutated(observeDelete(store, repoId, args.path));
       } catch (e) {
         return fail(e);
@@ -743,15 +801,16 @@ export function buildServer(ctx: ServerContext): McpServer {
     "diff",
     {
       description: "Block-grain diff between two revisions of a document: added/removed/changed blocks.",
-      inputSchema: { doc: z.string(), from_rev: z.string(), to_rev: z.string() },
+      inputSchema: { doc: z.string(), from_rev: z.string(), to_rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         // Resolve `doc` id-or-path FIRST: diffBlocks keys its SQL on the doc id,
         // so a raw path here would silently return an empty diff (no error) —
         // the misleading-empty trap. resolveDocId throws doc_missing when the
         // ref names no document.
-        const docId = resolveDocId({ doc: args.doc });
+        const docId = resolveDocId(repoId, { doc: args.doc });
         return ok(diffBlocks(store, docId, args.from_rev, args.to_rev));
       } catch (e) {
         return fail(e);
@@ -764,11 +823,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "TIME-TRAVEL read: the whole file bytes of a document AS OF a past revision — `content` is the reconstructed source at that `rev` (fences/tables/list markers preserved), plus `path`/`docId`/`rev`. Use this to audit or answer 'what did this doc say at revision N', or to fetch the exact prior text before reverting. Get a `rev` from diff, history_node, or changes_since. Contrast: docs_read = current bytes; diff = block-grain changes BETWEEN two revisions. `renderedHashMatch` is true when the reconstruction is byte-for-byte the file at that revision; it can be false for an old revision ONLY when the document's leading/frontmatter trivia (separator bytes, not block content) changed since — block content always reconstructs faithfully. `properties` are CURRENT values (propertiesAreCurrent:true), since property history is not stored. Args take a doc id or path plus a rev id.",
-      inputSchema: { doc: z.string().optional(), path: z.string().optional(), rev: z.string() },
+      inputSchema: { doc: z.string().optional(), path: z.string().optional(), rev: z.string(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        const docId = resolveDocId(args);
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, args);
         const res = readDocumentAtRevision(store, docId, args.rev);
         if (!res) throw new EngineError("target_missing", `no revision ${JSON.stringify(args.rev)} for document ${docId}`, { data: { doc: docId, rev: args.rev } });
         return ok(res);
@@ -788,10 +848,12 @@ export function buildServer(ctx: ServerContext): McpServer {
         doc: z.string().optional(),
         include_deleted: z.boolean().optional(),
         limit: z.number().int().optional(),
+        ...REPO_ARG,
       },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         if (!args.path_glob && !args.doc) {
           throw new EngineError("target_missing", "docs_history requires one of path_glob or doc");
         }
@@ -822,10 +884,11 @@ export function buildServer(ctx: ServerContext): McpServer {
     "changes_since",
     {
       description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Each digest's `revisions[]` carries `{doc, path, contentHash}` (contentHash = hex of the revision's rendered file hash), so a synchronizer can decide 'changed vs echo' without a follow-up docs_read. Filter by `origin` (api/observed/import) to ignore commits a given writer produced. Poll with your last cursor to cheaply re-orient after time away.",
-      inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional() },
+      inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
+        const { repoId } = repoScope(args.repo);
         return ok(changesSince(store, repoId, {
           ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
           ...(args.origin ? { origin: args.origin } : {}),
@@ -845,10 +908,10 @@ export function buildServer(ctx: ServerContext): McpServer {
         "`disk` reports a READ-ONLY scan of the working tree vs the DB: `changed` (files edited on disk but not re-ingested), " +
         "`deleted` (docs whose file is gone from disk), `untracked` (new *.md not yet ingested), and `checked` " +
         "(false when the server has no working-tree path — disk agreement is then UNVERIFIED, not clean).",
-      inputSchema: {},
+      inputSchema: { ...REPO_ARG },
     },
-    async () => {
-      try { return ok(reposStatus(store, repoId, ctx.rootPath)); } catch (e) { return fail(e); }
+    async (args) => {
+      try { const { repoId, rootPath } = repoScope(args.repo); return ok(reposStatus(store, repoId, rootPath)); } catch (e) { return fail(e); }
     },
   );
 
@@ -860,10 +923,34 @@ export function buildServer(ctx: ServerContext): McpServer {
         "`convergent` is true ONLY when the DB is internally converged AND a working-tree scan ran (`diskChecked`) AND found no drift " +
         "(`disk.changed`/`deleted`/`untracked` all 0). If the server has no working-tree path, `diskChecked` is false and `convergent` is " +
         "false — a green light is never shown while disk freshness is unverified, so an agent can trust `convergent: true` to mean not stale.",
+      inputSchema: { ...REPO_ARG },
+    },
+    async (args) => {
+      try { const { repoId, rootPath } = repoScope(args.repo); return ok(syncStatus(store, repoId, rootPath)); } catch (e) { return fail(e); }
+    },
+  );
+
+  // List the repos in this workspace (multi-repo discovery for a client): slug +
+  // whether it has a filesystem source. The `repo` arg other tools take is a slug
+  // from here. (repos_status gives per-repo counts.)
+  server.registerTool(
+    "repos",
+    {
+      description:
+        "List the repos in this workspace: `{ repos: [{ slug, hasSource }] }`. A client addresses any of them by passing that `slug` as the `repo` argument to another tool (omit `repo` ⇒ the server's default repo). Use repos_status for per-repo counts/convergence.",
       inputSchema: {},
     },
     async () => {
-      try { return ok(syncStatus(store, repoId, ctx.rootPath)); } catch (e) { return fail(e); }
+      try {
+        const rows = store.db
+          .prepare(
+            "SELECT r.slug AS slug, MAX(CASE WHEN s.adapter = 'fs' THEN 1 ELSE 0 END) AS has_fs FROM repos r LEFT JOIN attachments a ON a.repo_id = r.repo_id LEFT JOIN sources s ON s.source_id = a.source_id GROUP BY r.repo_id, r.slug ORDER BY r.slug",
+          )
+          .all() as { slug: string; has_fs: number }[];
+        return ok({ repos: rows.map((r) => ({ slug: r.slug, hasSource: r.has_fs === 1 })) });
+      } catch (e) {
+        return fail(e);
+      }
     },
   );
 
