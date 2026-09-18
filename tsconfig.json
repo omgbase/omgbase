@@ -5,6 +5,7 @@
     { "path": "packages/cli" },
     { "path": "packages/client" },
     { "path": "packages/embedder" },
-    { "path": "packages/fs-adapter" }
+    { "path": "packages/fs-adapter" },
+    { "path": "packages/sync" }
   ]
 }

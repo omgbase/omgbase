@@ -254,11 +254,18 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
      implementation. Behavior-preserving (all sync tests green).
    - ✅ **D3 done** — `observe_many` MCP tool + `observeMany` core, sharing
      `observeOne`.
-   - ⏳ **Remaining** — lift the coordinator out to `@omgbase/sync`: an
-     `EngineClient` seam (in-process for local/tests; MCP-client for remote) +
-     source-adapter protocol, `sync_state`-backed echo bookkeeping, fs export
-     direction. Local `omg watch`/`mcp` keep calling `observeOne` in-process (same
-     primitive, no self-MCP-loop); remote uses the `observe` tool.
+   - ✅ **`@omgbase/sync` package done** — `packages/sync`: `EngineClient` seam
+     (`InProcessEngineClient` for local/tests; `McpEngineClient` +
+     `connectStdioEngine` for remote over MCP), `Coordinator` (`syncIn` /
+     `reconcile(paths)` / `syncOut` / `watchIn`), and the `omgbase-sync` bin
+     (spawns `omg mcp`, mirrors an fs directory). `observe_delete` tool +
+     `observeDelete` core added (recommendation a). syncOut skips observed-origin
+     commits (loop safety, recommendation c) and relies on the idempotent echo
+     gate; cursor is per-session in v1 (recommendation b). Coordinator tests +
+     end-to-end MCP-transport smoke verified.
+   - ⏳ **Deferred** — wiring local `omg sync`/`watch` to *delegate* to the
+     Coordinator (they already share `observeOne`, so no drift); durable cursor
+     persistence; `subscribe` (D1).
 5. **Stage 5 — `attach` as sugar.** Reroute `attach` to source-add + sync;
    retire the duplicate attach impls. `root_path` now derived from the fs source.
 6. **Stage 6 — remove `root_path` (LAST, breaking).** Table-rebuild migration;

@@ -3,6 +3,7 @@ import { sha256 } from "../core/hash.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
 import { hasConflictMarkers } from "./git-heuristics.js";
+import { tombstoneObservedDeletion } from "./tombstone.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
 
 // Observe (ADR-014 §7, D2): the SINGLE reconcile primitive. "Given the current
@@ -107,4 +108,30 @@ export function observeMany(store: Store, repoId: string, items: { path: string;
   const out = items.map((it) => toPublic(observeOne(store, repoId, it.path, it.content, ts)));
   sweepResurrectionPool(store, ts);
   return out;
+}
+
+export interface ObserveDeleteResult {
+  docId: string | null;
+  path: string;
+  /** true when a live doc existed at `path` and was tombstoned. */
+  deleted: boolean;
+}
+
+/**
+ * Observe that `path` left the source scope: tombstone the live doc as an
+ * OBSERVED deletion (blocks pooled for resurrection; no file removed — the file
+ * is already gone from the source). The deletion counterpart to `observeFile`,
+ * for a synchronizer mirroring an external delete. Idempotent: a path with no
+ * live doc is a no-op (`deleted:false`). Distinct from `docs_delete`, which is
+ * an api-origin, intentional, non-pooled removal that also unlinks the file.
+ */
+export function observeDelete(store: Store, repoId: string, path: string, opts: { ts?: string } = {}): ObserveDeleteResult {
+  const ts = opts.ts ?? new Date().toISOString();
+  const existing = store.db
+    .prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+    .get(repoId, path) as { doc_id: string } | undefined;
+  if (!existing) return { docId: null, path, deleted: false };
+  tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
+  sweepResurrectionPool(store, ts);
+  return { docId: existing.doc_id, path, deleted: true };
 }

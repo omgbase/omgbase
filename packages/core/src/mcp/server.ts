@@ -22,7 +22,7 @@ import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/hist
 import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
-import { observeFile, observeMany } from "../sync/observe.js";
+import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
@@ -702,6 +702,22 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         return okMutated(observeMany(store, repoId, args.files));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "observe_delete",
+    {
+      description:
+        "SYNC DELETE (ADR-014): record that `path` left the source scope — tombstone the live doc as an OBSERVED deletion (its blocks are pooled for resurrection if the path reappears; no file is removed, since it is already gone from the source). The deletion counterpart to `observe`, for a synchronizer mirroring an external delete. Idempotent: a path with no live doc is a no-op (`deleted:false`). Contrast `docs_delete` — an api-origin, intentional, non-pooled removal that also unlinks the working-tree file.",
+      inputSchema: { path: z.string() },
+    },
+    async (args) => {
+      try {
+        return okMutated(observeDelete(store, repoId, args.path));
       } catch (e) {
         return fail(e);
       }
