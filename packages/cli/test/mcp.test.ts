@@ -181,3 +181,60 @@ describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
     });
   }, 15000);
 });
+
+describe("omg mcp — configured-but-broken embedder (degrade loudly)", () => {
+  let bdir: string;
+  let bvault: string;
+  beforeAll(() => {
+    bdir = mkdtempSync(join(tmpdir(), "omg-mcp-badembed-"));
+    bvault = join(bdir, "vault");
+    mkdirSync(bvault, { recursive: true });
+    writeFileSync(join(bvault, "doc.md"), "# Doc\n\nHello world.\n");
+    const env = { ...process.env, NO_COLOR: "1" };
+    execFileSync("node", [BIN, "init", bvault, "--yes", "--no-embedder"], { encoding: "utf8", env });
+    execFileSync("node", [BIN, "-C", bvault, "source", "add", ".", "-y"], { encoding: "utf8", env });
+    // Point the embedder at a command that cannot spawn — the "nonfunctional
+    // embedder" case. It is configured (so NOT semantic_unavailable) but broken.
+    execFileSync("node", [BIN, "-C", bvault, "config", "set", "embedding.provider", "omg-no-such-embedder-xyz"], { encoding: "utf8", env });
+  });
+  afterAll(() => rmSync(bdir, { recursive: true, force: true }));
+
+  it("starts serving, warns loudly on stderr, and fails semantic access with embedder_failed", async () => {
+    const child = spawn("node", [BIN, "-C", bvault, "mcp", "--no-watch"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, NO_COLOR: "1" },
+    }) as ChildProcessWithoutNullStreams;
+    let stderr = "";
+    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    const rpc = new RpcClient(child);
+
+    // Server still comes up despite the broken embedder (degraded, not dead).
+    const init = await rpc.send("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } });
+    expect((init.result as { serverInfo?: { name?: string } })?.serverInfo?.name).toBe("omgbase");
+    rpc.notify("notifications/initialized", {});
+
+    // A non-semantic query works fine — the embedder is irrelevant to it.
+    const plain = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs" } });
+    expect((plain.result as { isError?: boolean }).isError).toBeFalsy();
+
+    // A semantic query fails LOUDLY and SPECIFICALLY: embedder_failed, not the
+    // misleading semantic_unavailable (which means "no provider configured").
+    const sem = await rpc.send("tools/call", { name: "query", arguments: { query: 'from docs where semantic("hello") > 0.1' } });
+    const sc = (sem.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
+    expect(sc.isError).toBe(true);
+    const body = JSON.parse(sc.content?.[0]?.text ?? "{}") as { error?: string; message?: string };
+    expect(body.error).toBe("embedder_failed");
+    expect(body.message ?? "").toContain("omg-no-such-embedder-xyz");
+
+    // Startup complained loudly on stderr (never on stdout — protocol channel).
+    expect(stderr).toContain("EMBEDDER NONFUNCTIONAL");
+    expect(stderr).toContain("omg-no-such-embedder-xyz");
+    expect(rpc.nonJsonStdout).toEqual([]);
+
+    await new Promise<number>((res) => {
+      child.on("exit", (code) => res(code ?? -1));
+      child.stdin.end();
+      setTimeout(() => { child.kill("SIGKILL"); res(-99); }, 4000);
+    });
+  }, 15000);
+});

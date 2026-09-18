@@ -138,7 +138,7 @@ sync_status { repo? }         // watcher/sync state: last commit seq, last check
 
 ## 5. Error codes
 
-`stale_expectation` · `parent_missing` · `target_missing` · `block_missing` · `doc_missing` · `cycle_move` · `opaque_block` · `not_contiguous` · `type_mismatch` · `conflicted_document` · `path_taken` · `create_conflict` · `ambiguous_locator` · `ambiguous_heading` (candidate ids attached) · `node_not_editable` (editable-prop list attached) · `stale_plan` (a `docs_update` whose base changed) · `filter_invalid` · `budget_exceeded` (partial result attached) · `semantic_unavailable` · `sync_conflict` · `repo_not_found`. Shape: `{ error, message, data?, retriable: boolean }` — stable codes, prose free to improve.
+`stale_expectation` · `parent_missing` · `target_missing` · `block_missing` · `doc_missing` · `cycle_move` · `opaque_block` · `not_contiguous` · `type_mismatch` · `conflicted_document` · `path_taken` · `create_conflict` · `ambiguous_locator` · `ambiguous_heading` (candidate ids attached) · `node_not_editable` (editable-prop list attached) · `stale_plan` (a `docs_update` whose base changed) · `filter_invalid` · `budget_exceeded` (partial result attached) · `semantic_unavailable` (no embedder configured) · `embedder_failed` (embedder IS configured but couldn't start — spawn/handshake/endpoint failure; `data: { provider, reason }`) · `sync_conflict` · `repo_not_found`. Shape: `{ error, message, data?, retriable: boolean }` — stable codes, prose free to improve.
 
 ## 6. Outline wire format
 

@@ -1,4 +1,4 @@
-import { EmbeddingWorker, buildEmbedTasks, buildDocEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, type EmbeddingProvider } from "@omgbase/core";
+import { EmbeddingWorker, buildEmbedTasks, buildDocEmbedTasks, embeddingSettings, createExternalProvider, resolveSettings, EngineError, type EmbeddingProvider } from "@omgbase/core";
 import type { Cli } from "../context.js";
 
 // Shared embedding setup for the CLI (05 §6). Reads embedding.* from the repo's
@@ -23,14 +23,22 @@ export interface LoadedEmbedding {
 
 /**
  * Connect the configured embedding provider + build a worker for a repo, or
- * null when embedding.provider is unset. Throws only on misconfiguration
- * (command won't spawn, endpoint unreachable, bad handshake). Callers MUST call
- * close() when done (e.g. in a finally) to release a spawned process.
+ * null when embedding.provider is UNSET (callers surface semantic_unavailable).
+ * When a provider IS configured but can't be reached (command won't spawn,
+ * endpoint unreachable, bad handshake) this throws a loud, typed `embedder_failed`
+ * EngineError naming the provider + reason — never a silent null, so a broken
+ * embedder is never mistaken for an unconfigured one. Callers MUST call close()
+ * when done (e.g. in a finally) to release a spawned process.
  */
 export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: string): Promise<LoadedEmbedding | null> {
   const settings = embeddingSettings(resolveSettings(ws.store, repoId));
   if (!settings.provider) return null;
-  const ext = await createExternalProvider(settings);
+  let ext;
+  try {
+    ext = await createExternalProvider(settings);
+  } catch (err) {
+    throw embedderFailed(settings.provider, err);
+  }
   if (!ext) return null;
   return {
     worker: new EmbeddingWorker(ws.store, ext.provider),
@@ -39,6 +47,18 @@ export async function loadEmbedding(ws: ReturnType<Cli["workspace"]>, repoId: st
     remote: /^https?:\/\//i.test(settings.provider),
     close: ext.close,
   };
+}
+
+/** Build the shared `embedder_failed` error: a configured embedder that can't be
+ *  reached is a hard, clearly-diagnosed fault (not `semantic_unavailable`, which
+ *  means "no provider configured"). */
+export function embedderFailed(provider: string, err: unknown): EngineError {
+  const reason = err instanceof Error ? err.message : String(err);
+  return new EngineError(
+    "embedder_failed",
+    `embedder '${provider}' is configured but failed to start: ${reason}. Fix: put it on PATH or use an absolute path / http(s) URL for embedding.provider — or unset embedding.provider to run without semantic search.`,
+    { data: { provider, reason } },
+  );
 }
 
 export interface DrainDecision {

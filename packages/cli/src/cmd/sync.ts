@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, type RepoRow, type Workspace } from "@omgbase/core";
+import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, EngineError, type RepoRow, type Workspace } from "@omgbase/core";
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -98,7 +98,18 @@ async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<nu
   const lease = WatchLease.tryAcquire(ws.omgbaseDir);
   if (!lease) throw new EngineErrorLike("target_missing", "another watcher already holds the lease for this workspace");
 
-  const embedding = await loadEmbedding(ws, repo.repoId);
+  // A configured-but-broken embedder disables auto-embed but must not take the
+  // watcher down: warn loudly and keep watching (vectors just go stale until the
+  // embedder is fixed and a drain catches up). An unset provider is silent.
+  let embedding: Awaited<ReturnType<typeof loadEmbedding>> = null;
+  try {
+    embedding = await loadEmbedding(ws, repo.repoId);
+  } catch (err) {
+    if (err instanceof EngineError && err.code === "embedder_failed") {
+      const d = (err.data ?? {}) as { provider?: string; reason?: string };
+      cli.io.err(cli.style.err(`  ✖ EMBEDDER NONFUNCTIONAL — auto-embed disabled (provider: ${d.provider ?? "?"}; reason: ${d.reason ?? err.message})`));
+    } else throw err;
+  }
   const drainer = embedding
     ? new EmbedDrainer(ws.store, repo.repoId, embedding.worker, {
         onDrain: ({ embedded }) => cli.io.err(cli.style.dim(`  embedded ${embedded} block(s)`)),

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer, type SyncSource } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK } from "../output.js";
@@ -29,12 +29,28 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   const repo = cli.repo(ws);
 
   // Connect the configured embedder once (if any) so the query tool's
-  // `semantic` mode has a vectorizer for the session. Absent ⇒ semantic queries
+  // `semantic` mode has a vectorizer for the session. Unset ⇒ semantic queries
   // return semantic_unavailable. The spawned process lives for the session and
   // is released on shutdown.
-  const embedding = await loadEmbedding(ws, repo.repoId);
-  if (embedding) {
-    cli.io.err(cli.style.dim(`[mcp] semantic query enabled via ${embedding.providerName}`));
+  //
+  // A CONFIGURED-but-broken embedder must never be mistaken for "no embedder":
+  // we don't take the whole server down over it (non-semantic tools work fine),
+  // but we complain loudly at startup and make every semantic access fail with a
+  // clear `embedder_failed` (see the throwing embedQuery below), so the fault is
+  // impossible to miss instead of silently degrading to keyword-only search.
+  let embedding: Awaited<ReturnType<typeof loadEmbedding>> = null;
+  let embedderError: EngineError | null = null;
+  try {
+    embedding = await loadEmbedding(ws, repo.repoId);
+    if (embedding) cli.io.err(cli.style.dim(`[mcp] semantic query enabled via ${embedding.providerName}`));
+  } catch (err) {
+    embedderError = err instanceof EngineError && err.code === "embedder_failed" ? err : null;
+    if (!embedderError) throw err; // an unexpected failure is still fatal
+    const d = (embedderError.data ?? {}) as { provider?: string; reason?: string };
+    cli.io.err(cli.style.err("[mcp] ✖ EMBEDDER NONFUNCTIONAL — semantic search + auto-embed disabled"));
+    cli.io.err(cli.style.err(`      provider: ${d.provider ?? "?"}`));
+    cli.io.err(cli.style.err(`      reason:   ${d.reason ?? embedderError.message}`));
+    cli.io.err(cli.style.err("      semantic queries will fail with embedder_failed until this is fixed."));
   }
 
   // Keep embeddings timely: a background drainer embeds blocks touched by a
@@ -90,19 +106,26 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
 
   if (drainer) cli.io.err(cli.style.dim(`[mcp] auto-embed on mutation enabled`));
 
+  // The query surface's `embedQuery`: a live vectorizer when the embedder loaded,
+  // or — when it's configured-but-broken — a hook that throws `embedder_failed`
+  // so semantic access fails loudly and specifically (not the misleading
+  // `semantic_unavailable`, which the server emits only when embedQuery is
+  // absent, i.e. genuinely no provider configured). `const` captures satisfy
+  // closure narrowing over the `let`-bound state above.
+  const loaded = embedding;
+  const failed = embedderError;
+  const embedQuery = loaded
+    ? async (text: string) => ({ model: loaded.provider.model, vec: await loaded.worker.embedQuery(text) })
+    : failed
+      ? (_text: string): Promise<{ model: string; vec: Float32Array }> => Promise.reject(failed)
+      : undefined;
+
   const handle = await serveStdio({
     store: ws.store,
     repoId: repo.repoId,
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
-    ...(embedding
-      ? {
-          embedQuery: async (text: string) => ({
-            model: embedding.provider.model,
-            vec: await embedding.worker.embedQuery(text),
-          }),
-        }
-      : {}),
+    ...(embedQuery ? { embedQuery } : {}),
   });
 
   let shuttingDown = false;
