@@ -40,7 +40,7 @@ beforeEach(() => {
   mkdirSync(vault, { recursive: true });
   writeFileSync(join(vault, "hub.md"), ["# Hub", "", "## Log", "", "- seed entry", ""].join("\n"));
   execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

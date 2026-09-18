@@ -1,16 +1,16 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, statSync } from "node:fs";
-import { join, basename, resolve, dirname, relative, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { join, resolve, dirname, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 import { spawnSync } from "node:child_process";
-import { Workspace, attachRepo, walkMarkdownAsync, rebuildFileStats, reposStatus, workspaceSettings, writeWorkspaceSettings } from "@omgbase/core";
+import { Workspace, reposStatus, workspaceSettings, writeWorkspaceSettings } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns as columnsLocal } from "../render.js";
-import { drainEmbeddings } from "./_embed.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { EngineErrorLike, EXIT_OK } from "../output.js";
 
-// Bootstrap: init / attach / repos (11 §5.1).
+// Bootstrap: init / repos (11 §5.1). Pointing a repo at a directory is
+// `omg source add <dir>` (ADR-014) — a repo owns identity; sources bring bytes.
 
 async function confirmTTY(cli: Cli, question: string): Promise<boolean> {
   if (!cli.io.stdoutTTY || !process.stdin.isTTY) return false;
@@ -155,7 +155,7 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
       help: { type: "boolean" },
     },
   });
-  if (values.help) return help(cli, "init", "omgbase init [dir] [--yes] [--embedder <cmd|url> | --no-embedder]", "Create an omgbase workspace (.omgbase/ + database) in dir (default cwd). Does not ingest files — run `omg attach .` to add a repo. --embedder sets the embedding provider directly; --no-embedder skips the provider offer entirely.");
+  if (values.help) return help(cli, "init", "omgbase init [dir] [--yes] [--embedder <cmd|url> | --no-embedder]", "Create an omgbase workspace (.omgbase/ + database) in dir (default cwd). Does not ingest files — run `omg source add .` to point a repo at a directory. --embedder sets the embedding provider directly; --no-embedder skips the provider offer entirely.");
 
   const dir = resolve(positionals[0] ?? cli.cwd);
   mkdirSync(dir, { recursive: true });
@@ -165,7 +165,7 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
   }
 
   // Create the workspace + db only. Ingesting a working tree is a separate,
-  // consent-gated step (`omg attach`) so init never silently absorbs whatever
+  // consent-gated step (`omg source add`) so init never silently absorbs whatever
   // happens to live under cwd (home dir, desktop, …).
   const ws = Workspace.open(dir);
   let needsProviderHint = false;
@@ -187,127 +187,11 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
   io.out(render.wordmark("initialized"));
   io.out(render.rule(40));
   io.out(`  ${style.ok(render.g.ok)} workspace  ${style.path(dir)}`);
-  io.err(style.dim(`  next: ${style.accent("omg attach .")} to ingest a directory of files as a repo`));
+  io.err(style.dim(`  next: ${style.accent("omg source add .")} to point a repo at a directory of files`));
   if (needsProviderHint) {
     io.err(style.dim(`  semantic search is off — no embedding provider set. Install the built-in embedder:`));
     io.err(style.dim(`    ${EMBEDDER_INSTALL} && omg config set embedding.provider ${EMBEDDER_CMD} --repo ""`));
   }
-  return EXIT_OK;
-}
-
-// Walk `abs` for markdown while showing a live, growing count next to a [y/N]
-// prompt. The scan runs concurrently with the question; the count carries a `+`
-// suffix until the walk completes ("248+" → "248"). Returns the answer plus the
-// files walked so far (the full set once the walk finished, which it always has
-// by the time the user answers unless they answered mid-scan — attachRepo
-// re-walks defensively when handed a partial, see below).
-async function confirmAttachWithCount(
-  cli: Cli,
-  abs: string,
-  slug: string,
-): Promise<{ ok: boolean; files: string[]; complete: boolean }> {
-  const signal = { aborted: false };
-  let count = 0;
-  let complete = false;
-  const isTTY = cli.io.stdoutTTY && process.stdin.isTTY;
-
-  const render = (): void => {
-    if (!isTTY) return;
-    const suffix = complete ? "" : "+";
-    process.stderr.write(`\r  attach ${slug} — ${count}${suffix} files  [y/N] `);
-  };
-
-  const walk = walkMarkdownAsync(abs, (n) => { count = n; render(); }, signal)
-    .then((files) => { complete = true; render(); return files; });
-
-  if (!isTTY) {
-    // No TTY to prompt: refuse rather than silently absorbing the tree.
-    signal.aborted = true;
-    await walk;
-    return { ok: false, files: [], complete };
-  }
-
-  render();
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const answer = await new Promise<string>((res) => rl.question("", res));
-  rl.close();
-  signal.aborted = true;
-  const files = await walk;
-  return { ok: /^y(es)?$/i.test(answer.trim()), files, complete };
-}
-
-async function runAttach(cli: Cli, args: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { slug: { type: "string" }, yes: { type: "boolean", short: "y" }, help: { type: "boolean" } },
-  });
-  if (values.help) return help(cli, "attach", "omgbase attach <path> [--slug <s>] [-y]", "Attach a working tree to this workspace and ingest its Markdown files. Prompts before ingesting; -y skips the prompt.");
-  const path = positionals[0];
-  if (!path) throw new CliUsageError("attach requires a <path>");
-  const abs = resolve(cli.cwd, path);
-  if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new EngineErrorLike("target_missing", `no such directory: ${abs}`);
-  const slug = values.slug ?? (basename(abs) || "vault");
-
-  const ws = cli.workspace();
-
-  // Consent gate: -y proceeds; otherwise prompt with a live file count. A
-  // non-TTY without -y refuses rather than absorbing the tree silently.
-  let files: string[] | undefined;
-  if (!values.yes) {
-    const { ok, files: walked, complete } = await confirmAttachWithCount(cli, abs, slug);
-    if (cli.io.stdoutTTY) process.stderr.write("\n");
-    if (!ok) {
-      if (!process.stdin.isTTY || !cli.io.stdoutTTY) {
-        cli.io.err(cli.style.dim(`  refusing to attach without -y (would ingest files under ${shortenHome(abs)})`));
-      } else {
-        cli.io.err(cli.style.dim("  cancelled"));
-      }
-      return EXIT_OK;
-    }
-    // Reuse the walk only if it finished before the user answered; a partial
-    // list means attachRepo should re-walk to catch everything.
-    if (complete) files = walked;
-  }
-
-  // ensureRepo (inside attachRepo) registers the repo's `fs` source from `abs`
-  // (ADR-014); a repo owns identity, its bytes come from an attached source.
-  const result = attachRepo(ws.store, slug, abs, files);
-  rebuildFileStats(ws.store, result.repoId, abs);
-
-  const { render, style, io } = cli;
-  if (cli.flags.mode === "human") {
-    io.out(`  ${render.g.diamond} attached ${style.accent(slug)}  ${style.path(abs)}  ${style.dim(`${result.fileCount} files`)}`);
-  }
-
-  // Freshly-ingested blocks aren't embedded yet. If this workspace has an
-  // embedding provider configured, offer to drain the queue now (verbose) so
-  // semantic search works immediately — no separate `omg embed drain` needed.
-  // Draining hands block text to the provider (and off-machine for a remote
-  // endpoint), so it gets its own consent: `-y` accepts (as it did the ingest),
-  // a TTY prompts, and a non-TTY without `-y` skips rather than blocking. No
-  // provider ⇒ drainEmbeddings returns null and we say nothing.
-  const drained = await drainEmbeddings(cli, ws, result.repoId, {
-    verbose: true,
-    confirm: async ({ pending, remote, providerName }) => {
-      if (pending === 0) return false; // nothing to embed — don't prompt
-      if (values.yes) return true;
-      const where = remote ? `${providerName} (remote — block text leaves your machine)` : `${providerName} (local)`;
-      return confirmTTY(cli, `embed ${pending} block(s) now via ${where}?`);
-    },
-  });
-
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({
-      repo: slug,
-      repoId: result.repoId,
-      files: result.fileCount,
-      converged: result.allConverged,
-      ...(drained ? { embedded: drained.embedded } : {}),
-    }));
-    return EXIT_OK;
-  }
-  if (drained) io.err(`  ${style.ok(render.g.ok)} embedded ${drained.embedded}, cached ${drained.cached}`);
   return EXIT_OK;
 }
 
@@ -355,6 +239,5 @@ function shortenHome(p: string): string {
   return home && p.startsWith(home) ? "~" + p.slice(home.length) : p;
 }
 
-export const cmdInit: Command = { name: "init", summary: "Create a workspace (run `attach` to ingest files)", run: (cli, a) => runInit(cli, a) };
-export const cmdAttach: Command = { name: "attach", summary: "Attach a working tree and ingest its files", run: (cli, a) => runAttach(cli, a) };
+export const cmdInit: Command = { name: "init", summary: "Create a workspace (run `source add` to ingest files)", run: (cli, a) => runInit(cli, a) };
 export const cmdRepos: Command = { name: "repos", summary: "List repos in this workspace", run: (cli, a) => runRepos(cli, a) };

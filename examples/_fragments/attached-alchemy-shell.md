@@ -12,7 +12,7 @@ gives bash its `$ ` prompt.
 The `setup` runs first (in the launching bash, before it `exec`s into the
 interactive one) and its `cd`/exports carry over: it locates the repo
 (`git rev-parse`), puts the freshly built `omg` on `PATH` via a shim, copies the
-corpus into a temp dir, `cd`s in, and runs `omg init` + `omg attach`. There's no
+corpus into a temp dir, `cd`s in, and runs `omg init` + `omg source add`. There's no
 `teardown` in prompt mode (the shell replaces the launcher); the OS reclaims the
 temp dirs.
 
@@ -36,5 +36,5 @@ setup: |
   cp -R "$repo/packages/core/corpus/oqx/fixtures/alchemy/." "$work"
   cd "$work"
   omg init . --yes --no-embedder >/dev/null
-  omg attach . -y --slug alchemy >/dev/null
+  omg source add . -y --slug alchemy >/dev/null
 -->

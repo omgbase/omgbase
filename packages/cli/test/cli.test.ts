@@ -59,7 +59,7 @@ beforeAll(() => {
   writeFileSync(join(vault, "target.md"), "# Target\n\nReferenced by hub.\n");
   // init (build the workspace), then attach the tree to ingest it.
   execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 
 afterAll(() => {
@@ -236,8 +236,8 @@ describe("init / attach split (consent-gated ingest)", () => {
       // Before attach: workspace exists but no repo ingested yet.
       expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
       // -y ingests the tree; attach --json reports the file count.
-      const attached = JSON.parse(run(root, ["attach", ".", "-y", "--json"]).stdout) as { files: number };
-      expect(attached.files).toBe(1);
+      const attached = JSON.parse(run(root, ["source", "add", ".", "-y", "--json"]).stdout) as { ingested: number };
+      expect(attached.ingested).toBe(1);
       // Now a repo exists and is queryable.
       const after = JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[];
       expect(after).toHaveLength(1);
@@ -251,8 +251,8 @@ describe("init / attach split (consent-gated ingest)", () => {
     try {
       writeFileSync(join(root, "note.md"), "# Note\n\nbody\n");
       run(root, ["init", "--yes", "--no-embedder"]);
-      const res = run(root, ["attach", "."]);
-      expect(res.stderr).toMatch(/refusing to attach without -y/);
+      const res = run(root, ["source", "add", "."]);
+      expect(res.stderr).toMatch(/refusing without -y/);
       // Declined ⇒ still no repo ingested.
       expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
     } finally {

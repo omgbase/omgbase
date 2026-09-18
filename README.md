@@ -106,7 +106,7 @@ In addition to the core CEL filter language (see `docs/query-language.md`), the 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`, `source`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
 
 ### The mental model: workspace, repo, source, config
 
@@ -117,7 +117,7 @@ Four concepts, and getting them straight makes everything else obvious:
 - A **source** is *where a repo's bytes come from*: a filesystem directory today (via the built-in `fs` adapter), git/S3/others later. A repo can have zero, one, or several attached sources — managed with `omg source`. (A repo with no source is **headless**: it lives entirely in the DB. See [Remote / headless](#remote--headless-servers).)
 - **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* every repo inherits; a repo can *override* any key. That's why an embedder is set once workspace-wide (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
 
-> The `attach` command is the fast path that does the common thing in one step: create a repo *and* point it at a filesystem directory *and* ingest it. `omg source` is the general form underneath, for repos that need more than one source or a non-default layout.
+> There is no separate "attach/ingest/load" verb: `omg source add <dir>` is how content enters — it creates the repo if needed, registers the filesystem source, and runs the initial sync. The initial ingest is just that source's first sync (the same reconcile every later sync uses).
 
 ### 1. Build and link the binaries
 
@@ -127,17 +127,18 @@ pnpm -r build     # build every package (core, cli, sync, embedder, fs-adapter)
 pnpm rlink        # link binaries onto PATH: omg, omgbase, omgbase-sync, omgbase-embedder, omgbase-fs-adapter
 ```
 
-### 2. Create a workspace and attach a repo
+### 2. Create a workspace and point a repo at a directory
 
 `init` creates the workspace **but ingests nothing** — pulling a directory of files in is a separate, consent-gated step, so `init` never silently absorbs whatever happens to live under the cwd.
 
 ```bash
-omg init ./my-vault --yes   # create .omgbase/ + the DB (offers to .gitignore it)
+omg init ./my-vault --yes         # create .omgbase/ + the DB (offers to .gitignore it)
 cd ./my-vault
-omg attach . -y             # ingest this tree as a repo (slug defaults to the folder name; prompts without -y)
+omg source add . -y --slug notes  # register this dir as the repo's fs source + initial sync
+                                  # (slug defaults to the folder name; prompts without -y)
 
-omg status                  # where am I: repo, sync state, watcher, embed queue
-omg repos                   # every repo in this workspace: slug · root · doc/block counts
+omg status                        # where am I: repo, sync state, watcher, embed queue
+omg repos                         # every repo in this workspace: slug · root · doc/block counts
 ```
 
 ### 3. Read and query
@@ -180,20 +181,20 @@ omg config set gc.enabled true                                  # no --repo ⇒ 
 
 ## Sources & syncing
 
-A repo stays current with its source(s). For a repo created by `attach` (which points it at a directory), the built-in freshness/watch machinery keeps it fresh with no extra setup:
+A repo stays current with its source(s). Once `omg source add <dir>` has pointed a repo at a directory, the built-in freshness/watch machinery keeps it fresh with no extra setup:
 
 ```bash
 omg sync            # one-shot: re-ingest anything changed on disk since last ingest
 omg watch           # stay live: an external fs-adapter process streams edits; the engine reconciles them
 ```
 
-`omg source` is the general registry when a repo needs an explicit or additional source:
+`omg source` manages the registry — a repo can have more than one source, and existing sources can be re-bound:
 
 ```bash
-omg source add notes-fs --root ./notes    # register a filesystem source (adapter defaults to fs)
-omg source attach notes-fs                 # bind it to the current repo
-omg source list                            # sources + which repos they feed
-omg source detach notes-fs                 # unbind (rm to delete)
+omg source add ./notes --slug notes   # point a (new or current) repo at a dir + initial sync
+omg source list                       # sources + which repos they feed
+omg source attach notes-fs            # attach an existing source to the current repo
+omg source detach notes-fs            # unbind (rm to delete)
 ```
 
 ### The standalone synchronizer (`omgbase-sync`)

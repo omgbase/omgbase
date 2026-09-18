@@ -13,7 +13,7 @@ export interface Command {
   run(cli: Cli, args: string[]): number | Promise<number>;
 }
 
-import { cmdInit, cmdAttach, cmdRepos } from "./cmd/bootstrap.js";
+import { cmdInit, cmdRepos } from "./cmd/bootstrap.js";
 import { cmdStatus } from "./cmd/status.js";
 import { cmdLs } from "./cmd/ls.js";
 import { cmdOutline } from "./cmd/outline.js";
@@ -41,7 +41,6 @@ import { cmdHelp } from "./cmd/help.js";
 
 export const COMMANDS: Command[] = [
   cmdInit,
-  cmdAttach,
   cmdRepos,
   cmdStatus,
   cmdLs,

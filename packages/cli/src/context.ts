@@ -92,9 +92,10 @@ function resolveDir(dir: string): string {
 }
 
 // Which commands may run without a workspace (11 §2.1).
-export const NO_WORKSPACE_OK = new Set(["init", "attach", "help", "version"]);
+export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
 // Commands that manage sync themselves — skip the freshness sweep (11 §3.3).
-// `shell` is exempt because each line it runs sweeps on its own.
-export const SKIP_FRESHNESS = new Set(["sync", "watch", "mcp", "init", "attach", "help", "version", "shell"]);
+// `shell` is exempt because each line it runs sweeps on its own. `source`
+// creates/binds sources and runs its own initial sync, so it skips the pre-sweep.
+export const SKIP_FRESHNESS = new Set(["sync", "watch", "mcp", "init", "source", "help", "version", "shell"]);
 
 export { CliUsageError };

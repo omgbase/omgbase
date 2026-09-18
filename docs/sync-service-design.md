@@ -212,20 +212,27 @@ bookkeeping (engine → coordinator, backed by `sync_state`). The clever
 identity/opset work never leaves the engine — it is reached through `observe` /
 `docs_update`.
 
-## 8. `attach` becomes sugar
+## 8. `attach` is gone — `omg source add <dir>` is the one way in
+
+There is no top-level `attach`/`ingest`/`load` verb. `omg source add <dir>` is how
+content enters, and it decomposes into:
 
 ```
-omg attach ./foo [--slug s]
-  ≡  ensureRepo(slug)
-   + source add   --adapter fs --name <slug>-fs --config '{"root":"<abs ./foo>"}'
-   + source attach <slug>-fs --repo <slug>
-   + omg sync --repo <slug>          # initial enumerate + observe walk
+omg source add ./foo [--slug s] [--name n]
+  ≡  ensureRepo(slug)                       # repo identity (no auto source when null)
+   + ensureFsAdapter + createSource(<slug>-fs, fs, {root: abs}) + attach
+   + freshnessSweep(repo, abs)              # the initial sync — the SAME reconcile
+                                            #   (observeOne) every later sync uses
 ```
 
-The three duplicate attach implementations collapse into: "configure an fs source
-+ initial sync". `attachRepo`/`attachDirectory`/`attachSource` are unified onto
-the source path. A sourceless (DB-canonical) repo is created by `init`/an explicit
-`repo create` with no `attach`.
+The initial ingest is just the new source's first sync — not a distinct code path
+(the old `attachRepo` private `ingestFile` walk is no longer on the CLI path).
+"attach" survives only as the source-binding verb (`omg source attach <name>`,
+for an existing source). A sourceless (headless, DB-canonical) repo is created
+via the library (`ensureRepo(store, slug, null)`); the CLI has no verb that makes
+one, since `source add` always registers a source. Rationale: "attach"/"ingest"/
+"load" all mislead — the durable thing is a *source*, added once and synced;
+`import` already owns one-shot loading.
 
 ## 9. Staged migration plan (order of implementation)
 

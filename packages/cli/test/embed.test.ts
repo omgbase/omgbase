@@ -48,7 +48,7 @@ beforeEach(() => {
   // --no-embedder: start with NO provider so the "no provider configured" block
   // is deterministic regardless of whether omgbase-embedder is on the test host.
   execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -137,9 +137,9 @@ describe("attach auto-drains when a provider is configured", () => {
       );
       // init with the fake embedder as the provider, then attach.
       execFileSync("node", [BIN, "init", root, "--yes", "--embedder", `node ${FAKE}`], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-      const attachJson = execFileSync("node", [BIN, "-C", root, "--json", "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-      const res = JSON.parse(attachJson) as { files: number; embedded?: number };
-      expect(res.files).toBe(1);
+      const attachJson = execFileSync("node", [BIN, "-C", root, "--json", "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+      const res = JSON.parse(attachJson) as { ingested: number; embedded?: number };
+      expect(res.ingested).toBe(1);
       expect(res.embedded).toBeGreaterThanOrEqual(1);
       // Queue is empty right after attach — no separate drain needed.
       const status = JSON.parse(execFileSync("node", [BIN, "-C", root, "embed", "status", "--json"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } })) as { queued: number };

@@ -5,7 +5,7 @@ Shared setup for the omgbase CLI examples, pulled into a tutorial with a recital
 
 This variant seeds a throwaway working directory with a fresh, **un-attached**
 copy of the alchemy corpus — for the getting-started walkthrough, which
-demonstrates `omg init` / `omg attach` itself. The already-attached variant is
+demonstrates `omg init` / `omg source add` itself. The already-attached variant is
 [attached-alchemy.md](./attached-alchemy.md); the live-REPL variant is
 [attached-alchemy-shell.md](./attached-alchemy-shell.md).
 

@@ -4,9 +4,10 @@ import { Store } from "./store/store.js";
 import { mintId } from "./ids.js";
 import { ingestFile } from "./ingest.js";
 
-// omg attach (07 task 1.4): register a working tree as a repo and ingest every
-// Markdown file. Paths stored repo-relative, canonical (no leading slash,
-// forward slashes).
+// Library primitive: register a working tree as a repo (via ensureRepo, which
+// also attaches its fs source) and ingest every Markdown file. Paths stored
+// repo-relative, canonical (no leading slash, forward slashes). The CLI entry
+// point is `omg source add <dir>` (ADR-014); there is no `omg attach` verb.
 
 export interface AttachResult {
   repoId: string;

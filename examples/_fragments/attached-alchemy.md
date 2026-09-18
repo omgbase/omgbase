@@ -11,7 +11,7 @@ the live `omg shell` REPL variant is
 
 The `setup` below, in order: locates the repo (`git rev-parse`); puts the freshly
 built `omg` on `PATH` via a tiny shim over the dist binary; then copies the
-corpus into a temp dir, `cd`s into it, and runs `omg init` + `omg attach`.
+corpus into a temp dir, `cd`s into it, and runs `omg init` + `omg source add`.
 `teardown` removes both temp dirs when the session ends.
 
 <!-- recital include: ./omg-types.md -->
@@ -30,7 +30,7 @@ setup: |
   cp -R "$repo/packages/core/corpus/oqx/fixtures/alchemy/." "$work"
   cd "$work"
   omg init . --yes --no-embedder >/dev/null
-  omg attach . -y --slug alchemy >/dev/null
+  omg source add . -y --slug alchemy >/dev/null
 teardown: |
   rm -rf "$work" "$shim"
 -->

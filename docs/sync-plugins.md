@@ -101,16 +101,18 @@ The shipped verbs are minimal — there are no `omg adapter …`, `omg source �
 ```text
 omg init [dir]                  # workspace only: create .omgbase/ + db (does NOT ingest).
                                 #   offers a .gitignore entry if dir is inside a git tree;
-                                #   ends by suggesting `omg attach .`.
-omg attach <path> [--slug <s>]  # create a filesystem repo from a directory, ingest its
-                                #   Markdown (sets the repo's root_path), rebuild file_stats.
-                                #   prompts before ingesting; -y skips the prompt.
+                                #   ends by suggesting `omg source add .`.
+omg source add <dir> [--slug <s>] [--name <n>]
+                                # point a (new or current) repo at a filesystem dir: create
+                                #   the repo, register + attach an <slug>-fs source, and run
+                                #   the initial sync (freshnessSweep). prompts before
+                                #   ingesting; -y skips the prompt.
 omg repos                       # list the workspace's repos (slug, root path, doc/block counts).
 ```
 
 - **Workspace ≠ repo.** `.omgbase/` defines the workspace; `omg init` does not ingest or define a repo. A workspace can sit in a git root, a notes dir, or `$HOME`.
 - **Workspace discovery:** `--workspace` flag wins; else `OMGBASE_WORKSPACE` env; else walk up from cwd for `.omgbase/` (the default). No global default dir.
-- **Sourceless / headless repo:** a repo with no attached source. The **database is authoritative for content** (no external bytes, no write-back). `apply` works (with a `NullDocStore` — the file write is a no-op); `sync`/`watch` are no-ops; convergence is vacuous. Reachable through the library (`ensureRepo(store, slug, null)`); `omg attach` always registers an fs source, so the CLI never creates one.
+- **Sourceless / headless repo:** a repo with no attached source. The **database is authoritative for content** (no external bytes, no write-back). `apply` works (with a `NullDocStore` — the file write is a no-op); `sync`/`watch` are no-ops; convergence is vacuous. Reachable through the library (`ensureRepo(store, slug, null)`); `omg source add` always registers an fs source, so the CLI never creates one.
 - **`sync`/`watch`/`mcp` take no source flags.** They resolve the repo and spawn its attached fs source's adapter (§2). The source is a durable property of the repo, never a per-invocation choice.
 
 ## 8. Multiplexing (future capability, not v1)

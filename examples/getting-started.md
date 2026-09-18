@@ -51,20 +51,22 @@ $ omg init . --yes --no-embedder
   omgbase  >  initialized
   ----------------------------------------
   ok workspace  /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v
-  next: omg attach . to ingest a directory of files as a repo
+  next: omg source add . to point a repo at a directory of files
 ```
 
 (`--yes` accepts the prompts non-interactively; `--no-embedder` skips semantic
 search setup, which needs an external embedder we don't need here.)
 
-## `omg attach` — ingest the files
+## `omg source add` — point a repo at the files
 
-`attach` is the consent step: it ingests a directory's Markdown into a **repo**.
-We name it `alchemy` with `--slug`; `-y` skips the "ingest N files?" prompt.
+A repo owns identity + history; where its bytes come from is a **source**.
+`omg source add <dir>` registers a filesystem source, creating the repo and
+running the initial sync. We name the repo `alchemy` with `--slug`; `-y` skips
+the "ingest N files?" prompt.
 
 ```console
-$ omg attach . -y --slug alchemy
-  * attached alchemy  /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  18 files
+$ omg source add . -y --slug alchemy
+  * alchemy ← /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  18 files
 ```
 
 ## Orient yourself
