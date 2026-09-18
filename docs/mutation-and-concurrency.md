@@ -98,7 +98,7 @@ Every conflict is a typed error **carrying current truth** so the caller can ret
 }
 ```
 
-The `current` payload is op-specific: `checkContentHash` throws `{ content_hash, markdown }`; a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, content_hash }` (`ops.ts`, `plan-update.ts`).
+The `current` payload is op-specific: `checkContentHash` throws `{ content_hash, markdown }`; a `parent_children_hash` mismatch carries `{ parent_children_hash }`; the whole-document planner's `stale_plan` carries `{ revision, content_hash }` (`ops.ts`, `plan-update.ts`). A **missing** `expect.content_hash` (not just a mismatched one) throws `stale_expectation` with the same `{ content_hash, markdown }` `current` payload and `retriable: true`, so an op that omitted the CAS token is retriable straight from the error — no separate hydration read. (Better still, ask for it up front: `docs_read`/`docs_get_many` with `include_ids:true` return a `hashes` map giving every block's current content hash alongside its id.)
 
 Error codes actually thrown by the write path (codes are stable per `mcp/errors.ts`): `stale_expectation`, `block_missing`, `target_missing` (anchor/placeholder not found), `parent_missing`, `doc_missing`, `cycle_move`, `not_contiguous`, `type_mismatch`, `path_taken` (`docs_create`/`docs_rename`), `ambiguous_heading` (a `{heading}` locator matching >1 heading), `node_not_editable` (a macro targeting a node with no editable block), `stale_plan` (the doc changed since the plan was computed), and `sync_conflict` (file changed on disk — retriable).
 

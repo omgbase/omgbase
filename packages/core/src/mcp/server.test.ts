@@ -487,6 +487,48 @@ describe("apply op schema + sections_append heading resolution", () => {
     expect(r.content[0]!.text).not.toContain("block_missing");
   });
 
+  it("docs_read include_ids returns hashes usable directly as raw apply's expect.content_hash", async () => {
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: string[]; hashes: Record<string, string> };
+    };
+    // Pick the "intro body" paragraph via nodes_get, then update it through the
+    // RAW apply kernel using ONLY the hash the same read handed back — no
+    // nodes_get_many(resolution:"full") hydration round trip.
+    let target = "";
+    for (const id of read.ids) {
+      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "intro body") { target = id; break; }
+    }
+    expect(target).not.toBe("");
+    expect(read.hashes[target]).toMatch(/^[0-9a-f]{64}$/);
+    const { payload, isError } = (await call("apply", {
+      ops: [{ op: "update", block: target, markdown: "rewritten intro", expect: { content_hash: read.hashes[target] } }],
+    })) as { payload: { committed: boolean }; isError: boolean };
+    expect(isError).toBe(false);
+    expect(payload.committed).toBe(true);
+    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(after.content).toContain("rewritten intro");
+  });
+
+  it("raw apply update without expect.content_hash returns the current hash so the error is directly retriable", async () => {
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: string[]; hashes: Record<string, string> };
+    };
+    let target = "";
+    for (const id of read.ids) {
+      const { payload } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      if (payload.raw === "intro body") { target = id; break; }
+    }
+    const { payload, isError } = (await call("apply", {
+      ops: [{ op: "update", block: target, markdown: "no hash supplied" }],
+    })) as { payload: { error: string; data: { retriable?: boolean; current?: { content_hash?: string } } }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("stale_expectation");
+    expect(payload.data.retriable).toBe(true);
+    // The current hash is handed back and matches what the read reported.
+    expect(payload.data.current!.content_hash).toBe(read.hashes[target]);
+  });
+
   it("sections_append resolves heading text to a block id (unique)", async () => {
     const { isError } = (await call("sections_append", { heading: "Launch", markdown: "appended item", path: "notes.md" })) as { isError: boolean };
     expect(isError).toBe(false);

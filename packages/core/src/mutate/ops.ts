@@ -90,7 +90,15 @@ function resolveSection(doc: MutDoc, headingId: string, at: At): { siblings: Mut
 
 function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: number): void {
   if (!expect?.content_hash) {
-    throw new MutationError("stale_expectation", "expect.content_hash required", { op_index: opIndex, block: block.id });
+    // Hand back the current hash + bytes so the caller can retry immediately
+    // (same actionable shape as a hash MISMATCH below) instead of a separate
+    // hydration read — an agent may hold fresh ids yet lack the CAS token.
+    throw new MutationError("stale_expectation", "expect.content_hash required", {
+      op_index: opIndex,
+      block: block.id,
+      current: { content_hash: rawHashHex(block.raw), markdown: block.raw },
+      retriable: true,
+    });
   }
   const current = rawHashHex(block.raw);
   if (current !== expect.content_hash) {

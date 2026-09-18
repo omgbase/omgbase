@@ -33,6 +33,14 @@ export interface DocsReadResult {
   content: string;
   /** Block ids in document order, for follow-up edits (include_ids). */
   ids?: string[];
+  /**
+   * Block id → current content hash (raw-bytes hash, hex) for every id in
+   * `ids` (include_ids). This is the exact value the raw `apply` kernel wants in
+   * an update/split/merge/remove op's `expect.content_hash`, so a single read
+   * yields both the stable ids AND the CAS tokens to mutate them — no follow-up
+   * nodes_get_many(resolution:"full") hydration round trip.
+   */
+  hashes?: Record<string, string>;
 }
 
 export interface DocsReadOptions {
@@ -114,14 +122,19 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   };
   if (opts.includeIds) {
     const ids: string[] = [];
+    const hashes: Record<string, string> = {};
     const collect = (nodes: BlockNode[]): void => {
       for (const n of nodes) {
         ids.push(n.blockId);
+        // The block's raw-bytes hash is already loaded (BlockNode.rawHashHex), so
+        // exposing it as the CAS token costs nothing beyond the id walk.
+        hashes[n.blockId] = n.rawHashHex;
         collect(n.children);
       }
     };
     collect(loadDocBlocks(store, docId));
     result.ids = ids;
+    result.hashes = hashes;
   }
   return result;
 }

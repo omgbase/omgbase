@@ -92,6 +92,38 @@ describe("apply — changesets", () => {
     expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Body.");
   });
 
+  it("update without expect.content_hash errors actionably (carries the current hash to retry)", () => {
+    const docId = seed("a.md", "# Title\n\nBody.\n");
+    const bId = blockByText(docId, "Body");
+    let caught: MutationError | undefined;
+    try {
+      apply(store, {
+        repoId, rootPath: dir,
+        ops: [{ op: "update", block: bId, markdown: "Rewritten." }],
+        origin: { actor: "agent:test" },
+      });
+    } catch (e) {
+      caught = e as MutationError;
+    }
+    expect(caught).toBeInstanceOf(MutationError);
+    expect(caught!.code).toBe("stale_expectation");
+    // The error hands back the current hash, so the caller can retry WITHOUT a
+    // separate hydration read — nothing was written.
+    const data = caught!.data as { retriable?: boolean; current?: { content_hash?: string } };
+    expect(data.retriable).toBe(true);
+    expect(data.current!.content_hash).toBe(hashOf(bId));
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Body.");
+
+    // Retrying with the returned hash succeeds.
+    const res = apply(store, {
+      repoId, rootPath: dir,
+      ops: [{ op: "update", block: bId, markdown: "Rewritten.", expect: { content_hash: data.current!.content_hash! } }],
+      origin: { actor: "agent:test" },
+    });
+    expect(res.committed).toBe(true);
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Rewritten.");
+  });
+
   it("insert op accepts a document path for `doc`, not just a d_ id", () => {
     const docId = seed("a.md", "# Title\n\nBody.\n");
     const res = apply(store, {

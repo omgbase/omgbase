@@ -91,6 +91,18 @@ describe("docsRead — whole-document read", () => {
     expect(res!.ids![0]).toMatch(/^b_/);
   });
 
+  it("includeIds also returns a {id → content hash} map for CAS pinning", () => {
+    const { docId } = ingest(SAMPLE);
+    const res = docsRead(store!, docId, { includeIds: true });
+    // One hash entry per id, keyed by the same ids, each a raw-hash hex string.
+    expect(Object.keys(res!.hashes!).sort()).toEqual([...res!.ids!].sort());
+    for (const id of res!.ids!) expect(res!.hashes![id]).toMatch(/^[0-9a-f]{64}$/);
+    // The value is exactly the block's raw hash the apply kernel expects.
+    const first = res!.ids![0]!;
+    const rawHash = (store!.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ?").get(first) as { h: string }).h;
+    expect(res!.hashes![first]).toBe(rawHash);
+  });
+
   it("round-trips a document with no frontmatter byte-for-byte", () => {
     const { docId } = ingest(SAMPLE);
     expect(docsRead(store!, docId)?.content).toBe(SAMPLE);
