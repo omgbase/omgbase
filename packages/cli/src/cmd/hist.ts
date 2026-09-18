@@ -1,12 +1,13 @@
 import { parseArgs } from "node:util";
-import { resolveRef, historyNode } from "@omgbase/core";
+import { resolveRef, historyNode, type NodeChange } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { remoteCall } from "./_remote.js";
 
 // `omg hist <node>` (11 §5.5) — history_node: a block's biography.
 
-function runHist(cli: Cli, args: string[]): number {
+async function runHist(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -19,12 +20,18 @@ function runHist(cli: Cli, args: string[]): number {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("hist requires a <node>");
 
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-  const resolved = resolveRef(ws.store, repo.repoId, ref);
-  if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `hist needs a block id; got ${ref}`);
-
-  const changes = historyNode(ws.store, resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
+  let changes: NodeChange[];
+  if (cli.flags.server) {
+    // Remote: history_node keys on a block id (globally unique). Pass the ref
+    // through — a locator would need a local resolve, so remote hist wants an id.
+    changes = await remoteCall<NodeChange[]>(cli, "history_node", { id: ref, ...(values.n ? { limit: Number(values.n) } : {}) });
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    const resolved = resolveRef(ws.store, repo.repoId, ref);
+    if (!resolved || resolved.kind !== "block") throw new EngineErrorLike("block_missing", `hist needs a block id; got ${ref}`);
+    changes = historyNode(ws.store, resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
+  }
 
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify(changes));
