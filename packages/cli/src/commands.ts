@@ -13,7 +13,7 @@ export interface Command {
   run(cli: Cli, args: string[]): number | Promise<number>;
 }
 
-import { cmdInit, cmdAttach, cmdRepos } from "./cmd/bootstrap.js";
+import { cmdInit, cmdRepos } from "./cmd/bootstrap.js";
 import { cmdStatus } from "./cmd/status.js";
 import { cmdLs } from "./cmd/ls.js";
 import { cmdOutline } from "./cmd/outline.js";
@@ -34,13 +34,13 @@ import { cmdNode } from "./cmd/node.js";
 import { cmdNew, cmdMv, cmdMeta } from "./cmd/docs.js";
 import { cmdUpdateDoc } from "./cmd/update.js";
 import { cmdRun } from "./cmd/run.js";
-import { cmdWatch, cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
+import { cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
 import { cmdShell } from "./cmd/shell.js";
+import { cmdSource } from "./cmd/source.js";
 import { cmdHelp } from "./cmd/help.js";
 
 export const COMMANDS: Command[] = [
   cmdInit,
-  cmdAttach,
   cmdRepos,
   cmdStatus,
   cmdLs,
@@ -70,8 +70,8 @@ export const COMMANDS: Command[] = [
   cmdMeta,
   cmdRun,
   cmdShell,
+  cmdSource,
   cmdSync,
-  cmdWatch,
   cmdMcp,
   cmdRebuild,
   cmdGc,

@@ -1,0 +1,30 @@
+{
+  "name": "@omgbase/sync",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open Markdown Graph Base — standalone store-to-store synchronizer: a coordinator over an EngineClient seam (in-process or MCP-client) and source adapters",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "bin": {
+    "omgbase-sync": "./dist/src/bin.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@omgbase/core": "workspace:*",
+    "@omgbase/fs-adapter": "workspace:*"
+  }
+}

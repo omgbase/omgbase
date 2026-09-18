@@ -49,6 +49,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | --- | --- |
 | `docs/README.md` | docs index, CI-enforced invariants, glossary |
 | `docs/architecture.md` | system shape, kernel concepts, identity/canonicality rules |
+| `docs/object-model.md` | **orientation**: the docs/blocks/nodes/edges mental model and which layer each verb touches (conceptual; specs are authoritative) |
 | `docs/data-model.md` | SQLite DDL, ID/hash conventions, rebuild/GC rules (authoritative schema is `core/store/schema.ts`) |
 | `docs/reconciliation-spec.md` | parser contract, round-trip law, matcher phases/thresholds |
 | `docs/mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
@@ -59,4 +60,6 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |
 | `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter` (registry tables reserved, not yet wired) |
+| `docs/sync-service-design.md` | **DESIGN, not as-built** (ADR-014): the `@omgbase/sync` migration — sync as a standalone MCP-client service, `DocStore` seam, `observe` tool, `attach`-as-sugar, `root_path` removal |
+| `docs/surface-map.md` | the **Rosetta stone**: one operation catalog across library / `omg` CLI / MCP tool, the exception set, and the gap list that makes `--server` (remote-over-MCP) feel local |
 | `docs/update-opsets.md` | whole-document update planner (`docs_update`/`docs_plan_update`, `omg update`) |

@@ -43,9 +43,12 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE repos (
   repo_id      TEXT PRIMARY KEY,          -- 'rp_' + base32
   slug         TEXT NOT NULL UNIQUE,
-  root_path    TEXT,                      -- absolute working-tree path; NULL for sourceless/non-fs repos (13 §7)
   settings     TEXT NOT NULL DEFAULT '{}' -- JSON: sync.quiescence_ms, matcher thresholds, embedding config…
 );
+-- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
+-- come from is an attached `fs` source (sources.config.root via attachments); the
+-- former root_path column was dropped in schema v13, and RepoRow.rootPath is now
+-- DERIVED from that source (null = sourceless/headless).
 
 CREATE TABLE docs (
   doc_id        TEXT PRIMARY KEY,

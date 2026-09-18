@@ -107,7 +107,9 @@ export interface CommitDigest {
   origin: string;
   actor: string | null;
   summary: string;
-  revisions: { doc: string; path: string }[];
+  /** `contentHash` (hex of the revision's rendered_hash) lets a puller decide
+   *  "changed vs echo" without a follow-up docs_read/docs_history (ADR-014 §4.2). */
+  revisions: { doc: string; path: string; contentHash: string }[];
 }
 
 /** changes_since: commit digests after a cursor (repo commit seq) — the change
@@ -128,7 +130,7 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   const page = commits.slice(0, limit);
 
   const digests: CommitDigest[] = page.map((c) => {
-    const revs = store.db.prepare("SELECT r.doc_id AS doc, r.path AS path FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string }[];
+    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ doc: r.doc, path: r.path, contentHash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
     const summary = renderSummary(c.origin, c.actor, revs, dispCounts);
     return { commit: c.commit_id, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, summary, revisions: revs };

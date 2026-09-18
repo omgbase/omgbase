@@ -5,6 +5,7 @@ import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK } from "../output.js";
 import { readContent, extractContentOpts } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
+import { remoteCall } from "./_remote.js";
 
 // `omg update <target> (-f file | -)`: a polymorphic-target command (the omgbase
 // north-star — every command accepts any entity ref). A block id (b_…) replaces
@@ -24,7 +25,7 @@ function runUpdate(cli: Cli, args: string[]): number | Promise<number> {
   return runDocUpdate(cli, args);
 }
 
-function runDocUpdate(cli: Cli, args: string[]): number {
+async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
   const { values, positionals } = parseArgs({
     args: content.rest,
@@ -39,21 +40,36 @@ function runDocUpdate(cli: Cli, args: string[]): number {
   const doc = positionals[0];
   if (!doc) throw new CliUsageError("update requires a <doc> (id or path)");
   const bytes = readContent(content);
-
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-  const ctx: DocsUpdateContext = {
-    repoId: repo.repoId,
-    rootPath: repo.rootPath,
-    ...(ws.omgbaseDir ? { omgbaseDir: ws.omgbaseDir } : {}),
-    ...(values.actor ? { actor: values.actor } : {}),
-  };
-
   const dryRun = Boolean(values.plan) || cli.flags.dryRun;
-  const { opset, result } = docsUpdate(ws.store, ctx, doc, bytes, {
-    dryRun,
-    ...(values.reason ? { reason: values.reason } : {}),
-  });
+
+  let opset: ReturnType<typeof docsUpdate>["opset"];
+  let result: ReturnType<typeof docsUpdate>["result"];
+  if (cli.flags.server) {
+    // Remote: docs_update reconciles + commits server-side, returning the same
+    // { opset, result } — render unchanged.
+    const r = await remoteCall<{ opset: typeof opset; result: typeof result }>(cli, "docs_update", {
+      doc,
+      content: bytes,
+      ...(values.reason ? { reason: values.reason } : {}),
+      ...(dryRun ? { dry_run: true } : {}),
+    });
+    opset = r.opset;
+    result = r.result;
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    if (!repo.rootPath) throw new CliUsageError(`repo '${repo.slug}' has no filesystem source; 'update' needs a working tree`);
+    const ctx: DocsUpdateContext = {
+      repoId: repo.repoId,
+      rootPath: repo.rootPath,
+      ...(ws.omgbaseDir ? { omgbaseDir: ws.omgbaseDir } : {}),
+      ...(values.actor ? { actor: values.actor } : {}),
+    };
+    ({ opset, result } = docsUpdate(ws.store, ctx, doc, bytes, {
+      dryRun,
+      ...(values.reason ? { reason: values.reason } : {}),
+    }));
+  }
 
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify({ opset, result }));

@@ -9,7 +9,7 @@ afterEach(() => { store?.close(); store = undefined; });
 
 function setup(): { store: Store; repoId: string } {
   store = new Store({ path: ":memory:" });
-  store.db.prepare("INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_1','test','/tmp')").run();
+  store.db.prepare("INSERT INTO repos (repo_id, slug) VALUES ('rp_1','test')").run();
   return { store, repoId: "rp_1" };
 }
 

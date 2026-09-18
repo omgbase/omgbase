@@ -11,7 +11,7 @@ import {
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
-import { runOps, readContent, readStdin, expandBlockArgs, extractContentOpts } from "./_mutate.js";
+import { runOps, runOpsRemote, readContent, readStdin, expandBlockArgs, extractContentOpts } from "./_mutate.js";
 import { runRmDoc } from "./docs.js";
 
 // Write sugar (11 §5.6): each command builds kernel Ops and applies them as one
@@ -43,7 +43,7 @@ function parseAt(values: { at?: string }): At {
 
 // ---- apply (primitive) ------------------------------------------------------
 
-function runApply(cli: Cli, args: string[]): number {
+async function runApply(cli: Cli, args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
     allowPositionals: true,
@@ -56,6 +56,7 @@ function runApply(cli: Cli, args: string[]): number {
   const raw = values.f ? (values.f === "-" ? readStdin() : readFileSync(values.f, "utf8")) : readStdin();
   const parsed = JSON.parse(raw) as { ops?: Op[] };
   if (!parsed.ops || !Array.isArray(parsed.ops)) throw new CliUsageError("changeset must have an `ops` array");
+  if (cli.flags.server) return runOpsRemote(cli, "apply", { ops: parsed.ops, ...(values.reason ? { reason: values.reason } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   return runOps(cli, ws, repo, parsed.ops, { ...(values.reason ? { reason: values.reason } : {}), ...(values.actor ? { actor: values.actor } : {}) });
@@ -63,7 +64,7 @@ function runApply(cli: Cli, args: string[]): number {
 
 // ---- insert -----------------------------------------------------------------
 
-function runInsert(cli: Cli, args: string[]): number {
+async function runInsert(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
   const { values, positionals } = parseArgs({
     args: content.rest,
@@ -77,6 +78,7 @@ function runInsert(cli: Cli, args: string[]): number {
   const to = positionals[0];
   if (!to) throw new CliUsageError("insert requires a <to> parent (block id, or a heading id for section append)");
   const markdown = readContent(content);
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_insert", { to, markdown, at: parseAt(values) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const parent = block(cli, ws, repo.repoId, to);
@@ -86,7 +88,7 @@ function runInsert(cli: Cli, args: string[]): number {
 
 // ---- update -----------------------------------------------------------------
 
-function runUpdate(cli: Cli, args: string[]): number {
+async function runUpdate(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
   const { values, positionals } = parseArgs({
     args: content.rest,
@@ -100,6 +102,8 @@ function runUpdate(cli: Cli, args: string[]): number {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("update requires a <block>");
   const markdown = readContent(content);
+  // Remote: the server pins CAS from current bytes when --expect is absent.
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_update", { block: ref, markdown, ...(values.expect ? { expect: { content_hash: values.expect } } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);
@@ -116,7 +120,7 @@ function runUpdate(cli: Cli, args: string[]): number {
 
 // ---- move -------------------------------------------------------------------
 
-function runMove(cli: Cli, args: string[]): number {
+async function runMove(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -127,10 +131,12 @@ function runMove(cli: Cli, args: string[]): number {
     return EXIT_OK;
   }
   if (!values.to) throw new CliUsageError("move requires --to <parent>");
+  const refs = expandBlockArgs(positionals);
+  if (refs.length === 0) throw new CliUsageError("move requires one or more blocks (or - for stdin)");
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_move", { blocks: refs, to: values.to, at: parseAt(values) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const blocks = expandBlockArgs(positionals).map((r) => block(cli, ws, repo.repoId, r));
-  if (blocks.length === 0) throw new CliUsageError("move requires one or more blocks (or - for stdin)");
+  const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
   const parent = block(cli, ws, repo.repoId, values.to);
   const op: Op = { op: "move", blocks, to: { parent, at: parseAt(values) } as To };
   return runOps(cli, ws, repo, [op], actorOf(values));
@@ -138,7 +144,7 @@ function runMove(cli: Cli, args: string[]): number {
 
 // ---- rm (blocks; --doc handled by the doc-level command) --------------------
 
-function runRm(cli: Cli, args: string[]): number {
+async function runRm(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -152,17 +158,19 @@ function runRm(cli: Cli, args: string[]): number {
     // Doc deletion always requires the explicit --doc (11 §5.6).
     return runRmDoc(cli, values.doc, values.actor);
   }
+  const refs = expandBlockArgs(positionals);
+  if (refs.length === 0) throw new CliUsageError("rm requires one or more blocks (or - for stdin), or --doc");
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_remove", { blocks: refs });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const blocks = expandBlockArgs(positionals).map((r) => block(cli, ws, repo.repoId, r));
-  if (blocks.length === 0) throw new CliUsageError("rm requires one or more blocks (or - for stdin), or --doc");
+  const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
   const op: Op = { op: "remove", blocks };
   return runOps(cli, ws, repo, [op], actorOf(values));
 }
 
 // ---- done (tasks_complete) --------------------------------------------------
 
-function runDone(cli: Cli, args: string[]): number {
+async function runDone(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -172,10 +180,12 @@ function runDone(cli: Cli, args: string[]): number {
     cli.io.err("  done <blocks…|-> [--undo]  — check (or uncheck) task blocks");
     return EXIT_OK;
   }
+  const refs = expandBlockArgs(positionals);
+  if (refs.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
+  if (cli.flags.server) return runOpsRemote(cli, "tasks_complete", { blocks: refs, ...(values.undo ? { checked: false } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const blocks = expandBlockArgs(positionals).map((r) => block(cli, ws, repo.repoId, r));
-  if (blocks.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
+  const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
   const ops: Op[] = values.undo
     ? blocks.map((b) => ({ op: "update", block: b, attrs: { checked: false }, expect: pinned(ws, b) }) as Op)
     : tasksComplete(ws.store, blocks);
@@ -184,7 +194,7 @@ function runDone(cli: Cli, args: string[]): number {
 
 // ---- append (sections_append) -----------------------------------------------
 
-function runAppend(cli: Cli, args: string[]): number {
+async function runAppend(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
   const { values, positionals } = parseArgs({
     args: content.rest,
@@ -198,6 +208,8 @@ function runAppend(cli: Cli, args: string[]): number {
   const heading = positionals[0];
   if (!heading) throw new CliUsageError("append requires a <heading> block");
   const markdown = readContent(content);
+  // Remote: sections_append resolves the heading ref (id OR text) server-side.
+  if (cli.flags.server) return runOpsRemote(cli, "sections_append", { heading, markdown });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const headingId = block(cli, ws, repo.repoId, heading);
@@ -206,7 +218,7 @@ function runAppend(cli: Cli, args: string[]): number {
 
 // ---- split / merge ----------------------------------------------------------
 
-function runSplit(cli: Cli, args: string[]): number {
+async function runSplit(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -219,15 +231,16 @@ function runSplit(cli: Cli, args: string[]): number {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("split requires a <block>");
   if (!values.at) throw new CliUsageError("split requires --at n[,n…]");
+  const at = values.at.split(",").map((s) => Number(s.trim()));
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_split", { block: ref, at });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blockId = block(cli, ws, repo.repoId, ref);
-  const at = values.at.split(",").map((s) => Number(s.trim()));
   const op: Op = { op: "split", block: blockId, at, expect: { content_hash: rawHashOf(ws, blockId) ?? "" } };
   return runOps(cli, ws, repo, [op], actorOf(values));
 }
 
-function runMerge(cli: Cli, args: string[]): number {
+async function runMerge(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -237,10 +250,12 @@ function runMerge(cli: Cli, args: string[]): number {
     cli.io.err("  merge <blocks…>  — merge adjacent blocks into the first");
     return EXIT_OK;
   }
+  const refs = expandBlockArgs(positionals);
+  if (refs.length < 2) throw new CliUsageError("merge requires at least two blocks");
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_merge", { blocks: refs, ...(values.sep !== undefined ? { separator: values.sep } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const blocks = expandBlockArgs(positionals).map((r) => block(cli, ws, repo.repoId, r));
-  if (blocks.length < 2) throw new CliUsageError("merge requires at least two blocks");
+  const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
   const op: Op = { op: "merge", blocks, ...(values.sep !== undefined ? { separator: values.sep } : {}) };
   return runOps(cli, ws, repo, [op], actorOf(values));
 }

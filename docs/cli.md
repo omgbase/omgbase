@@ -1,6 +1,6 @@
 # omgbase — CLI Surface (`omg`)
 
-**Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync`/`watch`/`mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
+**Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync` (incl. `--watch`, and `--server` for remote-over-MCP) / `mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
 **Depends on:** `architecture.md` §11–12; `data-model.md` §2, §6; `mutation-and-concurrency.md` §6; `mcp-api.md` (tool semantics); `query-language.md` (envelope, fenced form).
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
@@ -25,7 +25,7 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 
 - Repo selection within a workspace: the repo whose `root_path` contains the cwd; when none or several match, require `--repo <slug>` (error message lists the candidates).
 - `-C <dir>` runs as if invoked from `<dir>` (git/make convention).
-- No workspace found ⇒ every command except `init`, `attach`, and `--help`/`--version` fails with `repo_not_found` and a hint to run `omg init`.
+- No workspace found ⇒ every command except `init`, `--help`/`--version` (and `omg sync --server`, which runs against a remote engine) fails with `repo_not_found` and a hint to run `omg init`.
 
 ### 2.2 Global flags
 
@@ -33,6 +33,7 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 |---|---|
 | `-C <dir>` | Run as if cwd were `<dir>` |
 | `--repo <slug>` | Select repo within the workspace |
+| `--server <cmd\|url>` | Run against a **remote engine over MCP** instead of the embedded local store (ADR-014). Global by design; commands adopt it one at a time (today: `sync`), others reject it rather than silently running locally. |
 | `--json` | Machine output: the library result object, verbatim, one JSON document on stdout |
 | `--jsonl` | List-shaped results as one JSON object per line (streaming-friendly) |
 | `--ids` | List-shaped results as bare IDs, one per line (pipe fuel) |
@@ -60,7 +61,7 @@ Errors go to **stderr**, always: human form `error[stale_expectation]: <message>
 
 ## 3. Process and concurrency model
 
-**Embedded-first, daemonless by default.** Every `omg` command opens the SQLite database directly (WAL), does its work in-process via the library, and exits. No daemon is required for any command. Long-lived processes are explicit: `omg watch` (foreground watcher) and `omg mcp` (stdio MCP server, host-owned lifetime).
+**Embedded-first, daemonless by default.** Every `omg` command opens the SQLite database directly (WAL), does its work in-process via the library, and exits. No daemon is required for any command. Long-lived processes are explicit: `omg sync --watch` (foreground watcher) and `omg mcp` (stdio MCP server, host-owned lifetime).
 
 This is the design's central decision (ADR-012). The alternatives — a mandatory daemon with an IPC protocol, or a CLI that shells out to a server — buy nothing at the scale envelope (01 §13) and cost a protocol, a lifecycle manager, and a class of "is the daemon up?" failure modes.
 
@@ -72,13 +73,13 @@ Read commands open their own connection and see a consistent WAL snapshot. Alway
 
 The write protocol's per-repo writer lock (04 §6 step 1) is a **cross-process advisory lock on `<workspace>/.omgbase/writer.lock`**, held for steps 2–7 of the protocol. All writers — one-shot CLI mutations, the watcher's checkpoint ingests, `omg mcp` applies — acquire it. Node exposes no `flock(2)` and the design forbids new runtime deps (§8), so the lock is an **O_EXCL lockfile** (`sync/writer-lock.ts`): exclusive creation is atomic on local filesystems, the holder writes its pid into the file for liveness, and a lockfile whose pid is dead is stolen — no daemon, no lease sweeper. The file-CAS + ingest-and-replay behavior (04 §6) is unchanged.
 
-With the lock in place, a one-shot `omg` mutation while `omg watch` runs is safe end-to-end: the mutation writes file + DB under the lock; the watcher then observes a file whose hash equals `current_revision.rendered_hash` and records a no-op (echo suppression is hash-based, so it works cross-process for free).
+With the lock in place, a one-shot `omg` mutation while `omg sync --watch` runs is safe end-to-end: the mutation writes file + DB under the lock; the watcher then observes a file whose hash equals `current_revision.rendered_hash` and records a no-op (echo suppression is hash-based, so it works cross-process for free).
 
 ### 3.3 Freshness: reads are current by default
 
 Without a watcher, the database lags human edits made since the last ingest. A CLI that silently answers from stale state is a trap; one that re-ingests the whole vault per invocation is a different trap. The rule:
 
-> Before executing, a command runs a **freshness sweep** — unless `--stale` is given, a live watcher holds the watch lease (§3.4), or the command is itself `sync`/`watch`/`mcp`.
+> Before executing, a command runs a **freshness sweep** — unless `--stale` is given, a live watcher holds the watch lease (§3.4), or the command manages sync itself (`sync`/`mcp`/`source`/`shell`).
 
 The sweep: walk the repo's `*.md` files, `stat` each, compare `(mtime_ns, size)` against the `file_stats` cache; hash only the changed candidates; ingest non-convergent files as one observed checkpoint (under the writer lock). At the envelope (≤10⁴ docs) the no-change case is a directory walk plus stats — tens of milliseconds.
 
@@ -97,7 +98,7 @@ CREATE TABLE file_stats (
 
 ### 3.4 The watch lease
 
-`omg watch` (and `omg mcp`'s in-process watcher) holds an advisory lock on `<workspace>/.omgbase/watch.lock` for its lifetime — the same O_EXCL lockfile substitution as the writer lock (`sync/watch-lease.ts`). The holder records its pid in the file; liveness is a pid check (read the holder pid, `kill(pid, 0)`), and a lockfile whose holder pid is dead is stolen — no heartbeats, no stale-lease sweeper. Commands use the probe to skip the freshness sweep; `omg status` reports it (`watcher: live` / `watcher: none`).
+`omg sync --watch` (and `omg mcp`'s in-process watcher) holds an advisory lock on `<workspace>/.omgbase/watch.lock` for its lifetime — the same O_EXCL lockfile substitution as the writer lock (`sync/watch-lease.ts`). The holder records its pid in the file; liveness is a pid check (read the holder pid, `kill(pid, 0)`), and a lockfile whose holder pid is dead is stolen — no heartbeats, no stale-lease sweeper. Commands use the probe to skip the freshness sweep; `omg status` reports it (`watcher: live` / `watcher: none`).
 
 ### 3.5 Semantic staleness
 
@@ -119,9 +120,9 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 
 | Command | Does |
 |---|---|
-| `omg init [dir]` | Create the workspace (`.omgbase/` + DB) in `dir` (default cwd). Does **not** ingest files — that's a separate consent-gated `attach` step, so `init` never absorbs whatever happens to live under cwd (home dir, desktop, …). If inside a git working tree, offers to ignore the DB via the closest `.gitignore` at/above the workspace (creating one at the git root if none), written relative to that file — prompt on TTY, `--yes` for scripts, **never silent** (02 §2). Outside git, nothing to ignore. Also offers to set the embedding provider: if `omgbase-embedder` is installed it offers it (`--yes` accepts); `--embedder <cmd\|url>` sets any provider verbatim; `--no-embedder` skips. If none ends up set, prints install+config guidance. |
-| `omg attach <path> [--slug <s>] [-y]` | Attach a working tree and ingest its Markdown (`attachRepo`; slug defaults to basename). Prompts before ingesting, showing a live file count that grows as the tree is scanned (`248+` while scanning, `248` when done) beside `[y/N]`; Enter = No. `-y` skips the prompt; a non-TTY without `-y` refuses rather than absorbing the tree silently. |
-| `omg repos` | List repos: slug, root path, doc/block counts. |
+| `omg init [dir]` | Create the workspace (`.omgbase/` + DB) in `dir` (default cwd). Does **not** ingest files — that's a separate consent-gated `omg source add` step, so `init` never absorbs whatever happens to live under cwd (home dir, desktop, …). If inside a git working tree, offers to ignore the DB via the closest `.gitignore` at/above the workspace (creating one at the git root if none), written relative to that file — prompt on TTY, `--yes` for scripts, **never silent** (02 §2). Outside git, nothing to ignore. Also offers to set the embedding provider: if `omgbase-embedder` is installed it offers it (`--yes` accepts); `--embedder <cmd\|url>` sets any provider verbatim; `--no-embedder` skips. If none ends up set, prints install+config guidance. |
+| `omg source add <dir> [--slug <s>] [--name <n>] [-y]` | Point a repo at a filesystem directory (ADR-014): create the repo if needed, register + attach an `<slug>-fs` source, and run the initial sync (`freshnessSweep`). There is no separate `attach`/`ingest`/`load` verb — the initial ingest is the source's first sync. Prompts before ingesting, showing a live file count that grows as the tree is scanned (`248+` while scanning, `248` when done) beside `[y/N]`; Enter = No. `-y` skips the prompt; a non-TTY without `-y` refuses rather than absorbing the tree silently. Other subcommands: `list`, `attach <name>` (bind an existing source), `detach`, `rm`. |
+| `omg repos` | List repos: slug, root path (derived from the fs source), doc/block counts. |
 
 ### 5.2 Orient & read
 
@@ -244,7 +245,8 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | Command | Does |
 |---|---|
 | `omg sync` | One-shot freshness sweep (§3.3), verbose: files ingested, dispositions summary. Idempotent; safe alongside a live watcher (hash-based echo suppression makes double ingest a no-op). |
-| `omg watch` | Foreground watcher (checkpoints at quiescence). Holds the watch lease. Process supervision is the OS's job (tmux/launchd/systemd) — the CLI does not daemonize in v1. |
+| `omg sync --watch` | Foreground watcher (checkpoints at quiescence); holds the watch lease. Process supervision is the OS's job (tmux/launchd/systemd) — the CLI does not daemonize in v1. (There is no separate `omg sync --watch` — watching is a mode of `sync`, ADR-014.) |
+| `omg sync --server <cmd> [--root <dir>] [--out] [--watch]` | The same reconcile, but against a remote engine **over MCP** (the global `--server` flag): connects as an MCP client to the spawned server and drives the coordinator. Shares `runFsMirror` with the standalone `omgbase-sync` bin. No local workspace required (the fs dir is the source). |
 | `omg mcp [--no-watch]` | MCP server on **stdio**; the host (Claude Code, Cursor, …) owns the process lifetime. Runs an in-process watcher by default so a lone `omg mcp` session is always fresh — auto-disabled when another live lease exists; `--no-watch` forces off. This is the one-line integration: `{"command": "omg", "args": ["mcp", "-C", "/path/to/vault"]}`. |
 
 ### 5.9 Admin, maintenance, dev
@@ -302,7 +304,7 @@ These traces become the CLI test suite's fixtures (spawn the built binary agains
 Two stages, sequential exit gates (07 conventions):
 
 - **CLI-A — read surface + freshness.** Scaffold (`bin` wiring, discovery, global flags, output contract, error rendering), `init/attach/repos/status/ls/outline/cat/show/find/query/log/hist/diff/links/sync`, `file_stats` + freshness sweep, cross-process writer-lock (O_EXCL lockfile) in the library. **Gate:** C1/C3/C4 pass as spawned-binary tests; freshness test (edit file out-of-band → query sees it without a watcher); `--json` shape parity with library types.
-- **CLI-B — write surface + serve + admin.** `apply` + all sugar, `edit`, `node`, `run`, `watch`, `mcp`, `rebuild-index/gc/import/doctor/config/embed`. **Gate:** full C1–C7 suite; concurrent-writer torture (live `omg watch` + one-shot mutations under the writer lock — the 04 §5 scenarios re-run cross-process); `omg mcp` drives the existing Stage-6 trace suite over stdio unchanged.
+- **CLI-B — write surface + serve + admin.** `apply` + all sugar, `edit`, `node`, `run`, `watch`, `mcp`, `rebuild-index/gc/import/doctor/config/embed`. **Gate:** full C1–C7 suite; concurrent-writer torture (live `omg sync --watch` + one-shot mutations under the writer lock — the 04 §5 scenarios re-run cross-process); `omg mcp` drives the existing Stage-6 trace suite over stdio unchanged.
 
 ## 8. Implementation notes
 
@@ -314,7 +316,7 @@ Two stages, sequential exit gates (07 conventions):
 
 ## 9. Deferred (not in v1; listed so their absence is a decision)
 
-- **Daemon management** (`omg watch --detach`, PID files, restart) — the OS supervises; ship launchd/systemd snippets in docs instead.
+- **Daemon management** (`omg sync --watch --detach`, PID files, restart) — the OS supervises; ship launchd/systemd snippets in docs instead.
 - **Remote/HTTP serving** (`omg serve`: SSE MCP, REST) — arrives with the multi-user server, i.e. with the Postgres dialect trigger (ADR-001), not before.
 - **TUI** (`omg ui`) — fzf compositions cover the interactive need for now.
 - **`omg run --materialize`** — projections are ADR-011's Stage-8 feature; `run` stays read-and-print until then.

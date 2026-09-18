@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync, unlinkSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
-import { attachRepo } from "./attach.js";
+import { ingestDirectory } from "./attach.js";
 import { freshnessSweep, rebuildFileStats } from "./freshness.js";
 
 let store: Store | undefined;
@@ -21,7 +21,7 @@ function setup(): { store: Store; root: string; repoId: string } {
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "a.md"), "# A\n\nalpha paragraph\n");
   store = new Store({ path: ":memory:" });
-  const { repoId } = attachRepo(store, "vault", root);
+  const { repoId } = ingestDirectory(store, "vault", root);
   // Prime the stat cache so subsequent sweeps have a baseline.
   rebuildFileStats(store, repoId, root);
   return { store, root, repoId };

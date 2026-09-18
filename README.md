@@ -12,13 +12,14 @@ Ordinary files stay the human representation (editable in any editor, Obsidian, 
 - **semantic node projection** — links, tasks, anchors, environment variables, schema references, and other features are projected as queryable nodes anchored to their source blocks;
 - **hybrid retrieval** — full-text (FTS5) + vector search fused with reciprocal-rank fusion;
 - **a safe structural mutation API** — six kernel ops with content-hash CAS, built for autonomous agents;
-- **an MCP server** — the whole surface exposed as Model Context Protocol tools.
+- **an MCP server** — the whole surface exposed as Model Context Protocol tools;
+- **store-to-store sync** — mirror an external store (a filesystem directory today; git/S3/others via adapters) into a repo, locally or against a **remote / headless** server over MCP, with no local files required on the server.
 
 The files are always the source of truth for *content*; the engine's database owns *identity, history, and derived indexes*. At quiescence, `sha256(file) == current_revision.rendered_hash` for every tracked document with a round-trip renderer.
 
 ## Status
 
-The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
+The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. A **store-to-store sync layer** (`@omgbase/sync`, ADR-014) is built: the source registry (`omg source`), the `observe`/`observe_many`/`observe_delete` MCP surface, the headless `DocStore` seam, and the standalone `omgbase-sync` coordinator. A repo now owns identity, not a filesystem — its bytes come from an attached source, the legacy `repos.root_path` column has been removed (schema v13; `RepoRow.rootPath` is derived), and sourceless/headless repos are first-class. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
 
 ## Install
 
@@ -35,7 +36,7 @@ pnpm lint
 
 A single-writer engine process sits beside one or more working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
-The repo is a pnpm workspace of five packages:
+The repo is a pnpm workspace of six packages:
 
 ```
 packages/
@@ -44,18 +45,19 @@ packages/
       core/      parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
       format/    adapter contract · registry · markdown/yaml/json adapters · node projection
       reconcile/ matcher phases · scoring · dispositions · eval harness
-      sync/      external-source bridge · driver · checkpoints · reconciling ingest · settings layering · watcher
-      mutate/    six kernel ops · changesets · CAS · macros
+      sync/      observe primitive · source registry · external-source bridge · driver · checkpoints · watcher
+      mutate/    six kernel ops · changesets · CAS · macros · DocStore seam
       graph/     edge extraction · intervals · traversal · history/diff
-      search/    CEL query compiler · FTS · embeddings · vector · RRF · resolve/pipeline
+      search/    OQX bindings · FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
       migrate/   mrplex importer
     corpus/      round-trip + matcher fixtures
   cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter)
+  sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin)
   client/        @omgbase/client — thin remote MCP client (placeholder)
   embedder/      @omgbase/embedder — external embedding provider (transformers.js + all-MiniLM-L6-v2)
   fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol)
-docs/            normative design documents
+docs/            as-built design reference · decision log (ADRs)
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.
@@ -104,46 +106,116 @@ In addition to the core CEL filter language (see `docs/query-language.md`), the 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `attach`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`, `graph`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
 
-**Workspace, repo, config — the three things to know first.**
+### The mental model: workspace, repo, source, config
 
-- A **workspace** is the `.omgbase/` directory + its SQLite database. It is *not* the content — it can live in a project root, a notes directory, or `$HOME`. Commands find it by walking up from the cwd.
-- A **repo** is a named, synced scope *inside* a workspace. One workspace can hold many. Today a repo is backed by a filesystem directory (its `root_path`); the sync layer is being generalized to external adapters (git/GitHub/Linear — see `docs/sync-plugins.md`).
-- **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* that every repo inherits; a repo can *override* any key. This is why an embedder is set once for the whole workspace (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
+Four concepts, and getting them straight makes everything else obvious:
+
+- A **workspace** is the `.omgbase/` directory + its SQLite database. It is *not* the content — it can live in a project root, a notes directory, or `$HOME`. Commands find it by walking **up** from the cwd (like `git`). One `omg init` creates one.
+- A **repo** is a named scope *inside* a workspace that owns **identity + history** for a set of documents. One workspace can hold many repos; each has a `slug`. A repo does **not** intrinsically own a filesystem — it owns the versioned graph.
+- A **source** is *where a repo's bytes come from*: a filesystem directory today (via the built-in `fs` adapter), git/S3/others later. A repo can have zero, one, or several attached sources — managed with `omg source`. (A repo with no source is **headless**: it lives entirely in the DB. See [Remote / headless](#remote--headless-servers).)
+- **Config** is one settings schema at **two layers**: values set at the **workspace** layer are *defaults* every repo inherits; a repo can *override* any key. That's why an embedder is set once workspace-wide (so every repo shares one vector space) while something like `gc.enabled` is set per repo.
+
+> There is no separate "attach/ingest/load" verb: `omg source add <dir>` is how content enters — it creates the repo if needed, registers the filesystem source, and runs the initial sync. The initial ingest is just that source's first sync (the same reconcile every later sync uses).
+
+### 1. Build and link the binaries
 
 ```bash
-pnpm -r build           # build all packages (core, cli, embedder, fs-adapter)
-pnpm rlink              # globally link binaries (omg, omgbase, omgbase-embedder, omgbase-fs-adapter)
+pnpm install
+pnpm -r build     # build every package (core, cli, sync, embedder, fs-adapter)
+pnpm rlink        # link binaries onto PATH: omg, omgbase, omgbase-sync, omgbase-embedder, omgbase-fs-adapter
+```
 
-# --- bootstrap ------------------------------------------------------------
-omg init ./my-vault --yes   # create the workspace (.omgbase/ + DB); does NOT ingest
+### 2. Create a workspace and point a repo at a directory
+
+`init` creates the workspace **but ingests nothing** — pulling a directory of files in is a separate, consent-gated step, so `init` never silently absorbs whatever happens to live under the cwd.
+
+```bash
+omg init ./my-vault --yes         # create .omgbase/ + the DB (offers to .gitignore it)
 cd ./my-vault
-omg attach . -y             # ingest this tree as a repo (prompts without -y)
-omg status                  # where am I: repo, sync, watcher, queue
-omg repos                   # list every repo in this workspace
+omg source add . -y --slug notes  # register this dir as the repo's fs source + initial sync
+                                  # (slug defaults to the folder name; prompts without -y)
 
-# --- config (workspace default vs repo override) --------------------------
+omg status                        # where am I: repo, sync state, watcher, embed queue
+omg repos                         # every repo in this workspace: slug · root · doc/block counts
+```
+
+### 3. Read and query
+
+Reads are **current by default**: before each command a freshness sweep re-ingests any files that changed on disk since the last ingest (skip with `--stale`, or keep a `watch`er running). OQX is the one query + traversal language (`from … where … select … follow …`; see `docs/query-language.md`).
+
+```bash
+omg outline notes/hub.md                       # compact orientation outline (stable wire format)
+omg cat notes/hub.md                            # exact file bytes, reconstructed from the DB
+omg query 'from docs where layer == "canon"'    # query documents by frontmatter
+omg q 'from nodes where kind == "md:task" && !attrs.checked' --ids | omg cat -   # pipe ids as fuel
+omg find "stable identity rationale" -1         # top hybrid-search hit's id alone
+omg log --since 24h                             # one commit digest per line
+```
+
+### 4. Edit — the pipe is the changeset boundary
+
+Every mutation renders by splice, writes the file atomically, and records a revision; conflicts are typed and carry current truth.
+
+```bash
+omg q 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")' --ids | omg done -
+echo '# New idea' | omg new notes/idea.md -     # create a document from bytes on stdin (or: -f file.md)
+omg edit b_k7z2p9q                              # $EDITOR round-trip on one block, CAS-pinned
+omg retarget old.md new.md                      # rewrite links; plan by default, --apply to commit
+omg hist b_k7z2p9q                              # a block's biography: every commit that touched it
+```
+
+Human output is colorized and glyph-rich on a capable TTY; `--json` / `--jsonl` / `--ids` emit machine data verbatim, and `NO_COLOR` / pipes degrade to plain text automatically.
+
+### 5. Config (workspace default vs repo override)
+
+```bash
 omg config set embedding.provider omgbase-embedder --repo ""   # --repo "" ⇒ workspace default
 omg config list --repo ""                                       # show workspace defaults
 omg config list                                                 # effective view for this repo (◆ = overridden)
 omg config set gc.enabled true                                  # no --repo ⇒ this repo's layer
-
-# --- reads (current by default) -------------------------------------------
-omg outline notes/hub.md                # compact orientation outline (frozen wire format)
-omg q 'type == "task" && !attrs.checked' --text deploy --ids | omg cat -   # pipe fuel
-omg log --since 24h                     # one commit digest per line
-omg find "stable identity rationale" -1 # top hit's id alone
-
-# --- writes — the pipe is the changeset boundary --------------------------
-omg q 'type == "task" && !attrs.checked && under_heading("Launch")' --ids | omg done -
-omg retarget old.md new.md              # plan by default; add --apply to commit
-omg edit b_k7z2p9q                       # $EDITOR round-trip, CAS pinned
 ```
 
-**Config scope in one rule:** `omg config` targets the repo you're in (by cwd or `--repo <slug>`); pass `--repo ""` to target the workspace default layer; at the workspace root of a multi-repo workspace, a bare `omg config` falls back to the workspace layer. `get` returns the *effective* value (default merged with any override); `list --repo <slug>` marks overridden keys with `◆`.
+`omg config` targets the repo you're in (by cwd or `--repo <slug>`); `--repo ""` targets the workspace default layer; at a multi-repo workspace root a bare `omg config` falls back to the workspace layer. `get` returns the *effective* value (default merged with any override).
 
-Reads are **current by default**: before each command a freshness sweep re-ingests any files changed on disk since the last ingest (skip with `--stale`, or run a `watch`er). Human output is colorized and glyph-rich on a capable TTY; `--json`/`--jsonl`/`--ids` emit machine data verbatim, and `NO_COLOR`/pipes degrade to plain text automatically.
+## Sources & syncing
+
+A repo stays current with its source(s). Once `omg source add <dir>` has pointed a repo at a directory, one verb keeps it fresh:
+
+```bash
+omg sync            # one-shot: re-ingest anything changed on disk since last ingest
+omg sync --watch    # stay live: an external fs-adapter process streams edits; the engine reconciles them
+```
+
+(There is no separate `omg watch` — watching is `omg sync --watch`. And `omg sync` is just the explicit form of the freshness sweep every read already runs by default.)
+
+`omg source` manages the registry — a repo can have more than one source, and existing sources can be re-bound:
+
+```bash
+omg source add ./notes --slug notes   # point a (new or current) repo at a dir + initial sync
+omg source list                       # sources + which repos they feed
+omg source attach notes-fs            # attach an existing source to the current repo
+omg source detach notes-fs            # unbind (rm to delete)
+```
+
+### Remote / over-MCP sync (`--server`)
+
+`omg sync` runs **in-process** against the local workspace by default. Point it at a server with the global **`--server`** flag and the *same command* runs against a **remote or headless** engine **over MCP** — the coordinator connects as an MCP client and drives the exact tools an agent uses:
+
+```bash
+omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault           # one sync over MCP
+omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault --watch   # stay live over MCP
+omg sync --server "…" --root ./my-vault --out                             # also export engine-authored changes back
+```
+
+`--server` is a **global flag** (ADR-014): the goal is that most commands eventually run either embedded-local or remote-over-MCP. Today `sync` implements it; other commands reject `--server` rather than silently running locally, and gain remote support one at a time.
+
+The same coordinator ships as a standalone bin, **`omgbase-sync`**, for environments that don't have the full `omg` CLI — `omgbase-sync --root ./v [--watch] [--out]` is exactly `omg sync --server … --root ./v`. Under the hood both fetch changed files from a source adapter and call the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled + echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back. Reconciliation never leaves the engine (`docs/sync-service-design.md`, ADR-014).
+
+### Remote / headless servers
+
+Because the engine's database already holds a **byte-exact** representation of every file (blocks' retained bytes + trivia + frontmatter; `docs_read` reconstructs the file byte-for-byte), a server needs **no local working tree**. A repo with no attached source is *headless* — the DB is the source of truth for content, and `omgbase-sync` (or any MCP client) syncs bytes in via `observe` and out via `changes_since` + `docs_read`. Mutations on a headless repo commit to the DB and skip the file write entirely.
 
 ### Interactive shell
 
@@ -178,40 +250,29 @@ The engine can also be used directly as a library via `@omgbase/core`. All funct
 ### Attach a directory and query it
 
 ```ts
-import { Store } from "@omgbase/core/core/store/store";
-import { attachRepo } from "@omgbase/core/sync/attach";
-import { query } from "@omgbase/core/search/query";
-import { docsOutline } from "@omgbase/core/core/read/outline";
+import { Store, ingestDirectory, oqxRun, docsOutline } from "@omgbase/core";
 
 // Open (or create) the engine database. Use ":memory:" for tests.
 const store = new Store({ path: "/path/to/vault/.omgbase/omgbase.db" });
 
-// Walk a directory tree: ingest every file (md/yaml/json), thread identity, extract edges.
-const { repoId } = attachRepo(store, "my-vault", "/path/to/vault");
+// Walk a directory tree: create the repo (+ its fs source), ingest every file
+// (md/yaml/json), thread identity, extract edges.
+const { repoId } = ingestDirectory(store, "my-vault", "/path/to/vault");
 
-// CEL query over blocks (see docs/query-language.md for the full language).
-const { hits } = query(store, repoId, {
-  from: "blocks",
-  filter: 'type == "task" && !attrs.checked && under_heading("Launch")',
-  limit: 50,
-});
+// OQX is the one query + traversal language (see docs/query-language.md).
+// Blocks under a heading:
+const tasks = oqxRun(store, repoId, 'from blocks where type == "task" && !attrs.checked && under_heading("Launch")', { limit: 50 });
 
-// Query across formats: find YAML configs referencing a specific host.
-const yamlHits = query(store, repoId, {
-  from: "docs",
-  filter: 'format == "yaml" && database.host == "localhost"',
-});
+// Across formats — YAML configs referencing a specific host:
+const configs = oqxRun(store, repoId, 'from docs where format == "yaml" && database.host == "localhost"');
 
-// Query nodes: find unchecked tasks across all markdown files.
-const tasks = query(store, repoId, {
-  from: "nodes",
-  filter: 'kind == "md:task" && attrs.checked == false',
-});
+// Nodes — unchecked tasks across all markdown files:
+const openTasks = oqxRun(store, repoId, 'from nodes where kind == "md:task" && attrs.checked == false');
+console.log(tasks.hits, configs.hits, openTasks.hits);
 
 // Compact orientation outline of one document.
-const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get("notes.md");
-const outline = docsOutline(store, doc.doc_id);
-console.log(outline.text);
+const doc = store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get("notes.md") as { doc_id: string };
+console.log(docsOutline(store, doc.doc_id).text);
 ```
 
 ### Watch for human edits
@@ -238,7 +299,7 @@ await watcher.start();
 // On shutdown: await watcher.stop(); await source.close();
 ```
 
-For one-shot, non-watching ingestion (used by `omg init`/`attach`/`sync`), the synchronous filesystem fast-path is still available directly as `attachRepo(store, slug, rootPath)` and `freshnessSweep(store, repoId, rootPath)`.
+For one-shot, non-watching ingestion, the synchronous filesystem fast-path is available directly as `ingestDirectory(store, slug, rootPath)` (a reconciling walk that also registers the repo's fs source) and `freshnessSweep(store, repoId, rootPath)` (what `omg sync` / `omg source add` use).
 
 ### Apply a structural mutation
 
@@ -272,7 +333,32 @@ const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
 ```
 
-Tools exposed: `docs_outline`, `docs_read`, `nodes_get`, `nodes_get_many`, `query`, `query_syntax`, `graph_syntax`, `text_search`, `resolve`, `apply`, `tasks_complete`, `sections_append`, `links_retarget`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `graph_traverse`, `graph_path`, `history_node`, `diff`, `changes_since`, `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor; every hydrating tool honors `budget_tokens`. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source.
+Tools exposed (the authoritative list is the registrations in `packages/core/src/mcp/server.ts`): reads — `docs_outline`, `docs_read`, `docs_get_many`, `nodes_get`, `nodes_get_many`, `query`, `query_syntax`, `graph`, `text_search`, `resolve`; writes — `apply`, `tasks_complete`, `node_set`, `sections_append`, `docs_append`, `links_stale`, `links_retarget`, `links_repair`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `docs_plan_update`, `docs_update`; sync — `observe`, `observe_many`, `observe_delete`; history — `history_node`, `diff`, `docs_read_at`, `docs_history`, `changes_since`; admin — `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source. `observe`/`observe_many`/`observe_delete` are the sync-ingest surface (file→DB, observed-origin, echo-suppressed) that `@omgbase/sync` drives; `changes_since` digests carry per-revision `contentHash` for the export direction.
+
+### Synchronize a source into a repo (library)
+
+`@omgbase/sync` reconciles a `SyncSource` (external store) with an omgbase repo reached through an `EngineClient` — `InProcessEngineClient` (direct `Store`) locally, or `McpEngineClient` (over MCP) against a remote/headless server. The `Coordinator` owns the loop; the engine owns reconciliation.
+
+```ts
+import { Coordinator, InProcessEngineClient, connectStdioEngine } from "@omgbase/sync";
+import { createExternalSource } from "@omgbase/core";
+import { fsAdapterBinPath } from "@omgbase/fs-adapter";
+import { execPath } from "node:process";
+
+// A filesystem source (external adapter process) …
+const source = await createExternalSource({ command: execPath, args: [fsAdapterBinPath(), "--root", "/path/to/vault"] });
+
+// … synced against a local in-process engine …
+const engine = new InProcessEngineClient(store, repoId);
+// … or a remote/headless server over MCP:
+//   const engine = await connectStdioEngine({ command: "omg", args: ["mcp", "-C", "/path/to/vault"] });
+
+const coord = new Coordinator(engine, source);
+await coord.syncIn();                       // filesystem → engine (initial ingest, echo-suppressed)
+await coord.syncOut();                       // engine → filesystem (export engine-authored changes)
+const sub = await coord.watchIn({ onSummary: (s) => console.log("mirrored", s) });  // stay live
+// On shutdown: await sub?.stop(); await source.close(); await engine.close();
+```
 
 ### Semantic search (optional)
 
@@ -300,7 +386,7 @@ const hits = hybridSearch(store, { repoId, text: "identity", vector: { model: my
 
 ## Reading the design
 
-Start with `docs/README.md`, then the numbered documents. They are normative: where code and docs disagree, the docs win until an ADR (`docs/decisions.md`) says otherwise.
+Start with the repo-root `AGENTS.md` (orientation + the `docs/` trust index), then `docs/README.md`. The `docs/` are maintained as an **as-built** description of the implementation: where a doc and the code disagree, **the code wins** — fix the doc. `docs/decisions.md` is the ADR log (the "why"); `docs/sync-service-design.md` (ADR-014) is the forward design for the sync service migration.
 
 ## License
 

@@ -1,10 +1,6 @@
 import { parseArgs } from "node:util";
 import { readFileSync } from "node:fs";
 import {
-  Watcher,
-  WatchLease,
-  EmbedDrainer,
-  freshnessSweep,
   rebuildIndex,
   runGc,
   planImport,
@@ -26,82 +22,8 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
 import { loadEmbedding, drainEmbeddings } from "./_embed.js";
-import { openFsSource } from "./_source.js";
 
-// watch + admin/maintenance (11 §5.8–5.9).
-
-// ---- watch ------------------------------------------------------------------
-
-async function runWatch(cli: Cli, args: string[]): Promise<number> {
-  parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-
-  const lease = WatchLease.tryAcquire(ws.omgbaseDir);
-  if (!lease) throw new EngineErrorLike("target_missing", "another watcher already holds the lease for this workspace");
-
-  // Keep embeddings timely: when a checkpoint ingests changed files, schedule a
-  // background embed drain so their vectors don't go stale until a manual `omg
-  // embed drain`. Off when no provider is configured.
-  const embedding = await loadEmbedding(ws, repo.repoId);
-  const drainer = embedding
-    ? new EmbedDrainer(ws.store, repo.repoId, embedding.worker, {
-        onDrain: ({ embedded }) => cli.io.err(cli.style.dim(`  embedded ${embedded} block(s)`)),
-        onError: (err) => cli.io.err(cli.style.dim(`  embed drain failed: ${String(err)}`)),
-      })
-    : null;
-
-  if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // start fresh
-
-  // Live watching runs in the external fs-adapter process (chokidar lives there,
-  // not in the engine). A sourceless repo has nothing to watch.
-  const source = await openFsSource(repo);
-  if (!source) {
-    cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to watch`));
-    lease.release();
-    return EXIT_OK;
-  }
-
-  const watcher = new Watcher(ws.store, repo.repoId, source, {
-    onCheckpoint: (r) => {
-      if (r.ingested.length || r.deleted.length || r.conflicted.length) {
-        cli.io.err(`${cli.style.ok(cli.render.g.sync)} +${r.ingested.length} -${r.deleted.length}${r.conflicted.length ? ` !${r.conflicted.length}` : ""}`);
-        drainer?.schedule();
-      }
-    },
-    onError: (err) => cli.io.err(cli.style.err(`  watch error: ${String(err)}`)),
-  });
-  await watcher.start();
-  // Prime: embed anything already stale at startup (post-sweep), in the background.
-  drainer?.schedule();
-  cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop${drainer ? " · auto-embed on" : ""}`));
-
-  await new Promise<void>((resolve) => {
-    const stop = (): void => {
-      // Graceful shutdown closes the child fs-adapter process, the drainer, and
-      // the embedder. Any of those could stall (a wedged child, a slow flush) —
-      // and `watch` must never become unkillable by a signal, or Ctrl-C hangs
-      // the terminal and a supervising process (a test's SIGTERM) leaks it. A
-      // watchdog force-exits if graceful cleanup doesn't finish promptly.
-      const watchdog = setTimeout(() => process.exit(EXIT_OK), 3000);
-      void (async () => {
-        try {
-          await watcher.stop();
-          await source.close();
-          if (drainer) { try { await drainer.flush(); } catch { /* reported via onError */ } await drainer.close(); }
-          if (embedding) await embedding.close();
-          lease.release();
-        } finally {
-          clearTimeout(watchdog);
-          resolve();
-        }
-      })();
-    };
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
-  return EXIT_OK;
-}
+// admin/maintenance (11 §5.8–5.9). The live watcher moved to `omg sync --watch`.
 
 // ---- rebuild-index ----------------------------------------------------------
 
@@ -376,7 +298,6 @@ function coerce(raw: string): unknown {
   return raw;
 }
 
-export const cmdWatch: Command = { name: "watch", summary: "Foreground watcher (holds the lease)", run: (c, a) => runWatch(c, a) };
 export const cmdRebuild: Command = { name: "rebuild-index", summary: "Rebuild derived tables", run: (c, a) => runRebuild(c, a) };
 export const cmdGc: Command = { name: "gc", summary: "Mark-and-sweep (flag-gated)", run: (c, a) => runGcCmd(c, a) };
 export const cmdDoctor: Command = { name: "doctor", summary: "Invariant sweep (CI-able)", run: (c, a) => runDoctor(c, a) };

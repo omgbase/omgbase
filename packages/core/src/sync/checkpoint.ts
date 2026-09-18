@@ -1,11 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
-import { sha256 } from "../core/hash.js";
 import { mintId } from "../core/ids.js";
-import { ingestFile } from "../core/ingest.js";
-import { makeReconcilingResolver } from "./reconciling-ingest.js";
-import { hasConflictMarkers } from "./git-heuristics.js";
+import { observeOne } from "./observe.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
 import { tombstoneObservedDeletion } from "./tombstone.js";
 
@@ -52,44 +49,28 @@ export function processCheckpoint(
 
   for (const change of changes) {
     const abs = join(rootPath, change.path);
-    const existing = store.db
-      .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
-      .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
-    const oldHex = existing?.file_hash?.toString("hex") ?? null;
 
     if (!existsSync(abs)) {
       // File gone from disk: tombstone the live doc (drop FTS, tombstone blocks +
       // doc, pool blocks for resurrection) so it stops being served as a ghost.
+      const existing = store.db
+        .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
+        .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
       if (existing) {
         tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
         deleted.push(change.path);
       }
-      fileEntries.push([change.path, oldHex, null]);
+      fileEntries.push([change.path, existing?.file_hash?.toString("hex") ?? null, null]);
       continue;
     }
 
-    const content = readFileSync(abs, "utf8");
-    const diskHash = sha256(content);
-
-    if (existing && existing.file_hash && existing.file_hash.equals(diskHash)) {
-      suppressed.push(change.path);
-      fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
-      continue;
-    }
-
-    const resolveIds = makeReconcilingResolver(store, repoId, { ts, path: change.path });
-    if (hasConflictMarkers(content)) {
-      ingestFile(store, repoId, change.path, content, { ts, resolveIds });
-      store.db.prepare("UPDATE docs SET conflicted = 1 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
-      conflicted.push(change.path);
-      fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
-      continue;
-    }
-
-    ingestFile(store, repoId, change.path, content, { ts, resolveIds });
-    store.db.prepare("UPDATE docs SET conflicted = 0 WHERE repo_id = ? AND path = ?").run(repoId, change.path);
-    ingested.push(change.path);
-    fileEntries.push([change.path, oldHex, diskHash.toString("hex")]);
+    // Reconcile the disk bytes through the shared observe primitive (echo gate,
+    // identity threading, conflict-marker flagging — the one implementation).
+    const r = observeOne(store, repoId, change.path, readFileSync(abs, "utf8"), ts);
+    if (r.echo) suppressed.push(change.path);
+    else if (r.conflicted) conflicted.push(change.path);
+    else ingested.push(change.path);
+    fileEntries.push([change.path, r.oldHashHex, r.newHashHex]);
   }
 
   store.db

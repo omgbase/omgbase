@@ -68,7 +68,7 @@ beforeAll(() => {
     ["# Hub", "", "Intro.", "", "## Tasks", "", "- [ ] a task", "- [x] done task", ""].join("\n"),
   );
   execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 
 afterAll(() => {
@@ -120,5 +120,64 @@ describe("omg mcp (stdio)", () => {
       }, 4000);
     });
     expect(exitCode).toBe(0);
+  }, 15000);
+});
+
+describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
+  let mdir: string;
+  let ws: string;
+  beforeAll(() => {
+    mdir = mkdtempSync(join(tmpdir(), "omg-mcp-multi-"));
+    ws = join(mdir, "ws");
+    mkdirSync(join(ws, "alpha"), { recursive: true });
+    mkdirSync(join(ws, "beta"), { recursive: true });
+    writeFileSync(join(ws, "alpha", "a.md"), "# AlphaDoc\n");
+    writeFileSync(join(ws, "beta", "b.md"), "# BetaDoc\n");
+    const env = { ...process.env, NO_COLOR: "1" };
+    execFileSync("node", [BIN, "init", ws, "--yes", "--no-embedder"], { encoding: "utf8", env });
+    execFileSync("node", [BIN, "-C", join(ws, "alpha"), "source", "add", ".", "--slug", "alpha", "-y"], { encoding: "utf8", env });
+    execFileSync("node", [BIN, "-C", join(ws, "beta"), "source", "add", ".", "--slug", "beta", "-y"], { encoding: "utf8", env });
+  });
+  afterAll(() => rmSync(mdir, { recursive: true, force: true }));
+
+  it("defaults to the bound repo, targets others by slug, lists repos, errors on unknown", async () => {
+    // Bind alpha as the default (cwd under alpha's root).
+    const child = spawn("node", [BIN, "-C", join(ws, "alpha"), "mcp", "--no-watch"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, NO_COLOR: "1" },
+    }) as ChildProcessWithoutNullStreams;
+    const rpc = new RpcClient(child);
+    await rpc.send("initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "vitest", version: "0" } });
+    rpc.notify("notifications/initialized", {});
+
+    const paths = async (args: Record<string, unknown>): Promise<string[]> => {
+      const res = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs", ...args } });
+      const c = (res.result as { content?: { text?: string }[]; isError?: boolean }) ?? {};
+      if (c.isError) return ["<error>"];
+      return ((JSON.parse(c.content?.[0]?.text ?? "{}") as { hits?: { path?: string }[] }).hits ?? []).map((h) => h.path ?? "");
+    };
+
+    // No repo → the bound default (alpha).
+    expect(await paths({})).toEqual(["a.md"]);
+    // repo: "beta" → the other repo in the same workspace DB.
+    expect(await paths({ repo: "beta" })).toEqual(["b.md"]);
+    // repo: "alpha" explicitly → alpha.
+    expect(await paths({ repo: "alpha" })).toEqual(["a.md"]);
+
+    // `repos` lists both.
+    const reposRes = await rpc.send("tools/call", { name: "repos", arguments: {} });
+    const reposBody = JSON.parse(((reposRes.result as { content?: { text?: string }[] }).content?.[0]?.text) ?? "{}") as { repos?: { slug: string; hasSource: boolean }[] };
+    expect((reposBody.repos ?? []).map((r) => r.slug).sort()).toEqual(["alpha", "beta"]);
+    expect((reposBody.repos ?? []).every((r) => r.hasSource)).toBe(true);
+
+    // Unknown slug → a loud repo_not_found (isError), not a silent empty.
+    const bad = await rpc.send("tools/call", { name: "query", arguments: { query: "from docs", repo: "nope" } });
+    expect((bad.result as { isError?: boolean }).isError).toBe(true);
+
+    await new Promise<number>((res) => {
+      child.on("exit", (code) => res(code ?? -1));
+      child.stdin.end();
+      setTimeout(() => { child.kill("SIGKILL"); res(-99); }, 4000);
+    });
   }, 15000);
 });

@@ -13,6 +13,7 @@ export { docPropertiesMerged, docPropertiesGrouped, writeDocProperties, flattenF
 import "./format/index.js";
 
 // Workspace + sync surface used by the CLI (second client, 11 §1).
+export { Store, type StoreOptions } from "./core/store/store.js";
 export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js";
 export {
   resolveSettings,
@@ -26,7 +27,8 @@ export {
 export { freshnessSweep, rebuildFileStats, recordFileStat, detectDiskDrift, type SweepResult, type DiskDrift } from "./sync/freshness.js";
 export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
-export { attachRepo, type AttachResult } from "./sync/attach.js";
+export { ingestDirectory, type IngestDirResult } from "./sync/attach.js";
+export { ensureRepo } from "./core/attach.js";
 export { walkMarkdown, walkMarkdownAsync } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
 // External sync-adapter seam (sync-plugins): a SyncSource is the in-engine
@@ -42,7 +44,22 @@ export type {
   WatchListener,
 } from "./sync/plugin.js";
 export { createExternalSource, type ExternalSourceSpec } from "./sync/external-source.js";
+export {
+  ensureAdapter,
+  listAdapters,
+  createSource,
+  deleteSource,
+  listSources,
+  getSourceByName,
+  attachSourceToRepo,
+  detachSourceFromRepo,
+  sourcesForRepo,
+  renderConfigFlags,
+  type AdapterRow,
+  type SourceRow,
+} from "./sync/sources.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
+export { observeFile, observeMany, observeOne, observeDelete, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult } from "./sync/observe.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
@@ -52,7 +69,7 @@ export { reposStatus, syncStatus, type RepoStatus, type SyncStatus, type DiskSta
 export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/read/outline.js";
 export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions } from "./core/read/document.js";
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
-export { findDoc, loadDocBlocks, blockRaw, type DocInfo, type BlockNode } from "./core/read/reader.js";
+export { findDoc, loadDocBlocks, blockRaw, docsList, type DocInfo, type BlockNode, type DocListRow } from "./core/read/reader.js";
 export { resolveRef, type ResolvedRef } from "./core/read/refs.js";
 export { resolve, type ResolveHit, type ResolveInput } from "./search/resolve.js";
 
@@ -90,6 +107,7 @@ export { isValidId, prefixOf } from "./core/ids.js";
 
 // Mutation surface consumed by CLI write commands (11 §5.6).
 export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";
+export { type DocStore, FsDocStore, NullDocStore, resolveDocStore } from "./mutate/doc-store.js";
 export { type To, type At, type Expect } from "./mutate/ops.js";
 export {
   tasksComplete,

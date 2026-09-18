@@ -1,14 +1,15 @@
 import { parseArgs } from "node:util";
-import { findDoc, docsOutline } from "@omgbase/core";
+import { findDoc, docsOutline, type OutlineResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK } from "../output.js";
+import { remoteCall } from "./_remote.js";
 
 // `omg outline <doc|path>` (alias ol) — the wire format (06 §6). Human output
 // prints the outline text with full block ids inline; --json emits the
 // OutlineResult verbatim.
 
-function runOutline(cli: Cli, args: string[]): number {
+async function runOutline(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -26,15 +27,28 @@ function runOutline(cli: Cli, args: string[]): number {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("outline requires a <doc|path>");
 
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-  const info = ref.startsWith("d_") ? findDoc(ws.store, { docId: ref }) : findDoc(ws.store, { repoId: repo.repoId, path: ref });
-  if (!info) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
-
-  const opts: Parameters<typeof docsOutline>[2] = {};
-  if (values.depth) opts.depth = Number(values.depth);
-  if (values.skeleton) opts.resolution = "skeleton";
-  const result = docsOutline(ws.store, info.docId, opts);
+  let result: OutlineResult;
+  let header: string;
+  if (cli.flags.server) {
+    // Remote: the docs_outline tool resolves the ref + returns the same
+    // OutlineResult. The header shows the ref you passed (no local path lookup).
+    result = await remoteCall<OutlineResult>(cli, "docs_outline", {
+      doc: ref,
+      ...(values.depth ? { depth: Number(values.depth) } : {}),
+      ...(values.skeleton ? { resolution: "skeleton" } : {}),
+    });
+    header = ref;
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    const info = ref.startsWith("d_") ? findDoc(ws.store, { docId: ref }) : findDoc(ws.store, { repoId: repo.repoId, path: ref });
+    if (!info) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
+    const opts: Parameters<typeof docsOutline>[2] = {};
+    if (values.depth) opts.depth = Number(values.depth);
+    if (values.skeleton) opts.resolution = "skeleton";
+    result = docsOutline(ws.store, info.docId, opts);
+    header = info.path;
+  }
 
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify(result));
@@ -42,7 +56,7 @@ function runOutline(cli: Cli, args: string[]): number {
   }
 
   const { render, style, io } = cli;
-  io.out(render.wordmark(info.path));
+  io.out(render.wordmark(header));
   io.out(render.rule(40));
   // Colorize the inline block ids + § marks.
   for (const line of result.text.split("\n")) {

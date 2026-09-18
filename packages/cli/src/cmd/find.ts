@@ -4,6 +4,9 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { remoteCall } from "./_remote.js";
+
+type FindHit = ReturnType<typeof resolveThing>[number];
 
 // `omg find <text>` (11 §5.2) — resolve: ranked {id, locator, preview,
 // evidence}. `-1` prints the top hit's id alone (pipe fuel: omg cat $(omg find … -1)).
@@ -27,26 +30,33 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
   const text = positionals.join(" ").trim();
   if (!text) throw new CliUsageError("find requires <text>");
 
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
   const limit = values.one ? 1 : values.n ? Number(values.n) : 10;
 
-  // Hybrid by default: if a provider is configured, fuse the query vector into
-  // the ranking (--no-semantic forces FTS-only). resolve() blends when a vector
-  // is supplied.
-  const input: ResolveInput = { repoId: repo.repoId, query: text, limit };
-  if (!values["no-semantic"]) {
-    const loaded = await loadEmbedding(ws, repo.repoId);
-    if (loaded) {
-      try {
-        const vec = await loaded.worker.embedQuery(text);
-        input.vector = { model: loaded.provider.model, vec };
-      } finally {
-        await loaded.close();
+  let hits: FindHit[];
+  if (cli.flags.server) {
+    // Remote: the `resolve` tool does the hybrid ranking server-side (using the
+    // server's embedder if configured). Same ranked-hit shape → render unchanged.
+    hits = await remoteCall<FindHit[]>(cli, "resolve", { query: text, limit });
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    // Hybrid by default: if a provider is configured, fuse the query vector into
+    // the ranking (--no-semantic forces FTS-only). resolve() blends when a vector
+    // is supplied.
+    const input: ResolveInput = { repoId: repo.repoId, query: text, limit };
+    if (!values["no-semantic"]) {
+      const loaded = await loadEmbedding(ws, repo.repoId);
+      if (loaded) {
+        try {
+          const vec = await loaded.worker.embedQuery(text);
+          input.vector = { model: loaded.provider.model, vec };
+        } finally {
+          await loaded.close();
+        }
       }
     }
+    hits = resolveThing(ws.store, input);
   }
-  const hits = resolveThing(ws.store, input);
   cli.capture?.(hits); // shell: the ranked hits become the addressable frame
 
   // -1: bare top id.

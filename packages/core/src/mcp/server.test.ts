@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -588,5 +588,116 @@ describe("apply op schema + sections_append heading resolution", () => {
     // and no document was created at that path
     const row = store.db.prepare("SELECT 1 FROM docs WHERE path = 'does-not-exist.md'").get();
     expect(row).toBeUndefined();
+  });
+});
+
+describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)", () => {
+  let root: string;
+
+  // Return the ordered top-level block ids of notes.md, and the raw of each,
+  // so tests can target a block by content without knowing its minted id.
+  async function ids(): Promise<{ id: string; raw: string }[]> {
+    const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as { payload: { ids: string[] } };
+    const out: { id: string; raw: string }[] = [];
+    for (const id of payload.ids) {
+      const { payload: n } = (await call("nodes_get", { id, resolution: "raw" })) as { payload: { raw?: string } };
+      out.push({ id, raw: n.raw ?? "" });
+    }
+    return out;
+  }
+  const idOf = async (raw: string) => (await ids()).find((b) => b.raw === raw)!.id;
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "omg-mcpblocks-"));
+    const body = "# Doc\n\nAlpha para.\n\nBeta para.\n\n## Tasks\n\n- [ ] wire it\n";
+    writeFileSync(join(root, "notes.md"), body);
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", root);
+    ingestFile(store, repoId, "notes.md", body);
+    await connect(root);
+  });
+  afterEach(() => {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("blocks_insert accepts a block ref for its parent and inserts through the kernel", async () => {
+    const alpha = await idOf("Alpha para.");
+    const { isError } = (await call("blocks_insert", { to: alpha, markdown: "Inserted child.", at: "end" })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("Inserted child.");
+  });
+
+  it("blocks_update resolves a ref and pins CAS from current bytes server-side", async () => {
+    const beta = await idOf("Beta para.");
+    const { isError } = (await call("blocks_update", { block: beta, markdown: "Beta, edited." })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("Beta, edited.");
+    expect(payload.content).not.toContain("Beta para.");
+  });
+
+  it("blocks_update honors a caller-supplied stale expect (CAS conflict)", async () => {
+    const beta = await idOf("Beta para.");
+    const { isError } = (await call("blocks_update", { block: beta, markdown: "nope", expect: { content_hash: "deadbeef" } })) as { isError: boolean };
+    expect(isError).toBe(true);
+  });
+
+  it("blocks_remove removes a block by ref", async () => {
+    const alpha = await idOf("Alpha para.");
+    const { isError } = (await call("blocks_remove", { blocks: [alpha] })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).not.toContain("Alpha para.");
+  });
+
+  it("blocks_split splits a block at offsets (CAS pinned server-side)", async () => {
+    const alpha = await idOf("Alpha para.");
+    const { isError } = (await call("blocks_split", { block: alpha, at: [5] })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("Alpha");
+  });
+
+  it("blocks_merge joins adjacent blocks", async () => {
+    const alpha = await idOf("Alpha para.");
+    const beta = await idOf("Beta para.");
+    const { isError } = (await call("blocks_merge", { blocks: [alpha, beta] })) as { isError: boolean };
+    expect(isError).toBe(false);
+  });
+
+  it("a bogus ref errors block_missing", async () => {
+    const { payload, isError } = (await call("blocks_update", { block: "b_nope", markdown: "x" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(payload.error).toBe("block_missing");
+  });
+
+  it("dry_run previews without committing", async () => {
+    const alpha = await idOf("Alpha para.");
+    const { payload, isError } = (await call("blocks_insert", { to: alpha, markdown: "PREVIEW ONLY", dry_run: true })) as {
+      payload: { diffs?: Record<string, unknown> }; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.diffs).toBeTruthy();
+    const { payload: read } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(read.content).not.toContain("PREVIEW ONLY");
+  });
+
+  it("tasks_complete checks and unchecks a task by ref", async () => {
+    // The task is a list item nested under a ul — resolve its id from the
+    // outline (which lists nested block ids), not the top-level docs_read ids.
+    const taskId = async () => {
+      const { payload } = (await call("docs_outline", { path: "notes.md" })) as { payload: { text: string } };
+      const line = payload.text.split("\n").find((l) => l.includes("wire it"))!;
+      return line.trim().split(/\s+/)[0]!;
+    };
+    await call("tasks_complete", { blocks: [await taskId()] });
+    let { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toMatch(/- \[x\] wire it/i);
+    // uncheck — re-resolve (the id may change after the write)
+    await call("tasks_complete", { blocks: [await taskId()], checked: false });
+    ({ payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } });
+    expect(payload.content).toContain("- [ ] wire it");
   });
 });

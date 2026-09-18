@@ -53,7 +53,7 @@ directive —
 
 — which locates the repo, puts the built `omg` on `PATH`, copies the corpus into
 a throwaway temp directory, and (for all but getting-started) runs
-`omg init` / `omg attach` against the copy; a `teardown` removes the temp
+`omg init` / `omg source add` against the copy; a `teardown` removes the temp
 directory when the session ends. Nothing touches your real files or a shared
 database, and there is no external environment to wire up.
 

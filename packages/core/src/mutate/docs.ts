@@ -1,15 +1,12 @@
-import { writeFileSync, renameSync, existsSync, mkdirSync, unlinkSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import type { Store } from "../core/store/store.js";
-import { sha256 } from "../core/hash.js";
 import { ingestFile } from "../core/ingest.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { newCommit } from "../core/store/writers.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { withWriterLock } from "../sync/writer-lock.js";
-import { recordFileStat } from "../sync/freshness.js";
+import { resolveDocStore, type DocStore } from "./doc-store.js";
 import { MutationError } from "./tree.js";
 
 // Document-level operations (06 §API: docs_create/move/delete/set_meta; 11 §5.6
@@ -21,7 +18,11 @@ import { MutationError } from "./tree.js";
 
 export interface DocOpContext {
   repoId: string;
-  rootPath: string;
+  /** Working-tree root for the default filesystem write target. Omit only when
+   *  supplying an explicit `docStore` (e.g. a headless NullDocStore). */
+  rootPath?: string;
+  /** Write target (ADR-014 §5); defaults to a filesystem store at `rootPath`. */
+  docStore?: DocStore;
   /** workspace .omgbase/ dir; when set, the write runs under the writer flock. */
   omgbaseDir?: string;
   actor?: string;
@@ -56,16 +57,13 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   if (existing) throw new MutationError("path_taken", `document already exists at ${rel}`);
   const content = composeFile(markdown, frontmatter);
 
+  const docStore = resolveDocStore(ctx);
   return underLock(ctx, () => {
-    const abs = join(ctx.rootPath, rel);
-    if (existsSync(abs)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
-    mkdirSync(dirname(abs), { recursive: true });
-    const tmp = `${abs}.omgtmp`;
-    writeFileSync(tmp, content);
-    renameSync(tmp, abs);
+    if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
+    docStore.write(rel, content);
     const ts = new Date().toISOString();
     const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
-    if (ctx.omgbaseDir) recordFileStat(store, ctx.repoId, rel, abs, sha256(content));
+    if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, rel, content);
     return { docId: res.docId, path: rel, committed: true };
   });
 }
@@ -77,14 +75,12 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
   const toRel = canonical(toPath);
   if (findDoc(store, { repoId: ctx.repoId, path: toRel })) throw new MutationError("path_taken", `a document already exists at ${toRel}`);
 
+  const docStore = resolveDocStore(ctx);
   return underLock(ctx, () => {
-    const fromAbs = join(ctx.rootPath, info.path);
-    const toAbs = join(ctx.rootPath, toRel);
-    if (existsSync(toAbs)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
-    const content = existsSync(fromAbs) ? readFileSync(fromAbs, "utf8") : "";
-    mkdirSync(dirname(toAbs), { recursive: true });
-    if (existsSync(fromAbs)) renameSync(fromAbs, toAbs);
-    else writeFileSync(toAbs, content);
+    if (docStore.exists(toRel)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
+    const content = docStore.read(info.path) ?? "";
+    if (docStore.exists(info.path)) docStore.rename(info.path, toRel);
+    else docStore.write(toRel, content);
 
     const ts = new Date().toISOString();
     store.write((db) => {
@@ -96,8 +92,8 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
       void commit;
     });
     if (ctx.omgbaseDir) {
-      recordFileStat(store, ctx.repoId, info.path, fromAbs, sha256("")); // clears the old row
-      recordFileStat(store, ctx.repoId, toRel, toAbs, sha256(content));
+      docStore.clearStat(store, ctx.repoId, info.path); // drop the old path's row
+      docStore.recordStat(store, ctx.repoId, toRel, content);
     }
     return { docId: info.docId, path: toRel, committed: true };
   });
@@ -108,8 +104,8 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
   const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
+  const docStore = resolveDocStore(ctx);
   return underLock(ctx, () => {
-    const abs = join(ctx.rootPath, info.path);
     const ts = new Date().toISOString();
     store.write((db) => {
       const commit = newCommit(db, { repoId: ctx.repoId, ts, origin: "api", actor: ctx.actor ?? null, reason: `delete ${info.path}` });
@@ -118,8 +114,8 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
       db.prepare("UPDATE blocks SET deleted_commit = ? WHERE doc_id = ? AND deleted_commit IS NULL").run(commit.commitId, info.docId);
       db.prepare("UPDATE docs SET deleted_commit = ? WHERE doc_id = ?").run(commit.commitId, info.docId);
     });
-    if (existsSync(abs)) unlinkSync(abs);
-    if (ctx.omgbaseDir) store.db.prepare("DELETE FROM file_stats WHERE repo_id = ? AND path = ?").run(ctx.repoId, info.path);
+    docStore.remove(info.path);
+    if (ctx.omgbaseDir) docStore.clearStat(store, ctx.repoId, info.path);
     return { docId: info.docId, path: info.path, committed: true };
   });
 }
@@ -134,21 +130,18 @@ export function docsSetMeta(
   const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
+  const docStore = resolveDocStore(ctx);
   return underLock(ctx, () => {
-    const abs = join(ctx.rootPath, info.path);
-    const original = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+    const original = docStore.read(info.path) ?? "";
     const { frontmatter, body } = splitFrontmatter(original);
     const merged: Record<string, unknown> = { ...frontmatter, ...(patch.set ?? {}) };
     for (const k of patch.unset ?? []) delete merged[k];
     const content = composeFile(body, merged);
 
-    const tmp = `${abs}.omgtmp`;
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(tmp, content);
-    renameSync(tmp, abs);
+    docStore.write(info.path, content);
     const ts = new Date().toISOString();
     const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
-    if (ctx.omgbaseDir) recordFileStat(store, ctx.repoId, info.path, abs, sha256(content));
+    if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, info.path, content);
     return { docId: res.docId, path: info.path, committed: true };
   });
 }

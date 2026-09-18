@@ -7,8 +7,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Concurrent-writer torture (11 §7 CLI-B gate; 04 §5 re-run cross-process). A
-// live `omg watch` holds the watch lease while one-shot mutations fire under
-// the writer flock. Assert: every mutation lands, the doc converges, and
+// live `omg sync --watch` holds the watch lease while one-shot mutations fire
+// under the writer flock. Assert: every mutation lands, the doc converges, and
 // `doctor` passes — i.e. the cross-process lock kept file+db consistent.
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -40,14 +40,14 @@ beforeEach(() => {
   mkdirSync(vault, { recursive: true });
   writeFileSync(join(vault, "hub.md"), ["# Hub", "", "## Log", "", "- seed entry", ""].join("\n"));
   execFileSync("node", [BIN, "init", vault, "--yes", "--no-embedder"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
-  execFileSync("node", [BIN, "-C", vault, "attach", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+  execFileSync("node", [BIN, "-C", vault, "source", "add", ".", "-y"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("concurrent-writer torture (live watch + one-shot mutations)", () => {
   it("all appends land, the doc converges, and doctor passes", async () => {
     // Start a live watcher (holds the watch lease).
-    const watcher: ChildProcess = spawn("node", [BIN, "-C", vault, "watch"], {
+    const watcher: ChildProcess = spawn("node", [BIN, "-C", vault, "sync", "--watch"], {
       stdio: ["ignore", "ignore", "ignore"],
       env: { ...process.env, NO_COLOR: "1" },
     });

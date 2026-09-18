@@ -196,6 +196,9 @@ importers:
       '@omgbase/fs-adapter':
         specifier: workspace:*
         version: link:../fs-adapter
+      '@omgbase/sync':
+        specifier: workspace:*
+        version: link:../sync
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -260,6 +263,18 @@ importers:
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
+
+  packages/sync:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
+      '@omgbase/core':
+        specifier: workspace:*
+        version: link:../core
+      '@omgbase/fs-adapter':
+        specifier: workspace:*
+        version: link:../fs-adapter
 
 packages:
 

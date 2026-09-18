@@ -7,8 +7,9 @@
 
 ## 1. Cross-cutting response rules
 
-These four rules apply to every tool and are non-negotiable:
+These rules apply to every tool and are non-negotiable:
 
+0. **Multi-repo (ADR-014).** Every repo-scoped tool accepts an optional `repo` (a slug); omitting it uses the server's bound default repo, so single-repo clients are unchanged. An unknown slug is a loud `repo_not_found`. Discover slugs with the `repos` tool; per-repo counts/convergence via `repos_status { repo }`. Mutators resolve the *target* repo's working-tree root, so a write always lands in the right tree.
 1. **Explicit incompleteness.** Every list-shaped result carries `truncated: boolean` and, when true, `cursor`. An agent must never have to guess whether it saw everything.
 2. **Budgets are first-class.** Hydrating tools (`docs_get_many`, `nodes_get_many`, …) accept `budget_tokens` (server estimates ~4 chars/token, truncates at block boundaries, sets `truncated`). Traversals bound the walk instead: `query`'s OQX `follow … { depth n }` / `where $ordinal <= N` and the `graph` tool's `degrees`/`max_documents`.
 3. **Conflicts carry current truth.** See `mutation-and-concurrency.md` §4.
@@ -94,13 +95,17 @@ docs_move { doc, to_path }                                   // rename; identity
 docs_delete { doc }                                          // tombstone (resurrection-poolable) + remove file
 docs_set_meta { doc, set?, unset? }                          // surgical frontmatter key patch
 docs_plan_update { doc, content }                            // plan a whole-doc update; returns opset + plan, no write
-docs_update { doc, content, reason?, dry_run? }              // whole-doc update w/ identity-preserving reconciliation
+docs_update { doc, content, reason?, dry_run? }              // whole-doc update w/ identity-preserving reconciliation (api-origin)
+observe { path, content }                                    // sync ingest: whole-file bytes as an OBSERVED commit (file→DB); echo-suppressed
+observe_many { files:[{path,content}] }                      // batch observe: one ts + one resurrection sweep; per-file results
 ```
 `apply` is the only real block-op writer: a changeset of kernel ops (insert/update/move/remove/split/merge) applied atomically; each op is a tagged object keyed by `"op"`, targeting its `block`/`blocks` field (never `id`/`target`). MCP-originated writes are actor `agent:mcp`; a successful non-dry-run write schedules a background embed drain.
 
 Macros expand to `apply` ops through the same changeset machinery. Registered macros are exactly `tasks_complete`, `node_set`, `sections_append`, `docs_append`, `links_retarget`, `links_repair` — the once-specced `sections_rename`/`sections_move`/`lists_insert_item` are NOT registered MCP tools. `node_set` surgically edits one editable prop of a projected node (a link's `name`/`value`, a task's `checked`); it errors `node_not_editable` when the kind/prop has no editor. `sections_append` accepts a heading block id (preferred) or its text (resolved, scoped by `doc`/`path`; repo-wide non-unique text errors `ambiguous_heading`). `docs_append` is additive and identity-preserving (existing blocks keep their ids); the doc must already exist (else `doc_missing`). `links_stale` is READ-ONLY (not a writer): it surfaces DANGLING internal links (`phantom:` edges) with `stale[]` + `externalCount` + `truncated`, scoped by `path_glob`; feed its targets into `links_repair` (batch of `{from,to}` pairs, a generalization of the single-pair `links_retarget`) to fix them.
 
 `docs_plan_update`/`docs_update` are the whole-document path with SMART identity preservation: submit the complete proposed `content` and the engine reconciles it against the current stable block tree, preserving ids for recognizably-same structure, minting for new, tombstoning removals. `docs_plan_update` returns the executable opset + human-readable plan without writing; `docs_update` = plan + commit (`dry_run:true` is identical to `docs_plan_update`), refusing a stale plan with `stale_plan`.
+
+`observe` (ADR-014) is the whole-file **sync-ingest** counterpart: it records `content` as the current authoritative bytes for `path` as an **observed-origin** commit — a write *around* the engine (mirroring an external edit) rather than `docs_update`'s api-origin write *through* it. Both reconcile against the block tree and preserve ids; only `origin` differs (and thus the change-feed semantics + matcher path). `observe` writes **no file** (it is the file→DB direction), so it works on a headless/sourceless server; it is idempotent (bytes matching the stored revision are an echo — `echo:true`, `rev:null`, no commit) and flags git conflict markers (`conflicted:true`). Mirror a deletion with `docs_delete`. Returns `{ docId, path, rev, commitId, converged, echo, conflicted, dispositions[] }`. `observe_many` is the batch form — an array of `{path, content}` under one timestamp + a single resurrection-pool sweep, returning one result per file. `observe`/`observe_many` are the single reconcile primitive (`observeOne`) that the local filesystem checkpoint and the external-source driver also share, so on-the-wire and in-process reconciliation cannot drift.
 
 > **As-built:** these doc-level tools are registered in the MCP server and back the CLI's `new`/`mv`/`rm --doc`/`meta`/`update`. `docs_set_meta` takes `set` (keys to set) and `unset` (keys to remove) rather than a single `patch` object; the per-op `expect` CAS guard specced in 04 is implemented on kernel ops (via `expect.content_hash`), while the doc-level tools re-ingest the whole file and ride the in-process writer lock. MCP-originated writes are actor `agent:mcp`.
 
@@ -112,15 +117,16 @@ diff { doc, from_rev, to_rev }                               // block-grain diff
 docs_history { path_glob?, doc?, include_deleted?, limit? }  // per-document revision lists
 changes_since { cursor?, origin?: "api"|"observed"|"import", limit? }  // repo-wide commit feed
 ```
-`history_node` returns the commits that touched a block with disposition kind/confidence/reason (no `cursor` param). `diff` is block-grain only (added/removed/changed blocks) — there is no `grain` param. `docs_history` groups revisions BY DOCUMENT (each `rev`/`seq`/`commit`/`ts`/`origin`/`actor`/`contentHash`/`isCurrent`, oldest→newest); require one of `path_glob` or `doc`, `include_deleted:true` to also see tombstoned docs, `limit` caps documents with `truncated`. `changes_since` is the repo-wide COMMIT feed: `cursor` is the repo commit seq (NOT a `since_ts`; no `scope`/`min_confidence`), poll with your last cursor to cheaply re-orient after time away. Feed a `rev` from any of these into `docs_read_at` (whole doc at that rev) or `diff` (changes between two revs).
+`history_node` returns the commits that touched a block with disposition kind/confidence/reason (no `cursor` param). `diff` is block-grain only (added/removed/changed blocks) — there is no `grain` param. `docs_history` groups revisions BY DOCUMENT (each `rev`/`seq`/`commit`/`ts`/`origin`/`actor`/`contentHash`/`isCurrent`, oldest→newest); require one of `path_glob` or `doc`, `include_deleted:true` to also see tombstoned docs, `limit` caps documents with `truncated`. `changes_since` is the repo-wide COMMIT feed: `cursor` is the repo commit seq (NOT a `since_ts`; no `scope`/`min_confidence`), poll with your last cursor to cheaply re-orient after time away. Each digest's `revisions[]` carries `{doc, path, contentHash}` (contentHash = hex of the revision's rendered file hash), so a synchronizer can decide "changed vs echo" against what it last wrote without a follow-up `docs_read`; `origin` filters to commits a given writer produced. Feed a `rev` from any of these into `docs_read_at` (whole doc at that rev) or `diff` (changes between two revs).
 
 ### Admin
 
 ```
-repos_status {}               // repo counts (docs/blocks/commits/open edges/unconverged) + on-disk drift
-sync_status {}                // watcher/sync state: last commit seq, last checkpoint, convergent?
+repos {}                      // list the workspace's repos: { repos: [{ slug, hasSource }] }
+repos_status { repo? }        // repo counts (docs/blocks/commits/open edges/unconverged) + on-disk drift
+sync_status { repo? }         // watcher/sync state: last commit seq, last checkpoint, convergent?
 ```
-Both take no arguments and report on the server's single configured repo. `repos_status.disk` is a read-only working-tree scan (`changed`/`deleted`/`untracked`/`checked`). `sync_status.convergent` is true ONLY when the DB is converged AND a working-tree scan ran and found no drift — never green while disk freshness is unverified. There are no `repos_list`/`repos_create`/`sync_flush` tools on this surface (repo lifecycle lives in the CLI/store, not the MCP server).
+`repos` enumerates the workspace's repos so a client can pick a `repo` slug for any tool (ADR-014). `repos_status`/`sync_status` report on the addressed repo (or the bound default). `repos_status.disk` is a read-only working-tree scan (`changed`/`deleted`/`untracked`/`checked`). `sync_status.convergent` is true ONLY when the DB is converged AND a working-tree scan ran and found no drift — never green while disk freshness is unverified. There are no `repos_create`/`sync_flush` tools on this surface (repo lifecycle lives in the CLI/store, not the MCP server).
 
 ## 4. Tool-description contracts (write these into the MCP descriptions)
 

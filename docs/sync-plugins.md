@@ -21,11 +21,11 @@ external source scope
 
 This is the same architecture decision as the embedder: a capability the core must not vendor becomes a separate process behind a stdio contract. See `05 §6` — "a fake local provider is worse than useless." For sync the driver is dependency isolation and language independence: a GitHub adapter should not force `@octokit` into the engine.
 
-## 2. Reserved registry (schema only, not yet wired)
+## 2. Source registry (wired — ADR-014 Stage 3)
 
-A future workspace-level registry is meant to separate *what a repo is* from *where its bytes come from*: **adapters** (a name → external command), **sources** (a named `{ adapter, config }`), **attachments** (a many-to-many join of repo ⇄ source), and per-attachment **sync_state** (revision/cursor tracking). All four tables exist in the schema (v9, `core/store/schema.ts`) but are **inert — nothing in the engine reads or writes them.** They reserve the shape a multi-source workspace will need (a source feeding many repos, a repo backed by many sources, bare/sourceless repos); none of that factoring is wired.
+The workspace-level registry separates *what a repo is* from *where its bytes come from*: **adapters** (a name → external command), **sources** (a named `{ adapter, config, env }`), **attachments** (a many-to-many join of repo ⇄ source), and per-attachment **sync_state** (revision/cursor tracking). All four tables exist in the schema (v9, `core/store/schema.ts`). As of ADR-014 Stage 3 the first three are **wired**: `core/src/sync/sources.ts` is the CRUD surface (`ensureAdapter`, `createSource`, `attachSourceToRepo`, `sourcesForRepo`, `renderConfigFlags`) and `omg source list/add/attach/detach/rm` (`cli/src/cmd/source.ts`) is the UI. `sync_state` remains reserved (the coordinator's echo/cursor bookkeeping, Stage 4).
 
-As-built there is no registry lookup. A repo's filesystem source is synthesized directly from the repo's `root_path`: `omg watch` / `omg mcp` / `omg sync` call `openFsSource` (`cli/src/cmd/_source.ts`), which spawns `@omgbase/fs-adapter` (bin **`omgbase-fs-adapter`**) with `--root <root_path>`. A repo with no `root_path` is **sourceless** and its `sync`/`watch` is a no-op (§7). One repo, at most one filesystem source, today.
+Source resolution reads the **registry**: `omg sync --watch` / `omg mcp` call `openRepoSource(store, repo)` (`cli/src/cmd/_source.ts`), which finds the repo's attached `fs` source and spawns `@omgbase/fs-adapter` (bin **`omgbase-fs-adapter`**) with `renderConfigFlags(config)` (`{ root }` → `--root <root>`). A repo with no attached fs source is **sourceless** and its `sync`/`watch` is a no-op (§7). `attach` (via `ensureRepo`) registers the `fs` source, and `RepoRow.rootPath` is **derived** from it — the `repos.root_path` column was dropped in schema v13 (ADR-014 Stage 6). (`omg sync`'s freshness fast-path uses that derived `rootPath`; it shares the single `observeOne` reconcile primitive with the watcher and the `observe` MCP tool — ADR-014 D2.)
 
 ## 3. Invoking an adapter (as-built)
 
@@ -101,17 +101,19 @@ The shipped verbs are minimal — there are no `omg adapter …`, `omg source �
 ```text
 omg init [dir]                  # workspace only: create .omgbase/ + db (does NOT ingest).
                                 #   offers a .gitignore entry if dir is inside a git tree;
-                                #   ends by suggesting `omg attach .`.
-omg attach <path> [--slug <s>]  # create a filesystem repo from a directory, ingest its
-                                #   Markdown (sets the repo's root_path), rebuild file_stats.
-                                #   prompts before ingesting; -y skips the prompt.
+                                #   ends by suggesting `omg source add .`.
+omg source add <dir> [--slug <s>] [--name <n>]
+                                # point a (new or current) repo at a filesystem dir: create
+                                #   the repo, register + attach an <slug>-fs source, and run
+                                #   the initial sync (freshnessSweep). prompts before
+                                #   ingesting; -y skips the prompt.
 omg repos                       # list the workspace's repos (slug, root path, doc/block counts).
 ```
 
 - **Workspace ≠ repo.** `.omgbase/` defines the workspace; `omg init` does not ingest or define a repo. A workspace can sit in a git root, a notes dir, or `$HOME`.
 - **Workspace discovery:** `--workspace` flag wins; else `OMGBASE_WORKSPACE` env; else walk up from cwd for `.omgbase/` (the default). No global default dir.
-- **Sourceless / native repo:** a repo with no `root_path`. The **database is authoritative for content** (no external bytes, no write-back). `apply` works; `sync`/`watch` are no-ops; convergence is vacuous. This state is reachable through the library/`apply`; the CLI has no verb that creates one (`omg attach` always sets a `root_path`).
-- **`sync`/`watch`/`mcp` take no source flags.** They resolve the repo, read its `root_path`, and spawn the fs adapter (§2). The source is a durable property of the repo, never a per-invocation choice.
+- **Sourceless / headless repo:** a repo with no attached source. The **database is authoritative for content** (no external bytes, no write-back). `apply` works (with a `NullDocStore` — the file write is a no-op); `sync`/`watch` are no-ops; convergence is vacuous. Reachable through the library (`ensureRepo(store, slug, null)`); `omg source add` always registers an fs source, so the CLI never creates one.
+- **`omg sync` (incl. `--watch`) / `omg mcp` take no source flags.** They resolve the repo and spawn its attached fs source's adapter (§2). The source is a durable property of the repo, never a per-invocation choice. (Remote sync uses the global `--server` flag, not a source flag.)
 
 ## 8. Multiplexing (future capability, not v1)
 
@@ -137,7 +139,7 @@ An in-process `fetch()` returns bytes synchronously; over a pipe it is a round-t
 
 ## 11. Multi-repo is the payoff
 
-One workspace DB holds many repos (`02 §3`) — today each is filesystem-backed from its `root_path` or sourceless; backing a repo with a different adapter is the deferred registry (§2). The prize is **cross-repo edges** — a Linear issue → a GitHub PR → a markdown doc in one OQX `follow`. That needs a cross-repo query surface, which today's `query(store, repoId, …)` hard-scopes against and the MCP server binds one repo per session. Cross-repo query is out of scope here (a query/MCP change, not a sync change) but is the reason this seam matters.
+One workspace DB holds many repos (`02 §3`) — each backed by its attached fs source(s) or sourceless; backing a repo with a different adapter is the deferred registry (§2). The MCP surface is now **multi-repo**: every tool takes an optional `repo` slug (ADR-014), so a client can address any repo in the workspace over one connection (the `repos` tool lists them). Still out of scope: a single query that spans repos in one `follow` (cross-repo edges — a Linear issue → a GitHub PR → a markdown doc); each `query` is still scoped to one repo. That's a query-engine change, not a sync change, but it's the reason this seam matters.
 
 ## 12. Invariants (unchanged)
 

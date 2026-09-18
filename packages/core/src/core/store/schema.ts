@@ -2,7 +2,7 @@
 // Kept as one string so migrations and rebuild-index can apply it verbatim.
 // No dialect-specific SQL leaks above the store module (02 §8).
 
-export const SCHEMA_VERSION = 12;
+export const SCHEMA_VERSION = 13;
 
 // file_stats (02 §4; derived, rebuildable by a full re-stat) backs the CLI
 // freshness sweep (11 §3.3): (mtime_ns, size) cheap-change detection so a
@@ -160,6 +160,7 @@ export const MIGRATIONS: Record<number, string> = {
   10: WORKSPACE_SETTINGS_DDL,
   11: "",  // ALTER TABLE documents RENAME TO docs, handled programmatically in store.ts
   12: DOC_EMBEDDINGS_DDL,  // doc-grain semantic vectors
+  13: "",  // drop repos.root_path (migrate → fs sources), handled programmatically in store.ts
 };
 
 export const DDL = /* sql */ `
@@ -167,9 +168,11 @@ export const DDL = /* sql */ `
 CREATE TABLE IF NOT EXISTS repos (
   repo_id   TEXT PRIMARY KEY,
   slug      TEXT NOT NULL UNIQUE,
-  root_path TEXT,                   -- filesystem-only concept (13 §7); NULL for sourceless/non-fs repos
   settings  TEXT NOT NULL DEFAULT '{}'
 );
+-- A repo owns identity + history, NOT a filesystem (ADR-014). Where its bytes
+-- come from is a sources row (adapter=fs, config.root) joined via attachments;
+-- the former repos.root_path column was removed in schema v13.
 
 CREATE TABLE IF NOT EXISTS docs (
   doc_id         TEXT PRIMARY KEY,

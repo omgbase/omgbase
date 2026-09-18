@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Workspace, RepoSelectionError } from "./workspace.js";
-import { attachRepo } from "./attach.js";
+import { ingestDirectory } from "./attach.js";
 
 let dir: string | undefined;
 afterEach(() => {
@@ -38,7 +38,7 @@ describe("Workspace.selectRepo", () => {
     mkdirSync(root, { recursive: true });
     writeFileSync(join(root, "x.md"), "# X\n");
     const ws = Workspace.open(root);
-    attachRepo(ws.store, "vault", root);
+    ingestDirectory(ws.store, "vault", root);
 
     const repo = ws.selectRepo(root);
     expect(repo.slug).toBe("vault");
@@ -55,8 +55,8 @@ describe("Workspace.selectRepo", () => {
     writeFileSync(join(repoA, "a.md"), "# A\n");
     writeFileSync(join(repoB, "b.md"), "# B\n");
     const ws = Workspace.open(root);
-    attachRepo(ws.store, "docs", repoA);
-    attachRepo(ws.store, "notes", repoB);
+    ingestDirectory(ws.store, "docs", repoA);
+    ingestDirectory(ws.store, "notes", repoB);
 
     // cwd inside repoA → picks docs.
     expect(ws.selectRepo(repoA).slug).toBe("docs");
@@ -77,7 +77,7 @@ describe("Workspace.selectRepo", () => {
     mkdirSync(root, { recursive: true });
     writeFileSync(join(root, "x.md"), "# X\n");
     const ws = Workspace.open(root);
-    attachRepo(ws.store, "vault", root);
+    ingestDirectory(ws.store, "vault", root);
 
     expect(() => ws.selectRepo(root, "nope")).toThrow(RepoSelectionError);
     ws.close();

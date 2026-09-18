@@ -9,6 +9,7 @@ These documents are maintained as **as-built** references to the implementation 
 | Doc | Contents | You need it when… |
 |---|---|---|
 | `architecture.md` | System shape, canonicality, kernel concepts, identity rules, all subsystem summaries | always — read first |
+| `object-model.md` | Orientation: the documents/blocks/nodes/edges mental model and which layer each verb touches | getting oriented, or explaining the model to a user |
 | `data-model.md` | ID/hash conventions, full SQLite DDL, canonical serializations, rebuild & GC rules | touching `core/` or any storage |
 | `reconciliation-spec.md` | Parser contract, round-trip law, trivia policy, matcher phases/thresholds, eval harness, sync pipeline | touching `core/parse`, `reconcile/`, `sync/` |
 | `mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |

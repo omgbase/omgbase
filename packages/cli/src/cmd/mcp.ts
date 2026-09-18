@@ -4,7 +4,7 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EXIT_OK } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
-import { openFsSource } from "./_source.js";
+import { openRepoSource } from "./_source.js";
 
 // `omg mcp [--no-watch]` (11 §5.8) — MCP server on stdio; the host owns the
 // process lifetime. Runs an in-process watcher by default so a lone session is
@@ -62,7 +62,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
       // Prime with a one-shot sweep so the session starts fresh, then watch via
       // the external fs-adapter process (chokidar lives there, not in-engine).
       if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
-      source = await openFsSource(repo);
+      source = await openRepoSource(ws.store, repo);
       if (source) {
         watcher = new Watcher(ws.store, repo.repoId, source, {
           onCheckpoint: (r) => {

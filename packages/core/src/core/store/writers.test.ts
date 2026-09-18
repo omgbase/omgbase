@@ -13,7 +13,7 @@ afterEach(() => {
 
 function fresh(): Store {
   const s = new Store({ path: ":memory:" });
-  s.db.prepare("INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_1','s','/tmp')").run();
+  s.db.prepare("INSERT INTO repos (repo_id, slug) VALUES ('rp_1','s')").run();
   return s;
 }
 

@@ -5,6 +5,7 @@ import { makeCli, type Cli } from "./context.js";
 import { CliUsageError, renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
 import { resolveCommand } from "./commands.js";
 import { runCommand, parseGlobals, type Parsed } from "./dispatch.js";
+import { closeRemote } from "./cmd/_remote.js";
 
 // Hand-rolled router (11 §8: no commander). Splits global flags from the
 // command + its residual argv (parseGlobals, in dispatch.ts), resolves the
@@ -36,7 +37,12 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
   if (!resolveCommand(command)) {
     return renderError(new CliUsageError(`unknown command '${command}'`), io, cli.style, flags.mode !== "human");
   }
-  return runCommand(cli, command, parsed.rest);
+  try {
+    return await runCommand(cli, command, parsed.rest);
+  } finally {
+    // Tear down the remote (`--server`) MCP connection if the command opened one.
+    await closeRemote();
+  }
 }
 
 // Entry point.

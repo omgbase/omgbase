@@ -4,12 +4,15 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK } from "../output.js";
 import { runOps } from "./_mutate.js";
+import { remoteCall } from "./_remote.js";
+
+interface RetargetHit { block: string; oldRaw: string; newRaw: string; }
 
 // `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6) — plan-by-default.
 // Without --apply it runs the dry-run and prints the per-block diffs (the 06 §4
 // "always dry-run first" contract, encoded as the default). --apply commits.
 
-function runRetarget(cli: Cli, args: string[]): number {
+async function runRetarget(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -23,6 +26,17 @@ function runRetarget(cli: Cli, args: string[]): number {
   const to = positionals[1];
   if (!from || !to) throw new CliUsageError("retarget requires <from> and <to> targets");
 
+  // Remote: links_retarget resolves + (optionally) applies server-side.
+  if (cli.flags.server) {
+    const r = await remoteCall<{ hits: RetargetHit[]; applied: boolean }>(cli, "links_retarget", { from_target: from, to_target: to, dry_run: !values.apply });
+    if (values.apply) {
+      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(r));
+      else cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} retargeted ${r.hits.length} block(s)`));
+      return EXIT_OK;
+    }
+    return renderPlan(cli, from, to, r.hits);
+  }
+
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const { ops, hits } = linksRetarget(ws.store, repo.repoId, from, to);
@@ -31,8 +45,11 @@ function runRetarget(cli: Cli, args: string[]): number {
   if (values.apply) {
     return runOps(cli, ws, repo, ops, values.actor ? { actor: values.actor } : {});
   }
+  return renderPlan(cli, from, to, hits);
+}
 
-  // Plan (default): show what WOULD change, commit nothing.
+// Plan (default): show what WOULD change, commit nothing.
+function renderPlan(cli: Cli, from: string, to: string, hits: RetargetHit[]): number {
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify({ from, to, hits }));
     return EXIT_OK;
