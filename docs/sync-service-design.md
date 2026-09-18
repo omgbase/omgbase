@@ -266,8 +266,13 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
    - ⏳ **Deferred** — wiring local `omg sync`/`watch` to *delegate* to the
      Coordinator (they already share `observeOne`, so no drift); durable cursor
      persistence; `subscribe` (D1).
-5. **Stage 5 — `attach` as sugar.** Reroute `attach` to source-add + sync;
-   retire the duplicate attach impls. `root_path` now derived from the fs source.
+5. **Stage 5 — `attach` populates the registry. ✅ DONE (partial).** `omg attach`
+   now also seeds the `fs` adapter + creates an `<slug>-fs` source + attaches it
+   (idempotent on re-attach), so new repos own an explicit source, not just a
+   `root_path`. `root_path` is still written for back-compat. *Deferred to Stage
+   6:* making `root_path` derived-from-source and retiring the three duplicate
+   attach impls (`core/attach.ts`, `sync/attach.ts`, `sync/driver.ts
+   attachSource`) — that pairs with the column removal.
 6. **Stage 6 — remove `root_path` (LAST, breaking).** Table-rebuild migration;
    migrate the ~117 call sites to resolve the fs root from the attached source
    (most via a single `repoFsRoot(repo)` helper). Drop the column.
