@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, unlinkSync, utimesSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
-import { attachRepo } from "./attach.js";
+import { ingestDirectory } from "./attach.js";
 import { rebuildFileStats, freshnessSweep, detectDiskDrift } from "./freshness.js";
 import { reposStatus, syncStatus } from "./admin.js";
 
@@ -23,7 +23,7 @@ function setup(): { store: Store; root: string; repoId: string } {
   writeFileSync(join(root, "a.md"), "# A\n\nalpha paragraph\n");
   writeFileSync(join(root, "b.md"), "# B\n\nbeta paragraph\n");
   store = new Store({ path: ":memory:" });
-  const { repoId } = attachRepo(store, "vault", root);
+  const { repoId } = ingestDirectory(store, "vault", root);
   rebuildFileStats(store, repoId, root);
   return { store, root, repoId };
 }

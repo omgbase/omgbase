@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { fileURLToPath } from "node:url";
 import { Store } from "./store/store.js";
 import { ingestFile } from "./ingest.js";
-import { ensureRepo, attachDirectory } from "./attach.js";
+import { ensureRepo } from "./attach.js";
+import { ingestDirectory } from "../sync/attach.js";
 
 const CORPUS_ROOT = fileURLToPath(new URL("../../corpus/roundtrip", import.meta.url));
 
@@ -60,10 +61,10 @@ describe("ingestFile", () => {
   });
 });
 
-describe("attachDirectory — fixture vault", () => {
+describe("ingestDirectory — fixture vault", () => {
   it("ingests the whole corpus vault with full convergence", () => {
     store = new Store({ path: ":memory:" });
-    const res = attachDirectory(store, "corpus", CORPUS_ROOT);
+    const res = ingestDirectory(store, "corpus", CORPUS_ROOT);
     expect(res.fileCount).toBeGreaterThanOrEqual(50);
     expect(res.allConverged).toBe(true);
 

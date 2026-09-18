@@ -27,7 +27,7 @@ export {
 export { freshnessSweep, rebuildFileStats, recordFileStat, detectDiskDrift, type SweepResult, type DiskDrift } from "./sync/freshness.js";
 export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
-export { attachRepo, type AttachResult } from "./sync/attach.js";
+export { ingestDirectory, type IngestDirResult } from "./sync/attach.js";
 export { ensureRepo } from "./core/attach.js";
 export { walkMarkdown, walkMarkdownAsync } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";

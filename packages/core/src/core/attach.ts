@@ -1,42 +1,17 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
 import { Store } from "./store/store.js";
 import { mintId } from "./ids.js";
-import { ingestFile } from "./ingest.js";
 
-// Library primitive: register a working tree as a repo (via ensureRepo, which
-// also attaches its fs source) and ingest every Markdown file. Paths stored
-// repo-relative, canonical (no leading slash, forward slashes). The CLI entry
-// point is `omg source add <dir>` (ADR-014); there is no `omg attach` verb.
+// Repo identity + fs-source registration (ADR-014). A repo owns identity +
+// history, NOT a filesystem: `ensureRepo` mints the repo row, and when given a
+// filesystem root it registers that as an `fs` source + attachment (the durable
+// "where its bytes come from"). Ingesting a directory's files is a separate
+// concern — `ingestDirectory` (sync/attach.ts) for the reconciling walk, or the
+// freshness sweep / `observeOne` on the live path. The CLI entry point is
+// `omg source add <dir>`; there is no `omg attach` verb.
 
-export interface AttachResult {
-  repoId: string;
-  slug: string;
-  fileCount: number;
-  blockCount: number;
-  /** true iff every ingested file converged (file_hash == rendered_hash). */
-  allConverged: boolean;
-}
-
-function canonicalPath(root: string, file: string): string {
-  return relative(root, file).split(sep).join("/");
-}
-
-function walkMarkdown(dir: string): string[] {
-  const out: string[] = [];
-  for (const entry of readdirSync(dir)) {
-    if (entry === ".omgbase" || entry === ".git" || entry === "node_modules") continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walkMarkdown(full));
-    else if (entry.endsWith(".md")) out.push(full);
-  }
-  return out;
-}
-
-/** Create (or reuse) a repo row for `slug`, returning its id. A repo owns
- *  identity + history, NOT a filesystem (ADR-014): when `rootPath` is given it is
- *  registered as an `fs` source + attachment (the durable "where its bytes come
- *  from"), not stored on the repo. Pass null for a sourceless/headless repo. */
+/** Create (or reuse) a repo row for `slug`, returning its id. When `rootPath` is
+ *  given it is registered as an `fs` source + attachment, not stored on the repo.
+ *  Pass null for a sourceless/headless repo. */
 export function ensureRepo(store: Store, slug: string, rootPath: string | null = null): string {
   const existing = store.db.prepare("SELECT repo_id FROM repos WHERE slug = ?").get(slug) as
     | { repo_id: string }
@@ -62,19 +37,4 @@ function registerFsSource(store: Store, repoId: string, slug: string, root: stri
     source = { source_id: sourceId };
   }
   db.prepare("INSERT OR IGNORE INTO attachments (repo_id, source_id) VALUES (?, ?)").run(repoId, source.source_id);
-}
-
-/** Attach a directory: create repo + ingest all Markdown files. */
-export function attachDirectory(store: Store, slug: string, rootPath: string): AttachResult {
-  const repoId = ensureRepo(store, slug, rootPath);
-  const files = walkMarkdown(rootPath);
-  let blockCount = 0;
-  let allConverged = true;
-  for (const file of files) {
-    const content = readFileSync(file, "utf8");
-    const result = ingestFile(store, repoId, canonicalPath(rootPath, file), content);
-    blockCount += result.blockCount;
-    if (!result.converged) allConverged = false;
-  }
-  return { repoId, slug, fileCount: files.length, blockCount, allConverged };
 }

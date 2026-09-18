@@ -226,7 +226,8 @@ omg source add ./foo [--slug s] [--name n]
 ```
 
 The initial ingest is just the new source's first sync — not a distinct code path
-(the old `attachRepo` private `ingestFile` walk is no longer on the CLI path).
+(the old `attachRepo` private `ingestFile` walk — since renamed `ingestDirectory`
+and kept only as a library/test helper — is no longer on the CLI path).
 "attach" survives only as the source-binding verb (`omg source attach <name>`,
 for an existing source). A sourceless (headless, DB-canonical) repo is created
 via the library (`ensureRepo(store, slug, null)`); the CLI has no verb that makes

@@ -248,13 +248,14 @@ The engine can also be used directly as a library via `@omgbase/core`. All funct
 ### Attach a directory and query it
 
 ```ts
-import { Store, attachRepo, oqxRun, docsOutline } from "@omgbase/core";
+import { Store, ingestDirectory, oqxRun, docsOutline } from "@omgbase/core";
 
 // Open (or create) the engine database. Use ":memory:" for tests.
 const store = new Store({ path: "/path/to/vault/.omgbase/omgbase.db" });
 
-// Walk a directory tree: ingest every file (md/yaml/json), thread identity, extract edges.
-const { repoId } = attachRepo(store, "my-vault", "/path/to/vault");
+// Walk a directory tree: create the repo (+ its fs source), ingest every file
+// (md/yaml/json), thread identity, extract edges.
+const { repoId } = ingestDirectory(store, "my-vault", "/path/to/vault");
 
 // OQX is the one query + traversal language (see docs/query-language.md).
 // Blocks under a heading:
@@ -296,7 +297,7 @@ await watcher.start();
 // On shutdown: await watcher.stop(); await source.close();
 ```
 
-For one-shot, non-watching ingestion (used by `omg init`/`attach`/`sync`), the synchronous filesystem fast-path is still available directly as `attachRepo(store, slug, rootPath)` and `freshnessSweep(store, repoId, rootPath)`.
+For one-shot, non-watching ingestion, the synchronous filesystem fast-path is available directly as `ingestDirectory(store, slug, rootPath)` (a reconciling walk that also registers the repo's fs source) and `freshnessSweep(store, repoId, rootPath)` (what `omg sync` / `omg source add` use).
 
 ### Apply a structural mutation
 

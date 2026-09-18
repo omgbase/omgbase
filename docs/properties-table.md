@@ -322,7 +322,7 @@ target.** The §4 derived tables `rebuild-index` rebuilds (`sections`, `edges`,
 derives from the *same inputs `blocks` itself is built from* (block text +
 frontmatter blob + adapter), so it is maintained transactionally at ingest
 alongside `blocks` and repopulated the same way `blocks` is — by re-ingest
-(`attachDirectory` / `freshnessSweep`), not by an in-db rollup rebuild. Adding a
+(`ingestDirectory` / `freshnessSweep`), not by an in-db rollup rebuild. Adding a
 `rebuild-index --properties` target would miscategorize it (and require fragile
 block-id remapping). If a bulk recompute is ever needed, it is a re-ingest pass,
 not an index rebuild.
