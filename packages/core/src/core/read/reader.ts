@@ -4,6 +4,31 @@ import { isValidId } from "../ids.js";
 // Read-side reconstruction of current-state blocks (02 §3 blocks table).
 // Rebuilds the containment forest for a document from parent_block + order_key.
 
+/** One row of the `ls` / docs_list surface: a live document with its block
+ *  count and last-commit timestamp. */
+export interface DocListRow {
+  path: string;
+  blocks: number;
+  ts: string | null;
+}
+
+/** List a repo's live documents (path, block count, last-commit ts), ordered by
+ *  path. `pathGlob` is a simple LIKE match (`*` → `%`). Backs `omg ls` and the
+ *  `docs_list` MCP tool (one implementation for both surfaces). */
+export function docsList(store: Store, repoId: string, opts: { pathGlob?: string } = {}): DocListRow[] {
+  const like = opts.pathGlob ? opts.pathGlob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%") : "%";
+  return store.db
+    .prepare(
+      `SELECT d.path AS path,
+              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
+              (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev) AS ts
+       FROM docs d
+       WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'
+       ORDER BY d.path`,
+    )
+    .all(repoId, like) as DocListRow[];
+}
+
 export interface BlockNode {
   blockId: string;
   docId: string;

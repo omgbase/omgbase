@@ -1,36 +1,26 @@
 import { parseArgs } from "node:util";
+import { docsList, type DocListRow } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns } from "../render.js";
 import { EXIT_OK } from "../output.js";
+import { remoteCall } from "./_remote.js";
 
 // `omg ls [glob]` (11 §5.2) — live documents: path, block count, last-commit
 // time. glob is a simple prefix/suffix match on the path (SQL LIKE with * → %).
 
-interface DocRow {
-  path: string;
-  blocks: number;
-  ts: string | null;
-}
-
-function runLs(cli: Cli, args: string[]): number {
+async function runLs(cli: Cli, args: string[]): Promise<number> {
   const { positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
   const glob = positionals[0];
 
-  const like = glob ? glob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%") : "%";
-  const rows = ws.store.db
-    .prepare(
-      `SELECT d.path AS path,
-              (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
-              (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id
-                WHERE r.rev_id = d.current_rev) AS ts
-       FROM docs d
-       WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'
-       ORDER BY d.path`,
-    )
-    .all(repo.repoId, like) as DocRow[];
+  let rows: DocListRow[];
+  if (cli.flags.server) {
+    rows = await remoteCall<DocListRow[]>(cli, "docs_list", glob ? { path_glob: glob } : {});
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    rows = docsList(ws.store, repo.repoId, glob ? { pathGlob: glob } : {});
+  }
   cli.capture?.(rows); // shell: docs become the addressable frame (ref = path)
 
   if (cli.flags.mode === "ids") {

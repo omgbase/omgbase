@@ -107,6 +107,6 @@ export const SKIP_FRESHNESS = new Set(["sync", "mcp", "init", "source", "help", 
 // Commands that implement the global `--server` remote (MCP-client) mode
 // (ADR-014). Others error on `--server` rather than silently running locally.
 // This set grows as commands gain a remote path (the roadmap: most reads, shell).
-export const REMOTE_OK = new Set(["sync", "query", "outline", "hist"]);
+export const REMOTE_OK = new Set(["sync", "query", "outline", "hist", "cat", "ls", "diff"]);
 
 export { CliUsageError };

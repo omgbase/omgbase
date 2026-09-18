@@ -4,7 +4,8 @@ import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
-import { findDoc, findDocByRef } from "../core/read/reader.js";
+import { findDoc, findDocByRef, docsList } from "../core/read/reader.js";
+import { resolveRef } from "../core/read/refs.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
@@ -18,7 +19,7 @@ import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, 
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
-import { historyNode, diffBlocks, changesSince, docHistory } from "../graph/history.js";
+import { historyNode, diffBlocks, diffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
@@ -322,6 +323,53 @@ export function buildServer(ctx: ServerContext): McpServer {
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
         });
         return ok(res);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "read_ref",
+    {
+      description:
+        "Read ANY ref — a document (id or path) OR a block (id or locator like `foo.md#Heading/p[2]`) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", content, path, docId, … }` (complete file bytes); a block ref returns `{ kind:\"block\", … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
+      inputSchema: {
+        ref: z.string(),
+        resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
+        ...REPO_ARG,
+      },
+    },
+    async (args) => {
+      try {
+        const { repoId } = repoScope(args.repo);
+        const resolved = resolveRef(store, repoId, args.ref);
+        if (!resolved) throw new EngineError("doc_missing", `no document or block for ${JSON.stringify(args.ref)}`);
+        if (resolved.kind === "document") {
+          const res = docsRead(store, resolved.docId);
+          if (!res) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args.ref)}`);
+          return ok({ kind: "document", ...res });
+        }
+        const node = nodesGet(store, resolved.docId, resolved.blockId!, { resolution: args.resolution ?? "raw" });
+        if (!node) throw new EngineError("block_missing", `no block ${resolved.blockId}`);
+        return ok({ kind: "block", ...node });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_list",
+    {
+      description:
+        "List the repo's live documents (the `omg ls` operation): `[{ path, blocks, ts }]` — repo-relative path, live block count, and last-commit timestamp (ISO, or null) — ordered by path. `path_glob` is a simple LIKE match (`*` → any run). For structured/ranked discovery use `query` or `resolve`; this is the plain directory listing.",
+      inputSchema: { path_glob: z.string().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId } = repoScope(args.repo);
+        return ok(docsList(store, repoId, args.path_glob ? { pathGlob: args.path_glob } : {}));
       } catch (e) {
         return fail(e);
       }
@@ -812,6 +860,31 @@ export function buildServer(ctx: ServerContext): McpServer {
         // ref names no document.
         const docId = resolveDocId(repoId, { doc: args.doc });
         return ok(diffBlocks(store, docId, args.from_rev, args.to_rev));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "diff_unified",
+    {
+      description:
+        "Line-based unified diff between two revisions of a document (the `omg diff` rendering): returns `{ doc, path, from, to, diff }` where `diff` is the +/- unified text. `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
+      inputSchema: { doc: z.string(), from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId } = repoScope(args.repo);
+        const docId = resolveDocId(repoId, { doc: args.doc });
+        const revs = store.db
+          .prepare("SELECT rev_id FROM revisions WHERE doc_id = ? ORDER BY seq DESC LIMIT 2")
+          .all(docId) as { rev_id: string }[];
+        const toRev = args.to_rev ?? revs[0]?.rev_id;
+        const fromRev = args.from_rev ?? revs[1]?.rev_id ?? revs[0]?.rev_id;
+        if (!toRev || !fromRev) throw new EngineError("target_missing", `no revisions to diff for ${JSON.stringify(args.doc)}`);
+        const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path ?? "";
+        return ok({ doc: docId, path, from: fromRev, to: toRev, diff: diffUnified(store, docId, fromRev, toRev) });
       } catch (e) {
         return fail(e);
       }

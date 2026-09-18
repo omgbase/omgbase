@@ -3,12 +3,13 @@ import { resolveRef, nodesGet, docsRead } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { remoteCall } from "./_remote.js";
 
 // `omg cat <node>` (11 §5.2) — content only, default raw exact bytes, pipe-clean.
 // For a document ref, cats the whole rendered document; for a block, the block
 // (subtree at raw). No decoration on stdout: cat is the bytes.
 
-function runCat(cli: Cli, args: string[]): number {
+async function runCat(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -21,6 +22,21 @@ function runCat(cli: Cli, args: string[]): number {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("cat requires a <node>");
   const resolution = (values.resolution ?? "raw") as "raw" | "text" | "outline" | "skeleton" | "full";
+
+  // Remote: the polymorphic `read_ref` tool classifies + reads server-side.
+  if (cli.flags.server) {
+    const r = await remoteCall<Record<string, unknown> & { kind: string }>(cli, "read_ref", { ref, ...(resolution !== "raw" ? { resolution } : {}) });
+    if (r.kind === "document") {
+      cli.capture?.(r.content);
+      if (cli.flags.mode === "json") cli.io.out(JSON.stringify({ doc: r.docId, path: r.path, content: r.content }));
+      else cli.io.out(String(r.content ?? ""));
+    } else {
+      cli.capture?.(r);
+      if (cli.flags.mode === "json") cli.io.out(JSON.stringify(r));
+      else cli.io.out(String(r.raw ?? r.text ?? r.label ?? ""));
+    }
+    return EXIT_OK;
+  }
 
   const ws = cli.workspace();
   const repo = cli.repo(ws);
