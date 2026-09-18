@@ -2,7 +2,10 @@ import { parseArgs } from "node:util";
 import { changesSince } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EXIT_OK } from "../output.js";
+import { CliUsageError, truncationFooter, EXIT_OK } from "../output.js";
+import { remoteCall } from "./_remote.js";
+
+type ChangesResult = ReturnType<typeof changesSince>;
 
 // `omg log` (11 §5.5) — changes_since, one digest summary per line. Relative
 // --since (24h/7d) is resolved to a literal ISO timestamp client-side, then to
@@ -31,7 +34,7 @@ function relativeToIso(since: string): string {
   return Number.isNaN(t) ? new Date(0).toISOString() : new Date(t).toISOString();
 }
 
-function runLog(cli: Cli, args: string[]): number {
+async function runLog(cli: Cli, args: string[]): Promise<number> {
   const { values } = parseArgs({
     args,
     allowPositionals: true,
@@ -47,13 +50,27 @@ function runLog(cli: Cli, args: string[]): number {
     cli.io.out("  log [--since 24h|7d|ISO] [--cursor n] [--origin api|observed] [-n N]  — commit digests");
     return EXIT_OK;
   }
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-  const cursor = values.cursor ? Number(values.cursor) : resolveSinceSeq(cli, repo.repoId, values.since);
-  const opts: Parameters<typeof changesSince>[2] = { cursor };
-  if (values.n) opts.limit = Number(values.n);
-  if (values.origin) opts.origin = values.origin;
-  const result = changesSince(ws.store, repo.repoId, opts);
+
+  let result: ChangesResult;
+  if (cli.flags.server) {
+    // Remote: changes_since by cursor/limit/origin. `--since` resolves a
+    // timestamp against the local commits table, which a remote client lacks —
+    // use `--cursor` remotely.
+    if (values.since) throw new CliUsageError("--since is not supported with --server; use --cursor <seq>");
+    result = await remoteCall<ChangesResult>(cli, "changes_since", {
+      ...(values.cursor ? { cursor: Number(values.cursor) } : {}),
+      ...(values.n ? { limit: Number(values.n) } : {}),
+      ...(values.origin ? { origin: values.origin } : {}),
+    });
+  } else {
+    const ws = cli.workspace();
+    const repo = cli.repo(ws);
+    const cursor = values.cursor ? Number(values.cursor) : resolveSinceSeq(cli, repo.repoId, values.since);
+    const opts: Parameters<typeof changesSince>[2] = { cursor };
+    if (values.n) opts.limit = Number(values.n);
+    if (values.origin) opts.origin = values.origin;
+    result = changesSince(ws.store, repo.repoId, opts);
+  }
 
   if (cli.flags.mode === "json") {
     cli.io.out(JSON.stringify(result));
