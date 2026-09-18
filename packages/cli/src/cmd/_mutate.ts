@@ -5,6 +5,7 @@ import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
 import { CliUsageError, EXIT_OK, EXIT_ERROR } from "../output.js";
+import { remoteCall } from "./_remote.js";
 
 // Shared plumbing for every write command (11 §5.6, §5.7). Sugar commands build
 // their kernel Ops, then hand them here: this sets origin.actor (human:$USER by
@@ -134,8 +135,27 @@ export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: 
   };
 
   const result = apply(ws.store, req);
-  cli.capture?.(result); // shell: ApplyResult — its minted/affected ids are the frame
+  return renderApply(cli, result);
+}
 
+/**
+ * Remote peer of runOps: call the changeset-producing tool that mirrors this
+ * command (blocks_insert, tasks_complete, …) against the `--server` engine — the
+ * server resolves refs + pins CAS + applies — then render the returned
+ * ApplyResult with the SAME renderers as local. --dry-run is threaded as the
+ * tool's dry_run so the preview comes back without committing.
+ */
+export async function runOpsRemote(cli: Cli, tool: string, toolArgs: Record<string, unknown>): Promise<number> {
+  const result = await remoteCall<ApplyResult>(cli, tool, {
+    ...toolArgs,
+    ...(cli.flags.dryRun ? { dry_run: true } : {}),
+  });
+  return renderApply(cli, result);
+}
+
+/** Capture + render an ApplyResult (shared by the local and remote paths). */
+function renderApply(cli: Cli, result: ApplyResult): number {
+  cli.capture?.(result); // shell: ApplyResult — its minted/affected ids are the frame
   if (cli.flags.mode !== "human") {
     cli.io.out(JSON.stringify(result));
     return EXIT_OK;

@@ -20,8 +20,9 @@ export interface GlobalFlags {
    * --server <cmd|url>: run the command against a remote engine over MCP instead
    * of the embedded local store (ADR-014). Global by design — the surface is
    * uniform and commands adopt remote mode one at a time (REMOTE_OK). Reads,
-   * doc-level mutators, sync, and shell implement it; block-level sugar that
-   * needs local ref resolution / a working tree errors rather than run locally.
+   * doc-level mutators, block-level sugar (via server-side ref resolution + CAS),
+   * sync, and shell all implement it; the handful of genuinely local-only ops
+   * (e.g. `status`'s watcher state, `node props`) error rather than run locally.
    */
   server?: string;
   help: boolean;
@@ -107,11 +108,16 @@ export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
 export const SKIP_FRESHNESS = new Set(["sync", "mcp", "init", "source", "help", "version", "shell"]);
 // Commands that implement the global `--server` remote (MCP-client) mode
 // (ADR-014). Others error on `--server` rather than silently running locally.
-// Covers reads, doc-level mutators, sync, and shell; block-level sugar stays
-// local (it builds ops via the local store — ref resolution + CAS).
+// Covers reads, doc-level mutators, block-level sugar, sync, and shell — the
+// block sugar resolves refs + pins CAS server-side via the blocks_* tools.
 export const REMOTE_OK = new Set([
+  // reads
   "sync", "query", "outline", "hist", "cat", "ls", "diff", "find", "log",
+  // doc-level mutators
   "new", "mv", "meta", "rm", "update", "retarget",
+  // block-level sugar (server-side ref resolution + CAS via the blocks_* /
+  // tasks_complete / sections_append / node_set / apply tools)
+  "apply", "insert", "move", "split", "merge", "done", "append", "node",
   // shell accepts --server itself, then threads it into every line it runs.
   "shell",
 ]);

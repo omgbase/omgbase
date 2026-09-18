@@ -195,6 +195,44 @@ export function buildServer(ctx: ServerContext): McpServer {
     return matches[0]!.block_id;
   }
 
+  // Resolve a human ref (block id, locator, node id, …) to a live block id — the
+  // server-side equal of the CLI's local `block()`. The block-level tools accept
+  // refs (not pre-resolved ids) so a remote `omg insert/move/split/…` behaves
+  // exactly like local: ref resolution and CAS pinning happen HERE, next to the
+  // store, instead of on a client that has none.
+  function resolveBlockRef(repoId: string, ref: string): string {
+    const r = resolveRef(store, repoId, ref);
+    if (!r || r.kind !== "block" || !r.blockId) throw new EngineError("block_missing", `not a block: ${ref}`, { data: { ref } });
+    return r.blockId;
+  }
+  // Current raw-content hash (hex) of a block, for CAS `expect` pinning — mirrors
+  // the CLI's rawHashOf. Undefined for an unknown/deleted block (the op then runs
+  // unpinned, exactly as the CLI does when it can't read a hash).
+  function pinHash(blockId: string): string | undefined {
+    const row = store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { h: string } | undefined;
+    return row?.h;
+  }
+  // Resolve the before/after anchor in an `at` spec (itself a block ref) to its
+  // id; start/end pass through. Absent ⇒ "end" (append), matching CLI parseAt.
+  type AtSpec = z.infer<typeof atSchema>;
+  function resolveAt(repoId: string, at: AtSpec | undefined): AtSpec {
+    if (!at || at === "start" || at === "end") return at ?? "end";
+    if ("before" in at) return { before: resolveBlockRef(repoId, at.before) };
+    return { after: resolveBlockRef(repoId, at.after) };
+  }
+  // Apply an already-built op list, honoring dry_run (preview, no drain) — the
+  // shared tail of every block-level tool below.
+  function applyOps(repoId: string, rootPath: string, ops: Op[], reason: string, dryRun?: boolean) {
+    const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...(dryRun !== undefined ? { dryRun } : {}) });
+    return dryRun ? ok(res) : okMutated(res);
+  }
+  // Guard shared by every mutating tool: a sourceless (headless-only) repo has no
+  // working tree to write through, so mutation is disabled with a loud error.
+  function requireRoot(rootPath: string | undefined): string {
+    if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+    return rootPath;
+  }
+
   server.registerTool(
     "docs_outline",
     {
@@ -512,18 +550,146 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
   );
 
+  // ---- block-level sugar (ref-accepting peers of the `apply` primitive) -------
+  // These mirror the CLI verbs `insert`/`update`/`move`/`rm`/`split`/`merge`
+  // 1:1. Each takes human REFS (a block id or anything resolveRef accepts),
+  // resolves them + pins CAS server-side, builds exactly the op the CLI would,
+  // and applies it. This is what lets `omg <verb> --server` feel identical to
+  // local: the resolution that used to live in the CLI now lives next to the
+  // store, so a remote client needs no local database.
+
   server.registerTool(
-    "tasks_complete",
+    "blocks_insert",
     {
-      description: "Macro: mark the given task blocks checked. Expands to update(attrs:{checked:true}) per block; the expansion is applied via the same changeset machinery.",
-      inputSchema: { blocks: z.array(z.string()), ...REPO_ARG },
+      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent — a block id or any ref resolveRef accepts. `at` places among siblings: \"end\" (default) / \"start\" / {before|after: <block ref>}. Expands to one insert op through the kernel writer.",
+      inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
-        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const ops = tasksComplete(store, args.blocks);
-        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "tasks_complete" } }));
+        const root = requireRoot(rootPath);
+        const to = { parent: resolveBlockRef(repoId, args.to), at: resolveAt(repoId, args.at) };
+        const ops: Op[] = [{ op: "insert", to, markdown: args.markdown } as Op];
+        return applyOps(repoId, root, ops, "blocks_insert", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "blocks_update",
+    {
+      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer.",
+      inputSchema: { block: z.string(), markdown: z.string().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const block = resolveBlockRef(repoId, args.block);
+        const expect = args.expect ?? (() => { const h = pinHash(block); return h ? { content_hash: h } : undefined; })();
+        const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(args.attrs ? { attrs: args.attrs } : {}), ...(expect ? { expect } : {}) } as Op];
+        return applyOps(repoId, root, ops, "blocks_update", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "blocks_move",
+    {
+      description: "Move block(s) under a new parent at a position. `blocks` and `to` (the parent) are refs; `at` is \"end\"/\"start\"/{before|after: <ref>}. One move op through the kernel writer.",
+      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
+        const to = { parent: resolveBlockRef(repoId, args.to), at: resolveAt(repoId, args.at) };
+        const ops: Op[] = [{ op: "move", blocks, to } as Op];
+        return applyOps(repoId, root, ops, "blocks_move", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "blocks_remove",
+    {
+      description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs. One remove op through the kernel writer. To delete a whole document use docs_delete.",
+      inputSchema: { blocks: z.array(z.string()), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
+        const ops: Op[] = [{ op: "remove", blocks } as Op];
+        return applyOps(repoId, root, ops, "blocks_remove", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "blocks_split",
+    {
+      description: "Split a block at character offset(s) into consecutive blocks. `block` is a ref; `at` is a list of integer offsets. CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
+      inputSchema: { block: z.string(), at: z.array(z.number().int()), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const block = resolveBlockRef(repoId, args.block);
+        const ops: Op[] = [{ op: "split", block, at: args.at, expect: { content_hash: pinHash(block) ?? "" } } as Op];
+        return applyOps(repoId, root, ops, "blocks_split", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "blocks_merge",
+    {
+      description: "Merge adjacent blocks into the first, joined by `separator` (default a blank line). `blocks` are refs (≥2). One merge op through the kernel writer.",
+      inputSchema: { blocks: z.array(z.string()), separator: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
+        const ops: Op[] = [{ op: "merge", blocks, ...(args.separator !== undefined ? { separator: args.separator } : {}) } as Op];
+        return applyOps(repoId, root, ops, "blocks_merge", args.dry_run);
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "tasks_complete",
+    {
+      description: "Macro: check (or, with checked:false, uncheck) the given task blocks. `blocks` are refs. Expands to update(attrs:{checked}) per block, CAS-pinned, applied via the same changeset machinery.",
+      inputSchema: { blocks: z.array(z.string()), checked: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+    },
+    async (args) => {
+      try {
+        const { repoId, rootPath } = repoScope(args.repo);
+        const root = requireRoot(rootPath);
+        const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
+        const checked = args.checked ?? true;
+        const ops: Op[] = checked
+          ? tasksComplete(store, blocks)
+          : blocks.map((block) => ({ op: "update", block, attrs: { checked: false }, ...(() => { const h = pinHash(block); return h ? { expect: { content_hash: h } } : {}; })() } as Op));
+        return applyOps(repoId, root, ops, "tasks_complete", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -535,14 +701,14 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Macro: surgically set one editable property of a projected node (e.g. a link's `name` text or `value` target, a task's `checked`). Takes the node id (from query from:nodes), a property, and its new value. Resolves the node to its block and rewrites only that node's span, applying one update op. Nodes are read-only projections — this is the affordance to edit what a node represents without hand-rewriting the block. Errors node_not_editable (with the editable prop list) when the kind/prop has no editor.",
-      inputSchema: { node: z.string(), prop: z.string(), value: z.string(), ...REPO_ARG },
+      inputSchema: { node: z.string(), prop: z.string(), value: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
-        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        const root = requireRoot(rootPath);
         const ops = nodeSet(store, args.node, args.prop, args.value);
-        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "node_set" } }));
+        return applyOps(repoId, root, ops, "node_set", args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -554,15 +720,15 @@ export function buildServer(ctx: ServerContext): McpServer {
     {
       description:
         "Macro: append markdown at the end of a heading's section range. `heading` accepts the heading's block id (preferred, from docs_outline) OR its text — text is resolved to an id, scoped to `doc`/`path` when given. Heading text without a doc scope is repo-wide and errors ambiguous_heading (with candidate ids) when it isn't unique. Expands to a single insert op.",
-      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional(), ...REPO_ARG },
+      inputSchema: { heading: z.string(), markdown: z.string(), doc: z.string().optional(), path: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
-        if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
+        const root = requireRoot(rootPath);
         const headingId = resolveHeadingId(repoId, args.heading, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
         const ops = sectionsAppend(headingId, args.markdown);
-        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "sections_append" } }));
+        return applyOps(repoId, root, ops, "sections_append", args.dry_run);
       } catch (e) {
         return fail(e);
       }

@@ -32,7 +32,7 @@
 
 ## Core operations (the shared vernacular)
 
-Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ planned · 🔒 local by design (builds ops via the local store — ref resolution / CAS / a working tree — so it does not go remote) · — n/a (exception / no CLI verb).
+Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ planned · 🔒 inherently local (watcher/process state, no meaningful remote form) · — n/a (exception / no CLI verb).
 
 ### Orient & read
 
@@ -74,11 +74,16 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
-| Apply a changeset | `apply` | `apply` | `apply` | 🔒 local |
-| Insert / move / split / merge / edit a block | `apply` ops | `insert`/`move`/`split`/`merge`/`edit` | `apply` | 🔒 local |
-| Complete tasks | `tasksComplete` | `done` | `tasks_complete` | 🔒 local |
-| Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | 🔒 local |
-| Set a node property | `nodeSet` | `node set` | `node_set` | 🔒 local |
+| Apply a changeset | `apply` | `apply` | `apply` | ✅ |
+| Insert a block | `apply` ops | `insert` | `blocks_insert` | ✅ |
+| Update a block (CAS) | `apply` ops | `update` (b_ target) | `blocks_update` | ✅ |
+| Move block(s) | `apply` ops | `move` | `blocks_move` | ✅ |
+| Remove block(s) | `apply` ops | `rm` (blocks) | `blocks_remove` | ✅ |
+| Split a block | `apply` ops | `split` | `blocks_split` | ✅ |
+| Merge blocks | `apply` ops | `merge` | `blocks_merge` | ✅ |
+| Complete tasks | `tasksComplete` | `done` | `tasks_complete` | ✅ |
+| Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | ✅ |
+| Set a node property | `nodeSet` | `node set` | `node_set` | ✅ |
 | Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ✅ |
 
 ### Document lifecycle
@@ -123,26 +128,26 @@ vernacular and `--server` does not apply.
 
 ## `--server` coverage (state)
 
-**Shipped** — the reads, doc-lifecycle, whole-document `update`, `retarget`,
-`sync`, and `shell` rows are wired end-to-end (remote writes flow through the
-server → `apply` → write-through to the served repo's tree). The gap tools that
-unblocked the reads are in place: **`read_ref`** (polymorphic doc/block/card read
-via server-side `resolveRef`, backs `cat`), **`docs_list`** (backs `ls`),
-**`diff_unified`** (line-unified text, backs `diff`), and `find`→`resolve`
-alignment.
+**Shipped** — reads, the full doc lifecycle, **all block-level mutation**, tasks,
+append, `node set`, whole-document `update`, `retarget`, `apply`, `sync`, and
+`shell` are wired end-to-end. Remote writes flow through the server → `apply` →
+write-through to the served repo's tree; local and remote produce byte-identical
+files for the same inputs (verified per-op). The block sugar is backed by
+**`blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/
+`blocks_merge`** — ref-accepting peers of the `apply` primitive that resolve refs
+and pin CAS **server-side**, so a remote client needs no local store. The read
+gap tools are in place too: **`read_ref`** (polymorphic doc/block/card read backs
+`cat`), **`docs_list`** (backs `ls`), **`diff_unified`** (backs `diff`), and
+`find`→`resolve`.
 
-**Deferred (`▫️`)** — mostly-local reads that still want a remote path: `show`
-(metadata card via `read_ref` kind=card), `run` (OQX-fence fetch+run), `links`
-(→`links_stale`), `repos`/`status` (→`repos`/`repos_status`), and the optional
-`cat --rev`→`docs_read_at` time-travel verb.
+**Deferred (`▫️`)** — a few remaining reads: `show` (metadata card via `read_ref`
+kind=card), `run` (OQX-fence fetch+run), `links` (→`links_stale`), `repos`
+(→`repos`), and the optional `cat --rev`→`docs_read_at` time-travel verb.
 
-**Local by design (`🔒`)** — block-level sugar (`apply`, `insert`/`move`/`split`/
-`merge`/`edit`, `done`, `append`, `node set`) resolves refs and pins CAS hashes
-against the *local* store before building kernel ops; and `status`'s watcher
-state is inherently about the local process. These stay local: `--server` rejects
-them per-command with a clear message rather than pretending. A remote equivalent
-would need high-level tools that resolve refs + CAS entirely server-side — a
-future step, not a coherence gap.
+**Inherently local (`🔒`)** — `status`'s watcher/sync-process state and
+`node props` (an editability lookup with no remote tool) are about the local
+process, so `--server` rejects them with a clear message. Everything that
+represents a real engine operation now has a remote path.
 
 ## Drift to align (`⚠️`, register-only differences — document, optionally rename)
 
