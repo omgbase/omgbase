@@ -49,6 +49,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | --- | --- |
 | `docs/README.md` | docs index, CI-enforced invariants, glossary |
 | `docs/architecture.md` | system shape, kernel concepts, identity/canonicality rules |
+| `docs/object-model.md` | **orientation**: the docs/blocks/nodes/edges mental model and which layer each verb touches (conceptual; specs are authoritative) |
 | `docs/data-model.md` | SQLite DDL, ID/hash conventions, rebuild/GC rules (authoritative schema is `core/store/schema.ts`) |
 | `docs/reconciliation-spec.md` | parser contract, round-trip law, matcher phases/thresholds |
 | `docs/mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
