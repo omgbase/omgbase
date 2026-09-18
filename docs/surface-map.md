@@ -15,7 +15,7 @@
 > remote engine over MCP by calling the tool in its row and rendering the
 > identically-shaped result. `--server` can only be *complete* — feel exactly like
 > local — if every remote-capable CLI command has a corresponding tool. This map
-> is the checklist for that (`✳️` = the gap to close).
+> is the checklist for that; see **`--server` coverage** below for current state.
 
 ## Naming principle
 
@@ -32,7 +32,7 @@
 
 ## Core operations (the shared vernacular)
 
-Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ planned · — n/a (exception).
+Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ planned · 🔒 local by design (builds ops via the local store — ref resolution / CAS / a working tree — so it does not go remote) · — n/a (exception / no CLI verb).
 
 ### Orient & read
 
@@ -41,14 +41,14 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Query (OQX) | `oqxRun` | `query` / `q` | `query` | ✅ |
 | Query syntax help | — | (help text) | `query_syntax` | — |
 | Document outline | `docsOutline` | `outline` / `ol` | `docs_outline` | ✅ |
-| Read any ref → bytes | `resolveRef`+`docsRead`/`nodesGet` | `cat` | **`read_ref`** ✳️ | ▫️ |
-| Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ▫️ |
+| Read any ref → bytes | `resolveRef`+`docsRead`/`nodesGet` | `cat` | **`read_ref`** | ✅ |
+| Read whole document | `docsRead` | `cat` (doc) | `docs_read` | ✅ (via `read_ref`) |
 | Read many documents | `docsReadMany` | — | `docs_get_many` | — |
-| Hydrate a block | `nodesGet` | `cat`/`show` (block) | `nodes_get` | ▫️ |
+| Hydrate a block | `nodesGet` | `cat`/`show` (block) | `nodes_get` | ✅ `cat` · ▫️ `show` |
 | Hydrate many blocks | `nodesGetMany` | — | `nodes_get_many` | — |
-| Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | **`read_ref`** (kind=card) ✳️ | ▫️ |
-| Find / rank | `resolveThing`/`textSearch` | `find` | `resolve` (+`text_search`) | ▫️ |
-| List documents | (store query) | `ls` | **`docs_list`** ✳️ | ▫️ |
+| Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | **`read_ref`** (kind=card) | ▫️ |
+| Find / rank | `resolveThing`/`textSearch` | `find` | `resolve` (+`text_search`) | ✅ |
+| List documents | (store query) | `ls` | **`docs_list`** | ✅ |
 | Graph neighborhood | `graphNeighborhood` | (`query … follow`) | `graph` | — |
 | Run an OQX fence | `oqxRun` | `run` | `query` | ▫️ |
 
@@ -56,9 +56,9 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
-| Commit feed | `changesSince` | `log` | `changes_since` | ▫️ |
+| Commit feed | `changesSince` | `log` | `changes_since` | ✅ |
 | Block biography | `historyNode` | `hist` | `history_node` | ✅ |
-| Diff two revisions | `diffBlocks`/`diffUnified` | `diff` | `diff` (block-grain) + **`diff_unified`** ✳️ | ▫️ |
+| Diff two revisions | `diffBlocks`/`diffUnified` | `diff` | `diff` (block-grain) + **`diff_unified`** | ✅ |
 | Read doc at a revision | `readDocumentAtRevision` | (`cat --rev` ✳️) | `docs_read_at` | ▫️ |
 | Per-document version list | `docHistory` | — | `docs_history` | — |
 
@@ -67,28 +67,28 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
 | Surface stale links | `linksStale` | `links` | `links_stale` | ▫️ |
-| Retarget one link | `linksRetarget` | `retarget` | `links_retarget` | ▫️ |
+| Retarget one link | `linksRetarget` | `retarget` | `links_retarget` | ✅ |
 | Repair many links | `linksRepair` | (`retarget` batch) | `links_repair` | ▫️ |
 
 ### Mutate (all expand to `apply` + macros)
 
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
-| Apply a changeset | `apply` | `apply` | `apply` | ▫️ |
-| Insert / move / split / merge / edit a block | `apply` ops | `insert`/`move`/`split`/`merge`/`edit` | `apply` | ▫️ |
-| Complete tasks | `tasksComplete` | `done` | `tasks_complete` | ▫️ |
-| Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | ▫️ |
-| Set a node property | `nodeSet` | `node set` | `node_set` | ▫️ |
-| Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ▫️ |
+| Apply a changeset | `apply` | `apply` | `apply` | 🔒 local |
+| Insert / move / split / merge / edit a block | `apply` ops | `insert`/`move`/`split`/`merge`/`edit` | `apply` | 🔒 local |
+| Complete tasks | `tasksComplete` | `done` | `tasks_complete` | 🔒 local |
+| Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | 🔒 local |
+| Set a node property | `nodeSet` | `node set` | `node_set` | 🔒 local |
+| Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ✅ |
 
 ### Document lifecycle
 
 | Operation | library | `omg` CLI | MCP tool | `--server` |
 |---|---|---|---|---|
-| Create a document | `docsCreate` | `new` | `docs_create` | ▫️ |
-| Move / rename | `docsMove` | `mv` | `docs_move` | ▫️ |
-| Delete (tombstone) | `docsDelete` | `rm --doc` | `docs_delete` | ▫️ |
-| Patch frontmatter | `docsSetMeta` | `meta` | `docs_set_meta` | ▫️ |
+| Create a document | `docsCreate` | `new` | `docs_create` | ✅ |
+| Move / rename | `docsMove` | `mv` | `docs_move` | ✅ |
+| Delete (tombstone) | `docsDelete` | `rm --doc` | `docs_delete` | ✅ |
+| Patch frontmatter | `docsSetMeta` | `meta` | `docs_set_meta` | ✅ |
 
 ### Status
 
@@ -96,7 +96,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 |---|---|---|---|---|
 | List repos | `Workspace.repos` | `repos` | `repos` | ▫️ |
 | Repo counts + drift | `reposStatus` | `status` | `repos_status` | ▫️ |
-| Watcher/sync state | `syncStatus` | `status` | `sync_status` | ▫️ |
+| Watcher/sync state | `syncStatus` | `status` | `sync_status` | 🔒 local |
 
 ### Sync ingest primitives (the file↔DB direction)
 
@@ -121,24 +121,28 @@ vernacular and `--server` does not apply.
   *line* remotely, but the session construct itself is CLI-only), `omg help`,
   `omg --version`.
 
-## Gaps to close (`✳️`) so `--server` feels local
+## `--server` coverage (state)
 
-1. **`read_ref { ref, resolution? }`** — polymorphic read: classify a ref
-   (doc/block/locator) server-side via `resolveRef` and return doc bytes or a
-   block/card with a `kind` discriminator. Unblocks `cat` and `show` over MCP
-   (today they dispatch with a *local* `resolveRef`, which a remote client has
-   no tool for).
-2. **`docs_list { path_glob?, limit? }`** — the `ls` operation (docs + block
-   counts). (`query 'from docs'` is close but omits the block-count/among columns
-   `ls` renders.)
-3. **`diff_unified { doc, from_rev?, to_rev? }`** (or a `grain` arg on `diff`) —
-   the CLI renders *line-unified* text; the current `diff` tool returns
-   *block-grain* entries. Pick one; recommend adding the unified variant so `omg
-   diff --server` matches local output.
-4. **`find`** — align `omg find` onto `resolve` (hybrid ranker); reconcile the
-   result shapes so the CLI renderer is reused.
-5. (Optional) **`cat --rev`** — a CLI verb for time-travel read, mapping to
-   `docs_read_at`.
+**Shipped** — the reads, doc-lifecycle, whole-document `update`, `retarget`,
+`sync`, and `shell` rows are wired end-to-end (remote writes flow through the
+server → `apply` → write-through to the served repo's tree). The gap tools that
+unblocked the reads are in place: **`read_ref`** (polymorphic doc/block/card read
+via server-side `resolveRef`, backs `cat`), **`docs_list`** (backs `ls`),
+**`diff_unified`** (line-unified text, backs `diff`), and `find`→`resolve`
+alignment.
+
+**Deferred (`▫️`)** — mostly-local reads that still want a remote path: `show`
+(metadata card via `read_ref` kind=card), `run` (OQX-fence fetch+run), `links`
+(→`links_stale`), `repos`/`status` (→`repos`/`repos_status`), and the optional
+`cat --rev`→`docs_read_at` time-travel verb.
+
+**Local by design (`🔒`)** — block-level sugar (`apply`, `insert`/`move`/`split`/
+`merge`/`edit`, `done`, `append`, `node set`) resolves refs and pins CAS hashes
+against the *local* store before building kernel ops; and `status`'s watcher
+state is inherently about the local process. These stay local: `--server` rejects
+them per-command with a clear message rather than pretending. A remote equivalent
+would need high-level tools that resolve refs + CAS entirely server-side — a
+future step, not a coherence gap.
 
 ## Drift to align (`⚠️`, register-only differences — document, optionally rename)
 
