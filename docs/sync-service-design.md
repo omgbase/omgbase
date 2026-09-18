@@ -1,10 +1,12 @@
 # Design: `@omgbase/sync` — a standalone store-to-store synchronizer
 
-> **Status: DESIGN / PROPOSED (not as-built).** Unlike the rest of `docs/`, this
-> file describes work that is *not yet implemented*. It is the plan of record for
-> the sync-service migration tracked by ADR-014. As stages land, the as-built
-> facts move into `docs/sync-plugins.md` / `docs/architecture.md` and this file
-> shrinks to a pointer. Until then: code is still ground truth; this is intent.
+> **Status: IMPLEMENTED (ADR-014).** All six stages have landed on branch
+> `multi-repo-story` (see §9). This file is retained as the design rationale +
+> stage record; the as-built surface lives in `docs/sync-plugins.md`,
+> `docs/mcp-api.md`, `docs/data-model.md`, and the code (ground truth). Not yet
+> done: the optional `subscribe` (D1), durable export-cursor persistence, and
+> wiring local `omg sync`/`watch` to *delegate* to the Coordinator (they already
+> share the `observeOne` primitive, so there is no behavior drift).
 
 ## 1. Motivation
 
