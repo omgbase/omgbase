@@ -138,7 +138,7 @@ function runMove(cli: Cli, args: string[]): number {
 
 // ---- rm (blocks; --doc handled by the doc-level command) --------------------
 
-function runRm(cli: Cli, args: string[]): number {
+async function runRm(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -152,6 +152,7 @@ function runRm(cli: Cli, args: string[]): number {
     // Doc deletion always requires the explicit --doc (11 §5.6).
     return runRmDoc(cli, values.doc, values.actor);
   }
+  if (cli.flags.server) throw new CliUsageError("rm --server supports only --doc <doc>; block removal needs local ref resolution");
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = expandBlockArgs(positionals).map((r) => block(cli, ws, repo.repoId, r));

@@ -5,6 +5,7 @@ import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK } from "../output.js";
 import { readContent, extractContentOpts } from "./_mutate.js";
+import { remoteCall } from "./_remote.js";
 
 // Document-level commands (11 §5.6): new / mv / rm --doc / meta. Thin wrappers
 // over the core doc ops, which own the file-write + commit + flock protocol.
@@ -25,7 +26,7 @@ function report(cli: Cli, verb: string, res: DocOpResult): number {
 
 // ---- new --------------------------------------------------------------------
 
-function runNew(cli: Cli, args: string[]): number {
+async function runNew(cli: Cli, args: string[]): Promise<number> {
   const content = extractContentOpts(args);
   const { values, positionals } = parseArgs({
     args: content.rest,
@@ -39,6 +40,9 @@ function runNew(cli: Cli, args: string[]): number {
   const path = positionals[0];
   if (!path) throw new CliUsageError("new requires a <path>");
   const bytes = readContent(content);
+  if (cli.flags.server) {
+    return report(cli, "created", await remoteCall<DocOpResult>(cli, "docs_create", { path, markdown: bytes }));
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const res = docsCreate(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), path, bytes);
@@ -47,7 +51,7 @@ function runNew(cli: Cli, args: string[]): number {
 
 // ---- mv ---------------------------------------------------------------------
 
-function runMv(cli: Cli, args: string[]): number {
+async function runMv(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -60,6 +64,9 @@ function runMv(cli: Cli, args: string[]): number {
   const doc = positionals[0];
   const toPath = positionals[1];
   if (!doc || !toPath) throw new CliUsageError("mv requires <doc> and <new-path>");
+  if (cli.flags.server) {
+    return report(cli, "moved to", await remoteCall<DocOpResult>(cli, "docs_move", { doc, to_path: toPath }));
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const res = docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath);
@@ -68,7 +75,10 @@ function runMv(cli: Cli, args: string[]): number {
 
 // ---- rm --doc (block rm lives in mutate.ts; this handles the --doc branch) --
 
-export function runRmDoc(cli: Cli, doc: string, actor?: string): number {
+export async function runRmDoc(cli: Cli, doc: string, actor?: string): Promise<number> {
+  if (cli.flags.server) {
+    return report(cli, "deleted", await remoteCall<DocOpResult>(cli, "docs_delete", { doc }));
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const res = docsDelete(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, actor), doc);
@@ -77,7 +87,7 @@ export function runRmDoc(cli: Cli, doc: string, actor?: string): number {
 
 // ---- meta -------------------------------------------------------------------
 
-function runMeta(cli: Cli, args: string[]): number {
+async function runMeta(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -113,6 +123,13 @@ function runMeta(cli: Cli, args: string[]): number {
   const unset = values.unset ?? [];
   if (Object.keys(set).length === 0 && unset.length === 0) throw new CliUsageError("meta requires --set or --unset");
 
+  if (cli.flags.server) {
+    return report(cli, "patched", await remoteCall<DocOpResult>(cli, "docs_set_meta", {
+      doc,
+      ...(Object.keys(set).length ? { set } : {}),
+      ...(unset.length ? { unset } : {}),
+    }));
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const res = docsSetMeta(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, { set, unset });
