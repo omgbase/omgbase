@@ -20,10 +20,11 @@ import { openRepoSource } from "./_source.js";
 
 function help(cli: Cli): number {
   cli.io.out("  sync — reconcile a repo with its filesystem source");
-  cli.io.out(`  ${cli.style.dim("usage:")} omg sync [--watch] [--server <cmd> [--root <dir>] [--out]]`);
+  cli.io.out(`  ${cli.style.dim("usage:")} omg sync [--watch] [--server <cmd|url> [-H "Name: value"]... [--root <dir>] [--out]]`);
   cli.io.out("    (no flags)         one-shot: re-ingest what changed on disk");
   cli.io.out("    --watch            stay live and reconcile edits as they land");
-  cli.io.out("    --server <cmd>     run against a remote engine over MCP (spawns <cmd>)");
+  cli.io.out("    --server <cmd|url> run against a remote engine over MCP (spawns <cmd>, or an http(s) url over Streamable HTTP)");
+  cli.io.out('    -H "Name: value"   [--server url] extra HTTP header, repeatable');
   cli.io.out("    --root <dir>       [--server] the directory to mirror (default cwd)");
   cli.io.out("    --out              [--server] also export engine-authored changes back to disk");
   return EXIT_OK;

@@ -4,6 +4,6 @@
 // InProcessEngineClient (local, direct Store) or McpEngineClient (remote, MCP).
 
 export { type EngineClient, type ChangesPage, type DocBytes, InProcessEngineClient } from "./engine-client.js";
-export { McpEngineClient, connectStdioEngine } from "./mcp-engine-client.js";
+export { McpEngineClient, connectStdioEngine, connectHttpEngine } from "./mcp-engine-client.js";
 export { Coordinator, type SyncInSummary, type SyncOutSummary } from "./coordinator.js";
 export { runFsMirror, type FsMirrorOptions } from "./mirror.js";

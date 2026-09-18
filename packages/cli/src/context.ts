@@ -25,6 +25,12 @@ export interface GlobalFlags {
    * (e.g. `status`'s watcher state, `node props`) error rather than run locally.
    */
   server?: string;
+  /**
+   * -H / --header "Name: value": extra HTTP headers, repeatable, sent on every
+   * request when `--server` is an http(s) URL (auth beyond a secret path). Kept
+   * in flag order; ignored for stdio `--server` commands.
+   */
+  headers?: string[];
   help: boolean;
   version: boolean;
 }

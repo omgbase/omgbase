@@ -40,6 +40,7 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
     io: cli.io,
     noColor: cli.style.tier === "plain",
     ...(cli.flags.server ? { server: cli.flags.server } : {}),
+    ...(cli.flags.headers ? { headers: cli.flags.headers } : {}),
   });
 
   const interactive = cli.io.stdoutTTY && Boolean(process.stdin.isTTY);

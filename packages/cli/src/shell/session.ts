@@ -40,6 +40,8 @@ export interface ShellSessionOptions {
   /** Remote engine address (`--server <cmd|url>`): threaded into every line so
    *  each command runs against the remote engine and shares one connection. */
   server?: string;
+  /** Extra HTTP headers (`-H`) for an http(s) `--server`: threaded alongside it. */
+  headers?: string[];
 }
 
 export class ShellSession {
@@ -48,6 +50,7 @@ export class ShellSession {
   private readonly io: IO;
   private readonly style: Style;
   private readonly server: string | undefined;
+  private readonly headers: string[] | undefined;
 
   private readonly bindings = new Map<string, Captured>();
   private frame: Row[] | null = null;
@@ -61,6 +64,7 @@ export class ShellSession {
     this.cwd = opts.cwd;
     this.io = opts.io;
     this.server = opts.server;
+    this.headers = opts.headers;
     const noColor = opts.noColor ?? !opts.io.stdoutTTY;
     this.style = new Style({ noColor, isTTY: opts.io.stdoutTTY });
   }
@@ -206,7 +210,10 @@ export class ShellSession {
     if (!command) return EXIT_OK;
     // In a remote session, thread the server address into every line (unless the
     // line names its own) so each command runs against the shared remote engine.
-    if (this.server !== undefined && flags.server === undefined) flags.server = this.server;
+    if (this.server !== undefined && flags.server === undefined) {
+      flags.server = this.server;
+      if (this.headers && flags.headers === undefined) flags.headers = this.headers;
+    }
     const io = quiet ? this.quietIO() : this.io;
     const cli = makeCli(flags, io, { ...(this.workspace ? { workspace: this.workspace } : {}), cwd: this.cwd, capture: sink });
     return runCommand(cli, command, rest);

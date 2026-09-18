@@ -33,7 +33,8 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 |---|---|
 | `-C <dir>` | Run as if cwd were `<dir>` |
 | `--repo <slug>` | Select repo within the workspace |
-| `--server <cmd\|url>` | Run against a **remote engine over MCP** instead of the embedded local store (ADR-014). Global by design; commands adopt it one at a time (today: `sync`), others reject it rather than silently running locally. |
+| `--server <cmd\|url>` | Run against a **remote engine over MCP** instead of the embedded local store (ADR-014). An `http(s)://…` value connects over Streamable HTTP (the full URL, including any secret base path, is used verbatim); anything else is a command spawned and talked to over stdio. Global by design; commands adopt it one at a time (today: `sync`), others reject it rather than silently running locally. |
+| `-H "Name: value"` | Extra HTTP header, repeatable; sent on every request when `--server` is an `http(s)` URL (errors for a stdio `--server`). |
 | `--json` | Machine output: the library result object, verbatim, one JSON document on stdout |
 | `--jsonl` | List-shaped results as one JSON object per line (streaming-friendly) |
 | `--ids` | List-shaped results as bare IDs, one per line (pipe fuel) |
@@ -246,7 +247,7 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 |---|---|
 | `omg sync` | One-shot freshness sweep (§3.3), verbose: files ingested, dispositions summary. Idempotent; safe alongside a live watcher (hash-based echo suppression makes double ingest a no-op). |
 | `omg sync --watch` | Foreground watcher (checkpoints at quiescence); holds the watch lease. Process supervision is the OS's job (tmux/launchd/systemd) — the CLI does not daemonize in v1. (There is no separate `omg sync --watch` — watching is a mode of `sync`, ADR-014.) |
-| `omg sync --server <cmd> [--root <dir>] [--out] [--watch]` | The same reconcile, but against a remote engine **over MCP** (the global `--server` flag): connects as an MCP client to the spawned server and drives the coordinator. Shares `runFsMirror` with the standalone `omgbase-sync` bin. No local workspace required (the fs dir is the source). |
+| `omg sync --server <cmd\|url> [-H "Name: value"]... [--root <dir>] [--out] [--watch]` | The same reconcile, but against a remote engine **over MCP** (the global `--server` flag): connects as an MCP client — over stdio to a spawned `<cmd>`, or over Streamable HTTP to an `http(s)` `url` (repeatable `-H` headers) — and drives the coordinator. Shares `runFsMirror` with the standalone `omgbase-sync` bin. No local workspace required (the fs dir is the source). |
 | `omg mcp [--no-watch]` | MCP server on **stdio**; the host (Claude Code, Cursor, …) owns the process lifetime. Runs an in-process watcher by default so a lone `omg mcp` session is always fresh — auto-disabled when another live lease exists; `--no-watch` forces off. This is the one-line integration: `{"command": "omg", "args": ["mcp", "-C", "/path/to/vault"]}`. |
 
 ### 5.9 Admin, maintenance, dev

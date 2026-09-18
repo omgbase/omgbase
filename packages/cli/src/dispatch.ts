@@ -58,6 +58,13 @@ export function parseGlobals(argv: string[]): Parsed {
         flags.server = s;
         continue;
       }
+      case "-H":
+      case "--header": {
+        const h = argv[++i];
+        if (h === undefined) throw new CliUsageError(`${a} requires a "Name: value" header`);
+        (flags.headers ??= []).push(h);
+        continue;
+      }
       case "--json":
         flags.mode = "json";
         continue;

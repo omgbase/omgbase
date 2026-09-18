@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { ObserveResult, ObserveDeleteResult } from "@omgbase/core";
 import type { EngineClient, ChangesPage, DocBytes } from "./engine-client.js";
 
 // McpEngineClient (ADR-014 §7): reaches the omgbase side over the Model Context
 // Protocol. The coordinator is identical against this or the in-process client;
-// only the transport differs. v1 connects over stdio by spawning an `omg mcp`
-// server; a Streamable-HTTP transport for a truly remote server is additive
-// (swap the transport passed to the Client).
+// only the transport differs. `connectStdioEngine` spawns an `omg mcp` server
+// and talks over its stdin/stdout; `connectHttpEngine` reaches a truly remote
+// server over Streamable HTTP. Both hand a connected Client to the same wrapper.
 
 interface ToolResult {
   content?: { type: string; text?: string }[];
@@ -78,6 +80,23 @@ export async function connectStdioEngine(spec: { command: string; args?: string[
     args: spec.args ?? [],
     ...(spec.env ? { env: spec.env } : {}),
   });
+  await client.connect(transport);
+  return new McpEngineClient(client);
+}
+
+/** Connect to an omgbase MCP server over Streamable HTTP at `url`. The full URL
+ *  (including any base path) is used verbatim, so a secret-prefixed endpoint
+ *  like `https://host/k/<secret>/mcp` authenticates by the path alone. Extra
+ *  `headers` are sent on every request (for hosts that need auth beyond the
+ *  path). Returns a ready EngineClient. */
+export async function connectHttpEngine(spec: { url: string; headers?: Record<string, string> }): Promise<McpEngineClient> {
+  const client = new Client({ name: "omgbase-sync", version: "0.0.0" });
+  // The transport's `sessionId` getter is `string | undefined`, which trips the
+  // Transport interface's optional `sessionId?: string` under
+  // exactOptionalPropertyTypes; the value is only ever read by the SDK.
+  const transport = new StreamableHTTPClientTransport(new URL(spec.url), {
+    ...(spec.headers && Object.keys(spec.headers).length > 0 ? { requestInit: { headers: spec.headers } } : {}),
+  }) as Transport;
   await client.connect(transport);
   return new McpEngineClient(client);
 }
