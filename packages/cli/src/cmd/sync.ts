@@ -13,6 +13,11 @@ function runSync(cli: Cli, args: string[]): number {
   parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
+  if (!repo.rootPath) {
+    if (cli.flags.mode === "human") cli.io.out(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
+    else cli.io.out(JSON.stringify({ scanned: 0, ingested: [], deleted: [], conflicted: [], changed: false }));
+    return EXIT_OK;
+  }
   const result = freshnessSweep(ws.store, repo.repoId, repo.rootPath);
 
   if (cli.flags.mode !== "human") {

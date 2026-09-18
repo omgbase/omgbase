@@ -3,8 +3,7 @@ import { join, basename, resolve, dirname, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 import { spawnSync } from "node:child_process";
-import { Workspace, attachRepo, walkMarkdownAsync, rebuildFileStats, reposStatus, workspaceSettings, writeWorkspaceSettings, createSource, attachSourceToRepo, getSourceByName } from "@omgbase/core";
-import { ensureFsAdapter, FS_ADAPTER } from "./_source.js";
+import { Workspace, attachRepo, walkMarkdownAsync, rebuildFileStats, reposStatus, workspaceSettings, writeWorkspaceSettings } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns as columnsLocal } from "../render.js";
@@ -271,19 +270,10 @@ async function runAttach(cli: Cli, args: string[]): Promise<number> {
     if (complete) files = walked;
   }
 
+  // ensureRepo (inside attachRepo) registers the repo's `fs` source from `abs`
+  // (ADR-014); a repo owns identity, its bytes come from an attached source.
   const result = attachRepo(ws.store, slug, abs, files);
   rebuildFileStats(ws.store, result.repoId, abs);
-
-  // Register the filesystem source in the source registry (ADR-014 Stage 5) so
-  // the repo owns an explicit `fs` source — the durable form of "where its bytes
-  // come from" — not just a `root_path`. Idempotent on re-attach. `root_path` is
-  // still written by attachRepo for back-compat until it is retired (Stage 6).
-  ensureFsAdapter(ws.store);
-  const sourceName = `${slug}-fs`;
-  if (!getSourceByName(ws.store, sourceName)) {
-    const sourceId = createSource(ws.store, { name: sourceName, adapter: FS_ADAPTER, config: { root: abs } });
-    attachSourceToRepo(ws.store, result.repoId, sourceId);
-  }
 
   const { render, style, io } = cli;
   if (cli.flags.mode === "human") {
@@ -343,7 +333,7 @@ function runRepos(cli: Cli, args: string[]): number {
   const { render, style, io } = cli;
   const rows = repos.map((r) => [
     `  ${render.g.diamond} ${style.accent(r.slug)}`,
-    style.path(shortenHome(r.rootPath)),
+    style.path(r.rootPath ? shortenHome(r.rootPath) : "(no source)"),
     style.dim(`${r.status.docs} docs`),
     style.dim(`${r.status.blocks} blocks`),
   ]);

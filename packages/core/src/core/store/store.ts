@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL } from "./schema.js";
 import { cosineBytes } from "../vec.js";
+import { mintId } from "../ids.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -52,6 +53,7 @@ export class Store {
       if (v === 7) { this.migrateV7(); continue; }
       if (v === 9) { this.migrateV9(); continue; }
       if (v === 11) { this.migrateV11(); continue; }
+      if (v === 13) { this.migrateV13(); continue; }
       const ddl = MIGRATIONS[v];
       if (!ddl) throw new Error(`no migration to schema v${v}`);
       this.db.exec(ddl);
@@ -111,6 +113,41 @@ export class Store {
     // one is not — otherwise there's nothing to do.
     if (tableExists("docs") || !tableExists("documents")) return;
     this.db.exec("ALTER TABLE documents RENAME TO docs");
+  }
+
+  // v13 (ADR-014): a repo owns identity, not a filesystem. Drop repos.root_path,
+  // migrating each repo's former root_path into an `fs` source + attachment (the
+  // durable "where its bytes come from"). Idempotent: skip if the column is gone
+  // (fresh dbs get the columnless repos table straight from the DDL). Runs in one
+  // transaction; DROP COLUMN needs modern SQLite (>= 3.35, bundled by
+  // better-sqlite3), and root_path is a plain unindexed column so it drops cleanly.
+  private migrateV13(): void {
+    const cols = this.db.pragma("table_info(repos)") as { name: string }[];
+    if (cols.length === 0 || !cols.some((c) => c.name === "root_path")) return;
+
+    this.db.transaction(() => {
+      // The fs adapter row backs the migrated sources (sources.adapter FK).
+      this.db.exec("INSERT OR IGNORE INTO adapters (name, command, args) VALUES ('fs', 'omgbase-fs-adapter', '[]')");
+
+      const repos = this.db
+        .prepare("SELECT repo_id, slug, root_path FROM repos WHERE root_path IS NOT NULL AND root_path != ''")
+        .all() as { repo_id: string; slug: string; root_path: string }[];
+      const findByName = this.db.prepare("SELECT source_id FROM sources WHERE name = ?");
+      const insSource = this.db.prepare("INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?, ?, 'fs', ?, '{}')");
+      const insAttach = this.db.prepare("INSERT OR IGNORE INTO attachments (repo_id, source_id) VALUES (?, ?)");
+      for (const r of repos) {
+        const name = `${r.slug}-fs`;
+        const existing = findByName.get(name) as { source_id: string } | undefined;
+        let sourceId = existing?.source_id;
+        if (!sourceId) {
+          sourceId = mintId("src");
+          insSource.run(sourceId, name, JSON.stringify({ root: r.root_path }));
+        }
+        insAttach.run(r.repo_id, sourceId);
+      }
+
+      this.db.exec("ALTER TABLE repos DROP COLUMN root_path");
+    })();
   }
 
   /**

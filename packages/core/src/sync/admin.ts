@@ -39,7 +39,7 @@ export interface RepoStatus {
  *   false and disk agreement is unverified (do not infer convergence from it).
  */
 export function reposStatus(store: Store, repoId: string, rootPath?: string): RepoStatus {
-  const repo = store.db.prepare("SELECT slug, root_path FROM repos WHERE repo_id = ?").get(repoId) as { slug: string; root_path: string } | undefined;
+  const repo = store.db.prepare("SELECT slug FROM repos WHERE repo_id = ?").get(repoId) as { slug: string } | undefined;
   const count = (sql: string): number => (store.db.prepare(sql).get(repoId) as { c: number }).c;
   const unconverged = (store.db.prepare(
     `SELECT count(*) c FROM docs d JOIN revisions r ON r.rev_id = d.current_rev
@@ -56,7 +56,7 @@ export function reposStatus(store: Store, repoId: string, rootPath?: string): Re
   return {
     repoId,
     slug: repo?.slug ?? "",
-    rootPath: repo?.root_path ?? "",
+    rootPath: rootPath ?? "",
     docs: count("SELECT count(*) c FROM docs WHERE repo_id = ? AND deleted_commit IS NULL"),
     blocks: count("SELECT count(*) c FROM blocks WHERE repo_id = ? AND deleted_commit IS NULL"),
     commits: count("SELECT count(*) c FROM commits WHERE repo_id = ?"),

@@ -266,16 +266,21 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
    - ⏳ **Deferred** — wiring local `omg sync`/`watch` to *delegate* to the
      Coordinator (they already share `observeOne`, so no drift); durable cursor
      persistence; `subscribe` (D1).
-5. **Stage 5 — `attach` populates the registry. ✅ DONE (partial).** `omg attach`
-   now also seeds the `fs` adapter + creates an `<slug>-fs` source + attaches it
-   (idempotent on re-attach), so new repos own an explicit source, not just a
-   `root_path`. `root_path` is still written for back-compat. *Deferred to Stage
-   6:* making `root_path` derived-from-source and retiring the three duplicate
-   attach impls (`core/attach.ts`, `sync/attach.ts`, `sync/driver.ts
-   attachSource`) — that pairs with the column removal.
-6. **Stage 6 — remove `root_path` (LAST, breaking).** Table-rebuild migration;
-   migrate the ~117 call sites to resolve the fs root from the attached source
-   (most via a single `repoFsRoot(repo)` helper). Drop the column.
+5. **Stage 5 — `attach` populates the registry. ✅ DONE.** Source registration
+   now lives in `ensureRepo` itself: given a `rootPath` it seeds the `fs` adapter
+   + creates+attaches an `<slug>-fs` source (idempotent). So *every* attach entry
+   point (`core/attach.ts`, `sync/attach.ts`, the CLI) registers the source
+   through one place — the fs-binding duplication that mattered is gone (two thin
+   walk+ingest wrappers remain, but both funnel through `ensureRepo`).
+6. **Stage 6 — remove `root_path`. ✅ DONE.** Schema v13 drops the column
+   (`ALTER TABLE repos DROP COLUMN`, in a transaction) and migrates each existing
+   `root_path` into an `fs` source + attachment. `RepoRow.rootPath` is now
+   **derived** from the attached fs source (`Workspace.repos()` + `reposStatus`);
+   it is `string | null` (null = sourceless/headless). The ~117 `repo.rootPath`
+   *consumers* were unaffected; only 3 direct-SQL sites + a handful of CLI
+   null-guards changed. `ensureRepo` no longer writes the column. Verified: a
+   dedicated v12→v13 migration test, the full suite (780 core tests), and an
+   end-to-end CLI smoke (derived rootPath + headless no-op).
 
 ## 10. Decisions (resolved 2026-09-17)
 

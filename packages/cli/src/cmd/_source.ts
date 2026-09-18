@@ -47,19 +47,13 @@ function hasEnv(source: SourceRow): boolean {
 }
 
 /**
- * Build the live filesystem SyncSource for a repo, or null if it has none.
- * Prefers a registered fs source (registry); falls back to `root_path`.
+ * Build the live filesystem SyncSource for a repo from its attached `fs` source
+ * (ADR-014), or null if it has none (a sourceless/headless repo).
  */
 export async function openRepoSource(store: Store, repo: RepoRow): Promise<SyncSource | null> {
   const fsSource = sourcesForRepo(store, repo.repoId).find((s) => s.adapter === FS_ADAPTER);
-  if (fsSource) {
-    const root = fsSource.config.root;
-    if (typeof root !== "string" || root === "") return null;
-    return spawnSource(fsSource);
-  }
-  // Back-compat: synthesize the fs source from the repo's root_path.
-  if (repo.rootPath) {
-    return createExternalSource({ command: execPath, args: [fsAdapterBinPath(), "--root", repo.rootPath] });
-  }
-  return null;
+  if (!fsSource) return null;
+  const root = fsSource.config.root;
+  if (typeof root !== "string" || root === "") return null;
+  return spawnSource(fsSource);
 }

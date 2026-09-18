@@ -11,8 +11,8 @@ function runStatus(cli: Cli, args: string[]): number {
   parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const rs = reposStatus(ws.store, repo.repoId, repo.rootPath);
-  const ss = syncStatus(ws.store, repo.repoId, repo.rootPath);
+  const rs = reposStatus(ws.store, repo.repoId, repo.rootPath ?? undefined);
+  const ss = syncStatus(ws.store, repo.repoId, repo.rootPath ?? undefined);
   const watcher = watchLeaseLive(ws.omgbaseDir);
   // Embedding queue depth: count blocks whose embeddings are missing is a v1
   // approximation; the queue table isn't wired yet, so report 0 (05 §6 stub).
@@ -41,7 +41,7 @@ function runStatus(cli: Cli, args: string[]): number {
   const { render, style, io } = cli;
   const g = render.g;
   io.out(render.wordmark(repo.slug));
-  io.out(`  ${style.path(shortenHome(repo.rootPath))}`);
+  io.out(`  ${style.path(repo.rootPath ? shortenHome(repo.rootPath) : "(no source — headless)")}`);
   io.out(render.rule(40));
 
   // Two-column figure grid.

@@ -19,7 +19,7 @@ The files are always the source of truth for *content*; the engine's database ow
 
 ## Status
 
-The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. A **store-to-store sync layer** (`@omgbase/sync`, ADR-014) is in progress — the source registry, the `observe`/`observe_many`/`observe_delete` MCP surface, the headless `DocStore` seam, and the standalone `omgbase-sync` coordinator are built; `attach`-as-source-sugar and retiring the legacy `root_path` column are the remaining migration steps. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
+The engine is feature-complete and tested: round-trip fidelity, core store, identity reconciliation, mutation & concurrency, graph, retrieval, agent ergonomics, and hardening are all built. A **store-to-store sync layer** (`@omgbase/sync`, ADR-014) is built: the source registry (`omg source`), the `observe`/`observe_many`/`observe_delete` MCP surface, the headless `DocStore` seam, and the standalone `omgbase-sync` coordinator. A repo now owns identity, not a filesystem — its bytes come from an attached source, the legacy `repos.root_path` column has been removed (schema v13; `RepoRow.rootPath` is derived), and sourceless/headless repos are first-class. See `docs/` for the as-built design reference and the repo-root `AGENTS.md` for orientation.
 
 ## Install
 

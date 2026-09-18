@@ -126,7 +126,7 @@ export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: 
   }
   const req: ApplyRequest = {
     repoId: repo.repoId,
-    rootPath: repo.rootPath,
+    ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ops,
     origin: { actor: opts.actor ?? defaultActor(), ...(opts.reason ? { reason: opts.reason } : {}) },
     omgbaseDir: ws.omgbaseDir,

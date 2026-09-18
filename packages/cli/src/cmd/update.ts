@@ -42,6 +42,7 @@ function runDocUpdate(cli: Cli, args: string[]): number {
 
   const ws = cli.workspace();
   const repo = cli.repo(ws);
+  if (!repo.rootPath) throw new CliUsageError(`repo '${repo.slug}' has no filesystem source; 'update' needs a working tree`);
   const ctx: DocsUpdateContext = {
     repoId: repo.repoId,
     rootPath: repo.rootPath,

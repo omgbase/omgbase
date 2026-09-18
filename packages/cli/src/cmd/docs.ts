@@ -9,8 +9,8 @@ import { readContent, extractContentOpts } from "./_mutate.js";
 // Document-level commands (11 §5.6): new / mv / rm --doc / meta. Thin wrappers
 // over the core doc ops, which own the file-write + commit + flock protocol.
 
-function ctxOf(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, rootPath: string, actor?: string): DocOpContext {
-  return { repoId, rootPath, omgbaseDir: ws.omgbaseDir, ...(actor ? { actor } : {}) };
+function ctxOf(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, rootPath: string | null, actor?: string): DocOpContext {
+  return { repoId, ...(rootPath ? { rootPath } : {}), omgbaseDir: ws.omgbaseDir, ...(actor ? { actor } : {}) };
 }
 
 function report(cli: Cli, verb: string, res: DocOpResult): number {
