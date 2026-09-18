@@ -6,3 +6,4 @@
 export { type EngineClient, type ChangesPage, type DocBytes, InProcessEngineClient } from "./engine-client.js";
 export { McpEngineClient, connectStdioEngine } from "./mcp-engine-client.js";
 export { Coordinator, type SyncInSummary, type SyncOutSummary } from "./coordinator.js";
+export { runFsMirror, type FsMirrorOptions } from "./mirror.js";

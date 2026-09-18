@@ -18,6 +18,7 @@
   "dependencies": {
     "@omgbase/core": "workspace:*",
     "@omgbase/fs-adapter": "workspace:*",
+    "@omgbase/sync": "workspace:*",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

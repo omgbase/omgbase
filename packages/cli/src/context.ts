@@ -16,6 +16,13 @@ export interface GlobalFlags {
   stale: boolean; // --stale (skip freshness sweep)
   noColor: boolean; // --no-color / NO_COLOR / non-TTY
   dryRun: boolean; // --dry-run (global across mutators)
+  /**
+   * --server <cmd|url>: run the command against a remote engine over MCP instead
+   * of the embedded local store (ADR-014). Global by design — the surface is
+   * uniform and commands adopt remote mode one at a time (REMOTE_OK). Today only
+   * `sync` implements it; other commands error rather than silently run locally.
+   */
+  server?: string;
   help: boolean;
   version: boolean;
 }
@@ -96,6 +103,10 @@ export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
 // Commands that manage sync themselves — skip the freshness sweep (11 §3.3).
 // `shell` is exempt because each line it runs sweeps on its own. `source`
 // creates/binds sources and runs its own initial sync, so it skips the pre-sweep.
-export const SKIP_FRESHNESS = new Set(["sync", "watch", "mcp", "init", "source", "help", "version", "shell"]);
+export const SKIP_FRESHNESS = new Set(["sync", "mcp", "init", "source", "help", "version", "shell"]);
+// Commands that implement the global `--server` remote (MCP-client) mode
+// (ADR-014). Others error on `--server` rather than silently running locally.
+// This set grows as commands gain a remote path (the roadmap: most reads, shell).
+export const REMOTE_OK = new Set(["sync"]);
 
 export { CliUsageError };

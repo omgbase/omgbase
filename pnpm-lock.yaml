@@ -196,6 +196,9 @@ importers:
       '@omgbase/fs-adapter':
         specifier: workspace:*
         version: link:../fs-adapter
+      '@omgbase/sync':
+        specifier: workspace:*
+        version: link:../sync
       yaml:
         specifier: ^2.9.0
         version: 2.9.0

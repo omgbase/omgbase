@@ -106,7 +106,7 @@ In addition to the core CEL filter language (see `docs/query-language.md`), the 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync`, `watch`, `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
 
 ### The mental model: workspace, repo, source, config
 
@@ -181,12 +181,14 @@ omg config set gc.enabled true                                  # no --repo ⇒ 
 
 ## Sources & syncing
 
-A repo stays current with its source(s). Once `omg source add <dir>` has pointed a repo at a directory, the built-in freshness/watch machinery keeps it fresh with no extra setup:
+A repo stays current with its source(s). Once `omg source add <dir>` has pointed a repo at a directory, one verb keeps it fresh:
 
 ```bash
 omg sync            # one-shot: re-ingest anything changed on disk since last ingest
-omg watch           # stay live: an external fs-adapter process streams edits; the engine reconciles them
+omg sync --watch    # stay live: an external fs-adapter process streams edits; the engine reconciles them
 ```
+
+(There is no separate `omg watch` — watching is `omg sync --watch`. And `omg sync` is just the explicit form of the freshness sweep every read already runs by default.)
 
 `omg source` manages the registry — a repo can have more than one source, and existing sources can be re-bound:
 
@@ -197,19 +199,19 @@ omg source attach notes-fs            # attach an existing source to the current
 omg source detach notes-fs            # unbind (rm to delete)
 ```
 
-### The standalone synchronizer (`omgbase-sync`)
+### Remote / over-MCP sync (`--server`)
 
-`@omgbase/sync` is a separate coordinator that mirrors a store against an omgbase repo reached **over MCP** — the same tools an agent uses. This is how you sync against a **remote or headless** server, or run sync as its own process:
+`omg sync` runs **in-process** against the local workspace by default. Point it at a server with the global **`--server`** flag and the *same command* runs against a **remote or headless** engine **over MCP** — the coordinator connects as an MCP client and drives the exact tools an agent uses:
 
 ```bash
-# Mirror a directory into the repo served by an MCP server (spawned as `omg mcp` by default):
-omgbase-sync --root ./my-vault              # one initial sync (filesystem → engine)
-omgbase-sync --root ./my-vault --watch      # stay live: mirror edits as they land
-omgbase-sync --root ./my-vault --out        # also export engine-authored changes back to disk
-omgbase-sync --root ./my-vault --server "omg mcp -C /path/to/vault"   # custom / remote server command
+omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault           # one sync over MCP
+omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault --watch   # stay live over MCP
+omg sync --server "…" --root ./my-vault --out                             # also export engine-authored changes back
 ```
 
-Under the hood it fetches changed files from a source adapter and calls the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled and echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back out. It never re-implements reconciliation — that stays in the engine (`docs/sync-service-design.md`, ADR-014).
+`--server` is a **global flag** (ADR-014): the goal is that most commands eventually run either embedded-local or remote-over-MCP. Today `sync` implements it; other commands reject `--server` rather than silently running locally, and gain remote support one at a time.
+
+The same coordinator ships as a standalone bin, **`omgbase-sync`**, for environments that don't have the full `omg` CLI — `omgbase-sync --root ./v [--watch] [--out]` is exactly `omg sync --server … --root ./v`. Under the hood both fetch changed files from a source adapter and call the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled + echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back. Reconciliation never leaves the engine (`docs/sync-service-design.md`, ADR-014).
 
 ### Remote / headless servers
 

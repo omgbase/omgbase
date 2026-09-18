@@ -1,5 +1,5 @@
 import { freshnessSweep, watchLeaseLive } from "@omgbase/core";
-import { NO_WORKSPACE_OK, SKIP_FRESHNESS, type Cli, type GlobalFlags } from "./context.js";
+import { NO_WORKSPACE_OK, SKIP_FRESHNESS, REMOTE_OK, type Cli, type GlobalFlags } from "./context.js";
 import { CliUsageError, EngineErrorLike, renderError } from "./output.js";
 import { resolveCommand } from "./commands.js";
 
@@ -50,6 +50,12 @@ export function parseGlobals(argv: string[]): Parsed {
         const slug = argv[++i];
         if (slug === undefined) throw new CliUsageError("--repo requires a slug");
         flags.repo = slug;
+        continue;
+      }
+      case "--server": {
+        const s = argv[++i];
+        if (s === undefined) throw new CliUsageError("--server requires a command or url");
+        flags.server = s;
         continue;
       }
       case "--json":
@@ -110,6 +116,17 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
   }
   // `--help` after a command → route to help for that command.
   const args = cli.flags.help ? ["--help", ...rest] : rest;
+
+  // Global `--server` (remote/MCP mode) is only implemented by some commands so
+  // far (REMOTE_OK); reject it elsewhere rather than silently running locally.
+  if (cli.flags.server !== undefined && !cli.flags.help && !REMOTE_OK.has(resolved.name)) {
+    return renderError(
+      new CliUsageError(`--server is not yet supported for '${resolved.name}' (remote mode is on the roadmap; today: sync)`),
+      cli.io,
+      cli.style,
+      cli.flags.mode !== "human",
+    );
+  }
 
   try {
     // Freshness sweep (11 §3.3): current-by-default, unless --stale, a live

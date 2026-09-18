@@ -3,10 +3,18 @@
 > **Status: IMPLEMENTED (ADR-014).** All six stages have landed on branch
 > `multi-repo-story` (see §9). This file is retained as the design rationale +
 > stage record; the as-built surface lives in `docs/sync-plugins.md`,
-> `docs/mcp-api.md`, `docs/data-model.md`, and the code (ground truth). Not yet
-> done: the optional `subscribe` (D1), durable export-cursor persistence, and
-> wiring local `omg sync`/`watch` to *delegate* to the Coordinator (they already
-> share the `observeOne` primitive, so there is no behavior drift).
+> `docs/mcp-api.md`, `docs/data-model.md`, and the code (ground truth).
+>
+> **CLI surface (follow-up, done):** there is one sync verb — `omg sync`
+> (one-shot local), `omg sync --watch` (live local; the former `omg watch` is
+> gone), and `omg sync --server <cmd>` (remote over MCP, via the Coordinator).
+> `--server` is a **global** flag (`context.REMOTE_OK`) so any command can adopt
+> remote mode over time (roadmap: reads, `shell`); today only `sync` implements
+> it. `omgbase-sync` is now a thin wrapper over the shared `runFsMirror` — i.e.
+> `omg sync --server … --root X` ≡ `omgbase-sync --root X`.
+>
+> Not yet done: the optional `subscribe` (D1), durable export-cursor persistence,
+> and per-command remote (`--server`) support beyond `sync`.
 
 ## 1. Motivation
 
@@ -273,9 +281,12 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
      commits (loop safety, recommendation c) and relies on the idempotent echo
      gate; cursor is per-session in v1 (recommendation b). Coordinator tests +
      end-to-end MCP-transport smoke verified.
-   - ⏳ **Deferred** — wiring local `omg sync`/`watch` to *delegate* to the
-     Coordinator (they already share `observeOne`, so no drift); durable cursor
-     persistence; `subscribe` (D1).
+   - ✅ **CLI unified (follow-up)** — one `omg sync` verb: local one-shot,
+     `--watch` (live local; `omg watch` removed), and `--server <cmd>` (remote via
+     the Coordinator, the global `--server` flag). `omgbase-sync` reduced to a
+     thin wrapper over the shared `runFsMirror`.
+   - ⏳ **Deferred** — durable export-cursor persistence; `subscribe` (D1);
+     `--server` support for commands beyond `sync` (roadmap: reads, `shell`).
 5. **Stage 5 — `attach` populates the registry. ✅ DONE.** Source registration
    now lives in `ensureRepo` itself: given a `rootPath` it seeds the `fs` adapter
    + creates+attaches an `<slug>-fs` source (idempotent). So *every* attach entry
