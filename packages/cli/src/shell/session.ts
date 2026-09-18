@@ -30,18 +30,24 @@ import {
 // future Markdown CLI-session runner, not just interactive readline.
 
 export interface ShellSessionOptions {
-  workspace: Workspace;
+  /** The shared local workspace. Omitted in remote (`--server`) mode: every line
+   *  routes over MCP and never touches a local store. */
+  workspace?: Workspace;
   cwd: string;
   io: IO;
   /** Force plain styling for the shell's own notices (matches the command tier). */
   noColor?: boolean;
+  /** Remote engine address (`--server <cmd|url>`): threaded into every line so
+   *  each command runs against the remote engine and shares one connection. */
+  server?: string;
 }
 
 export class ShellSession {
-  private readonly workspace: Workspace;
+  private readonly workspace: Workspace | undefined;
   private readonly cwd: string;
   private readonly io: IO;
   private readonly style: Style;
+  private readonly server: string | undefined;
 
   private readonly bindings = new Map<string, Captured>();
   private frame: Row[] | null = null;
@@ -54,6 +60,7 @@ export class ShellSession {
     this.workspace = opts.workspace;
     this.cwd = opts.cwd;
     this.io = opts.io;
+    this.server = opts.server;
     const noColor = opts.noColor ?? !opts.io.stdoutTTY;
     this.style = new Style({ noColor, isTTY: opts.io.stdoutTTY });
   }
@@ -197,8 +204,11 @@ export class ShellSession {
   private async dispatch(tokens: string[], sink: (v: unknown) => void, quiet: boolean): Promise<number> {
     const { flags, command, rest } = parseGlobals(tokens);
     if (!command) return EXIT_OK;
+    // In a remote session, thread the server address into every line (unless the
+    // line names its own) so each command runs against the shared remote engine.
+    if (this.server !== undefined && flags.server === undefined) flags.server = this.server;
     const io = quiet ? this.quietIO() : this.io;
-    const cli = makeCli(flags, io, { workspace: this.workspace, cwd: this.cwd, capture: sink });
+    const cli = makeCli(flags, io, { ...(this.workspace ? { workspace: this.workspace } : {}), cwd: this.cwd, capture: sink });
     return runCommand(cli, command, rest);
   }
 

@@ -19,8 +19,9 @@ export interface GlobalFlags {
   /**
    * --server <cmd|url>: run the command against a remote engine over MCP instead
    * of the embedded local store (ADR-014). Global by design — the surface is
-   * uniform and commands adopt remote mode one at a time (REMOTE_OK). Today only
-   * `sync` implements it; other commands error rather than silently run locally.
+   * uniform and commands adopt remote mode one at a time (REMOTE_OK). Reads,
+   * doc-level mutators, sync, and shell implement it; block-level sugar that
+   * needs local ref resolution / a working tree errors rather than run locally.
    */
   server?: string;
   help: boolean;
@@ -106,10 +107,13 @@ export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
 export const SKIP_FRESHNESS = new Set(["sync", "mcp", "init", "source", "help", "version", "shell"]);
 // Commands that implement the global `--server` remote (MCP-client) mode
 // (ADR-014). Others error on `--server` rather than silently running locally.
-// This set grows as commands gain a remote path (the roadmap: most reads, shell).
+// Covers reads, doc-level mutators, sync, and shell; block-level sugar stays
+// local (it builds ops via the local store — ref resolution + CAS).
 export const REMOTE_OK = new Set([
   "sync", "query", "outline", "hist", "cat", "ls", "diff", "find", "log",
   "new", "mv", "meta", "rm", "update", "retarget",
+  // shell accepts --server itself, then threads it into every line it runs.
+  "shell",
 ]);
 
 export { CliUsageError };

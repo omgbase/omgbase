@@ -121,7 +121,7 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
   // far (REMOTE_OK); reject it elsewhere rather than silently running locally.
   if (cli.flags.server !== undefined && !cli.flags.help && !REMOTE_OK.has(resolved.name)) {
     return renderError(
-      new CliUsageError(`--server is not yet supported for '${resolved.name}' (remote mode is on the roadmap; today: sync)`),
+      new CliUsageError(`--server is not supported for '${resolved.name}' — it needs local ref resolution or a working tree; run it against a local workspace`),
       cli.io,
       cli.style,
       cli.flags.mode !== "human",

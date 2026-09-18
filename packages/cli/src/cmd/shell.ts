@@ -30,13 +30,16 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
   // overrides the interactive prompt. (An empty env value is treated as unset.)
   const promptOpt = values.prompt ?? (process.env.OMG_SHELL_PROMPT || undefined);
 
-  // Resolve the workspace once and hold it open for the session's lifetime.
-  const ws = cli.workspace();
+  // Local mode: resolve the workspace once and hold it open for the session's
+  // lifetime. Remote mode (`--server`): no local store — every line routes over
+  // MCP through the shared connection, so we hold no workspace.
+  const ws = cli.flags.server ? undefined : cli.workspace();
   const session = new ShellSession({
-    workspace: ws,
+    ...(ws ? { workspace: ws } : {}),
     cwd: cli.cwd,
     io: cli.io,
     noColor: cli.style.tier === "plain",
+    ...(cli.flags.server ? { server: cli.flags.server } : {}),
   });
 
   const interactive = cli.io.stdoutTTY && Boolean(process.stdin.isTTY);
