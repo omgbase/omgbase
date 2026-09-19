@@ -48,7 +48,8 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Hydrate many blocks | `nodesGetMany` | — | `nodes_get_many` | — |
 | Metadata card | `nodesGet`(full)+`docLinks`+`docProps` | `show` | **`read_ref`** (kind=card) | ▫️ |
 | Find / rank | `resolveThing`/`textSearch` | `find` | `resolve` (+`text_search`) | ✅ |
-| List documents | (store query) | `ls` | **`docs_list`** | ✅ |
+| List documents (paged) | `docsList` | `ls` (walks every page) | **`docs_list`** | ✅ |
+| Repo shape (dir tree + totals) | `docsTree` | — | **`docs_tree`** | — |
 | Graph neighborhood | `graphNeighborhood` | (`query … follow`) | `graph` | — |
 | Run an OQX fence | `oqxRun` | `run` | `query` | ▫️ |
 

@@ -49,7 +49,7 @@ document-level trivia (leading whitespace, the frontmatter separator).
 
 > **Surface:** `new` / `mv` / `rm --doc` / `meta` (lifecycle:
 > `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`), `cat` / `ls` /
-> `outline` (reads: `read_ref`/`docs_read`, `docs_list`, `docs_outline`),
+> `outline` (reads: `read_ref`/`docs_read`, `docs_tree`, `docs_list`, `docs_outline`),
 > `update <doc>` (whole-document identity-preserving reconcile: `docs_update`).
 
 ---
@@ -223,7 +223,7 @@ walled off from the things that must stay correct (graph, search, bytes).
 
 | Layer | You… | CLI | MCP |
 |---|---|---|---|
-| **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `read_ref`, `docs_list`, `docs_outline`, `docs_update` |
+| **Document** | create/rename/delete/retitle, read whole | `new` `mv` `rm --doc` `meta` `cat` `ls` `outline` `update <doc>` | `docs_*`, `read_ref`, `docs_tree`, `docs_list`, `docs_outline`, `docs_update` |
 | **Block** | edit structure (the anchors) | `insert` `update <block>` `move` `rm <blocks>` `split` `merge` `done` `append` `apply` | `blocks_*`, `tasks_complete`, `sections_append`, `apply` |
 | **Node** | read/query projections; edit one property | `query "from nodes"` `node set` | `query`, `nodes_get(_many)`, `node_set` |
 | **Edge** | assert (by writing links/fields); traverse; retarget | `query "… follow"` `links` `retarget` | `query`, `links_stale`, `links_retarget`, `links_repair` |

@@ -69,7 +69,11 @@ export { reposStatus, syncStatus, type RepoStatus, type SyncStatus, type DiskSta
 export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/read/outline.js";
 export { docsRead, reconstructContent, type DocsReadResult, type DocsReadOptions } from "./core/read/document.js";
 export { nodesGet, nodesGetMany, type GetNode, type Resolution } from "./core/read/nodes.js";
-export { findDoc, loadDocBlocks, blockRaw, docsList, type DocInfo, type BlockNode, type DocListRow } from "./core/read/reader.js";
+export {
+  findDoc, loadDocBlocks, blockRaw, docsList, docsTree, normalizeTreePrefix, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT,
+  type DocInfo, type BlockNode, type DocListRow, type DocListPage, type DocListOptions, type DocTreeEntry, type DocTreePage, type DocTreeOptions,
+} from "./core/read/reader.js";
+export { CursorInvalid, encodeCursor, decodeCursor } from "./core/cursor.js";
 export { resolveRef, type ResolvedRef } from "./core/read/refs.js";
 export { resolve, type ResolveHit, type ResolveInput } from "./search/resolve.js";
 

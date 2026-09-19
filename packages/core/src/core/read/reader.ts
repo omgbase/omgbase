@@ -1,5 +1,6 @@
 import type { Store } from "../store/store.js";
 import { isValidId } from "../ids.js";
+import { encodeCursor, decodeCursor } from "../cursor.js";
 
 // Read-side reconstruction of current-state blocks (02 §3 blocks table).
 // Rebuilds the containment forest for a document from parent_block + order_key.
@@ -12,21 +13,201 @@ export interface DocListRow {
   ts: string | null;
 }
 
-/** List a repo's live documents (path, block count, last-commit ts), ordered by
- *  path. `pathGlob` is a simple LIKE match (`*` → `%`). Backs `omg ls` and the
- *  `docs_list` MCP tool (one implementation for both surfaces). */
-export function docsList(store: Store, repoId: string, opts: { pathGlob?: string } = {}): DocListRow[] {
-  const like = opts.pathGlob ? opts.pathGlob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%") : "%";
+/** A page of the docs_list surface. Honors the uniform list contract (mcp-api
+ *  §1): `truncated` is honest, and when true `cursor` resumes after the last
+ *  item returned. */
+export interface DocListPage {
+  items: DocListRow[];
+  truncated: boolean;
+  cursor: string | null;
+}
+
+export interface DocListOptions {
+  /** Simple LIKE match on the path (`*` → any run, ACROSS `/`). */
+  pathGlob?: string;
+  /** Max rows per page (default DOCS_LIST_DEFAULT_LIMIT). */
+  limit?: number;
+  /** Resume after a previous page's `cursor`. */
+  cursor?: string | null;
+  /** Cap the page's estimated size (~4 chars/token); at least one row is always
+   *  returned so a paging client makes progress. */
+  budgetTokens?: number;
+}
+
+export const DOCS_LIST_DEFAULT_LIMIT = 200;
+
+/** Escape a user glob into a LIKE pattern (`*` → `%`; literal `%`/`_` escaped). */
+function globToLike(glob: string): string {
+  return glob.replace(/[%_\\]/g, "\\$&").replace(/\*/g, "%");
+}
+
+/** Live docs of a repo (path, live block count, last-commit ts) whose path
+ *  matches `like`, ordered by path, optionally resuming strictly after `after`
+ *  and capped at `limit`. The one query behind docs_list and docs_tree. */
+function liveDocRows(store: Store, repoId: string, like: string, after: string | null, limit: number | null): DocListRow[] {
+  const params: unknown[] = [repoId, like];
+  let where = "";
+  if (after !== null) {
+    where += " AND d.path > ?";
+    params.push(after);
+  }
+  let tail = "";
+  if (limit !== null) {
+    tail = " LIMIT ?";
+    params.push(limit);
+  }
   return store.db
     .prepare(
       `SELECT d.path AS path,
               (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
               (SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = d.current_rev) AS ts
        FROM docs d
-       WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'
-       ORDER BY d.path`,
+       WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND d.path LIKE ? ESCAPE '\\'${where}
+       ORDER BY d.path${tail}`,
     )
-    .all(repoId, like) as DocListRow[];
+    .all(...params) as DocListRow[];
+}
+
+// Path-keyset cursors for the path-ordered list surfaces: the shared kernel
+// encoding (core/cursor.ts) with a one-part tuple.
+function encodePathCursor(path: string): string {
+  return encodeCursor([path]);
+}
+function decodePathCursor(cursor: string): string {
+  return decodeCursor(cursor, "docs_list/docs_tree", 1)[0]!;
+}
+
+/** Page an already path-ordered row set under a limit + token budget, issuing
+ *  a keyset cursor when it stops early. Shared by docs_list and docs_tree. */
+function pagePathOrdered<T extends { path: string }>(
+  rows: T[],
+  limit: number,
+  budgetTokens: number | undefined,
+  moreBeyond: boolean,
+): { items: T[]; truncated: boolean; cursor: string | null } {
+  const budget = budgetTokens ?? Infinity;
+  const items: T[] = [];
+  let tokens = 0;
+  let truncated = moreBeyond;
+  for (const row of rows) {
+    if (items.length >= limit) {
+      truncated = true;
+      break;
+    }
+    const cost = Math.ceil(JSON.stringify(row).length / 4);
+    if (items.length > 0 && tokens + cost > budget) {
+      truncated = true;
+      break;
+    }
+    tokens += cost;
+    items.push(row);
+  }
+  const last = items[items.length - 1];
+  return { items, truncated, cursor: truncated && last ? encodePathCursor(last.path) : null };
+}
+
+/** List a repo's live documents (path, block count, last-commit ts), ordered by
+ *  path, as a page: `{ items, truncated, cursor }`. `pathGlob` is a simple LIKE
+ *  match (`*` → `%`). Backs `omg ls` and the `docs_list` MCP tool (one
+ *  implementation for both surfaces). For a directory-aware summary use
+ *  `docsTree`. */
+export function docsList(store: Store, repoId: string, opts: DocListOptions = {}): DocListPage {
+  const like = opts.pathGlob ? globToLike(opts.pathGlob) : "%";
+  const limit = Math.max(1, Math.floor(opts.limit ?? DOCS_LIST_DEFAULT_LIMIT));
+  const after = opts.cursor ? decodePathCursor(opts.cursor) : null;
+  // Fetch one past the limit so `truncated` is a fact, not a guess.
+  const rows = liveDocRows(store, repoId, like, after, limit + 1);
+  const moreBeyond = rows.length > limit;
+  return pagePathOrdered(rows.slice(0, limit), limit, opts.budgetTokens, moreBeyond);
+}
+
+/** One entry of the docs_tree surface: a live document (`kind: "doc"`) or a
+ *  collapsed directory (`kind: "dir"`, path ends in `/`) at the requested
+ *  depth. `docs`/`blocks` are totals under the entry (a doc counts 1 doc);
+ *  `ts` is the latest last-commit timestamp under it. */
+export interface DocTreeEntry {
+  path: string;
+  kind: "dir" | "doc";
+  docs: number;
+  blocks: number;
+  ts: string | null;
+}
+
+export interface DocTreePage {
+  /** The normalized directory prefix the tree was taken under (`""` = root;
+   *  otherwise ends in `/`). */
+  prefix: string;
+  depth: number;
+  /** Totals over EVERYTHING under `prefix`, regardless of paging. */
+  total: { docs: number; blocks: number };
+  entries: DocTreeEntry[];
+  truncated: boolean;
+  cursor: string | null;
+}
+
+export interface DocTreeOptions {
+  /** Directory to take the tree under (`projects` or `projects/`; leading `/`
+   *  tolerated). Omit for the repo root. */
+  path?: string;
+  /** How many path segments below `prefix` to expand before collapsing
+   *  (default 1 = immediate children, like `tree -L 1`). */
+  depth?: number;
+  limit?: number;
+  cursor?: string | null;
+  budgetTokens?: number;
+}
+
+export const DOCS_TREE_DEFAULT_LIMIT = 200;
+
+/** Normalize a tree prefix: no leading `/`, and either empty or ending in `/`. */
+export function normalizeTreePrefix(path: string | undefined): string {
+  const trimmed = (path ?? "").replace(/^\/+/, "").replace(/\/+$/, "");
+  return trimmed === "" ? "" : trimmed + "/";
+}
+
+/** The path-separator-aware orientation read (`tree -L depth` + `du`): every
+ *  live doc under `path` is collapsed at `depth` segments into one entry per
+ *  directory (with doc/block totals + latest ts) or listed as a doc when it is
+ *  shallow enough. Entries are ordered by path; dirs carry a trailing `/`. The
+ *  result is paged under the same limit/cursor/budget contract as docsList,
+ *  and always carries `total` for the whole prefix so an agent sees the size of
+ *  what it is looking at even when the page is cut. Backs the `docs_tree` MCP
+ *  tool. */
+export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}): DocTreePage {
+  const prefix = normalizeTreePrefix(opts.path);
+  const depth = Math.max(1, Math.floor(opts.depth ?? 1));
+  const limit = Math.max(1, Math.floor(opts.limit ?? DOCS_TREE_DEFAULT_LIMIT));
+  const like = prefix === "" ? "%" : globToLike(prefix) + "%";
+  const rows = liveDocRows(store, repoId, like, null, null);
+
+  const byPath = new Map<string, DocTreeEntry>();
+  const total = { docs: 0, blocks: 0 };
+  for (const row of rows) {
+    total.docs += 1;
+    total.blocks += row.blocks;
+    const segs = row.path.slice(prefix.length).split("/");
+    if (segs.length <= depth) {
+      byPath.set(row.path, { path: row.path, kind: "doc", docs: 1, blocks: row.blocks, ts: row.ts });
+      continue;
+    }
+    const dir = prefix + segs.slice(0, depth).join("/") + "/";
+    const cur = byPath.get(dir);
+    if (cur) {
+      cur.docs += 1;
+      cur.blocks += row.blocks;
+      if (row.ts !== null && (cur.ts === null || row.ts > cur.ts)) cur.ts = row.ts;
+    } else {
+      byPath.set(dir, { path: dir, kind: "dir", docs: 1, blocks: row.blocks, ts: row.ts });
+    }
+  }
+
+  let entries = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  if (opts.cursor) {
+    const after = decodePathCursor(opts.cursor);
+    entries = entries.filter((e) => e.path > after);
+  }
+  const { items, truncated, cursor } = pagePathOrdered(entries, limit, opts.budgetTokens, false);
+  return { prefix, depth, total, entries: items, truncated, cursor };
 }
 
 export interface BlockNode {

@@ -130,7 +130,7 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 | Command | Does |
 |---|---|
 | `omg status` | `repos_status` + `sync_status` + watch-lease probe + embedding queue depth. The "where am I" command. |
-| `omg ls [glob]` | Live documents: path, block count, last-commit time. |
+| `omg ls [glob]` | Live documents: path, block count, last-commit time. The engine pages `docs_list`; `ls` walks every page (local and `--server`) so the terminal listing is always complete. |
 | `omg outline <doc\|path> [--depth n] [--section <loc>] [--annotate tasks,edges,updated,confidence]` | `docs_outline`, frozen wire format. Alias: `omg ol`. |
 | `omg cat <node> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. |
 | `omg show <node> [--include children,ancestors,edges,history,section]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. |
@@ -266,6 +266,7 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | MCP tool | CLI |
 |---|---|
 | `docs_outline` | `outline` |
+| `docs_list` / `docs_tree` | `ls` / — (no CLI tree verb yet) |
 | `nodes_get` / `nodes_get_many` | `show` / `cat` (many: stdin IDs) |
 | `resolve` | `find` |
 | `query` | `query` |

@@ -4,7 +4,8 @@ import type { Store } from "../core/store/store.js";
 import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
-import { findDoc, findDocByRef, docsList } from "../core/read/reader.js";
+import { findDoc, findDocByRef, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT } from "../core/read/reader.js";
+import { CursorInvalid } from "../core/cursor.js";
 import { resolveRef } from "../core/read/refs.js";
 import { isValidId } from "../core/ids.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
@@ -27,7 +28,7 @@ import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
-// (docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
+// (docs_tree, docs_list, docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
 // + macros), graph (traverse, path), history (history_node, diff,
 // changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
 // on lists; stable error-code mapping.
@@ -97,6 +98,7 @@ function fail(err: unknown): { content: { type: "text"; text: string }[]; isErro
   let body: unknown;
   if (err instanceof EngineError) body = err.body();
   else if (err instanceof FilterInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false };
+  else if (err instanceof CursorInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
   else if (err instanceof MutationError) body = { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
   else body = { error: "repo_not_found", message: String(err), retriable: false };
   return { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
@@ -398,16 +400,61 @@ export function buildServer(ctx: ServerContext): McpServer {
   );
 
   server.registerTool(
-    "docs_list",
+    "docs_tree",
     {
       description:
-        "List the repo's live documents (the `omg ls` operation): `[{ path, blocks, ts }]` — repo-relative path, live block count, and last-commit timestamp (ISO, or null) — ordered by path. `path_glob` is a simple LIKE match (`*` → any run). For structured/ranked discovery use `query` or `resolve`; this is the plain directory listing.",
-      inputSchema: { path_glob: z.string().optional(), ...REPO_ARG },
+        "ORIENTATION: the path-separator-aware shape of a repo in ONE small call — start here to answer 'what does this repo contain?', NOT with docs_list. Like `tree -L <depth>` crossed with `du`: every live document under `path` (a directory prefix; omit for the repo root) is collapsed at `depth` path segments (default 1 = immediate children), giving one entry per directory and one per shallow document. Returns `{ prefix, depth, total: { docs, blocks }, entries: [{ path, kind: \"dir\"|\"doc\", docs, blocks, ts }], truncated, cursor }`: a `dir` entry's path ends in `/` and its `docs`/`blocks`/`ts` are the totals + latest last-commit timestamp UNDER it; a `doc` entry is a single document (docs = 1). `total` always covers everything under `prefix` regardless of paging, so you see the true size of what you're looking at. On an 800-document repo `depth:1` at the root is ~10 rows where docs_list would be ~800; descend by calling again with `path` set to a dir entry (or raise `depth`). Entries are ordered by path and paged: `limit` (default " + DOCS_TREE_DEFAULT_LIMIT + ") / `cursor` / `budget_tokens` with an honest `truncated`. For ranked or attribute-based discovery use `resolve`/`query`; to enumerate the documents themselves once you know where to look, use docs_list with a `path_glob`.",
+      inputSchema: {
+        path: z.string().optional(),
+        depth: z.number().int().optional(),
+        limit: z.number().int().optional(),
+        cursor: z.string().nullable().optional(),
+        budget_tokens: z.number().int().optional(),
+        ...REPO_ARG,
+      },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return ok(docsList(store, repoId, args.path_glob ? { pathGlob: args.path_glob } : {}));
+        return ok(
+          docsTree(store, repoId, {
+            ...(args.path !== undefined ? { path: args.path } : {}),
+            ...(args.depth !== undefined ? { depth: args.depth } : {}),
+            ...(args.limit !== undefined ? { limit: args.limit } : {}),
+            ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+            ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
+          }),
+        );
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "docs_list",
+    {
+      description:
+        "ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ path, blocks, ts }], truncated, cursor }` — repo-relative path, live block count, last-commit timestamp (ISO, or null) — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default " + DOCS_LIST_DEFAULT_LIMIT + ") caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `resolve`.",
+      inputSchema: {
+        path_glob: z.string().optional(),
+        limit: z.number().int().optional(),
+        cursor: z.string().nullable().optional(),
+        budget_tokens: z.number().int().optional(),
+        ...REPO_ARG,
+      },
+    },
+    async (args) => {
+      try {
+        const { repoId } = repoScope(args.repo);
+        return ok(
+          docsList(store, repoId, {
+            ...(args.path_glob !== undefined ? { pathGlob: args.path_glob } : {}),
+            ...(args.limit !== undefined ? { limit: args.limit } : {}),
+            ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+            ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
+          }),
+        );
       } catch (e) {
         return fail(e);
       }

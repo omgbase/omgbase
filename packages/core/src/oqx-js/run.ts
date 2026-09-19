@@ -13,6 +13,7 @@ import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
 import { float32ToBlob } from "../core/vec.js";
+import { encodeCursor as encodeKeyset, decodeCursor as decodeKeyset } from "../core/cursor.js";
 
 export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
 
@@ -266,16 +267,15 @@ export async function oqxRunAsync(
   return oqxRun(store, repoId, source, { ...opts, semanticVectors });
 }
 
+// The collect page's keyset is (path, id): the kernel's shared cursor encoding
+// (core/cursor.ts) with a two-part tuple. A malformed cursor is CursorInvalid,
+// which the MCP layer maps to filter_invalid.
 function encodeCursor(path: string, id: string): string {
-  return Buffer.from(JSON.stringify([path, id]), "utf8").toString("base64url");
+  return encodeKeyset([path, id]);
 }
 function decodeCursor(cursor: string): { path: string; id: string } {
-  try {
-    const [path, id] = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as [string, string];
-    return { path, id };
-  } catch {
-    throw new FilterInvalid("invalid cursor", "OQX §3");
-  }
+  const [path, id] = decodeKeyset(cursor, "query", 2);
+  return { path: path!, id: id! };
 }
 
 /** Parse an OQX source into the `@omgbase/oqx` AST (re-exported for callers). */

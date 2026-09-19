@@ -51,7 +51,7 @@ describe("MCP server skeleton", () => {
   it("lists the full tool surface", async () => {
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name).sort();
-    for (const t of ["docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
+    for (const t of ["docs_tree", "docs_list", "docs_outline", "docs_read", "docs_get_many", "nodes_get", "nodes_get_many", "query", "query_syntax", "graph", "text_search", "resolve", "apply", "blocks_insert", "blocks_update", "blocks_move", "blocks_remove", "blocks_split", "blocks_merge", "tasks_complete", "node_set", "sections_append", "docs_append", "links_retarget", "links_stale", "links_repair", "docs_create", "docs_move", "docs_delete", "docs_set_meta", "docs_plan_update", "docs_update", "history_node", "diff", "docs_read_at", "docs_history", "changes_since", "repos_status", "sync_status"]) {
       expect(names, `missing tool ${t}`).toContain(t);
     }
   });
@@ -60,6 +60,44 @@ describe("MCP server skeleton", () => {
     const { payload: q } = (await call("query_syntax", {})) as { payload: { syntax: string } };
     expect(q.syntax).toContain("$path.startsWith");
     expect(q.syntax).toContain("select");
+  });
+
+  it("docs_tree collapses dirs at depth and carries the whole-prefix total", async () => {
+    ingestFile(store, repoId, "projects/a.md", "# a\n");
+    ingestFile(store, repoId, "projects/deep/b.md", "# b\n\ntext\n");
+    const { payload } = (await call("docs_tree", {})) as {
+      payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; entries: { path: string; kind: string; docs: number }[]; truncated: boolean; cursor: string | null };
+    };
+    expect(payload.prefix).toBe("");
+    expect(payload.depth).toBe(1);
+    expect(payload.total.docs).toBe(3);
+    expect(payload.entries.map((e) => [e.path, e.kind, e.docs])).toEqual([["notes.md", "doc", 1], ["projects/", "dir", 2]]);
+    expect(payload.truncated).toBe(false);
+    expect(payload.cursor).toBeNull();
+
+    const { payload: scoped } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1 })) as { payload: { entries: { path: string }[]; truncated: boolean; cursor: string | null } };
+    expect(scoped.entries.map((e) => e.path)).toEqual(["projects/a.md"]);
+    expect(scoped.truncated).toBe(true);
+    const { payload: rest } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1, cursor: scoped.cursor })) as { payload: { entries: { path: string; kind: string }[]; truncated: boolean } };
+    expect(rest.entries.map((e) => [e.path, e.kind])).toEqual([["projects/deep/", "dir"]]);
+    expect(rest.truncated).toBe(false);
+  });
+
+  it("docs_list is a page under the uniform list contract (items + truncated + cursor)", async () => {
+    ingestFile(store, repoId, "b.md", "# b\n");
+    ingestFile(store, repoId, "c.md", "# c\n");
+    const { payload } = (await call("docs_list", { limit: 2 })) as { payload: { items: { path: string; blocks: number; ts: string | null }[]; truncated: boolean; cursor: string | null } };
+    expect(payload.items.map((r) => r.path)).toEqual(["b.md", "c.md"]);
+    expect(payload.truncated).toBe(true);
+    expect(payload.cursor).not.toBeNull();
+    const { payload: next } = (await call("docs_list", { limit: 2, cursor: payload.cursor })) as { payload: { items: { path: string }[]; truncated: boolean; cursor: string | null } };
+    expect(next.items.map((r) => r.path)).toEqual(["notes.md"]);
+    expect(next.truncated).toBe(false);
+    expect(next.cursor).toBeNull();
+
+    const { payload: bad, isError } = (await call("docs_list", { cursor: "garbage" })) as { payload: { error: string }; isError: boolean };
+    expect(isError).toBe(true);
+    expect(bad.error).toBe("filter_invalid");
   });
 
   it("docs_outline returns the outline with full block ids inline", async () => {

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { docsList, type DocListRow } from "@omgbase/core";
+import { docsList, type DocListRow, type DocListPage } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns } from "../render.js";
@@ -8,19 +8,29 @@ import { remoteCall } from "./_remote.js";
 
 // `omg ls [glob]` (11 §5.2) — live documents: path, block count, last-commit
 // time. glob is a simple prefix/suffix match on the path (SQL LIKE with * → %).
+//
+// The engine pages docs_list (uniform truncated+cursor contract, mcp-api §1);
+// a terminal `ls` is complete by definition, so this walks every page — local
+// or `--server` — and renders the concatenation.
 
 async function runLs(cli: Cli, args: string[]): Promise<number> {
   const { positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   const glob = positionals[0];
 
-  let rows: DocListRow[];
-  if (cli.flags.server) {
-    rows = await remoteCall<DocListRow[]>(cli, "docs_list", glob ? { path_glob: glob } : {});
-  } else {
-    const ws = cli.workspace();
-    const repo = cli.repo(ws);
-    rows = docsList(ws.store, repo.repoId, glob ? { pathGlob: glob } : {});
-  }
+  const rows: DocListRow[] = [];
+  let cursor: string | null = null;
+  do {
+    let page: DocListPage;
+    if (cli.flags.server) {
+      page = await remoteCall<DocListPage>(cli, "docs_list", { ...(glob ? { path_glob: glob } : {}), ...(cursor ? { cursor } : {}) });
+    } else {
+      const ws = cli.workspace();
+      const repo = cli.repo(ws);
+      page = docsList(ws.store, repo.repoId, { ...(glob ? { pathGlob: glob } : {}), ...(cursor ? { cursor } : {}) });
+    }
+    rows.push(...page.items);
+    cursor = page.truncated ? page.cursor : null;
+  } while (cursor);
   cli.capture?.(rows); // shell: docs become the addressable frame (ref = path)
 
   if (cli.flags.mode === "ids") {
