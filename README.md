@@ -482,7 +482,7 @@ new PlannedEngine(planner).run(parse('name from emp where dept == "eng" && level
 
 This is the seam an omgbase adapter uses: its existing OQX→SQL compiler (docs/
 blocks/nodes, the relations table, `$` intrinsics, `WITH RECURSIVE` for `follow`)
-becomes a `QueryPlanner`, while oqx-js contributes the parser, IR, semantics
+becomes a `QueryPlanner`, while oqx contributes the parser, IR, semantics
 contract, and residual executor.
 
 ## Requirements
