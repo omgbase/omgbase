@@ -329,11 +329,36 @@ function healTopLevelSeams(children: MutBlock[], format: string): void {
 }
 
 export function opRemove(doc: MutDoc, blockIds: string[], opIndex: number, expectPer?: Record<string, Expect>): { ids: string[]; removed: string[] } {
-  const removed: string[] = [];
+  // Pass 1 — validate while every block is still in place: a genuinely unknown
+  // id is block_missing, and each CAS expectation is checked against the block's
+  // current bytes. Then collapse the set to its TOP-MOST members: a block whose
+  // ancestor is also being removed goes with that ancestor's subtree. A caller
+  // holding a flat id list (docs_read include_ids) can hand over a container
+  // and its children together without the child's lookup failing after the
+  // container has already taken it. Duplicates collapse too.
+  const set = new Set(blockIds);
+  const tops: string[] = [];
+  const seen = new Set<string>();
   for (const id of blockIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
     const found = locate(doc, id);
-    if (!found) throw new MutationError("block_missing", `block ${id} not found`, { op_index: opIndex, block: id });
+    if (!found) {
+      throw new MutationError("block_missing", `block ${id} not found in this document`, {
+        op_index: opIndex,
+        block: id,
+        hint: "the id is not a live block of the targeted document — it may have been removed by an earlier op in this changeset (removing a block removes its whole subtree), or never existed",
+      });
+    }
     if (expectPer?.[id]) checkContentHash(found.block, expectPer[id], opIndex);
+    if (!hasAncestorIn(doc, found.siblings, set)) tops.push(id);
+  }
+  // Pass 2 — remove the top-most blocks; `removed` reports every block that
+  // actually left the tree (each subtree walked), so the caller sees the
+  // collapsed descendants too.
+  const removed: string[] = [];
+  for (const id of tops) {
+    const found = locate(doc, id)!;
     const collect = (b: MutBlock): void => { removed.push(b.id); b.children.forEach(collect); };
     collect(found.block);
     found.siblings.splice(found.index, 1);
@@ -342,6 +367,20 @@ export function opRemove(doc: MutDoc, blockIds: string[], opIndex: number, expec
     pruneOrDirty(doc, found.siblings);
   }
   return { ids: blockIds, removed };
+}
+
+// Does any block owning `siblings` (walking up to the document root) have an id
+// in `set`? I.e. is a block found in `siblings` a descendant of a block in `set`.
+function hasAncestorIn(doc: MutDoc, siblings: MutBlock[], set: Set<string>): boolean {
+  let cur = siblings;
+  for (;;) {
+    const owner = ownerOf(doc, cur);
+    if (!owner) return false;
+    if (set.has(owner.id)) return true;
+    const f = locate(doc, owner.id);
+    if (!f) return false;
+    cur = f.siblings;
+  }
 }
 
 // After removing from `siblings`: if that list is now empty, remove the empty

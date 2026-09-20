@@ -41,6 +41,14 @@ export interface DocsReadResult {
    * nodes_get_many(resolution:"full") hydration round trip.
    */
   hashes?: Record<string, string>;
+  /**
+   * Block id → parent block id (null = top level) for every id in `ids`
+   * (include_ids). `ids` is a flat pre-order walk, so without this a caller
+   * cannot tell a top-level block from a nested one (a list from its items)
+   * without a second outline read — this makes "the top-level blocks of these
+   * sections" a local filter.
+   */
+  parents?: Record<string, string | null>;
 }
 
 export interface DocsReadOptions {
@@ -123,18 +131,21 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   if (opts.includeIds) {
     const ids: string[] = [];
     const hashes: Record<string, string> = {};
+    const parents: Record<string, string | null> = {};
     const collect = (nodes: BlockNode[]): void => {
       for (const n of nodes) {
         ids.push(n.blockId);
-        // The block's raw-bytes hash is already loaded (BlockNode.rawHashHex), so
-        // exposing it as the CAS token costs nothing beyond the id walk.
+        // The block's raw-bytes hash and parent are already loaded on the node,
+        // so exposing them costs nothing beyond the id walk.
         hashes[n.blockId] = n.rawHashHex;
+        parents[n.blockId] = n.parentBlock;
         collect(n.children);
       }
     };
     collect(loadDocBlocks(store, docId));
     result.ids = ids;
     result.hashes = hashes;
+    result.parents = parents;
   }
   return result;
 }

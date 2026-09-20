@@ -103,6 +103,18 @@ describe("docsRead — whole-document read", () => {
     expect(res!.hashes![first]).toBe(rawHash);
   });
 
+  it("includeIds also returns a {id → parent id | null} map so nesting is visible without an outline", () => {
+    const { docId } = ingest(SAMPLE);
+    const res = docsRead(store!, docId, { includeIds: true });
+    expect(Object.keys(res!.parents!).sort()).toEqual([...res!.ids!].sort());
+    const tops = res!.ids!.filter((id) => res!.parents![id] === null);
+    // SAMPLE: heading, paragraph, list (2 items) ⇒ 3 top-level blocks, 2 nested under the list.
+    expect(tops).toHaveLength(3);
+    const list = tops[2]!;
+    const items = res!.ids!.filter((id) => res!.parents![id] === list);
+    expect(items).toHaveLength(2);
+  });
+
   it("round-trips a document with no frontmatter byte-for-byte", () => {
     const { docId } = ingest(SAMPLE);
     expect(docsRead(store!, docId)?.content).toBe(SAMPLE);

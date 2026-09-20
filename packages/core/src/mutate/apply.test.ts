@@ -49,6 +49,53 @@ describe("apply — changesets", () => {
     expect(readFileSync(join(dir, "a.md"), "utf8")).toContain("Body paragraph here.");
   });
 
+  it("remove collapses a set naming a container and its own children to the top-most blocks", () => {
+    const docId = seed("a.md", "# Title\n\nIntro.\n\n- one\n- two\n\nTail.\n");
+    const list = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND type = 'list'").get(docId) as { block_id: string }).block_id;
+    const one = blockByText(docId, "one");
+    const two = blockByText(docId, "two");
+    // The flat docs_read id order: container first, then its items — plus a duplicate.
+    const res = apply(store, {
+      repoId, rootPath: dir,
+      ops: [{ op: "remove", blocks: [list, one, two, one] }],
+      origin: { actor: "agent:test" },
+    });
+    expect(res.committed).toBe(true);
+    const removed = (res.results[0] as unknown as { removed: string[] }).removed;
+    expect(removed.sort()).toEqual([list, one, two].sort());
+    const after = readFileSync(join(dir, "a.md"), "utf8");
+    expect(after).not.toContain("- one");
+    expect(after).toContain("Intro.");
+    expect(after).toContain("Tail.");
+  });
+
+  it("remove still CAS-checks a descendant that its container will take", () => {
+    const docId = seed("a.md", "# Title\n\n- one\n- two\n");
+    const list = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND type = 'list'").get(docId) as { block_id: string }).block_id;
+    const one = blockByText(docId, "one");
+    expect(() =>
+      apply(store, {
+        repoId, rootPath: dir,
+        ops: [{ op: "remove", blocks: [list, one], expect: { [one]: { content_hash: "deadbeef" } } }],
+        origin: { actor: "agent:test" },
+      }),
+    ).toThrow(MutationError);
+  });
+
+  it("remove of a genuinely unknown id is block_missing with a hint", () => {
+    const docId = seed("a.md", "# Title\n\nBody.\n");
+    const body = blockByText(docId, "Body");
+    try {
+      apply(store, { repoId, rootPath: dir, ops: [{ op: "remove", blocks: [body, "b_0000000"] }], origin: { actor: "agent:test" } });
+      expect.unreachable("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(MutationError);
+      const err = e as MutationError;
+      expect(err.code).toBe("block_missing");
+      expect((err.data as { hint?: string }).hint).toMatch(/subtree/);
+    }
+  });
+
   it("applies an update and writes the file", () => {
     const docId = seed("a.md", "# Title\n\nBody paragraph here.\n");
     const bId = blockByText(docId, "Body");

@@ -207,6 +207,21 @@ export function buildServer(ctx: ServerContext): McpServer {
     if (!r || r.kind !== "block" || !r.blockId) throw new EngineError("block_missing", `not a block: ${ref}`, { data: { ref } });
     return r.blockId;
   }
+  // Resolve a PARENT ref for insert/move: a block ref names that block as the
+  // parent; a document ref (id or path) names the document's top level — the
+  // kernel's `{ doc: true }` parent — so "append a new section to this doc" is
+  // one blocks_insert call, not a detour through docs_append. Returns the doc
+  // the parent lives in so the caller can pin the op to it.
+  function resolveParentRef(repoId: string, ref: string): { parent: string | { doc: true }; docId: string } {
+    const r = resolveRef(store, repoId, ref);
+    if (!r) throw new EngineError("block_missing", `not a block or document: ${ref}`, { data: { ref } });
+    if (r.kind === "document") return { parent: { doc: true }, docId: r.docId };
+    return { parent: r.blockId!, docId: r.docId };
+  }
+  function docIdOfBlock(blockId: string): string | undefined {
+    const row = store.db.prepare("SELECT doc_id FROM blocks WHERE block_id = ? AND deleted_commit IS NULL").get(blockId) as { doc_id: string } | undefined;
+    return row?.doc_id;
+  }
   // Current raw-content hash (hex) of a block, for CAS `expect` pinning — mirrors
   // the CLI's rawHashOf. Undefined for an unknown/deleted block (the op then runs
   // unpinned, exactly as the CLI does when it can't read a hash).
@@ -269,7 +284,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_read",
     {
       description:
-        "Read a whole document in one call: `content` is the complete file bytes verbatim (fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. What `metadata` holds is format-dependent: for markdown it's the parsed frontmatter (and, as adapters grow, merged intrinsics like inline fields or an h1-derived title); for YAML/JSON it's the parsed object the file represents; other adapters extract per their format. The cold-start 'read the guide before doing anything' call. Args take a doc id or path. Pass include_ids:true to also get the document's block ids in order (`ids`) AND `hashes` — a {block id → content hash} map giving the exact `expect.content_hash` value the raw `apply` kernel needs, so one read yields both the ids and the CAS tokens to mutate them (no follow-up nodes_get_many hydration). For structure-only orientation use docs_outline; to hydrate a single block use nodes_get.",
+        "Read a whole document in one call: `content` is the complete file bytes verbatim (fences/tables/list markers preserved), `metadata` is the document's structured property bag, plus `path`/`docId`/`rev`. What `metadata` holds is format-dependent: for markdown it's the parsed frontmatter (and, as adapters grow, merged intrinsics like inline fields or an h1-derived title); for YAML/JSON it's the parsed object the file represents; other adapters extract per their format. The cold-start 'read the guide before doing anything' call. Args take a doc id or path. Pass include_ids:true to also get the document's block ids in order (`ids`) AND `hashes` — a {block id → content hash} map giving the exact `expect.content_hash` value the raw `apply` kernel needs, so one read yields both the ids and the CAS tokens to mutate them (no follow-up nodes_get_many hydration) — AND `parents`, a {block id → parent block id | null} map (null = top level), because `ids` is a flat pre-order walk and a list is otherwise indistinguishable from its items; filter to `parents[id] === null` for the top-level blocks. For structure-only orientation use docs_outline; to hydrate a single block use nodes_get.",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -294,7 +309,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_get_many",
     {
       description:
-        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`content` = complete file bytes verbatim, `properties` grouped by source, plus `path`/`docId`/`rev`, and — with include_ids:true — the document's ordered block `ids` plus a `hashes` {block id → content hash} map for raw-`apply` CAS pinning); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it. Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
+        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`content` = complete file bytes verbatim, `properties` grouped by source, plus `path`/`docId`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block id → content hash} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it. Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
       inputSchema: {
         docs: z.array(z.string()),
         include_ids: z.boolean().optional(),
@@ -608,15 +623,17 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_insert",
     {
-      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent — a block id or any ref resolveRef accepts. `at` places among siblings: \"end\" (default) / \"start\" / {before|after: <block ref>}. Expands to one insert op through the kernel writer.",
+      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block, or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Expands to one insert op through the kernel writer.",
       inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
-        const to = { parent: resolveBlockRef(repoId, args.to), at: resolveAt(repoId, args.at) };
-        const ops: Op[] = [{ op: "insert", to, markdown: args.markdown } as Op];
+        const { parent, docId } = resolveParentRef(repoId, args.to);
+        const to = { parent, at: resolveAt(repoId, args.at) };
+        // A document parent carries no block to infer the doc from; pin it.
+        const ops: Op[] = [{ op: "insert", ...(typeof parent === "object" ? { doc: docId } : {}), to, markdown: args.markdown } as Op];
         return applyOps(repoId, root, ops, "blocks_insert", args.dry_run);
       } catch (e) {
         return fail(e);
@@ -647,7 +664,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_move",
     {
-      description: "Move block(s) under a new parent at a position. `blocks` and `to` (the parent) are refs; `at` is \"end\"/\"start\"/{before|after: <ref>}. One move op through the kernel writer.",
+      description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref, or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. One move op through the kernel writer.",
       inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -655,7 +672,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         const { repoId, rootPath } = repoScope(args.repo);
         const root = requireRoot(rootPath);
         const blocks = args.blocks.map((b) => resolveBlockRef(repoId, b));
-        const to = { parent: resolveBlockRef(repoId, args.to), at: resolveAt(repoId, args.at) };
+        const { parent, docId } = resolveParentRef(repoId, args.to);
+        // The kernel reads `{ doc: true }` + start/end as "the SOURCE doc's top
+        // level", so a document parent is only honest when it IS the source doc.
+        if (typeof parent === "object" && blocks[0] !== undefined && docIdOfBlock(blocks[0]) !== docId) {
+          throw new EngineError("target_missing", `blocks_move cannot target another document's root (${args.to}); anchor on a block in that document with at.before/at.after`, { data: { to: args.to } });
+        }
+        const to = { parent, at: resolveAt(repoId, args.at) };
         const ops: Op[] = [{ op: "move", blocks, to } as Op];
         return applyOps(repoId, root, ops, "blocks_move", args.dry_run);
       } catch (e) {
@@ -667,7 +690,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_remove",
     {
-      description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs. One remove op through the kernel writer. To delete a whole document use docs_delete.",
+      description: "Remove block(s) (the resurrection pool catches regret). `blocks` are refs; removing a block removes its whole subtree, and a set that names both a container and some of its descendants (e.g. every id of a section straight from docs_read include_ids) is fine — it collapses to the top-most blocks and `removed` lists everything that left. One remove op through the kernel writer. To delete a whole document use docs_delete.",
       inputSchema: { blocks: z.array(z.string()), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {

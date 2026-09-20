@@ -732,6 +732,49 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     expect(payload.content).not.toContain("Alpha para.");
   });
 
+  it("blocks_remove accepts a container together with its children (flat include_ids set)", async () => {
+    const { payload: read } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { ids: string[]; parents: Record<string, string | null> };
+    };
+    const list = read.ids.find((id) => read.parents[id] === null && read.ids.some((c) => read.parents[c] === id))!;
+    const items = read.ids.filter((id) => read.parents[id] === list);
+    expect(items.length).toBeGreaterThan(0);
+    const { payload, isError } = (await call("blocks_remove", { blocks: [list, ...items] })) as {
+      payload: { results: { removed: string[] }[] }; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.results[0]!.removed.sort()).toEqual([list, ...items].sort());
+    const { payload: after } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(after.content).not.toContain("wire it");
+  });
+
+  it("blocks_insert accepts a DOCUMENT path as `to` and inserts at the top level", async () => {
+    const { isError } = (await call("blocks_insert", { to: "notes.md", markdown: "## Appended\n\nBy path." })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md", include_ids: true })) as {
+      payload: { content: string; ids: string[]; parents: Record<string, string | null> };
+    };
+    expect(payload.content.trimEnd().endsWith("## Appended\n\nBy path.")).toBe(true);
+    // `at: "start"` on a document parent lands before the first top-level block.
+    const { isError: e2 } = (await call("blocks_insert", { to: "notes.md", markdown: "Preamble.", at: "start" })) as { isError: boolean };
+    expect(e2).toBe(false);
+    const { payload: p2 } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(p2.content.startsWith("Preamble.")).toBe(true);
+  });
+
+  it("blocks_move accepts the source document as `to` (top level) and refuses another document's root", async () => {
+    const alpha = await idOf("Alpha para.");
+    const { isError } = (await call("blocks_move", { blocks: [alpha], to: "notes.md", at: "end" })) as { isError: boolean };
+    expect(isError).toBe(false);
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content.trimEnd().endsWith("Alpha para.")).toBe(true);
+    writeFileSync(join(root, "other.md"), "# Other\n");
+    ingestFile(store, repoId, "other.md", "# Other\n");
+    const { payload: bad, isError: e2 } = (await call("blocks_move", { blocks: [alpha], to: "other.md" })) as { payload: { error: string }; isError: boolean };
+    expect(e2).toBe(true);
+    expect(bad.error).toBe("target_missing");
+  });
+
   it("blocks_split splits a block at offsets (CAS pinned server-side)", async () => {
     const alpha = await idOf("Alpha para.");
     const { isError } = (await call("blocks_split", { block: alpha, at: [5] })) as { isError: boolean };
