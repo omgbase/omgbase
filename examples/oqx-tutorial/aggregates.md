@@ -4,29 +4,29 @@
 
 ## Fold a query to one value
 
-A **top-level** consumer — `repo.<target> <op> { … }` — reduces the whole
+A **top-level** consumer — `$repo.<target> <op> { … }` — reduces the whole
 matching set instead of listing rows. `count` yields a number:
 
 ```console
-$ omg query 'repo.docs count { }'
+$ omg query '$repo.docs count { }'
 18
-$ omg query 'repo.docs count { where type == "substance" }'
+$ omg query '$repo.docs count { where type == "substance" }'
 5
 ```
 
 `exists` yields a boolean:
 
 ```console
-$ omg query 'repo.docs exists { where layer == "draft" }'
+$ omg query '$repo.docs exists { where layer == "draft" }'
 true
-$ omg query 'repo.docs exists { where layer == "legendary-only" }'
+$ omg query '$repo.docs exists { where layer == "legendary-only" }'
 false
 ```
 
 `first` returns zero-or-one row (here the first in path order):
 
 ```console
-$ omg query 'repo.docs first { }'
+$ omg query '$repo.docs first { }'
 d_sz1e8z0  index.md
 ```
 
@@ -34,7 +34,7 @@ d_sz1e8z0  index.md
 one, so it doubles as an assertion. Exactly one document is a draft:
 
 ```console
-$ omg query 'repo.docs single { where layer == "draft" }'
+$ omg query '$repo.docs single { where layer == "draft" }'
 d_f7w5k26  texts/mutus-liber.md
 ```
 
@@ -42,7 +42,7 @@ Point it at the canon documents and it refuses to pick — it stops the moment a
 second match appears:
 
 ```console
-$ omg query 'repo.docs single { where layer == "canon" }'
+$ omg query '$repo.docs single { where layer == "canon" }'
 error[error]: single { … } matched 2 rows; use first { … } for zero-or-one
 ```
 

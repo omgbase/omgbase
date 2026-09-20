@@ -12,7 +12,7 @@ import { readStdin } from "./_mutate.js";
 // object model (`doc.layer`, `section.blocks`); whitespace query directives
 // belong to OQX (`<receiver> collect|exists|count|first|single { <block> }`).
 // `from E` selects + flattens a relation relative to the current source scope
-// (top-level `from docs` = the repository's docs; `repo.docs collect { from
+// (top-level `from docs` = the repository's docs; `$repo.docs collect { from
 // nodes … }` re-projects each doc through its nodes). Inside a block the
 // `where`/`select` keyword may be omitted: a leading predicate-shaped expression
 // is an implicit `where` (`nodes exists { kind == "md:task" }`), a bare
@@ -22,14 +22,14 @@ import { readStdin } from "./_mutate.js";
 // tree over scalar predicates and consumer directives, count comparisons
 // (`nodes count { … } >= 2`), nestable collect, one-scope lifts (^name:) that
 // filter + capture, one-scope-outward references (^name) that correlate a nested
-// query to a parent binding, explicit root relations repo.docs/nodes/blocks for
+// query to a parent binding, explicit root relations $repo.docs/nodes/blocks for
 // join-equivalents, first/single lookups, full-text text(...) + embedding-score
 // semantic(...) predicates, `order by <expr> [asc|desc]` ranking, and recursive
 // `follow [distinct] <rel> [{ where … frontier … depth n by … }]` traversal over
 // a type-preserving relation with $depth/$stop/$ordinal recursion metadata +
 // post-walk filtering. A top-level consumer directive changes the result shape:
-// `repo.docs count { … }` / `repo.docs exists { … }` reduce to a scalar,
-// `repo.docs first { … }` / `repo.docs single { … }` to zero-or-one row (bare
+// `$repo.docs count { … }` / `$repo.docs exists { … }` reduce to a scalar,
+// `$repo.docs first { … }` / `$repo.docs single { … }` to zero-or-one row (bare
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
 // string or -f file|-. Human output: one hit per line (id + path), or the scalar
 // for count/exists; --json/--jsonl/--ids.
@@ -50,9 +50,9 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
     cli.io.out("       query 'from nodes where kind == \"md:section\" select items: section.blocks collect { where type == \"list_item\" }'");
     cli.io.out("       query 'from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked } select $path, open'");
-    cli.io.out("       query 'from docs select owner_id, owner: repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id }'");
-    cli.io.out("       query 'repo.docs count { where layer == \"canon\" }'   # scalar; also repo.<target> exists/first/single { … }");
-    cli.io.out("       query 'repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
+    cli.io.out("       query 'from docs select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id }'");
+    cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/first/single { … }");
+    cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");

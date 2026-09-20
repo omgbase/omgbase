@@ -61,9 +61,9 @@ const QUERIES: string[] = [
   'from nodes where kind == "md:task" && attrs.checked == true',   // boolean param → 1/0
   'from nodes where kind == "md:task" && attrs.checked == false',
   // consumers
-  'repo.docs count { where $path.startsWith("substances/") }',
-  'repo.docs exists { where $path == "index.md" }',
-  'repo.docs first { where type == "practitioner" order by era desc }',
+  '$repo.docs count { where $path.startsWith("substances/") }',
+  '$repo.docs exists { where $path == "index.md" }',
+  '$repo.docs first { where type == "practitioner" order by era desc }',
   'from docs where type == "substance" select $path, layer',
   // order by + pagination surface
   'from docs where type == "practitioner" order by era asc',
@@ -76,7 +76,7 @@ const QUERIES: string[] = [
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',
   'from nodes where kind == "md:section" && name == "The magnum opus" select n: name, d: $depth follow section.children',
   // correlation / lifts
-  'from docs where type == "substance" && repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
+  'from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
   'from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked } select $path, open',
   // edges target
   'from edges where predicate == "references" select $src, $dst_path',

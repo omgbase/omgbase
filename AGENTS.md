@@ -55,7 +55,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/mutation-and-concurrency.md` | six-op kernel, changesets, CAS, conflict objects, write protocol |
 | `docs/graph-and-query.md` | edge extraction, OQX traversal, RRF retrieval, embeddings |
 | `docs/mcp-api.md` | MCP tool surface, resources, error codes (`mcp/server.ts` is the ultimate source) |
-| `docs/decisions.md` | the ADR log ("why"); all 13 remain `Status: proposed` |
+| `docs/decisions.md` | the ADR log ("why"); all remain `Status: proposed` |
 | `docs/query-language.md` | OQX query language: the query-string surface + CEL predicate grammar |
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |

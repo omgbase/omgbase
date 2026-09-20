@@ -34,8 +34,10 @@ docs:
   - computed         = $title (first H1), $tags (body #hashtags) — engine-derived
                        $-intrinsics. They do NOT shadow an authored title/tags
                        key: $title is the H1, title is the frontmatter value.
-  - intrinsics       = $id, $path, $repo, $updated_at (ISO-8601, sorts
-                       chronologically), $body, $content_hash
+  - intrinsics       = $id, $path, $updated_at (ISO-8601, sorts
+                       chronologically), $body, $content_hash; $repo is the
+                       repository handle ($repo.docs / $repo.nodes / … root scans
+                       from any scope; $repo.$id = the repository id)
   - link-graph       = there are NO CEL link predicates. Traverse the authored
                        link graph with OQX \`follow doc.out\` / \`follow doc.in\`
                        (see "Link-graph traversal" below), or query the \`edges\`

@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@omgbase/oqx": "^0.6.0",
+    "@omgbase/oqx": "^0.7.0",
     "better-sqlite3": "^13.0.3",
     "mdast-util-from-markdown": "^2.0.2",
     "mdast-util-frontmatter": "^2.0.1",

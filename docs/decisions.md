@@ -87,6 +87,14 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 
 ---
 
+## ADR-015 — OQX names are local; `$repo` is the only root handle
+**Status:** proposed
+**Context:** `@omgbase/oqx` ≤ 0.6 resolved a bare identifier against the current row and, when the row lacked it, climbed enclosing query scopes to the root. omgbase leaned on that climb for its root-scan receiver: a bare `repo` inside a nested block fell through to `root("repo")`, so `repo.docs collect { … == ^x }` worked from any depth. The climb made a query's meaning depend on runtime row shape (adding a same-named field to an inner row silently re-pointed an outer reference; a typo could capture an outer field; `null`/`false`/`0` had to be special-cased as "present"), and every `DataContext` had to reproduce the same `has` gate for pushdown and residual execution to agree. oqx 0.7.0 removed the climb: a bare name is the current row only, `^name` is exactly one scope out, and `DataContext.has` is gone. Without a change, omgbase's correlated `repo.*` subqueries returned `[]` silently.
+**Decision:** Adopt oqx 0.7's local resolution and expose the repository root as the **`$repo` intrinsic, present in every scope** (the root and every row, store-backed or plain): `$repo.docs` / `$repo.nodes` / `$repo.blocks` / `$repo.edges` are the explicit root scans and `$repo.$id` is the repository id. No non-`$` magic names: bare `repo` is an ordinary frontmatter key. `$repo` on a doc row (formerly the repository id string) becomes the handle; the id moves to `$repo.$id`. The store context serves `$repo` from `get` like the `doc`/`block`/`section` self-aliases — a many-to-one relation of the data model, not scope magic. The SQL planner recognizes `$repo.<target>` as a pushable source; a bare `$repo` in a predicate is residual.
+**Consequences:** every reference in a query is decidable from its text; correlation is always spelled (`^name`, `$repo.<target>`) and is depth-independent for root scans. Cost: a rename of `repo.` → `$repo.` across the MCP tool description, CLI help, tutorial examples, corpus, and docs, and the one intrinsic re-meaning (`$repo` id → `$repo.$id`).
+
+---
+
 ## Cut list (authoritative — PRs adding these are rejected)
 
 Persistent Section entities · BlockVersion as an entity · one generic edge table across tree/graph/lineage · inferring *operations* from file diffs · high-level ops as kernel primitives (macros only; split/merge excepted) · graph analytics suite · embedded/auto-injected IDs · engine-level contradiction detection · CRDT/OT · Cypher/Gremlin · full CST/incremental parsing core · per-cell table identity · learned rankers (v1) · real-time collaborative cursors.

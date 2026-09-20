@@ -83,15 +83,15 @@ different sets. Several tests depend on this; keep it fully checked.
   !attrs.checked } select $path, open` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
-- **Correlation & joins (`^name` outer references + `repo.*` roots)** — the
+- **Correlation & joins (`^name` outer references + `$repo.*` roots)** — the
   wikilink graph is the join fixture. `slug` on every substance/process is the
   key a `[[wikilink]]` value matches, so:
   - a *dependent join* resolves each document's outgoing wikilinks to the
-    documents they name (`repo.docs collect { where slug in ^refs }`), with
+    documents they name (`$repo.docs collect { where slug in ^refs }`), with
     `prima-materia.md`'s lone `[[nigredo]]` (no target document) as the dangling
     reference that resolves to `[]`;
   - a *semi-join* finds the substances any wikilink actually points to —
-    mercury, salt, sulphur — over the global `repo.nodes` scan, and the *anti-join*
+    mercury, salt, sulphur — over the global `$repo.nodes` scan, and the *anti-join*
     the two (philosophers-stone, prima-materia) named only in prose;
   - a *self-join* on `tradition` pairs the two western practitioners (Newton,
     Paracelsus) while the sole Islamic (Jabir) and Alexandrian (Maria) holders
@@ -102,15 +102,15 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Order by (`order by <expr> [asc|desc]`)** — the four practitioners have
   distinct `era` values (250 / 800 / 1530 / 1680), so `order by era` sorts them
   Maria → Jabir → Paracelsus → Newton (numeric, not lexical), `desc` reverses,
-  and `repo.docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
+  and `$repo.docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
   bm25 scores become a top-K.
-- **Top-level consumers (`repo.<target> <op> { … }`)** — a postfix directive over
+- **Top-level consumers (`$repo.<target> <op> { … }`)** — a postfix directive over
   a root receiver shapes the whole result, over the 18-document corpus:
-  `repo.docs count` folds a set to a number (18 total, 5 substances),
-  `repo.docs exists` to a boolean, `repo.docs first` to the first document in path
-  order (`index.md`, which sorts before every subdirectory), and `repo.docs single`
+  `$repo.docs count` folds a set to a number (18 total, 5 substances),
+  `$repo.docs exists` to a boolean, `$repo.docs first` to the first document in path
+  order (`index.md`, which sorts before every subdirectory), and `$repo.docs single`
   to the sole `draft` document (`texts/mutus-liber.md`) — while
-  `repo.docs single { where layer == "canon" }` fails loudly because 13 documents
+  `$repo.docs single { where layer == "canon" }` fails loudly because 13 documents
   match.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to

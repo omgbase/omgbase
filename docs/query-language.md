@@ -27,7 +27,7 @@ The `query` MCP tool takes a single OQX **string** plus pagination:
 Every concern folds into the expression: `from docs|blocks|nodes|edges` (source),
 `where <predicate>`, `select <expr>, name: <expr>, …`, `order by <expr> [asc|desc]`,
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
-correlation/joins (the `^` sigil with `repo.docs`/`repo.nodes`/`repo.blocks`
+correlation/joins (the `^` sigil with `$repo.docs`/`$repo.nodes`/`$repo.blocks`
 roots), and bounded traversal (`follow`). Results are lean projected hits
 (`{id, path, …projections}`), or a `count`/`exists` scalar — never full
 documents; hydrate by id afterward.
@@ -50,8 +50,11 @@ guard — use `$path` or `frontmatter.path`).
   collided key compares unequal — use `list()` (§4).
 - **Source-scoped:** `frontmatter.<k>` / `inline.<k>`.
 - **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
-- **Intrinsics:** `$id`, `$path`, `$repo`, `$updated_at` (ISO-8601 UTC, compares
+- **Intrinsics:** `$id`, `$path`, `$updated_at` (ISO-8601 UTC, compares
   lexicographically = chronologically), `$body`, `$content_hash`, `format`.
+- **`$repo`** (every scope): the repository handle — `$repo.docs` / `$repo.nodes` /
+  `$repo.blocks` / `$repo.edges` are the explicit root scans (§3.4), `$repo.$id`
+  the repository id. **[was: `$repo` on a doc was the repository id string.]**
 - **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
   `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
 
@@ -144,6 +147,13 @@ A Ruby-style range is a value, used most often as the right side of `in`:
     what the value happens to look like.
 
 ### 3.4 Correlation (`^`) and lifts
+- **Bare names are local.** A bare identifier resolves against the **current row
+  only**; an absent field is absent — it never falls through to an enclosing row
+  or to the repository root, so adding a same-named field to an inner row cannot
+  change what an outer reference means. Reach outward explicitly: `^name` for
+  the enclosing row, `$repo.<target>` for a root scan from any depth. **[was
+  (oqx < 0.7): an absent local name climbed enclosing scopes, and a bare `repo`
+  reached the root that way.]**
 - **`^name` reads a name `N` scopes outward** (`^` = one scope, `^^` = two) — it
   resolves against the enclosing **row's fields/intrinsics/lifts**, not the outer
   query's select aliases. To reference the outer row's path write `^$path` (not a

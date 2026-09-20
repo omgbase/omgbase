@@ -64,7 +64,6 @@ function intrinsicSql(name: string, ctx: TranslateCtx): string | null {
   if (target === "docs") switch (name) {
     case "$id": return `${self}.doc_id`;
     case "$path": return `${doc}.path`;
-    case "$repo": return `${self}.repo_id`;
     case "$content_hash": return `lower(hex(${self}.file_hash))`;
     case "$updated_at": return `(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`;
   }
@@ -99,7 +98,7 @@ function intrinsicSql(name: string, ctx: TranslateCtx): string | null {
 
 // docs intrinsics whose BARE (non-$) form is a loud error in-memory (10 §2) — not
 // pushable, so the residual raises it.
-const RESERVED_DOC_BASENAMES = new Set(["id", "path", "repo", "updated_at", "content_hash", "body"]);
+const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "content_hash", "body"]);
 const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 
 // A single-valued document property (the CEL scalar-in-scope rule): the scalar

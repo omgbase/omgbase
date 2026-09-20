@@ -29,7 +29,7 @@ A query counts the open ones directly — a task is a projected node, and
 `attrs.checked` is false while it's open:
 
 ```console
-$ omg query 'repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
+$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
 2
 ```
 
@@ -56,7 +56,7 @@ $ omg cat lab/2026-02-notes.md | grep '^- \['
 - [x] Note crystal quality per cycle
 - [x] Assay cycle 1 and cycle 4 crops for iron
 - [x] Write the plateau result up for the coagulation note
-$ omg query 'repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
+$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
 0
 ```
 

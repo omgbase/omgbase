@@ -51,11 +51,11 @@ function guards(target: Target, repoId: string): { sql: string; params: unknown[
 }
 
 // The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
-// or `repo.<target>` source (else null — not a pushable shape).
+// or `$repo.<target>` source (else null — not a pushable shape).
 function rootTarget(source: Expr): Target | null {
   const TARGETS = new Set<Target>(["docs", "blocks", "nodes", "edges"]);
   if (source.kind === "ident" && TARGETS.has(source.name as Target)) return source.name as Target;
-  if (source.kind === "member" && source.recv.kind === "ident" && source.recv.name === "repo" && TARGETS.has(source.name as Target)) {
+  if (source.kind === "member" && source.recv.kind === "ident" && source.recv.name === "$repo" && TARGETS.has(source.name as Target)) {
     return source.name as Target;
   }
   return null;

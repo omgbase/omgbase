@@ -215,8 +215,8 @@ importers:
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
       '@omgbase/oqx':
-        specifier: ^0.6.0
-        version: 0.6.0
+        specifier: ^0.7.0
+        version: 0.7.0
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
@@ -682,8 +682,8 @@ packages:
     resolution: {integrity: sha512-/xGlezI6xfGO9NwuJlnwz/K14qD1kCSAGtacBHnGzeAIuJGazcp45KP5NuyARXoKb7cwulAGWVsbeSxdG/cb0Q==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  '@omgbase/oqx@0.6.0':
-    resolution: {integrity: sha512-vv21SbuP/T2XIw0BkG80N//AeXc1IqcpNDkz9pp3qF1/uvfqs7xymFuEd/Yp6U3cB/FhPpvfD+DC1eCe/9SD0Q==}
+  '@omgbase/oqx@0.7.0':
+    resolution: {integrity: sha512-hHUTQHOJGi+cJLJxjcRFBwyQr+rbH8dOLpf4JtKYnGw539rcqSBPYqvyX4D8WMotaHcMBXx9FD+mqoHwoKHBKg==}
     engines: {node: '>=22.6.0'}
 
   '@pkgjs/parseargs@0.11.0':
@@ -2638,7 +2638,7 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  '@omgbase/oqx@0.6.0': {}
+  '@omgbase/oqx@0.7.0': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true

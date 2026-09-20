@@ -44,8 +44,8 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
 
 // docs intrinsics whose BARE (non-$) form is almost always a typo (10 §2); a bare
 // read of one is a loud error, matching the CEL guard.
-// (`repo` is intentionally excluded: `repo.docs`/`repo.nodes`/… is the root-scan
-// receiver, so a bare `repo` must climb to the repo root, not fault as a field.)
+// (The root-scan receiver is the `$repo` intrinsic — `$repo.docs`/`$repo.nodes`/… —
+// so a bare `repo` is just an ordinary frontmatter key.)
 const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "content_hash", "body"]);
 
 export interface StoreContextOptions {
@@ -92,6 +92,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
        ORDER BY d.path, e.edge_id`, repoId), "edges");
 
   const rootFns: Record<string, () => Row[]> = { docs: docsRoot, blocks: blocksRoot, nodes: nodesRoot, edges: edgesRoot };
+  // The repository handle behind the `$repo` intrinsic: `$repo.<target>` is the
+  // explicit root scan (rootFns), `$repo.$id` the repository id.
+  const repoRoot: RepoRoot = { [REPO_ROOT]: true };
 
   // ---- attrs / property decoding --------------------------------------------
   const parseJson = (v: unknown): unknown => {
@@ -151,11 +154,6 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     }
     return out;
   };
-  const docPropExists = (docId: string, key: string, source?: string): boolean =>
-    !!one(source
-      ? `SELECT 1 FROM properties WHERE doc_id = ? AND key = ? AND source = ? AND deleted_commit IS NULL LIMIT 1`
-      : `SELECT 1 FROM properties WHERE doc_id = ? AND key = ? AND deleted_commit IS NULL LIMIT 1`,
-      ...(source ? [docId, key, source] : [docId, key]));
 
   // ---- top-ordinal of a block's top-level ancestor (for section ranges) -----
   const topOrdinal = (block: Row): number => {
@@ -257,7 +255,6 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "docs") switch (name) {
       case "$id": return row.doc_id;
       case "$path": return row.path;
-      case "$repo": return row.repo_id;
       case "$content_hash": return row.file_hash == null ? null : hex(row.file_hash);
       case "$updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
       case "$body": return docsRead(store, String(row.doc_id))?.content ?? null;
@@ -297,7 +294,16 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // ---- get ------------------------------------------------------------------
   const getFrom = (row: unknown, key: string): unknown => {
     if (row == null) return undefined;
-    if ((row as RepoRoot)[REPO_ROOT]) return rootFns[key] ? rootFns[key]!() : undefined;
+    // `$repo` is an intrinsic of EVERY scope — the root and any row, store-backed
+    // or plain. Bare names resolve against the current row only (oqx ≥ 0.7: no
+    // scope climbing), so a correlated subquery at any depth reaches the
+    // repository root through this local intrinsic, never by falling through
+    // to an enclosing scope.
+    if (key === "$repo") return repoRoot;
+    if ((row as RepoRoot)[REPO_ROOT]) {
+      if (key === "$id") return repoId;
+      return rootFns[key] ? rootFns[key]!() : undefined;
+    }
     if ((row as PropSourceRef)[PROP_SOURCE]) {
       const p = row as PropSourceRef;
       return docProp(p.docId, key, p.source);
@@ -351,20 +357,6 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return undefined;
   };
 
-  const provides = (row: Row, t: Target, key: string): boolean => {
-    if (key.startsWith("$")) return intrinsic(row, t, key) !== undefined;
-    if (t === "docs") {
-      if (key === "doc" || key === "format" || key === "frontmatter" || key === "inline" || rel.docs[key]) return true;
-      if (RESERVED_DOC_BASENAMES.has(key)) return true; // present-as-guard (get throws)
-      // exact key, or a flattened nested prefix (`logging` for `logging.level`).
-      return docPropExists(String(row.doc_id), key)
-        || !!one(`SELECT 1 FROM properties WHERE doc_id = ? AND key LIKE ? AND deleted_commit IS NULL LIMIT 1`, row.doc_id, `${key}.%`);
-    }
-    if (t === "blocks") return key === "block" || key === "doc" || key === "type" || key === "text" || key === "attrs" || !!rel.blocks[key];
-    if (t === "nodes") return key === "section" || key === "doc" || key === "block" || key === "kind" || key === "name" || key === "value" || key === "attrs" || !!rel.nodes[key];
-    if (t === "edges") return key === "doc" || ["predicate", "provenance", "dst_kind", "anchor", "src_field"].includes(key);
-    return false;
-  };
 
   // ---- domain functions (row-scoped, via callMethod on $self) ---------------
   const method = (name: string, recv: unknown, args: unknown[]): CallResult => {
@@ -463,18 +455,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   return {
     root(name: string): unknown {
       if (opts.rowsRoot && name === opts.rowsRoot.name) return opts.rowsRoot.rows;
-      if (name === "repo") return { [REPO_ROOT]: true } as RepoRoot;
+      if (name === "$repo") return repoRoot;
       return rootFns[name] ? rootFns[name]!() : undefined;
     },
     get: getFrom,
-    has(row: unknown, key: string): boolean {
-      if (row == null) return false;
-      if ((row as RepoRoot)[REPO_ROOT]) return !!rootFns[key];
-      if ((row as PropSourceRef)[PROP_SOURCE]) return true;
-      const t = (row as Row)[TARGET];
-      if (!t) return typeof row === "object" && key in (row as object);
-      return provides(row as Row, t, key);
-    },
     toRows(value: unknown): Iterable<unknown> {
       if (value == null) return [];
       if (Array.isArray(value)) return value;

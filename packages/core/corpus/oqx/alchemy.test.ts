@@ -652,7 +652,7 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
 });
 
 // The join-equivalent surface: a nested query over an EXPLICIT root relation
-// (repo.docs / repo.nodes) correlated to a parent binding via the one-scope
+// ($repo.docs / $repo.nodes) correlated to a parent binding via the one-scope
 // `^name` reference. These express dependent/semi/anti joins and 1:1 lookups
 // without a JOIN keyword. Substances and processes carry a `slug`; a wikilink's
 // value IS a slug, so links resolve to real documents.
@@ -677,7 +677,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // does link-extraction AND resolution — a citation/reference graph.
     const res = hits(
       "from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" } " +
-        "select p: $path, cites: repo.docs collect { where slug in ^refs select target: $path }",
+        "select p: $path, cites: $repo.docs collect { where slug in ^refs select target: $path }",
     );
     expect(res.hits.map((h) => h.p)).toEqual(WITH_WIKILINK); // only docs that link out
     const cites = new Map(
@@ -702,9 +702,9 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("finds substances actually cited by a wikilink anywhere (correlated semi-join over a global node scan)", () => {
     // For each substance, does ANY wikilink node in the whole repository name its
-    // slug? repo.nodes is the explicit global scan; ^slug ties it to this row.
+    // slug? $repo.nodes is the explicit global scan; ^slug ties it to this row.
     const cited = paths(
-      'from docs where type == "substance" && repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
+      'from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
     );
     expect(cited).toEqual([
       "substances/mercury.md",
@@ -715,7 +715,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("finds substances no wikilink points to (correlated anti-join)", () => {
     const uncited = paths(
-      'from docs where type == "substance" && !repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
+      'from docs where type == "substance" && !$repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
     );
     // the tria prima are all cited; the two abstractions are named by prose, not links.
     expect(uncited).toEqual([
@@ -726,10 +726,10 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("pairs each practitioner with their tradition-mates, excluding themselves (self-join)", () => {
     // Two correlations at once: ^tradition matches the tradition, ^me excludes
-    // the row itself. A self-join over repo.docs.
+    // the row itself. A self-join over $repo.docs.
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, peers: repo.docs collect { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
+        "select me: $path, tradition, peers: $repo.docs collect { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
     );
     const peers = new Map(
       res.hits.map((h) => [h.me, (h.peers as { p: string }[]).map((p) => p.p).sort()]),
@@ -747,7 +747,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // cardinality-checked 1:1 lookup returning one record (not an array).
     const res = hits(
       "from docs where type == \"lab-note\" " +
-        "select subject, process: repo.docs single { where slug == ^subject select p: $path, layer }",
+        "select subject, process: $repo.docs single { where slug == ^subject select p: $path, layer }",
     );
     const by = new Map(res.hits.map((h) => [h.path, h.process as { p: string; layer: string }]));
     expect(by.get("lab/2026-01-notes.md")).toEqual({ p: "processes/calcination.md", layer: "canon" });
@@ -757,7 +757,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
   it("first { … } returns a zero-or-one tradition-mate (null when there is none)", () => {
     const res = hits(
       "from docs where type == \"practitioner\" " +
-        "select me: $path, tradition, mate: repo.docs first { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
+        "select me: $path, tradition, mate: $repo.docs first { where type == \"practitioner\" && tradition == ^tradition && $path != ^$path select p: $path }",
     );
     const by = new Map(res.hits.map((h) => [h.me, h.mate as { p: string } | null]));
     expect(by.get("practitioners/newton.md")).toEqual({ p: "practitioners/paracelsus.md" });
@@ -766,7 +766,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("same-document correlation needs no root relation (^ against the owning row)", () => {
     // A lab note's subject is calcination; correlate its OWN task nodes against a
-    // parent binding — no repo.* scan, just the structural doc.nodes relation.
+    // parent binding — no $repo.* scan, just the structural doc.nodes relation.
     const res = hits(
       "from docs where $path == \"lab/2026-01-notes.md\" " +
         "select subject, mentions: nodes collect { where kind == \"md:wikilink\" select tgt: value }",
@@ -870,44 +870,44 @@ describe("alchemy corpus — order by", () => {
   });
 
   it("repo.first + order by era desc is the latest practitioner (Newton)", () => {
-    const r = hits('repo.docs first { where type == "practitioner" order by era desc }');
+    const r = hits('$repo.docs first { where type == "practitioner" order by era desc }');
     expect(r.hits.map((h) => h.path)).toEqual([`${P}newton.md`]);
   });
 });
 
-describe("alchemy corpus — top-level consumers (repo.<target> <op>)", () => {
+describe("alchemy corpus — top-level consumers ($repo.<target> <op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.
-    expect(hits("repo.docs count { }").count).toBe(18);
-    expect(hits('repo.docs count { where type == "substance" }').count).toBe(5);
+    expect(hits("$repo.docs count { }").count).toBe(18);
+    expect(hits('$repo.docs count { where type == "substance" }').count).toBe(5);
   });
 
   it("repo.count of a correlated query counts DOCS, not their matched nodes", () => {
     // docs that contain at least one task node (the lab notes) — a handful of
     // docs, though they hold many tasks between them.
     const docsWithTasks = paths('from docs where nodes exists { where kind == "md:task" }');
-    expect(hits('repo.docs count { where nodes exists { where kind == "md:task" } }').count).toBe(docsWithTasks.length);
+    expect(hits('$repo.docs count { where nodes exists { where kind == "md:task" } }').count).toBe(docsWithTasks.length);
   });
 
   it("repo.exists answers presence with a boolean", () => {
-    expect(hits('repo.docs exists { where layer == "draft" }').exists).toBe(true);
-    expect(hits('repo.docs exists { where layer == "nonexistent" }').exists).toBe(false);
+    expect(hits('$repo.docs exists { where layer == "draft" }').exists).toBe(true);
+    expect(hits('$repo.docs exists { where layer == "nonexistent" }').exists).toBe(false);
   });
 
   it("repo.first returns the first document in path order, with projections", () => {
-    const r = hits('repo.docs first { select t: type }');
+    const r = hits('$repo.docs first { select t: type }');
     expect(r.hits.length).toBe(1);
     expect(r.hits[0]!.path).toBe("index.md"); // sorts before every subdirectory
   });
 
   it("repo.single fetches the sole draft document (mutus-liber)", () => {
-    const r = hits('repo.docs single { where layer == "draft" }');
+    const r = hits('$repo.docs single { where layer == "draft" }');
     expect(r.hits.map((h) => h.path)).toEqual(["texts/mutus-liber.md"]);
   });
 
   it("repo.single fails loudly when the query matches more than one document", () => {
     // 13 documents are canon — single must refuse to pick one.
-    expect(() => hits('repo.docs single { where layer == "canon" }')).toThrow(/matched \d+ rows/);
+    expect(() => hits('$repo.docs single { where layer == "canon" }')).toThrow(/matched \d+ rows/);
   });
 });
 
@@ -1015,8 +1015,8 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   });
 
   it("default keeps per-path occurrences; `distinct` collapses to reached nodes", () => {
-    const occ = hits('repo.docs count { where $path == "substances/philosophers-stone.md" follow doc.out }').count!;
-    const dist = hits('repo.docs count { where $path == "substances/philosophers-stone.md" follow distinct doc.out }').count!;
+    const occ = hits('$repo.docs count { where $path == "substances/philosophers-stone.md" follow doc.out }').count!;
+    const dist = hits('$repo.docs count { where $path == "substances/philosophers-stone.md" follow distinct doc.out }').count!;
     expect(dist).toBe(10);
     expect(occ).toBeGreaterThan(dist); // the dense graph reaches nodes by many distinct paths
   });
