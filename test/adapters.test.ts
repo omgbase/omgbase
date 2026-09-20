@@ -29,9 +29,9 @@ test("tier 2: a custom DataContext resolves relations its own way", () => {
       if (key === "children") return ((row as { childIds?: number[] }).childIds ?? []).map((i) => nodes.get(i));
       return (row as Record<string, unknown>)?.[key];
     },
-    // `children` is a computed relation, not a stored key — declare it so the
-    // engine's scope resolution sees it.
-    has: (row, key) => key === "children" || (row != null && typeof row === "object" && key in row),
+    // `children` is a computed relation, not a stored key. Since a bare name is
+    // read from the current row only (via `get`), nothing else is needed for the
+    // engine to see it.
     toRows: (v) => coerceCollection(v),
     identity: (row) => (row as { id: number }).id,
   };

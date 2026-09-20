@@ -13,10 +13,10 @@ export type RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
 /** Scalar value/predicate expression, evaluated against a row scope + bindings. */
 export type Expr =
   | { kind: "lit"; value: string | number | boolean | null }
-  | { kind: "ident"; name: string } // bare property of the current row (climbs scopes)
-  | { kind: "outer"; levels: number; name: string } // `^name` — read `levels` scopes out
+  | { kind: "ident"; name: string } // bare property of the CURRENT row/scope only (never climbs)
+  | { kind: "outer"; levels: number; name: string } // `^name` — read from exactly `levels` scopes out
   | { kind: "binding"; index: number } // a ${…} interpolated host value
-  | { kind: "member"; recv: Expr; name: string } // .prop navigation (no climb)
+  | { kind: "member"; recv: Expr; name: string } // .prop navigation on the value to its left
   | { kind: "index"; recv: Expr; index: Expr } // [expr] navigation
   | { kind: "call"; recv: Expr | null; name: string; args: Expr[] } // fn / method
   | { kind: "unary"; op: "!" | "-"; expr: Expr }

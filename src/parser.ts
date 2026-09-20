@@ -263,15 +263,28 @@ class Parser {
     return follow;
   }
 
-  // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain.
+  // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain
+  // whose head may be an outer reference (`^rel`, `^^root.rel`) — since a bare
+  // name is the current row's own property, an enclosing row's relation or a
+  // named root is only reachable as a receiver through `^`.
   private parseReceiver(): Expr {
     if (this.at("binding")) return { kind: "binding", index: this.next().index! };
+    const levels = this.parseCarets();
     if (!this.at("ident")) this.fail("expected a collection navigation (a property/relation name)");
-    return this.parseNavFrom(this.next()).expr;
+    return this.parseNavFrom(this.next(), levels).expr;
   }
 
-  private parseNavFrom(head: Token): { expr: Expr; name: string } {
-    let expr: Expr = { kind: "ident", name: head.value };
+  // Consume a run of `^` and return its length (0 when there is none).
+  private parseCarets(): number {
+    let levels = 0;
+    while (this.at("caret")) { this.next(); levels++; }
+    return levels;
+  }
+
+  // A dotted navigation chain from `head`; `levels` > 0 makes the head an outer
+  // reference read exactly that many scopes out.
+  private parseNavFrom(head: Token, levels = 0): { expr: Expr; name: string } {
+    let expr: Expr = levels > 0 ? { kind: "outer", levels, name: head.value } : { kind: "ident", name: head.value };
     let name = head.value;
     while (this.at("dot")) {
       this.next();
@@ -291,8 +304,7 @@ class Parser {
 
   private parseSelectItem(): SelectItem {
     // Leading `^`s mark a lift; the count is how many scopes out it binds.
-    let lift = 0;
-    while (this.at("caret")) { this.next(); lift++; }
+    const lift = this.parseCarets();
     if (!this.at("ident")) this.fail("expected a projection name");
     const nameTok = this.next();
     if (this.at("colon")) {
@@ -393,8 +405,11 @@ class Parser {
     const start = this.pos;
     let receiver: Expr;
     if (this.at("binding")) receiver = { kind: "binding", index: this.next().index! };
-    else if (this.at("ident")) receiver = this.parseNavFrom(this.next()).expr;
-    else return null;
+    else if (this.at("ident") || this.at("caret")) {
+      const levels = this.parseCarets();
+      if (!this.at("ident")) { this.pos = start; return null; }
+      receiver = this.parseNavFrom(this.next(), levels).expr;
+    } else return null;
 
     if (this.at("ident") && CONSUMERS.has(this.peek().value)) {
       const after = this.peekAt(1);
@@ -548,8 +563,7 @@ class Parser {
     // expression position, `^` reads an enclosing row's field even when the
     // current row shadows the name.)
     if (t.type === "caret") {
-      let levels = 0;
-      while (this.at("caret")) { this.next(); levels++; }
+      const levels = this.parseCarets();
       if (!this.at("ident")) this.fail("expected an identifier after '^' (an outer reference)");
       return { kind: "outer", levels, name: this.next().value };
     }

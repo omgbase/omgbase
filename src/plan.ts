@@ -8,6 +8,11 @@
 // Deliberately conservative: only positive scalar leaves are pushable. Consumer
 // ops (exists/count/collect), negation, and disjunction stay residual — an
 // adapter that wants to push those can special-case them itself.
+//
+// Because a bare identifier resolves against the current row ONLY (it never
+// climbs to an enclosing scope or a named root), an `ident` in a top-level
+// `where` is unambiguously a column of the scanned rows and is safe to push. An
+// `outer` (`^name`) reference is not a row column and stays residual.
 
 import type { Query, Where, Expr } from "./ast.ts";
 
@@ -49,7 +54,8 @@ export function constValue(e: Expr, params: readonly unknown[]): unknown {
   throw new Error("constValue: not a constant expression");
 }
 
-/** Recognize `field == const` / `const == field` (field is a bare row column). */
+/** Recognize `field == const` / `const == field` (a bare identifier is always a
+ * column of the current row — see the module note). */
 export function asEquality(e: Expr): { field: string; value: Expr } | null {
   if (e.kind !== "binary" || e.op !== "==") return null;
   if (e.left.kind === "ident" && isConst(e.right)) return { field: e.left.name, value: e.right };

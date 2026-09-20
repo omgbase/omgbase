@@ -6,6 +6,11 @@
 // `first`/`single` stop early when the result is unordered; `count` never
 // materializes rows; and within an `&&` the cheap scalar leaves are evaluated
 // before expensive consumer-op leaves (which each drive a nested traversal).
+//
+// Name resolution is strictly lexical and LOCAL: a bare identifier is read from
+// the current scope only, and an enclosing scope is reached solely through an
+// explicit `^name` (exactly one scope out per caret). There is no implicit
+// fall-through from an inner scope to an outer one — see `resolveIn`.
 
 import type {
   Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow,
@@ -30,6 +35,11 @@ export interface Engine {
   run(query: Query, bindings: readonly unknown[]): OqxResult;
 }
 
+// One query scope: the row under evaluation plus the chain of enclosing scopes
+// that `^` walks. The root scope (parent === null) has no row; its names are the
+// context's named roots. `lifts` holds values bound INTO this scope by `^name:`
+// items in nested blocks; `meta` holds recursion intrinsics for a follow
+// occurrence.
 interface Scope {
   row: unknown;
   parent: Scope | null;
@@ -341,11 +351,13 @@ export class InMemoryEngine implements Engine {
     switch (e.kind) {
       case "lit": return e.value;
       case "binding": return scope.bindings[e.index];
-      case "ident": return this.resolveFrom(e.name, scope);
+      case "ident": return this.resolveIn(e.name, scope);
       case "outer": {
+        // `^name` reads from EXACTLY `levels` scopes out — the target scope is
+        // resolved locally, never climbed further. Past the root it is absent.
         let s: Scope | null = scope;
         for (let i = 0; i < e.levels && s; i++) s = s.parent;
-        return s ? this.resolveFrom(e.name, s) : undefined;
+        return s ? this.resolveIn(e.name, s) : undefined;
       }
       case "member": {
         const r = this.evalExpr(e.recv, scope);
@@ -377,28 +389,22 @@ export class InMemoryEngine implements Engine {
     }
   }
 
-  // Resolve a bare name starting at `start` and climbing enclosing scopes: `^`
-  // outer references reuse this after skipping the requested number of scopes.
-  private resolveFrom(name: string, start: Scope): unknown {
-    if (RECUR.has(name)) {
-      for (let s: Scope | null = start; s; s = s.parent) if (s.meta && name in s.meta) return s.meta[name];
-      return undefined;
-    }
-    for (let s: Scope | null = start; s; s = s.parent) {
-      if (s.lifts && name in s.lifts) return s.lifts[name];
-      if (s.parent === null) {
-        const v = this.ctx.root(name);
-        if (v !== undefined) return v;
-      } else if (this.has(s.row, name)) {
-        return this.ctx.get(s.row, name);
-      }
-    }
-    return undefined;
-  }
-
-  private has(row: unknown, name: string): boolean {
-    if (this.ctx.has) return this.ctx.has(row, name);
-    return row != null && typeof row === "object" && name in (row as object);
+  // Resolve a name against ONE scope — never its ancestors. A scope provides,
+  // in order: the recursion intrinsics (`$depth`, …) when it is a follow
+  // occurrence; values lifted into it by `^name:` items; then either the row's
+  // own property or, for the root scope (no row), the context's named roots.
+  //
+  // A name the scope lacks is simply absent (undefined). It does NOT fall
+  // through to an enclosing scope, so a query's meaning never depends on which
+  // properties an inner row happens to have: adding a same-named property to an
+  // inner row cannot capture an outer reference, and an outer reference is
+  // always spelled explicitly as `^name`. Present-but-falsy values (null, false,
+  // 0, "") need no special case — there is no "absent, so look outward" rule.
+  private resolveIn(name: string, scope: Scope): unknown {
+    if (RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
+    if (scope.lifts && name in scope.lifts) return scope.lifts[name];
+    if (scope.parent === null) return this.ctx.root(name);
+    return this.ctx.get(scope.row, name);
   }
 
   private evalCall(e: Extract<Expr, { kind: "call" }>, scope: Scope): unknown {

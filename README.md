@@ -149,25 +149,44 @@ non-range string yields an absent range, so `x in range(bad)` is just false.
 **Interpolations are always values, never syntax.** `where name == ${x}` compares
 against the value of `x`; a string in `x` can't inject operators or identifiers.
 
-**Bindings & scoping.** A bare identifier resolves against the current row, and if
-absent it **climbs to enclosing rows** — lexical outer references, for free:
+**Scoping: bare names are local, `^` reaches out.** A bare identifier resolves
+against the **current row only**. If the row lacks that property the value is
+absent — it never falls through to an enclosing row. To correlate with an
+enclosing scope you say so explicitly with `^name` ("exactly one scope out";
+`^^name` for two, and so on):
 
 ```js
 const accounts = [
   { owner: "x", budget: 100, orders: [{ amount: 50 }, { amount: 150 }] },
   { owner: "y", budget: 200, orders: [{ amount: 250 }] },
 ];
+oqx`owner from ${accounts} where orders exists { amount > ^budget }`;
+// [{ owner: "x" }, { owner: "y" }]   — `^budget` is the enclosing account's budget
+
 oqx`owner from ${accounts} where orders exists { amount > budget }`;
-// [{ owner: "x" }, { owner: "y" }]   — `budget` climbs from the order to the account
+// []   — a bare `budget` is the ORDER's own budget: absent, so `>` is false
 ```
 
-A `.member` access does **not** climb — it always navigates the value on its left.
+Every reference is therefore decidable from the query text alone. Adding a
+`budget` field to the order rows later cannot change what `^budget` means, and a
+typo can't silently capture an outer field. Present-but-falsy values (`null`,
+`false`, `0`, `""`) are read like any other local value — there is no "absent, so
+look outward" rule to trip over — and `^` always reads *exactly* N scopes out
+(one past the root is absent, not the nearest match).
 
-**Explicit outer references (`^`).** Implicit climbing only reaches an outer field
-when the inner row *doesn't* have that name. When both scopes share a name, the
-inner one shadows the outer, and you reach past it with `^name` ("one scope out",
-`^^name` for two). This is what makes correlated subqueries work — e.g. each
-person's siblings, where both the person and the candidates have a `parent`:
+A `.member` access always navigates the value on its left. Named roots (see
+[data context](#data-context-string-queries-and-named-roots)) live on the
+*root* scope, one out from a top-level row: `^people` from a person row, `^^people`
+from a row nested one level deeper. A receiver may start with `^` too, which is
+how a nested consumer runs over a named root or an enclosing row's relation:
+
+```js
+execute("name, peers: ^people collect { name where city == ^city && name != ^name } from people", { people });
+```
+
+**Correlated subqueries.** Because inner and outer rows often share names, the
+explicit `^` is what makes correlation unambiguous — e.g. each person's
+siblings, where both the person and the candidates have a `parent`:
 
 ```js
 const family = [
@@ -188,7 +207,8 @@ oqx`
 Here `parent` is the inner candidate's parent while `^parent` is the outer
 person's. (`^` in an expression *reads* one scope out; the same `^` as a
 select-item prefix — `^name: …` in §7 — *binds* one scope out. Both mean "one
-scope out.")
+scope out.") A value bound into a scope by a lift is read there as a bare name,
+like a row property.
 
 ### 4. Built-in functions
 
@@ -350,6 +370,10 @@ oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by $ordinal`;
 // a1 is never reached; a and b report stop:"depth"
 ```
 
+The intrinsics belong to the reached row's own scope like any other name: inside
+a nested block (`kids: children collect { … }`) a bare `$depth` is absent, and
+the occurrence's depth is `^$depth`.
+
 The walk is **per-path**: a node reached by N distinct paths yields N
 occurrences, and revisiting an identity already on the current path is admitted
 **once** as `$stop == "cycle"` and never re-expanded, so cycles terminate without
@@ -370,8 +394,10 @@ from ${source}                                  source collection
 where a == b && rel exists { … } || !c          predicate tree + nested ops
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
-^name / ^^name                                   read an outer row's field (N scopes out)
+name                                             the CURRENT row's field only (never climbs)
+^name / ^^name                                   read an enclosing row's field (exactly N scopes out)
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
+^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
 order by expr desc, expr2                        ordering
 follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier)
 ${source} <collect|exists|count|first|single> { … }   whole-query consumer
@@ -414,7 +440,10 @@ than approximate it. The conformance suite verifies this.
 The engine never touches host objects directly; it asks a `DataContext` to
 resolve named roots, read properties/relations, coerce results to rows, and
 compute identity. Implement it to query an ORM graph, a remote API, or lazily
-loaded relations — the query *semantics* stay in OQX:
+loaded relations — the query *semantics* stay in OQX. Name resolution is simple
+for a context: a bare `field`, a `.field` segment, and a `^field` outer
+reference each become one `get(row, key)` against exactly the row of the scope
+they name, so a computed relation only needs `get` to know about it:
 
 ```js
 import { parse, run } from "@omgbase/oqx";
@@ -422,7 +451,6 @@ import { parse, run } from "@omgbase/oqx";
 const graph = {
   root: (name) => name === "tree" ? [nodes.get(1)] : undefined,
   get:  (row, key) => key === "children" ? row.childIds.map(id => nodes.get(id)) : row[key],
-  has:  (row, key) => key === "children" || key in row,   // declare computed relations
   toRows: (v) => v == null ? [] : Array.isArray(v) ? v : [v],
   identity: (row) => row.id,                                // for follow dedup
 };

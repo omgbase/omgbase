@@ -126,15 +126,90 @@ test("single { … } throws when more than one row matches", () => {
   );
 });
 
-// ---- outer references (lexical scope climbing) ------------------------------
+// ---- outer references (explicit `^`; bare names never climb) ----------------
 
-test("nested predicate can reference an outer-row field", () => {
-  const accounts = [
-    { owner: "x", budget: 100, orders: [{ amount: 50 }, { amount: 150 }] },
-    { owner: "y", budget: 200, orders: [{ amount: 250 }] },
+const accounts = [
+  { owner: "x", budget: 100, orders: [{ amount: 50 }, { amount: 150 }] },
+  { owner: "y", budget: 200, orders: [{ amount: 250 }] },
+];
+const owners = (rows: unknown): unknown[] => (rows as Array<{ owner: unknown }>).map((r) => r.owner);
+
+test("^name correlates a nested predicate with the enclosing row", () => {
+  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { amount > ^budget }`), ["x", "y"]);
+});
+
+test("a bare identifier resolves against the current row only: an absent local name stays absent", () => {
+  // `budget` is not a property of an order. It must NOT resolve to the enclosing
+  // account's budget — it is absent, so `>` is false and nothing matches.
+  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { amount > budget }`), []);
+  assert.equal(oqx`${accounts} exists { orders exists { has(budget) } }`, false);
+  // …and projecting it yields an absent value, not the outer one.
+  assert.deepEqual(
+    oqx`owner, b: orders collect { budget } from ${accounts} where owner == "y"`,
+    [{ owner: "y", b: [{ budget: undefined }] }],
+  );
+});
+
+test("regression: adding a same-named property to an inner row cannot change an outer reference", () => {
+  // Same accounts, but every order now ALSO carries a `budget`. Under implicit
+  // climbing this would have silently re-pointed a bare `budget` from the
+  // account to the order; with explicit `^budget` the outer reference is fixed.
+  const shadowed = [
+    { owner: "x", budget: 100, orders: [{ amount: 50, budget: 0 }, { amount: 150, budget: 1000 }] },
+    { owner: "y", budget: 200, orders: [{ amount: 250, budget: 1000 }] },
   ];
-  const out = oqx`owner from ${accounts} where orders exists { amount > budget }` as Array<Record<string, unknown>>;
-  assert.deepEqual(out.map((r) => r.owner), ["x", "y"]);
+  const outer = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { amount > ^budget }`);
+  assert.deepEqual(outer(accounts), ["x", "y"]);
+  assert.deepEqual(outer(shadowed), ["x", "y"]); // unchanged: `^budget` is the account's, always
+  // The bare name is, and always was, the ORDER's own property.
+  const local = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { amount > budget }`);
+  assert.deepEqual(local(accounts), []); // absent on the order → no match
+  assert.deepEqual(local(shadowed), ["x"]); // x: 50 > 0; y: 250 > 1000 is false
+});
+
+test("present-but-falsy local values are read locally; absence is absence (no outward fallback)", () => {
+  const rows = [{ label: "outer", items: [{ label: null }, { label: false }, { label: 0 }, { label: "" }, {}] }];
+  const out = oqx`each: items collect { local: label, outer: ^label, present: has(label) } from ${rows}`;
+  assert.deepEqual(out, [{ each: [
+    { local: null, outer: "outer", present: false }, // null ≡ absent for has(), but still never "outer"
+    { local: false, outer: "outer", present: true },
+    { local: 0, outer: "outer", present: true },
+    { local: "", outer: "outer", present: true },
+    { local: undefined, outer: "outer", present: false },
+  ] }]);
+  // `== null` matches the null AND the absent item — neither resolves outward.
+  assert.equal(oqx`${rows} exists { items count { where label == null } == 2 }`, true);
+  assert.equal(oqx`${rows} exists { items count { where label == ^label } == 0 }`, true);
+});
+
+test("^ reads exactly one scope out per caret; past the root it is absent", () => {
+  const rows = [{ v: "top", mid: [{ v: "mid", leaf: [{ v: "leaf" }] }] }];
+  const out = oqx`
+    m: mid collect { l: leaf collect { own: v, one: ^v, two: ^^v, three: ^^^v, four: ^^^^v } }
+    from ${rows}
+  `;
+  // ^^^v is the root scope, which has no row → absent (named roots live there);
+  // ^^^^v is past the root → absent. Neither falls back to a nearer `v`.
+  assert.deepEqual(out, [{ m: [{ l: [{ own: "leaf", one: "mid", two: "top", three: undefined, four: undefined }] }] }]);
+});
+
+test("named roots live on the root scope: reachable from a row only via ^, never by a bare name", () => {
+  const folks = [
+    { name: "Ada", city: "SF" }, { name: "Ben", city: "SF" }, { name: "Cy", city: "NYC" },
+  ];
+  // `^people` from a top-level row is the root scope's `people`; inside the
+  // block, `^city` / `^name` are the enclosing person's.
+  assert.deepEqual(
+    execute("name, peers: ^people collect { name where city == ^city && name != ^name } from people", { people: folks }),
+    [{ name: "Ada", peers: [{ name: "Ben" }] }, { name: "Ben", peers: [{ name: "Ada" }] }, { name: "Cy", peers: [] }],
+  );
+  // A bare `people` inside a person row is that row's (absent) property → an
+  // empty receiver → exists is false for every row; `^people` is the root.
+  assert.deepEqual(execute("name from people where people exists { name == ^name }", { people: folks }), []);
+  assert.deepEqual(
+    execute("name from people where ^people exists { city == ^city && name != ^name }", { people: folks }),
+    [{ name: "Ada" }, { name: "Ben" }],
+  );
 });
 
 test("^ outer reference reaches an enclosing row even when the name is shadowed", () => {
@@ -143,8 +218,8 @@ test("^ outer reference reaches an enclosing row even when the name is shadowed"
     { name: "Ben", parent: "Pat" },
     { name: "Cy", parent: "Sam" },
   ];
-  // Both the outer person and each inner candidate have `parent`; `^parent` /
-  // `^name` reach the outer row that the inner row would otherwise shadow.
+  // Both the outer person and each inner candidate have `parent`; a bare
+  // `parent` is the candidate's, `^parent` / `^name` are the outer person's.
   const out = oqx`
     name,
     siblings: ${family} collect { name where parent == ^parent && name != ^name }
@@ -289,6 +364,23 @@ test("follow cycles terminate: a revisit is admitted once as $stop == 'cycle'", 
   // never re-expanded, so the walk terminates.
   assert.deepEqual(out.map((r) => r.id), [1, 2, 1]);
   assert.deepEqual(out.map((r) => r.stop), ["interior", "interior", "cycle"]);
+});
+
+test("recursion intrinsics belong to the reached row's scope; a nested block reads them via ^", () => {
+  const out = oqx`
+    id, kids: children collect { id, own: $depth, parentDepth: ^$depth }
+    from ${tree}
+    follow children { depth 2 }
+    order by $ordinal
+  `;
+  // Inside `children collect { … }` the rows are plain children, not follow
+  // occurrences: a bare `$depth` is absent there and does not climb to the
+  // occurrence's; `^$depth` names it explicitly.
+  assert.deepEqual(out, [
+    { id: "root", kids: [{ id: "a", own: undefined, parentDepth: 1 }, { id: "b", own: undefined, parentDepth: 1 }] },
+    { id: "a", kids: [{ id: "a1", own: undefined, parentDepth: 2 }] },
+    { id: "b", kids: [] },
+  ]);
 });
 
 test("follow distinct collapses per-path occurrences to reached nodes", () => {

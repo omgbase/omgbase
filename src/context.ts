@@ -20,11 +20,11 @@ export interface CallResult {
 export interface DataContext {
   /** Resolve a named root collection (the `from <name>` / directive receiver). */
   root(name: string): unknown;
-  /** Read a property/relation off a row (`.field`, or a nav-expression segment). */
+  /** Read a property/relation off a row: a bare identifier (`field`), a
+   * `.field` segment, or a `^field` outer reference all come through here, each
+   * against exactly the row of the scope it names. An absent property is
+   * `undefined`; the engine never looks elsewhere for it. */
   get(row: unknown, key: string): unknown;
-  /** Whether a row has a property — decides scope-climbing for a bare identifier
-   * (a present-but-undefined field stops the climb). Defaults to a key check. */
-  has?(row: unknown, key: string): boolean;
   /** Coerce a relation/source value into rows (may be lazy). */
   toRows(value: unknown): Iterable<unknown>;
   /** Identity of a row for `follow` cycle detection / dedup. */
@@ -52,10 +52,6 @@ export class DefaultContext implements DataContext {
   get(row: unknown, key: string): unknown {
     if (row == null) return undefined;
     return (Object(row) as Record<string, unknown>)[key];
-  }
-
-  has(row: unknown, key: string): boolean {
-    return row != null && typeof row === "object" && key in (row as object);
   }
 
   toRows(value: unknown): Iterable<unknown> {

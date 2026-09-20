@@ -69,12 +69,12 @@ export class SqliteTable implements QueryPlanner {
   private translatable(e: Expr): boolean {
     switch (e.kind) {
       case "lit": case "binding": return true;
-      case "ident": return this.columns.has(e.name);
+      case "ident": return this.columns.has(e.name); // a bare name is always the current row's column
       case "unary": return (e.op === "!" || e.op === "-") && this.translatable(e.expr);
       case "logical": return this.translatable(e.left) && this.translatable(e.right);
       case "binary":
         return (e.op in RELOP_SQL || ARITH_SQL.has(e.op)) && this.translatable(e.left) && this.translatable(e.right);
-      default: return false; // member/index/call/in → residual
+      default: return false; // member/index/call/in/outer(^) → residual
     }
   }
 
