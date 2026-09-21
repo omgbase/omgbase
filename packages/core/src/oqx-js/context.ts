@@ -343,14 +343,20 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       if (key === "type") return r.type;
       if (key === "text") return r.text;
       if (key === "attrs") return parseJson(r.attrs);
-      return undefined;
+      // A bare non-structural identifier flattens into attrs: `checked` reads
+      // `attrs.checked`. Structural fields above win on collision; an absent key
+      // is undefined (silently false in a predicate), matching a doc's missing
+      // frontmatter key. The `attrs.<k>` form still works unchanged.
+      return jattr(r, key);
     }
     if (t === "nodes") {
       if (key === "kind") return r.kind;
       if (key === "name") return r.name;
       if (key === "value") return r.value;
       if (key === "attrs") return parseJson(r.attrs);
-      return undefined;
+      // Bare non-structural identifier flattens into attrs (see blocks above):
+      // `checked` reads `attrs.checked` on an `md:task`, `level` on an `md:section`.
+      return jattr(r, key);
     }
     // edges
     if (key === "predicate" || key === "provenance" || key === "dst_kind" || key === "anchor" || key === "src_field") return r[key];

@@ -60,6 +60,15 @@ const QUERIES: string[] = [
   'from docs where format == "markdown"',          // a docs COLUMN, not a property
   'from nodes where kind == "md:task" && attrs.checked == true',   // boolean param → 1/0
   'from nodes where kind == "md:task" && attrs.checked == false',
+  // flattened attrs: a bare identifier reads attrs.<key> on nodes/blocks; planned
+  // (json_extract) must equal in-memory for the SAME queries the attrs.<k> form covers
+  'from nodes where kind == "md:task" && checked == true',
+  'from nodes where kind == "md:task" && checked == false',
+  'from nodes where kind == "md:task" && !checked',
+  'from blocks where type == "task" && checked == false',
+  'from nodes where kind == "md:section" && level == 1',
+  'from docs where nodes exists { where kind == "md:task" && !checked }',
+  'from nodes where kind == "md:task" && checked == false select $path, checked',
   // consumers
   '$repo.docs count { where $path.startsWith("substances/") }',
   '$repo.docs exists { where $path == "index.md" }',

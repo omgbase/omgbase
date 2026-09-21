@@ -162,11 +162,16 @@ export function translateValue(e: Expr, ctx: TranslateCtx): Frag | null {
       }
       if (target === "blocks") {
         if (e.name === "type" || e.name === "text") return { sql: `${self}.${e.name}`, params: [] };
-        return null;
+        // Bare non-structural identifier flattens into attrs — same pushdown as
+        // the `attrs.<k>` member form (json_extract), so `checked` == `attrs.checked`.
+        const sql = jsonExtract(`${self}.attrs`, [e.name]);
+        return sql ? { sql, params: [] } : null;
       }
       if (target === "nodes") {
         if (e.name === "kind" || e.name === "name" || e.name === "value") return { sql: `${self}.${e.name}`, params: [] };
-        return null;
+        // Bare non-structural identifier flattens into attrs (see blocks above).
+        const sql = jsonExtract(`${self}.attrs`, [e.name]);
+        return sql ? { sql, params: [] } : null;
       }
       if (target === "edges") {
         if (["predicate", "provenance", "dst_kind", "anchor", "src_field"].includes(e.name)) return { sql: `${self}.${e.name}`, params: [] };

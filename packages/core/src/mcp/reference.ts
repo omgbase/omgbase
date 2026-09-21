@@ -44,7 +44,12 @@ docs:
                        target / the doc.out_edges / doc.in_edges relations.
 
 blocks:
-  - bare fields      = type, text, attrs.<key> (attrs.checked, attrs.lang, ...)
+  - bare fields      = type, text, and every attrs key FLATTENED to the row:
+                       a bare \`checked\` reads \`attrs.checked\` (\`attrs.<key>\`
+                       still works). Structural type/text win on collision; an
+                       absent key is silently false, like a missing frontmatter
+                       key on a doc. Same flattening on the nodes target
+                       (kind/name/value + attrs keys: \`checked\`, section \`level\`).
   - intrinsics       = $id, $doc, $path, $ordinal, $depth, $updated_at,
                        $content_hash (projectable in select — the block's OWN
                        raw hash, i.e. the value update/split expect; not the

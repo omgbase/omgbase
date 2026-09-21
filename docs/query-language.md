@@ -59,7 +59,10 @@ guard — use `$path` or `frontmatter.path`).
   `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
 
 ### `blocks`
-- **Bare fields:** `type`, `text`, `attrs.<key>` (`attrs.checked`, `attrs.lang`, …).
+- **Bare fields:** `type`, `text`, and every `attrs` key FLATTENED onto the row:
+  a bare `checked` reads `attrs.checked` (`attrs.<key>` still works). Structural
+  `type`/`text` win on a name collision; an absent key is silently false in a
+  predicate, exactly like a missing frontmatter key on a doc.
 - **Intrinsics:** `$id`, `$doc`, `$path`, `$ordinal`, `$depth`, `$content_hash`,
   `$body` (the block text), `$updated_at`.
 - **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.format` constrain by the
@@ -68,8 +71,10 @@ guard — use `$path` or `frontmatter.path`).
   (enclosing `md:section` node(s)). **Structural functions:** §5.
 
 ### `nodes`
-- **Bare fields:** `kind` (`md:task`/`md:link`/`yaml:…`), `name`, `value`,
-  `attrs.<key>`.
+- **Bare fields:** `kind` (`md:task`/`md:link`/`yaml:…`), `name`, `value`, and
+  every `attrs` key FLATTENED onto the row (`checked` on a task, `level` on a
+  section == `attrs.checked` / `attrs.level`; `attrs.<key>` still works).
+  `kind`/`name`/`value` win on a name collision; an absent key is silently false.
 - **Intrinsics:** `$id`(=`$node_id`), `$node_id`, `$doc_id`, `$block_id`, `$path`.
 - **Reach-through:** `doc.<key>`, `block.type`/`block.text`.
 - **Section relations:** `section.blocks` (content under an `md:section` node's

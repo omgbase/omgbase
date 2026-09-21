@@ -161,6 +161,31 @@ describe("node queries — from: nodes", () => {
     expect(checked.hits.length).toBe(1);
   });
 
+  it("flattens attrs into the node namespace (bare `checked` == `attrs.checked`)", () => {
+    const { store, repoId } = setup();
+    ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo1\n- [ ] todo2\n");
+
+    // bare `checked` reads attrs.checked, in both the pushed and in-memory paths
+    for (const plan of [true, false]) {
+      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == true', { plan }).hits.length).toBe(1);
+      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == false', { plan }).hits.length).toBe(2);
+      expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && !checked', { plan }).hits.length).toBe(2);
+    }
+    // the flattened name is exactly what a projection returns
+    const hit = oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == true select checked').hits[0]!;
+    expect(hit.checked).toBe(true);
+  });
+
+  it("flattens attrs on the blocks target too (bare `checked`)", () => {
+    const { store, repoId } = setup();
+    ingestFile(store, repoId, "test.md", "- [x] done\n- [ ] todo\n");
+
+    for (const plan of [true, false]) {
+      expect(oqxRun(store, repoId, 'from blocks where type == "task" && checked == true', { plan }).hits.length).toBe(1);
+      expect(oqxRun(store, repoId, 'from blocks where type == "task" && checked == false', { plan }).hits.length).toBe(1);
+    }
+  });
+
   it("returns kind, name, value in hits", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\n");
