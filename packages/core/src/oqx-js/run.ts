@@ -15,7 +15,7 @@ import type { SemanticVec } from "../search/cel/compile.js";
 import { float32ToBlob } from "../core/vec.js";
 import { encodeCursor as encodeKeyset, decodeCursor as decodeKeyset } from "../core/cursor.js";
 
-export type OqxConsumer = "collect" | "count" | "exists" | "first" | "single";
+export type OqxConsumer = "collect" | "count" | "exists" | "none" | "first" | "single";
 
 export type EmbedQuery = (text: string) => Promise<{ model: string; vec: Float32Array }>;
 
@@ -32,6 +32,8 @@ export interface OqxResult {
   consumer: OqxConsumer;
   count?: number;
   exists?: boolean;
+  /** The `none` consumer's result: true iff the query yields no rows. */
+  none?: boolean;
   /** Present for a top-level `values` projection (`select <expr> values`): the
    * bare projected values in page order, in place of `hits` (which is then
    * empty). Paged/deduped exactly like hits — `truncated`/`cursor` apply. For
@@ -110,6 +112,8 @@ function rewriteSub(s: Subquery): Subquery {
     orderBy: s.orderBy ? s.orderBy.map((o) => ({ ...o, expr: rewriteExpr(o.expr) })) : null,
     follow: s.follow ? rewriteFollow(s.follow) : null,
     ...(s.values ? { values: true } : {}),
+    ...(s.limit ? { limit: rewriteExpr(s.limit) } : {}),
+    ...(s.offset ? { offset: rewriteExpr(s.offset) } : {}),
   };
 }
 function rewriteQuery(q: Query): Query {
@@ -123,7 +127,19 @@ function rewriteQuery(q: Query): Query {
     follow: q.follow ? rewriteFollow(q.follow) : null,
     ...(q.distinct ? { distinct: true } : {}),
     ...(q.values ? { values: true } : {}),
+    ...(q.limit ? { limit: rewriteExpr(q.limit) } : {}),
+    ...(q.offset ? { offset: rewriteExpr(q.offset) } : {}),
   };
+}
+
+// A top-level `limit`/`offset` on the collect path is applied by the runner (see
+// oqxRunInner), so it must be a plain number literal here — there is no row to
+// evaluate anything else against at the root, and omgbase queries carry no
+// bindings.
+function constBound(e: Expr | undefined, word: string): number | null {
+  if (!e) return null;
+  if (e.kind === "lit" && typeof e.value === "number" && Number.isInteger(e.value) && e.value >= 0) return e.value;
+  throw new FilterInvalid(`top-level ${word} must be a non-negative integer literal`, "OQX");
 }
 
 // Distinct phrases referenced by `semantic("…")` (free calls in the raw parse).
@@ -232,6 +248,10 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
     const res = engine.run(parsed, []);
     return { hits: [], truncated: false, cursor: null, consumer: "count", count: res.consumer === "count" ? res.count : 0 };
   }
+  if (consumer === "none") {
+    const res = engine.run(parsed, []);
+    return { hits: [], truncated: false, cursor: null, consumer: "none", none: res.consumer === "none" ? res.none : true };
+  }
 
   // collect / first / single: inject id + path so every hit carries them. A
   // top-level `select distinct` is applied HERE, not in the engine: the injected
@@ -245,7 +265,14 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   // the final page below and returned as `values` with `hits` empty.
   const topValues = !!parsed.values;
   const userSelect = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
-  const q: Query = { ...parsed, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...userSelect] };
+  // On the collect path a top-level `limit`/`offset` is ALSO taken out of the
+  // engine query and applied here, after the runner's own distinct — the engine
+  // would otherwise bound the raw rows before dedup (`select distinct type
+  // limit 3` must be three distinct types). first/single keep theirs: the
+  // engine's offset-aware cap is exactly right for them.
+  const { limit: topLimit, offset: topOffset, ...unbounded } = parsed;
+  const base = consumer === "collect" ? unbounded : parsed;
+  const q: Query = { ...base, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...userSelect] };
   const res = engine.run(q, []);
 
   if (consumer === "first" || consumer === "single") {
@@ -257,6 +284,11 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   // collect: keyset pagination on (path, id) when the order is the default.
   let rows = (res.consumer === "collect" ? res.rows : []).map(toHit);
   if (topDistinct) rows = dedupHitsByProjection(rows);
+  // The query's own bound defines the result SET; the `limit`/`cursor` options
+  // then page within it.
+  const offset = constBound(topOffset, "offset") ?? 0;
+  const limit = constBound(topLimit, "limit");
+  if (offset || limit != null) rows = rows.slice(offset, limit == null ? undefined : offset + limit);
   const custom = !!parsed.orderBy && parsed.orderBy.length > 0;
   const cap = opts.limit ?? 50;
   let page = rows;

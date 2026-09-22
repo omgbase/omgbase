@@ -94,8 +94,8 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     cli.io.out(JSON.stringify(result));
     return EXIT_OK;
   }
-  if (result.consumer === "count" || result.consumer === "exists") {
-    cli.io.out(result.consumer === "count" ? String(result.count) : String(result.exists));
+  if (result.consumer === "count" || result.consumer === "exists" || result.consumer === "none") {
+    cli.io.out(result.consumer === "count" ? String(result.count) : result.consumer === "exists" ? String(result.exists) : String(result.none));
     return EXIT_OK;
   }
   if (result.values) {

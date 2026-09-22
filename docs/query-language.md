@@ -29,9 +29,15 @@ Every concern folds into the expression: `from docs|blocks|nodes|edges` (source)
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil with `$repo.docs`/`$repo.nodes`/`$repo.blocks`
 roots), and bounded traversal (`follow`). Results are lean projected hits
-(`{id, path, …projections}`), a `count`/`exists` scalar, or — for a
+(`{id, path, …projections}`), a `count`/`exists`/`none` scalar, or — for a
 `select <expr> values` projection — the bare projected values (`values: […]`,
 §7); never full documents; hydrate by id afterward.
+
+Consumers (oqx ≥ 0.9): `collect` (rows, the default), `exists` (≥ 1 row),
+`none` (0 rows — exactly `!… exists { … }`, and the way to say "every":
+`nodes none { where kind == "md:task" && !checked }`), `count`, `first`,
+`single`. There is deliberately no `all { … }`: its block would have to mean
+something different from every other consumer's.
 
 ## 2. Targets and field namespaces
 
@@ -230,6 +236,17 @@ nested/correlated scopes:
   projecting the single item under a reserved key alongside the injected
   id/path, then peeling the values off the final page — so the keyset cursor
   still works.
+- **`limit N` / `offset N`** (oqx ≥ 0.9): bound the row set **after** `where` /
+  `order by` / `distinct` and **before** the consumer reduces it, so they mean
+  the same thing under every consumer (`nodes count { … limit 5 } <= 5`,
+  `nodes exists { offset 1 }` = at least two, `first { … offset 1 }` = the
+  second). At the top level they define the result **set**; the tool's
+  `limit`/`cursor` options then page *within* it (so `order by era desc limit 3`
+  with a page `limit` of 2 returns two hits, `truncated: true`, and the third on
+  the next page). The runner applies a top-level bound after its own
+  `distinct` dedup, so `select distinct type limit 3` is three distinct types.
+  Top-level bounds must be integer literals; inside a block `^n` reads the
+  enclosing row.
 - **`cursor`:** opaque, keyset on `(path, id)`, valid for the same query only.
 
 ## 8. Execution model
@@ -263,6 +280,9 @@ projected-query fence (ADR-011, deferred).
 | Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
 | Distinct doc types | `from docs select distinct type` |
 | Distinct doc types as bare strings | `from docs select distinct type values` |
+| Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
+| Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
+| Each doc's first section heading | `from docs select h: nodes first { name values where kind == "md:section" order by first_ordinal }` |
 | Each substance's tags minus one | `from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |

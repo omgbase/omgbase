@@ -51,7 +51,9 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from nodes where kind == \"md:section\" select items: section.blocks collect { where type == \"list_item\" }'");
     cli.io.out("       query 'from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked } select $path, open'");
     cli.io.out("       query 'from docs select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id }'");
-    cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/first/single { … }");
+    cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
+    cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
+    cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
     cli.io.out("       query 'from docs where layer == \"canon\" select $path values'   # `values`: bare values, no {id,path} hits (one item only)");
     cli.io.out("       query 'from docs select $path, tags: tags collect { $value values where $value != \"draft\" }'   # $value = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
@@ -115,7 +117,10 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   // Shell capture (typed result before formatting): a scalar for count/exists,
   // else the whole result (its .hits become the addressable frame).
   cli.capture?.(
-    result.consumer === "count" ? result.count : result.consumer === "exists" ? result.exists : result.values ?? result,
+    result.consumer === "count" ? result.count
+      : result.consumer === "exists" ? result.exists
+      : result.consumer === "none" ? result.none
+      : result.values ?? result,
   );
 
   // JSON emits the whole result verbatim (incl. consumer + any scalar), so
@@ -125,9 +130,9 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     return EXIT_OK;
   }
 
-  // Scalar consumers (count/exists) have no hits — render the reduction itself.
-  if (result.consumer === "count" || result.consumer === "exists") {
-    const scalar = result.consumer === "count" ? String(result.count) : String(result.exists);
+  // Scalar consumers (count/exists/none) have no hits — render the reduction itself.
+  if (result.consumer === "count" || result.consumer === "exists" || result.consumer === "none") {
+    const scalar = result.consumer === "count" ? String(result.count) : result.consumer === "exists" ? String(result.exists) : String(result.none);
     cli.io.out(scalar);
     return EXIT_OK;
   }

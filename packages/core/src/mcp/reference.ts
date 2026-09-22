@@ -158,6 +158,9 @@ Absent keys are simply omitted from the hit.
                           the bare value (result has \`values: [...]\`, no hits).
                           \`$value\` is the current item itself (a row, or each
                           element of a list property inside \`tags collect { … }\`).
+  - "limit N" / "offset N" → bound the result set (after where/order/distinct,
+                          before the consumer reduces; also inside blocks).
+  - consumers           → collect | exists | none (zero rows) | count | first | single
 
 ## semantic grain (docs vs blocks)
 

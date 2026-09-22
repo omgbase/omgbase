@@ -103,6 +103,14 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 
 ---
 
+## ADR-017 — `none` and `limit`/`offset`: two more kernel constructs adopted as-is; a query bound defines the set, the page walks it
+**Status:** proposed
+**Context:** `@omgbase/oqx` 0.9.0 adds `none { … }` (the zero-cardinality consumer: true iff the block yields no rows, exactly `!… exists`, and the spelling for universal quantification — `all { … }` was rejected because its block would mean something different from every other consumer's) and `limit N` / `offset N` (bound the row set after where/order/distinct and before the consumer reduces it, at the top level and inside any block; a bound is read as part of the block so `^n` is the enclosing row). omgbase already had a page `limit`/`cursor` on the `query` tool, so the two notions of "limit" had to be reconciled.
+**Decision:** Adopt both from the library. `none` is one more scalar consumer on the result (`consumer: "none"`, `none: boolean`), rendered by the CLI like `count`/`exists`. A **query-level bound defines the result set; the tool's `limit`/`cursor` page within it** — never the other way round. On the collect path the runner lifts a top-level `limit`/`offset` out of the engine query and applies it after its own `distinct` dedup (the engine would bound raw rows before the runner dedups by user projection), then pages; top-level bounds are therefore integer literals. `first`/`single` keep the bound in the engine, whose offset-aware cap is exactly right. Nested bounds are pure engine behavior. The tier-3 planner does not push `LIMIT`/`OFFSET` (the residual applies them), and the library's own SQLite adapter guards its first/single `LIMIT` against a query bound for the same reason.
+**Consequences:** "the top three by era", "docs where every task is done", and "at least two links" are one expression each, with no client-side trimming. Cost: one more optional result field (`none`), and a rule to remember — a query bound is semantic, a page limit is transport.
+
+---
+
 ## Cut list (authoritative — PRs adding these are rejected)
 
 Persistent Section entities · BlockVersion as an entity · one generic edge table across tree/graph/lineage · inferring *operations* from file diffs · high-level ops as kernel primitives (macros only; split/merge excepted) · graph analytics suite · embedded/auto-injected IDs · engine-level contradiction detection · CRDT/OT · Cypher/Gremlin · full CST/incremental parsing core · per-cell table identity · learned rankers (v1) · real-time collaborative cursors.

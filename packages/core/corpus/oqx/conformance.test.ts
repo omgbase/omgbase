@@ -87,6 +87,15 @@ const QUERIES: string[] = [
   '$repo.docs first { where type == "practitioner" select $path values order by era desc }',
   'from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }',
   'from docs where tags exists { where $value == "tria-prima" }',
+  // none / limit / offset (top-level bounds are applied by the runner, nested by the engine)
+  'from docs where type == "substance" && nodes none { where kind == "md:task" }',
+  '$repo.docs none { where type == "nope" }',
+  'from docs where type == "practitioner" order by era desc limit 2',
+  'from docs where type == "practitioner" order by era desc offset 1 limit 2',
+  'from docs select distinct type values limit 2',
+  'from docs where nodes exists { where kind == "md:task" offset 3 }',
+  '$repo.docs first { where type == "practitioner" select $path values order by era asc offset 1 }',
+  'from docs where $path == "processes/magnum-opus.md" select h: nodes collect { where kind == "md:section" select name values order by first_ordinal limit 2 }',
   // follow (planner declines → in-memory both ways, still must agree)
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',
   'from nodes where kind == "md:section" && name == "The magnum opus" select n: name, d: $depth follow section.children',

@@ -1190,3 +1190,66 @@ describe("alchemy corpus — $value and values (scalar collections)", () => {
   });
 });
 
+// `none` (zero rows) and `limit`/`offset` (bound the set after where/order/
+// distinct, before the consumer), oqx ≥ 0.9. A top-level bound defines the
+// result SET; the runner's page `limit`/`cursor` walk within it.
+describe("alchemy corpus — none, limit, offset", () => {
+  it("none: substances with no task at all excludes salt (checked supply list)", () => {
+    const noTasks = paths('from docs where type == "substance" && nodes none { where kind == "md:task" }');
+    expect(noTasks).toEqual(SUBSTANCES.filter((p) => p !== "substances/salt.md"));
+    // …but every substance has no OPEN task — "every task is done" is none over the complement
+    expect(paths('from docs where type == "substance" && nodes none { where kind == "md:task" && !checked }')).toEqual(SUBSTANCES);
+    expect(noTasks).toEqual(paths('from docs where type == "substance" && !nodes exists { where kind == "md:task" }'));
+  });
+
+  it("none as the whole-query consumer returns a scalar", () => {
+    expect(hits('$repo.docs none { where type == "nope" }')).toMatchObject({ consumer: "none", none: true, hits: [] });
+    expect(hits('$repo.docs none { where type == "substance" }').none).toBe(false);
+  });
+
+  it("top-level limit/offset bound the ordered result set", () => {
+    expect(paths('from docs where type == "practitioner" order by era desc limit 2'))
+      .toEqual(["practitioners/newton.md", "practitioners/paracelsus.md"]);
+    expect(paths('from docs where type == "practitioner" order by era desc offset 1 limit 2'))
+      .toEqual(["practitioners/paracelsus.md", "practitioners/jabir-ibn-hayyan.md"]);
+    expect(paths('from docs where type == "practitioner" order by era asc offset 3')).toEqual(["practitioners/newton.md"]);
+    expect(paths('from docs limit 0')).toEqual([]);
+  });
+
+  it("the page limit walks WITHIN the query's bound", () => {
+    const p1 = hits('from docs order by $path limit 3', 2);
+    expect(p1.hits.length).toBe(2);
+    expect(p1.truncated).toBe(true); // a third row exists inside the bound
+    const all3 = paths('from docs order by $path limit 3');
+    expect(all3.length).toBe(3);
+    expect(p1.hits.map((h) => h.path)).toEqual(all3.slice(0, 2));
+    // default order → keyset cursor continues inside the bounded set and stops there
+    const q = 'from docs limit 3';
+    const a = hits(q, 2);
+    const b = oqxRun(store, repoId, q, { limit: 2, cursor: a.cursor! });
+    expect([...a.hits, ...b.hits].map((h) => h.path)).toEqual(paths(q));
+    expect(b.truncated).toBe(false);
+  });
+
+  it("a top-level bound applies after distinct (three distinct types, not three rows)", () => {
+    const all = hits('from docs select distinct type values').values as string[];
+    expect(hits('from docs select distinct type values limit 2').values).toEqual(all.slice(0, 2));
+    expect(hits('from docs select distinct type values offset 1').values).toEqual(all.slice(1));
+  });
+
+  it("first/single honor offset; nested blocks honor limit; exists { offset } is a cardinality floor", () => {
+    expect(hits('$repo.docs first { where type == "practitioner" select $path values order by era asc offset 1 }').values)
+      .toEqual(["practitioners/jabir-ibn-hayyan.md"]);
+    const secs = hits('from docs where $path == "processes/magnum-opus.md" select h: nodes collect { where kind == "md:section" select name values order by first_ordinal }').hits[0]!.h as string[];
+    const top2 = hits('from docs where $path == "processes/magnum-opus.md" select h: nodes collect { where kind == "md:section" select name values order by first_ordinal limit 2 }').hits[0]!.h;
+    expect(top2).toEqual(secs.slice(0, 2));
+    expect(paths('from docs where nodes exists { where kind == "md:task" offset 3 }'))
+      .toEqual(paths('from docs where nodes count { where kind == "md:task" } >= 4'));
+  });
+
+  it("a top-level bound must be a literal; a bad bound is filter_invalid", () => {
+    expect(() => hits('from docs limit 1.5')).toThrow(/non-negative integer/);
+    expect(() => hits('from docs where nodes exists { limit ^nope }')).toThrow(/non-negative integer/); // `^nope` is absent on the doc
+  });
+});
+
