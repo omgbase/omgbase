@@ -13,7 +13,7 @@ export type RelOp = "==" | "!=" | "<" | "<=" | ">" | ">=";
 /** Scalar value/predicate expression, evaluated against a row scope + bindings. */
 export type Expr =
   | { kind: "lit"; value: string | number | boolean | null }
-  | { kind: "ident"; name: string } // bare property of the CURRENT row/scope only (never climbs)
+  | { kind: "ident"; name: string } // bare property of the CURRENT row/scope only (never climbs); `$value` is the row itself
   | { kind: "outer"; levels: number; name: string } // `^name` — read from exactly `levels` scopes out
   | { kind: "binding"; index: number } // a ${…} interpolated host value
   | { kind: "member"; recv: Expr; name: string } // .prop navigation on the value to its left
@@ -73,6 +73,10 @@ export interface Subquery {
   select: SelectItem[];
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
+  /** `values` — scalar projection mode: the (single) projected expression is the
+   * row's result itself rather than being wrapped in a `{ name: value }` record,
+   * so `name values` yields `["Bob", …]` and `$value values` yields the rows. */
+  values?: boolean;
 }
 
 /** The where-clause boolean tree: OQX owns &&/||/!/grouping so consumer ops
@@ -95,4 +99,6 @@ export interface Query {
   follow: Follow | null;
   /** `distinct` — dedup the result rows by their projected value (see OpNode). */
   distinct?: boolean;
+  /** `values` — scalar projection mode (see Subquery). */
+  values?: boolean;
 }

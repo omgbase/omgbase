@@ -25,7 +25,7 @@ const CONSUMERS = new Set<string>(["collect", "exists", "count", "first", "singl
 // before them rather than consume them as its high bound.
 const CLAUSE_WORDS = new Set<string>([
   "collect", "exists", "count", "first", "single",
-  "order", "by", "asc", "desc", "follow", "distinct", "frontier", "depth", "in",
+  "order", "by", "asc", "desc", "follow", "distinct", "frontier", "depth", "in", "values",
 ]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
@@ -49,6 +49,7 @@ interface BodyClauses {
   orderBy: OrderSpec[] | null;
   follow: Follow | null;
   distinct: boolean;
+  values: boolean;
 }
 
 class Parser {
@@ -89,6 +90,7 @@ class Parser {
         consumer: directive.op,
         follow: directive.sub.follow,
         distinct: directive.distinct ?? false,
+        values: directive.sub.values ?? false,
       };
     }
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
@@ -108,6 +110,7 @@ class Parser {
       consumer: "collect",
       follow: body.follow,
       distinct: body.distinct,
+      values: body.values,
     };
   }
 
@@ -124,6 +127,7 @@ class Parser {
     let orderBy: OrderSpec[] | null = null;
     let follow: Follow | null = null;
     let distinct = false;
+    let values = false;
     let sawWhere = false, sawSelect = false, sawOrder = false;
 
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -148,7 +152,7 @@ class Parser {
         if (sawSelect) this.fail("duplicate projection");
         sawSelect = true;
         if (this.at("kw")) { this.next(); if (this.at("ident", "distinct")) { this.next(); distinct = true; } } // consume `select` + optional `distinct`; a leading `^` is part of the item
-        select = this.parseSelectItems();
+        ({ items: select, values } = this.parseProjection());
         continue;
       }
       if (orderByAllowed && this.atOrderBy()) {
@@ -167,12 +171,12 @@ class Parser {
       if (this.at("ident") || this.at("binding")) {
         if (sawSelect) this.fail("duplicate projection (an implicit select cannot follow a `select`)");
         sawSelect = true;
-        select = this.parseSelectItems();
+        ({ items: select, values } = this.parseProjection());
         continue;
       }
       this.fail(`unexpected ${this.tokDesc()} — expected from/where/select${orderByAllowed ? "/order by" : ""}/follow`);
     }
-    return { froms, where, select, orderBy, follow, distinct };
+    return { froms, where, select, orderBy, follow, distinct, values };
   }
 
   // Decide, by syntactic shape only, whether a leading unkeyworded run is a
@@ -296,20 +300,36 @@ class Parser {
   }
 
   // ---- select ---------------------------------------------------------------
-  private parseSelectItems(): SelectItem[] {
+  // A projection list, optionally followed by the `values` mode word. Under
+  // `values` the list must be exactly one item, which need not be named: the
+  // row's result IS that value (no `{ name: value }` record), so a name would be
+  // meaningless. Without `values`, every item needs a key — a bare/dotted
+  // navigation supplies its own (the last segment); any other expression must be
+  // aliased (`name: expr`).
+  private parseProjection(): { items: SelectItem[]; values: boolean } {
     const items = [this.parseSelectItem()];
     while (this.at("comma")) { this.next(); items.push(this.parseSelectItem()); }
-    return items;
+    let values = false;
+    if (this.at("ident", "values")) {
+      this.next();
+      values = true;
+      if (items.length !== 1) this.fail("`values` projects exactly one expression (got " + items.length + ")");
+      const only = items[0]!;
+      if (only.kind === "field" && only.lift > 0) this.fail("a lift (^name: …) cannot be combined with `values`");
+    } else {
+      for (const it of items) {
+        if (it.name === "") this.fail("a projection item that is not a plain name needs an alias (`name: expr`) unless it is followed by `values`");
+      }
+    }
+    return { items, values };
   }
 
   private parseSelectItem(): SelectItem {
     // Leading `^`s mark a lift; the count is how many scopes out it binds.
     const lift = this.parseCarets();
-    if (!this.at("ident")) this.fail("expected a projection name");
-    const nameTok = this.next();
-    if (this.at("colon")) {
-      this.next();
-      const name = nameTok.value;
+    if (this.at("ident") && this.peekAt(1)?.type === "colon") {
+      const name = this.next().value;
+      this.next(); // ':'
       const op = this.tryOp();
       if (op) {
         if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
@@ -321,9 +341,12 @@ class Parser {
       const expr = this.parseValueExpr();
       return { kind: "field", name, expr, lift };
     }
-    // bare/dotted projection: key defaults to the last navigation segment.
-    const { expr, name } = this.parseNavFrom(nameTok);
-    return { kind: "field", name, expr, lift };
+    if (!this.at("ident") && !this.canStartValue()) this.fail("expected a projection name");
+    // Unaliased item: a bare/dotted navigation keys by its last segment; any
+    // other expression is unnamed ("") — legal only under `values` (checked by
+    // parseProjection, which sees the whole list).
+    const expr = this.parseValueExpr();
+    return { kind: "field", name: navKey(expr) ?? "", expr, lift };
   }
 
   // ---- order by -------------------------------------------------------------
@@ -433,7 +456,10 @@ class Parser {
 
   private parseSubquery(): { sub: Subquery; distinct: boolean } {
     const body = this.parseBody(true);
-    return { sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow }, distinct: body.distinct };
+    return {
+      sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow, values: body.values },
+      distinct: body.distinct,
+    };
   }
 
   // ---- expression Pratt parser ----------------------------------------------
@@ -585,5 +611,16 @@ class Parser {
       return { kind: "ident", name: t.value };
     }
     this.fail(`unexpected ${this.tokDesc()} — expected a value`);
+  }
+}
+
+// The default key of an unaliased projection item: the last segment of a bare /
+// dotted / outer navigation (`name`, `meta.slug` → "slug", `^name`), else null.
+function navKey(e: Expr): string | null {
+  switch (e.kind) {
+    case "ident": return e.name;
+    case "outer": return e.name;
+    case "member": return e.name;
+    default: return null;
   }
 }

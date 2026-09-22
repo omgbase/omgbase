@@ -101,8 +101,51 @@ oqx`label: name, decade: age / 10 from ${people} where name == "Bob"`;
 // [{ label: "Bob", decade: 4.1 }]
 ```
 
+An item that is not a plain navigation — a call, arithmetic, a comparison — has
+no natural key, so it must be aliased (`n: size(jobs)`), unless the projection is
+in `values` mode (next).
+
 The `select` keyword is optional and works in any position — `select name from …`
-is identical to `name from …`. (It's the hook for a future `select distinct`.)
+is identical to `name from …` (and hosts `select distinct`, §6).
+
+**`values` — scalar projection.** Ordinarily every row projects to a record. Add
+`values` after a projection of exactly **one** item to get the value itself:
+
+```js
+oqx`name values from ${people}`;                       // ["Bob", "Alice", "Carol"]
+oqx`name.upper() values from ${people} where age < 30`; // ["CAROL"]  (no alias needed)
+oqx`${people} first { name values where age > 50 }`;    // "Alice"
+```
+
+`values` is a result-shape mode, not a consumer: it works in the top-level
+projection and inside any `collect` / `first` / `single` block, and composes with
+`distinct` (`select distinct employer values from ${jobs}` is the distinct set of
+employers as strings, not `{ employer }` records). An alias, if present, is
+ignored; a lift (`^name:`) cannot be combined with it.
+
+**`$value` — the current item.** Every scope has a current value; `$value` is
+that exact value, whatever its type (an object row or a plain scalar). Bare names
+still navigate it (`name` ≡ `$value.name`), so `$value` matters exactly where
+there is nothing to navigate: collections of numbers or strings, or handing the
+whole row somewhere. Together with `values` this makes scalar collections
+first-class:
+
+```js
+const scores = [10, 60, 70, 45];
+oqx`$value values from ${scores} where $value > 50`;              // [60, 70]
+oqx`$value values from ${scores} order by $value desc`;           // [70, 60, 45, 10]
+
+const players = [{ name: "Ann", scores: [10, 60, 70] }, { name: "Ben", scores: [45] }];
+oqx`name, big: scores collect { $value values where $value > 50 } from ${players}`;
+// [{ name: "Ann", big: [60, 70] }, { name: "Ben", big: [] }]
+
+oqx`employee: $value from ${people} where name == "Bob"`;         // [{ employee: <Bob> }]
+```
+
+Inside a nested block `$value` is the inner item; the enclosing row is `^$value`
+(§3). At the root scope (before any row) it is absent. Plain objects are **not**
+iterable through `$value` — a record stays a record; converting one to a
+collection of entries is a separate, explicit step (`entries()`, planned).
 
 ### 3. Predicates (where)
 
@@ -395,7 +438,9 @@ where a == b && rel exists { … } || !c          predicate tree + nested ops
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
 name                                             the CURRENT row's field only (never climbs)
-^name / ^^name                                   read an enclosing row's field (exactly N scopes out)
+$value                                           the current item itself (a scalar row, or the whole object)
+<expr> values                                    scalar projection: the value, not a { name: value } record
+^name / ^^name                                   read an enclosing row's field (exactly N scopes out); ^$value = the enclosing row
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 ^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
 order by expr desc, expr2                        ordering

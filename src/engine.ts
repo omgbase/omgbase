@@ -13,7 +13,7 @@
 // fall-through from an inner scope to an outer one — see `resolveIn`.
 
 import type {
-  Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow,
+  Query, Where, Expr, OpNode, SelectItem, OrderSpec, Follow, Subquery,
 } from "./ast.ts";
 import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
@@ -50,6 +50,10 @@ interface Scope {
 
 const RECUR = new Set(["$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
 const HARD_DEPTH_CAP = 8;
+
+// What a scope projects to: the select list plus the `values` mode flag. Both
+// `Query` and `Subquery` carry this shape.
+type Projection = Pick<Subquery, "select" | "values">;
 
 export class InMemoryEngine implements Engine {
   private ctx: DataContext;
@@ -91,8 +95,8 @@ export class InMemoryEngine implements Engine {
       }
     }
     this.sortScopes(kept, query.orderBy);
-    if (query.distinct) kept = this.dedupByProjection(kept, query.select);
-    return this.shape(query.consumer, kept, query.select);
+    if (query.distinct) kept = this.dedupByProjection(kept, query);
+    return this.shape(query.consumer, kept, query);
   }
 
   // A where match that needs no lift capture (exists/count fast paths).
@@ -118,20 +122,20 @@ export class InMemoryEngine implements Engine {
     let scopes: Scope[] = occ.map((o) => ({ row: o.row, parent: root, bindings: root.bindings, lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
-    if (query.distinct) scopes = this.dedupByProjection(scopes, query.select);
-    return this.shape(query.consumer, scopes, query.select);
+    if (query.distinct) scopes = this.dedupByProjection(scopes, query);
+    return this.shape(query.consumer, scopes, query);
   }
 
   // Dedup scopes by their PROJECTED value (`distinct`): keep the first scope per
   // distinct projection, preserving order. An empty projection dedups by row
   // identity (so `count distinct { }` counts distinct rows).
-  private dedupByProjection(scopes: Scope[], select: SelectItem[]): Scope[] {
+  private dedupByProjection(scopes: Scope[], proj: Projection): Scope[] {
     const seen = new Set<string>();
     const out: Scope[] = [];
     for (const s of scopes) {
-      const key = select.length === 0
+      const key = proj.select.length === 0
         ? `i:${String(this.ctx.identity(s.row))}`
-        : `p:${stableStringify(this.projectRow(select, s))}`;
+        : `p:${stableStringify(this.projectRow(proj, s))}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(s);
@@ -213,25 +217,31 @@ export class InMemoryEngine implements Engine {
 
   // ---- consumer shaping -----------------------------------------------------
 
-  private shape(consumer: Query["consumer"], scopes: Scope[], select: SelectItem[]): OqxResult {
+  private shape(consumer: Query["consumer"], scopes: Scope[], proj: Projection): OqxResult {
     switch (consumer) {
       case "exists": return { consumer, exists: scopes.length > 0 };
       case "count": return { consumer, count: scopes.length };
-      case "collect": return { consumer, rows: scopes.map((s) => this.projectRow(select, s)) };
-      case "first": return { consumer, row: scopes.length > 0 ? this.projectRow(select, scopes[0]!) : null };
+      case "collect": return { consumer, rows: scopes.map((s) => this.projectRow(proj, s)) };
+      case "first": return { consumer, row: scopes.length > 0 ? this.projectRow(proj, scopes[0]!) : null };
       case "single":
         if (scopes.length > 1) throw new OqxError(`single { … } matched ${scopes.length} rows; use first { … } for zero-or-one`, "eval");
-        return { consumer, row: scopes.length > 0 ? this.projectRow(select, scopes[0]!) : null };
+        return { consumer, row: scopes.length > 0 ? this.projectRow(proj, scopes[0]!) : null };
     }
   }
 
-  private projectRow(select: SelectItem[], scope: Scope): unknown {
+  // The per-row result: the raw row (empty projection), the single item's value
+  // itself (`values` mode), or a `{ name: value }` record.
+  private projectRow(proj: Projection, scope: Scope): unknown {
+    const { select } = proj;
     if (select.length === 0) return scope.row;
+    if (proj.values) return this.itemValue(select[0]!, scope);
     const out: Record<string, unknown> = {};
-    for (const item of select) {
-      out[item.name] = item.kind === "field" ? this.evalExpr(item.expr, scope) : this.evalCollectValue(item.op, scope);
-    }
+    for (const item of select) out[item.name] = this.itemValue(item, scope);
     return out;
+  }
+
+  private itemValue(item: SelectItem, scope: Scope): unknown {
+    return item.kind === "field" ? this.evalExpr(item.expr, scope) : this.evalCollectValue(item.op, scope);
   }
 
   // ---- where evaluation -----------------------------------------------------
@@ -271,7 +281,7 @@ export class InMemoryEngine implements Engine {
     }
     if (op.op === "count") {
       let rows = this.matchRows(op, scope);
-      if (op.distinct) rows = this.dedupByProjection(rows, op.sub.select);
+      if (op.distinct) rows = this.dedupByProjection(rows, op.sub);
       const n = rows.length;
       return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
     }
@@ -310,13 +320,13 @@ export class InMemoryEngine implements Engine {
       scopes = this.matchRows(op, scope);
     }
     this.sortScopes(scopes, sub.orderBy);
-    if (op.distinct) scopes = this.dedupByProjection(scopes, sub.select);
+    if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
     switch (op.op) {
-      case "collect": return scopes.map((s) => this.projectRow(sub.select, s));
-      case "first": return scopes.length > 0 ? this.projectRow(sub.select, scopes[0]!) : null;
+      case "collect": return scopes.map((s) => this.projectRow(sub, s));
+      case "first": return scopes.length > 0 ? this.projectRow(sub, scopes[0]!) : null;
       case "single":
         if (scopes.length > 1) throw new OqxError(`single { … } for '${describeReceiver(op.receiver)}' matched ${scopes.length} rows`, "eval");
-        return scopes.length > 0 ? this.projectRow(sub.select, scopes[0]!) : null;
+        return scopes.length > 0 ? this.projectRow(sub, scopes[0]!) : null;
       default: throw new OqxError(`${op.op} { … } is not valid in select position`, "eval");
     }
   }
@@ -390,9 +400,11 @@ export class InMemoryEngine implements Engine {
   }
 
   // Resolve a name against ONE scope — never its ancestors. A scope provides,
-  // in order: the recursion intrinsics (`$depth`, …) when it is a follow
-  // occurrence; values lifted into it by `^name:` items; then either the row's
-  // own property or, for the root scope (no row), the context's named roots.
+  // in order: `$value` (the scope's row itself — the current item, whatever its
+  // type, so scalar collections are queryable; absent at the root, which has no
+  // row); the recursion intrinsics (`$depth`, …) when it is a follow occurrence;
+  // values lifted into it by `^name:` items; then either the row's own property
+  // or, for the root scope (no row), the context's named roots.
   //
   // A name the scope lacks is simply absent (undefined). It does NOT fall
   // through to an enclosing scope, so a query's meaning never depends on which
@@ -401,6 +413,7 @@ export class InMemoryEngine implements Engine {
   // always spelled explicitly as `^name`. Present-but-falsy values (null, false,
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
+    if (name === "$value") return scope.parent === null ? undefined : scope.row;
     if (RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
     if (scope.lifts && name in scope.lifts) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);

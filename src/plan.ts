@@ -12,7 +12,9 @@
 // Because a bare identifier resolves against the current row ONLY (it never
 // climbs to an enclosing scope or a named root), an `ident` in a top-level
 // `where` is unambiguously a column of the scanned rows and is safe to push. An
-// `outer` (`^name`) reference is not a row column and stays residual.
+// `outer` (`^name`) reference is not a row column and stays residual, and so is
+// the `$value` intrinsic (the row itself, not one of its columns) — adapters
+// gate idents on their known column set, which never includes it.
 
 import type { Query, Where, Expr } from "./ast.ts";
 

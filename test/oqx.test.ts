@@ -142,7 +142,7 @@ test("a bare identifier resolves against the current row only: an absent local n
   // `budget` is not a property of an order. It must NOT resolve to the enclosing
   // account's budget — it is absent, so `>` is false and nothing matches.
   assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { amount > budget }`), []);
-  assert.equal(oqx`${accounts} exists { orders exists { has(budget) } }`, false);
+  assert.equal(oqx`${accounts} exists { orders exists { where has(budget) } }`, false);
   // …and projecting it yields an absent value, not the outer one.
   assert.deepEqual(
     oqx`owner, b: orders collect { budget } from ${accounts} where owner == "y"`,
@@ -503,4 +503,89 @@ test("a missing source is a parse error", () => {
 
 test("first { … } in where position is rejected", () => {
   assert.throws(() => execute("name from people where jobs first { employer }", { people }), OqxError);
+});
+
+// ---- `$value` (the current item) and `values` (scalar projection mode) -------
+
+const scores = [10, 60, 70, 45];
+const players = [
+  { name: "Ann", scores: [10, 60, 70] },
+  { name: "Ben", scores: [45] },
+  { name: "Cid", scores: [] },
+];
+
+test("$value is the current row itself, so scalar collections are queryable", () => {
+  assert.deepEqual(oqx`$value values from ${scores} where $value > 50`, [60, 70]);
+  assert.deepEqual(oqx`$value values from ${["b", "a"]} order by $value`, ["a", "b"]);
+  assert.deepEqual(oqx`$value values from ${scores} order by $value desc`, [70, 60, 45, 10]);
+});
+
+test("$value on an object row is that exact object (reference identity)", () => {
+  const out = oqx`employee: $value from ${people} where name == "Bob"` as Array<{ employee: unknown }>;
+  assert.equal(out[0]!.employee, people[0]);
+  // bare `$value` keys by its own name, like any other bare projection
+  assert.deepEqual(oqx`$value from ${[1, 2]}`, [{ $value: 1 }, { $value: 2 }]);
+});
+
+test("$value inside a nested block is the inner item; ^$value is the enclosing row", () => {
+  assert.deepEqual(
+    oqx`name, big: scores collect { $value values where $value > 50 } from ${players}`,
+    [{ name: "Ann", big: [60, 70] }, { name: "Ben", big: [] }, { name: "Cid", big: [] }],
+  );
+  // `^$value` reads the enclosing scope's row: players with strictly more scores than me
+  assert.deepEqual(
+    oqx`name, richer: ${players} collect { name values where scores.size() > ^$value.scores.size() } from ${players}`,
+    [{ name: "Ann", richer: [] }, { name: "Ben", richer: ["Ann"] }, { name: "Cid", richer: ["Ann", "Ben"] }],
+  );
+});
+
+test("$value is absent at the root scope and is never a named root", () => {
+  assert.deepEqual(execute("$value values from xs where has($value)", { xs: [1, null, 2] }), [1, 2]);
+  assert.equal(execute("xs exists { where $value == ^$value }", { xs: [1] }), false); // ^$value from a top-level row is the root: absent
+});
+
+test("values: a record projection becomes the bare value", () => {
+  assert.deepEqual(oqx`name values from ${people}`, ["Bob", "Alice", "Carol"]);
+  assert.deepEqual(oqx`select name values from ${people} where age > 40`, ["Bob", "Alice"]);
+  // an unaliased expression is legal under values (a name would be meaningless)
+  assert.deepEqual(oqx`name.upper() values from ${people} where age < 30`, ["CAROL"]);
+  assert.deepEqual(oqx`age * 2 values from ${people} where name == "Bob"`, [82]);
+  // an alias is accepted and ignored
+  assert.deepEqual(oqx`n: name values from ${people} where name == "Bob"`, ["Bob"]);
+});
+
+test("values composes with distinct, first/single, and nested consumers", () => {
+  const jobs = people.flatMap((p) => p.jobs);
+  assert.deepEqual(oqx`select distinct employer values from ${jobs}`, ["Globocorp", "Initech"]);
+  assert.deepEqual(oqx`employer values from ${jobs} where employer != "Globocorp"`, ["Initech"]);
+  assert.equal(oqx`${people} first { name values where age > 50 }`, "Alice");
+  assert.equal(oqx`${people} single { name values where name == "Carol" }`, "Carol");
+  assert.equal(oqx`${people} first { name values where age > 90 }`, null);
+  assert.deepEqual(
+    oqx`name, employers: jobs collect distinct { employer values } from ${people}`,
+    [{ name: "Bob", employers: ["Globocorp"] }, { name: "Alice", employers: ["Initech", "Globocorp"] }, { name: "Carol", employers: ["Globocorp"] }],
+  );
+  assert.deepEqual(
+    oqx`name, latest: jobs first { start_date values order by start_date desc } from ${people} where name == "Bob"`,
+    [{ name: "Bob", latest: "2001/03/01" }],
+  );
+  // a nested collect can itself be the value
+  assert.deepEqual(
+    oqx`e: jobs collect { employer values } values from ${people} where name == "Alice"`,
+    [["Initech", "Globocorp"]],
+  );
+});
+
+test("values takes exactly one item, and rejects lifts", () => {
+  assert.throws(() => parse("name, id values from people"), (e: unknown) => e instanceof OqxError && /exactly one/.test(e.message));
+  assert.throws(() => parse("from people where jobs collect { ^x: employer values }"), (e: unknown) => e instanceof OqxError && /lift/.test(e.message));
+});
+
+test("an unaliased non-navigation projection item is an error unless followed by values", () => {
+  assert.throws(() => parse("size(jobs) from people"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
+  assert.throws(() => parse("select age > 40 from people"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
+  // a call-shaped leading expression is a projection, not an implicit where —
+  // say `where` to filter by it
+  assert.throws(() => parse("people exists { has(budget) }"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
+  assert.deepEqual(oqx`n: size(jobs) from ${people}`, [{ n: 2 }, { n: 2 }, { n: 1 }]);
 });
