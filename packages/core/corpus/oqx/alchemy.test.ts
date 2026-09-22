@@ -1124,3 +1124,69 @@ describe("alchemy corpus — failure modes are loud", () => {
     expect(() => paths('from docs where path.startsWith("lab/")')).toThrow(/did you mean the intrinsic/);
   });
 });
+
+// `$value` (the current item) and `values` (scalar projection mode), oqx ≥ 0.8.
+// `$value` is engine-owned: on a target scan it is the store row; when a block's
+// receiver is a list-valued property (tags) the rows are its ELEMENTS, and
+// `$value` is how you name one. A top-level `values` projection comes back as
+// `values: [...]` with no hits (paged like hits); a nested one is a plain array.
+describe("alchemy corpus — $value and values (scalar collections)", () => {
+  it("top-level values: bare projected values in place of hits", () => {
+    const r = hits('from docs where type == "practitioner" select era values order by era asc');
+    expect(r.hits).toEqual([]);
+    expect(r.values).toEqual([250, 800, 1530, 1680]);
+    expect(r.consumer).toBe("collect");
+  });
+
+  it("values composes with distinct (the type strings, deduped)", () => {
+    const rec = hits('from docs select distinct type').hits.map((h) => h.type);
+    const bare = hits('from docs select distinct type values').values;
+    expect(bare).toEqual(rec);
+    expect(new Set(bare).size).toBe(bare!.length);
+  });
+
+  it("values pages like hits (truncated + cursor continue the same sweep)", () => {
+    const all = hits('from docs select $path values').values as string[];
+    const p1 = hits('from docs select $path values', 5);
+    expect(p1.values!.length).toBe(5);
+    expect(p1.truncated).toBe(true);
+    const p2 = oqxRun(store, repoId, 'from docs select $path values', { limit: 100, cursor: p1.cursor! });
+    expect([...(p1.values as string[]), ...(p2.values as string[])]).toEqual(all);
+    expect(all.length).toBe(18);
+  });
+
+  it("first/single with values yield zero-or-one bare value", () => {
+    const newest = hits('$repo.docs first { where type == "practitioner" select $path values order by era desc }');
+    expect(newest.hits).toEqual([]);
+    expect(newest.values).toEqual(["practitioners/newton.md"]);
+    expect(hits('$repo.docs first { where type == "nope" select $path values }').values).toEqual([]);
+  });
+
+  it("$value names each element of a list property inside a block", () => {
+    const r = hits('from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }');
+    const byPath = Object.fromEntries(r.hits.map((h) => [h.path, h.tags]));
+    expect(byPath).toEqual({
+      "substances/mercury.md": [],                       // scalar-authored `tags: substance` → one element, filtered out
+      "substances/philosophers-stone.md": ["goal", "legendary"],
+      "substances/prima-materia.md": ["theory"],
+      "substances/salt.md": ["tria-prima"],
+      "substances/sulphur.md": ["tria-prima"],
+    });
+  });
+
+  it("$value in a where block is an element-wise membership test, equal to `in list()`", () => {
+    const viaValue = paths('from docs where tags exists { where $value == "tria-prima" }');
+    expect(viaValue).toEqual(["substances/salt.md", "substances/sulphur.md"]);
+    expect(viaValue).toEqual(paths('from docs where "tria-prima" in list(tags)'));
+    // the scalar-authored tag is one element too
+    expect(paths('from docs where tags exists { where $value == "substance" }')).toEqual(SUBSTANCES);
+  });
+
+  it("values takes exactly one item; a call needs an alias unless followed by values", () => {
+    expect(() => hits('from docs select $path, type values')).toThrow(/exactly one/);
+    expect(() => hits('from docs select size(tags)')).toThrow(/needs an alias/);
+    expect(hits('from docs where $path == "substances/salt.md" select size(tags) values').values).toEqual([2]);
+    expect(hits('from docs where $path == "substances/salt.md" select n: size(tags)').hits[0]!.n).toBe(2);
+  });
+});
+

@@ -81,6 +81,12 @@ const QUERIES: string[] = [
   'from docs select distinct type',
   'from docs where $path == "processes/magnum-opus.md" select k: nodes collect distinct { select kind }',
   'from docs where nodes count distinct { select kind } == 3',
+  // values / $value (top-level values is shaped by the runner; nested by the engine)
+  'from docs where type == "practitioner" select era values order by era asc',
+  'from docs select distinct type values',
+  '$repo.docs first { where type == "practitioner" select $path values order by era desc }',
+  'from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }',
+  'from docs where tags exists { where $value == "tria-prima" }',
   // follow (planner declines → in-memory both ways, still must agree)
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',
   'from nodes where kind == "md:section" && name == "The magnum opus" select n: name, d: $depth follow section.children',

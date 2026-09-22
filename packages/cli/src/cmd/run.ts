@@ -98,6 +98,11 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     cli.io.out(result.consumer === "count" ? String(result.count) : String(result.exists));
     return EXIT_OK;
   }
+  if (result.values) {
+    for (const v of result.values) cli.io.out(typeof v === "string" ? v : JSON.stringify(v));
+    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
+    return EXIT_OK;
+  }
   if (cli.flags.mode === "ids") {
     for (const h of result.hits) cli.io.out(h.id);
     return EXIT_OK;

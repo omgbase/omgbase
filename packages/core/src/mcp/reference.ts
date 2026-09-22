@@ -154,6 +154,10 @@ Project fields onto each hit. Default hit is {id, path}. select adds:
                           (semantic queries only). Ordering is by this cosine;
                           text/filter only prune candidates, they don't reweight.
 Absent keys are simply omitted from the hit.
+  - "<expr> values"     → scalar projection mode: exactly one item, returned as
+                          the bare value (result has \`values: [...]\`, no hits).
+                          \`$value\` is the current item itself (a row, or each
+                          element of a list property inside \`tags collect { … }\`).
 
 ## semantic grain (docs vs blocks)
 

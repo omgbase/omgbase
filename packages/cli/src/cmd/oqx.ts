@@ -52,6 +52,8 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked } select $path, open'");
     cli.io.out("       query 'from docs select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id }'");
     cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/first/single { … }");
+    cli.io.out("       query 'from docs where layer == \"canon\" select $path values'   # `values`: bare values, no {id,path} hits (one item only)");
+    cli.io.out("       query 'from docs select $path, tags: tags collect { $value values where $value != \"draft\" }'   # $value = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
@@ -113,7 +115,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   // Shell capture (typed result before formatting): a scalar for count/exists,
   // else the whole result (its .hits become the addressable frame).
   cli.capture?.(
-    result.consumer === "count" ? result.count : result.consumer === "exists" ? result.exists : result,
+    result.consumer === "count" ? result.count : result.consumer === "exists" ? result.exists : result.values ?? result,
   );
 
   // JSON emits the whole result verbatim (incl. consumer + any scalar), so
@@ -127,6 +129,14 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   if (result.consumer === "count" || result.consumer === "exists") {
     const scalar = result.consumer === "count" ? String(result.count) : String(result.exists);
     cli.io.out(scalar);
+    return EXIT_OK;
+  }
+
+  // A `values` projection has no hits — one bare value per line (strings
+  // verbatim, anything else as JSON; `--jsonl` is JSON throughout).
+  if (result.values) {
+    for (const v of result.values) cli.io.out(typeof v === "string" && cli.flags.mode !== "jsonl" ? v : JSON.stringify(v));
+    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
     return EXIT_OK;
   }
 

@@ -32,6 +32,11 @@ export interface OqxResult {
   consumer: OqxConsumer;
   count?: number;
   exists?: boolean;
+  /** Present for a top-level `values` projection (`select <expr> values`): the
+   * bare projected values in page order, in place of `hits` (which is then
+   * empty). Paged/deduped exactly like hits — `truncated`/`cursor` apply. For
+   * first/single it holds zero or one value. */
+  values?: unknown[];
 }
 
 export interface OqxOptions {
@@ -104,6 +109,7 @@ function rewriteSub(s: Subquery): Subquery {
     select: rewriteSelect(s.select),
     orderBy: s.orderBy ? s.orderBy.map((o) => ({ ...o, expr: rewriteExpr(o.expr) })) : null,
     follow: s.follow ? rewriteFollow(s.follow) : null,
+    ...(s.values ? { values: true } : {}),
   };
 }
 function rewriteQuery(q: Query): Query {
@@ -116,6 +122,7 @@ function rewriteQuery(q: Query): Query {
     consumer: q.consumer,
     follow: q.follow ? rewriteFollow(q.follow) : null,
     ...(q.distinct ? { distinct: true } : {}),
+    ...(q.values ? { values: true } : {}),
   };
 }
 
@@ -168,6 +175,10 @@ export function collectSemanticPhrases(source: string): string[] {
 
 const ID_ITEM: SelectItem = { kind: "field", name: "__oqx_id", expr: { kind: "ident", name: "$id" }, lift: 0 };
 const PATH_ITEM: SelectItem = { kind: "field", name: "__oqx_path", expr: { kind: "ident", name: "$path" }, lift: 0 };
+// The reserved key a top-level `values` projection's single item is renamed to,
+// so it rides through id/path injection, keyset paging, and distinct as an
+// ordinary record field and is peeled off at the end.
+const VALUE_KEY = "__oqx_value";
 
 function toHit(row: unknown): OqxHit {
   const o = row as Record<string, unknown>;
@@ -228,11 +239,18 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   // we run without engine-distinct and dedup hits by their USER projection below,
   // keeping the first row's id/path.
   const topDistinct = !!parsed.distinct;
-  const q: Query = { ...parsed, distinct: false, select: [ID_ITEM, PATH_ITEM, ...parsed.select] };
+  // A top-level `values` projection runs as a RECORD projection whose single
+  // item is renamed to VALUE_KEY (the engine's own values mode is switched off),
+  // so pagination and distinct work unchanged; the bare values are peeled off
+  // the final page below and returned as `values` with `hits` empty.
+  const topValues = !!parsed.values;
+  const userSelect = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
+  const q: Query = { ...parsed, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...userSelect] };
   const res = engine.run(q, []);
 
   if (consumer === "first" || consumer === "single") {
     const row = res.consumer === "first" || res.consumer === "single" ? res.row : null;
+    if (topValues) return { hits: [], truncated: false, cursor: null, consumer, values: row == null ? [] : [toHit(row)[VALUE_KEY]] };
     return { hits: row == null ? [] : [toHit(row)], truncated: false, cursor: null, consumer };
   }
 
@@ -250,6 +268,7 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   page = page.slice(0, cap);
   const last = page[page.length - 1];
   const cursor = truncated && last && !custom ? encodeCursor(last.path, last.id) : null;
+  if (topValues) return { hits: [], truncated, cursor, consumer: "collect", values: page.map((h) => h[VALUE_KEY]) };
   return { hits: page, truncated, cursor, consumer: "collect" };
 }
 

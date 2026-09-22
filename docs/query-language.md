@@ -29,8 +29,9 @@ Every concern folds into the expression: `from docs|blocks|nodes|edges` (source)
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil with `$repo.docs`/`$repo.nodes`/`$repo.blocks`
 roots), and bounded traversal (`follow`). Results are lean projected hits
-(`{id, path, …projections}`), or a `count`/`exists` scalar — never full
-documents; hydrate by id afterward.
+(`{id, path, …projections}`), a `count`/`exists` scalar, or — for a
+`select <expr> values` projection — the bare projected values (`values: […]`,
+§7); never full documents; hydrate by id afterward.
 
 ## 2. Targets and field namespaces
 
@@ -55,6 +56,11 @@ guard — use `$path` or `frontmatter.path`).
 - **`$repo`** (every scope): the repository handle — `$repo.docs` / `$repo.nodes` /
   `$repo.blocks` / `$repo.edges` are the explicit root scans (§3.4), `$repo.$id`
   the repository id. **[was: `$repo` on a doc was the repository id string.]**
+- **`$value`** (every scope, oqx ≥ 0.8): the current item **itself** — the row
+  when scanning a target, or the scalar element when a block's receiver is a
+  list-valued property (`tags exists { where $value == "pricing" }`,
+  `tags collect { $value values }`). Inside a block `^$value` is the enclosing
+  row. It is engine-owned (never a stored field) and never pushed to SQL.
 - **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
   `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
 
@@ -211,7 +217,19 @@ nested/correlated scopes:
   disables the cursor (you get the top `limit` with `truncated`). **[was CEL/
   SQLite: NULLs sorted first ascending.]**
 - **`select`:** default hit is `{id, path}`; add `name: <expr>` fields and nested
-  `collect { … }` / `first { … }` / `single { … }`.
+  `collect { … }` / `first { … }` / `single { … }`. An item that is not a plain
+  navigation (a call, arithmetic) needs an alias — `n: size(tags)` — unless the
+  projection is in `values` mode.
+- **`values`** (oqx ≥ 0.8): `select <expr> values` — exactly **one** item — makes
+  each row's result the bare value rather than a `{ name: value }` record. At the
+  top level the result carries `values: […]` in place of `hits` (empty), paged
+  and `distinct`-deduped exactly like hits (`from docs select distinct type values`
+  → the type strings). Inside a `collect`/`first`/`single` block it yields a plain
+  array / scalar (`tags: tags collect { $value values }`, `latest: nodes first
+  { value values order by … }`). The runner implements the top-level form by
+  projecting the single item under a reserved key alongside the injected
+  id/path, then peeling the values off the final page — so the keyset cursor
+  still works.
 - **`cursor`:** opaque, keyset on `(path, id)`, valid for the same query only.
 
 ## 8. Execution model
@@ -244,6 +262,8 @@ projected-query fence (ADR-011, deferred).
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
 | Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
 | Distinct doc types | `from docs select distinct type` |
+| Distinct doc types as bare strings | `from docs select distinct type values` |
+| Each substance's tags minus one | `from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
