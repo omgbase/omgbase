@@ -52,10 +52,12 @@ export class SqliteTable implements QueryPlanner {
     const sqlParams: unknown[] = [];
     const whereSql = pushed.map((e) => this.translate(e, params, sqlParams)).join(" AND ");
 
-    // A LIMIT is only safe when nothing is left to filter in-memory and the
-    // result is unordered (first/single are "some row" without an order by).
+    // A LIMIT is only safe when nothing is left to filter in-memory, the result
+    // is unordered (first/single are "some row" without an order by), and the
+    // query carries no limit/offset of its own (the residual applies those, so
+    // a SQL LIMIT underneath would starve them).
     let tail = "";
-    if (!residual && !query.orderBy) {
+    if (!residual && !query.orderBy && !query.limit && !query.offset) {
       if (query.consumer === "first") tail = " LIMIT 1";
       else if (query.consumer === "single") tail = " LIMIT 2";
     }

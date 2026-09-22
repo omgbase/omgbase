@@ -589,3 +589,87 @@ test("an unaliased non-navigation projection item is an error unless followed by
   assert.throws(() => parse("people exists { has(budget) }"), (e: unknown) => e instanceof OqxError && /needs an alias/.test(e.message));
   assert.deepEqual(oqx`n: size(jobs) from ${people}`, [{ n: 2 }, { n: 2 }, { n: 1 }]);
 });
+
+// ---- `none` — the zero-cardinality consumer ---------------------------------
+
+test("none { … } is true iff the block yields no rows — the complement of exists", () => {
+  assert.deepEqual(owners(oqx`owner from ${accounts} where orders none { where amount > 200 }`), ["x"]);
+  assert.deepEqual(
+    oqx`owner from ${accounts} where orders none { where amount > 200 }`,
+    oqx`owner from ${accounts} where !orders exists { where amount > 200 }`,
+  );
+  // universal quantification is `none` over the complement: every job at Globocorp
+  assert.deepEqual(oqx`name values from ${people} where jobs none { where employer != "Globocorp" }`, ["Bob", "Carol"]);
+  // an empty relation has no rows, so none {} is true
+  assert.deepEqual(oqx`name values from ${players} where scores none { }`, ["Cid"]);
+});
+
+test("none as the whole-query consumer returns a boolean", () => {
+  assert.equal(oqx`${people} none { where age > 90 }`, true);
+  assert.equal(oqx`${people} none { where age > 50 }`, false);
+  const r = run(parse("xs none { where $value > 2 }"), { roots: { xs: [1, 2] } });
+  assert.deepEqual(r, { consumer: "none", none: true });
+});
+
+test("none is a where-position test: not comparable, not a projection", () => {
+  assert.throws(() => parse("from people where jobs none { } > 0"), (e: unknown) => e instanceof OqxError && /only count/.test(e.message));
+  assert.throws(() => parse("n: jobs none { } from people"), (e: unknown) => e instanceof OqxError && /collect\/first\/single/.test(e.message));
+});
+
+// ---- `limit` / `offset` — bounding the row set -------------------------------
+
+test("limit/offset bound the ordered top-level result", () => {
+  assert.deepEqual(oqx`name values from ${people} order by age desc limit 2`, ["Alice", "Bob"]);
+  assert.deepEqual(oqx`name values from ${people} order by age desc offset 1 limit 1`, ["Bob"]);
+  assert.deepEqual(oqx`name values from ${people} order by age desc offset 1`, ["Bob", "Carol"]);
+  assert.deepEqual(oqx`name values from ${people} offset 5`, []);
+  assert.deepEqual(oqx`name values from ${people} limit 0`, []);
+  // clause order is free, and the bound may be a binding
+  const n = 1;
+  assert.deepEqual(oqx`limit ${n} name values from ${people} where age > 30 order by name`, ["Alice"]);
+});
+
+test("the bound applies after where/order/distinct and before the consumer reduces", () => {
+  assert.equal(oqx`${people} count { limit 2 }`, 2);
+  assert.equal(oqx`${people} count { where age > 30 offset 1 }`, 1);
+  assert.equal(oqx`${people} exists { offset 2 }`, true);
+  assert.equal(oqx`${people} exists { offset 3 }`, false);
+  assert.equal(oqx`${people} none { limit 0 }`, true);
+  assert.equal(oqx`${people} first { name values order by age offset 1 }`, "Bob"); // the second-youngest
+  assert.equal(oqx`${people} single { name values order by age desc limit 1 }`, "Alice"); // limit 1 makes single safe
+  const jobs = people.flatMap((p) => p.jobs);
+  assert.deepEqual(oqx`select distinct employer values from ${jobs} limit 1`, ["Globocorp"]);
+  assert.deepEqual(oqx`select distinct employer values from ${jobs} offset 1`, ["Initech"]);
+});
+
+test("limit/offset inside nested blocks, evaluated in the enclosing scope", () => {
+  assert.deepEqual(
+    oqx`name, latest: jobs collect { employer values order by start_date desc limit 1 } from ${people}`,
+    [{ name: "Bob", latest: ["Globocorp"] }, { name: "Alice", latest: ["Globocorp"] }, { name: "Carol", latest: ["Globocorp"] }],
+  );
+  assert.deepEqual(oqx`name values from ${people} where jobs count { limit 1 } == 1`, ["Bob", "Alice", "Carol"]);
+  assert.deepEqual(oqx`name values from ${people} where jobs exists { offset 1 }`, ["Bob", "Alice"]); // ≥ 2 jobs
+  assert.deepEqual(oqx`name values from ${people} where jobs none { offset 1 }`, ["Carol"]);
+  // `^n` reads the enclosing row: each player's top-n scores where n is their own field
+  const ranked = [{ name: "A", n: 2, scores: [5, 9, 1] }, { name: "B", n: 1, scores: [7, 3] }];
+  assert.deepEqual(
+    oqx`name, top: scores collect { $value values order by $value desc limit ^n } from ${ranked}`,
+    [{ name: "A", top: [9, 5] }, { name: "B", top: [7] }],
+  );
+});
+
+test("limit/offset compose with follow (bounding the walk's ordered occurrences)", () => {
+  const tree = [{ id: "root", children: [{ id: "a", children: [{ id: "a1", children: [] }] }, { id: "b", children: [] }] }];
+  assert.deepEqual(oqx`id values from ${tree} follow children order by $depth, id limit 2`, ["root", "a"]);
+  assert.deepEqual(oqx`id values from ${tree} follow children order by $depth, id offset 3`, ["a1"]);
+});
+
+test("limit/offset must be non-negative integers; a field named limit is still a field", () => {
+  assert.throws(() => oqx`name from ${people} limit ${-1}`, (e: unknown) => e instanceof OqxError && /non-negative integer/.test(e.message));
+  assert.throws(() => oqx`name from ${people} offset ${"2"}`, (e: unknown) => e instanceof OqxError && /non-negative integer/.test(e.message));
+  assert.throws(() => oqx`name from ${people} limit ${1.5}`, (e: unknown) => e instanceof OqxError);
+  assert.throws(() => parse("name from people limit 1 limit 2"), (e: unknown) => e instanceof OqxError && /duplicate `limit`/.test(e.message));
+  assert.deepEqual(oqx`limit from ${[{ limit: 3 }]}`, [{ limit: 3 }]);
+  assert.deepEqual(oqx`from ${[{ limit: 3 }, { limit: 1 }]} where limit > 2`, [{ limit: 3 }]);
+});
+

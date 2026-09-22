@@ -20,12 +20,13 @@ import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, Consumer, RelOp,
 } from "./ast.ts";
 
-const CONSUMERS = new Set<string>(["collect", "exists", "count", "first", "single"]);
+const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
 // Contextual clause words lexed as bare idents; an open-ended range must stop
 // before them rather than consume them as its high bound.
 const CLAUSE_WORDS = new Set<string>([
-  "collect", "exists", "count", "first", "single",
+  "collect", "exists", "none", "count", "first", "single",
   "order", "by", "asc", "desc", "follow", "distinct", "frontier", "depth", "in", "values",
+  "limit", "offset",
 ]);
 const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
@@ -50,6 +51,8 @@ interface BodyClauses {
   follow: Follow | null;
   distinct: boolean;
   values: boolean;
+  limit: Expr | null;
+  offset: Expr | null;
 }
 
 class Parser {
@@ -91,6 +94,7 @@ class Parser {
         follow: directive.sub.follow,
         distinct: directive.distinct ?? false,
         values: directive.sub.values ?? false,
+        ...bounds(directive.sub),
       };
     }
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
@@ -111,6 +115,7 @@ class Parser {
       follow: body.follow,
       distinct: body.distinct,
       values: body.values,
+      ...bounds(body),
     };
   }
 
@@ -128,6 +133,8 @@ class Parser {
     let follow: Follow | null = null;
     let distinct = false;
     let values = false;
+    let limit: Expr | null = null;
+    let offset: Expr | null = null;
     let sawWhere = false, sawSelect = false, sawOrder = false;
 
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -155,6 +162,13 @@ class Parser {
         ({ items: select, values } = this.parseProjection());
         continue;
       }
+      if (this.atBound()) {
+        const word = this.next().value;
+        const e = this.parsePostfix();
+        if (word === "limit") { if (limit) this.fail("duplicate `limit` clause"); limit = e; }
+        else { if (offset) this.fail("duplicate `offset` clause"); offset = e; }
+        continue;
+      }
       if (orderByAllowed && this.atOrderBy()) {
         if (sawOrder) this.fail("duplicate `order by` clause");
         sawOrder = true;
@@ -174,9 +188,19 @@ class Parser {
         ({ items: select, values } = this.parseProjection());
         continue;
       }
-      this.fail(`unexpected ${this.tokDesc()} — expected from/where/select${orderByAllowed ? "/order by" : ""}/follow`);
+      this.fail(`unexpected ${this.tokDesc()} — expected from/where/select${orderByAllowed ? "/order by" : ""}/limit/offset/follow`);
     }
-    return { froms, where, select, orderBy, follow, distinct, values };
+    return { froms, where, select, orderBy, follow, distinct, values, limit, offset };
+  }
+
+  // `limit <n>` / `offset <n>` — the word must be followed by something that can
+  // be a bound (a number, a binding, or an outer reference), so a field that
+  // happens to be called `limit` still projects/filters as a bare name.
+  private atBound(): boolean {
+    const t = this.peek();
+    if (t.type !== "ident" || (t.value !== "limit" && t.value !== "offset")) return false;
+    const nx = this.peekAt(1);
+    return !!nx && (nx.type === "number" || nx.type === "binding" || nx.type === "caret");
   }
 
   // Decide, by syntactic shape only, whether a leading unkeyworded run is a
@@ -333,7 +357,7 @@ class Parser {
       const op = this.tryOp();
       if (op) {
         if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
-          this.fail(`projection '${name}' must use collect/first/single, not ${op.op}`);
+          this.fail(`projection '${name}' must use collect/first/single, not ${op.op} (exists/none/count are where-position tests)`);
         }
         if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not ${op.op} { … }`);
         return { kind: "collect", name, op };
@@ -405,7 +429,7 @@ class Parser {
   // Validate a consumer op used in where position and attach any `count { … } <op> N`.
   private finishWhereOp(op: OpNode): OpNode {
     if (op.op === "first" || op.op === "single") {
-      this.fail(`${op.op} { … } is a select-position lookup; in where use exists { … } or count { … } <op> N`);
+      this.fail(`${op.op} { … } is a select-position lookup; in where use exists { … } / none { … } or count { … } <op> N`);
     }
     if (op.op === "collect") {
       const allLift = op.sub.select.length > 0 && op.sub.select.every((s) => s.kind === "field" && s.lift > 0);
@@ -457,7 +481,7 @@ class Parser {
   private parseSubquery(): { sub: Subquery; distinct: boolean } {
     const body = this.parseBody(true);
     return {
-      sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow, values: body.values },
+      sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow, values: body.values, ...bounds(body) },
       distinct: body.distinct,
     };
   }
@@ -623,4 +647,10 @@ function navKey(e: Expr): string | null {
     case "member": return e.name;
     default: return null;
   }
+}
+
+// The optional `limit`/`offset` fields of a Query/Subquery, present only when set
+// (so a Query built without them is unchanged).
+function bounds(b: { limit?: Expr | null; offset?: Expr | null }): { limit?: Expr; offset?: Expr } {
+  return { ...(b.limit ? { limit: b.limit } : {}), ...(b.offset ? { offset: b.offset } : {}) };
 }

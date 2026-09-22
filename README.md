@@ -266,12 +266,13 @@ oqx`name from ${people} where title.lower() == "director"`;  // → Alice
 
 ### 5. Consumers
 
-A consumer shapes a result set. There are five:
+A consumer shapes a result set. There are six:
 
 | Consumer  | Returns                        |
 | --------- | ------------------------------ |
 | `collect` | an array (the default)         |
-| `exists`  | a boolean                      |
+| `exists`  | a boolean — one or more rows   |
+| `none`    | a boolean — zero rows (the complement of `exists`) |
 | `count`   | a number                       |
 | `first`   | one record, or `null`          |
 | `single`  | one record, or `null`; throws if more than one matches |
@@ -301,7 +302,13 @@ cardinality:
 ```js
 oqx`name from ${people} where jobs exists { !end }`;   // has a current job → Bob, Carol
 oqx`name from ${people} where jobs count {} >= 2`;     // ≥2 jobs → Bob, Alice
+oqx`name from ${people} where jobs none { where end }`; // no past job → Carol
 ```
+
+`none { … }` is exactly `!… exists { … }`, kept as its own word because the
+cardinality is the point. It is also how you say "every": *all* members active is
+`members none { where !active }` — there is deliberately no `all { … }`, whose
+block would have to mean something different from every other consumer's.
 
 In a projection, `collect` yields a nested array; `first` / `single` yield one
 nested record:
@@ -383,6 +390,26 @@ oqx`name from ${people} where city == "NYC" order by age desc`;
 // [{ name: "Bob" }, { name: "Carol" }]
 ```
 
+### 8b. Bounding: `limit` / `offset`
+
+`limit N` and `offset N` bound the row set **after** `where`, `order by`, and
+`distinct`, and **before** the consumer reduces it — so they mean the same thing
+under every consumer: `count { … limit 5 }` is at most 5, `first { … offset 1 }`
+is the second row, `exists { offset 2 }` asks for a third. They work at the top
+level and inside any block, and `N` may be a literal, a `${…}` binding, or an
+outer reference — `limit ^n` reads the enclosing row's `n`, as `^` does everywhere
+inside `{ … }`; it must be a non-negative integer.
+
+```js
+oqx`name values from ${people} order by age desc limit 2`;                 // ["Alice", "Bob"]
+oqx`name values from ${people} order by age desc offset 1 limit 1`;        // ["Bob"]
+oqx`name, latest: jobs collect { employer values order by start desc limit 1 } from ${people}`;
+oqx`name from ${people} where jobs exists { offset 1 }`;                   // has a second job
+```
+
+A storage adapter that pushes the whole query may translate them to SQL
+`LIMIT`/`OFFSET`; the shipped `SqliteTable` leaves them to the residual.
+
 ### 9. Recursion: `follow`
 
 `follow <relation>` turns a query into a bounded recursive traversal: the `where`
@@ -435,6 +462,7 @@ your relation returns fresh objects rather than shared references.
 name, alias: expr, nested: rel collect { … }   projection (select optional)
 from ${source}                                  source collection
 where a == b && rel exists { … } || !c          predicate tree + nested ops
+where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
 name                                             the CURRENT row's field only (never climbs)
@@ -444,8 +472,9 @@ $value                                           the current item itself (a scal
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 ^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
 order by expr desc, expr2                        ordering
+limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
 follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier)
-${source} <collect|exists|count|first|single> { … }   whole-query consumer
+${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```
 
 ## Data context: string queries and named roots

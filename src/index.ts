@@ -43,8 +43,8 @@ export type * from "./ast.ts";
 const templateCache = new WeakMap<TemplateStringsArray, Query>();
 
 /** The OQX tagged template. Returns the query result shaped by its consumer:
- * an array for `collect` (the default), a boolean for `exists`, a number for
- * `count`, or a single record / null for `first` / `single`. */
+ * an array for `collect` (the default), a boolean for `exists` / `none`, a
+ * number for `count`, or a single record / null for `first` / `single`. */
 export function oqx(strings: TemplateStringsArray, ...values: unknown[]): unknown {
   let query = templateCache.get(strings);
   if (!query) {
@@ -82,6 +82,7 @@ function unwrap(result: OqxResult): unknown {
   switch (result.consumer) {
     case "collect": return result.rows;
     case "exists": return result.exists;
+    case "none": return result.none;
     case "count": return result.count;
     case "first": case "single": return result.row;
   }

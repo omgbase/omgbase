@@ -89,3 +89,19 @@ test("sqlite: unordered first pushes a LIMIT", { skip: !DatabaseSync }, () => {
   assert.ok(plan);
   assert.equal([...plan!.rows()].length, 1); // LIMIT 1 applied in SQL
 });
+
+test("sqlite: a query-level limit/offset is honored (no SQL LIMIT underneath first/single/none)", { skip: !DatabaseSync }, () => {
+  const db = makeDb();
+  const planner = new SqliteTable!(db, "emp", opts);
+  for (const src of [
+    'emp first { name values where dept == "eng" offset 1 }',   // fully pushed predicate, unordered → SQL LIMIT must NOT apply
+    'emp single { name values where dept == "eng" limit 1 }',
+    'emp count { where dept == "eng" limit 2 }',
+    'emp none { where dept == "eng" offset 3 }',
+    'name values from emp where level >= 4 order by level desc offset 1 limit 1',
+  ]) {
+    const q = parse(src);
+    assert.deepEqual(new PlannedEngine(planner).run(q, []), run(q, { roots: { emp: employees } }), src);
+  }
+});
+

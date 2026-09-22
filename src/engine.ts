@@ -26,6 +26,7 @@ import {
 export type OqxResult =
   | { consumer: "collect"; rows: unknown[] }
   | { consumer: "exists"; exists: boolean }
+  | { consumer: "none"; none: boolean }
   | { consumer: "count"; count: number }
   | { consumer: "first"; row: unknown | null }
   | { consumer: "single"; row: unknown | null };
@@ -55,6 +56,10 @@ const HARD_DEPTH_CAP = 8;
 // `Query` and `Subquery` carry this shape.
 type Projection = Pick<Subquery, "select" | "values">;
 
+// An evaluated `limit`/`offset` pair. `limit === null` is unbounded.
+interface Bound { offset: number; limit: number | null; }
+const UNBOUNDED: Bound = { offset: 0, limit: null };
+
 export class InMemoryEngine implements Engine {
   private ctx: DataContext;
 
@@ -69,22 +74,30 @@ export class InMemoryEngine implements Engine {
       rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, root))));
     }
 
-    if (query.follow) return this.runFollow(query, rows, root);
+    const bound = this.boundOf(query, root);
+    if (query.follow) return this.runFollow(query, rows, root, bound);
 
     // Consumer-directed short-circuits (skipped under `distinct`, which must
-    // materialize + dedup by projection before reducing).
-    if (!query.distinct && query.consumer === "exists") {
-      for (const r of rows) if (this.matches(query.where, r, root)) return { consumer: "exists", exists: true };
-      return { consumer: "exists", exists: false };
-    }
-    if (!query.distinct && query.consumer === "count") {
-      let count = 0;
-      for (const r of rows) if (this.matches(query.where, r, root)) count++;
-      return { consumer: "count", count };
+    // materialize + dedup by projection before reducing). Counting never
+    // materializes rows; exists/none stop as soon as the bound is known to be
+    // non-empty (the (offset+1)th match — or the first, when unbounded).
+    if (!query.distinct && (query.consumer === "exists" || query.consumer === "none" || query.consumer === "count")) {
+      const need = query.consumer === "count" ? Infinity : bound.offset + 1;
+      let n = 0;
+      for (const r of rows) {
+        if (this.matches(query.where, r, root)) { n++; if (n >= need) break; }
+      }
+      const m = boundedCount(n, bound);
+      if (query.consumer === "count") return { consumer: "count", count: m };
+      if (query.consumer === "exists") return { consumer: "exists", exists: m > 0 };
+      return { consumer: "none", none: m === 0 };
     }
 
-    const cap = !query.orderBy && !query.distinct && query.consumer === "first" ? 1
-      : !query.orderBy && !query.distinct && query.consumer === "single" ? 2
+    // first/single over an unordered, non-distinct set need only the rows up to
+    // the bound: offset + 1 (first) / offset + 2 (single, to detect a second).
+    const want = query.consumer === "first" ? 1 : query.consumer === "single" ? 2 : Infinity;
+    const cap = !query.orderBy && !query.distinct && want !== Infinity
+      ? bound.offset + Math.min(want, bound.limit ?? want)
       : Infinity;
     let kept: Scope[] = [];
     for (const r of rows) {
@@ -96,7 +109,27 @@ export class InMemoryEngine implements Engine {
     }
     this.sortScopes(kept, query.orderBy);
     if (query.distinct) kept = this.dedupByProjection(kept, query);
+    kept = sliceBound(kept, bound);
     return this.shape(query.consumer, kept, query);
+  }
+
+  // Evaluate a block's `limit`/`offset`. The bound is part of the block, so it
+  // is read in a row-less scope INSIDE it: a bare name is absent (there is no
+  // current item yet), `^name` is the enclosing row — exactly as in the block's
+  // body — and literals/bindings are themselves. For a top-level query `scope`
+  // is the root. Each must be a non-negative integer.
+  private boundOf(b: Pick<Subquery, "limit" | "offset">, enclosing: Scope): Bound {
+    if (!b.limit && !b.offset) return UNBOUNDED;
+    const scope: Scope = enclosing.parent === null ? enclosing : { row: undefined, parent: enclosing, bindings: enclosing.bindings };
+    const read = (e: Expr | undefined, word: string): number | null => {
+      if (!e) return null;
+      const v = this.evalExpr(e, scope);
+      if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+        throw new OqxError(`${word} must be a non-negative integer (got ${JSON.stringify(v ?? null)})`, "eval");
+      }
+      return v;
+    };
+    return { offset: read(b.offset, "offset") ?? 0, limit: read(b.limit, "limit") };
   }
 
   // A where match that needs no lift capture (exists/count fast paths).
@@ -115,7 +148,7 @@ export class InMemoryEngine implements Engine {
 
   // ---- follow ---------------------------------------------------------------
 
-  private runFollow(query: Query, rows: unknown[], root: Scope): OqxResult {
+  private runFollow(query: Query, rows: unknown[], root: Scope, bound: Bound): OqxResult {
     const { seed, post } = query.where ? partitionRecur(query.where) : { seed: null, post: null };
     const seeds = seed ? rows.filter((r) => this.matches(seed, r, root)) : rows;
     const occ = this.followWalk(seeds, query.follow!, root);
@@ -123,6 +156,7 @@ export class InMemoryEngine implements Engine {
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
     if (query.distinct) scopes = this.dedupByProjection(scopes, query);
+    scopes = sliceBound(scopes, bound);
     return this.shape(query.consumer, scopes, query);
   }
 
@@ -220,6 +254,7 @@ export class InMemoryEngine implements Engine {
   private shape(consumer: Query["consumer"], scopes: Scope[], proj: Projection): OqxResult {
     switch (consumer) {
       case "exists": return { consumer, exists: scopes.length > 0 };
+      case "none": return { consumer, none: scopes.length === 0 };
       case "count": return { consumer, count: scopes.length };
       case "collect": return { consumer, rows: scopes.map((s) => this.projectRow(proj, s)) };
       case "first": return { consumer, row: scopes.length > 0 ? this.projectRow(proj, scopes[0]!) : null };
@@ -262,9 +297,15 @@ export class InMemoryEngine implements Engine {
 
   private evalWhereOp(op: OpNode, scope: Scope): boolean {
     if (op.sub.follow) throw new OqxError("`follow` is only valid on a select-position collect { … }, not a where op", "eval");
-    if (op.op === "exists") return this.anyMatch(op, scope);
+    const bound = this.boundOf(op.sub, scope);
+    if (op.op === "exists" || op.op === "none") {
+      // Unbounded: stop at the first match (dedup cannot change emptiness).
+      // Bounded: the offset/limit decide emptiness, so materialize the set.
+      const any = bound === UNBOUNDED ? this.anyMatch(op, scope) : this.opRows(op, scope, bound).length > 0;
+      return op.op === "exists" ? any : !any;
+    }
     if (op.op === "collect") {
-      const matched = this.matchRows(op, scope);
+      const matched = this.opRows(op, scope, bound);
       for (const item of op.sub.select) {
         if (item.kind !== "field") continue;
         // Bind `item.lift` scopes out: `^` = the collect's own scope, `^^` its
@@ -280,12 +321,18 @@ export class InMemoryEngine implements Engine {
       return matched.length > 0;
     }
     if (op.op === "count") {
-      let rows = this.matchRows(op, scope);
-      if (op.distinct) rows = this.dedupByProjection(rows, op.sub);
-      const n = rows.length;
+      const n = this.opRows(op, scope, bound).length;
       return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
     }
-    return this.matchRows(op, scope).length > 0;
+    return this.opRows(op, scope, bound).length > 0;
+  }
+
+  // The rows a consumer op reduces: matched → ordered → distinct → bounded.
+  private opRows(op: OpNode, scope: Scope, bound: Bound): Scope[] {
+    let scopes = this.matchRows(op, scope);
+    this.sortScopes(scopes, op.sub.orderBy);
+    if (op.distinct) scopes = this.dedupByProjection(scopes, op.sub);
+    return sliceBound(scopes, bound);
   }
 
   // Short-circuiting existence check over a consumer receiver.
@@ -310,17 +357,19 @@ export class InMemoryEngine implements Engine {
   // A select-position collect/first/single, optionally recursive via `follow`.
   private evalCollectValue(op: OpNode, scope: Scope): unknown {
     const sub = op.sub;
+    const bound = this.boundOf(sub, scope);
     let scopes: Scope[];
     if (sub.follow) {
       let rows = this.rowsOf(this.evalExpr(op.receiver, scope));
       for (const proj of sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
       const seeds = sub.where ? rows.filter((r) => this.evalWhere(sub.where!, { row: r, parent: scope, bindings: scope.bindings, lifts: {} })) : rows;
       scopes = this.followWalk(seeds, sub.follow, scope).map((o) => ({ row: o.row, parent: scope, bindings: scope.bindings, meta: o.meta }));
+      this.sortScopes(scopes, sub.orderBy);
+      if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
+      scopes = sliceBound(scopes, bound);
     } else {
-      scopes = this.matchRows(op, scope);
+      scopes = this.opRows(op, scope, bound);
     }
-    this.sortScopes(scopes, sub.orderBy);
-    if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
     switch (op.op) {
       case "collect": return scopes.map((s) => this.projectRow(sub, s));
       case "first": return scopes.length > 0 ? this.projectRow(sub, scopes[0]!) : null;
@@ -457,6 +506,16 @@ function stableStringify(v: unknown): string {
 
 function compareCount(n: number, cmp: { op: string; value: number }): boolean {
   return relate(cmp.op, n, cmp.value);
+}
+
+// Apply a bound to an ordered row set / to a match count.
+function sliceBound<T>(rows: T[], b: Bound): T[] {
+  if (b === UNBOUNDED) return rows;
+  return rows.slice(b.offset, b.limit == null ? undefined : b.offset + b.limit);
+}
+function boundedCount(n: number, b: Bound): number {
+  const rest = Math.max(0, n - b.offset);
+  return b.limit == null ? rest : Math.min(rest, b.limit);
 }
 
 // Order `&&` conjuncts so cheap scalar leaves run before consumer-op leaves.
