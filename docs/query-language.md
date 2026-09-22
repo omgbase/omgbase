@@ -55,7 +55,11 @@ guard — use `$path` or `frontmatter.path`).
   object so `logging.level` navigates it. A value is scalar-comparable only when
   the key is **single-valued and scalar-authored** in scope; a list/repeated/
   collided key compares unequal — use `list()` (§4).
-- **Source-scoped:** `frontmatter.<k>` / `inline.<k>`.
+- **Source-scoped:** `frontmatter.<k>` / `inline.<k>`. The whole bag as a
+  collection: `entries(frontmatter)` / `entries(inline)` (oqx ≥ 0.10) — one
+  entry per top-level key, **in key order** (authored position is not indexed),
+  valued by the same scalar-vs-list rule as a bare read, dotted keys folded back
+  into a nested value; inside the block `$key` is the key and `$value` the value.
 - **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
 - **Intrinsics:** `$id`, `$path`, `$updated_at` (ISO-8601 UTC, compares
   lexicographically = chronologically), `$body`, `$content_hash`, `format`.
@@ -179,7 +183,7 @@ A Ruby-style range is a value, used most often as the right side of `in`:
 - **`^name:` in a select** *lifts* the value `N` scopes out (flatten-append),
   binding it into the enclosing scope while the collect filters (§ lifts).
 
-## 4. `list()` / `size()` / `has()`
+## 4. `list()` / `size()` / `has()` / `entries()`
 `list(f)` coerces scalar-or-list to an array (absent → `[]`); legal anywhere,
 canonically inside `in`/`size`. `size(x)` = string/array length or object key
 count. `has(f)` = the field is present (not null). A list-authored key is not
@@ -281,6 +285,8 @@ projected-query fence (ADR-011, deferred).
 | Distinct doc types | `from docs select distinct type` |
 | Distinct doc types as bare strings | `from docs select distinct type values` |
 | Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
+| A doc's frontmatter as key/value rows | `from docs where $path == "x.md" select fm: entries(frontmatter) collect { k: $key, v: $value }` |
+| Docs whose frontmatter has any numeric key over 1600 | `from docs where entries(frontmatter) exists { where $value > 1600 } select $path` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `from docs select h: nodes first { name values where kind == "md:section" order by first_ordinal }` |
 | Each substance's tags minus one | `from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }` |

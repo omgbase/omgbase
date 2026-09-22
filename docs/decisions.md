@@ -111,6 +111,14 @@ Format: one ADR per decision; status is `proposed` until Brendan ratifies (`acce
 
 ---
 
+## ADR-018 — `entries()`: records become collections only explicitly; omgbase materializes `frontmatter` / `inline` handles
+**Status:** proposed
+**Context:** `@omgbase/oqx` 0.10.0 completes the collection-model change begun with `$value`/`values` (ADR-016): a plain object is never iterable, and `entries(x)` is the explicit bridge — a collection of `{ key, value }` entries where, inside the block, the scope's row is the property's *value* (`$value`, bare names) and `$key` is the key. `$key` is entry-scope-only (arrays gain no implicit index; `entries(arr)` yields numeric keys explicitly), and a free-function call may be a consumer receiver (`entries(attrs) exists { … }`). In omgbase the natural targets — `attrs`, a nested frontmatter map, a list property — are already plain values the builtin handles, but `frontmatter` and `inline` are lazy `PropSourceRef` handles served key-by-key from the `properties` table, so `Object.entries` on them yields nothing.
+**Decision:** Adopt the library semantics unchanged and add one context extension: `callFunction("entries", <PropSourceRef>)` materializes that source's bag as entries — one per top-level key in key order (the table's deterministic order; authored position is not indexed — `ord` is position within a list key), each valued by the same scalar-vs-list rule as a bare `docProp` read, with flattened dotted keys folded back into a nested value. Nothing else changes: `entries(...)` is a free call, so the SQL translator leaves it residual; the runner passes it through.
+**Consequences:** "show me this doc's frontmatter as rows", "docs whose frontmatter has a key matching …", and per-key inspection of `attrs` are one query each, and the `frontmatter.<k>` / `inline.<k>` reads and `entries(frontmatter)` agree by construction (same decoder). Cost: one more special case in the store context's `callFunction`.
+
+---
+
 ## Cut list (authoritative — PRs adding these are rejected)
 
 Persistent Section entities · BlockVersion as an entity · one generic edge table across tree/graph/lineage · inferring *operations* from file diffs · high-level ops as kernel primitives (macros only; split/merge excepted) · graph analytics suite · embedded/auto-injected IDs · engine-level contradiction detection · CRDT/OT · Cypher/Gremlin · full CST/incremental parsing core · per-cell table identity · learned rankers (v1) · real-time collaborative cursors.

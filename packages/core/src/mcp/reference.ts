@@ -161,6 +161,8 @@ Absent keys are simply omitted from the hit.
   - "limit N" / "offset N" → bound the result set (after where/order/distinct,
                           before the consumer reduces; also inside blocks).
   - consumers           → collect | exists | none (zero rows) | count | first | single
+  - entries(x)          → a record as a collection: \`entries(frontmatter) collect
+                          { k: $key, v: $value }\` (also inline / attrs / a nested map)
 
 ## semantic grain (docs vs blocks)
 

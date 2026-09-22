@@ -134,6 +134,25 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (rows.length === 1 && rows[0]!.card === "scalar") return decodeProp(rows[0]!);
     return rows.map(decodeProp);
   };
+  // All of a doc's properties from one source (`frontmatter` / `inline`) as OQX
+  // entries, for `entries(frontmatter)`: one entry per TOP-LEVEL key, valued by
+  // the same scalar-vs-list rule as a bare read (`docProp`), with flattened dotted
+  // keys (`logging.level`) folded back into one nested entry. Keys come in the
+  // properties table's deterministic order — by key — because authored key
+  // position is not indexed (`ord` is the position WITHIN a list-valued key).
+  const docPropEntries = (docId: string, source: string): unknown[] => {
+    const keys = all(
+      `SELECT DISTINCT key FROM properties WHERE doc_id = ? AND source = ? AND deleted_commit IS NULL ORDER BY key`,
+      docId, source,
+    ).map((r) => String(r.key));
+    const tops: string[] = [];
+    const seen = new Set<string>();
+    for (const k of keys) {
+      const top = k.split(".")[0]!;
+      if (!seen.has(top)) { seen.add(top); tops.push(top); }
+    }
+    return tops.map((t) => semantics.makeEntry(t, docProp(docId, t, source)));
+  };
   // Reconstruct a nested object from flattened dotted keys under `prefix.`
   // (undefined when there are none). Leaves are decoded property values.
   const docPropObject = (docId: string, prefix: string, source?: string): unknown => {
@@ -487,6 +506,13 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // pushdown can serve the property's autopromoted/cached bounds — see
     // detectRange + val_json in store/properties.ts.
     callFunction(name: string, args: unknown[]): CallResult {
+      // `entries(frontmatter)` / `entries(inline)`: the source handle is lazy (a
+      // PropSourceRef, not a plain object), so materialize its property bag as
+      // entries here; any other argument falls through to the oqx builtin.
+      if (name === "entries" && (args[0] as PropSourceRef | undefined)?.[PROP_SOURCE]) {
+        const p = args[0] as PropSourceRef;
+        return { handled: true, value: docPropEntries(p.docId, p.source) };
+      }
       if (name === "range") {
         const s = args[0];
         if (semantics.isRange(s)) return { handled: true, value: s };

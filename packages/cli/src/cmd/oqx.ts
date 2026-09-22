@@ -54,6 +54,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
+    cli.io.out("       query 'from docs where $path == \"x.md\" select fm: entries(frontmatter) collect { k: $key, v: $value }'   # a record as a collection ($key/$value); also entries(attrs), entries(inline)");
     cli.io.out("       query 'from docs where layer == \"canon\" select $path values'   # `values`: bare values, no {id,path} hits (one item only)");
     cli.io.out("       query 'from docs select $path, tags: tags collect { $value values where $value != \"draft\" }'   # $value = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");

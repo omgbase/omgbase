@@ -95,6 +95,11 @@ const QUERIES: string[] = [
   'from docs select distinct type values limit 2',
   'from docs where nodes exists { where kind == "md:task" offset 3 }',
   '$repo.docs first { where type == "practitioner" select $path values order by era asc offset 1 }',
+  // entries() / $key (a free call → residual; the store context materializes frontmatter/inline)
+  'from docs where $path == "substances/salt.md" select fm: entries(frontmatter) collect { k: $key, v: $value }',
+  'from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }',
+  'from docs where entries(inline) exists { } select ks: entries(inline) collect { $key values }',
+  'from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value } select $path',
   'from docs where $path == "processes/magnum-opus.md" select h: nodes collect { where kind == "md:section" select name values order by first_ordinal limit 2 }',
   // follow (planner declines → in-memory both ways, still must agree)
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',

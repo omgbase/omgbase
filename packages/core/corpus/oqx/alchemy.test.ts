@@ -1253,3 +1253,59 @@ describe("alchemy corpus — none, limit, offset", () => {
   });
 });
 
+// `entries()` + `$key` (oqx ≥ 0.10): a record as a collection. `attrs` and list
+// properties are plain values the library handles; `frontmatter` / `inline` are
+// lazy handles the store context materializes (ADR-018).
+describe("alchemy corpus — entries() and $key", () => {
+  it("entries(frontmatter) is the authored bag, in key order, valued like a bare read", () => {
+    const fm = hits('from docs where $path == "substances/salt.md" select fm: entries(frontmatter) collect { k: $key, v: $value }').hits[0]!.fm;
+    // key order: authored position is not indexed (properties.ord is the position
+    // within a list key), so the bag comes in the table's deterministic key order
+    expect(fm).toEqual([
+      { k: "element", v: "salt" },
+      { k: "layer", v: "canon" },
+      { k: "slug", v: "salt" },
+      { k: "tags", v: ["substance", "tria-prima"] }, // list-authored → array, as `tags` reads
+      { k: "tradition", v: "western" },
+      { k: "type", v: "substance" },
+      { k: "verified", v: true },
+    ]);
+    // agrees with the bare reads by construction
+    const bare = hits('from docs where $path == "substances/salt.md" select type, slug, layer, tradition, element, tags, verified').hits[0]!;
+    for (const e of fm as { k: string; v: unknown }[]) expect(bare[e.k]).toEqual(e.v);
+  });
+
+  it("entries(frontmatter) as a where receiver: keys and values are both queryable", () => {
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }'))
+      .toEqual(["practitioners/newton.md", "texts/mutus-liber.md"]); // eras 1680 and 1677
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }'))
+      .toEqual(paths('from docs where era > 1600'));
+    // every doc has a `type` key
+    expect(paths('from docs where entries(frontmatter) none { where $key == "type" }')).toEqual([]);
+    // the value of a list key is the array: membership works on it
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "tags" && "tria-prima" in $value }'))
+      .toEqual(["substances/salt.md", "substances/sulphur.md"]);
+  });
+
+  it("entries(inline) covers the `key:: value` fields; empty for docs without any", () => {
+    const withInline = paths('from docs where entries(inline) exists { }');
+    expect(withInline).toEqual(paths('from docs where nodes exists { where kind == "md:inline_field" }'));
+    expect(withInline).toContain("practitioners/jabir-ibn-hayyan.md");
+    const ks = hits('from docs where $path == "practitioners/jabir-ibn-hayyan.md" select ks: entries(inline) collect { $key values }').hits[0]!.ks;
+    expect(ks).toEqual(["century", "known_for"]); // key order
+    expect(hits('from docs where $path == "index.md" select ks: entries(inline) collect { $key values }').hits[0]!.ks).toEqual([]);
+  });
+
+  it("entries(attrs) on nodes: per-key inspection of the attrs bag", () => {
+    const checked = paths('from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value }');
+    expect(checked).toEqual(paths('from nodes where kind == "md:task" && checked'));
+    const ks = hits('from nodes where kind == "md:task" select ks: entries(attrs) collect { $key values } limit 1').hits[0]!.ks as string[];
+    expect(ks).toContain("checked");
+  });
+
+  it("a list property through entries() yields numeric index keys", () => {
+    const idx = hits('from docs where $path == "substances/salt.md" select t: entries(tags) collect { k: $key, v: $value }').hits[0]!.t;
+    expect(idx).toEqual([{ k: 0, v: "substance" }, { k: 1, v: "tria-prima" }]);
+  });
+});
+
