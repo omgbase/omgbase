@@ -294,7 +294,8 @@ class Parser {
   // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain
   // whose head may be an outer reference (`^rel`, `^^root.rel`) — since a bare
   // name is the current row's own property, an enclosing row's relation or a
-  // named root is only reachable as a receiver through `^`.
+  // named root is only reachable as a receiver through `^` — or a free-function
+  // call (`entries(prefs)`), so a computed collection can be consumed directly.
   private parseReceiver(): Expr {
     if (this.at("binding")) return { kind: "binding", index: this.next().index! };
     const levels = this.parseCarets();
@@ -310,10 +311,12 @@ class Parser {
   }
 
   // A dotted navigation chain from `head`; `levels` > 0 makes the head an outer
-  // reference read exactly that many scopes out.
+  // reference read exactly that many scopes out. A bare head followed by `(` is
+  // a free-function call (`entries(x)`), which may then be navigated further.
   private parseNavFrom(head: Token, levels = 0): { expr: Expr; name: string } {
     let expr: Expr = levels > 0 ? { kind: "outer", levels, name: head.value } : { kind: "ident", name: head.value };
     let name = head.value;
+    if (levels === 0 && this.at("lparen")) expr = { kind: "call", recv: null, name: head.value, args: this.parseArgs() };
     while (this.at("dot")) {
       this.next();
       if (!this.at("ident")) this.fail("expected an identifier after '.' in a navigation");

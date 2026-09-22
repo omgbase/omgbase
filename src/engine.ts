@@ -19,7 +19,7 @@ import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  equals, relate, arith, membership, truthy, toNumber, compareForSort, makeRange,
+  equals, relate, arith, membership, truthy, toNumber, compareForSort, makeRange, isEntry,
 } from "./semantics.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
@@ -39,8 +39,9 @@ export interface Engine {
 // One query scope: the row under evaluation plus the chain of enclosing scopes
 // that `^` walks. The root scope (parent === null) has no row; its names are the
 // context's named roots. `lifts` holds values bound INTO this scope by `^name:`
-// items in nested blocks; `meta` holds recursion intrinsics for a follow
-// occurrence.
+// items in nested blocks; `meta` holds the scope's intrinsics: recursion
+// metadata for a follow occurrence, and `$key` for an entry scope (a row that
+// arrived as an `entries()` entry — see `enter`).
 interface Scope {
   row: unknown;
   parent: Scope | null;
@@ -50,6 +51,7 @@ interface Scope {
 }
 
 const RECUR = new Set(["$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
+const KEY = "$key";
 const HARD_DEPTH_CAP = 8;
 
 // What a scope projects to: the select list plus the `values` mode flag. Both
@@ -101,7 +103,7 @@ export class InMemoryEngine implements Engine {
       : Infinity;
     let kept: Scope[] = [];
     for (const r of rows) {
-      const s: Scope = { row: r, parent: root, bindings, lifts: {} };
+      const s = this.enter(r, root, { lifts: {} });
       if (!query.where || this.evalWhere(query.where, s)) {
         kept.push(s);
         if (kept.length >= cap) break;
@@ -135,7 +137,7 @@ export class InMemoryEngine implements Engine {
   // A where match that needs no lift capture (exists/count fast paths).
   private matches(where: Where | null, row: unknown, parent: Scope): boolean {
     if (!where) return true;
-    return this.evalWhere(where, { row, parent, bindings: parent.bindings });
+    return this.evalWhere(where, this.enter(row, parent));
   }
 
   private rowsOf(v: unknown): unknown[] {
@@ -143,7 +145,23 @@ export class InMemoryEngine implements Engine {
   }
 
   private child(row: unknown, parent: Scope): Scope {
-    return { row, parent, bindings: parent.bindings };
+    return this.enter(row, parent);
+  }
+
+  // Make the scope for a row. An `entries()` entry is unwrapped here: the scope's
+  // row is the property's VALUE (so `$value` and bare names read it) and the key
+  // becomes the `$key` intrinsic in `meta`. Every place a row becomes a scope
+  // goes through this, so entries behave the same at the top level, in nested
+  // blocks, as `from` re-projections, and as follow seeds.
+  private enter(row: unknown, parent: Scope, extra: { lifts?: Record<string, unknown>; meta?: Record<string, unknown> } = {}): Scope {
+    const s: Scope = { row, parent, bindings: parent.bindings };
+    if (extra.lifts) s.lifts = extra.lifts;
+    if (extra.meta) s.meta = extra.meta;
+    if (isEntry(row)) {
+      s.row = row.value;
+      s.meta = { ...(s.meta ?? {}), [KEY]: row.key };
+    }
+    return s;
   }
 
   // ---- follow ---------------------------------------------------------------
@@ -152,7 +170,7 @@ export class InMemoryEngine implements Engine {
     const { seed, post } = query.where ? partitionRecur(query.where) : { seed: null, post: null };
     const seeds = seed ? rows.filter((r) => this.matches(seed, r, root)) : rows;
     const occ = this.followWalk(seeds, query.follow!, root);
-    let scopes: Scope[] = occ.map((o) => ({ row: o.row, parent: root, bindings: root.bindings, lifts: {}, meta: o.meta }));
+    let scopes: Scope[] = occ.map((o) => this.enter(o.row, root, { lifts: {}, meta: o.meta }));
     if (post) scopes = scopes.filter((s) => this.evalWhere(post, s));
     this.sortScopes(scopes, query.orderBy);
     if (query.distinct) scopes = this.dedupByProjection(scopes, query);
@@ -192,7 +210,7 @@ export class InMemoryEngine implements Engine {
   //     `ctx.identity(row)`.
   private followWalk(seedRows: unknown[], follow: Follow, parent: Scope): Occurrence[] {
     const cap = follow.depth ?? HARD_DEPTH_CAP;
-    const scopeFor = (row: unknown): Scope => ({ row, parent, bindings: parent.bindings });
+    const scopeFor = (row: unknown): Scope => this.enter(row, parent);
     const keyOf = (row: unknown): string =>
       String(follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(row));
     const succOf = (row: unknown): unknown[] => {
@@ -345,7 +363,7 @@ export class InMemoryEngine implements Engine {
     let rows = this.rowsOf(this.evalExpr(op.receiver, scope));
     for (const proj of op.sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
     for (const r of rows) {
-      const s: Scope = { row: r, parent: scope, bindings: scope.bindings, lifts: {} };
+      const s = this.enter(r, scope, { lifts: {} });
       if (!op.sub.where || this.evalWhere(op.sub.where, s)) yield s;
     }
   }
@@ -362,8 +380,8 @@ export class InMemoryEngine implements Engine {
     if (sub.follow) {
       let rows = this.rowsOf(this.evalExpr(op.receiver, scope));
       for (const proj of sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
-      const seeds = sub.where ? rows.filter((r) => this.evalWhere(sub.where!, { row: r, parent: scope, bindings: scope.bindings, lifts: {} })) : rows;
-      scopes = this.followWalk(seeds, sub.follow, scope).map((o) => ({ row: o.row, parent: scope, bindings: scope.bindings, meta: o.meta }));
+      const seeds = sub.where ? rows.filter((r) => this.evalWhere(sub.where!, this.enter(r, scope, { lifts: {} }))) : rows;
+      scopes = this.followWalk(seeds, sub.follow, scope).map((o) => this.enter(o.row, scope, { meta: o.meta }));
       this.sortScopes(scopes, sub.orderBy);
       if (op.distinct) scopes = this.dedupByProjection(scopes, sub);
       scopes = sliceBound(scopes, bound);
@@ -451,9 +469,10 @@ export class InMemoryEngine implements Engine {
   // Resolve a name against ONE scope — never its ancestors. A scope provides,
   // in order: `$value` (the scope's row itself — the current item, whatever its
   // type, so scalar collections are queryable; absent at the root, which has no
-  // row); the recursion intrinsics (`$depth`, …) when it is a follow occurrence;
-  // values lifted into it by `^name:` items; then either the row's own property
-  // or, for the root scope (no row), the context's named roots.
+  // row); `$key` (the property key, for an entry scope only — see `enter`); the
+  // recursion intrinsics (`$depth`, …) when it is a follow occurrence; values
+  // lifted into it by `^name:` items; then either the row's own property or,
+  // for the root scope (no row), the context's named roots.
   //
   // A name the scope lacks is simply absent (undefined). It does NOT fall
   // through to an enclosing scope, so a query's meaning never depends on which
@@ -463,7 +482,7 @@ export class InMemoryEngine implements Engine {
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
     if (name === "$value") return scope.parent === null ? undefined : scope.row;
-    if (RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
+    if (name === KEY || RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
     if (scope.lifts && name in scope.lifts) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
     return this.ctx.get(scope.row, name);

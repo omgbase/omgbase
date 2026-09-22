@@ -143,9 +143,32 @@ oqx`employee: $value from ${people} where name == "Bob"`;         // [{ employee
 ```
 
 Inside a nested block `$value` is the inner item; the enclosing row is `^$value`
-(§3). At the root scope (before any row) it is absent. Plain objects are **not**
-iterable through `$value` — a record stays a record; converting one to a
-collection of entries is a separate, explicit step (`entries()`, planned).
+(§3). At the root scope (before any row) it is absent.
+
+**`entries(x)` and `$key` — records to collections, explicitly.** A plain object
+is **not** iterable: `from ${obj}` is one row (the object). `entries(obj)`
+converts it into a collection of entries, and inside such a scope the current
+item is the property's **value** — `$value` and bare names read it — while
+**`$key`** is the property's key:
+
+```js
+const settings = { theme: "dark", fontSize: 14, autosave: true };
+oqx`key: $key, value: $value from entries(${settings})`;
+// [{ key: "theme", value: "dark" }, { key: "fontSize", value: 14 }, { key: "autosave", value: true }]
+oqx`$key values from entries(${settings}) where $value != "dark"`;   // ["fontSize", "autosave"]
+
+const flags = { beta: { on: true }, legacy: { on: false } };
+oqx`$key values from entries(${flags}) where on`;                    // ["beta"]  (bare `on` reads the value)
+
+oqx`name, on: entries(prefs) collect { $key values where $value } from ${users}`;   // as a nested receiver
+oqx`name from ${users} where entries(prefs) exists { where $key == "dark" && $value }`;
+```
+
+`entries(array)` yields numeric index keys, a `Map` yields its entries, and
+absence/scalars yield nothing. `$key` exists **only** in an entry scope — an
+ordinary row or array element has no implicit index; `entries(arr)` is how you
+ask for one. As a plain value (not a source) `entries(x)` is an array of
+`{ key, value }` records.
 
 ### 3. Predicates (where)
 
@@ -257,7 +280,7 @@ like a row property.
 
 Methods on a value: `contains`, `startsWith`, `endsWith`, `matches` (regex),
 `size`, `lower`, `upper`. Free functions: `list(x)` (coerce to an array), `size(x)`,
-`has(x)`.
+`has(x)`, `range(s)` (§3), `entries(x)` (§2).
 
 ```js
 oqx`name from ${people} where title.startsWith("Eng")`;      // → Bob
@@ -467,10 +490,12 @@ where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl.
 where x in range(field)                          coerce a string field to a range, then test coverage
 name                                             the CURRENT row's field only (never climbs)
 $value                                           the current item itself (a scalar row, or the whole object)
+from entries(obj) … $key / $value                a record's properties as a collection (key + value; bare names read the value)
 <expr> values                                    scalar projection: the value, not a { name: value } record
 ^name / ^^name                                   read an enclosing row's field (exactly N scopes out); ^$value = the enclosing row
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 ^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
+entries(rel) exists { … }                        a free-function call may be a receiver
 order by expr desc, expr2                        ordering
 limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
 follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier)

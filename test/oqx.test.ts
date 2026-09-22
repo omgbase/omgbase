@@ -673,3 +673,81 @@ test("limit/offset must be non-negative integers; a field named limit is still a
   assert.deepEqual(oqx`from ${[{ limit: 3 }, { limit: 1 }]} where limit > 2`, [{ limit: 3 }]);
 });
 
+// ---- `entries()` + `$key` — the explicit record → collection bridge -----------
+
+const settings = { theme: "dark", fontSize: 14, autosave: true };
+
+test("entries(object) yields entry scopes exposing $key and $value", () => {
+  assert.deepEqual(
+    oqx`key: $key, value: $value from entries(${settings})`,
+    [{ key: "theme", value: "dark" }, { key: "fontSize", value: 14 }, { key: "autosave", value: true }],
+  );
+  assert.deepEqual(oqx`$key values from entries(${settings})`, ["theme", "fontSize", "autosave"]);
+  assert.deepEqual(oqx`$value values from entries(${settings}) where $key != "theme"`, [14, true]);
+  // the scope's row IS the value: a bare projection returns the values
+  assert.deepEqual(oqx`from entries(${settings})`, ["dark", 14, true]);
+});
+
+test("bare names inside an entry scope navigate the property's VALUE", () => {
+  const flags = { beta: { on: true, since: 2 }, legacy: { on: false, since: 1 } };
+  assert.deepEqual(oqx`$key values from entries(${flags}) where on`, ["beta"]);
+  assert.deepEqual(oqx`name: $key, since from entries(${flags}) order by since`, [{ name: "legacy", since: 1 }, { name: "beta", since: 2 }]);
+});
+
+test("plain objects still do not auto-iterate; entries() is the explicit opt-in", () => {
+  assert.deepEqual(oqx`from ${settings}`, [settings]); // one row: the object itself
+  assert.equal(oqx`${settings} count { }`, 1);
+  assert.equal(oqx`entries(${settings}) count { }`, 3);
+});
+
+test("entries of arrays give numeric index keys; Map, null, and scalars", () => {
+  assert.deepEqual(oqx`k: $key, v: $value from entries(${["x", "y"]})`, [{ k: 0, v: "x" }, { k: 1, v: "y" }]);
+  assert.deepEqual(oqx`$key values from entries(${new Map([["a", 1], ["b", 2]])})`, ["a", "b"]);
+  assert.deepEqual(oqx`from entries(${null})`, []);
+  assert.deepEqual(oqx`from entries(${42})`, []);
+  assert.deepEqual(oqx`from entries(${"str"})`, []);
+});
+
+test("$key is entry-scope-only: absent on ordinary rows and array elements", () => {
+  assert.deepEqual(oqx`k: $key from ${[10, 20]}`, [{ k: undefined }, { k: undefined }]);
+  assert.deepEqual(oqx`k: $key from ${people} where name == "Bob"`, [{ k: undefined }]);
+});
+
+test("entries() as a nested receiver, and ^$key / ^$value from inside an entry scope", () => {
+  const users = [
+    { name: "Ann", prefs: { dark: true, compact: false } },
+    { name: "Ben", prefs: { dark: false } },
+    { name: "Cid", prefs: {} },
+  ];
+  assert.deepEqual(oqx`name, on: entries(prefs) collect { $key values where $value } from ${users}`,
+    [{ name: "Ann", on: ["dark"] }, { name: "Ben", on: [] }, { name: "Cid", on: [] }]);
+  assert.deepEqual(oqx`name values from ${users} where entries(prefs) exists { where $key == "dark" && $value }`, ["Ann"]);
+  assert.deepEqual(oqx`name values from ${users} where entries(prefs) none { }`, ["Cid"]);
+  assert.equal(oqx`${users} count { where entries(prefs) count { } >= 2 }`, 1);
+  // inside an entry scope, `^$key` / `^$value` reach the enclosing entry
+  const groups = { a: [1, 2, 3], b: [5] };
+  assert.deepEqual(
+    oqx`g: $key, big: $value collect { $value values where $value > 1 } from entries(${groups})`,
+    [{ g: "a", big: [2, 3] }, { g: "b", big: [5] }],
+  );
+  assert.deepEqual(
+    oqx`$key values from entries(${groups}) where $value exists { where $value > 4 && ^$key == "b" }`,
+    ["b"],
+  );
+});
+
+test("entries() as a plain value is an array of { key, value } records", () => {
+  assert.deepEqual(oqx`e: entries(prefs) from ${[{ prefs: { x: 1 } }]}`, [{ e: [{ key: "x", value: 1 }] }]);
+  assert.deepEqual(execute("e: entries(s) values from xs", { xs: [{ s: { a: 1, b: 2 } }] }), [[{ key: "a", value: 1 }, { key: "b", value: 2 }]]);
+});
+
+test("entries compose with order/limit/distinct and a follow seed keeps its $key", () => {
+  assert.deepEqual(oqx`$key values from entries(${settings}) order by $key limit 2`, ["autosave", "fontSize"]);
+  assert.deepEqual(oqx`select distinct $value values from entries(${{ a: 1, b: 1, c: 2 }})`, [1, 2]);
+  const forest = { left: { id: "L", children: [{ id: "L1", children: [] }] }, right: { id: "R", children: [] } };
+  assert.deepEqual(
+    oqx`id, root: $key from entries(${forest}) follow children order by $ordinal`,
+    [{ id: "L", root: "left" }, { id: "R", root: "right" }, { id: "L1", root: undefined }],
+  );
+});
+

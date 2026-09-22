@@ -167,9 +167,51 @@ export function parseRangeString(s: string): OqxRange | null {
   return null;
 }
 
+// ---- entries: the explicit record → collection bridge -----------------------
+//
+// A plain object is NOT iterable in OQX (`from ${obj}` is one row). `entries(x)`
+// converts it explicitly into a collection of ENTRY values, each `{ key, value }`
+// tagged (non-enumerably, so JSON/deepEqual see a plain record) so the engine
+// can recognize one: when an entry becomes a query scope, the scope's ROW is
+// the property's value (`$value`, bare names) and `$key` is scope metadata.
+// Arrays yield numeric index keys; a Map yields its entries; null/scalars yield
+// nothing. (Arrays never expose an implicit `$key` — `entries(arr)` is how you
+// ask for the index.)
+
+const ENTRY: unique symbol = Symbol.for("oqx.entry");
+
+export interface OqxEntry {
+  readonly key: unknown;
+  readonly value: unknown;
+  readonly [ENTRY]: true;
+}
+
+/** Construct an entry value (see entriesOf). */
+export function makeEntry(key: unknown, value: unknown): OqxEntry {
+  const e = { key, value } as { key: unknown; value: unknown; [ENTRY]?: true };
+  Object.defineProperty(e, ENTRY, { value: true, enumerable: false });
+  return e as OqxEntry;
+}
+
+/** Whether a value is an entry produced by `entries()` / `makeEntry`. */
+export function isEntry(v: unknown): v is OqxEntry {
+  return typeof v === "object" && v !== null && (v as { [ENTRY]?: unknown })[ENTRY] === true;
+}
+
+/** The entries of a host value: object → own enumerable (key, value) pairs in
+ * insertion order; array → (index, element); Map → its entries; anything else
+ * (absent, scalars, ranges) → none. */
+export function entriesOf(v: unknown): OqxEntry[] {
+  if (v == null || typeof v !== "object" || isRange(v)) return [];
+  if (Array.isArray(v)) return v.map((x, i) => makeEntry(i, x));
+  if (v instanceof Map) return Array.from(v, ([k, x]) => makeEntry(k, x));
+  return Object.entries(v as Record<string, unknown>).map(([k, x]) => makeEntry(k, x));
+}
+
 /** Free functions callable as `name(args)`. */
 export const BUILTIN_FUNCTIONS: Record<string, (args: unknown[]) => unknown> = {
   list: (args) => toList(args[0]),
+  entries: (args) => entriesOf(args[0]),
   size: (args) => sizeOf(args[0]),
   has: (args) => args[0] != null,
   // Coerce a string to a range value (or pass a range through); anything else,
