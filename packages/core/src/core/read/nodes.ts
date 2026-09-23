@@ -79,27 +79,58 @@ export function nodesGet(store: Store, docId: string, blockId: string, opts: Nod
 export interface NodesGetManyResult {
   nodes: GetNode[];
   truncated: boolean;
+  /**
+   * Requested ids (within the first 100) that name NO live block — or, when a
+   * `docId` scope is given, no live block in THAT document. Ids dropped by the
+   * 100-id cap or the token budget are NOT listed here; they are reported by
+   * `truncated` instead. Never silently dropped.
+   */
+  unresolved: string[];
 }
 
-/** Fetch up to 100 blocks by id, with budget truncation (06 §3). */
+/**
+ * Fetch up to 100 blocks by id, with budget truncation (06 §3). Block ids are
+ * globally unique, so `docId` is an optional SCOPE, not a requirement: with
+ * `null` each id is resolved to its owning document (`blocks.doc_id`), the ids
+ * are grouped by doc, each doc's forest is loaded once, and the nodes come back
+ * in request order. With a `docId`, ids from other documents count as
+ * `unresolved` (the caller asked for that doc's blocks).
+ */
 export function nodesGetMany(
   store: Store,
-  docId: string,
+  docId: string | null,
   blockIds: string[],
   opts: { resolution?: Resolution; budgetTokens?: number } = {},
 ): NodesGetManyResult {
   const capped = blockIds.slice(0, 100);
-  const roots = loadDocBlocks(store, docId);
   const budget = opts.budgetTokens ?? Infinity;
   const resolution = opts.resolution ?? "text";
 
+  // id → owning doc for every requested id that is a live block (one query).
+  const owner = new Map<string, string>();
+  if (capped.length > 0) {
+    const rows = store.db
+      .prepare(`SELECT block_id, doc_id FROM blocks WHERE deleted_commit IS NULL AND block_id IN (${capped.map(() => "?").join(",")})`)
+      .all(...capped) as { block_id: string; doc_id: string }[];
+    for (const r of rows) if (docId === null || r.doc_id === docId) owner.set(r.block_id, r.doc_id);
+  }
+
+  // Load each involved document's forest once.
+  const forests = new Map<string, BlockNode[]>();
+  for (const d of new Set(owner.values())) forests.set(d, loadDocBlocks(store, d));
+
   const nodes: GetNode[] = [];
+  const unresolved: string[] = [];
   let tokens = 0;
   let truncated = blockIds.length > 100;
 
   for (const id of capped) {
-    const node = findBlock(roots, id);
-    if (!node) continue;
+    const d = owner.get(id);
+    const node = d ? findBlock(forests.get(d)!, id) : null;
+    if (!node) {
+      unresolved.push(id);
+      continue;
+    }
     const projected = project(store, node, resolution, false);
     const cost = Math.ceil(JSON.stringify(projected).length / 4);
     if (tokens + cost > budget) {
@@ -109,5 +140,5 @@ export function nodesGetMany(
     tokens += cost;
     nodes.push(projected);
   }
-  return { nodes, truncated };
+  return { nodes, truncated, unresolved };
 }

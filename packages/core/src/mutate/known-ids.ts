@@ -4,7 +4,7 @@ import type { RawBlock } from "../core/parse/types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
 import { mintId } from "../core/ids.js";
-import { extractFromBlock, extractFromFrontmatter } from "../graph/extract.js";
+import { extractFromBlock, extractFromFrontmatter, resolveRelativePath } from "../graph/extract.js";
 import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
 import { adapterForPath, type AdapterEdge } from "../format/index.js";
 import type { MutBlock, MutDoc } from "./tree.js";
@@ -84,6 +84,10 @@ export function makeKnownIdResolver(
   opts: { path?: string } = {},
 ): IdResolver {
   const adapter = opts.path ? adapterForPath(opts.path) : undefined;
+  // Source directory for `./`/`../` link targets — the same rule the observed
+  // (reconciling) ingest applies, so an `apply` re-ingest resolves a relative
+  // link to the same node instead of minting a `phantom:../x.md` placeholder.
+  const docDir = opts.path ? opts.path.replace(/[^/]*$/, "") : "";
   const byKey = idByPositionalKey(doc.children);
 
   return (rest: RawBlock[], docId: string | null) => {
@@ -109,16 +113,16 @@ export function makeKnownIdResolver(
       const out: ResolvedEdgeRow[] = [];
       if (adapter?.extractEdges) {
         const raw = collectRawBlocks(assigned);
-        for (const e of adapter.extractEdges(raw, metadata)) out.push(resolveAdapterEdge(db, repoId, thisDocId, e));
+        for (const e of adapter.extractEdges(raw, metadata)) out.push(resolveAdapterEdge(db, repoId, thisDocId, e, docDir));
       } else {
         const walk = (blocks: TreeInputBlock[]): void => {
           for (const b of blocks) {
-            for (const e of extractFromBlock(b.blockId, b.type, b.raw)) out.push(resolveEdge(db, repoId, thisDocId, e));
+            for (const e of extractFromBlock(b.blockId, b.type, b.raw)) out.push(resolveEdge(db, repoId, thisDocId, e, docDir));
             if (b.children.length > 0) walk(b.children);
           }
         };
         walk(assigned);
-        for (const e of extractFromFrontmatter(metadata)) out.push(resolveEdge(db, repoId, thisDocId, e));
+        for (const e of extractFromFrontmatter(metadata)) out.push(resolveEdge(db, repoId, thisDocId, e, docDir));
       }
       return out;
     };
@@ -130,7 +134,7 @@ export function makeKnownIdResolver(
 
 // Edge resolution — mirrors reconciling-ingest's resolvers (block-anchor targets
 // resolve to the document node in v1; the anchor is preserved on the edge).
-function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType<typeof extractFromBlock>[number]): ResolvedEdgeRow {
+function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType<typeof extractFromBlock>[number], docDir: string): ResolvedEdgeRow {
   let dstNode: string;
   let dstKind = e.dstKind;
   if (e.dstKind === "external") {
@@ -139,13 +143,13 @@ function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType
     dstNode = srcDoc;
     dstKind = "document";
   } else {
-    dstNode = resolveDocPath(db, repoId, e.target).id;
+    dstNode = resolveDocPath(db, repoId, resolveRelativePath(e.target, docDir)).id;
     dstKind = "document";
   }
   return { srcDoc, srcBlock: e.srcBlock, srcField: e.srcField, predicate: e.predicate, dstKind, dstNode, anchor: e.anchor, provenance: e.provenance };
 }
 
-function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: AdapterEdge): ResolvedEdgeRow {
+function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: AdapterEdge, docDir: string): ResolvedEdgeRow {
   let dstNode: string;
   let dstKind = e.dstKind;
   if (e.dstKind === "external") {
@@ -154,7 +158,7 @@ function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: Ada
     dstNode = srcDoc;
     dstKind = "document";
   } else {
-    dstNode = resolveDocPath(db, repoId, e.target).id;
+    dstNode = resolveDocPath(db, repoId, resolveRelativePath(e.target, docDir)).id;
     dstKind = "document";
   }
   return { srcDoc, srcBlock: e.srcBlock, srcField: e.srcField, predicate: e.predicate, dstKind, dstNode, anchor: e.anchor, provenance: e.provenance };

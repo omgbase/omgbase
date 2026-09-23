@@ -314,6 +314,39 @@ describe("MCP server skeleton", () => {
   });
 });
 
+describe("nodes_get_many spans documents (ids are globally unique)", () => {
+  it("without doc/path returns ids from three docs in request order and lists bogus ids as unresolved", async () => {
+    ingestFile(store, repoId, "a.md", "# A\n\npara a\n");
+    ingestFile(store, repoId, "b.md", "# B\n\npara b\n");
+    const idsOf = (path: string): string[] =>
+      (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND deleted_commit IS NULL ORDER BY order_key").all(path) as { block_id: string }[]).map((r) => r.block_id);
+    const notes = idsOf("notes.md");
+    const a = idsOf("a.md");
+    const b = idsOf("b.md");
+    const ids = [b[1]!, notes[0]!, "b_bogus", a[1]!, notes[1]!, a[0]!, b[0]!];
+
+    const { payload, isError } = (await call("nodes_get_many", { ids })) as {
+      payload: { nodes: { id: string }[]; truncated: boolean; unresolved: string[] };
+      isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.nodes.map((n) => n.id)).toEqual([b[1], notes[0], a[1], notes[1], a[0], b[0]]);
+    expect(payload.unresolved).toEqual(["b_bogus"]);
+    expect(payload.truncated).toBe(false);
+  });
+
+  it("with an explicit doc scope, other docs' ids are unresolved rather than dropped", async () => {
+    ingestFile(store, repoId, "a.md", "# A\n");
+    const aId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'a.md')").get() as { block_id: string }).block_id;
+    const notesId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'notes.md') AND type = 'heading'").get() as { block_id: string }).block_id;
+    const { payload } = (await call("nodes_get_many", { path: "notes.md", ids: [notesId, aId] })) as {
+      payload: { nodes: { id: string }[]; unresolved: string[] };
+    };
+    expect(payload.nodes.map((n) => n.id)).toEqual([notesId]);
+    expect(payload.unresolved).toEqual([aId]);
+  });
+});
+
 describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   let root: string;
 
@@ -362,6 +395,41 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(payload.path).toBe("moved/notes.md");
     const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
     expect(q.hits.map((h) => h.path)).toContain("moved/notes.md");
+  });
+
+  it("docs_move reports dangling inbound links; retarget_inbound rewrites them and adopts destination phantoms", async () => {
+    // b links to notes.md by path; a links to the FUTURE path (a phantom today).
+    writeFileSync(join(root, "b.md"), "# B\n\nSee [notes](/notes.md#Risks) and `[code](/notes.md)`.\n");
+    writeFileSync(join(root, "a.md"), "# A\n\nSoon [moved](/moved/notes.md).\n");
+    processCheckpoint(store, repoId, root, [{ path: "notes.md" }, { path: "b.md" }, { path: "a.md" }]);
+    const staleBefore = (await call("links_stale", {})) as { payload: { stale: { target: string }[] } };
+    expect(staleBefore.payload.stale.map((s) => s.target)).toEqual(["moved/notes.md"]);
+
+    // Plain move: b's link dangles and is reported; a's phantom resolves.
+    const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as {
+      payload: { path: string; dangling: { doc: string; path: string; block: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
+      isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.path).toBe("moved/notes.md");
+    expect(payload.dangling).toHaveLength(1);
+    expect(payload.dangling[0]).toMatchObject({ path: "b.md", target: "/notes.md", anchor: "Risks" });
+    expect(payload.retargeted).toBeNull();
+    const staleAfter = (await call("links_stale", {})) as { payload: { stale: { srcPath: string; target: string }[] } };
+    expect(staleAfter.payload.stale).toHaveLength(1);
+    expect(staleAfter.payload.stale[0]).toMatchObject({ srcPath: "b.md", target: "notes.md" });
+
+    // Move again with retarget_inbound: zero dangling, file rewritten, code span untouched.
+    const { payload: p2 } = (await call("docs_move", { doc: "moved/notes.md", to_path: "final/notes.md", retarget_inbound: true })) as {
+      payload: { dangling: unknown[]; retargeted: { blocks: string[]; docs: string[] } | null };
+    };
+    expect(p2.dangling).toEqual([]);
+    expect(p2.retargeted!.blocks).toHaveLength(1);
+    const { payload: a } = (await call("docs_read", { path: "a.md" })) as { payload: { content: string } };
+    expect(a.content).toBe("# A\n\nSoon [moved](/final/notes.md).\n");
+    const staleEnd = (await call("links_stale", {})) as { payload: { stale: { srcPath: string; target: string }[] } };
+    // b's link was dangling at notes.md (not the moved-from path), so it stays stale — only what pointed at the moved doc is retargeted.
+    expect(staleEnd.payload.stale.map((s) => `${s.srcPath}→${s.target}`)).toEqual(["b.md→notes.md"]);
   });
 
   it("docs_delete tombstones the document", async () => {

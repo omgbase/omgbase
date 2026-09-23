@@ -360,7 +360,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "nodes_get_many",
     {
-      description: "Fetch up to 100 blocks by id with budget truncation. Result carries truncated.",
+      description:
+        "Fetch up to 100 blocks by id (in request order) with budget truncation. Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side; `doc`/`path` is an optional SCOPE (ids from other docs then count as unresolved), not a requirement. Result carries `nodes`, `truncated` (cap or `budget_tokens` hit), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -373,7 +374,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, { doc: args.doc, path: args.path, block: args.ids[0] });
+        // Only an explicit doc/path scopes the fetch; never infer a doc from
+        // ids[0] — that silently dropped every id owned by another document.
+        const docId = args.doc || args.path ? resolveDocId(repoId, { doc: args.doc, path: args.path }) : null;
         const res = nodesGetMany(store, docId, args.ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),
@@ -936,12 +939,13 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "docs_move",
     {
-      description: "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists.",
-      inputSchema: { doc: z.string(), to_path: z.string(), ...REPO_ARG },
+      description:
+        "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists. Links follow the PATH, not the identity: inbound links written against the old path now dangle (their edges become `phantom:<old path>`, so links_stale reports them), and links already written against the new path start resolving to this doc. The result lists those `dangling` inbound links ({doc, path, block, target, anchor, field?} per occurrence; block null = a frontmatter relation). Pass `retarget_inbound:true` to rewrite them in the same call — a destination-aware rewrite (anchors/link text/code spans preserved, absolute vs relative style kept) applied as one CAS-checked changeset, after which `dangling` holds only what could not be rewritten (frontmatter relations) and `retargeted` lists the touched blocks/docs.",
+      inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path));
+        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path, { retargetInbound: args.retarget_inbound === true }));
       } catch (e) {
         return fail(e);
       }

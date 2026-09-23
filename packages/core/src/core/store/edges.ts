@@ -36,8 +36,13 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
     )
     .all(srcDoc) as { edge_id: string; src_block: string | null; src_field: string | null; predicate: string; dst_node: string; anchor: string | null }[];
 
-  const openByKey = new Map<string, string>();
-  for (const r of openRows) openByKey.set(edgeKey({ srcBlock: r.src_block, srcField: r.src_field, predicate: r.predicate, dstNode: r.dst_node, anchor: r.anchor }), r.edge_id);
+  // One open row per key. Two spellings of one target in one block
+  // (`../old.md` and `./x/../../old.md`) extract as two descriptors but resolve
+  // to the SAME key, so dedupe the wanted set here; and any duplicate open rows
+  // already in the table (from earlier versions of this function) are closed
+  // below so they cannot leak past the link they came from.
+  const openKeys = new Set<string>();
+  for (const r of openRows) openKeys.add(edgeKey({ srcBlock: r.src_block, srcField: r.src_field, predicate: r.predicate, dstNode: r.dst_node, anchor: r.anchor }));
 
   const wantKeys = new Set<string>();
   const insert = db.prepare(
@@ -46,14 +51,21 @@ export function maintainEdges(db: Database, repoId: string, srcDoc: string, comm
   );
   for (const e of edges) {
     const key = edgeKey(e);
+    if (wantKeys.has(key)) continue;
     wantKeys.add(key);
-    if (!openByKey.has(key)) {
+    if (!openKeys.has(key)) {
       insert.run(mintId("e"), repoId, srcDoc, e.srcBlock, e.srcField, e.predicate, e.dstKind, e.dstNode, e.anchor, e.provenance, commitId);
     }
   }
-  // Close rows no longer wanted.
+  // Close every open row whose key is no longer wanted, and all but the first
+  // open row of a wanted key.
   const close = db.prepare("UPDATE edges SET to_commit = ? WHERE edge_id = ?");
-  for (const [key, edgeId] of openByKey) if (!wantKeys.has(key)) close.run(commitId, edgeId);
+  const kept = new Set<string>();
+  for (const r of openRows) {
+    const key = edgeKey({ srcBlock: r.src_block, srcField: r.src_field, predicate: r.predicate, dstNode: r.dst_node, anchor: r.anchor });
+    if (wantKeys.has(key) && !kept.has(key)) { kept.add(key); continue; }
+    close.run(commitId, r.edge_id);
+  }
 
   rebuildDocEdges(db, srcDoc);
 }

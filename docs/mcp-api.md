@@ -64,9 +64,11 @@ docs_read_at { doc?, path?, rev }                            // time-travel whol
 
 ```
 nodes_get { doc?, path?, id, resolution?: "skeleton"|"outline"|"text"|"raw"|"full" }
-nodes_get_many { doc?, path?, ids[], resolution?, budget_tokens? }   // ≤ 100 ids
+nodes_get_many { doc?, path?, ids[], resolution?, budget_tokens? }   // ≤ 100 ids, any number of docs
 ```
 `nodes_get` hydrates one block subtree at a resolution (the full ladder from §1). The `raw`/`full` resolutions include the block's `content_hash` (what `update`/`split` need in `expect.content_hash`). There is no `locator`/`include` param — the block id is the address and the owning doc is inferred.
+
+`nodes_get_many` hydrates up to 100 blocks in request order and returns `{ nodes, truncated, unresolved }`. Block ids are globally unique, so `ids` may span any number of documents: each id is resolved to its owning doc server-side (grouped by doc, one forest load per doc). `doc`/`path` is an optional *scope* — when given, ids owned by other documents count as unresolved — never a requirement, and the owning doc is not inferred from `ids[0]`. `unresolved` lists the requested ids (within the cap) that name no live block; ids dropped by the 100-id cap or the token budget are reported by `truncated`, not `unresolved`. Nothing is silently dropped.
 
 ### Search
 
@@ -99,7 +101,7 @@ links_stale { path_glob?, limit? }                           // READ-ONLY: surfa
 links_retarget { from_target, to_target, dry_run? }          // macro: rewrite one link destination
 links_repair { repairs?[{from,to}], from_target?, to_target?, dry_run? }  // macro: bulk stale-link repair
 docs_create { path, markdown, frontmatter? }                 // fails path_taken if it exists
-docs_move { doc, to_path }                                   // rename; identity + history preserved
+docs_move { doc, to_path, retarget_inbound? }                // rename; identity + history preserved; returns dangling inbound links
 docs_delete { doc }                                          // tombstone (resurrection-poolable) + remove file
 docs_set_meta { doc, set?, unset? }                          // surgical frontmatter key patch
 docs_plan_update { doc, content }                            // plan a whole-doc update; returns opset + plan, no write
@@ -107,6 +109,8 @@ docs_update { doc, content, reason?, dry_run? }              // whole-doc update
 observe { path, content }                                    // sync ingest: whole-file bytes as an OBSERVED commit (file→DB); echo-suppressed
 observe_many { files:[{path,content}] }                      // batch observe: one ts + one resurrection sweep; per-file results
 ```
+`docs_move` renames a document; block identity and history are preserved, but **links follow the path, not the identity**. Inbound links written against the old path now dangle: their open edges are re-pointed at `phantom:<old path>` (what re-extracting the source would produce), so `links_stale` reports them; phantom edges already written against the new path are adopted and resolve to the moved doc. The result is `{ docId, path, committed, dangling, retargeted }` — `dangling` lists each inbound occurrence `{ doc, path, block, target, anchor, field? }` (block `null` = a frontmatter relation; self-doc pure-fragment links `#H` are not path-dependent and are not listed). `retarget_inbound:true` rewrites those links in the same call — a destination-aware rewrite over the source blocks (anchors, link text, titles, and code spans preserved; absolute stays absolute, `./`/`../` is recomputed, bare root-relative stays bare) applied as one CAS-checked `update` changeset (actor `agent:mcp`), after which `dangling` holds only what was not rewritten (frontmatter relations) and `retargeted` lists the touched `blocks`/`docs`.
+
 `apply` is the only real block-op writer: a changeset of kernel ops (insert/update/move/remove/split/merge) applied atomically; each op is a tagged object keyed by `"op"`, targeting its `block`/`blocks` field (never `id`/`target`). MCP-originated writes are actor `agent:mcp`; a successful non-dry-run write schedules a background embed drain.
 
 Macros expand to `apply` ops through the same changeset machinery. Registered macros are exactly `tasks_complete`, `node_set`, `sections_append`, `docs_append`, `links_retarget`, `links_repair` — the once-specced `sections_rename`/`sections_move`/`lists_insert_item` are NOT registered MCP tools. `node_set` surgically edits one editable prop of a projected node (a link's `name`/`value`, a task's `checked`); it errors `node_not_editable` when the kind/prop has no editor. `sections_append` accepts a heading block id (preferred) or its text (resolved, scoped by `doc`/`path`; repo-wide non-unique text errors `ambiguous_heading`). `docs_append` is additive and identity-preserving (existing blocks keep their ids); the doc must already exist (else `doc_missing`). `links_stale` is READ-ONLY (not a writer): it surfaces DANGLING internal links (`phantom:` edges) with `stale[]` + `externalCount` + `truncated`, scoped by `path_glob`; feed its targets into `links_repair` (batch of `{from,to}` pairs, a generalization of the single-pair `links_retarget`) to fix them.

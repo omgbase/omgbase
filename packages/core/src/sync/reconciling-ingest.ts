@@ -4,7 +4,7 @@ import type { RawBlock } from "../core/parse/types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
 import { mintId } from "../core/ids.js";
-import { extractFromBlock, extractFromFrontmatter } from "../graph/extract.js";
+import { extractFromBlock, extractFromFrontmatter, resolveRelativePath } from "../graph/extract.js";
 import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
 import { sha256, normalizeVisibleText } from "../core/hash.js";
 import { reconcileDocument, type ResurrectionCandidate } from "../reconcile/reconcile.js";
@@ -190,18 +190,8 @@ function resolveEdge(db: Database, repoId: string, srcDoc: string, e: ReturnType
   };
 }
 
-// Resolve relative paths (./foo, ../bar) against the source document's directory.
-function resolveRelativePath(target: string, docDir: string): string {
-  if (!target.startsWith("./") && !target.startsWith("../")) return target;
-  const parts = (docDir + target).split("/");
-  const resolved: string[] = [];
-  for (const p of parts) {
-    if (p === "." || p === "") continue;
-    if (p === "..") { resolved.pop(); continue; }
-    resolved.push(p);
-  }
-  return resolved.join("/");
-}
+// resolveRelativePath (./foo, ../bar against the source doc's directory) lives
+// in graph/extract.ts so docs_move's inbound-link scan resolves identically.
 
 // Resolve an adapter-produced edge to a ResolvedEdgeRow. Same resolution
 // logic as resolveEdge but accepts the AdapterEdge shape, with relative path

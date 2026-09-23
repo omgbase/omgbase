@@ -13,9 +13,9 @@
 3. **Inferred is quarantined.** `inferred_edges` is a separate table (each row carries `method`/`score`/`model_v`/`computed_at`), excluded from every query and traversal by construction. As-built it is a schema stub — no writer or reader is wired to it yet.
 4. **Structural relations are not edges.** parent/child/sibling order live in Placement, not the edge tables; OQX navigates them through relations (`block.children`, `section.children`/`section.subsections`, `section`, `section.blocks`) and the `follow` operator (§3), not through edge rows.
 
-## 2. Extraction rules (extraction_version: x1)
+## 2. Extraction rules (extraction_version: x2)
 
-Run per touched document inside the commit transaction:
+Run per touched document inside the commit transaction. **Code is not prose**: a `code_fence` block yields no edges, and inline code spans (`` `…` ``, any backtick-run length, CommonMark matching) are masked before the scanners below run — so a backticked `[[wikilink]]` example, a placeholder link inside a fence, or a regex fragment with square brackets never mints a `references` edge (`graph/extract.ts` `maskCode`). The markdown adapter's `md:link` / `md:wikilink` / `md:anchor` / `md:inline_field` node projection applies the same mask, so nodes and edges agree. The version is not persisted: an existing repo picks up x2 for a document the next time that document is ingested (checkpoint / `observe` / `apply` / `docs_update`); `rebuild-index --edges` only recomputes the `doc_edges` rollup and does not re-extract.
 
 | Source | Edge | Provenance |
 |---|---|---|
@@ -27,6 +27,7 @@ Run per touched document inside the commit transaction:
 | Image `![alt](path)` | `src_block —embeds→ x_/d_` | `link` |
 
 - Unresolvable internal targets mint a **phantom document node** (`dst_kind:"document"`, `dst_node` = path-keyed placeholder) so backlinks appear the moment the target is created. Phantoms are flagged in results.
+- Internal targets resolve **by path**: `./`/`../` destinations against the source doc's directory, anything else root-relative, one leading `/` stripped (`graph/extract.ts` `resolveRelativePath`). Consequently `docs_move` re-points the moved doc's open inbound edges at `phantom:<old path>` (a self-doc pure-fragment link `#H` excepted) and adopts phantoms at the new path — the edge index after a move equals what re-extraction would produce (`mutate/docs.ts`, `graph/inbound-links.ts`).
 - Predicates are freeform lowercase snake_case from field/key names; `references` and `embeds` are reserved.
 - Interval maintenance at commit: diff extracted set vs currently-open rows for the doc → close missing (`to_commit = this`), open new (`from_commit = this`). Unchanged rows untouched. `doc_edges` rollup recomputed for the touched doc in the same transaction.
 
