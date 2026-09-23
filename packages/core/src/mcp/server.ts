@@ -21,7 +21,7 @@ import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, diffUnified, changesSince, docHistory } from "../graph/history.js";
-import { linksStale } from "../graph/link-health.js";
+import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
@@ -859,12 +859,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_stale",
     {
       description:
-        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the canonical missing path WITHOUT a leading `/` (e.g. `guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
-      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), ...REPO_ARG },
+        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the canonical missing path WITHOUT a leading `/` (e.g. `guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{srcPath,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
+      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), summary: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
+        if (args.summary) return ok(linksStaleSummary(store, repoId, args.path_glob ? { pathGlob: args.path_glob } : {}));
         return ok(linksStale(store, repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),

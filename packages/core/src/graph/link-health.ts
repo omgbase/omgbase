@@ -50,6 +50,18 @@ export interface StaleLink {
   reason: StaleReason;
 }
 
+/** links_stale summary mode: counts only, no per-row output. */
+export interface LinkHealthSummary {
+  /** number of dangling internal links (rows `linksStale` would return, uncapped) */
+  staleCount: number;
+  /** distinct missing targets, most-referenced first (ties by target) */
+  byTarget: { target: string; count: number }[];
+  /** source documents carrying dangling links, most first (ties by path) */
+  bySource: { srcPath: string; count: number }[];
+  externalCount: number;
+  totalOpenEdges: number;
+}
+
 export interface LinkHealth {
   /** dangling internal links, ordered by srcPath then target */
   stale: StaleLink[];
@@ -186,5 +198,41 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
     externalCount: totals.external ?? 0,
     totalOpenEdges: totals.total,
     truncated,
+  };
+}
+
+/**
+ * linksStaleSummary: the same scan as linksStale, reduced to counts grouped by
+ * missing target and by source document — a repo-wide audit in one small call
+ * (no per-row output, no limit). Scoping (`pathGlob` over SOURCE docs) and the
+ * tombstone rule match linksStale exactly, so the totals agree.
+ */
+export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkHealthOptions, "pathGlob"> = {}): LinkHealthSummary {
+  const params: unknown[] = [repoId];
+  let globSql = "";
+  if (opts.pathGlob) {
+    const { clause, param } = globClause("d.path", opts.pathGlob);
+    globSql = `AND ${clause}`;
+    params.push(param);
+  }
+  const base = `FROM edges e JOIN docs d ON d.doc_id = e.src_doc
+     WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL ${globSql}`;
+  const totals = store.db
+    .prepare(`SELECT count(*) AS total, sum(CASE WHEN e.dst_kind = 'external' THEN 1 ELSE 0 END) AS external ${base}`)
+    .get(...params) as { total: number; external: number | null };
+  const phantom = `${base} AND e.dst_node LIKE 'phantom:%'`;
+  const byTarget = (store.db
+    .prepare(`SELECT e.dst_node AS dstNode, count(*) AS count ${phantom} GROUP BY e.dst_node ORDER BY count DESC, e.dst_node`)
+    .all(...params) as { dstNode: string; count: number }[])
+    .map((r) => ({ target: r.dstNode.slice("phantom:".length), count: r.count }));
+  const bySource = store.db
+    .prepare(`SELECT d.path AS srcPath, count(*) AS count ${phantom} GROUP BY d.path ORDER BY count DESC, d.path`)
+    .all(...params) as { srcPath: string; count: number }[];
+  return {
+    staleCount: byTarget.reduce((n, t) => n + t.count, 0),
+    byTarget,
+    bySource,
+    externalCount: totals.external ?? 0,
+    totalOpenEdges: totals.total,
   };
 }

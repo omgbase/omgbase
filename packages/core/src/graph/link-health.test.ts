@@ -5,7 +5,7 @@ import { join, dirname } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { linksStale } from "./link-health.js";
+import { linksStale, linksStaleSummary } from "./link-health.js";
 import { linksRepair } from "../mutate/macros.js";
 import { apply } from "../mutate/apply.js";
 
@@ -150,5 +150,24 @@ describe("linksStale reports the destination AS AUTHORED next to the canonical t
     expect(viaTarget.hits[0]!.newRaw).toContain("[b](/c.md)");
     apply(store, { repoId, rootPath: dir, ops: viaAuthored.ops, origin: { actor: "test" } });
     expect(linksStale(store, repoId).stale).toHaveLength(0);
+  });
+});
+
+describe("linksStaleSummary (counts only)", () => {
+  it("groups dangling links by target and by source doc, agrees with row mode, honors pathGlob", () => {
+    save("j/one.md", "# 1\n\n[a](/gone-a.md)\n\n[a2](/gone-a.md) [b](/gone-b.md)\n\n<https://example.com/x>\n");
+    save("g/two.md", "# 2\n\n[a](/gone-a.md)\n");
+    const s = linksStaleSummary(store, repoId);
+    expect(s).not.toHaveProperty("stale");
+    expect(s.staleCount).toBe(linksStale(store, repoId).stale.length);
+    expect(s.byTarget).toEqual([{ target: "gone-a.md", count: 3 }, { target: "gone-b.md", count: 1 }]);
+    expect(s.bySource).toEqual([{ srcPath: "j/one.md", count: 3 }, { srcPath: "g/two.md", count: 1 }]);
+    expect(s.externalCount).toBe(1);
+    expect(s.totalOpenEdges).toBe(5);
+
+    const scoped = linksStaleSummary(store, repoId, { pathGlob: "g/*" });
+    expect(scoped.staleCount).toBe(1);
+    expect(scoped.byTarget).toEqual([{ target: "gone-a.md", count: 1 }]);
+    expect(scoped.bySource).toEqual([{ srcPath: "g/two.md", count: 1 }]);
   });
 });
