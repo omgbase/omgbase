@@ -1,8 +1,9 @@
 # omgbase — Query Language Spec (OQX)
 
 **As-built (2026-09):** the query language is **OQX** (omgbase Query eXpressions),
-now the external **`@omgbase/oqx`** package (parser + engine + scalar-semantics
-contract), bound to omgbase's SQLite store by `packages/core/src/oqx-js/`
+the **`@omgbase/oqx`** package (parser + engine + scalar-semantics contract — a
+standalone zero-dependency library, in-tree at `packages/oqx` since ADR-019 and
+published on its own version line), bound to omgbase's SQLite store by `packages/core/src/oqx-js/`
 (a `DataContext` in `context.ts`, the `oqxRun` wrapper in `run.ts`, and a tier-3
 pushdown planner in `planner.ts`). See **ADR-013**. This document specs the
 language as-built; the **behavioral ground truth** is the corpus

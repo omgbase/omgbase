@@ -58,7 +58,7 @@ pnpm lint
 
 A single-writer engine process sits beside one or more working trees ("repos"). It watches the filesystem and ingests human edits (observation path), applies structural mutations from agents (intent path), and serializes all state changes through one append-only commit log per repo, backed by embedded SQLite (WAL) under `.omgbase/`.
 
-The repo is a pnpm workspace of six packages:
+The repo is a pnpm workspace of seven packages:
 
 ```
 packages/
@@ -70,11 +70,12 @@ packages/
       sync/      observe primitive · source registry · external-source bridge · driver · checkpoints · watcher
       mutate/    six kernel ops · changesets · CAS · macros · DocStore seam
       graph/     edge extraction · intervals · traversal · history/diff
-      oqx-js/    OQX bindings — the store `DataContext` + `oqxRun` over the external @omgbase/oqx (`oqx/` is a thin re-export)
+      oqx-js/    OQX bindings — the store `DataContext` + `oqxRun` over @omgbase/oqx (`oqx/` is a thin re-export)
       search/    FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
       migrate/   mrplex importer
     corpus/      round-trip + matcher fixtures
+  oqx/           @omgbase/oqx — the OQX query language + engine (standalone, zero deps, own version line; omgbase binds it in core/src/oqx-js/)
   cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync)
   sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin)
   client/        @omgbase/client — thin remote MCP client (placeholder)

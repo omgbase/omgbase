@@ -8,6 +8,14 @@ readable, declarative syntax. This package is the **generic collection kernel**:
 the OQX language semantics separated from any particular data model, exposed as a
 JavaScript tagged template.
 
+> **Where this lives.** `@omgbase/oqx` is part of the
+> [omgbase monorepo](https://github.com/omgbase/omgbase) at `packages/oqx`, but it
+> is published independently under its own version line and has **zero runtime
+> dependencies** — it is usable without omgbase, and omgbase code is never
+> imported here (omgbase binds it from the outside via the `DataContext` seam).
+> Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
+> test suite (see [Requirements](#requirements)).
+
 ```js
 import { oqx } from "@omgbase/oqx";
 
@@ -763,9 +771,10 @@ condition in `exports`; Node 22.12+ can `require()` an ES module natively).
 - **`@omgbase/oqx/sqlite`**: imports `node:sqlite`, which is available without
   a flag from Node 22.13 (behind `--experimental-sqlite` in 22.5–22.12). This is
   the reason for the `engines` floor.
-- **Developing the repo**: `npm test` runs the `.ts` suite directly through
-  Node's type stripping, unflagged from Node 22.18 (and all of 24). `npm run
-  typecheck` typechecks; `npm run build` emits `dist/`.
+- **Developing the package** (in the omgbase monorepo, `packages/oqx`): `pnpm
+  test` runs the `.ts` suite directly through Node's type stripping, unflagged
+  from Node 22.18 (and all of 24). `pnpm typecheck` typechecks; `pnpm build`
+  emits `dist/`; `pnpm lint` runs the workspace eslint baseline.
 
 ## Relationship to omgbase
 

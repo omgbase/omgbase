@@ -2,7 +2,7 @@
 
 Fixture repositories for high-level OQX tests — queries run against a realistic
 interlinked corpus rather than three throwaway documents. Grammar and engine
-semantics are tested upstream in `@omgbase/oqx`; omgbase's unit-level coverage
+semantics are tested in `@omgbase/oqx` itself (`packages/oqx/test/`); omgbase's unit-level coverage
 of the SQL pushdown (translator shape) lives in `src/oqx-js/sql/translate.test.ts`,
 and `conformance.test.ts` here proves planned == pure in-memory over every query.
 

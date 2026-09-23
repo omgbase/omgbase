@@ -4,6 +4,13 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.10.2] - 2026-09-23
+
+Moved into the omgbase monorepo (`packages/oqx`, via `git subtree` — full
+history preserved); package name, API, and zero-dependency boundary unchanged.
+`repository`/`homepage`/`bugs` metadata now point at the monorepo. No code
+changes beyond dropping one unused import.
+
 ## [0.10.1] - 2026-09-23
 
 Metadata and documentation only; no code changes.
@@ -201,6 +208,7 @@ First public release as `@omgbase/oqx`.
   `@omgbase/oqx/sqlite` (`SqliteTable`, real OQX→SQL pushdown over
   `node:sqlite`).
 
+[0.10.2]: https://github.com/omgbase/omgbase/tree/main/packages/oqx
 [0.10.1]: https://github.com/omgbase/oqx/compare/v0.10.0...HEAD
 [0.10.0]: https://github.com/omgbase/oqx/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/omgbase/oqx/compare/v0.8.0...v0.9.0

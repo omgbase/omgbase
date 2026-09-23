@@ -15,7 +15,8 @@ When you hit a stopping point — work is done, or you're blocked and need input
 ## Orientation
 
 - **Monorepo** (pnpm workspace, Node ≥ 22, pnpm 12). Packages:
-  - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `migrate/`, `mcp/`, `cli/`.
+  - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `migrate/`, `mcp/`, `cli/`.
+  - `packages/oqx` — `@omgbase/oqx`: the OQX query language + engine (parser, in-memory engine, `DataContext`/`QueryPlanner` seams, `node:sqlite` adapter). In-tree since ADR-019 but **standalone**: zero runtime dependencies, its own semver line, published on its own, never imports anything from omgbase. Any change here must keep it free of omgbase imports and must bump its `version` + `CHANGELOG.md`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
   - `packages/sync` — `@omgbase/sync`: the store-to-store synchronizer (ADR-014) — `Coordinator`, `EngineClient` seam (in-process or MCP), the `omgbase-sync` bin; backs `omg sync --server`.
   - `packages/embedder` — transformers.js / `Xenova/gte-base` (768-dim) embeddings, served as the `omgbase-embedder` stdio binary.
@@ -26,8 +27,8 @@ When you hit a stopping point — work is done, or you're blocked and need input
 ## Build / verify
 
 ```
-pnpm build     # tsc -b across the workspace
-pnpm test      # pnpm -r test (vitest); core is the big suite
+pnpm build     # builds packages/oqx first (core resolves its types from oqx's dist), then tsc -b across the workspace
+pnpm test      # pnpm -r test (vitest; oqx uses node --test, Node ≥ 22.18); core is the big suite
 pnpm lint      # pnpm -r lint
 ```
 
@@ -38,7 +39,7 @@ Always run `pnpm build && pnpm test` before considering a change done.
 Prefer these over prose docs — they cannot drift because they *are* the implementation:
 
 - **MCP tool surface** (names, params, behavior): the registrations and inline tool descriptions in `packages/core/src/mcp/server.ts`. This is the definitive list of tools, not `docs/mcp-api.md`.
-- **Query language (OQX)**: OQX is now the external **`@omgbase/oqx`** package (parser + engine + semantics); omgbase binds it to the store via `packages/core/src/oqx-js/` (a `DataContext` in `context.ts` + the `oqxRun` wrapper in `run.ts`; `packages/core/src/oqx/run.ts` is a thin re-export kept for import stability). The former in-tree compiler was removed (ADR-013). Authoritative surface: the `query` tool description in `packages/core/src/mcp/server.ts`, the runnable examples in `packages/core/corpus/oqx/README.md`, and the behavioral gate `corpus/oqx/alchemy.test.ts` (+ `corpus/oqx/conformance.test.ts`, which proves the tier-3 pushdown planner equals pure in-memory). OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`). **Scalar semantics follow `@omgbase/oqx`, not the old CEL layer** — `docs/query-language.md` is rewritten to as-built (ADR-013 behavior changes: `!=`/negation over absent matches, case-sensitive string ops + `.lower()`/regex `matches()`, absent sorts last, arithmetic supported, `select/collect/count distinct`). `packages/core/src/search/cel/` remains only as a helper the store-context reuses (FTS sanitizer, `FilterInvalid`, vec types).
+- **Query language (OQX)**: OQX is the **`@omgbase/oqx`** package (parser + engine + semantics; in-tree at `packages/oqx` since ADR-019, still a standalone zero-dependency library published on its own version line — omgbase code must never be imported from it); omgbase binds it to the store via `packages/core/src/oqx-js/` (a `DataContext` in `context.ts` + the `oqxRun` wrapper in `run.ts`; `packages/core/src/oqx/run.ts` is a thin re-export kept for import stability). The former in-tree compiler was removed (ADR-013). Authoritative surface: the `query` tool description in `packages/core/src/mcp/server.ts`, the runnable examples in `packages/core/corpus/oqx/README.md`, and the behavioral gate `corpus/oqx/alchemy.test.ts` (+ `corpus/oqx/conformance.test.ts`, which proves the tier-3 pushdown planner equals pure in-memory). OQX is the single query + traversal surface (`from … where … select … collect/exists/count … follow … order by`). **Scalar semantics follow `@omgbase/oqx`, not the old CEL layer** — `docs/query-language.md` is rewritten to as-built (ADR-013 behavior changes: `!=`/negation over absent matches, case-sensitive string ops + `.lower()`/regex `matches()`, absent sorts last, arithmetic supported, `select/collect/count distinct`). `packages/core/src/search/cel/` remains only as a helper the store-context reuses (FTS sanitizer, `FilterInvalid`, vec types).
 - **SQLite schema**: `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION` + migrations). Definitive over `docs/data-model.md`.
 - **Mutation kernel** (the six ops + macros + whole-doc reconciliation): `packages/core/src/mutate/`.
 
