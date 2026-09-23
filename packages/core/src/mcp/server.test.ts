@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
@@ -823,4 +823,61 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     ({ payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } });
     expect(payload.content).toContain("- [ ] wire it");
   });
+});
+
+describe("link maintenance tools: honest dry run, authored targets, summary, scoping, multi-block update", () => {
+  let root: string;
+  type Repair = { hits: { block: string; path: string; oldRaw: string; newRaw: string }[]; pairs: { from: string; to: string; hits: number }[]; applied: boolean; committed: boolean; diffs?: Record<string, { before: string; after: string }> };
+
+  beforeEach(async () => {
+    root = mkdtempSync(join(tmpdir(), "omg-mcplinks2-"));
+    store = new Store({ path: ":memory:" });
+    repoId = ensureRepo(store, "t", root);
+    writeFileSync(join(root, "list.md"), "# L\n\n- item [b](/b.md) here\n- other\n\nAlso [b](/b.md#Top) and `[b](/b.md)`.\n");
+    processCheckpoint(store, repoId, root, [{ path: "list.md" }]);
+    await connect(root);
+  });
+  afterEach(() => {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("links_repair dry_run plans through the kernel (diffs, committed:false); the apply then succeeds on list+item hits", async () => {
+    await call("docs_create", { path: "c.md", markdown: "# C\n" });
+    const repairs = [{ from: "b.md", to: "/c.md" }];
+    const { payload: dry, isError } = (await call("links_repair", { repairs, dry_run: true })) as { payload: Repair; isError: boolean };
+    expect(isError).toBe(false);
+    expect(dry.applied).toBe(false);
+    expect(dry.committed).toBe(false);
+    const after = dry.diffs!["list.md"]!.after;
+    expect(after).toContain("- item [b](/c.md) here");
+    expect(after).toContain("[b](/c.md#Top) and `[b](/b.md)`.");
+    // list (its item hit collapsed) + paragraph; the inline-code mention is not a hit
+    expect(dry.hits.map((h) => h.path)).toEqual(["list.md", "list.md"]);
+    expect(dry.pairs).toEqual([{ from: "b.md", to: "/c.md", hits: 2 }]);
+    expect(readFileSync(join(root, "list.md"), "utf8")).not.toContain("/c.md");
+
+    const { payload: done, isError: applyErr } = (await call("links_repair", { repairs, dry_run: false })) as { payload: Repair; isError: boolean };
+    expect(applyErr).toBe(false);
+    expect(done.applied).toBe(true);
+    expect(done.committed).toBe(true);
+    expect(readFileSync(join(root, "list.md"), "utf8")).toBe(after);
+    // Every real link now resolves. The one row left is the `[b](/b.md)` INSIDE
+    // inline code: the edge extractor (graph/extract.ts) still indexes code-span
+    // mentions as links, while the repairer deliberately leaves code alone.
+    const { payload: health } = (await call("links_stale", {})) as { payload: { stale: { authored: string | null }[] } };
+    expect(health.stale.map((s) => s.authored)).toEqual(["/b.md"]);
+  });
+
+  it("links_retarget takes the same path (planner-backed dry run, pairs, path_glob)", async () => {
+    writeFileSync(join(root, "other.md"), "# O\n\n[b](/b.md)\n");
+    processCheckpoint(store, repoId, root, [{ path: "other.md" }]);
+    const { payload } = (await call("links_retarget", { from_target: "/b.md", to_target: "/c.md", path_glob: "other.md" })) as { payload: Repair };
+    expect(payload.applied).toBe(false);
+    expect(payload.committed).toBe(false);
+    expect(payload.hits.map((h) => h.path)).toEqual(["other.md"]);
+    expect(payload.pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 1 }]);
+    expect(Object.keys(payload.diffs!)).toEqual(["other.md"]);
+  });
+
 });

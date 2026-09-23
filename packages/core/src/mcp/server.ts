@@ -837,17 +837,18 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "links_retarget",
     {
-      description: "Macro: rewrite a link/reference destination across all blocks that contain it. ALWAYS call with dry_run:true first to preview the hits, then dry_run:false to apply.",
-      inputSchema: { from_target: z.string(), to_target: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. ALWAYS call with dry_run:true first to preview `hits` + `pairs` (the dry run plans through the kernel, so it fails exactly where the apply would), then dry_run:false to apply.",
+      inputSchema: { from_target: z.string(), to_target: z.string(), path_glob: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const { ops, hits } = linksRetarget(store, repoId, args.from_target, args.to_target);
-        if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
-        return okMutated({ hits, applied: true, ...res });
+        const { ops, hits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const dryRun = args.dry_run !== false;
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, dryRun });
+        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
+        return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
         return fail(e);
       }
@@ -878,11 +879,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_repair",
     {
       description:
-        "Macro: BULK stale-link repair — rewrite one or MANY link-destination substrings across all blocks that contain them, in ONE changeset. This is links_retarget generalized to a batch: pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted for the one-off case. A block matched by multiple pairs gets a single coalesced update op (CAS-safe). ALWAYS call with dry_run:true first to preview `hits`, then dry_run:false to apply.",
+        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. Returns `hits[{block,path,oldRaw,newRaw}]` and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched). ALWAYS call with dry_run:true first — the dry run plans through the kernel (returns `diffs`), so it fails exactly where the apply would — then dry_run:false to apply.",
       inputSchema: {
         repairs: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
         from_target: z.string().optional(),
         to_target: z.string().optional(),
+        path_glob: z.string().optional(),
         dry_run: z.boolean().optional(),
         ...REPO_ARG,
       },
@@ -899,10 +901,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (!repairs || repairs.length === 0) {
           throw new EngineError("target_missing", "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair");
         }
-        const { ops, hits } = linksRepair(store, repoId, repairs);
-        if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" } });
-        return okMutated({ hits, applied: true, ...res });
+        const { ops, hits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
+        // The dry run plans through the same kernel path (dryRun: no write, no
+        // drain) so a preview surfaces exactly the failure an apply would hit.
+        const dryRun = args.dry_run !== false;
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, dryRun });
+        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
+        return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
         return fail(e);
       }
