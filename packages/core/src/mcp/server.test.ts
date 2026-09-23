@@ -896,4 +896,24 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(sum.bySource).toEqual([{ srcPath: "list.md", count: payload.stale.length }]);
     expect(sum.externalCount).toBe(0);
   });
+
+  it("blocks_update accepts multi-block markdown: target keeps its id, siblings minted, `id` + `ids` returned", async () => {
+    await call("docs_create", { path: "m.md", markdown: "# M\n\nBody.\n\nTail.\n" });
+    const { payload: before } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[] } };
+    const [headId, bodyId, tailId] = before.ids as [string, string, string];
+    const { payload, isError } = (await call("blocks_update", { block: bodyId, markdown: "Body, edited.\n\nExtra para.\n\n- li" })) as {
+      payload: { id: string; ids: string[]; committed: boolean }; isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.committed).toBe(true);
+    expect(payload.id).toBe(bodyId);
+    expect(payload.ids).toHaveLength(3);
+    expect(payload.ids[0]).toBe(bodyId);
+    const { payload: after } = (await call("docs_read", { path: "m.md", include_ids: true })) as { payload: { ids: string[]; content: string } };
+    expect(after.content).toBe("# M\n\nBody, edited.\n\nExtra para.\n\n- li\n\nTail.\n");
+    // include_ids flattens children: head, body, extra, list, (its item), tail
+    expect(after.ids).toHaveLength(6);
+    expect(after.ids.slice(0, 4)).toEqual([headId, ...payload.ids]);
+    expect(after.ids[5]).toBe(tailId);
+  });
 });

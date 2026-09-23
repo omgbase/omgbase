@@ -644,7 +644,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_update",
     {
-      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
+      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the response carries `id` (the target) and `ids` (all resulting blocks, in order). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
       inputSchema: { block: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -659,7 +659,12 @@ export function buildServer(ctx: ServerContext): McpServer {
           ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
           : undefined;
         const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-        return applyOps(repoId, root, ops, "blocks_update", args.dry_run);
+        const res = apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) });
+        // `ids` lists every resulting block (the target first, then any siblings
+        // minted from multi-block content); `id` keeps the target for convenience.
+        const ids = res.results[0]?.ids ?? [block];
+        const payload = { id: ids[0] ?? block, ids, ...res };
+        return args.dry_run ? ok(payload) : okMutated(payload);
       } catch (e) {
         return fail(e);
       }

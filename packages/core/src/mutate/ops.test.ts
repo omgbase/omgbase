@@ -54,6 +54,31 @@ describe("kernel ops", () => {
     expect(locate(d, bId)!.block.id).toBe(bId); // placement/identity untouched
   });
 
+  it("update with multi-block content: the target takes the first block, the rest follow as fresh siblings", () => {
+    const d = doc("# Title\n\nOld body.\n\nTail.\n");
+    const bId = idAt(d, 1);
+    const tailId = idAt(d, 2);
+    const { ids } = opUpdate(d, bId, 0, "New body.\n\n- one\n- two\n\n## Sub", undefined, { content_hash: hashAt(d, 1) });
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toBe(bId);
+    expect(d.children.map((b) => b.id)).toEqual([idAt(d, 0), ...ids, tailId]);
+    expect(d.children.map((b) => b.type)).toEqual(["heading", "paragraph", "list", "heading", "paragraph"]);
+    // separators between the new run, the old trailing trivia after its last block
+    expect(renderDoc(d)).toBe("# Title\n\nNew body.\n\n- one\n- two\n\n## Sub\n\nTail.\n");
+  });
+
+  it("update of a list item with a multi-item list: first item replaces, the rest become sibling items", () => {
+    const d = doc("- a\n- c\n");
+    const list = d.children[0]!;
+    const a = list.children[0]!;
+    const cId = list.children[1]!.id;
+    const { ids } = opUpdate(d, a.id, 0, "- a1\n- b", undefined, { content_hash: rawHashHex(a.raw) });
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(a.id);
+    expect(list.children.map((b) => b.id)).toEqual([a.id, ids[1], cId]);
+    expect(renderDoc(d)).toBe("- a1\n- b\n- c\n");
+  });
+
   it("update rejects a stale content_hash with current truth", () => {
     const d = doc("para one\n");
     try {
