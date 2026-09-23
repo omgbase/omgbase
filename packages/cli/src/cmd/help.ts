@@ -7,14 +7,14 @@ import { EXIT_OK } from "../output.js";
 // from the registry lazily to avoid an import cycle.
 
 const GROUPS: { title: string; names: string[] }[] = [
-  { title: "bootstrap", names: ["init", "attach", "repos"] },
+  { title: "bootstrap", names: ["init", "source", "repos"] },
   { title: "orient & read", names: ["status", "ls", "outline", "cat", "show", "find"] },
   { title: "query", names: ["query", "run"] },
   { title: "history & links", names: ["log", "hist", "diff", "links"] },
-  { title: "mutate", names: ["apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge"] },
+  { title: "mutate", names: ["apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "split", "merge", "node"] },
   { title: "documents", names: ["new", "mv", "meta"] },
   { title: "session", names: ["shell"] },
-  { title: "sync & serve", names: ["sync", "watch", "mcp"] },
+  { title: "sync & serve", names: ["sync", "mcp"] },
   { title: "admin", names: ["rebuild-index", "gc", "doctor", "config", "import", "embed"] },
 ];
 

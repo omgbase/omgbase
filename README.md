@@ -23,12 +23,34 @@ The engine is feature-complete and tested: round-trip fidelity, core store, iden
 
 ## Install
 
-Requires **Node ≥ 22** and **pnpm**.
+Requires **Node ≥ 22**.
+
+### From npm
 
 ```bash
+npm install -g omgbase              # the `omg` and `omgbase` binaries
+npm install -g @omgbase/embedder    # optional: local semantic search (`omgbase-embedder`)
+```
+
+`omgbase` pulls in the engine (`@omgbase/core`), the filesystem source adapter (`@omgbase/fs-adapter`), and the sync coordinator (`@omgbase/sync`). The optional `@omgbase/embedder` runs sentence embeddings locally with transformers.js (default model `Xenova/gte-base`, 768-dim; weights download to the transformers.js cache on first run, then work offline) and is spoken to over stdio, so the engine and CLI carry no ML dependency. `omg init` offers to configure it as the workspace's `embedding.provider` when `omgbase-embedder` is on `PATH`. Note: under allow-scripts policies (npm `ignore-scripts`, pnpm `allowBuilds`) the `onnxruntime-node` postinstall may be skipped; if the embedder then fails to start (`embedder_failed`), allow that package's build script and reinstall.
+
+### From source
+
+Needs **pnpm 12** (the workspace `packageManager`).
+
+```bash
+git clone https://github.com/omgbase/omgbase && cd omgbase
 pnpm install
-pnpm test
-pnpm typecheck
+pnpm build          # tsc -b across the workspace
+pnpm rlink          # link every bin package globally: omg, omgbase, omgbase-sync, omgbase-embedder, omgbase-fs-adapter
+```
+
+`pnpm rlink` runs `pnpm add -g .` in each package that declares a `bin`, so it needs a configured pnpm global bin directory (`pnpm setup` once, then reopen the shell). The resulting shims point at the clone's `dist/`, so a later `pnpm build` is picked up without relinking.
+
+### Developing
+
+```bash
+pnpm build && pnpm test   # vitest across the workspace; the cli package also replays the examples/ transcripts
 pnpm lint
 ```
 
@@ -48,14 +70,15 @@ packages/
       sync/      observe primitive · source registry · external-source bridge · driver · checkpoints · watcher
       mutate/    six kernel ops · changesets · CAS · macros · DocStore seam
       graph/     edge extraction · intervals · traversal · history/diff
-      search/    OQX bindings · FTS · embeddings · vector · RRF · resolve/pipeline
+      oqx-js/    OQX bindings — the store `DataContext` + `oqxRun` over the external @omgbase/oqx (`oqx/` is a thin re-export)
+      search/    FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
       migrate/   mrplex importer
     corpus/      round-trip + matcher fixtures
-  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter)
+  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync)
   sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin)
   client/        @omgbase/client — thin remote MCP client (placeholder)
-  embedder/      @omgbase/embedder — external embedding provider (transformers.js + all-MiniLM-L6-v2)
+  embedder/      @omgbase/embedder — external embedding provider (transformers.js + Xenova/gte-base, 768-dim)
   fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol)
 docs/            as-built design reference · decision log (ADRs)
 ```
@@ -81,7 +104,7 @@ Format is auto-detected from file extension. Each format adapter declares progre
 | **YAML** | `.yaml` `.yml` | yes | yes | `$ref` `extends` `$schema` path values | `yaml:ref` `yaml:schema` `yaml:anchor` `yaml:alias` `yaml:env_var` | yes | full structure |
 | **JSON** | `.json` | yes | yes | `$ref` `$schema` path values | `json:ref` `json:schema` | yes | full object |
 
-Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that `graph_traverse` follows in one call.
+Cross-format edges compose seamlessly: a markdown doc linking to a YAML config, which `extends` a base YAML file and references a JSON schema, produces a traversable graph that one OQX `follow doc.out` query (or the `graph` MCP tool, which compiles to it) walks in one call.
 
 Block kinds use a colon-separated format qualifier for non-markdown formats: `yaml:mapping_entry`, `json:property`, `yaml:scalar`. Markdown block types remain unqualified for backward compatibility: `heading`, `paragraph`, `task`, `code_fence`, etc.
 
@@ -93,11 +116,11 @@ Document-level properties live in one indexed `properties` table (design in `doc
 - **inline** — dataview-style `key:: value` fields in body text, accumulating across occurrences;
 - **computed** — engine-derived `$`-intrinsics (`$title` from the first H1, `$tags` from body `#hashtags`) that never shadow authored keys.
 
-A CEL bare key (`layer == "canon"`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source; `$title` / `$tags` address the computed ones. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — preserving the exact CEL semantics across the row-backed store.
+An OQX bare key (`from docs where layer == "canon"`) queries the authored union (frontmatter + inline) as an indexed seek; `frontmatter.<k>` / `inline.<k>` narrow to one source; `$title` / `$tags` address the computed ones. A per-value `card` flag records the authored scalar-vs-list shape, so scalar `==`/`!=`/`<` match scalar-authored values while `list()` spans all — the `@omgbase/oqx` scalar semantics hold across the row-backed store (see `docs/query-language.md`).
 
 ### Structural query functions
 
-In addition to the core CEL filter language (see `docs/query-language.md`), the query system provides format-aware structural functions for the `blocks` target:
+In addition to the OQX query language (`@omgbase/oqx`; see `docs/query-language.md`), the store binding provides format-aware structural functions for the `blocks` target:
 
 - `under_heading("Setup")` — markdown blocks under a heading (section range)
 - `under_kind("yaml:mapping_entry", "database")` — blocks nested under an ancestor of the given kind
@@ -106,7 +129,7 @@ In addition to the core CEL filter language (see `docs/query-language.md`), the 
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented: bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`, `cat`, `show`, `find`, `query`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`, and doc-level `new`/`mv`/`meta`/`update`), and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`, `shell`).
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented (39 commands, registered in `packages/cli/src/commands.ts`): bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`/`ol`, `cat`, `show`, `find`, `query`/`q`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`/`node`, and doc-level `new`/`mv`/`meta`/`update`), the `shell` session, and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`). `omg --help` prints the same catalog grouped by area.
 
 ### The mental model: workspace, repo, source, config
 
@@ -119,13 +142,9 @@ Four concepts, and getting them straight makes everything else obvious:
 
 > There is no separate "attach/ingest/load" verb: `omg source add <dir>` is how content enters — it creates the repo if needed, registers the filesystem source, and runs the initial sync. The initial ingest is just that source's first sync (the same reconcile every later sync uses).
 
-### 1. Build and link the binaries
+### 1. Get the binaries
 
-```bash
-pnpm install
-pnpm -r build     # build every package (core, cli, sync, embedder, fs-adapter)
-pnpm rlink        # link binaries onto PATH: omg, omgbase, omgbase-sync, omgbase-embedder, omgbase-fs-adapter
-```
+`npm install -g omgbase` (plus `@omgbase/embedder` for semantic search), or from a clone `pnpm install && pnpm build && pnpm rlink` — see [Install](#install).
 
 ### 2. Create a workspace and point a repo at a directory
 
@@ -209,7 +228,7 @@ omg sync --server "omg mcp -C /path/to/vault" --root ./my-vault --watch   # stay
 omg sync --server "…" --root ./my-vault --out                             # also export engine-authored changes back
 ```
 
-`--server` is a **global flag** (ADR-014): the goal is that most commands eventually run either embedded-local or remote-over-MCP. Today `sync` implements it; other commands reject `--server` rather than silently running locally, and gain remote support one at a time.
+`--server` is a **global flag** (ADR-014): the same command runs either embedded-local or remote-over-MCP. Remote mode is implemented for reads (`query`, `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`), doc-level mutators (`new`, `mv`, `meta`, `rm`, `update`, `retarget`), block-level sugar (`apply`, `insert`, `move`, `split`, `merge`, `done`, `append`, `node` — ref resolution and CAS pinning happen server-side), `sync`, and `shell` (which threads `--server` into every line it runs) — the `REMOTE_OK` set in `packages/cli/src/context.ts`. The genuinely local-only commands (`edit`'s `$EDITOR` round-trip, `status`'s watcher state, `init`/`source`/admin) reject `--server` rather than silently running locally. `--server` takes either a stdio command (`"omg mcp -C /path"`) or an `http(s)` URL (with `-H "Name: value"` for extra headers).
 
 The same coordinator ships as a standalone bin, **`omgbase-sync`**, for environments that don't have the full `omg` CLI — `omgbase-sync --root ./v [--watch] [--out]` is exactly `omg sync --server … --root ./v`. Under the hood both fetch changed files from a source adapter and call the engine's `observe` / `observe_many` tools (whole-file bytes → an *observed* commit, reconciled + echo-suppressed engine-side); the export direction polls `changes_since` and writes engine-authored changes back. Reconciliation never leaves the engine (`docs/sync-service-design.md`, ADR-014).
 
@@ -237,11 +256,27 @@ omg> done @1                       # references substitute into any command's ar
 
 ### MCP server
 
-`omg mcp` serves the full engine tool surface over stdio, with an in-process watcher so the session stays fresh. The host (Claude Code, Cursor, …) owns the process lifetime — the one-line integration:
+`omg mcp` serves the full engine tool surface over stdio, with an in-process watcher so the session stays fresh. The host (Claude Code, Claude Desktop, Cursor, …) owns the process lifetime. `-C` must point at an **initialized workspace** — a directory at or below one containing `.omgbase/` (`omg init <dir>` then `omg -C <dir> source add .`); hosts launch the server from their own cwd, so `omg mcp` in a directory without a workspace fails with `repo_not_found` and prints exactly that hint.
+
+Claude Code:
+
+```bash
+claude mcp add omg -- omg mcp -C /path/to/vault
+```
+
+Claude Desktop (`claude_desktop_config.json`) and any other host that takes an `mcpServers` map:
 
 ```json
-{ "command": "omg", "args": ["mcp", "-C", "/path/to/vault"] }
+{ "mcpServers": { "omg": { "command": "omg", "args": ["mcp", "-C", "/path/to/vault"] } } }
 ```
+
+Cursor (`.cursor/mcp.json`, project- or user-level) takes the same shape:
+
+```json
+{ "mcpServers": { "omg": { "command": "omg", "args": ["mcp", "-C", "/path/to/vault"] } } }
+```
+
+Add `--repo <slug>` to `args` when the workspace holds several repos, and `--no-watch` to skip the in-process watcher (it is auto-off when another live watcher holds the lease).
 
 ## Quickstart (library)
 
@@ -333,7 +368,7 @@ const server = buildServer({ store, repoId, rootPath: "/path/to/vault" });
 // Connect `server` to any MCP transport (stdio, in-memory, …).
 ```
 
-Tools exposed (the authoritative list is the registrations in `packages/core/src/mcp/server.ts`): reads — `docs_outline`, `docs_read`, `docs_get_many`, `nodes_get`, `nodes_get_many`, `query`, `query_syntax`, `graph`, `text_search`, `resolve`; writes — `apply`, `tasks_complete`, `node_set`, `sections_append`, `docs_append`, `links_stale`, `links_retarget`, `links_repair`, `docs_create`, `docs_move`, `docs_delete`, `docs_set_meta`, `docs_plan_update`, `docs_update`; sync — `observe`, `observe_many`, `observe_delete`; history — `history_node`, `diff`, `docs_read_at`, `docs_history`, `changes_since`; admin — `repos_status`, `sync_status`. Every list result carries `truncated` + a cursor. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source. `observe`/`observe_many`/`observe_delete` are the sync-ingest surface (file→DB, observed-origin, echo-suppressed) that `@omgbase/sync` drives; `changes_since` digests carry per-revision `contentHash` for the export direction.
+Tools exposed (45; the authoritative list is the `registerTool` calls in `packages/core/src/mcp/server.ts`): reads — `docs_outline`, `docs_read`, `docs_get_many`, `nodes_get`, `nodes_get_many`, `read_ref`, `docs_tree`, `docs_list`; search — `query`, `query_syntax`, `graph`, `text_search`, `resolve`; writes — `apply`, the block-level sugar `blocks_insert`/`blocks_update`/`blocks_move`/`blocks_remove`/`blocks_split`/`blocks_merge`, the macros `tasks_complete`/`node_set`/`sections_append`/`docs_append`/`links_retarget`/`links_repair` (+ the read-only `links_stale`), and the doc-level `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`/`docs_plan_update`/`docs_update`; sync — `observe`, `observe_many`, `observe_delete`; history — `history_node`, `diff`, `diff_unified`, `docs_read_at`, `docs_history`, `changes_since`; admin — `repos`, `repos_status`, `sync_status`. Every repo-scoped tool takes an optional `repo` slug; every list result carries `truncated` + a cursor. `docs_read` returns a whole document in one call — full file bytes (byte-exact) plus properties grouped by source. `observe`/`observe_many`/`observe_delete` are the sync-ingest surface (file→DB, observed-origin, echo-suppressed) that `@omgbase/sync` drives; `changes_since` digests carry per-revision `contentHash` for the export direction.
 
 ### Synchronize a source into a repo (library)
 
@@ -362,18 +397,18 @@ const sub = await coord.watchIn({ onSummary: (s) => console.log("mirrored", s) }
 
 ### Semantic search (optional)
 
-Semantic ranking needs an embedding provider, opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + all-MiniLM-L6-v2, 384-dim), exposed as the `omgbase-embedder` binary. Set it at the **workspace** layer (`--repo ""`) so every repo shares one vector space:
+Semantic ranking needs an embedding provider, opt-in. `embedding.provider` names an **external embedder** — either a command the engine spawns and talks to over a stdio JSON protocol, or an `http(s)` endpoint — so the engine and CLI carry no ML dependency. The default local embedder ships as `@omgbase/embedder` (transformers.js + `Xenova/gte-base`, 768-dim; weights download on first run), exposed as the `omgbase-embedder` binary. Set it at the **workspace** layer (`--repo ""`) so every repo shares one vector space (`omg init` offers this automatically when `omgbase-embedder` is on `PATH`):
 
 ```bash
-# omgbase-embedder is on PATH after `pnpm rlink`
+# omgbase-embedder is on PATH after `npm install -g @omgbase/embedder` (or `pnpm rlink` from a clone)
 omg config set embedding.provider omgbase-embedder --repo ""   # a command (stdio), workspace-wide …
 omg config set embedding.provider https://embed.internal/embed --repo ""   # … or an http endpoint
 omg embed drain                         # embed the corpus (prints an egress note for remote providers)
-omg q --semantic "crash safety and durability" -n 5
-omg find "how are ids kept stable"      # hybrid FTS ⊕ vector by default when a provider is set
+omg q 'from blocks order by semantic("crash safety and durability") desc' -n 5   # semantic top-5: a score function becomes a ranking
+omg find "how are ids kept stable" -n 5 # hybrid FTS ⊕ vector (RRF) by default when a provider is set
 ```
 
-Without a configured provider, semantic queries return `semantic_unavailable`. The provider contract is `embed(texts) => Promise<number[][]>`; a remote HTTP embedder is the same contract behind a URL.
+Without a configured provider, `semantic(…)` queries return `semantic_unavailable` (and `find` falls back to FTS alone); a configured-but-broken provider is a loud `embedder_failed`, never a silent downgrade. The provider contract is `embed(texts) => Promise<number[][]>`; a remote HTTP embedder is the same contract behind a URL.
 
 ```ts
 import { EmbeddingWorker } from "@omgbase/core/search/embeddings";
@@ -386,8 +421,8 @@ const hits = hybridSearch(store, { repoId, text: "identity", vector: { model: my
 
 ## Reading the design
 
-Start with the repo-root `AGENTS.md` (orientation + the `docs/` trust index), then `docs/README.md`. The `docs/` are maintained as an **as-built** description of the implementation: where a doc and the code disagree, **the code wins** — fix the doc. `docs/decisions.md` is the ADR log (the "why"); `docs/sync-service-design.md` (ADR-014) is the forward design for the sync service migration.
+Start with the repo-root `AGENTS.md` (orientation + the `docs/` trust index), then `docs/README.md`. The `docs/` are maintained as an **as-built** description of the implementation: where a doc and the code disagree, **the code wins** — fix the doc. `docs/decisions.md` is the ADR log (the "why"); `docs/sync-service-design.md` (ADR-014) is the design rationale + stage record for the sync service — implemented, all six stages.
 
 ## License
 
-Not yet specified.
+[MIT](./LICENSE).
