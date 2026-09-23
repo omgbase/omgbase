@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EXIT_OK } from "../output.js";
+import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
 
@@ -21,11 +21,33 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     options: { "no-watch": { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  mcp [--no-watch]  — serve the MCP tool surface on stdio (host owns lifetime)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "mcp",
+      summary: "Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime",
+      usage: "mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]",
+      options: [
+        ["-C <dir>", "the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)"],
+        ["--repo <slug>", "which repo, when the workspace has several"],
+        ["--no-watch", "don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)"],
+      ],
+      notes: [`host config: {"command": "${cli.prog}", "args": ["mcp", "-C", "/path/to/notes"]}`],
+    });
   }
 
-  const ws = cli.workspace();
+  // The host launches us from its own cwd, so a missing workspace here almost
+  // always means the host config lacks `-C <dir>` — say so, rather than the
+  // generic "run init" hint (which would create an empty workspace in the wrong place).
+  let ws: ReturnType<Cli["workspace"]>;
+  try {
+    ws = cli.workspace();
+  } catch (err) {
+    if (err instanceof EngineErrorLike && err.code === "repo_not_found") {
+      throw new EngineErrorLike("repo_not_found", err.message, {
+        hint: `\`${cli.prog} mcp\` serves one workspace: point it there with -C, e.g. {"command": "${cli.prog}", "args": ["mcp", "-C", "/path/to/notes"]} in the MCP host config — or create one first with \`${cli.prog} init <dir>\` and \`${cli.prog} -C <dir> source add .\``,
+      });
+    }
+    throw err;
+  }
   const repo = cli.repo(ws);
 
   // Connect the configured embedder once (if any) so the query tool's
