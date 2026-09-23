@@ -81,14 +81,15 @@ function readHolderPid(lockPath: string): number | null {
   }
 }
 
-// Busy-wait with a blocking sleep between polls. Writers hold the lock only for
-// the brief file-CAS + ingest window, so contention waits are short; a sync
-// spin keeps the lock API synchronous like the rest of the write path.
+// Blocking sleep between polls. Writers hold the lock only for the brief
+// file-CAS + ingest window, so contention waits are short, and the lock API
+// stays synchronous like the rest of the write path. `Atomics.wait` parks the
+// thread in the kernel for `ms` — unlike a `Date.now()` spin it burns no CPU,
+// which matters precisely when several writers contend on a loaded machine
+// (each spinning waiter would otherwise steal cycles from the lock holder).
+const SLEEP_CELL = new Int32Array(new SharedArrayBuffer(4));
 function sleepSync(ms: number): void {
-  const until = Date.now() + ms;
-  while (Date.now() < until) {
-    /* spin */
-  }
+  Atomics.wait(SLEEP_CELL, 0, 0, ms);
 }
 
 /**

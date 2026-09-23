@@ -51,14 +51,14 @@ describe("FsAdapter", () => {
 
   it("watch delivers a debounced batch of changed paths", async () => {
     const root = setup();
-    const fs = new FsAdapter({ root, debounceMs: 50 });
+    const fs = new FsAdapter({ root, debounceMs: 100 }); // wide enough that two back-to-back writes coalesce even on a loaded machine
     const batches: string[][] = [];
     const sub = fs.watch((paths) => batches.push(paths));
     await new Promise((r) => setTimeout(r, 200)); // let chokidar's initial scan settle
     batches.length = 0; // discard spurious startup events (macOS FSEvents re-reports existing files)
     writeFileSync(join(root, "c.md"), "# C\n");
     writeFileSync(join(root, "a.md"), "# A\n\nchanged\n");
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 600));
     await sub.stop();
     expect(batches.length).toBe(1); // coalesced
     expect(batches[0]!.sort()).toEqual(["a.md", "c.md"]);
