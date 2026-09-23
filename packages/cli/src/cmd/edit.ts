@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { resolveRef, nodesGet, type Op } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { runOps } from "./_mutate.js";
 
 // `omg edit <block>` (11 §5.6, §5.7): read the block's raw markdown → open it in
@@ -28,8 +28,12 @@ function runEdit(cli: Cli, args: string[]): number {
     options: { actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  edit <block>  — open the block's markdown in $EDITOR and update with CAS pinned");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "edit",
+      summary: "Open a block's markdown in $EDITOR and write it back with compare-and-swap pinned to what you saw",
+      usage: "edit <block> [--actor <s>] [--dry-run]",
+      options: [["--actor <s>", "commit actor (default human:$USER)"]],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("edit requires a <block>");

@@ -4,7 +4,7 @@ import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, EngineError, type Re
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EngineErrorLike, EXIT_OK } from "../output.js";
+import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
 
@@ -19,15 +19,18 @@ import { openRepoSource } from "./_source.js";
 // explicit form of the freshness sweep every read runs by default.
 
 function help(cli: Cli): number {
-  cli.io.out("  sync — reconcile a repo with its filesystem source");
-  cli.io.out(`  ${cli.style.dim("usage:")} omg sync [--watch] [--server <cmd|url> [-H "Name: value"]... [--root <dir>] [--out]]`);
-  cli.io.out("    (no flags)         one-shot: re-ingest what changed on disk");
-  cli.io.out("    --watch            stay live and reconcile edits as they land");
-  cli.io.out("    --server <cmd|url> run against a remote engine over MCP (spawns <cmd>, or an http(s) url over Streamable HTTP)");
-  cli.io.out('    -H "Name: value"   [--server url] extra HTTP header, repeatable');
-  cli.io.out("    --root <dir>       [--server] the directory to mirror (default cwd)");
-  cli.io.out("    --out              [--server] also export engine-authored changes back to disk");
-  return EXIT_OK;
+  return renderHelp(cli, {
+    name: "sync",
+    summary: "Reconcile a repo with its filesystem source (one-shot by default; the explicit form of the freshness sweep every read runs)",
+    usage: ["sync [--watch]", 'sync --server <cmd|url> [-H "Name: value"]… [--root <dir>] [--out]'],
+    options: [
+      ["--watch", "stay live and reconcile edits as they land"],
+      ["--server <cmd|url>", "mirror a local directory into a remote engine over MCP (spawns <cmd>, or an http(s) url over Streamable HTTP)"],
+      ['-H "Name: value"', "(--server url) extra HTTP header, repeatable"],
+      ["--root <dir>", "(--server) the directory to mirror (default cwd)"],
+      ["--out", "(--server) also export engine-authored changes back to disk"],
+    ],
+  });
 }
 
 async function runSync(cli: Cli, args: string[]): Promise<number> {

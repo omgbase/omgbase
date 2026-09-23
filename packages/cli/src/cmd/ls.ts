@@ -3,7 +3,7 @@ import { docsList, type DocListRow, type DocListPage } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns } from "../render.js";
-import { EXIT_OK } from "../output.js";
+import { EXIT_OK, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg ls [glob]` (11 §5.2) — live documents: path, block count, last-commit
@@ -14,7 +14,18 @@ import { remoteCall } from "./_remote.js";
 // or `--server` — and renders the concatenation.
 
 async function runLs(cli: Cli, args: string[]): Promise<number> {
-  const { positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "ls",
+      summary: "List live documents: path, block count, last-commit time (always the complete listing)",
+      usage: "ls [<glob>] [--ids|--json|--jsonl]",
+      options: [
+        ["<glob>", "path filter; `*` matches any run of characters (`notes/*.md`)"],
+        ["--ids", "paths only, one per line (pipe fuel)"],
+      ],
+    });
+  }
   const glob = positionals[0];
 
   const rows: DocListRow[] = [];

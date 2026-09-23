@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { VERSION } from "@omgbase/core";
 import { processIO, type IO } from "./render.js";
-import { makeCli, type Cli } from "./context.js";
-import { CliUsageError, renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
-import { resolveCommand } from "./commands.js";
+import { makeCli, progName, type Cli } from "./context.js";
+import { renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
+import { resolveCommand, unknownCommandError } from "./commands.js";
 import { runCommand, parseGlobals, type Parsed } from "./dispatch.js";
 import { closeRemote } from "./cmd/_remote.js";
 
@@ -12,7 +12,7 @@ import { closeRemote } from "./cmd/_remote.js";
 // command (with aliases), then delegates to runCommand for the freshness sweep +
 // dispatch + error mapping — the same path the shell reuses per line.
 
-export async function run(argv: string[], io: IO = processIO): Promise<number> {
+export async function run(argv: string[], io: IO = processIO, prog = "omg"): Promise<number> {
   let parsed: Parsed;
   try {
     parsed = parseGlobals(argv);
@@ -33,9 +33,9 @@ export async function run(argv: string[], io: IO = processIO): Promise<number> {
   if (flags.help && !command) command = "help";
   if (!command) command = "help";
 
-  const cli: Cli = makeCli(flags, io);
+  const cli: Cli = makeCli(flags, io, { prog });
   if (!resolveCommand(command)) {
-    return renderError(new CliUsageError(`unknown command '${command}'`), io, cli.style, flags.mode !== "human");
+    return renderError(unknownCommandError(prog, command), io, cli.style, flags.mode !== "human");
   }
   try {
     return await runCommand(cli, command, parsed.rest);
@@ -59,7 +59,8 @@ for (const stream of [process.stdout, process.stderr]) {
   });
 }
 
-run(process.argv.slice(2)).then(
+// Quote the binary back to the user as they invoked it (`omg` vs `omgbase`).
+run(process.argv.slice(2), processIO, progName(process.argv[1])).then(
   (code) => {
     process.exitCode = code;
   },

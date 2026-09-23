@@ -1,4 +1,5 @@
 import type { Cli } from "./context.js";
+import { CliUsageError } from "./output.js";
 
 // Command registry (11 §8: the catalog is data in the router). Each command is a
 // pure function (Cli, residual args) → exit code. CLI-A ships the read surface +
@@ -90,4 +91,41 @@ for (const c of COMMANDS) {
 
 export function resolveCommand(name: string): Command | null {
   return BY_NAME.get(name) ?? null;
+}
+
+/**
+ * The usage error for an unrecognized command: names the typo, points at the
+ * command list (quoting the binary as it was invoked), and — when one listed
+ * command or alias is within two edits — offers it as "did you mean".
+ */
+export function unknownCommandError(prog: string, name: string): CliUsageError {
+  const hint = `run '${prog} --help' for the command list`;
+  const guess = didYouMean(name);
+  return new CliUsageError(`unknown command '${name}'`, guess ? `did you mean '${guess}'? ${hint}` : hint);
+}
+
+function didYouMean(name: string): string | null {
+  // Two edits for a real word, one for something short — `statsu` → status,
+  // `lz` → ls, but a lone `x` suggests nothing rather than `q`.
+  const maxEdits = name.length <= 3 ? 1 : 2;
+  let best: { name: string; d: number } | null = null;
+  for (const candidate of BY_NAME.keys()) {
+    const d = editDistance(name.toLowerCase(), candidate);
+    if (d <= maxEdits && (!best || d < best.d)) best = { name: candidate, d };
+  }
+  return best?.name ?? null;
+}
+
+// Levenshtein distance; the inputs are short command names, so the plain
+// two-row DP is plenty.
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length]!;
 }

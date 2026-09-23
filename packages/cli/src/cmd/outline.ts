@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { findDoc, docsOutline, type OutlineResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg outline <doc|path>` (alias ol) — the wire format (06 §6). Human output
@@ -21,8 +21,16 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  outline <doc|path> [--depth n] [--skeleton]  — document outline (frozen wire format)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "outline",
+      summary: "A document's outline with block ids inline (frozen wire format) — the orientation view",
+      usage: "outline <doc|path> [--depth <n>] [--section <locator>] [--skeleton]",
+      options: [
+        ["--depth <n>", "limit heading depth"],
+        ["--section <locator>", "outline only the section at a locator"],
+        ["--skeleton", "structure only, no text"],
+      ],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("outline requires a <doc|path>");

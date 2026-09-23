@@ -10,7 +10,7 @@ import {
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, renderHelp } from "../output.js";
 import { runOps, runOpsRemote, readContent, readStdin, expandBlockArgs, extractContentOpts } from "./_mutate.js";
 import { runRmDoc } from "./docs.js";
 
@@ -50,8 +50,17 @@ async function runApply(cli: Cli, args: string[]): Promise<number> {
     options: { f: { type: "string", short: "f" }, reason: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  apply -f changeset.json|-  [--reason s] [--actor s]  — apply a raw changeset");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "apply",
+      summary: "Apply a raw changeset (`{ ops: [...] }`, the six-op kernel) — the primitive every other mutator expands to",
+      usage: "apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]",
+      options: [
+        ["-f <file|->", "changeset JSON from a file or stdin (default: stdin)"],
+        ["--reason <s>", "commit reason recorded in history"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+        ["--dry-run", "validate + render the diff, commit nothing"],
+      ],
+    });
   }
   const raw = values.f ? (values.f === "-" ? readStdin() : readFileSync(values.f, "utf8")) : readStdin();
   const parsed = JSON.parse(raw) as { ops?: Op[] };
@@ -72,8 +81,19 @@ async function runInsert(cli: Cli, args: string[]): Promise<number> {
     options: { at: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  insert <to> [--at end|start|before X|after X] (-m md | -f file | -)  — insert blocks");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "insert",
+      summary: "Insert markdown as new block(s) under a parent block or heading",
+      usage: "insert <to> (-m <markdown> | -f <file> | -) [--at end|start|before <id>|after <id>] [--actor <s>] [--dry-run]",
+      options: [
+        ["<to>", "parent block id, or a heading block id to append into its section"],
+        ["-m <markdown>", "content inline"],
+        ["-f <file>", "content from a file"],
+        ["-", "content from stdin"],
+        ["--at <pos>", "end (default) | start | before <id> | after <id>"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const to = positionals[0];
   if (!to) throw new CliUsageError("insert requires a <to> parent (block id, or a heading id for section append)");
@@ -96,8 +116,18 @@ async function runUpdate(cli: Cli, args: string[]): Promise<number> {
     options: { expect: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  update <block> (-m md | -f file | -) [--expect hash]  — replace a block's markdown (CAS)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "update",
+      summary: "Replace a block's markdown, with compare-and-swap against the block's current hash",
+      usage: "update <block> (-m <markdown> | -f <file> | -) [--expect <hash>] [--actor <s>] [--dry-run]",
+      options: [
+        ["-m <markdown>", "content inline"],
+        ["-f <file>", "content from a file"],
+        ["-", "content from stdin"],
+        ["--expect <hash>", "fail with stale_expectation unless the block's hash still matches"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("update requires a <block>");
@@ -127,8 +157,17 @@ async function runMove(cli: Cli, args: string[]): Promise<number> {
     options: { to: { type: "string" }, at: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  move <blocks…|-> --to <parent> [--at …]  — move blocks under a new parent");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "move",
+      summary: "Move block(s) under a new parent, identity preserved",
+      usage: "move <blocks…|-> --to <parent> [--at end|start|before <id>|after <id>] [--actor <s>] [--dry-run]",
+      options: [
+        ["<blocks…>", "block ids; `-` reads them from stdin, one per line"],
+        ["--to <parent>", "destination parent block"],
+        ["--at <pos>", "end (default) | start | before <id> | after <id>"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   if (!values.to) throw new CliUsageError("move requires --to <parent>");
   const refs = expandBlockArgs(positionals);
@@ -151,8 +190,16 @@ async function runRm(cli: Cli, args: string[]): Promise<number> {
     options: { doc: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  rm <blocks…|->            — remove blocks (resurrection pool catches regret)\n  rm --doc <doc>            — delete a whole document");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "rm",
+      summary: "Remove block(s) (the resurrection pool catches regret), or delete a whole document with --doc",
+      usage: ["rm <blocks…|-> [--actor <s>] [--dry-run]", "rm --doc <doc> [--actor <s>] [--dry-run]"],
+      options: [
+        ["<blocks…>", "block ids; `-` reads them from stdin, one per line"],
+        ["--doc <doc>", "delete a whole document (id or path) — always explicit"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   if (values.doc !== undefined) {
     // Doc deletion always requires the explicit --doc (11 §5.6).
@@ -177,8 +224,16 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
     options: { undo: { type: "boolean" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  done <blocks…|-> [--undo]  — check (or uncheck) task blocks");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "done",
+      summary: "Check (or uncheck) task blocks",
+      usage: "done <blocks…|-> [--undo] [--actor <s>] [--dry-run]",
+      options: [
+        ["<blocks…>", `task block ids; \`-\` reads them from stdin (\`${cli.prog} q … --ids | ${cli.prog} done -\`)`],
+        ["--undo", "uncheck instead"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("done requires one or more task blocks (or - for stdin)");
@@ -202,8 +257,18 @@ async function runAppend(cli: Cli, args: string[]): Promise<number> {
     options: { actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  append <heading> (-m md | -f | -)  — append content at the end of a heading's section");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "append",
+      summary: "Append markdown at the end of a heading's section",
+      usage: "append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
+      options: [
+        ["<heading>", "the heading block (id or locator) whose section receives the content"],
+        ["-m <markdown>", "content inline"],
+        ["-f <file>", "content from a file"],
+        ["-", "content from stdin"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const heading = positionals[0];
   if (!heading) throw new CliUsageError("append requires a <heading> block");
@@ -225,8 +290,15 @@ async function runSplit(cli: Cli, args: string[]): Promise<number> {
     options: { at: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  split <block> --at n[,n…]  — split a block at character offset(s)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "split",
+      summary: "Split a block at character offset(s) into sibling blocks",
+      usage: "split <block> --at <n[,n…]> [--actor <s>] [--dry-run]",
+      options: [
+        ["--at <n[,n…]>", "character offset(s) within the block's markdown"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("split requires a <block>");
@@ -247,8 +319,16 @@ async function runMerge(cli: Cli, args: string[]): Promise<number> {
     options: { sep: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  merge <blocks…>  — merge adjacent blocks into the first");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "merge",
+      summary: "Merge adjacent blocks into the first (the first block's identity survives)",
+      usage: "merge <blocks…|-> [--sep <s>] [--actor <s>] [--dry-run]",
+      options: [
+        ["<blocks…>", "two or more adjacent block ids; `-` reads them from stdin"],
+        ["--sep <s>", "separator placed between the merged texts"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const refs = expandBlockArgs(positionals);
   if (refs.length < 2) throw new CliUsageError("merge requires at least two blocks");
