@@ -2,7 +2,7 @@
 
 **omgbase** (Open Markdown Graph Base) is the successor to mrplex: a versioned, addressable graph of authored Markdown structure. Ordinary Markdown files stay the human representation — usable by editors, Obsidian, Git, and shell tools — while the engine adds stable block identity, block-grain history, a typed knowledge graph, hybrid retrieval, and a safe structural mutation API built for autonomous agents.
 
-These documents are maintained as **as-built** references to the implementation (last verified 2026-09-14). They descend from the architecture review of 2026-09-02 (Claude artifact: *omgbase Architecture Review*), but where a doc and the code disagree, the code is authoritative — fix the doc. See the repo-root `AGENTS.md` for orientation and where authoritative truth lives per surface.
+These documents are maintained as **as-built** references to the implementation (last verified 2026-09-23). They descend from the architecture review of 2026-09-02 (Claude artifact: *omgbase Architecture Review*), but where a doc and the code disagree, the code is authoritative — fix the doc. See the repo-root `AGENTS.md` for orientation and where authoritative truth lives per surface.
 
 ## Doc map (read in this order)
 
@@ -13,13 +13,15 @@ These documents are maintained as **as-built** references to the implementation 
 | `data-model.md` | ID/hash conventions, full SQLite DDL, canonical serializations, rebuild & GC rules | touching `core/` or any storage |
 | `reconciliation-spec.md` | Parser contract, round-trip law, trivia policy, matcher phases/thresholds, eval harness, sync pipeline | touching `core/parse`, `reconcile/`, `sync/` |
 | `mutation-and-concurrency.md` | Six-op kernel, changesets, CAS vocabulary, conflict objects, write protocol, deletion | touching `mutate/` |
-| `graph-and-query.md` | Edge extraction rules, intervals, traversal specs, CEL query surface, RRF retrieval, embeddings | touching `graph/`, `search/` |
+| `graph-and-query.md` | Edge extraction rules, intervals, traversal specs, the OQX query surface, RRF retrieval, embeddings | touching `graph/`, `search/`, `oqx-js/` |
 | `mcp-api.md` | Tool surface, resources/URIs, resolution ladder, error codes, outline format, acceptance traces | touching `mcp/` |
 | `decisions.md` | ADRs (binding), the authoritative cut list, experiments, open questions | before proposing any deviation |
-| `query-language.md` | OQX query language: the query-string surface, targets/fields, the CEL predicate subset (grammar, absence truth table, structural functions), ordering, compilation contract | touching `oqx/` or `search/` (the CEL compiler), or writing any filter in tests/fixtures |
+| `query-language.md` | OQX query language (as-built): the query-string surface, targets/fields, `@omgbase/oqx` scalar semantics (equality/absence, strings, ranges), scoping (`^`, `$repo`), consumers (`collect`/`exists`/`none`/`count`/`first`/`single`), `values`/`limit`/`entries()`, `follow`, ordering, the pushdown execution model | touching `oqx-js/` (the `DataContext` + planner) or writing any query in tests/fixtures |
 | `cli.md` | The `omg` CLI: invocation model, embedded/daemonless process & concurrency model (writer flock, watch lease, freshness sweep), output contract, command catalog with MCP correspondence, acceptance traces | building or scripting the `omg` binary |
 | `properties-table.md` | The properties table: one indexed row per property value; unified query surface for frontmatter/inline/computed document properties | touching `search/` property projection or the properties store |
-| `sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry tables are reserved but not yet wired | touching `sync/`, the adapter protocol, or writing an adapter |
+| `sync-plugins.md` | External-source reconciliation: the stdio adapter protocol (handshake + enumerate/fetch/watch/write), identity inferred\|borne, `@omgbase/fs-adapter`, the `sha256`-vs-`file_hash` freshness gate. The adapter/source/attachment registry is wired (`sync/sources.ts`, `omg source`); sourceless repos | touching `sync/`, the adapter protocol, or writing an adapter |
+| `sync-service-design.md` | ADR-014 design rationale + stage record (implemented): `@omgbase/sync` as a standalone MCP-client service, the `DocStore` seam, `observe*` tools, `attach`-as-sugar, `root_path` removal | touching `packages/sync/`, `omg sync --server`, or the observe/ingest path |
+| `surface-map.md` | The Rosetta stone: one operation catalog across library / `omg` CLI / MCP tool, the exception set, and `--server` coverage | adding or renaming an operation on any surface |
 | `update-opsets.md` | Whole-document update: reconcile a proposed complete document into an explicit, serializable, self-verifying opset (kernel ops + identity dispositions + preconditions); `planUpdate`/`applyOpset`/`docsUpdate`, `docs_plan_update`/`docs_update`, `omg update` | touching whole-document update, the `mutate/` planner, or the move/trivia kernel extensions |
 
 ## Rules for implementation agents

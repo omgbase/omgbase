@@ -139,10 +139,10 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 9. Query & retrieval (summary; full spec in `graph-and-query.md`)
 
-- CEL filters over two targets: `docs` and `blocks` (block filters may reach doc frontmatter via `doc.`). Structural functions (`under()`, `under_heading()`, `within()`, `has_edge()`, …) compile to indexed lookups.
+- One query language, **OQX** (`@omgbase/oqx`, ADR-013), over four targets: `docs`, `blocks`, `nodes`, `edges` (block/node filters reach the owning doc via `doc.`). Structural functions on blocks (`under()`, `under_heading()`, `within()`, `under_kind()`, `yaml_path()`, `json_pointer()`, `has_edge()`, …) are domain functions the store `DataContext` answers with indexed lookups; pushable top-level predicates are translated to SQL, the rest run in-memory as a residual.
 - Hybrid retrieval: FTS5 + vectors fused by **reciprocal-rank fusion**, then explainable multiplicative boosts (title/heading/path match, epistemic layer, recency). Every hit returns its evidence.
 - Embeddings attach to blocks: input = `doc title · path · heading chain · block type` + block text; key = `(content_hash, ctx_hash, model)`; async recompute.
-- The `pipeline` call composes seed → expand → hydrate in one round trip.
+- There is no separate `pipeline` call: seed → expand → project composes inside one `query` expression (`where` seeds, `follow` expands, `select` projects); the `graph` tool is a convenience wrapper that compiles to such a query.
 
 ## 10. Mutation & concurrency (summary; full spec in `mutation-and-concurrency.md`)
 
@@ -153,7 +153,7 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 11. MCP surface (summary; full spec in `mcp-api.md`)
 
-Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator), `pipeline`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos_*`, `sync_status/flush`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
+Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator) + `query_syntax` + `graph`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos` / `repos_status` / `sync_status`, and the sync-ingest primitives `observe` / `observe_many` / `observe_delete`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
 
 ## 12. Storage (summary; DDL in `data-model.md`)
 

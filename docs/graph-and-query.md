@@ -1,7 +1,7 @@
 # omgbase — Graph, Query, and Retrieval Spec
 
 **Status:** normative.
-**As-built (verified 2026-09-14).**
+**As-built (verified 2026-09-23).**
 **Depends on:** `architecture.md` §8–9; `data-model.md` §3–4.
 
 ---
@@ -48,7 +48,7 @@ Knobs go in a `{ … }` block after the relation (a bare `follow <rel>` carries 
 
 ## 4. Query
 
-The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts`) — not a structured JSON envelope. OQX (omgbase Query eXpressions) covers targets (`docs`/`blocks`/`nodes`/`edges`), dot navigation, whitespace query directives (`collect`/`exists`/`count`/`first`/`single`), correlated subqueries (the `^` sigil), `follow` recursion (§3), and `order by` ranking (including `semantic(…)`/`text(…)` predicates). It is **normatively specified in `query-language.md`** and summarized in the `query` tool's own description. Alongside it: the `graph` neighborhood macro (§3) and `text_search` (FTS5 keyword search over block text). A `semantic(…)` clause with no embedding provider configured fails `semantic_unavailable`; a provider that IS configured but couldn't start (spawn/handshake/endpoint failure) fails `embedder_failed` (the `omg mcp` server also warns loudly at startup and stays up for non-semantic tools rather than dying); a malformed query fails `filter_invalid` (reason + hint).
+The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts`) — not a structured JSON envelope. OQX (omgbase Query eXpressions) covers targets (`docs`/`blocks`/`nodes`/`edges`), dot navigation, whitespace query directives (`collect`/`exists`/`none`/`count`/`first`/`single`, plus `values`, `limit`/`offset`, `entries()`), correlated subqueries (the `^` sigil), `follow` recursion (§3), and `order by` ranking (including `semantic(…)`/`text(…)` predicates). It is **normatively specified in `query-language.md`** and summarized in the `query` tool's own description. Alongside it: the `graph` neighborhood macro (§3) and `text_search` (FTS5 keyword search over block text). A `semantic(…)` clause with no embedding provider configured fails `semantic_unavailable`; a provider that IS configured but couldn't start (spawn/handshake/endpoint failure) fails `embedder_failed` (the `omg mcp` server also warns loudly at startup and stays up for non-semantic tools rather than dying); a malformed query fails `filter_invalid` (reason + hint).
 
 ## 5. Hybrid retrieval & ranking
 
@@ -70,4 +70,4 @@ The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts
 
 ## 7. Collections
 
-As-built, collections are only a schema stub: a `collections` table (`node_id`, `repo_id`, `name`, `spec`) in `packages/core/src/core/store/schema.ts`, with no writer or reader wired up. The aspirational `member_of` pseudo-edges, read-time membership materialization, and `within()`/traversal-seed addressing are **not** implemented — `within()` resolves only a doc id, exact path, or glob (`search/cel/compile.ts`).
+As-built, collections are only a schema stub: a `collections` table (`node_id`, `repo_id`, `name`, `spec`) in `packages/core/src/core/store/schema.ts`, with no writer or reader wired up. The aspirational `member_of` pseudo-edges, read-time membership materialization, and `within()`/traversal-seed addressing are **not** implemented — `within()` resolves only a doc id, exact path, or glob (the `within` domain function in `packages/core/src/oqx-js/context.ts`).

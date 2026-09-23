@@ -15,8 +15,9 @@ When you hit a stopping point — work is done, or you're blocked and need input
 ## Orientation
 
 - **Monorepo** (pnpm workspace, Node ≥ 22, pnpm 12). Packages:
-  - `packages/core` — the engine. Everything of substance lives here: `parse/`, `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`) + `search/`, `graph/`, `core/store/` (SQLite schema), `mcp/`.
+  - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `migrate/`, `mcp/`, `cli/`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
+  - `packages/sync` — `@omgbase/sync`: the store-to-store synchronizer (ADR-014) — `Coordinator`, `EngineClient` seam (in-process or MCP), the `omgbase-sync` bin; backs `omg sync --server`.
   - `packages/embedder` — transformers.js / all-MiniLM-L6-v2 embeddings.
   - `packages/fs-adapter` — chokidar-based filesystem sync adapter (stdio).
   - `packages/client` — thin remote MCP client (placeholder).
@@ -43,7 +44,7 @@ Prefer these over prose docs — they cannot drift because they *are* the implem
 
 ## docs/ index
 
-Every doc here is maintained as an **as-built** description of the code (last verified 2026-09-14). They are references, not scripture: if a doc ever disagrees with the code, the code wins — fix the doc (or flag it) rather than coding to the doc. If you change behavior, update the relevant doc in the same change.
+Every doc here is maintained as an **as-built** description of the code (last verified 2026-09-23). They are references, not scripture: if a doc ever disagrees with the code, the code wins — fix the doc (or flag it) rather than coding to the doc. If you change behavior, update the relevant doc in the same change.
 
 | File | Covers |
 | --- | --- |
@@ -56,10 +57,10 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/graph-and-query.md` | edge extraction, OQX traversal, RRF retrieval, embeddings |
 | `docs/mcp-api.md` | MCP tool surface, resources, error codes (`mcp/server.ts` is the ultimate source) |
 | `docs/decisions.md` | the ADR log ("why"); all remain `Status: proposed` |
-| `docs/query-language.md` | OQX query language: the query-string surface + CEL predicate grammar |
+| `docs/query-language.md` | OQX query language as-built: targets/fields, `@omgbase/oqx` scalar semantics, scoping (`^`/`$repo`), consumers, `values`/`none`/`limit`/`entries()`, `follow`, execution model |
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |
-| `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter` (registry tables reserved, not yet wired) |
-| `docs/sync-service-design.md` | **DESIGN, not as-built** (ADR-014): the `@omgbase/sync` migration — sync as a standalone MCP-client service, `DocStore` seam, `observe` tool, `attach`-as-sugar, `root_path` removal |
+| `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter`; the adapters/sources/attachments registry (wired — `omg source`), sourceless repos |
+| `docs/sync-service-design.md` | ADR-014 design rationale + stage record (**implemented**, all six stages): `@omgbase/sync` as a standalone MCP-client service, `DocStore` seam, `observe*` tools, `attach`-as-sugar, `root_path` removal (schema v13) |
 | `docs/surface-map.md` | the **Rosetta stone**: one operation catalog across library / `omg` CLI / MCP tool, the exception set, and the gap list that makes `--server` (remote-over-MCP) feel local |
 | `docs/update-opsets.md` | whole-document update planner (`docs_update`/`docs_plan_update`, `omg update`) |

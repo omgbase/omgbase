@@ -33,7 +33,7 @@ carry it.
 
 ## Read them in order
 
-1. **[getting-started.md](./getting-started.md)** — `init`, `attach`, and orienting yourself in a workspace.
+1. **[getting-started.md](./getting-started.md)** — `init`, `source add`, and orienting yourself in a workspace.
 2. **[search-and-navigation.md](./search-and-navigation.md)** — `find`, `outline`, `show`, and the link/backlink graph.
 3. **[editing-and-history.md](./editing-and-history.md)** — structured edits (completing tasks) and reading history back.
 4. **[interactive-shell.md](./interactive-shell.md)** — `omg shell`: a persistent session with `@`-addressable results.
@@ -61,7 +61,7 @@ The shared fragments live in [`_fragments/`](./_fragments/): `omg-types.md` (the
 value types + bind-by-type above, pulled in by the bootstraps), and the
 bootstraps themselves — `attached-alchemy.md` (corpus already attached — used by
 the query/search/edit walkthroughs), `fresh-workspace.md` (un-attached — used by
-getting-started, whose whole point is to demonstrate `init` / `attach` live), and
+getting-started, whose whole point is to demonstrate `init` / `source add` live), and
 `attached-alchemy-shell.md` (same, but the session is the live `omg shell` REPL,
 driven in recital's prompt mode — used by interactive-shell). They are spliced in
 at parse time and are not standalone documents.
