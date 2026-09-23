@@ -1,9 +1,44 @@
 {
   "name": "omgbase",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Open Markdown Graph Base — CLI",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/omgbase/omgbase#readme",
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "keywords": [
+    "markdown",
+    "knowledge-graph",
+    "sqlite",
+    "mcp",
+    "model-context-protocol",
+    "obsidian",
+    "agents",
+    "omgbase",
+    "cli",
+    "sync",
+    "search"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/corpus/**",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo",
+    "LICENSE"
+  ],
   "type": "module",
   "bin": {
     "omgbase": "./dist/src/main.js",
@@ -17,9 +52,9 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "@omgbase/core": "workspace:*",
-    "@omgbase/fs-adapter": "workspace:*",
-    "@omgbase/sync": "workspace:*",
+    "@omgbase/core": "workspace:^",
+    "@omgbase/fs-adapter": "workspace:^",
+    "@omgbase/sync": "workspace:^",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

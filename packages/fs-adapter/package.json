@@ -1,9 +1,46 @@
 {
   "name": "@omgbase/fs-adapter",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Open Markdown Graph Base — filesystem sync adapter (walk/watch/read/write a directory tree), spoken to over stdio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/fs-adapter"
+  },
+  "homepage": "https://github.com/omgbase/omgbase#readme",
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "keywords": [
+    "markdown",
+    "knowledge-graph",
+    "sqlite",
+    "mcp",
+    "model-context-protocol",
+    "obsidian",
+    "agents",
+    "omgbase",
+    "filesystem",
+    "sync",
+    "adapter",
+    "watch",
+    "chokidar"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/corpus/**",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

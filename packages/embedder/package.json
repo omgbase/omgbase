@@ -1,9 +1,46 @@
 {
   "name": "@omgbase/embedder",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Open Markdown Graph Base — local embedding server (transformers.js + gte-base), spoken to over stdio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/embedder"
+  },
+  "homepage": "https://github.com/omgbase/omgbase#readme",
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "keywords": [
+    "markdown",
+    "knowledge-graph",
+    "sqlite",
+    "mcp",
+    "model-context-protocol",
+    "obsidian",
+    "agents",
+    "omgbase",
+    "embeddings",
+    "transformers",
+    "onnx",
+    "semantic-search",
+    "gte-base"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/corpus/**",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo",
+    "LICENSE"
+  ],
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",

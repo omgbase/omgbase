@@ -191,13 +191,13 @@ importers:
   packages/cli:
     dependencies:
       '@omgbase/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@omgbase/fs-adapter':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../fs-adapter
       '@omgbase/sync':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../sync
       yaml:
         specifier: ^2.9.0
@@ -270,10 +270,10 @@ importers:
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
       '@omgbase/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@omgbase/fs-adapter':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../fs-adapter
 
 packages:
