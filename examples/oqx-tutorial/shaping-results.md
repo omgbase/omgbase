@@ -57,5 +57,67 @@ d_h73rhv8  substances/salt.md
 d_5zmf9f7  substances/sulphur.md
 ```
 
+## `values` — bare values instead of hits
+
+When you want a single column and nothing else, follow a one-item `select` with
+`values`. The result is the bare projected value per row (no `{id, path}`
+record), so the human tier prints one value per line — a list of paths, or a
+list of numbers:
+
+```console
+$ omg query 'from docs where type == "practitioner" select $path values order by era asc'
+practitioners/maria-prophetissa.md
+practitioners/jabir-ibn-hayyan.md
+practitioners/paracelsus.md
+practitioners/newton.md
+$ omg query 'from docs where type == "practitioner" select era values order by era asc'
+250
+800
+1530
+1680
+```
+
+It composes with `distinct` — the corpus's document types, deduped, as plain
+strings:
+
+```console
+$ omg query 'from docs select distinct type values'
+hub
+lab-note
+practitioner
+process
+substance
+text
+```
+
+## `limit` / `offset` — bound the set in the query
+
+`-n` is the *page* size; `limit N` / `offset N` inside the query define the
+result **set** itself (applied after `where`, `order by`, and `distinct`). The
+two most recent practitioners, then the two after skipping the most recent:
+
+```console
+$ omg query 'from docs where type == "practitioner" order by era desc limit 2'
+d_rw4ygr0  practitioners/newton.md
+d_t5nvj1g  practitioners/paracelsus.md
+$ omg query 'from docs where type == "practitioner" order by era desc offset 1 limit 2'
+d_t5nvj1g  practitioners/paracelsus.md
+d_nzb61j9  practitioners/jabir-ibn-hayyan.md
+```
+
+The page walks *within* the bound: `limit 4` over the five substances, paged
+three at a time, truncates once and the second page holds the single remaining
+row — the fifth substance never appears.
+
+```console
+$ omg query 'from docs where type == "substance" limit 4' -n 3
+d_0vsapzt  substances/mercury.md
+d_1rren8z  substances/philosophers-stone.md
+d_prj3j7a  substances/prima-materia.md
+… truncated; continue with --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
+$ omg query 'from docs where type == "substance" limit 4' -n 3 --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
+d_h73rhv8  substances/salt.md
+```
+
 Next: **[correlated-subqueries.md](./correlated-subqueries.md)** — asking about
 the blocks and nodes *inside* a document.

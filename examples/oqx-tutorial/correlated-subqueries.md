@@ -49,6 +49,32 @@ d_w18c2st  lab/2026-02-notes.md
 (`count { … }` in filter position means the same as `exists` — non-empty — and
 also lets you compare, e.g. `nodes count { where kind == "md:task" } >= 3`.)
 
+## `none { }` — "no matching node" and "every"
+
+`none` is the zero-cardinality test: true when the block yields no rows (the
+same as `!… exists { … }`). Substances with no task at all — salt drops out,
+because its supply list *is* a task list, even though every item is checked:
+
+```console
+$ omg query 'from docs where type == "substance" && nodes none { where kind == "md:task" }'
+d_0vsapzt  substances/mercury.md
+d_1rren8z  substances/philosophers-stone.md
+d_prj3j7a  substances/prima-materia.md
+d_5zmf9f7  substances/sulphur.md
+```
+
+`none` over the *complement* is how you say "every": "every task is done" is
+"no task is open", and now salt qualifies:
+
+```console
+$ omg query 'from docs where type == "substance" && nodes none { where kind == "md:task" && !attrs.checked }'
+d_0vsapzt  substances/mercury.md
+d_1rren8z  substances/philosophers-stone.md
+d_prj3j7a  substances/prima-materia.md
+d_h73rhv8  substances/salt.md
+d_5zmf9f7  substances/sulphur.md
+```
+
 ## `collect { }` — shape, don't just test
 
 Where `exists`/`count` *test* a document's nodes, `collect` gathers them into the
