@@ -930,11 +930,11 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(done.applied).toBe(true);
     expect(done.committed).toBe(true);
     expect(readFileSync(join(root, "list.md"), "utf8")).toBe(after);
-    // Every real link now resolves. The one row left is the `[b](/b.md)` INSIDE
-    // inline code: the edge extractor (graph/extract.ts) still indexes code-span
-    // mentions as links, while the repairer deliberately leaves code alone.
+    // Every real link now resolves. The `[b](/b.md)` INSIDE inline code is not
+    // an edge at all: the extractor (graph/extract.ts) masks code spans and
+    // fences, and the repairer leaves code alone — so nothing is left stale.
     const { payload: health } = (await call("links_stale", {})) as { payload: { stale: { authored: string | null }[] } };
-    expect(health.stale.map((s) => s.authored)).toEqual(["/b.md"]);
+    expect(health.stale.map((s) => s.authored)).toEqual([]);
   });
 
   it("links_retarget takes the same path (planner-backed dry run, pairs, path_glob)", async () => {

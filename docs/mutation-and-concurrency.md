@@ -78,7 +78,7 @@ Macros expand server-side into kernel ops **within the same changeset**, and res
 | `sections_rename { heading, title, expect }` | `update(heading block markdown)` |
 | `sections_move { heading, to }` | `move(range resolved from section)` |
 | `lists_insert_item { list|item, at, markdown }` | `insert` with list-item typing |
-| `links_retarget { from_target, to_target, scope?, dry_run }` | query edge sources → `update` per affected block, rewriting only the link destination substring. Always run `dry_run` first by convention; the tool description says so. |
+| `links_retarget { from, to, path_glob?, dry_run }` | query edge sources → one `update` per top-most affected block, rewriting only whole link destinations (never prose, inline code, or code fences). The dry run plans through the kernel, so it fails exactly where the apply would; run it first by convention. |
 
 ## 4. Conflict objects
 
