@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/oqx",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "OQX (omgbase Query eXpressions): a composable query language and engine for JavaScript collections",
   "keywords": [
     "query",
@@ -15,13 +15,14 @@
   ],
   "license": "MIT",
   "author": "Brendan Baldwin",
-  "homepage": "https://github.com/omgbase/oqx#readme",
+  "homepage": "https://github.com/omgbase/omgbase/tree/main/packages/oqx#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/omgbase/oqx.git"
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/oqx"
   },
   "bugs": {
-    "url": "https://github.com/omgbase/oqx/issues"
+    "url": "https://github.com/omgbase/omgbase/issues"
   },
   "type": "module",
   "sideEffects": false,
@@ -53,7 +54,9 @@
     "clean": "rm -rf dist",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
     "@types/node": "^22.20.2",

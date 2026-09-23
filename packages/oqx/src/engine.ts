@@ -19,7 +19,7 @@ import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  equals, relate, arith, membership, truthy, toNumber, compareForSort, makeRange, isEntry,
+  relate, arith, membership, truthy, toNumber, compareForSort, makeRange, isEntry,
 } from "./semantics.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
