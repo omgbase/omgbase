@@ -113,9 +113,14 @@ export interface CommitDigest {
 }
 
 /** changes_since: commit digests after a cursor (repo commit seq) — the change
- * feed (06 §3). */
-export function changesSince(store: Store, repoId: string, opts: { cursor?: number; limit?: number; origin?: string } = {}): { digests: CommitDigest[]; cursor: number; truncated: boolean } {
+ * feed (06 §3). `seq` is a dense per-REPO total order, so a cursor is only
+ * meaningful against the repo it came from; `head` (the repo's current max seq)
+ * lets a caller tell "no new changes" (cursor == head) from "cursor is beyond
+ * this repo's feed" (cursor > head — e.g. a cursor from another repo/server),
+ * which otherwise both look like an empty page. */
+export function changesSince(store: Store, repoId: string, opts: { cursor?: number; limit?: number; origin?: string } = {}): { digests: CommitDigest[]; cursor: number; truncated: boolean; head: number } {
   const cursor = opts.cursor ?? 0;
+  const head = (store.db.prepare("SELECT COALESCE(MAX(seq), 0) AS head FROM commits WHERE repo_id = ?").get(repoId) as { head: number }).head;
   const limit = opts.limit ?? 50;
   const originClause = opts.origin ? "AND origin = ?" : "";
   const params: unknown[] = [repoId, cursor];
@@ -137,7 +142,7 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   });
 
   const nextCursor = page.length > 0 ? page[page.length - 1]!.seq : cursor;
-  return { digests, cursor: nextCursor, truncated };
+  return { digests, cursor: nextCursor, truncated, head };
 }
 
 // ---- doc_history: version-history listing (document-centric) ----------------

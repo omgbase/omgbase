@@ -23,8 +23,14 @@ function defaultTrivia(format: string): string {
   return "\n\n";
 }
 
-// Parse op-supplied content into MutBlocks (dirty; ids minted). Uses the
-// format's adapter when available; falls back to markdown.
+// Parse op-supplied content into MutBlocks (ids minted). Uses the format's
+// adapter when available; falls back to markdown. The parsed blocks are CLEAN:
+// a freshly parsed block's raw is the byte-exact source for its whole subtree,
+// so renderDoc must emit it verbatim. Marking it dirty would make renderBlock
+// rebuild the container from its children, which cannot reproduce a blockquote
+// (`> ` markers live only in the container raw) or a table (the delimiter row
+// is not a child node) — the op that splices these blocks in is responsible
+// for invalidating the CONTAINER it lands in (markContainerDirty).
 function parseContentToBlocks(content: string, format: string): MutBlock[] {
   const adapter = adapterForFormat(format);
   const normalized = content.endsWith("\n") ? content : content + "\n";
@@ -37,7 +43,7 @@ function parseContentToBlocks(content: string, format: string): MutBlock[] {
     trivia: b.trivia || trivia,
     attrs: b.attrs,
     children: (b.children as typeof b[]).map(toMut),
-    dirty: true,
+    dirty: false,
   });
   return tree.children.filter((b) => b.type !== "frontmatter").map(toMut as never);
 }
@@ -177,6 +183,9 @@ export function opInsert(doc: MutDoc, to: To, markdown: string): { ids: string[]
     }
   }
   siblings.splice(index, 0, ...blocks);
+  // A nested insert (into a blockquote/table/list item) changes the owning
+  // container's children, so its cached raw is stale — rebuild it from children.
+  if (siblings !== doc.children) markContainerDirty(doc, siblings);
   return { ids: blocks.map((b) => b.id) };
 }
 
@@ -233,16 +242,16 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
       // (nested identity) — the commit re-parse threads exactly these ids.
       if (childIds !== undefined && found.block.children.length > 0) {
         assignChildIds(found.block.children, childIds, "");
-        // Render the container VERBATIM from its op-supplied raw (the exact
-        // target bytes) rather than rebuilding from children — the splice
-        // renderer's child rebuild can't reproduce nested/loose list formatting.
-        // The children remain (clean) only to carry the threaded ids for the
-        // commit re-parse. Marking the subtree clean makes renderDoc emit
-        // `found.block.raw` verbatim, so nested containers converge exactly.
-        markSubtreeClean(found.block);
-      } else {
-        found.block.dirty = true;
       }
+      // Render the block VERBATIM from its op-supplied raw (the exact target
+      // bytes) rather than rebuilding from children — the splice renderer's
+      // child rebuild can't reproduce nested/loose list formatting, blockquote
+      // markers, or a table's delimiter row. The re-parsed children remain
+      // (clean) only to carry ids for the commit re-parse. The block's OWN raw
+      // is fresh, so it is not dirty; what is stale is the raw of the container
+      // it lives in (a nested update), which is invalidated instead.
+      markSubtreeClean(found.block);
+      markContainerDirty(doc, found.siblings);
     } else {
       // Non-markdown: raw swap preserves the block's type and attrs. Fragments
       // like JSON properties aren't valid standalone documents, so re-parsing

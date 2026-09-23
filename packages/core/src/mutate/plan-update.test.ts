@@ -228,3 +228,137 @@ describe("planUpdate — whole-document reconciliation opset", () => {
     expect(a.ops.map((o) => [o.op.op, o.disposition, o.blocks])).toEqual(b.ops.map((o) => [o.op.op, o.disposition, o.blocks]));
   });
 });
+
+describe("planUpdate — byte-exact convergence on ordinary Markdown constructs", () => {
+  const fm = "---\ntitle: Folded\nsources:\n  - >-\n    A long folded source description that\n    continues on a second line\n  - plain second source\n---\n";
+  it("folded multi-line YAML list entry + blockquote under an H3 (edit elsewhere)", () => {
+    const before = `${fm}\n# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Section heading\n> A quoted line directly under the heading.\n> Second quoted line.\n\nClosing paragraph with distinct content of its own.\n`;
+    const after = `${fm}\n# Title\n\nIntro paragraph with enough words to be carried across the edit, revised.\n\n### Section heading\n> A quoted line directly under the heading.\n> Second quoted line.\n\nClosing paragraph with distinct content of its own.\n`;
+    seed("a.md", before);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    const { result } = docsUpdate(store, ctx(), "a.md", after);
+    expect(result!.committed).toBe(true);
+    expect(fileOf("a.md")).toBe(after);
+  });
+
+  it("Markdown table (edit elsewhere)", () => {
+    const table = "| Name | Value |\n| --- | --- |\n| alpha | 1 |\n| bravo | 2 |\n";
+    const before = `# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n${table}\nClosing paragraph with distinct content of its own.\n`;
+    const after = `# Title\n\nIntro paragraph with enough words to be carried across the edit, revised.\n\n${table}\nClosing paragraph with distinct content of its own.\n`;
+    seed("a.md", before);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    const { result } = docsUpdate(store, ctx(), "a.md", after);
+    expect(result!.committed).toBe(true);
+    expect(fileOf("a.md")).toBe(after);
+  });
+
+  // The constructs below used to fail BOTH lowerings (plan_not_convergent): a
+  // freshly parsed block was marked dirty, so the splice renderer rebuilt
+  // blockquotes/tables from their children — dropping `> ` markers and the
+  // table delimiter row. Fresh raw is now authoritative (rendered verbatim).
+  it("edits the text inside a blockquote under an H3 (container update, byte-exact)", () => {
+    const before = `# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Section heading\n> A quoted line here with some words in it.\n\nClosing paragraph with distinct content of its own.\n`;
+    const after = before.replace("some words in it.", "some words in it, changed.");
+    const docId = seed("a.md", before);
+    const idBefore = ids(docId);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    const { result } = docsUpdate(store, ctx(), "a.md", after);
+    expect(result!.committed).toBe(true);
+    expect(fileOf("a.md")).toBe(after);
+    expect(ids(docId).get("Section heading")).toBe(idBefore.get("Section heading"));
+  });
+
+  it("replaces every row of a table (no carried children, byte-exact)", () => {
+    const before = "# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nClosing paragraph with distinct content of its own.\n";
+    const after = "# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n| c | d |\n|---|---|\n| 3 | 4 |\n\nClosing paragraph with distinct content of its own.\n";
+    seed("a.md", before);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    docsUpdate(store, ctx(), "a.md", after);
+    expect(fileOf("a.md")).toBe(after);
+  });
+
+  it("edits a line GFM folds into the preceding table / blockquote (lazy continuation)", () => {
+    // What reads as "a paragraph after the table" is, without a blank line, a
+    // table row; likewise a lazy line after `> quoted` belongs to the quote.
+    const t1 = "# T\n\nIntro paragraph with enough words to be carried across the edit.\n\n| Name | Value |\n| --- | --- |\n| alpha | 1 |\nClosing paragraph with distinct content of its own.\n";
+    seed("a.md", t1);
+    const t2 = t1.replace("of its own.", "of its own, edited here.");
+    const o1 = planUpdate(store, repoId, dir, "a.md", t2);
+    expect(o1.converges).toBe(true);
+    docsUpdate(store, ctx(), "a.md", t2);
+    expect(fileOf("a.md")).toBe(t2);
+
+    const b1 = "# T\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Sec\n> quoted\nClosing paragraph with distinct content of its own.\n";
+    seed("b.md", b1);
+    const b2 = b1.replace("of its own.", "of its own, edited here.");
+    const o2 = planUpdate(store, repoId, dir, "b.md", b2);
+    expect(o2.converges).toBe(true);
+    docsUpdate(store, ctx(), "b.md", b2);
+    expect(fileOf("b.md")).toBe(b2);
+  });
+
+  it("keeps a tight heading→blockquote seam when the quote is re-minted (anchor retiled)", () => {
+    // A short quote's edit is not carried (small-block policy) → remove+insert.
+    // opInsert heals the seam to a blank line; the planner must retile the
+    // anchoring heading back to the proposed "\n" — with identity preserved.
+    const before = "# T\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Sec\n> short\n\nClosing paragraph with distinct content of its own.\n";
+    const after = before.replace("> short", "> shorter");
+    const docId = seed("a.md", before);
+    const idBefore = ids(docId);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    docsUpdate(store, ctx(), "a.md", after);
+    expect(fileOf("a.md")).toBe(after);
+    expect(ids(docId).get("Sec")).toBe(idBefore.get("Sec"));
+  });
+
+  it("converts a paragraph into a blockquote and back without duplicating bytes", () => {
+    // The reconciler carries the paragraph INTO the new quote's child position;
+    // the op layer cannot express that (insert mints), so the old top-level
+    // block must still be removed — else its bytes would appear twice.
+    const para = "# T\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Sec\nquoted text here\n\nClosing paragraph with distinct content of its own.\n";
+    const quote = para.replace("\nquoted text here", "\n> quoted text here");
+    seed("a.md", para);
+    const o1 = planUpdate(store, repoId, dir, "a.md", quote);
+    expect(o1.diagnostics).toEqual([]);
+    docsUpdate(store, ctx(), "a.md", quote);
+    expect(fileOf("a.md")).toBe(quote);
+    const o2 = planUpdate(store, repoId, dir, "a.md", para);
+    expect(o2.diagnostics).toEqual([]);
+    docsUpdate(store, ctx(), "a.md", para);
+    expect(fileOf("a.md")).toBe(para);
+  });
+
+  it("a non-convergent plan names the first divergent byte and block", () => {
+    // Leading trivia (bytes before the first block) is not expressible via the
+    // ops — the documented non-convergent case. The diagnostic must say where.
+    seed("a.md", "# Title\n\nAlpha paragraph with several words.\n");
+    const opset = planUpdate(store, repoId, dir, "a.md", "\n# Title\n\nAlpha paragraph with several words.\n");
+    expect(opset.converges).toBe(false);
+    const last = opset.diagnostics[opset.diagnostics.length - 1]!;
+    expect(last).toMatch(/first divergence at byte 0 in leading trivia/);
+    expect(() => applyOpset(store, { repoId, rootPath: dir, opset, origin: { actor: "t" } })).toThrow(/plan_not_convergent|first divergence at byte 0/);
+  });
+
+  it("blockquote directly under an H3 with no blank line (edit elsewhere)", () => {
+    const before = `# Title\n\nIntro paragraph with enough words to be carried across the edit.\n\n### Section heading\n> A quoted line directly under the heading.\n\nClosing paragraph with distinct content of its own.\n`;
+    const after = `# Title\n\nIntro paragraph with enough words to be carried across the edit, revised.\n\n### Section heading\n> A quoted line directly under the heading.\n\nClosing paragraph with distinct content of its own.\n`;
+    seed("a.md", before);
+    const opset = planUpdate(store, repoId, dir, "a.md", after);
+    expect(opset.diagnostics).toEqual([]);
+    expect(opset.converges).toBe(true);
+    expect(fileOf("a.md")).toBe(before);
+    const { result } = docsUpdate(store, ctx(), "a.md", after);
+    expect(result!.committed).toBe(true);
+    expect(fileOf("a.md")).toBe(after);
+  });
+});

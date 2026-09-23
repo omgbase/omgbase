@@ -113,9 +113,14 @@ export function lowerTopLevel(oldDoc: MutDoc, rest: RawBlock[], assignment: Map<
     return { confidence: d?.confidence ?? null, reason: d?.reason ?? null, ...(d?.detail ? { detail: d.detail } : {}) };
   };
 
-  // 1. Removes: current top-level blocks gone from the proposed tree entirely.
+  // 1. Removes: current top-level blocks gone from the proposed TOP LEVEL. An id
+  // the reconciler carried into a nested position (a paragraph that became a
+  // blockquote's child) is still removed here: the container it now lives in is
+  // inserted fresh below, and an insert cannot carry ids, so leaving the old
+  // top-level block in place would duplicate its bytes.
+  const targetTopIds = new Set(target.map((t) => t.id));
   for (const ob of oldDoc.children) {
-    if (!targetIdSet.has(ob.id)) {
+    if (!targetTopIds.has(ob.id)) {
       ops.push({
         op: { op: "remove", blocks: [ob.id], expect: { [ob.id]: { content_hash: rawHashHex(ob.raw) } } },
         disposition: "deleted", blocks: [ob.id], confidence: null, reason: "tombstone",
@@ -152,8 +157,10 @@ export function lowerTopLevel(oldDoc: MutDoc, rest: RawBlock[], assignment: Map<
 
   let prevRef: string | null = null; // null = document start
   const refOf: { ref: string }[] = []; // parallel to target, the id/placeholder to anchor after
+  const placed: boolean[] = []; // parallel to target: realized by insert/move (seam-healing ops)
   target.forEach((t, i) => {
     const anchorAt = prevRef === null ? "start" : { after: prevRef };
+    placed[i] = !t.carried || !oldTopSet.has(t.id) || !stable.has(t.id);
     if (!t.carried || !oldTopSet.has(t.id)) {
       // Insert new (or a block not previously top-level) at this position.
       const opIndex = ops.length;
@@ -177,12 +184,16 @@ export function lowerTopLevel(oldDoc: MutDoc, rest: RawBlock[], assignment: Map<
 
   // 4. Trivia: set exact trailing trivia for proposed top-level blocks that are
   // inserted, moved, or whose trivia differs from the current block's — so the
-  // committed bytes equal the proposed content exactly.
+  // committed bytes equal the proposed content exactly. A block ANCHORING an
+  // insert/move is retiled too: those ops heal the seam (bump a lone "\n" to a
+  // blank line) so hand-authored ops never jam blocks, but the proposed content
+  // may legitimately want the tight seam (a blockquote directly under a heading).
   target.forEach((t, i) => {
     const ob = t.carried ? oldById.get(t.id) : undefined;
     const wasTop = ob && oldTopSet.has(t.id);
     const moved = wasTop && !stable.has(t.id);
-    const needs = !wasTop || moved || (ob && ob.trivia !== t.trivia);
+    const anchorsPlacement = placed[i + 1] === true;
+    const needs = !wasTop || moved || anchorsPlacement || (ob && ob.trivia !== t.trivia);
     if (!needs) return;
     ops.push({
       op: { op: "update", block: refOf[i]!.ref, trivia: t.trivia },
