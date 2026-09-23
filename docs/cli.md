@@ -1,9 +1,9 @@
 # omgbase — CLI Surface (`omg`)
 
-**Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync` (incl. `--watch`, and `--server` for remote-over-MCP) / `mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + all-MiniLM-L6-v2); `embed status/drain`, `find`, and `query --semantic` use it when configured, else `semantic_unavailable`.
+**Status:** As-built (verified 2026-09-14 against `packages/cli/src/cmd/`, `dispatch.ts`, and `packages/core/src/sync/`). Implemented in `packages/cli` — the read surface (§5.1–5.5), the write surface (§5.6: `apply` + all sugar, `edit`, `node`, `new`/`mv`/`rm --doc`/`meta`), `run`, the persistent session `shell` (§5.7a), `sync` (incl. `--watch`, and `--server` for remote-over-MCP) / `mcp` (§5.8), and admin (§5.9: `rebuild-index`/`gc`/`doctor`/`config`/`import`/`embed`). Deferred items in §9 remain deferred. The doc-level ops (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`) are library functions in `@omgbase/core` and are registered as MCP tools (06). Semantic search is live: `embedding.provider` names an **external embedder** — a spawned command speaking a stdio JSON protocol, or an http(s) endpoint — so the engine and CLI carry no ML dependency. `@omgbase/embedder` ships the default local embedder as the `omgbase-embedder` binary (transformers.js + `Xenova/gte-base`, 768-dim; override with `OMGBASE_EMBEDDER_MODEL`/`OMGBASE_EMBEDDER_DIM`); `embed status/drain`, `find`, and OQX's `semantic("…")` use it when configured, else `semantic_unavailable`.
 **Depends on:** `architecture.md` §11–12; `data-model.md` §2, §6; `mutation-and-concurrency.md` §6; `mcp-api.md` (tool semantics); `query-language.md` (envelope, fenced form).
 
-The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`.
+The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`. Help text and hints quote whichever name you invoked (`basename(argv[1])`, falling back to `omg` for a direct `node main.js` run).
 
 ---
 
@@ -25,7 +25,9 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 
 - Repo selection within a workspace: the repo whose `root_path` contains the cwd; when none or several match, require `--repo <slug>` (error message lists the candidates).
 - `-C <dir>` runs as if invoked from `<dir>` (git/make convention).
-- No workspace found ⇒ every command except `init`, `--help`/`--version` (and `omg sync --server`, which runs against a remote engine) fails with `repo_not_found` and a hint to run `omg init`.
+- No workspace found ⇒ every command except `init`, `help`/`--version` (and `omg sync --server`, which runs against a remote engine) fails with `repo_not_found` and a hint naming both fixes: `omg init` to create one here, or `-C <dir>` to run inside an existing one. `omg mcp` tailors the hint for the MCP-host-config reader (the host launches it from its own cwd, so the usual fix is `"args": ["mcp", "-C", "/path/to/notes"]`).
+- `<command> --help` (or `-h`) is documentation, not work: it never opens the workspace, so it works from any directory for every command. The freshness sweep is skipped on the help path.
+- An unknown command exits 2 with `usage: unknown command '<name>'`, a `run '<prog> --help' for the command list` hint, and — when one command or alias is within two edits — a `did you mean '<cmd>'?`.
 
 ### 2.2 Global flags
 
@@ -40,7 +42,7 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 | `--ids` | List-shaped results as bare IDs, one per line (pipe fuel) |
 | `--stale` | Skip the freshness sweep (§3.3) |
 | `--no-color` | Disable ANSI styling (also honors `NO_COLOR` and non-TTY stdout) |
-| `--version`, `--help` | The usual |
+| `--version`, `--help` / `-h` | The usual. Bare `omg --help` is the grouped command catalog; `omg <command> --help` is one uniform card per command — `name — summary`, a `usage:` line (or several), an aligned `options:` block ending in `-h, --help`, and optional notes/examples — on **stdout**, exit 0, no workspace required. |
 
 `--dry-run` is global across every mutating command and means exactly what `apply.dry_run` means: full validation + render, per-file unified diffs printed, nothing committed.
 
@@ -48,7 +50,7 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 
 Anywhere a node is named, the CLI accepts what the API accepts: a bare ID (`b_k7z2p9q`, `d_7f31k2m`) or a locator (`projects/foo.md#Risks/p[2]`). Locators contain `#`, `[`, and spaces — single-quote them. `ambiguous_locator` errors print the ranked candidates with IDs so the retry is a copy-paste.
 
-Mutating commands that take block lists accept `-` meaning "read IDs from stdin, one per line" — the counterpart of `--ids`.
+Commands that take a list of nodes — the mutators (`move`, `rm`, `done`, `merge`) and the readers `cat` and `show` — accept `-` meaning "read refs from stdin, one per line" — the counterpart of `--ids`, so `omg q … --ids | omg cat -` (or `| omg show -`, `| omg done -`) is the pipeline. One helper (`expandBlockArgs` in `cmd/_mutate.ts`) implements it everywhere; a `-` with empty stdin is a usage error (exit 2).
 
 ### 2.4 Exit codes and errors
 
@@ -132,24 +134,18 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 | `omg status` | `repos_status` + `sync_status` + watch-lease probe + embedding queue depth. The "where am I" command. |
 | `omg ls [glob]` | Live documents: path, block count, last-commit time. The engine pages `docs_list`; `ls` walks every page (local and `--server`) so the terminal listing is always complete. |
 | `omg outline <doc\|path> [--depth n] [--section <loc>] [--annotate tasks,edges,updated,confidence]` | `docs_outline`, frozen wire format. Alias: `omg ol`. |
-| `omg cat <node> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. |
-| `omg show <node> [--include children,ancestors,edges,history,section]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. |
+| `omg cat <node…\|-> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. Several refs (or `-` = refs from stdin) are cat'ed in order like unix `cat`; `--json` is the single object for one ref, an array for many (`--jsonl` one per line). |
+| `omg show <node…\|-> [--include history]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. Several refs (or `-`) print one card each — the hydrate step of `q … --ids \| show -`. |
 | `omg find <text> [-n N] [-1] [-v] [--no-semantic]` | `resolve` — ranked `{id, locator, preview, evidence}`. Hybrid (FTS + vector) by default when an embedding provider is configured; `--no-semantic` forces FTS-only; `-v` prints per-hit evidence. `-1` prints the top hit's ID alone: `omg cat $(omg find "risks" -1)`. |
 
 ### 5.3 Query
 
 ```
-omg query [filter] [--from blocks|docs] [--docs] [--text t] [--semantic s]
-          [-s|--select f,f] [--order f,-f] [-n N] [--cursor c] [-f envelope.yaml|-]
+omg query <source> [-n N] [--cursor c] [--ids|--json|--jsonl]
+omg query -f <file|-> [-n N] [--cursor c]
 ```
 
-Alias `omg q`. One query language, three input forms, all producing the same envelope (10 §1):
-
-1. **Positional CEL filter** + flags: `omg q 'type == "task" && !attrs.checked' --text deploy`
-2. **Flags only** (no filter is legal — pure FTS/semantic).
-3. **`-f file|-`**: the envelope as YAML — *exactly* the ```` ```omg ```` fence body (10 §10). A query authored in a document runs unchanged from a file or stdin; one language everywhere.
-
-Defaults: `--from blocks`; `--docs` is sugar for `--from docs`. Human output: one hit per line, `$id  $locator  <first line of text>`, evidence with `-v`.
+Alias `omg q`. The source is one OQX expression (`from docs|blocks|nodes|edges where … select … [order by …] [limit/offset] [follow …]`, or a top-level `$repo.<target> count|exists|none|first|single { … }`), passed positionally or read from a file / stdin with `-f` — exactly the body of a ```` ```omg ```` fence, so a query authored in a document runs unchanged (`omg run` evaluates it in place). There are **no** query-shaping flags (`--from`, `--text`, `--semantic`, `--select`, `--order` are gone with the CEL layer, ADR-013): full-text is the `text("…")` predicate, semantic ranking is `order by semantic("…") desc` / `where semantic("…") > 0.6` (needs `embedding.provider`, else `semantic_unavailable`), projection is `select`, ordering is `order by`. Human output: one hit per line (`$id  $path`), the scalar for `count`/`exists`/`none`, bare values for a `values` projection; `--json` is the whole result envelope (`hits`, `truncated`, `cursor`, …). `omg q --help` carries a worked example per feature; `docs/query-language.md` is the reference.
 
 `omg run <locator|path>` — evaluate the ```` ```omg ```` fence at a locator (or the first fence in a doc) and print its results with the same renderer. Strictly read-and-print: fences stay **inert** in the corpus (ADR-011 §8 reservations hold; nothing is projected, nothing is written). This is the fence-authoring loop: edit fence, `omg run`, repeat.
 
@@ -248,17 +244,17 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | `omg sync` | One-shot freshness sweep (§3.3), verbose: files ingested, dispositions summary. Idempotent; safe alongside a live watcher (hash-based echo suppression makes double ingest a no-op). |
 | `omg sync --watch` | Foreground watcher (checkpoints at quiescence); holds the watch lease. Process supervision is the OS's job (tmux/launchd/systemd) — the CLI does not daemonize in v1. (There is no separate `omg sync --watch` — watching is a mode of `sync`, ADR-014.) |
 | `omg sync --server <cmd\|url> [-H "Name: value"]... [--root <dir>] [--out] [--watch]` | The same reconcile, but against a remote engine **over MCP** (the global `--server` flag): connects as an MCP client — over stdio to a spawned `<cmd>`, or over Streamable HTTP to an `http(s)` `url` (repeatable `-H` headers) — and drives the coordinator. Shares `runFsMirror` with the standalone `omgbase-sync` bin. No local workspace required (the fs dir is the source). |
-| `omg mcp [--no-watch]` | MCP server on **stdio**; the host (Claude Code, Cursor, …) owns the process lifetime. Runs an in-process watcher by default so a lone `omg mcp` session is always fresh — auto-disabled when another live lease exists; `--no-watch` forces off. This is the one-line integration: `{"command": "omg", "args": ["mcp", "-C", "/path/to/vault"]}`. |
+| `omg mcp [--no-watch]` | MCP server on **stdio**; the host (Claude Code, Cursor, …) owns the process lifetime. Runs an in-process watcher by default so a lone `omg mcp` session is always fresh — auto-disabled when another live lease exists; `--no-watch` forces off. This is the one-line integration: `{"command": "omg", "args": ["mcp", "-C", "/path/to/vault"]}`. Started outside any workspace (the host's cwd is rarely yours) it fails `repo_not_found` with a hint that shows exactly that `-C` form, or `omg init <dir>` + `omg -C <dir> source add .` to create one. |
 
 ### 5.9 Admin, maintenance, dev
 
 | Command | Does |
 |---|---|
-| `omg rebuild-index [--sections\|--edges\|--fts\|--vec\|--block-changes\|--projections\|--all]` | 02 §6, spelling kept verbatim. `--vec` re-enqueues embeddings (drain does the work); `--projections` accepted-but-inert in v1 (ADR-011); `--block-changes` is an as-built addition to 02's list. |
-| `omg gc [--dry-run]` | Mark-and-sweep; **refuses** unless `gc.enabled` is set in repo settings (02 §7 ships it dark). Dry-run reports reclaimable bytes. |
+| `omg rebuild-index [--sections\|--edges\|--fts\|--block-changes\|--all]` | 02 §6, spelling kept verbatim; `--all` is the default. (02's `--vec`/`--projections` are not implemented — `omg embed drain` re-embeds; projections rebuild with the rest.) `--block-changes` is an as-built addition to 02's list. |
+| `omg gc [--dry-run]` | Mark-and-sweep; **refuses** unless `gc.enabled` is set in repo settings (02 §7 ships it dark). Dry-run reports what would be swept; the global `--dry-run` spelling is honored too. |
 | `omg import mrplex <export> [--execute]` | `planImport` report by default; `--execute` runs `importDocs` (minted IDs, no retro-history — invariant #7). Plan-by-default, same convention as `retarget`. |
 | `omg doctor` | Cheap invariant sweep: per-doc convergence, FTS row count vs live blocks, dangling `current_rev`, orphaned blobs sample, `PRAGMA integrity_check`, lock/lease sanity. Non-zero exit on any violation — CI-able. |
-| `omg config [get k \| set k v \| list]` | Read/write `repos.settings` JSON paths (`sync.quiescence_ms`, `embedding.provider`, `query.timeout_ms`, `gc.enabled`, …). Unknown namespaces warn. |
+| `omg config [get k \| set k v \| list]` | Read/write `repos.settings` JSON paths (`sync.quiescence_ms`, `embedding.provider`, `query.timeout_ms`, `gc.enabled`, …). `--repo ""` targets the workspace layer; an unknown sub-command exits 2 and points at `config --help`. |
 | `omg embed [status\|drain]` | Embedding queue depth / process the queue now (requires a configured provider; egress note printed — 05 §6). |
 
 ### 5.10 MCP ↔ CLI correspondence (completeness audit)

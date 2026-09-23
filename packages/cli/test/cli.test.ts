@@ -188,14 +188,44 @@ describe("errors + exit codes (§2.4)", () => {
     }
   });
 
-  it("unknown command → exit 2", () => {
-    let code = 0;
+  it("unknown command → exit 2, pointing at the command list (quoting the invoked name)", () => {
+    const res = spawnSync("node", [BIN, "bogus-cmd"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain("unknown command 'bogus-cmd'");
+    // A direct `node main.js` run has no bin name to echo — falls back to `omg`.
+    expect(res.stderr).toContain("run 'omg --help' for the command list");
+  });
+
+  it("a near-miss command gets a did-you-mean", () => {
+    const res = spawnSync("node", [BIN, "statsu"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/did you mean 'status'\?/);
+  });
+
+  it("no workspace → the hint names both init and -C", () => {
+    const empty = mkdtempSync(join(tmpdir(), "omg-empty-"));
     try {
-      execFileSync("node", [BIN, "bogus-cmd"], { encoding: "utf8", stdio: "pipe" });
-    } catch (err) {
-      code = (err as { status?: number }).status ?? 0;
+      const res = spawnSync("node", [BIN, "-C", empty, "ls"], { encoding: "utf8", env: { ...process.env, NO_COLOR: "1" } });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("repo_not_found");
+      expect(res.stderr).toMatch(/omg init/);
+      expect(res.stderr).toMatch(/-C <dir>/);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
     }
-    expect(code).toBe(2);
+  });
+
+  it("mcp without a workspace → a hint written for the MCP-host-config reader", () => {
+    const empty = mkdtempSync(join(tmpdir(), "omg-empty-"));
+    try {
+      const res = spawnSync("node", [BIN, "mcp", "-C", empty], { encoding: "utf8", input: "", env: { ...process.env, NO_COLOR: "1" } });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("repo_not_found");
+      expect(res.stderr).toMatch(/"args": \["mcp", "-C", /);
+      expect(res.stderr).toMatch(/omg init <dir>/);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 
   it("the `oqx` alias is gone — OQX is `query` / `q`", () => {
@@ -210,6 +240,114 @@ describe("errors + exit codes (§2.4)", () => {
     expect(code).toBe(2);
     // …while `q` still works.
     expect(omg(["q", "from docs", "--ids"]).code).toBe(0);
+  });
+});
+
+describe("--help (§2.2): every command, reachable without a workspace", () => {
+  // Every registered command name (incl. hidden `help`). Kept literal so a new
+  // command must be added here too — and thereby proven help-reachable.
+  const ALL = [
+    "init", "repos", "status", "ls", "outline", "cat", "show", "find", "query", "log", "hist", "diff", "links",
+    "apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "node", "split", "merge",
+    "new", "mv", "meta", "run", "shell", "source", "sync", "mcp",
+    "rebuild-index", "gc", "doctor", "config", "import", "embed", "help",
+  ];
+  let empty: string;
+  beforeAll(() => {
+    empty = mkdtempSync(join(tmpdir(), "omg-empty-"));
+  });
+  afterAll(() => {
+    rmSync(empty, { recursive: true, force: true });
+  });
+  const help = (args: string[]): { status: number | null; stdout: string; stderr: string } => {
+    const res = spawnSync("node", [BIN, "-C", empty, ...args], { encoding: "utf8", input: "", env: { ...process.env, NO_COLOR: "1" } });
+    return { status: res.status, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  };
+
+  it.each(ALL)("%s --help: exit 0, usage on stdout, no workspace needed", (cmd) => {
+    const res = help([cmd, "--help"]);
+    expect(res.stderr).not.toContain("repo_not_found");
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/usage:/);
+    // The one-line description + the options block (the top-level `help`
+    // catalog has its own shape and is exempt from the options check).
+    if (cmd !== "help") {
+      expect(res.stdout).toMatch(new RegExp(`^  ${cmd} — `, "m"));
+      expect(res.stdout).toMatch(/options:/);
+      expect(res.stdout).toMatch(/-h, --help/);
+    }
+  });
+
+  it("-h is --help", () => {
+    const res = help(["cat", "-h"]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/^  cat — /m);
+  });
+
+  it("sub-command dispatchers honor --help instead of treating it as a sub-command", () => {
+    for (const cmd of ["config", "node", "source", "embed"]) {
+      const res = help([cmd, "--help"]);
+      expect(res.status).toBe(0);
+      expect(res.stderr).not.toMatch(/unknown .* subcommand/);
+    }
+  });
+
+  it("the catalog header quotes the invoked binary name (omg fallback for a direct script run)", () => {
+    const res = help(["--help"]);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/usage: omg \[/);
+    expect(res.stdout).toMatch(/run omg <command> --help/);
+    expect(res.stdout).not.toMatch(/usage: omgbase/);
+  });
+});
+
+describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)", () => {
+  const piped = (args: string[], input: string): { status: number | null; stdout: string; stderr: string } => {
+    const res = spawnSync("node", [BIN, "-C", vault, ...args], { encoding: "utf8", input, env: { ...process.env, NO_COLOR: "1" } });
+    return { status: res.status, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  };
+
+  // The fixture's task count is whatever earlier suites left it at (the
+  // freshness test appends one), so compare against the piped id count.
+  const taskIds = (): { ids: string; n: number } => {
+    const ids = omg(["query", 'from blocks where type == "task"', "--ids"]).stdout;
+    return { ids, n: ids.trim().split("\n").filter(Boolean).length };
+  };
+
+  it("cat - cats every ref from stdin, in order", () => {
+    const { ids, n } = taskIds();
+    expect(n).toBeGreaterThanOrEqual(2);
+    const res = piped(["cat", "-"], ids);
+    expect(res.status).toBe(0);
+    expect(res.stderr).toBe("");
+    expect(res.stdout).toContain("wire the deploy pipeline");
+    expect(res.stdout).toContain("write the readme");
+  });
+
+  it("cat - --json is an array for many refs; a single ref keeps the object shape", () => {
+    const { ids, n } = taskIds();
+    const many = JSON.parse(piped(["cat", "-", "--json"], ids).stdout) as unknown[];
+    expect(Array.isArray(many)).toBe(true);
+    expect(many).toHaveLength(n);
+    const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { path: string; content: string };
+    expect(one.path).toBe("hub.md");
+    expect(one.content).toContain("# Hub");
+  });
+
+  it("show - hydrates each id to a card", () => {
+    const { ids, n } = taskIds();
+    const res = piped(["show", "-"], ids);
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("wire the deploy pipeline");
+    expect(res.stdout).toContain("write the readme");
+    const json = JSON.parse(piped(["show", "-", "--json"], ids).stdout) as { id: string }[];
+    expect(json).toHaveLength(n);
+  });
+
+  it("cat - with empty stdin is a usage error (exit 2), not doc_missing", () => {
+    const res = piped(["cat", "-"], "");
+    expect(res.status).toBe(2);
+    expect(res.stderr).toMatch(/cat requires a <node>/);
   });
 });
 
@@ -274,7 +412,7 @@ describe("init / attach split (consent-gated ingest)", () => {
     }
   });
 
-  it("init --no-embedder leaves no provider and hints how to add one", () => {
+  it("init --no-embedder leaves no provider and prints no embedder hint", () => {
     const root = mkdtempSync(join(tmpdir(), "omg-split-"));
     try {
       const res = run(root, ["init", "--yes", "--no-embedder"]);
@@ -282,7 +420,25 @@ describe("init / attach split (consent-gated ingest)", () => {
         embedding?: { provider?: string };
       };
       expect(cfg.embedding?.provider).toBeUndefined();
-      void res;
+      expect(res.stderr).not.toMatch(/@omgbase\/embedder/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("init without an installed embedder: the hint says what it is and that it is optional", () => {
+    const root = mkdtempSync(join(tmpdir(), "omg-split-"));
+    try {
+      // A PATH with no `omgbase-embedder` (a dev checkout may have it rlinked),
+      // so init takes the "not installed → guidance" branch deterministically.
+      const res = spawnSync(process.execPath, [BIN, "-C", root, "init", "--yes"], {
+        encoding: "utf8",
+        env: { ...process.env, NO_COLOR: "1", PATH: "/usr/bin:/bin" },
+      });
+      expect(res.status).toBe(0);
+      expect(res.stderr).toMatch(/optional/);
+      expect(res.stderr).toMatch(/npm i -g @omgbase\/embedder/);
+      expect(res.stderr).toMatch(/turns blocks into vectors/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

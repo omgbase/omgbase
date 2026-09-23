@@ -17,7 +17,7 @@ When you hit a stopping point — work is done, or you're blocked and need input
 - **Monorepo** (pnpm workspace, Node ≥ 22, pnpm 12). Packages:
   - `packages/core` — the engine. Everything of substance lives here: `parse/`, `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`) + `search/`, `graph/`, `core/store/` (SQLite schema), `mcp/`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
-  - `packages/embedder` — transformers.js / all-MiniLM-L6-v2 embeddings.
+  - `packages/embedder` — transformers.js / `Xenova/gte-base` (768-dim) embeddings, served as the `omgbase-embedder` stdio binary.
   - `packages/fs-adapter` — chokidar-based filesystem sync adapter (stdio).
   - `packages/client` — thin remote MCP client (placeholder).
 - **Data model** is three layers: **Docs → Blocks** (stable `b_` ids; the mutation anchors) **→ Nodes** (semantic projections: links, tasks, sections, anchors…).
