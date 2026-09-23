@@ -106,7 +106,7 @@ Seven concepts. Five durable, two derived. Concepts are not tables — see `data
 - The commit's `origin` determines the legal history claim:
   - `api` commits record **operations** — real intent, with actor and reason. Replayable.
   - `observed` commits record **dispositions** — beliefs about correspondence, each with `kind`, `confidence`, `reason`, and `matcher_version`.
-  - `import` commits record **operations** too — bulk migration ingest (e.g. mrplex) with freshly minted ids and explicitly no retro-inferred block history.
+  - `import` commits record **operations** too — bulk ingest with freshly minted ids and explicitly no retro-inferred block history.
   - `projection` commits are engine-authored writes that materialize a projection (ADR-011).
 - Dispositions are immutable. A better future matcher MUST NOT rewrite past dispositions.
 - Event sourcing is rejected as the storage model (ADR-003): the snapshot chain is the source of truth; the commit log is the change feed — an output of committed state.

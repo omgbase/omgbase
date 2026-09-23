@@ -123,7 +123,7 @@ vernacular and `--server` does not apply.
   `omg sync --watch` (drives the local reconcile loop — its *engine-side*
   primitives `observe*` **are** in the catalog), `omg mcp` (starts the server).
 - **Admin / maintenance:** `omg rebuild-index`, `omg gc`, `omg doctor`,
-  `omg embed`, `omg config`, `omg import`. Server-operator ops; no MCP tools.
+  `omg embed`, `omg config`. Server-operator ops; no MCP tools.
 - **Surface-intrinsic:** `omg shell` (a CLI session; `shell --server` runs each
   *line* remotely, but the session construct itself is CLI-only), `omg help`,
   `omg --version`.

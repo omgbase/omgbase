@@ -161,4 +161,3 @@ export {
 } from "./mutate/opset.js";
 export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
 export { runGc, type GcResult } from "./core/store/gc.js";
-export { planImport, importDocs, type MrplexDoc, type ImportPlan, type ImportResult } from "./migrate/mrplex.js";

@@ -15,7 +15,7 @@ When you hit a stopping point — work is done, or you're blocked and need input
 ## Orientation
 
 - **Monorepo** (pnpm workspace, Node ≥ 22, pnpm 12). Packages:
-  - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `migrate/`, `mcp/`, `cli/`.
+  - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `mcp/`, `cli/`.
   - `packages/oqx` — `@omgbase/oqx`: the OQX query language + engine (parser, in-memory engine, `DataContext`/`QueryPlanner` seams, `node:sqlite` adapter). In-tree since ADR-019 but **standalone**: zero runtime dependencies, its own semver line, published on its own, never imports anything from omgbase. Any change here must keep it free of omgbase imports and must bump its `version` + `CHANGELOG.md`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
   - `packages/sync` — `@omgbase/sync`: the store-to-store synchronizer (ADR-014) — `Coordinator`, `EngineClient` seam (in-process or MCP), the `omgbase-sync` bin; backs `omg sync --server`.

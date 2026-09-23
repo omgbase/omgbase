@@ -1,10 +1,7 @@
 import { parseArgs } from "node:util";
-import { readFileSync } from "node:fs";
 import {
   rebuildIndex,
   runGc,
-  planImport,
-  importDocs,
   reposStatus,
   buildEmbedTasks,
   buildDocEmbedTasks,
@@ -16,7 +13,6 @@ import {
   RepoSelectionError,
   type Settings,
   type RebuildTarget,
-  type MrplexDoc,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -220,41 +216,6 @@ function runConfig(cli: Cli, args: string[]): number {
   throw new CliUsageError(`unknown config subcommand '${sub}' (get|set|list)`, `run '${cli.prog} config --help'`);
 }
 
-// ---- import -----------------------------------------------------------------
-
-function runImport(cli: Cli, args: string[]): number {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { execute: { type: "boolean" }, help: { type: "boolean" } },
-  });
-  if (values.help) {
-    return renderHelp(cli, {
-      name: "import",
-      summary: "Import documents from a mrplex export — plan-by-default, --execute writes",
-      usage: "import mrplex <export.json> [--execute]",
-      options: [["--execute", "perform the import (default: print the plan only)"]],
-    });
-  }
-  if (positionals[0] !== "mrplex") throw new CliUsageError("only `import mrplex <export>` is supported");
-  const file = positionals[1];
-  if (!file) throw new CliUsageError("import mrplex requires an <export.json>");
-  const docs = JSON.parse(readFileSync(file, "utf8")) as MrplexDoc[];
-  const ws = cli.workspace();
-  const repo = cli.repo(ws);
-
-  if (!values.execute) {
-    const plan = planImport(repo.repoId, docs);
-    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(plan));
-    else cli.io.err(cli.style.dim(`  plan — ${docs.length} docs; re-run with --execute to import`));
-    return EXIT_OK;
-  }
-  const result = importDocs(ws.store, repo.repoId, docs);
-  if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(result));
-  else cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} imported ${docs.length} docs`));
-  return EXIT_OK;
-}
-
 // ---- embed ------------------------------------------------------------------
 
 async function runEmbed(cli: Cli, args: string[]): Promise<number> {
@@ -351,5 +312,4 @@ export const cmdRebuild: Command = { name: "rebuild-index", summary: "Rebuild de
 export const cmdGc: Command = { name: "gc", summary: "Mark-and-sweep (flag-gated)", run: (c, a) => runGcCmd(c, a) };
 export const cmdDoctor: Command = { name: "doctor", summary: "Invariant sweep (CI-able)", run: (c, a) => runDoctor(c, a) };
 export const cmdConfig: Command = { name: "config", summary: "Read/write repo settings", run: (c, a) => runConfig(c, a) };
-export const cmdImport: Command = { name: "import", summary: "Import from mrplex (plan-by-default)", run: (c, a) => runImport(c, a) };
 export const cmdEmbed: Command = { name: "embed", summary: "Embedding queue: status, or drain to embed", run: (c, a) => runEmbed(c, a) };

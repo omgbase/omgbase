@@ -250,7 +250,7 @@ describe("--help (§2.2): every command, reachable without a workspace", () => {
     "init", "repos", "status", "ls", "outline", "cat", "show", "find", "query", "log", "hist", "diff", "links",
     "apply", "insert", "update", "edit", "move", "rm", "done", "append", "retarget", "node", "split", "merge",
     "new", "mv", "meta", "run", "shell", "source", "sync", "mcp",
-    "rebuild-index", "gc", "doctor", "config", "import", "embed", "help",
+    "rebuild-index", "gc", "doctor", "config", "embed", "help",
   ];
   let empty: string;
   beforeAll(() => {

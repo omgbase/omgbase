@@ -35,7 +35,7 @@ import { cmdNode } from "./cmd/node.js";
 import { cmdNew, cmdMv, cmdMeta } from "./cmd/docs.js";
 import { cmdUpdateDoc } from "./cmd/update.js";
 import { cmdRun } from "./cmd/run.js";
-import { cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdImport, cmdEmbed } from "./cmd/admin.js";
+import { cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdEmbed } from "./cmd/admin.js";
 import { cmdShell } from "./cmd/shell.js";
 import { cmdSource } from "./cmd/source.js";
 import { cmdHelp } from "./cmd/help.js";
@@ -78,7 +78,6 @@ export const COMMANDS: Command[] = [
   cmdGc,
   cmdDoctor,
   cmdConfig,
-  cmdImport,
   cmdEmbed,
   cmdHelp,
 ];

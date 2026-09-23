@@ -73,7 +73,6 @@ packages/
       oqx-js/    OQX bindings — the store `DataContext` + `oqxRun` over @omgbase/oqx (`oqx/` is a thin re-export)
       search/    FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
-      migrate/   mrplex importer
     corpus/      round-trip + matcher fixtures
   oqx/           @omgbase/oqx — the OQX query language + engine (standalone, zero deps, own version line; omgbase binds it in core/src/oqx-js/)
   cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync)
@@ -130,7 +129,7 @@ In addition to the OQX query language (`@omgbase/oqx`; see `docs/query-language.
 
 ## Quickstart (CLI)
 
-The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented (39 commands, registered in `packages/cli/src/commands.ts`): bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`/`ol`, `cat`, `show`, `find`, `query`/`q`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`/`node`, and doc-level `new`/`mv`/`meta`/`update`), the `shell` session, and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `import`, `embed`). `omg --help` prints the same catalog grouped by area.
+The `omgbase` CLI (`packages/cli`, aliased `omg`) is the engine's second client — a thin adapter over `@omgbase/core`, embedded and daemonless (design in `docs/cli.md`, ADR-012). The full command surface is implemented (38 commands, registered in `packages/cli/src/commands.ts`): bootstrap (`init`, `source`, `repos`), reads (`status`, `ls`, `outline`/`ol`, `cat`, `show`, `find`, `query`/`q`, `run`, `log`, `hist`, `diff`, `links`), writes (`apply` + sugar: `insert`/`update`/`edit`/`move`/`rm`/`done`/`append`/`retarget`/`split`/`merge`/`node`, and doc-level `new`/`mv`/`meta`/`update`), the `shell` session, and sync/serve/admin (`sync` [`--watch`, `--server`], `mcp`, `rebuild-index`, `gc`, `doctor`, `config`, `embed`). `omg --help` prints the same catalog grouped by area.
 
 ### The mental model: workspace, repo, source, config
 

@@ -15,7 +15,7 @@ const GROUPS: { title: string; names: string[] }[] = [
   { title: "documents", names: ["new", "mv", "meta"] },
   { title: "session", names: ["shell"] },
   { title: "sync & serve", names: ["sync", "mcp"] },
-  { title: "admin", names: ["rebuild-index", "gc", "doctor", "config", "import", "embed"] },
+  { title: "admin", names: ["rebuild-index", "gc", "doctor", "config", "embed"] },
 ];
 
 async function runHelp(cli: Cli): Promise<number> {
