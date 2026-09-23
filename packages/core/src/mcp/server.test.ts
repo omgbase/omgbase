@@ -880,4 +880,11 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(Object.keys(payload.diffs!)).toEqual(["other.md"]);
   });
 
+  it("links_stale rows carry `authored` (the destination as written) next to the canonical `target`", async () => {
+    const { payload } = (await call("links_stale", {})) as { payload: { stale: { target: string; authored: string | null; anchor: string | null }[] } };
+    const authored = payload.stale.map((s) => s.authored).sort();
+    expect(authored).toContain("/b.md");
+    expect(authored).toContain("/b.md#Top");
+    for (const s of payload.stale) expect(s.target).toBe("b.md");
+  });
 });

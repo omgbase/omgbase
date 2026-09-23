@@ -121,3 +121,34 @@ describe("linksRepair (bulk stale-link fix)", () => {
     expect(linksStale(store, repoId).stale).toHaveLength(0);
   });
 });
+
+describe("linksStale reports the destination AS AUTHORED next to the canonical target", () => {
+  it("`authored` is the exact destination text (fragment included); `target` stays the canonical path", () => {
+    save("a.md", "# A\n\nSee [b](/b.md#Setup) and [[wiki-page]].\n");
+    const { stale } = linksStale(store, repoId);
+    const byTarget = new Map(stale.map((s) => [s.target, s]));
+    expect(byTarget.get("b.md")).toMatchObject({ target: "b.md", anchor: "Setup", authored: "/b.md#Setup" });
+    expect(byTarget.get("wiki-page")).toMatchObject({ target: "wiki-page", anchor: null, authored: "wiki-page" });
+  });
+
+  it("a relative destination canonicalizes against the source dir but is reported as written", () => {
+    save("sub/a.md", "# A\n\nSee [x](./x.md).\n");
+    const { stale } = linksStale(store, repoId);
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toMatchObject({ target: "sub/x.md", authored: "./x.md" });
+  });
+
+  it("either `target` or `authored` is a valid links_repair `from`", () => {
+    save("c.md", "# C\n");
+    save("a.md", "# A\n\nSee [b](/b.md).\n");
+    const s = linksStale(store, repoId).stale[0]!;
+    expect(s.target).toBe("b.md");
+    expect(s.authored).toBe("/b.md");
+    const viaTarget = linksRepair(store, repoId, [{ from: s.target, to: "/c.md" }]);
+    const viaAuthored = linksRepair(store, repoId, [{ from: s.authored!, to: "/c.md" }]);
+    expect(viaTarget.hits.map((h) => h.newRaw)).toEqual(viaAuthored.hits.map((h) => h.newRaw));
+    expect(viaTarget.hits[0]!.newRaw).toContain("[b](/c.md)");
+    apply(store, { repoId, rootPath: dir, ops: viaAuthored.ops, origin: { actor: "test" } });
+    expect(linksStale(store, repoId).stale).toHaveLength(0);
+  });
+});

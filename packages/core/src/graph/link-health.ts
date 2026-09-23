@@ -1,4 +1,5 @@
 import type { Store } from "../core/store/store.js";
+import { canonicalLinkPath, docDirOf, splitDestination } from "./link-destinations.js";
 
 // Stale-link maintenance (the read side). mrplex has links_stale (detect) +
 // links_repair (bulk fix); omgbase had only links_retarget (a targeted rename).
@@ -39,8 +40,12 @@ export interface StaleLink {
   predicate: string;
   provenance: string;
   dstKind: string;
-  /** human-readable target: the PATH (phantom prefix stripped), e.g. "guides/old.md" */
+  /** canonical target PATH (phantom prefix stripped, no leading `/`), e.g. "guides/old.md" */
   target: string;
+  /** the destination exactly as authored in the source block, e.g. "/guides/old.md#Setup"
+   * — paste-ready as `links_repair.from`. null when it can't be recovered (frontmatter
+   * edges have no block; a projected node no longer matches). */
+  authored: string | null;
   anchor: string | null;
   reason: StaleReason;
 }
@@ -130,21 +135,51 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
   const truncated = rows.length > limit;
   const page = rows.slice(0, limit);
 
-  const stale: StaleLink[] = page.map((r) => ({
-    srcDoc: r.srcDoc,
-    srcPath: r.srcPath,
-    srcBlock: r.srcBlock,
-    predicate: r.predicate,
-    provenance: r.provenance,
-    dstKind: r.dstKind,
-    // Strip the "phantom:" prefix to expose the human-readable path.
-    target: r.dstNode.slice("phantom:".length),
-    anchor: r.anchor,
-    // All phantom targets are dangling DOCUMENTS in this data model (cross-doc
-    // block refs collapse to document phantoms carrying an anchor). We tag rows
-    // that also carry an anchor as such, but the miss is still a missing doc.
-    reason: "dangling_doc",
-  }));
+  // Recover the destination AS AUTHORED from the block's projected link nodes:
+  // the edge index keeps only the canonical target, but md:link / md:wikilink /
+  // md:inline_field nodes carry the exact destination text. Pick the node whose
+  // canonical (path, fragment) equals this edge's (target, anchor).
+  const nodeStmt = store.db.prepare(
+    "SELECT kind, value FROM nodes WHERE block_id = ? AND kind IN ('md:link','md:wikilink','md:inline_field') AND value IS NOT NULL",
+  );
+  const authoredFor = (srcBlock: string | null, srcPath: string, target: string, anchor: string | null): string | null => {
+    if (srcBlock === null) return null;
+    const docDir = docDirOf(srcPath);
+    for (const n of nodeStmt.all(srcBlock) as { kind: string; value: string }[]) {
+      let dest = n.value;
+      if (n.kind === "md:inline_field") {
+        const wl = /^\[\[([^\]]+)\]\]$/.exec(dest);
+        if (wl) dest = wl[1]!;
+        else if (!dest.startsWith("/")) continue;
+      }
+      if (n.kind === "md:wikilink") dest = dest.split("|")[0]!;
+      const { path, fragment } = splitDestination(dest);
+      if (canonicalLinkPath(path, docDir) !== target) continue;
+      if ((fragment === "" ? null : fragment.slice(1)) !== anchor) continue;
+      return dest;
+    }
+    return null;
+  };
+
+  const stale: StaleLink[] = page.map((r) => {
+    // Strip the "phantom:" prefix to expose the canonical path.
+    const target = r.dstNode.slice("phantom:".length);
+    return {
+      srcDoc: r.srcDoc,
+      srcPath: r.srcPath,
+      srcBlock: r.srcBlock,
+      predicate: r.predicate,
+      provenance: r.provenance,
+      dstKind: r.dstKind,
+      target,
+      authored: authoredFor(r.srcBlock, r.srcPath, target, r.anchor),
+      anchor: r.anchor,
+      // All phantom targets are dangling DOCUMENTS in this data model (cross-doc
+      // block refs collapse to document phantoms carrying an anchor). We tag rows
+      // that also carry an anchor as such, but the miss is still a missing doc.
+      reason: "dangling_doc",
+    };
+  });
 
   return {
     stale,
