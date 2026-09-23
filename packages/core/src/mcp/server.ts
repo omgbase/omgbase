@@ -984,7 +984,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_plan_update",
     {
       description:
-        "Plan a whole-document update WITHOUT applying it. Given a doc (id or path) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (base revision + content hash); a stale plan is refused at apply. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
+        "Plan a whole-document update WITHOUT applying it. Given a doc (id or path) and the proposed complete `content`, reconciles the new representation against the current stable block tree and returns an executable *opset*: the exact kernel ops (insert/update/move/remove) it would run, each annotated with its identity consequence (disposition, confidence, reason), plus a summary (preserved/updated/moved/created/removed) and a human-readable plan. The opset carries preconditions (base revision + content hash); a stale plan is refused at apply. `converges` is verified by simulation (replaying the ops reproduces `content` byte-for-byte); when a lowering diverges, `diagnostics[]` names the first differing byte offset and the proposed block (index/type/byte range) that failed to round-trip. Use this to inspect identity effects before committing, or as the reviewable half of docs_update.",
       inputSchema: { doc: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1003,7 +1003,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_update",
     {
       description:
-        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a doc (id or path); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. This is docs_plan_update + apply(opset).",
+        "Whole-document update with smart identity preservation. Submit the complete proposed `content` for a doc (id or path); the engine reconciles it against the current tree, preserving stable block ids for structure that is recognizably the same (edits, moves, reorders), minting for new structure, and tombstoning removals — then commits the derived opset through the kernel write path. Frontmatter changes are applied too. dry_run:true returns the opset + plan without writing (identical to docs_plan_update). Conflicts (the doc changed since planning) fail stale_plan — re-run. A plan whose replay cannot reproduce `content` byte-for-byte fails plan_not_convergent; the message names the first divergent byte and the proposed block (index/type) that failed to round-trip (full diagnostics in `data.diagnostics`). This is docs_plan_update + apply(opset).",
       inputSchema: { doc: z.string(), content: z.string(), reason: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -1197,7 +1197,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "changes_since",
     {
-      description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Each digest's `revisions[]` carries `{doc, path, contentHash}` (contentHash = hex of the revision's rendered file hash), so a synchronizer can decide 'changed vs echo' without a follow-up docs_read. Filter by `origin` (api/observed/import) to ignore commits a given writer produced. Poll with your last cursor to cheaply re-orient after time away.",
+      description: "The change feed: commit digests after a cursor (repo commit seq) with one-line summaries. Each digest's `revisions[]` carries `{doc, path, contentHash}` (contentHash = hex of the revision's rendered file hash), so a synchronizer can decide 'changed vs echo' without a follow-up docs_read. Filter by `origin` (api/observed/import) to ignore commits a given writer produced. Poll with your last cursor to cheaply re-orient after time away. Paging: `cursor` is the last digest's `seq` (a dense per-REPO order — a cursor is only meaningful against the same `repo` it came from); pass it back while `truncated` is true. `head` is the repo's current max seq: an empty page with cursor == head means nothing new, cursor > head means the cursor belongs to a different repo/server.",
       inputSchema: { cursor: z.number().int().optional(), origin: z.enum(["api", "observed", "import"]).optional(), limit: z.number().int().optional(), ...REPO_ARG },
     },
     async (args) => {

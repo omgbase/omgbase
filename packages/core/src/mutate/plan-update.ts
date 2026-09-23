@@ -81,19 +81,21 @@ export function planUpdate(store: Store, repoId: string, rootPath: string, docRe
   let chosen: LowerResult | null = null;
   let converges = false;
   const t2 = lowerTopLevel(oldDoc, rest, assignmentOf(result), dispositionsOf(result));
-  if (verify(store, repoId, rootPath, path, opsOf(t2), setFrontmatter, content, currentContent)) {
+  const v2 = verify(store, repoId, rootPath, path, opsOf(t2), setFrontmatter, content, currentContent);
+  if (v2.ok) {
     chosen = t2; converges = true;
   } else {
-    diagnostics.push("top-level lowering did not reproduce the proposed content byte-for-byte; falling back to full replace");
+    diagnostics.push(`top-level lowering did not reproduce the proposed content byte-for-byte (${describeDivergence(v2, tree.children, content)}); falling back to full replace`);
     const t3 = lowerReplace(oldDoc, content);
-    if (verify(store, repoId, rootPath, path, opsOf(t3), setFrontmatter, content, currentContent)) {
+    const v3 = verify(store, repoId, rootPath, path, opsOf(t3), setFrontmatter, content, currentContent);
+    if (v3.ok) {
       chosen = t3; converges = true;
       diagnostics.push("full-replace plan converges (block identity not preserved)");
     } else {
       // Neither converged: return the identity-preserving plan but flag it. apply
       // refuses a non-convergent plan (loud failure), so no wrong bytes land.
       chosen = t2;
-      diagnostics.push("no lowering reproduced the proposed content exactly; plan will not apply — inspect and re-plan");
+      diagnostics.push(`no lowering reproduced the proposed content exactly (full replace: ${describeDivergence(v3, tree.children, content)}); plan will not apply — inspect and re-plan`);
     }
   }
 
@@ -120,18 +122,36 @@ function dispositionsOf(r: { dispositions: { blockId: string; kind: string; conf
 }
 function opsOf(l: LowerResult): Op[] { return l.ops.map((p: PlanOp) => p.op); }
 
+type Verified = { ok: true } | { ok: false; actual: string | null; error: string | null };
+
 // Simulate a candidate op list and check the rendered result equals the exact
 // proposed content. An invalid script throws in apply → treated as non-convergent.
-function verify(store: Store, repoId: string, rootPath: string, path: string, ops: Op[], setFrontmatter: { doc: string; raw: string | null }[] | undefined, expected: string, currentContent: string): boolean {
+function verify(store: Store, repoId: string, rootPath: string, path: string, ops: Op[], setFrontmatter: { doc: string; raw: string | null }[] | undefined, expected: string, currentContent: string): Verified {
   try {
     const res = apply(store, { repoId, rootPath, ops, origin: { actor: "plan:verify" }, dryRun: true, ...(setFrontmatter ? { setFrontmatter } : {}) });
     // A doc untouched by any op (e.g. an empty plan) is absent from diffs; its
     // effective result is the unchanged current content.
     const after = res.diffs?.[path]?.after ?? currentContent;
-    return after === expected;
-  } catch {
-    return false;
+    return after === expected ? { ok: true } : { ok: false, actual: after, error: null };
+  } catch (e) {
+    return { ok: false, actual: null, error: e instanceof Error ? `${(e as MutationError).code ?? "error"}: ${e.message}` : String(e) };
   }
+}
+
+// Name the failure precisely: the first differing byte offset and the proposed
+// top-level block (index + type) whose span covers it, so a caller learns WHICH
+// construct failed to round-trip rather than just "no lowering converged".
+function describeDivergence(v: Verified, proposed: RawBlock[], expected: string): string {
+  if (v.ok) return "converged";
+  if (v.actual === null) return `simulation threw ${v.error}`;
+  const actual = v.actual;
+  let off = 0;
+  const n = Math.min(actual.length, expected.length);
+  while (off < n && actual.charCodeAt(off) === expected.charCodeAt(off)) off++;
+  const idx = proposed.findIndex((b) => off >= b.span.start && off < b.span.end + b.trivia.length);
+  const where = idx >= 0 ? `proposed block #${idx} (${proposed[idx]!.type}, bytes ${proposed[idx]!.span.start}-${proposed[idx]!.span.end})` : off >= expected.length ? "past the end of the proposed content" : "leading trivia";
+  const snippet = (s: string): string => JSON.stringify(s.slice(off, off + 24));
+  return `first divergence at byte ${off} in ${where}: expected ${snippet(expected)}, rendered ${snippet(actual)}`;
 }
 
 // ---- applying an opset ------------------------------------------------------
@@ -154,7 +174,8 @@ export interface ApplyOpsetRequest {
 export function applyOpset(store: Store, req: ApplyOpsetRequest): ApplyResult {
   const { opset } = req;
   if (!opset.converges) {
-    throw new MutationError("plan_not_convergent", "opset does not reproduce the proposed content; re-plan", { diagnostics: opset.diagnostics });
+    const why = opset.diagnostics.length > 0 ? ` — ${opset.diagnostics[opset.diagnostics.length - 1]}` : "";
+    throw new MutationError("plan_not_convergent", `opset does not reproduce the proposed content; re-plan${why}`, { diagnostics: opset.diagnostics });
   }
   // Precondition: the document must still be at the revision/content the plan
   // was computed against.

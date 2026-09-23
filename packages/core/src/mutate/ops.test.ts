@@ -125,4 +125,31 @@ describe("kernel ops", () => {
     expect(d.children).toHaveLength(1);
     expect(d.children[0]!.raw).toBe("alpha beta");
   });
+
+  // Freshly parsed content is authoritative: a blockquote/table inserted or
+  // replaced whole renders its raw verbatim (no child rebuild). A NESTED edit
+  // inside one rebuilds the container faithfully (markers / delimiter row).
+  it("insert of a blockquote and a table renders them verbatim", () => {
+    const d = doc("# H\n\ntail\n");
+    opInsert(d, { parent: { doc: true }, at: { after: idAt(d, 0) } }, "> quoted line\n> second line\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n");
+    expect(renderDoc(d)).toBe("# H\n\n> quoted line\n> second line\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n\ntail\n");
+  });
+
+  it("update replacing a blockquote / table whole keeps markers and the delimiter row", () => {
+    const d = doc("# H\n\n> old quote\n\n| a | b |\n|---|---|\n| 1 | 2 |\n");
+    opUpdate(d, idAt(d, 1), 0, "> new quote\n> more", undefined, { content_hash: hashAt(d, 1) });
+    opUpdate(d, idAt(d, 2), 1, "| c | d |\n|---|---|\n| 3 | 4 |", undefined, { content_hash: hashAt(d, 2) });
+    expect(renderDoc(d)).toBe("# H\n\n> new quote\n> more\n\n| c | d |\n|---|---|\n| 3 | 4 |\n");
+  });
+
+  it("nested update inside a blockquote re-prefixes `> `; inside a table keeps the delimiter row", () => {
+    const d = doc("> first para\n>\n> second para\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n");
+    const bq = d.children[0]!;
+    const inner = bq.children[1]!;
+    opUpdate(d, inner.id, 0, "second para edited", undefined, { content_hash: rawHashHex(inner.raw) });
+    const table = d.children[1]!;
+    const row = table.children[2]!;
+    opUpdate(d, row.id, 1, "| 3 | 40 |", undefined, { content_hash: rawHashHex(row.raw) });
+    expect(renderDoc(d)).toBe("> first para\n>\n> second para edited\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 40 |\n");
+  });
 });

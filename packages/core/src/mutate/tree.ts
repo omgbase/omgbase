@@ -111,10 +111,31 @@ function renderBlock(b: MutBlock, depth: number): string {
   // tight/loose separator. This matches the canonical renderer, which treats a
   // top-level block's raw as the authoritative source for its whole subtree.
   if (b.type === "list") return renderList(b);
-  // Other containers (blockquote/table, or a list_item outside a list): fall
-  // back to the child-indent rebuild. Lists are the common mutable container.
+  // A blockquote's `> ` markers live only in the container raw, so a rebuild
+  // must re-prefix every line of every child (blank separator lines become a
+  // bare `>`), or the quote silently degrades to plain paragraphs.
+  if (b.type === "blockquote") return renderBlockquote(b, depth);
+  // A table's delimiter row (`| --- | --- |`) is not a child node (mdast keeps
+  // only header/body rows), so re-insert the retained delimiter line after the
+  // header row when rebuilding from rows.
+  if (b.type === "table") return renderTable(b, depth);
+  // Other containers (a list_item outside a list): fall back to the
+  // child-indent rebuild. Lists are the common mutable container.
   const indent = "  ".repeat(depth);
   return b.children.map((c) => indent + renderBlock(c, depth + 1).replace(/\n/g, "\n" + indent)).join("\n");
+}
+
+function renderBlockquote(bq: MutBlock, depth: number): string {
+  const body = bq.children.map((c) => renderBlock(c, depth + 1)).join("\n\n");
+  return body.split("\n").map((ln) => (ln.length ? `> ${ln}` : ">")).join("\n");
+}
+
+function renderTable(t: MutBlock, depth: number): string {
+  const rows = t.children.map((c) => renderBlock(c, depth + 1));
+  const lines = t.raw.split("\n");
+  const delimiter = lines.length >= 2 && /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(lines[1]!) ? lines[1]! : null;
+  if (delimiter !== null && rows.length >= 1) rows.splice(1, 0, delimiter);
+  return rows.join("\n");
 }
 
 const MARKER_RE = /^(\s*)([-*+]|\d+[.)])(\s+)/;
