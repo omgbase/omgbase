@@ -47,6 +47,26 @@ function splitAnchor(target: string): { path: string; anchor: string | null; anc
   return { path: target, anchor: null, anchorKind: null };
 }
 
+/**
+ * Resolve a `./foo` / `../bar` destination against the source document's
+ * directory (`docDir` = path with the filename stripped, e.g. "a/b/" or "").
+ * Any other destination is returned as-is (root-relative). The ONE resolution
+ * rule shared by edge extraction (sync/reconciling-ingest.ts) and docs_move's
+ * inbound-link scan (graph/inbound-links.ts) so they agree on what a link
+ * points at.
+ */
+export function resolveRelativePath(target: string, docDir: string): string {
+  if (!target.startsWith("./") && !target.startsWith("../")) return target;
+  const parts = (docDir + target).split("/");
+  const resolved: string[] = [];
+  for (const p of parts) {
+    if (p === "." || p === "") continue;
+    if (p === "..") { resolved.pop(); continue; }
+    resolved.push(p);
+  }
+  return resolved.join("/");
+}
+
 function isExternal(dest: string): boolean {
   return /^https?:\/\//.test(dest) || /^[a-z][a-z0-9+.-]*:/i.test(dest) === true && !dest.startsWith("/");
 }

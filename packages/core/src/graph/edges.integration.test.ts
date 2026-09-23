@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
@@ -73,6 +73,38 @@ describe("edge interval maintenance (05 §2)", () => {
     store.write((db) => rebuildDocEdges(db, docId));
     const after = store.db.prepare("SELECT predicate, dst_node, count, samples FROM doc_edges WHERE src_doc=? ORDER BY dst_node").all(docId);
     expect(after).toEqual(before);
+  });
+});
+
+describe("maintainEdges keeps one open row per key", () => {
+  it("two spellings of one target in one block open ONE row, and removing the link closes it", () => {
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    save("old.md", "# Old\n");
+    save("sub/d.md", "# D\n\nUp [a](../old.md) and [b](./x/../../old.md).\n");
+    const oldId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='old.md'").get() as { doc_id: string }).doc_id;
+    const open = (): number => (store.db.prepare("SELECT count(*) c FROM edges WHERE dst_node = ? AND to_commit IS NULL").get(oldId) as { c: number }).c;
+    expect(open()).toBe(1);
+
+    // Re-saving unchanged keeps the single row; dropping the links closes it.
+    save("sub/d.md", "# D\n\nUp [a](../old.md) and [b](./x/../../old.md) still.\n");
+    expect(open()).toBe(1);
+    save("sub/d.md", "# D\n\nno links\n");
+    expect(open()).toBe(0);
+  });
+
+  it("closes pre-existing duplicate open rows on the next ingest", () => {
+    save("a.md", "# A\n\nlink [x](/x.md)\n");
+    const row = store.db.prepare("SELECT * FROM edges WHERE to_commit IS NULL").get() as Record<string, unknown>;
+    // Simulate the duplicate an earlier maintainEdges could leave behind.
+    store.write((db) => {
+      db.prepare(
+        `INSERT INTO edges (edge_id, repo_id, src_doc, src_block, src_field, predicate, dst_kind, dst_node, anchor, provenance, from_commit, to_commit)
+         VALUES ('e_dup', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      ).run(row.repo_id, row.src_doc, row.src_block, row.src_field, row.predicate, row.dst_kind, row.dst_node, row.anchor, row.provenance, row.from_commit);
+    });
+    expect(openEdges()).toHaveLength(2);
+    save("a.md", "# A\n\nlink [x](/x.md) again\n");
+    expect(openEdges()).toHaveLength(1);
   });
 });
 
