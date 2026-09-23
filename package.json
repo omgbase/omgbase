@@ -2,7 +2,7 @@
   "name": "@omgbase/oqx",
   "version": "0.10.0",
   "description": "Generic Object Query eXpression engine for JavaScript",
-  "license": "ISC",
+  "license": "MIT",
   "author": "",
   "type": "module",
   "main": "./dist/index.js",
