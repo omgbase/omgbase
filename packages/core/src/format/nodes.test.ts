@@ -198,3 +198,26 @@ describe("node queries — from: nodes", () => {
     expect(hit.value).toBe("active");
   });
 });
+
+describe("node projection — code is not prose (agrees with edge extraction)", () => {
+  it("projects no md:link/md:wikilink nodes from fences or inline code; prose links keep exact spans", () => {
+    const { store, repoId } = setup();
+    const body = "Use `[[Fake]]` then [[Real]] and [r](/real.md) but `[f](/fake.md)`.";
+    ingestFile(store, repoId, "test.md", `# T\n\n\`\`\`\n[in fence](/fence.md) [[Fenced]]\n\`\`\`\n\n${body}\n`);
+
+    const rows = store.db
+      .prepare("SELECT kind, value, span_start, span_end, block_id FROM nodes WHERE doc_id IN (SELECT doc_id FROM docs WHERE path = 'test.md') AND kind IN ('md:link','md:wikilink')")
+      .all() as { kind: string; value: string; span_start: number; span_end: number; block_id: string }[];
+    expect(rows.map((r) => r.value).sort()).toEqual(["/real.md", "Real"]);
+
+    // Spans still index the original raw (maskCode is length-preserving).
+    for (const r of rows) {
+      const raw = (store.db.prepare("SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.block_id = ?").get(r.block_id) as { bytes: Buffer }).bytes.toString("utf8");
+      expect(raw).toBe(body);
+      const seg = raw.slice(r.span_start, r.span_end);
+      expect(seg).toBe(r.kind === "md:wikilink" ? "[[Real]]" : "[r](/real.md)");
+    }
+    // (Edge agreement is proven in graph/edges.integration.test.ts, which
+    // ingests through the reconciling resolver that drives extraction.)
+  });
+});

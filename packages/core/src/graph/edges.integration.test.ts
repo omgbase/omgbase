@@ -75,3 +75,28 @@ describe("edge interval maintenance (05 §2)", () => {
     expect(after).toEqual(before);
   });
 });
+
+describe("code-aware extraction through ingest (extraction_version x2)", () => {
+  it("links inside a fence or inline code never become edges; the prose link does", () => {
+    save(
+      "code.md",
+      [
+        "# Code",
+        "",
+        "Write `[[Fake Note]]` to link, or `[t](/fake.md)`.",
+        "",
+        "```md",
+        "[placeholder](/in-fence.md) and [[In Fence]]",
+        "```",
+        "",
+        "Prose [[Real Note]] and [real](/real.md) plus `[[Also Fake]]`.",
+        "",
+      ].join("\n"),
+    );
+    const targets = openEdges().map((e) => e.dst_node);
+    expect(targets).toContain("phantom:Real Note");
+    expect(targets).toContain("phantom:real.md");
+    expect(targets.some((t) => /fake|Fake|fence|Fence/.test(t))).toBe(false);
+    expect(openEdges()).toHaveLength(2);
+  });
+});

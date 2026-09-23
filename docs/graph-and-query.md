@@ -13,9 +13,9 @@
 3. **Inferred is quarantined.** `inferred_edges` is a separate table (each row carries `method`/`score`/`model_v`/`computed_at`), excluded from every query and traversal by construction. As-built it is a schema stub — no writer or reader is wired to it yet.
 4. **Structural relations are not edges.** parent/child/sibling order live in Placement, not the edge tables; OQX navigates them through relations (`block.children`, `section.children`/`section.subsections`, `section`, `section.blocks`) and the `follow` operator (§3), not through edge rows.
 
-## 2. Extraction rules (extraction_version: x1)
+## 2. Extraction rules (extraction_version: x2)
 
-Run per touched document inside the commit transaction:
+Run per touched document inside the commit transaction. **Code is not prose**: a `code_fence` block yields no edges, and inline code spans (`` `…` ``, any backtick-run length, CommonMark matching) are masked before the scanners below run — so a backticked `[[wikilink]]` example, a placeholder link inside a fence, or a regex fragment with square brackets never mints a `references` edge (`graph/extract.ts` `maskCode`). The markdown adapter's `md:link` / `md:wikilink` / `md:anchor` / `md:inline_field` node projection applies the same mask, so nodes and edges agree. The version is not persisted: an existing repo picks up x2 for a document the next time that document is ingested (checkpoint / `observe` / `apply` / `docs_update`); `rebuild-index --edges` only recomputes the `doc_edges` rollup and does not re-extract.
 
 | Source | Edge | Provenance |
 |---|---|---|

@@ -4,7 +4,7 @@ import { AdapterCapability, type FormatAdapter, type AdapterEdge, type Projected
 import type { BlockTree, RawBlock } from "../core/parse/types.js";
 import { parseTree, assertFullCoverage } from "../core/parse/tree.js";
 import { render } from "../core/parse/render.js";
-import { extractFromBlock, extractFromFrontmatter, type ExtractedEdge } from "../graph/extract.js";
+import { extractFromBlock, extractFromFrontmatter, maskCode, type ExtractedEdge } from "../graph/extract.js";
 import { parse as parseYaml } from "yaml";
 
 export const MARKDOWN_FORMAT = "markdown";
@@ -91,12 +91,18 @@ export const markdownAdapter: FormatAdapter = {
         // Anchor to the block's OWN assigned id (zipped on by ingest); fall back
         // to the parent's id, then "root", for pre-identity/parse-time callers.
         const id = b.blockId || parentId || "root";
+        // Code is not prose (extraction_version x2): a code_fence block projects
+        // no link/anchor/field nodes, and inline code spans are masked before the
+        // regex scans below. Same rule as graph/extract.ts so the md:link /
+        // md:wikilink nodes and the `references` edges agree. maskCode is
+        // length-preserving, so spans still index the ORIGINAL raw.
+        const scan = b.type === "code_fence" ? "" : maskCode(b.raw);
         // Links: [text](target)
-        for (const m of b.raw.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
+        for (const m of scan.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
           nodes.push({ kind: "md:link", name: m[1], value: m[2], blockId: id, ...span(m) });
         }
         // Wikilinks: [[target]]
-        for (const m of b.raw.matchAll(/\[\[([^\]]+)\]\]/g)) {
+        for (const m of scan.matchAll(/\[\[([^\]]+)\]\]/g)) {
           nodes.push({ kind: "md:wikilink", value: m[1], blockId: id, ...span(m) });
         }
         // Tasks: checkbox items (the whole block; span covers its raw)
@@ -106,7 +112,7 @@ export const markdownAdapter: FormatAdapter = {
         }
         // Anchors: ^ref
         const anchorRe = /\^([a-zA-Z0-9_-]+)/g;
-        for (const m of b.raw.matchAll(anchorRe)) {
+        for (const m of scan.matchAll(anchorRe)) {
           nodes.push({ kind: "md:anchor", name: m[1], blockId: id, ...span(m) });
         }
         // Inline fields (dataview forms). Two shapes, so a multi-word value is
@@ -116,10 +122,10 @@ export const markdownAdapter: FormatAdapter = {
         // Bracketed matches first; the line form is anchored to a line start
         // (leading whitespace only), so a `[key:: …]`/`(key:: …)` sitting on its
         // own line is not double-counted (a bracket is not `[a-z]`).
-        for (const m of b.raw.matchAll(/[[(]([a-z][a-z0-9_]*)::[ \t]*([^\]\n)]*?)[ \t]*[\])]/gi)) {
+        for (const m of scan.matchAll(/[[(]([a-z][a-z0-9_]*)::[ \t]*([^\]\n)]*?)[ \t]*[\])]/gi)) {
           nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, ...span(m) });
         }
-        for (const m of b.raw.matchAll(/^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$/gim)) {
+        for (const m of scan.matchAll(/^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$/gim)) {
           const start = (m.index ?? 0) + (m[0].match(/^[ \t]*/)?.[0].length ?? 0);
           const end = (m.index ?? 0) + m[0].replace(/[ \t]+$/, "").length;
           nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, spanStart: start, spanEnd: end });
