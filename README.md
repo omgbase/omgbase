@@ -187,6 +187,14 @@ oqx`name from ${people} where !active`;            // → Carol
 Equality is **typed and strict** (`5 == "5"` is false); a comparison against an
 absent (`null`/`undefined`) field is simply false rather than an error.
 
+**String literals** may be double- or single-quoted (`"NYC"` / `'NYC'`) and
+support backslash escapes: `\n`, `\t`, `\r`, `\0`, and `\<any other char>`
+for that character itself (`\"`, `\'`, `\\`). An unterminated string is a lex
+error. Note that inside the `oqx` tagged template JavaScript resolves its own
+escapes first (the template's cooked strings are what OQX lexes), so `\\n` in
+your source reaches OQX as `\n`. Usually you don't need any of this —
+interpolate the host value instead (`where name == ${name}`).
+
 **Ranges.** A Ruby-style range `lo..hi` (inclusive) or `lo...hi` (exclusive high
 end) is a value, used most often as the right side of `in`. Either bound may be
 omitted for an open-ended range (`..hi`, `lo..`). Bounds compare with the same
@@ -285,7 +293,22 @@ Methods on a value: `contains`, `startsWith`, `endsWith`, `matches` (regex),
 ```js
 oqx`name from ${people} where title.startsWith("Eng")`;      // → Bob
 oqx`name from ${people} where title.lower() == "director"`;  // → Alice
+oqx`name from ${people} where has(age) && !has(nickname)`;   // present vs absent
+oqx`name from ${people} where tags.contains("admin")`;       // array membership
 ```
+
+- `has(x)` is true when `x` is **present** — anything other than `null` /
+  `undefined`. `has(0)`, `has("")`, and `has(false)` are all true; use bare
+  truthiness (`where active`) when you mean truthy.
+- `.contains(v)` works on strings (substring) **and arrays** (an element equal
+  to `v` under OQX's strict equality); on anything else it is false.
+- `.size()` / `size(x)` is the length of a string or array, the key count of
+  an object, and 0 for absent; `.matches(re)` compiles its argument as a
+  JavaScript `RegExp`.
+
+Anything not in these tables is an **eval error** (`unknown function 'f(…)'` /
+`unknown method '.m(…)'`) — see [custom functions](#custom-functions-and-methods)
+for adding your own.
 
 ### 5. Consumers
 
@@ -528,7 +551,7 @@ Query AST  ─┬─ InMemoryEngine(DataContext)     tier 1/2 — drive any data
                    └─ finishes the residual on the in-memory engine
 ```
 
-**Everything obeys one scalar-semantics contract** (`oqx.semantics`): typed/strict
+**Everything obeys one scalar-semantics contract** (the `semantics` export): typed/strict
 equality (`5 == "5"` is false), absent operands make ordering comparisons false,
 CEL-style `in`, absent-last sort order. Any backend that can't reproduce a rule
 in its native language must leave that fragment as an in-memory *residual* rather
@@ -555,6 +578,41 @@ const graph = {
 };
 run(parse("id, depth: $depth from tree follow children"), { context: graph });
 ```
+
+#### Custom functions and methods
+
+`DataContext` has two optional hooks, `callFunction(name, args)` for free
+functions (`f(x)`) and `callMethod(name, recv, args)` for methods (`x.m()`).
+Each returns a `CallResult`: `{ handled: true, value }` to answer, or
+`{ handled: false }` to decline. **The engine does not consult the builtin
+table itself** — `DefaultContext` is what does that. So a context that omits
+these hooks, or handles only its own names without deferring, loses
+`entries()`, `size()`, `has()`, `range()`, `.contains()`, and the rest: the
+engine throws `OqxError("unknown function 'size(…)'", "eval")`. (The `graph`
+context above has exactly this limitation.) Delegate whatever you don't
+recognize:
+
+```js
+import { DefaultContext, parse, run } from "@omgbase/oqx";
+
+const builtins = new DefaultContext();          // or: semantics.BUILTIN_FUNCTIONS[name]
+const ctx = {
+  ...graph,
+  callFunction(name, args) {
+    if (name === "age") return { handled: true, value: yearsSince(args[0]) };
+    return builtins.callFunction(name, args);   // entries/size/has/range keep working
+  },
+  callMethod(name, recv, args) {
+    if (name === "slug") return { handled: true, value: slugify(recv) };
+    return builtins.callMethod(name, recv, args);
+  },
+};
+run(parse("id from tree where age(born) > 18 && title.slug() == 'x'"), { context: ctx });
+```
+
+The simplest route is to `extends DefaultContext` and `super.callFunction(...)`
+in the fallthrough. Custom calls are never pushed down by the shipped planners;
+they always run in the residual.
 
 ### Tier 3 — a `QueryPlanner` (pushdown + planning)
 
@@ -584,11 +642,130 @@ blocks/nodes, the relations table, `$` intrinsics, `WITH RECURSIVE` for `follow`
 becomes a `QueryPlanner`, while oqx contributes the parser, IR, semantics
 contract, and residual executor.
 
+## Exports
+
+Everything below is exported from `@omgbase/oqx` (`src/index.ts`); the SQLite
+adapter lives on the `@omgbase/oqx/sqlite` subpath.
+
+**Running queries**
+
+- `oqx` (default export **and** named) — the tagged template. Returns the
+  consumer-shaped value: an array for `collect`, a boolean for `exists` / `none`,
+  a number for `count`, a record or `null` for `first` / `single`.
+- `parse(source)` — a query string → reusable `Query` AST (an `OqxError` with
+  `stage: "lex" | "parse"` on bad input).
+- `execute(source, roots?)` — parse and run a string against named roots
+  (`{ people }`), returning the consumer-shaped value.
+- `run(query, opts?)` — run a parsed `Query`, returning the full `OqxResult`.
+  `opts.values` are the positional `${…}` bindings; then exactly one of
+  `opts.engine` (any `Engine`, e.g. a `PlannedEngine`), `opts.context` (a
+  `DataContext`, run on the in-memory engine), or `opts.roots` (plain-object
+  named roots → `DefaultContext`). Default: an empty `DefaultContext`.
+- `runQuery(query, values, roots)` — the lower-level call `oqx` / `execute` use:
+  in-memory over a `DefaultContext(roots)` (`roots` may be `undefined`).
+- `OqxResult` — the discriminated result `run` returns:
+
+  ```ts
+  type OqxResult =
+    | { consumer: "collect"; rows: unknown[] }
+    | { consumer: "exists";  exists: boolean }
+    | { consumer: "none";    none: boolean }
+    | { consumer: "count";   count: number }
+    | { consumer: "first";   row: unknown | null }
+    | { consumer: "single";  row: unknown | null };
+  ```
+
+**Errors**
+
+- `OqxError` — the one error class for every failure. `error.stage` is
+  `"lex" | "parse" | "eval"` so you can branch without matching messages;
+  `error.message` carries the detail (position for lex/parse errors, the
+  offending name or count for eval errors). Eval errors include: unknown
+  function/method, a non-integer or negative `limit` / `offset`, and
+  `single { … }` matching **more than one** row (zero rows is `null`, not an
+  error — use `first` when zero-or-one is expected and you don't care to assert).
+
+**Engines and contexts**
+
+- `Engine` — `{ run(query, bindings): OqxResult }`; what `run({ engine })` accepts.
+- `InMemoryEngine` — `new InMemoryEngine(context?)`; the reference engine over a
+  `DataContext` (tier 1/2).
+- `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identity`,
+  plus optional `callFunction` / `callMethod` (above).
+- `CallResult` — `{ handled: boolean; value?: unknown }`, returned by those hooks.
+- `DefaultContext` — `new DefaultContext(roots?)`; plain-object access, `.id`
+  identity, and the builtin function/method tables.
+- `semantics` — the scalar-contract module (`equals`, `relate`, `arith`,
+  `membership`, `truthy`, `compareForSort`, `sizeOf`, `toList`,
+  `coerceCollection`, ranges: `makeRange` / `isRange` / `rangeCovers` /
+  `parseRangeString`, entries: `makeEntry` / `isEntry` / `entriesOf`, and the
+  `BUILTIN_FUNCTIONS` / `BUILTIN_METHODS` tables). A backend reproducing a rule
+  natively must match these.
+
+**Planning (tier 3)**
+
+- `QueryPlanner` — `{ plan(query, params): Plan | null }`. Return `null` to
+  decline a query entirely (full in-memory fallback).
+- `Plan` — `{ rows(): Iterable; residual: Query; context?: DataContext }`: the
+  rows the store produced, the query to finish over them, and optionally a
+  context for navigating those rows' relations.
+- `PlannedEngine` — `new PlannedEngine(planner, fallbackContext?)`; an `Engine`
+  that runs the planner and finishes `plan.residual` on the in-memory engine
+  over `plan.rows()` (exposed as the `ROWS_ROOT` root).
+- Planner helpers, used together inside `plan()`: `partitionPushable(where,
+  canPush)` splits the top-level `where` conjunction into `pushed` expressions
+  (those your `canPush` accepts) and a `residual` where-tree; `asEquality(expr)`
+  recognizes `field == const` (either order) as `{ field, value }`;
+  `isConst(expr)` / `constValue(expr, params)` tell a literal-or-binding from a
+  row-dependent expression and evaluate it against the query bindings; and
+  `residualQuery(query, residualWhere)` rebuilds the query to scan `ROWS_ROOT`
+  with the pushed predicates dropped and projection / order / consumer / bounds
+  intact. A planner typically: checks `query.source` names its table (and
+  declines `from` / `follow`), partitions the `where`, translates `pushed` into
+  its native query using `constValue` for parameters, then returns
+  `{ rows, residual: residualQuery(query, residual) }`.
+- `IndexedCollection` — `new IndexedCollection(rootName, rows, indexFields)`; a
+  `QueryPlanner` that hash-indexes `rows` on `indexFields` and answers
+  `field == value` predicates on them from the index, leaving the rest residual:
+
+  ```js
+  import { parse, run, IndexedCollection, PlannedEngine } from "@omgbase/oqx";
+  const planner = new IndexedCollection("people", people, ["city", "title"]);
+  const engine = new PlannedEngine(planner);
+  run(parse('name from people where city == "NYC" && age > 30'), { engine });
+  // city probe from the index; `age > 30` finished in-memory over the candidates
+  ```
+
+- `SqliteTable` (from `@omgbase/oqx/sqlite`) —
+  `new SqliteTable(db, tableName, options)` over a `node:sqlite` `DatabaseSync`.
+  `SqliteTableOptions`:
+  - `columns: string[]` — the columns that map to bare OQX fields; only these
+    are pushable (any other identifier stays residual).
+  - `jsonColumns?: string[]` — columns whose stored text is `JSON.parse`d back
+    into the row (for nested relations kept as JSON).
+  - `map?: (raw) => row` — a custom raw-SQL-row → query-row mapper (overrides
+    `jsonColumns`).
+
+**Types**
+
+- Every AST node type from `src/ast.ts` is re-exported (`Query`, `Subquery`,
+  `Where`, `Expr`, `OpNode`, `SelectItem`, `OrderSpec`, `Follow`, …) for
+  planners that walk the IR.
+
 ## Requirements
 
-Node 22.6+ (the sources are TypeScript, run natively via type-stripping — the
-package has **no runtime dependencies**). `npm test` runs the suite; `npm run
-typecheck` typechecks.
+No runtime dependencies. The package is **ESM-only** (there is no `require`
+condition in `exports`; Node 22.12+ can `require()` an ES module natively).
+
+- **Main entry** (`@omgbase/oqx`): compiled ES2022 ESM. `engines.node` says
+  `>=22.13.0`, but nothing in the main entry needs it — Node 18+ works in
+  practice.
+- **`@omgbase/oqx/sqlite`**: imports `node:sqlite`, which is available without
+  a flag from Node 22.13 (behind `--experimental-sqlite` in 22.5–22.12). This is
+  the reason for the `engines` floor.
+- **Developing the repo**: `npm test` runs the `.ts` suite directly through
+  Node's type stripping, unflagged from Node 22.18 (and all of 24). `npm run
+  typecheck` typechecks; `npm run build` emits `dist/`.
 
 ## Relationship to omgbase
 
@@ -596,3 +773,7 @@ This is tier 1 (the in-memory object/collection interpreter) of the OQX
 implementation tiers. The language kernel here is host-agnostic; richer hosts
 (e.g. omgbase's docs/blocks/nodes with index pushdown) layer data-model
 vocabulary and execution capabilities on top of the same surface syntax.
+
+## License
+
+[MIT](./LICENSE). Release history is in the [CHANGELOG](./CHANGELOG.md).
