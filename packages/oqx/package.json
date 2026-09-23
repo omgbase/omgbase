@@ -1,0 +1,62 @@
+{
+  "name": "@omgbase/oqx",
+  "version": "0.10.1",
+  "description": "OQX (omgbase Query eXpressions): a composable query language and engine for JavaScript collections",
+  "keywords": [
+    "query",
+    "query-language",
+    "collections",
+    "graph",
+    "traversal",
+    "json",
+    "sqlite",
+    "omgbase",
+    "oqx"
+  ],
+  "license": "MIT",
+  "author": "Brendan Baldwin",
+  "homepage": "https://github.com/omgbase/oqx#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/oqx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/omgbase/oqx/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sqlite": {
+      "types": "./dist/adapters/sqlite.d.ts",
+      "import": "./dist/adapters/sqlite.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/fix-dts-extensions.mjs",
+    "clean": "rm -rf dist",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^5.7.0"
+  }
+}
