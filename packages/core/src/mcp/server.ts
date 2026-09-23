@@ -359,7 +359,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "nodes_get_many",
     {
-      description: "Fetch up to 100 blocks by id with budget truncation. Result carries truncated.",
+      description:
+        "Fetch up to 100 blocks by id (in request order) with budget truncation. Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side; `doc`/`path` is an optional SCOPE (ids from other docs then count as unresolved), not a requirement. Result carries `nodes`, `truncated` (cap or `budget_tokens` hit), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -372,7 +373,9 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        const docId = resolveDocId(repoId, { doc: args.doc, path: args.path, block: args.ids[0] });
+        // Only an explicit doc/path scopes the fetch; never infer a doc from
+        // ids[0] — that silently dropped every id owned by another document.
+        const docId = args.doc || args.path ? resolveDocId(repoId, { doc: args.doc, path: args.path }) : null;
         const res = nodesGetMany(store, docId, args.ids, {
           ...(args.resolution ? { resolution: args.resolution } : {}),
           ...(args.budget_tokens !== undefined ? { budgetTokens: args.budget_tokens } : {}),

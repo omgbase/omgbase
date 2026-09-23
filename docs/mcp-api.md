@@ -64,9 +64,11 @@ docs_read_at { doc?, path?, rev }                            // time-travel whol
 
 ```
 nodes_get { doc?, path?, id, resolution?: "skeleton"|"outline"|"text"|"raw"|"full" }
-nodes_get_many { doc?, path?, ids[], resolution?, budget_tokens? }   // ≤ 100 ids
+nodes_get_many { doc?, path?, ids[], resolution?, budget_tokens? }   // ≤ 100 ids, any number of docs
 ```
 `nodes_get` hydrates one block subtree at a resolution (the full ladder from §1). The `raw`/`full` resolutions include the block's `content_hash` (what `update`/`split` need in `expect.content_hash`). There is no `locator`/`include` param — the block id is the address and the owning doc is inferred.
+
+`nodes_get_many` hydrates up to 100 blocks in request order and returns `{ nodes, truncated, unresolved }`. Block ids are globally unique, so `ids` may span any number of documents: each id is resolved to its owning doc server-side (grouped by doc, one forest load per doc). `doc`/`path` is an optional *scope* — when given, ids owned by other documents count as unresolved — never a requirement, and the owning doc is not inferred from `ids[0]`. `unresolved` lists the requested ids (within the cap) that name no live block; ids dropped by the 100-id cap or the token budget are reported by `truncated`, not `unresolved`. Nothing is silently dropped.
 
 ### Search
 

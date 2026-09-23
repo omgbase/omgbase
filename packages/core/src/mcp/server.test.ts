@@ -314,6 +314,39 @@ describe("MCP server skeleton", () => {
   });
 });
 
+describe("nodes_get_many spans documents (ids are globally unique)", () => {
+  it("without doc/path returns ids from three docs in request order and lists bogus ids as unresolved", async () => {
+    ingestFile(store, repoId, "a.md", "# A\n\npara a\n");
+    ingestFile(store, repoId, "b.md", "# B\n\npara b\n");
+    const idsOf = (path: string): string[] =>
+      (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = ?) AND deleted_commit IS NULL ORDER BY order_key").all(path) as { block_id: string }[]).map((r) => r.block_id);
+    const notes = idsOf("notes.md");
+    const a = idsOf("a.md");
+    const b = idsOf("b.md");
+    const ids = [b[1]!, notes[0]!, "b_bogus", a[1]!, notes[1]!, a[0]!, b[0]!];
+
+    const { payload, isError } = (await call("nodes_get_many", { ids })) as {
+      payload: { nodes: { id: string }[]; truncated: boolean; unresolved: string[] };
+      isError: boolean;
+    };
+    expect(isError).toBe(false);
+    expect(payload.nodes.map((n) => n.id)).toEqual([b[1], notes[0], a[1], notes[1], a[0], b[0]]);
+    expect(payload.unresolved).toEqual(["b_bogus"]);
+    expect(payload.truncated).toBe(false);
+  });
+
+  it("with an explicit doc scope, other docs' ids are unresolved rather than dropped", async () => {
+    ingestFile(store, repoId, "a.md", "# A\n");
+    const aId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'a.md')").get() as { block_id: string }).block_id;
+    const notesId = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = (SELECT doc_id FROM docs WHERE path = 'notes.md') AND type = 'heading'").get() as { block_id: string }).block_id;
+    const { payload } = (await call("nodes_get_many", { path: "notes.md", ids: [notesId, aId] })) as {
+      payload: { nodes: { id: string }[]; unresolved: string[] };
+    };
+    expect(payload.nodes.map((n) => n.id)).toEqual([notesId]);
+    expect(payload.unresolved).toEqual([aId]);
+  });
+});
+
 describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
   let root: string;
 

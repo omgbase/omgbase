@@ -250,6 +250,35 @@ describe("nodesGetMany", () => {
     const res = nodesGetMany(store!, docId, many);
     expect(res.truncated).toBe(true);
   });
+
+  it("without a doc scope, resolves ids across documents in request order and lists bogus ids as unresolved", () => {
+    const { docId: a } = ingest("# A\n\npara a\n", "a.md");
+    const repoId = (store!.db.prepare("SELECT repo_id FROM docs WHERE doc_id = ?").get(a) as { repo_id: string }).repo_id;
+    const b = ingestFile(store!, repoId, "b.md", "# B\n\npara b\n").docId;
+    const c = ingestFile(store!, repoId, "c.md", "# C\n\npara c\n").docId;
+    const idsOf = (d: string): string[] => loadDocBlocks(store!, d).map((r) => r.blockId);
+    const [a1, a2] = idsOf(a);
+    const [b1, b2] = idsOf(b);
+    const [c1, c2] = idsOf(c);
+    const ids = [c2!, a1!, "b_nope", b2!, a2!, c1!, b1!];
+
+    const res = nodesGetMany(store!, null, ids, { resolution: "text" });
+    expect(res.nodes.map((n) => n.id)).toEqual([c2, a1, b2, a2, c1, b1]);
+    expect(res.unresolved).toEqual(["b_nope"]);
+    expect(res.truncated).toBe(false);
+  });
+
+  it("with a doc scope, ids owned by other documents are unresolved, not silently dropped", () => {
+    const { docId: a } = ingest("# A\n\npara a\n", "a.md");
+    const repoId = (store!.db.prepare("SELECT repo_id FROM docs WHERE doc_id = ?").get(a) as { repo_id: string }).repo_id;
+    const b = ingestFile(store!, repoId, "b.md", "# B\n").docId;
+    const aIds = loadDocBlocks(store!, a).map((r) => r.blockId);
+    const bIds = loadDocBlocks(store!, b).map((r) => r.blockId);
+
+    const res = nodesGetMany(store!, a, [...aIds, ...bIds]);
+    expect(res.nodes.map((n) => n.id)).toEqual(aIds);
+    expect(res.unresolved).toEqual(bIds);
+  });
 });
 
 describe("readDocumentAtRevision — whole-doc time travel", () => {
