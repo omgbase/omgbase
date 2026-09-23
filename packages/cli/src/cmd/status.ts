@@ -2,13 +2,21 @@ import { parseArgs } from "node:util";
 import { reposStatus, syncStatus, watchLeaseLive } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EXIT_OK } from "../output.js";
+import { EXIT_OK, renderHelp } from "../output.js";
 
 // `omg status` (11 §5.2): repos_status + sync_status + watch-lease probe +
 // embedding queue depth. The "where am I" command — the visual showcase.
 
 function runStatus(cli: Cli, args: string[]): number {
-  parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "status",
+      summary: "Where am I: the active repo, doc/block/commit counts, sync convergence, watcher, embed queue",
+      usage: "status [--repo <slug>] [--json]",
+      options: [["--json", "a flat object: repo, root, docs, blocks, commits, openEdges, convergent, disk, watcher, embedQueue"]],
+    });
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const rs = reposStatus(ws.store, repo.repoId, repo.rootPath ?? undefined);

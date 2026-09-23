@@ -18,7 +18,7 @@ When you hit a stopping point — work is done, or you're blocked and need input
   - `packages/core` — the engine. Everything of substance lives here (`packages/core/src/`): `format/` (parsers/renderers), `reconcile/`, `mutate/`, `oqx-js/` (binds the external `@omgbase/oqx`; `oqx/` is a thin re-export) + `search/`, `graph/`, `core/store/` (SQLite schema), `sync/`, `migrate/`, `mcp/`, `cli/`.
   - `packages/cli` — the `omg` / `omgbase` binary (a thin second client over `core`; no business logic).
   - `packages/sync` — `@omgbase/sync`: the store-to-store synchronizer (ADR-014) — `Coordinator`, `EngineClient` seam (in-process or MCP), the `omgbase-sync` bin; backs `omg sync --server`.
-  - `packages/embedder` — transformers.js / all-MiniLM-L6-v2 embeddings.
+  - `packages/embedder` — transformers.js / `Xenova/gte-base` (768-dim) embeddings, served as the `omgbase-embedder` stdio binary.
   - `packages/fs-adapter` — chokidar-based filesystem sync adapter (stdio).
   - `packages/client` — thin remote MCP client (placeholder).
 - **Data model** is three layers: **Docs → Blocks** (stable `b_` ids; the mutation anchors) **→ Nodes** (semantic projections: links, tasks, sections, anchors…).

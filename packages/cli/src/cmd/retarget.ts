@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { linksRetarget } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EXIT_OK } from "../output.js";
+import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { runOps } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
@@ -19,8 +19,16 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
     options: { scope: { type: "string" }, apply: { type: "boolean" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  retarget <from> <to> [--scope glob] [--apply]  — rewrite a link target; plan-by-default");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "retarget",
+      summary: "Rewrite every link that points at <from> to point at <to> — plan-by-default, --apply commits",
+      usage: "retarget <from> <to> [--scope <glob>] [--apply] [--actor <s>] [--dry-run]",
+      options: [
+        ["--scope <glob>", "only rewrite links in documents matching the path glob"],
+        ["--apply", "commit the rewrite (default: print the plan only)"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const from = positionals[0];
   const to = positionals[1];

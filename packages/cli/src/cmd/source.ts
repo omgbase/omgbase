@@ -20,7 +20,7 @@ import type { Cli } from "../context.js";
 import { columns } from "../render.js";
 import { drainEmbeddings } from "./_embed.js";
 import { ensureFsAdapter, FS_ADAPTER } from "./_source.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 
 // `omg source` (ADR-014) — the source registry: where a repo's bytes come from
 // (a filesystem directory today; git/S3/etc. via adapters later). A repo owns
@@ -30,14 +30,18 @@ import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
 // source's first sync (the same reconcile path every later sync uses).
 
 function help(cli: Cli): number {
-  cli.io.out(`  ${cli.style.bold("source")} — where a repo's bytes come from (filesystem today; git/S3/… later)`);
-  cli.io.out(`  ${cli.style.dim("usage:")} omg source <add|list|attach|detach|rm> …`);
-  cli.io.out("    add <dir> [--slug <s>] [--name <n>] [-y]   point a repo at a filesystem dir (creates the repo + initial sync)");
-  cli.io.out("    list                                       list sources + which repos they feed");
-  cli.io.out("    attach <name> [--repo <slug>]              attach an existing source to a repo");
-  cli.io.out("    detach <name> [--repo <slug>]              detach a source from a repo");
-  cli.io.out("    rm <name>                                  delete a source (and its attachments)");
-  return EXIT_OK;
+  return renderHelp(cli, {
+    name: "source",
+    summary: "Where a repo's bytes come from (a filesystem directory today; git/S3/… via adapters later)",
+    usage: "source <add|list|attach|detach|rm> …",
+    options: [
+      ["add <dir> [--slug <s>] [--name <n>] [-y]", "point a repo at a directory: creates the repo + runs the initial sync (-y skips the consent prompt)"],
+      ["list", "list sources and which repos they feed"],
+      ["attach <name> [--repo <slug>]", "attach an existing source to a repo"],
+      ["detach <name> [--repo <slug>]", "detach a source from a repo"],
+      ["rm <name>", "delete a source (and its attachments)"],
+    ],
+  });
 }
 
 function attachedRepoSlugs(cli: Cli, ws: ReturnType<Cli["workspace"]>, sourceId: string): string[] {

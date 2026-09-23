@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, findDoc, loadDocBlocks, blockRaw, oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type BlockNode } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 
 // `omg run <locator|path>` (11 §5.3) — evaluate the first ```omg fence in a doc
@@ -31,8 +31,13 @@ function fenceBody(raw: string): string {
 async function runRun(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
   if (values.help) {
-    cli.io.err("  run <locator|path>  — evaluate the first ```omg fence (OQX source) in a doc and print results (inert)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "run",
+      summary: "Evaluate the ```omg fence (an OQX query) at a locator — or the first fence in a document — and print its results",
+      usage: "run <locator|path> [--ids|--json|--jsonl]",
+      options: [["<locator|path>", "a fence block's locator, or a document whose first ```omg fence is run"]],
+      notes: ["Strictly read-and-print: fences stay inert in the corpus; nothing is projected or written."],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("run requires a <locator|path>");

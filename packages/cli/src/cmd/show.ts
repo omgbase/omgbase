@@ -2,25 +2,21 @@ import { parseArgs } from "node:util";
 import { resolveRef, nodesGet, findDoc, docLinks, historyNode, docPropertiesMerged } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { expandBlockArgs } from "./_mutate.js";
 
-// `omg show <node>` (11 §5.2) — the metadata card: attrs, placement, open
-// edges, last change. `cat` is the bytes; `show` is the card.
+// `omg show <node…|->` (11 §5.2) — the metadata card: attrs, placement, open
+// edges, last change. `cat` is the bytes; `show` is the card. Several refs (or
+// `-` = refs from stdin, one per line) print one card each — the hydrate step
+// of `omg q … --ids | omg show -`.
 
-function runShow(cli: Cli, args: string[]): number {
-  const { values, positionals } = parseArgs({
-    args,
-    allowPositionals: true,
-    options: { include: { type: "string" }, help: { type: "boolean" } },
-  });
-  if (values.help) {
-    cli.io.out("  show <node> [--include edges,history]  — metadata card (attrs, placement, edges, last change)");
-    return EXIT_OK;
-  }
-  const ref = positionals[0];
-  if (!ref) throw new CliUsageError("show requires a <node>");
-  const include = (values.include ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+/** One ref → its card payload (the --json object) and how to render it. */
+interface ShowOne {
+  payload: Record<string, unknown>;
+  render(): void;
+}
 
+function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const resolved = resolveRef(ws.store, repo.repoId, ref);
@@ -31,24 +27,50 @@ function runShow(cli: Cli, args: string[]): number {
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
     const properties = docPropertiesMerged(ws.store.db, resolved.docId);
     const payload = { kind: "document", id: info.docId, path: info.path, properties, edges: links };
-    cli.capture?.(payload); // shell: the doc card (a single entity → @_, frame intact)
-    if (cli.flags.mode !== "human") {
-      cli.io.out(JSON.stringify(payload));
-      return EXIT_OK;
-    }
-    renderDocCard(cli, info.path, properties, links);
-    return EXIT_OK;
+    return { payload, render: () => renderDocCard(cli, info.path, properties, links) };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
   if (!node) throw new EngineErrorLike("block_missing", `no block ${ref}`);
   const history = include.includes("history") ? historyNode(ws.store, resolved.blockId!, { limit: 5 }) : undefined;
-  cli.capture?.({ ...node, ...(history ? { history } : {}) }); // shell: block card (single entity)
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ ...node, ...(history ? { history } : {}) }));
+  return { payload: { ...node, ...(history ? { history } : {}) }, render: () => renderBlockCard(cli, node, history) };
+}
+
+function runShow(cli: Cli, args: string[]): number {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { include: { type: "string" }, help: { type: "boolean" } },
+  });
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "show",
+      summary: "Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)",
+      usage: "show <node…|-> [--include history]",
+      options: [
+        ["<node…>", "one or more refs: a doc/block id, a path, or a locator"],
+        ["-", `read refs from stdin, one per line (\`${cli.prog} q … --ids | ${cli.prog} show -\`)`],
+        ["--include <list>", "comma-separated extras; `history` adds the block's last 5 changes"],
+      ],
+    });
+  }
+  const refs = expandBlockArgs(positionals);
+  if (refs.length === 0) throw new CliUsageError("show requires a <node> (or - to read refs from stdin)");
+  const include = (values.include ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
+  const cards = refs.map((ref) => showOne(cli, ref, include));
+  // One ref keeps the single-entity shape (→ @_, frame intact); several become a list.
+  const single = cards.length === 1 ? cards[0]! : null;
+  cli.capture?.(single ? single.payload : cards.map((c) => c.payload));
+  if (cli.flags.mode === "json") {
+    cli.io.out(JSON.stringify(single ? single.payload : cards.map((c) => c.payload)));
     return EXIT_OK;
   }
-  renderBlockCard(cli, node, history);
+  if (cli.flags.mode !== "human") {
+    for (const c of cards) cli.io.out(JSON.stringify(c.payload));
+    return EXIT_OK;
+  }
+  for (const c of cards) c.render();
   return EXIT_OK;
 }
 

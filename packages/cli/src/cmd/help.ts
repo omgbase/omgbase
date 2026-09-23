@@ -19,14 +19,14 @@ const GROUPS: { title: string; names: string[] }[] = [
 ];
 
 async function runHelp(cli: Cli): Promise<number> {
-  const { render, style, io } = cli;
+  const { render, style, io, prog } = cli;
   const { COMMANDS } = await import("../commands.js");
   const byName = new Map(COMMANDS.map((c) => [c.name, c]));
 
   io.out(render.wordmark("Open Markdown Graph Base"));
   io.out(render.rule(40));
   io.out("");
-  io.out(`  ${style.dim("usage:")} omgbase ${style.dim("[--json|--jsonl|--ids] [-C dir] [--repo slug]")} <command> ${style.dim("[args]")}`);
+  io.out(`  ${style.dim("usage:")} ${prog} ${style.dim("[--json|--jsonl|--ids] [-C dir] [--repo slug]")} <command> ${style.dim("[args]")}`);
   io.out("");
 
   for (const group of GROUPS) {
@@ -41,7 +41,7 @@ async function runHelp(cli: Cli): Promise<number> {
     for (const r of rows) io.out(r);
     io.out("");
   }
-  io.out(`  ${style.dim("run")} omgbase <command> --help ${style.dim("for details")}`);
+  io.out(`  ${style.dim("run")} ${prog} <command> --help ${style.dim("for details")}`);
   return EXIT_OK;
 }
 

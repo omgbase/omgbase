@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EngineErrorLike, EXIT_OK } from "../output.js";
+import { truncationFooter, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
@@ -46,7 +46,23 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  query <source> [-n N] [--cursor c] [-f file|-]");
+    renderHelp(cli, {
+      name: "query",
+      summary: "Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)",
+      usage: ["query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]", "query -f <file|-> [-n <N>] [--cursor <c>]"],
+      options: [
+        ["<source>", "the OQX query text (quote it); `from` may be omitted inside blocks"],
+        ["-f <file|->", "read the query from a file, or stdin with `-`"],
+        ["-n <N>", "page size"],
+        ["--cursor <c>", "continue a truncated result"],
+        ["--ids", `bare ids, one per line — pipe fuel (\`… --ids | ${cli.prog} cat -\`)`],
+      ],
+      notes: [
+        `semantic ranking: \`order by semantic("phrase") desc\` or \`where semantic("phrase") > 0.6\` (needs embedding.provider; see \`${cli.prog} embed --help\`).`,
+        "full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.",
+        "examples:",
+      ],
+    });
     cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
     cli.io.out("       query 'from nodes where kind == \"md:section\" select items: section.blocks collect { where type == \"list_item\" }'");
     cli.io.out("       query 'from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked } select $path, open'");

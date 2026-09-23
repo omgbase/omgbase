@@ -3,7 +3,7 @@ import { parse as parseYamlScalar } from "yaml";
 import { docsCreate, docsMove, docsDelete, docsSetMeta, type DocOpContext, type DocOpResult } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
-import { CliUsageError, EXIT_OK } from "../output.js";
+import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { readContent, extractContentOpts } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
@@ -34,8 +34,17 @@ async function runNew(cli: Cli, args: string[]): Promise<number> {
     options: { actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  new <path> (-f file | -)  — create a document from complete file bytes (frontmatter incl.)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "new",
+      summary: "Create a document at <path> from complete file bytes (frontmatter included)",
+      usage: "new <path> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]",
+      options: [
+        ["-m <markdown>", "content inline"],
+        ["-f <file>", "content from a file"],
+        ["-", "content from stdin"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const path = positionals[0];
   if (!path) throw new CliUsageError("new requires a <path>");
@@ -58,8 +67,12 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
     options: { actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  mv <doc> <new-path>  — rename a document (identity preserved)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "mv",
+      summary: "Rename/move a document to a new path; its identity and history are preserved",
+      usage: "mv <doc> <new-path> [--actor <s>] [--dry-run]",
+      options: [["--actor <s>", "commit actor (default human:$USER)"]],
+    });
   }
   const doc = positionals[0];
   const toPath = positionals[1];
@@ -100,8 +113,17 @@ async function runMeta(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.err("  meta <doc> --set k=v … [--set-json k='…'] [--unset k …]  — surgical frontmatter patch");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "meta",
+      summary: "Surgical frontmatter patch: set/unset keys without touching the body",
+      usage: "meta <doc> [--set k=v]… [--set-json k=<json>]… [--unset k]… [--actor <s>] [--dry-run]",
+      options: [
+        ["--set k=v", "set a string value (repeatable)"],
+        ["--set-json k=<json>", "set a typed value from JSON (repeatable)"],
+        ["--unset k", "remove a key (repeatable)"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const doc = positionals[0];
   if (!doc) throw new CliUsageError("meta requires a <doc>");

@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { nodeSet, editablePropsFor } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { runOps, runOpsRemote } from "./_mutate.js";
 
 // `omg node set <nodeId> <prop> <value>` (node-editability) — surgically set an
@@ -21,10 +21,17 @@ function nodeKindFormat(cli: Cli, nodeId: string): { kind: string; format: strin
 
 async function runNode(cli: Cli, args: string[]): Promise<number> {
   const [sub, ...rest] = args;
-  if (sub === undefined || sub === "help" || rest.includes("--help")) {
-    cli.io.err("  node set <nodeId> <prop> <value>   — set an editable node property (surgical)");
-    cli.io.err("  node props <nodeId>                — list a node's editable properties");
-    return EXIT_OK;
+  if (sub === undefined || sub === "help" || args.includes("--help")) {
+    return renderHelp(cli, {
+      name: "node",
+      summary: "Edit a projected node's editable properties surgically (a link's target, a task's checked, …)",
+      usage: ["node set <nodeId> <prop> <value> [--actor <s>] [--dry-run]", "node props <nodeId>"],
+      options: [
+        ["set", "rewrite one property; the adapter maps it back onto the source block"],
+        ["props", "list which properties of this node's kind are editable"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
 
   if (sub === "set") {

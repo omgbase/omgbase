@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { changesSince } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, truncationFooter, EXIT_OK } from "../output.js";
+import { CliUsageError, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 type ChangesResult = ReturnType<typeof changesSince>;
@@ -47,8 +47,17 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  log [--since 24h|7d|ISO] [--cursor n] [--origin api|observed] [-n N]  — commit digests");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "log",
+      summary: "What changed: one digest per commit, newest first",
+      usage: "log [--since <24h|7d|ISO>] [--cursor <n>] [--origin api|observed] [-n <N>]",
+      options: [
+        ["--since <t>", "only commits after a relative age (24h, 7d) or an ISO timestamp"],
+        ["--cursor <n>", "continue from a commit sequence number"],
+        ["--origin <o>", "api (agent/CLI writes) | observed (file edits picked up by sync)"],
+        ["-n <N>", "max commits"],
+      ],
+    });
   }
 
   let result: ChangesResult;

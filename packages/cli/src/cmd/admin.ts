@@ -20,7 +20,7 @@ import {
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR, renderHelp } from "../output.js";
 import { loadEmbedding, drainEmbeddings } from "./_embed.js";
 
 // admin/maintenance (11 §5.8–5.9). The live watcher moved to `omg sync --watch`.
@@ -34,8 +34,18 @@ function runRebuild(cli: Cli, args: string[]): number {
     options: { sections: { type: "boolean" }, edges: { type: "boolean" }, fts: { type: "boolean" }, "block-changes": { type: "boolean" }, all: { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  rebuild-index [--sections|--edges|--fts|--block-changes|--all]");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "rebuild-index",
+      summary: "Rebuild derived tables from the authoritative docs/blocks (safe any time; never touches content or history)",
+      usage: "rebuild-index [--sections|--edges|--fts|--block-changes|--all]",
+      options: [
+        ["--sections", "section spans"],
+        ["--edges", "the link graph"],
+        ["--fts", "the full-text index"],
+        ["--block-changes", "the per-block change log"],
+        ["--all", "everything (default)"],
+      ],
+    });
   }
   const target: RebuildTarget = values.sections ? "sections" : values.edges ? "edges" : values.fts ? "fts" : values["block-changes"] ? "block_changes" : "all";
   const ws = cli.workspace();
@@ -49,17 +59,23 @@ function runRebuild(cli: Cli, args: string[]): number {
 function runGcCmd(cli: Cli, args: string[]): number {
   const { values } = parseArgs({ args, allowPositionals: true, options: { "dry-run": { type: "boolean" }, help: { type: "boolean" } } });
   if (values.help) {
-    cli.io.err("  gc [--dry-run]  — mark-and-sweep (refuses unless gc.enabled in repo settings)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "gc",
+      summary: "Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)",
+      usage: "gc [--dry-run]",
+      options: [["--dry-run", "report what would be swept, sweep nothing (allowed even when gc is disabled)"]],
+    });
   }
+  // `--dry-run` is also a global flag (parseGlobals consumes it) — honor either spelling.
+  const dryRun = Boolean(values["dry-run"]) || cli.flags.dryRun;
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const settings = resolveSettings(ws.store, repo.repoId);
   const enabled = Boolean((settings.gc as { enabled?: boolean } | undefined)?.enabled);
-  if (!enabled && !values["dry-run"]) {
+  if (!enabled && !dryRun) {
     throw new EngineErrorLike("target_missing", "gc is disabled; set gc.enabled=true (or use --dry-run)");
   }
-  const result = runGc(ws.store, { enabled: enabled || Boolean(values["dry-run"]) });
+  const result = runGc(ws.store, { enabled: enabled || dryRun });
   if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(result));
   else cli.io.err(cli.style.dim(`  swept ${result.blobsSwept} blobs, ${result.treeNodesSwept} tree nodes`));
   return EXIT_OK;
@@ -68,7 +84,15 @@ function runGcCmd(cli: Cli, args: string[]): number {
 // ---- doctor -----------------------------------------------------------------
 
 function runDoctor(cli: Cli, args: string[]): number {
-  parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "doctor",
+      summary: "Invariant sweep: convergence, FTS rows vs live blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
+      usage: "doctor [--json]",
+      options: [["--json", "`{ ok, checks: [{ name, ok, detail }] }`"]],
+    });
+  }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const db = ws.store.db;
@@ -127,6 +151,21 @@ function resolveConfigScope(cli: Cli, ws: ReturnType<Cli["workspace"]>): ConfigS
 
 function runConfig(cli: Cli, args: string[]): number {
   const [sub, ...rest] = args;
+  if (sub === "--help" || sub === "help" || args.includes("--help")) {
+    return renderHelp(cli, {
+      name: "config",
+      summary: "Read/write settings — one schema at two layers: workspace defaults, overridable per repo",
+      usage: ["config [list]", "config get <key>", "config set <key> <value>"],
+      options: [
+        ["list", "show the effective settings (default); at repo scope, overrides are marked"],
+        ["get <key>", "print one effective value (dotted path, e.g. embedding.provider)"],
+        ["set <key> <value>", "write a value at the selected layer (true/false/null/numbers are typed)"],
+        ["--repo <slug>", "target a repo's layer"],
+        ['--repo ""', "target the workspace layer (what every repo inherits)"],
+      ],
+      notes: [`e.g. ${cli.prog} config set embedding.provider omgbase-embedder --repo ""`],
+    });
+  }
   const ws = cli.workspace();
   const scope = resolveConfigScope(cli, ws);
   const label = scope.kind === "workspace" ? "workspace" : scope.slug;
@@ -178,7 +217,7 @@ function runConfig(cli: Cli, args: string[]): number {
     cli.io.err(cli.style.dim(`  set ${key} (${label})`));
     return EXIT_OK;
   }
-  throw new CliUsageError(`unknown config subcommand '${sub}' (get|set|list)`);
+  throw new CliUsageError(`unknown config subcommand '${sub}' (get|set|list)`, `run '${cli.prog} config --help'`);
 }
 
 // ---- import -----------------------------------------------------------------
@@ -190,8 +229,12 @@ function runImport(cli: Cli, args: string[]): number {
     options: { execute: { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  import mrplex <export.json> [--execute]  — plan-by-default; --execute imports");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "import",
+      summary: "Import documents from a mrplex export — plan-by-default, --execute writes",
+      usage: "import mrplex <export.json> [--execute]",
+      options: [["--execute", "perform the import (default: print the plan only)"]],
+    });
   }
   if (positionals[0] !== "mrplex") throw new CliUsageError("only `import mrplex <export>` is supported");
   const file = positionals[1];
@@ -217,12 +260,18 @@ function runImport(cli: Cli, args: string[]): number {
 async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   const sub = args.find((a) => !a.startsWith("-"));
   if (args.includes("--help") || args.includes("-h") || sub === "help") {
-    cli.io.err("  embed [status|drain] [--verbose] [--prune]  — embedding queue");
-    cli.io.err(cli.style.dim("    status (default)  report provider + how many blocks are queued (embeddable but not yet embedded)"));
-    cli.io.err(cli.style.dim("    drain             embed the queued blocks now; status alone makes no progress"));
-    cli.io.err(cli.style.dim("    --verbose         (with drain) print per-batch progress as blocks are embedded"));
-    cli.io.err(cli.style.dim("    --prune           (with drain) after embedding, delete vectors left by other models (e.g. after switching models)"));
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "embed",
+      summary: "The embedding queue: report the provider + what is queued, or drain it to embed now",
+      usage: ["embed [status]", "embed drain [--verbose] [--prune]"],
+      options: [
+        ["status", "(default) provider, model, and how many blocks/docs are embeddable but not yet embedded"],
+        ["drain", "embed the queued blocks now — status alone makes no progress"],
+        ["-v, --verbose", "(drain) per-batch progress"],
+        ["--prune", "(drain) afterwards delete vectors left by other models (e.g. after switching models)"],
+      ],
+      notes: [`needs embedding.provider (\`${cli.prog} config set embedding.provider omgbase-embedder --repo ""\`); without one, semantic search is simply off.`],
+    });
   }
   const verbose = args.includes("--verbose") || args.includes("-v");
   const prune = args.includes("--prune");

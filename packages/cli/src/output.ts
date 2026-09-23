@@ -14,12 +14,52 @@ export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
 export const EXIT_USAGE = 2;
 
-/** A CLI-level usage error (bad flag, missing argument) → exit 2. */
+/** A CLI-level usage error (bad flag, missing argument) → exit 2. An optional
+ *  `hint` is a one-line pointer at the fix (e.g. "run 'omg --help' …"). */
 export class CliUsageError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly hint?: string) {
     super(message);
     this.name = "CliUsageError";
   }
+}
+
+// Per-command `--help` (11 §2.2). One shape for every command so the reader
+// learns it once: a `name — summary` line, a `usage:` line (prefixed with the
+// invoked binary name), then aligned `options:`, then any free-form notes
+// (examples, sub-command tables). Help goes to stdout — it is the requested
+// output — and never needs a workspace.
+
+export interface HelpSpec {
+  name: string;
+  summary: string;
+  /** Usage form(s) WITHOUT the program name (`cat <node…|-> [--resolution r]`). */
+  usage: string | string[];
+  /** `[flag, description]` rows; `-h, --help` is appended automatically. */
+  options?: [string, string][];
+  /** Extra lines printed verbatim under the options (examples, sub-commands). */
+  notes?: string[];
+}
+
+interface HelpIO {
+  io: IO;
+  style: Style;
+  prog: string;
+}
+
+export function renderHelp(cli: HelpIO, spec: HelpSpec): number {
+  const { io, style, prog } = cli;
+  io.out(`  ${style.bold(spec.name)} — ${spec.summary}`);
+  const usages = Array.isArray(spec.usage) ? spec.usage : [spec.usage];
+  usages.forEach((u, i) => io.out(`  ${style.dim(i === 0 ? "usage:" : "      ")} ${prog} ${u}`));
+  const options: [string, string][] = [...(spec.options ?? []), ["-h, --help", "show this help"]];
+  const width = Math.max(...options.map(([f]) => f.length));
+  io.out(`  ${style.dim("options:")}`);
+  for (const [flag, desc] of options) io.out(`    ${style.accent(flag.padEnd(width))}  ${desc}`);
+  if (spec.notes && spec.notes.length > 0) {
+    io.out("");
+    for (const n of spec.notes) io.out(`  ${n}`);
+  }
+  return EXIT_OK;
 }
 
 /**
@@ -91,8 +131,11 @@ function toBody(err: unknown): { code: string; message: string; data?: unknown; 
  */
 export function renderError(err: unknown, io: IO, style: Style, json: boolean): number {
   if (err instanceof CliUsageError) {
-    if (json) io.err(JSON.stringify({ error: "usage", message: err.message, retriable: false }));
-    else io.err(`${style.err("usage")}: ${err.message}`);
+    if (json) io.err(JSON.stringify({ error: "usage", message: err.message, ...(err.hint ? { hint: err.hint } : {}), retriable: false }));
+    else {
+      io.err(`${style.err("usage")}: ${err.message}`);
+      if (err.hint) io.err(style.dim(`  hint: ${err.hint}`));
+    }
     return EXIT_USAGE;
   }
 

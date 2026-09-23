@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { Workspace, RepoSelectionError, type RepoRow } from "@omgbase/core";
 import { Style } from "./style.js";
 import { Renderer, type IO } from "./render.js";
@@ -42,6 +42,12 @@ export interface Cli {
   render: Renderer;
   cwd: string;
   /**
+   * The name the binary was invoked as (`omg` or `omgbase` — the two `bin`
+   * entries), used wherever help/hints quote a command back to the user so the
+   * text matches what they actually typed. Defaults to `omg`.
+   */
+  prog: string;
+  /**
    * Optional typed-result sink (11 shell). When present, a command calls it with
    * its structured library result — the same object `--json` would emit — before
    * terminal formatting. The interactive shell installs a sink to capture typed
@@ -60,6 +66,18 @@ export interface CliOptions {
   workspace?: Workspace;
   capture?: (value: unknown) => void;
   cwd?: string;
+  prog?: string;
+}
+
+/**
+ * The name to quote the binary as, from `process.argv[1]`: the basename when
+ * invoked through a `bin` shim (`omg`, `omgbase`), else `omg` — a direct
+ * `node dist/src/main.js` run would otherwise print "main.js".
+ */
+export function progName(argv1: string | undefined): string {
+  if (!argv1) return "omg";
+  const b = basename(argv1);
+  return /\.(c|m)?js$/.test(b) || b.length === 0 ? "omg" : b;
 }
 
 export function makeCli(flags: GlobalFlags, io: IO, opts: CliOptions = {}): Cli {
@@ -67,6 +85,7 @@ export function makeCli(flags: GlobalFlags, io: IO, opts: CliOptions = {}): Cli 
   const noColor = flags.noColor || !io.stdoutTTY || process.env.NO_COLOR != null;
   const style = new Style({ noColor, isTTY: io.stdoutTTY });
   const render = new Renderer(style);
+  const prog = opts.prog ?? "omg";
 
   let cachedWs: Workspace | null = opts.workspace ?? null;
   return {
@@ -75,6 +94,7 @@ export function makeCli(flags: GlobalFlags, io: IO, opts: CliOptions = {}): Cli 
     style,
     render,
     cwd,
+    prog,
     ...(opts.capture ? { capture: opts.capture } : {}),
     workspace(): Workspace {
       if (cachedWs) return cachedWs;
@@ -83,7 +103,7 @@ export function makeCli(flags: GlobalFlags, io: IO, opts: CliOptions = {}): Cli 
         throw new EngineErrorLike(
           "repo_not_found",
           `no omgbase workspace found at or above ${cwd}`,
-          { hint: "run `omgbase init` to create one" },
+          { hint: `run \`${prog} init\` to create one here, or \`${prog} -C <dir> …\` to run inside an existing workspace` },
         );
       }
       cachedWs = ws;

@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, historyNode, type NodeChange } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg hist <node>` (11 §5.5) — history_node: a block's biography.
@@ -14,8 +14,12 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
     options: { n: { type: "string", short: "n" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.out("  hist <node> [-n N]  — a block's change biography");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "hist",
+      summary: "A block's change biography: every commit that touched it",
+      usage: "hist <node> [-n <N>]",
+      options: [["-n <N>", "max changes"]],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("hist requires a <node>");

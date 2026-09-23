@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { docsUpdate, renderOpsetPlan, isValidId, type DocsUpdateContext } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
-import { CliUsageError, EXIT_OK } from "../output.js";
+import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { readContent, extractContentOpts } from "./_mutate.js";
 import { cmdUpdate as cmdUpdateBlock } from "./mutate.js";
 import { remoteCall } from "./_remote.js";
@@ -33,9 +33,20 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
     options: { actor: { type: "string" }, reason: { type: "string" }, plan: { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.err("  update <target> (-f file | -)  — replace a block (b_… target) or reconcile a whole document (doc id/path)");
-    cli.io.err("    --plan / --dry-run   (doc) show the opset (identity effects + summary), commit nothing");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "update",
+      summary: "Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)",
+      usage: "update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]",
+      options: [
+        ["-m <markdown>", "content inline"],
+        ["-f <file>", "content from a file"],
+        ["-", "content from stdin"],
+        ["--plan", "(doc) print the reconciliation opset — identity effects + summary — and commit nothing"],
+        ["--expect <hash>", "(block) fail with stale_expectation unless the block's hash still matches"],
+        ["--reason <s>", "commit reason recorded in history"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
+    });
   }
   const doc = positionals[0];
   if (!doc) throw new CliUsageError("update requires a <doc> (id or path)");

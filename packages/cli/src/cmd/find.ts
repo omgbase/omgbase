@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolve as resolveThing, type ResolveInput } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EXIT_OK } from "../output.js";
+import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 
@@ -24,8 +24,17 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
     },
   });
   if (values.help) {
-    cli.io.out("  find <text> [-n N] [-1] [-v] [--no-semantic]  — ranked hybrid search; -1 prints the top id alone");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "find",
+      summary: "Resolve a name/title/concept to ranked hits — full-text, fused with the embedding index when a provider is configured",
+      usage: "find <text> [-n <N>] [-1] [-v] [--no-semantic]",
+      options: [
+        ["-n <N>", "max hits (default 10)"],
+        ["-1", `print only the top hit's id (\`${cli.prog} cat $(${cli.prog} find "risks" -1)\`)`],
+        ["-v, --verbose", "print per-hit evidence"],
+        ["--no-semantic", "full-text only; skip the embedding provider even if one is configured"],
+      ],
+    });
   }
   const text = positionals.join(" ").trim();
   if (!text) throw new CliUsageError("find requires <text>");

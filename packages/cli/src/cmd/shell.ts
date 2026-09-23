@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EXIT_OK } from "../output.js";
+import { EXIT_OK, renderHelp } from "../output.js";
 import { ShellSession } from "../shell/session.js";
 
 // `omg shell` (11 shell) — a persistent in-process session. One open
@@ -19,10 +19,16 @@ async function runShell(cli: Cli, args: string[]): Promise<number> {
     options: { help: { type: "boolean" }, prompt: { type: "string" } },
   });
   if (values.help) {
-    cli.io.out("  shell [--prompt <str>]  — persistent session with typed bindings (@1/@_/@name; unset/bindings)");
-    cli.io.out("    --prompt <str>  emit <str> before reading each piped line, so a driver (e.g. recital) can sync on it");
-    cli.io.out("    (also read from $OMG_SHELL_PROMPT; --prompt wins)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "shell",
+      summary: "A persistent session: one open workspace across commands, and results become typed bindings (@1/@_/@name)",
+      usage: "shell [--prompt <str>] [--server <cmd|url>]",
+      options: [
+        ["--prompt <str>", "emit <str> before reading each piped line so a driver (e.g. recital) can sync on it; also $OMG_SHELL_PROMPT (--prompt wins)"],
+        ["--server <cmd|url>", "run every line against a remote engine over MCP"],
+      ],
+      notes: ["Interactive on a TTY (type `?` for binding help, `exit` to leave); a script runner when stdin is piped (one command per line)."],
+    });
   }
 
   // An explicit prompt string, if any: --prompt wins, else $OMG_SHELL_PROMPT.

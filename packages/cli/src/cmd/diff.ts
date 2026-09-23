@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { findDoc, diffUnified } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg diff <doc>` (11 §5.5) — unified diff. With no revisions: current vs
@@ -15,8 +15,15 @@ async function runDiff(cli: Cli, args: string[]): Promise<number> {
     options: { from: { type: "string" }, to: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
-    cli.io.out("  diff <doc> [--from rev] [--to rev]  — unified diff (default: current vs previous)");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "diff",
+      summary: "Unified diff of a document between two revisions (default: previous → current)",
+      usage: "diff <doc> [--from <rev>] [--to <rev>]",
+      options: [
+        ["--from <rev>", "older revision id (default: the one before --to)"],
+        ["--to <rev>", "newer revision id (default: current)"],
+      ],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("diff requires a <doc>");

@@ -7,7 +7,7 @@ import { Workspace, reposStatus, workspaceSettings, writeWorkspaceSettings } fro
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns as columnsLocal } from "../render.js";
-import { EngineErrorLike, EXIT_OK } from "../output.js";
+import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 
 // Bootstrap: init / repos (11 §5.1). Pointing a repo at a directory is
 // `omg source add <dir>` (ADR-014) — a repo owns identity; sources bring bytes.
@@ -155,7 +155,18 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
       help: { type: "boolean" },
     },
   });
-  if (values.help) return help(cli, "init", "omgbase init [dir] [--yes] [--embedder <cmd|url> | --no-embedder]", "Create an omgbase workspace (.omgbase/ + database) in dir (default cwd). Does not ingest files — run `omg source add .` to point a repo at a directory. --embedder sets the embedding provider directly; --no-embedder skips the provider offer entirely.");
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "init",
+      summary: `Create an omgbase workspace (.omgbase/ + database) in <dir> (default cwd). Ingests nothing — run \`${cli.prog} source add .\` next`,
+      usage: "init [<dir>] [--yes] [--embedder <cmd|url> | --no-embedder]",
+      options: [
+        ["-y, --yes", "accept the prompts (.gitignore entry, embedder offer) non-interactively"],
+        ["--embedder <cmd|url>", "set the embedding provider verbatim (optional; enables semantic search)"],
+        ["--no-embedder", "skip the embedder offer entirely"],
+      ],
+    });
+  }
 
   const dir = resolve(positionals[0] ?? cli.cwd);
   mkdirSync(dir, { recursive: true });
@@ -189,15 +200,26 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
   io.out(`  ${style.ok(render.g.ok)} workspace  ${style.path(dir)}`);
   io.err(style.dim(`  next: ${style.accent("omg source add .")} to point a repo at a directory of files`));
   if (needsProviderHint) {
-    io.err(style.dim(`  semantic search is off — no embedding provider set. Install the built-in embedder:`));
-    io.err(style.dim(`    ${EMBEDDER_INSTALL} && omg config set embedding.provider ${EMBEDDER_CMD} --repo ""`));
+    // Optional, and say so: everything except semantic ranking works without a
+    // provider. Name what the embedder is (a local model that turns blocks into
+    // vectors) so the reader can decide whether they want it at all.
+    io.err(style.dim(`  optional: semantic search is off — no embedding provider set. Full-text search, queries, and edits all work without one.`));
+    io.err(style.dim(`  to enable it, install the built-in embedder (@omgbase/embedder: a local transformers.js model that turns blocks into vectors so ${style.accent(`${cli.prog} find`)} and ${style.accent('semantic("…")')} can rank by meaning), then point the workspace at it:`));
+    io.err(style.dim(`    ${EMBEDDER_INSTALL} && ${cli.prog} config set embedding.provider ${EMBEDDER_CMD} --repo ""`));
   }
   return EXIT_OK;
 }
 
 function runRepos(cli: Cli, args: string[]): number {
   const { values } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
-  if (values.help) return help(cli, "repos", "omgbase repos", "List repos in this workspace: slug, root path, doc/block counts.");
+  if (values.help) {
+    return renderHelp(cli, {
+      name: "repos",
+      summary: "List the repos in this workspace: slug, root path (from its fs source), doc/block counts",
+      usage: "repos [--ids|--json|--jsonl]",
+      options: [["--ids", "slugs only, one per line"]],
+    });
+  }
   const ws = cli.workspace();
   const repos = ws.repos().map((r) => ({ ...r, status: reposStatus(ws.store, r.repoId) }));
 
@@ -227,12 +249,6 @@ function runRepos(cli: Cli, args: string[]): number {
 }
 
 // small local helpers ---------------------------------------------------------
-
-function help(cli: Cli, name: string, usage: string, desc: string): number {
-  cli.io.out(`  ${cli.style.bold(name)} — ${desc}`);
-  cli.io.out(`  ${cli.style.dim("usage:")} ${usage}`);
-  return EXIT_OK;
-}
 
 function shortenHome(p: string): string {
   const home = process.env.HOME;

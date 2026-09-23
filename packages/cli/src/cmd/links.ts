@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, docLinks } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 
 // `omg links <node>` (11 §5.4) — open edges touching the node; default both
 // directions, grouped; doc-grain by default, --blocks for block-grain.
@@ -21,8 +21,17 @@ function runLinks(cli: Cli, args: string[]): number {
     },
   });
   if (values.help) {
-    cli.io.out("  links <node> [--in|--out] [--pred p,p] [--blocks]  — open edges; --in = backlinks");
-    return EXIT_OK;
+    return renderHelp(cli, {
+      name: "links",
+      summary: "Open edges touching a node, grouped by predicate (both directions by default)",
+      usage: "links <node> [--in|--out] [--pred <p,p>] [--blocks]",
+      options: [
+        ["--in", "incoming edges only (backlinks)"],
+        ["--out", "outgoing edges only"],
+        ["--pred <p,p>", "keep only these predicates"],
+        ["--blocks", "block-grain edges (default: doc-grain)"],
+      ],
+    });
   }
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("links requires a <node>");

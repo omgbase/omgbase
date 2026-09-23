@@ -1,7 +1,7 @@
 import { freshnessSweep, watchLeaseLive } from "@omgbase/core";
 import { NO_WORKSPACE_OK, SKIP_FRESHNESS, REMOTE_OK, type Cli, type GlobalFlags } from "./context.js";
 import { CliUsageError, EngineErrorLike, renderError } from "./output.js";
-import { resolveCommand } from "./commands.js";
+import { resolveCommand, unknownCommandError } from "./commands.js";
 
 // Split global flags from the command + its residual argv (11 §2.2). Global
 // flags are recognized anywhere — before OR after the command. Everything after
@@ -114,14 +114,12 @@ export function parseGlobals(argv: string[]): Parsed {
 export async function runCommand(cli: Cli, command: string, rest: string[]): Promise<number> {
   const resolved = resolveCommand(command);
   if (!resolved) {
-    return renderError(
-      new CliUsageError(`unknown command '${command}'`),
-      cli.io,
-      cli.style,
-      cli.flags.mode !== "human",
-    );
+    return renderError(unknownCommandError(cli.prog, command), cli.io, cli.style, cli.flags.mode !== "human");
   }
-  // `--help` after a command → route to help for that command.
+  // `--help` after a command → route to help for that command. Help is
+  // documentation, not work: it must never need a workspace, so it also skips
+  // the freshness sweep below (which would otherwise fail with repo_not_found
+  // from any directory without a `.omgbase/`).
   const args = cli.flags.help ? ["--help", ...rest] : rest;
 
   // Global `--server` (remote/MCP mode) is only implemented by some commands so
@@ -139,7 +137,7 @@ export async function runCommand(cli: Cli, command: string, rest: string[]): Pro
     // Freshness sweep (11 §3.3): current-by-default, unless --stale, a live
     // watcher holds the lease, remote (`--server`) mode (no local tree to sweep),
     // or the command manages sync itself.
-    if (!cli.flags.stale && cli.flags.server === undefined && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
+    if (!cli.flags.help && !cli.flags.stale && cli.flags.server === undefined && !SKIP_FRESHNESS.has(resolved.name) && !NO_WORKSPACE_OK.has(resolved.name)) {
       const ws = cli.workspace();
       if (!watchLeaseLive(ws.omgbaseDir)) {
         // Best-effort: a workspace with no attached repo (or an unresolvable
