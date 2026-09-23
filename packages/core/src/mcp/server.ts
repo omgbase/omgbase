@@ -8,6 +8,7 @@ import { findDoc, findDocByRef, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT, DOC
 import { CursorInvalid } from "../core/cursor.js";
 import { resolveRef } from "../core/read/refs.js";
 import { isValidId } from "../core/ids.js";
+import { VERSION } from "../core/index.js";
 import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
 import { graphNeighborhood } from "./graph.js";
@@ -105,7 +106,7 @@ function fail(err: unknown): { content: { type: "text"; text: string }[]; isErro
 }
 
 export function buildServer(ctx: ServerContext): McpServer {
-  const server = new McpServer({ name: "omgbase", version: "0.0.0" });
+  const server = new McpServer({ name: "omgbase", version: VERSION });
   const { store } = ctx;
 
   // Multi-repo (ADR-014): every tool accepts an optional `repo` slug. Resolve it

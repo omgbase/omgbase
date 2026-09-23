@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import type { ObserveResult, ObserveDeleteResult } from "@omgbase/core";
+import { VERSION, type ObserveResult, type ObserveDeleteResult } from "@omgbase/core";
 import type { EngineClient, ChangesPage, DocBytes } from "./engine-client.js";
 
 // McpEngineClient (ADR-014 §7): reaches the omgbase side over the Model Context
@@ -74,7 +74,7 @@ export class McpEngineClient implements EngineClient {
 /** Connect to an omgbase MCP server over stdio by spawning `command args`
  *  (e.g. `omg mcp -C /vault`). Returns a ready EngineClient. */
 export async function connectStdioEngine(spec: { command: string; args?: string[]; env?: Record<string, string> }): Promise<McpEngineClient> {
-  const client = new Client({ name: "omgbase-sync", version: "0.0.0" });
+  const client = new Client({ name: "omgbase-sync", version: VERSION });
   const transport = new StdioClientTransport({
     command: spec.command,
     args: spec.args ?? [],
@@ -90,7 +90,7 @@ export async function connectStdioEngine(spec: { command: string; args?: string[
  *  `headers` are sent on every request (for hosts that need auth beyond the
  *  path). Returns a ready EngineClient. */
 export async function connectHttpEngine(spec: { url: string; headers?: Record<string, string> }): Promise<McpEngineClient> {
-  const client = new Client({ name: "omgbase-sync", version: "0.0.0" });
+  const client = new Client({ name: "omgbase-sync", version: VERSION });
   // The transport's `sessionId` getter is `string | undefined`, which trips the
   // Transport interface's optional `sessionId?: string` under
   // exactOptionalPropertyTypes; the value is only ever read by the SDK.
