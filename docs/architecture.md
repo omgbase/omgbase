@@ -153,7 +153,7 @@ Every block retains its **exact raw source bytes** (and span) from parse time. R
 
 ## 11. MCP surface (summary; full spec in `mcp-api.md`)
 
-Small tool set, capability via parameters: `docs_outline`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator) + `query_syntax` + `graph`, `changes_since`, `history_node`, `diff`, `apply` + macro tools, `repos` / `repos_status` / `sync_status`, and the sync-ingest primitives `observe` / `observe_many` / `observe_delete`. Uniform `resolution: skeleton|outline|text|raw|full` and `budget_tokens` on every reader. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
+Small tool set (45 registrations), capability via parameters: `docs_outline`, `docs_read(_many)`, `read_ref`, `docs_tree`/`docs_list`, `nodes_get(_many)`, `resolve`, `query` (OQX — traversal is the `follow` operator) + `query_syntax` + `graph`, `changes_since`, `history_node`, `diff`/`diff_unified`, `apply` + the `blocks_*` sugar + macro tools, `repos` / `repos_status` / `sync_status`, and the sync-ingest primitives `observe` / `observe_many` / `observe_delete`. One `resolution: skeleton|outline|text|raw|full` ladder wherever a block is hydrated — as built that is `nodes_get`, `nodes_get_many`, and `read_ref` (block refs); `docs_outline` takes only `skeleton|outline`, and the whole-document reads take none. `budget_tokens` is accepted by `docs_outline`, `docs_get_many`, `nodes_get_many`, `docs_tree`, and `docs_list`. Every list result carries `truncated` + cursor. URIs: `omg://<repo>/doc/<id>[@rev]`, `omg://<repo>/block/<id>[@rev]`, `omg://<repo>/path/<filepath>`.
 
 ## 12. Storage (summary; DDL in `data-model.md`)
 
