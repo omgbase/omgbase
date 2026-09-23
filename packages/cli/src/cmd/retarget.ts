@@ -36,7 +36,9 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
 
   // Remote: links_retarget resolves + (optionally) applies server-side.
   if (cli.flags.server) {
-    const r = await remoteCall<{ hits: RetargetHit[]; applied: boolean }>(cli, "links_retarget", { from_target: from, to_target: to, dry_run: !values.apply });
+    const r = await remoteCall<{ hits: RetargetHit[]; applied: boolean }>(cli, "links_retarget", {
+      from_target: from, to_target: to, dry_run: !values.apply, ...(values.scope ? { path_glob: values.scope } : {}),
+    });
     if (values.apply) {
       if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(r));
       else cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} retargeted ${r.hits.length} block(s)`));
@@ -47,7 +49,7 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
 
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const { ops, hits } = linksRetarget(ws.store, repo.repoId, from, to);
+  const { ops, hits } = linksRetarget(ws.store, repo.repoId, from, to, values.scope ? { pathGlob: values.scope } : {});
 
   // --apply → commit via the shared helper (honors --dry-run too, if combined).
   if (values.apply) {

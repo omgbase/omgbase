@@ -22,7 +22,7 @@ import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
 import { historyNode, diffBlocks, diffUnified, changesSince, docHistory } from "../graph/history.js";
-import { linksStale } from "../graph/link-health.js";
+import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
@@ -648,7 +648,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_update",
     {
-      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
+      description: "Replace a block's markdown (and/or set attrs) with compare-and-swap. `block` is a ref; `expect.content_hash` is pinned to the block's current bytes server-side when omitted (protects against a concurrent edit). One update op through the kernel writer. `markdown` may parse to SEVERAL sibling blocks (e.g. a paragraph followed by a list): the target keeps its id and takes the first, the rest are inserted right after it with fresh ids — the response carries `id` (the target) and `ids` (all resulting blocks, in order). A list item may likewise be replaced by a multi-item list (`- a\\n- b`), yielding sibling items. Task state is settable flat as `checked` (the same name reads flatten to — `from blocks where checked`), folded into attrs and synced to the `[ ]`/`[x]` in the raw. The general `attrs` bag is still accepted; note every OTHER block attr (heading `level`, code `lang`, list `ordered`) is derived from the markdown, so set those by editing `markdown`, not attrs.",
       inputSchema: { block: z.string(), markdown: z.string().optional(), checked: z.boolean().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -663,7 +663,12 @@ export function buildServer(ctx: ServerContext): McpServer {
           ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
           : undefined;
         const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-        return applyOps(repoId, root, ops, "blocks_update", args.dry_run);
+        const res = apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) });
+        // `ids` lists every resulting block (the target first, then any siblings
+        // minted from multi-block content); `id` keeps the target for convenience.
+        const ids = res.results[0]?.ids ?? [block];
+        const payload = { id: ids[0] ?? block, ids, ...res };
+        return args.dry_run ? ok(payload) : okMutated(payload);
       } catch (e) {
         return fail(e);
       }
@@ -841,17 +846,18 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "links_retarget",
     {
-      description: "Macro: rewrite a link/reference destination across all blocks that contain it. ALWAYS call with dry_run:true first to preview the hits, then dry_run:false to apply.",
-      inputSchema: { from_target: z.string(), to_target: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Macro: rewrite ONE link destination everywhere it is linked — the single-pair form of links_repair (same matching rules: whole link destinations only, leading `/` optional, fragments preserved; prose/inline code/code fences untouched). Scope source docs with `path_glob`. ALWAYS call with dry_run:true first to preview `hits` + `pairs` (the dry run plans through the kernel, so it fails exactly where the apply would), then dry_run:false to apply.",
+      inputSchema: { from_target: z.string(), to_target: z.string(), path_glob: z.string().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const { ops, hits } = linksRetarget(store, repoId, args.from_target, args.to_target);
-        if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" } });
-        return okMutated({ hits, applied: true, ...res });
+        const { ops, hits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const dryRun = args.dry_run !== false;
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, dryRun });
+        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
+        return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
         return fail(e);
       }
@@ -862,12 +868,13 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_stale",
     {
       description:
-        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the human-readable missing path, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated`. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single). Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
-      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), ...REPO_ARG },
+        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the canonical missing path WITHOUT a leading `/` (e.g. `guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{srcPath,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
+      inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), summary: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
+        if (args.summary) return ok(linksStaleSummary(store, repoId, args.path_glob ? { pathGlob: args.path_glob } : {}));
         return ok(linksStale(store, repoId, {
           ...(args.path_glob ? { pathGlob: args.path_glob } : {}),
           ...(args.limit !== undefined ? { limit: args.limit } : {}),
@@ -882,11 +889,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_repair",
     {
       description:
-        "Macro: BULK stale-link repair — rewrite one or MANY link-destination substrings across all blocks that contain them, in ONE changeset. This is links_retarget generalized to a batch: pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted for the one-off case. A block matched by multiple pairs gets a single coalesced update op (CAS-safe). ALWAYS call with dry_run:true first to preview `hits`, then dry_run:false to apply.",
+        "Macro: BULK stale-link repair — rewrite one or MANY LINK DESTINATIONS in ONE changeset. Pass `repairs` (an array of {from,to}) to fix several dangling targets — e.g. those surfaced by links_stale — at once; a single {from_target,to_target} pair is also accepted. MATCHING: `from` must be the WHOLE destination of a Markdown link/image `[t](dest)`, a wikilink `[[dest]]`/`[[dest|alias]]`, or a bare-path inline field `key:: /dest` — a leading `/` is optional on either side (so links_stale's `target` or `authored` both work), and a trailing `#heading`/`^ref` fragment on the link is kept and re-appended to `to`. NOT rewritten: prose mentions, inline code, `code_fence` blocks, longer paths that merely contain `from`, and frontmatter values (use docs_set_meta). Scope source docs with `path_glob` (as in links_stale). Ops coalesce to one update per TOP-MOST block (a list and its items count once), so a batch never trips over its own re-minted children. Returns `hits[{block,path,oldRaw,newRaw}]` and `pairs[{from,to,hits}]` (per-pair destination counts; 0 = nothing matched). ALWAYS call with dry_run:true first — the dry run plans through the kernel (returns `diffs`), so it fails exactly where the apply would — then dry_run:false to apply.",
       inputSchema: {
         repairs: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
         from_target: z.string().optional(),
         to_target: z.string().optional(),
+        path_glob: z.string().optional(),
         dry_run: z.boolean().optional(),
         ...REPO_ARG,
       },
@@ -903,10 +911,13 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (!repairs || repairs.length === 0) {
           throw new EngineError("target_missing", "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair");
         }
-        const { ops, hits } = linksRepair(store, repoId, repairs);
-        if (args.dry_run !== false) return ok({ hits, applied: false });
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" } });
-        return okMutated({ hits, applied: true, ...res });
+        const { ops, hits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
+        // The dry run plans through the same kernel path (dryRun: no write, no
+        // drain) so a preview surfaces exactly the failure an apply would hit.
+        const dryRun = args.dry_run !== false;
+        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, dryRun });
+        if (dryRun) return ok({ hits, pairs, applied: false, ...res });
+        return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
         return fail(e);
       }

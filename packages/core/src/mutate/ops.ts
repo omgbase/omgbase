@@ -207,19 +207,28 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   // whole-doc planner set exact trailing trivia after structural ops without
   // juggling post-op content hashes across the changeset.
   if (markdown !== undefined || expect?.content_hash !== undefined) checkContentHash(found.block, expect, opIndex);
+  // Blocks minted from MULTI-block content: the target takes the first parsed
+  // block (keeping its id); the rest become fresh siblings right after it.
+  const extra: MutBlock[] = [];
   if (markdown !== undefined) {
     if (doc.format === "markdown" && found.block.type === "list_item") {
       // A list item can't be re-parsed as a standalone block (`- x` parses to a
-      // list, `x` loses the marker). Unwrap: accept a single-item list (use its
-      // item) or a bare block (wrap it), keep this block a list_item, and mark
-      // the containing list dirty so it re-renders from its items.
+      // list, `x` loses the marker). Unwrap: accept a list (its first item
+      // replaces this one, further items become following siblings) or a bare
+      // block (wrap it), keep this block a list_item, and mark the containing
+      // list dirty so it re-renders from its items.
       const parsed = parseContentToBlocks(markdown, doc.format);
-      if (parsed.length !== 1) throw new MutationError("type_mismatch", "list-item update must be a single item");
+      if (parsed.length !== 1) {
+        throw new MutationError("type_mismatch", "list-item update content must be ONE list (`- a\\n- b`: first item replaces, the rest follow as siblings) or ONE bare block", {
+          op_index: opIndex, block: blockId, hint: "to put mixed content under an item, update the item then blocks_insert the rest with `to` = the item",
+        });
+      }
       const only = parsed[0]!;
       if (only.type === "list") {
-        if (only.children.length !== 1) throw new MutationError("type_mismatch", "list-item update must yield exactly one item");
+        if (only.children.length === 0) throw new MutationError("type_mismatch", "list-item update must yield at least one item", { op_index: opIndex, block: blockId });
         found.block.raw = only.children[0]!.raw;
         found.block.children = only.children[0]!.children;
+        extra.push(...only.children.slice(1));
       } else {
         found.block.raw = `- ${only.raw}`;
         found.block.children = [];
@@ -228,7 +237,9 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
       markContainerDirty(doc, found.siblings);
     } else if (doc.format === "markdown") {
       const parsed = parseContentToBlocks(markdown, doc.format);
-      if (parsed.length !== 1) throw new MutationError("type_mismatch", "update content must be a single block");
+      if (parsed.length === 0) throw new MutationError("type_mismatch", "update content must contain at least one block", { op_index: opIndex, block: blockId });
+      if (parsed.length > 1 && childIds !== undefined) throw new MutationError("type_mismatch", "update with childIds must be a single block", { op_index: opIndex, block: blockId });
+      extra.push(...parsed.slice(1));
       const nb = parsed[0]!;
       found.block.raw = nb.raw;
       found.block.type = nb.type;
@@ -274,7 +285,22 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   // Trailing trivia (positional tiling): set verbatim. No content change, no
   // dirty flag — renderDoc emits a top-level block's trivia unconditionally.
   if (trivia !== undefined) found.block.trivia = trivia;
-  return { ids: [blockId] };
+  if (extra.length > 0) {
+    // Splice the surplus blocks in after the target. The target's trailing
+    // trivia is the document's tiling AFTER the whole run, so it moves to the
+    // last new block; every seam inside the run must separate blocks (top level
+    // only — nested containers re-render from their children).
+    const tail = found.block.trivia;
+    if (found.siblings === doc.children) {
+      const sep = defaultTrivia(doc.format);
+      if (!separatesBlocks(found.block.trivia, doc.format)) found.block.trivia = sep;
+      for (const b of extra.slice(0, -1)) if (!separatesBlocks(b.trivia, doc.format)) b.trivia = sep;
+    }
+    extra[extra.length - 1]!.trivia = tail;
+    found.siblings.splice(found.index + 1, 0, ...extra);
+    markContainerDirty(doc, found.siblings);
+  }
+  return { ids: [blockId, ...extra.map((b) => b.id)] };
 }
 
 export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number): { ids: string[] } {
