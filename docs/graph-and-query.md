@@ -27,6 +27,7 @@ Run per touched document inside the commit transaction. **Code is not prose**: a
 | Image `![alt](path)` | `src_block —embeds→ x_/d_` | `link` |
 
 - Unresolvable internal targets mint a **phantom document node** (`dst_kind:"document"`, `dst_node` = path-keyed placeholder) so backlinks appear the moment the target is created. Phantoms are flagged in results.
+- Internal targets resolve **by path**: `./`/`../` destinations against the source doc's directory, anything else root-relative, one leading `/` stripped (`graph/extract.ts` `resolveRelativePath`). Consequently `docs_move` re-points the moved doc's open inbound edges at `phantom:<old path>` (a self-doc pure-fragment link `#H` excepted) and adopts phantoms at the new path — the edge index after a move equals what re-extraction would produce (`mutate/docs.ts`, `graph/inbound-links.ts`).
 - Predicates are freeform lowercase snake_case from field/key names; `references` and `embeds` are reserved.
 - Interval maintenance at commit: diff extracted set vs currently-open rows for the doc → close missing (`to_commit = this`), open new (`from_commit = this`). Unchanged rows untouched. `doc_edges` rollup recomputed for the touched doc in the same transaction.
 

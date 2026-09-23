@@ -938,12 +938,13 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "docs_move",
     {
-      description: "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists.",
-      inputSchema: { doc: z.string(), to_path: z.string(), ...REPO_ARG },
+      description:
+        "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists. Links follow the PATH, not the identity: inbound links written against the old path now dangle (their edges become `phantom:<old path>`, so links_stale reports them), and links already written against the new path start resolving to this doc. The result lists those `dangling` inbound links ({doc, path, block, target, anchor, field?} per occurrence; block null = a frontmatter relation). Pass `retarget_inbound:true` to rewrite them in the same call — a destination-aware rewrite (anchors/link text/code spans preserved, absolute vs relative style kept) applied as one CAS-checked changeset, after which `dangling` holds only what could not be rewritten (frontmatter relations) and `retargeted` lists the touched blocks/docs.",
+      inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path));
+        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path, { retargetInbound: args.retarget_inbound === true }));
       } catch (e) {
         return fail(e);
       }

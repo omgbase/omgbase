@@ -133,7 +133,11 @@ export {
   docsSetMeta,
   type DocOpContext,
   type DocOpResult,
+  type DocMoveOptions,
+  type DocMoveResult,
 } from "./mutate/docs.js";
+// Inbound-link discovery + destination-aware rewrite (docs_move's dangling report / retarget_inbound).
+export { inboundLinksTo, retargetLinksInRaw, type InboundLink } from "./graph/inbound-links.js";
 // Whole-document update: reconcile → opset → inspect/apply.
 export {
   planUpdate,
