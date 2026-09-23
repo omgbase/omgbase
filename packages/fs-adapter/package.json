@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Open Markdown Graph Base — filesystem sync adapter (walk/watch/read/write a directory tree), spoken to over stdio",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
