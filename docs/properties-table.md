@@ -1,10 +1,16 @@
-# omgbase — Properties Table (design proposal)
+# omgbase — Properties Table (as-built)
 
 **Status:** as-built / normative. The `properties` table shipped (schema migration 8;
-current `SCHEMA_VERSION = 12`) and supersedes the removed `docs.metadata` JSON blob for
-property-shaped data.
+current `SCHEMA_VERSION = 13`) and supersedes the removed `docs.metadata` JSON blob for
+property-shaped data. This document keeps its original "today → after" design framing;
+"today" below is the pre-migration state, and the `compile.ts` / CEL references describe
+the former in-tree CEL compiler (`search/cel/compile.ts`), which ADR-013 has since
+retired — property reads now go through the OQX `DataContext`
+(`packages/core/src/oqx-js/context.ts`, `docProp` / `docPropEntries` / `docPropObject`)
+and the pushdown translator (`oqx-js/sql/translate.ts`, the single-valued `properties`
+seek).
 
-> **As-built / normative — verified against code.** This design is fully implemented: schema migration 8 added the `properties` table (current `SCHEMA_VERSION = 12` — the "Schema v8" in §7 is the migration that introduced it, not the current version); `docs.metadata` was dropped; and `docs_read` returns properties grouped by source (`{ frontmatter, inline, computed }`) exactly as §4 describes — confirmed in `packages/core/src/core/read/document.ts` and `store/properties.ts`. (Caveat: the MCP `docs_read` **tool description string** still mentions `metadata`, but the returned shape is the grouped one.) See `AGENTS.md` for the docs trust index.
+> **As-built / normative — verified against code (2026-09-23).** This design is fully implemented: schema migration 8 added the `properties` table (current `SCHEMA_VERSION = 13` — the "Schema v8" in §7 is the migration that introduced it, not the current version); `docs.metadata` was dropped; and `docs_read` returns properties grouped by source (`{ frontmatter, inline, computed }`) exactly as §4 describes — confirmed in `packages/core/src/core/read/document.ts` and `store/properties.ts`. (Caveat: the MCP `docs_read` **tool description string** still mentions `metadata`, but the returned shape is the grouped one.) See `AGENTS.md` for the docs trust index.
 
 ---
 
@@ -23,12 +29,14 @@ doesn't exist yet as a query surface:
 
 | Source | Where it lives now | Indexed? | Queryable? |
 |---|---|---|---|
-| Frontmatter | `docs.metadata` (JSON TEXT column) | **No** — full scan + `json_extract` per row | Yes (bare keys → CEL) |
+| Frontmatter | `docs.metadata` (JSON TEXT column) | **No** — full scan + `json_extract` per row | Yes (bare keys in the query filter — then CEL, now OQX) |
 | Inline props | `nodes` table (`kind='md:inline_field'`) | Yes (`idx_nodes_kind/name`) | Only via `from:"nodes"` |
 | Computed | nowhere durable | — | No |
 
 So `layer == "canon"` is a table scan (`json_extract(d.metadata, '$.layer')` with
-no index — compile.ts:69), while the inline-field surface is indexed but lives
+no index — the former `search/cel/compile.ts`; as-built the read is
+`docProp` in `oqx-js/context.ts` seeking the `properties` table), while the
+inline-field surface is indexed but lives
 on a different target with a different shape. The assumption that "the JSON
 column makes querying fast" is **false**: it makes compilation *simple* (one
 expression) but every docs-target frontmatter filter scans the table.
@@ -38,8 +46,9 @@ expression) but every docs-target frontmatter filter scans the table.
 Traced across the codebase, the JSON column is the **sole query+projection
 surface for frontmatter**, used by:
 
-- CEL filters + `doc.<key>` reach-through (`compile.ts:69/85/108`) — the only
-  path frontmatter filtering exists on.
+- Query filters + `doc.<key>` reach-through (then the CEL `compile.ts`; as-built
+  `oqx-js/context.ts` `docProp` + `owningDoc`, pushed down by
+  `oqx-js/sql/translate.ts`) — the only path frontmatter filtering exists on.
 - `query` select projection (`query.ts`), semantic-path projection.
 - RRF hydration (`rrf.ts:50`), task docTitle (`tasks.ts:89`),
   `findDoc`/`docs_read`/`show` (`reader.ts:103`).
@@ -142,9 +151,11 @@ CREATE INDEX idx_props_src_key  ON properties(repo_id, source, key)            W
 
 ## 4. Query surface
 
-The authored CEL syntax and its semantics are **unchanged** — bare keys, `==`,
-`!=`, `list()`, membership, `size()` all keep the exact meaning they have today
-against `docs.metadata`. Only the compile target changes (indexed
+The authored query syntax and its semantics were **unchanged by this migration** —
+bare keys, `==`, `!=`, `list()`, membership, `size()` all kept the meaning they had
+against `docs.metadata`. (The later ADR-013 move to `@omgbase/oqx` did change scalar
+semantics — `!=` over absent, case-sensitive strings, arithmetic — see
+`query-language.md` §3; the property *store* below is unaffected.) Only the compile target changes (indexed
 `properties` rows instead of `json_extract` scans), plus two additive powers:
 source-scoped accessors and computed `$`-intrinsics.
 
@@ -272,7 +283,7 @@ Every current reader of `docs.metadata` is repointed at `properties`:
 
 | Site | Today | After |
 |---|---|---|
-| CEL filter / `doc.<k>` (`compile.ts`) | `json_extract(d.metadata,…)` | `properties` seek (§4) |
+| Query filter / `doc.<k>` (then CEL `compile.ts`; now `oqx-js/context.ts` + `oqx-js/sql/translate.ts`) | `json_extract(d.metadata,…)` | `properties` seek (§4) |
 | `query` select (`query.ts`) | parse `metadata` JSON | `properties` projection |
 | RRF hydrate (`rrf.ts`), task title (`tasks.ts`) | parse `metadata` | `properties` lookup / `computed.title` |
 | `findDoc`/`docs_read`/`show` (`reader.ts`) | `metadata` object | `properties` grouped-by-source |
@@ -351,8 +362,8 @@ not an index rebuild.
 - Computed properties get a durable home for the first time.
 - The mis-named, unindexed, redundant `metadata` JSON column is **gone** — one
   store, one model, honest naming.
-- **CEL semantics are unchanged** — `==`/`!=`/`list()`/`size()` keep today's
-  meaning; the `card` flag reproduces the scalar-vs-array distinction. No
+- **Query semantics are unchanged by this design** — `==`/`!=`/`list()`/`size()`
+  keep their meaning; the `card` flag reproduces the scalar-vs-array distinction. No
   authored query changes behavior. Multi-source additivity applies only to the
   *authored union* (frontmatter + inline) a bare key already spans.
 - Computed props as `$`-intrinsics keep the sigil rule exact and never shadow
@@ -363,8 +374,9 @@ not an index rebuild.
   `.exists`/`.all`, comparisons, and absence all move from `json_extract` to
   typed-row predicates (mostly `EXISTS (SELECT 1 FROM properties WHERE …)`),
   with the `card` gate on scalar comparisons. The semantics are unchanged, so
-  the existing CEL test suite is a strong equivalence oracle — port it and it
-  must stay green, plus new cases for `card` and multi-source union.
+  the existing query test suite (as-built: the OQX corpus, `corpus/oqx/`) is a
+  strong equivalence oracle — port it and it must stay green, plus new cases for
+  `card` and multi-source union.
 - **Read-site churn.** ~6 sites read `docs.metadata` today; all repoint to
   `properties` and `DocInfo.metadata` is removed (§5). Bounded and enumerated.
 - **More rows.** N frontmatter keys + M array elements + K inline fields = N+M+K
@@ -379,14 +391,14 @@ not an index rebuild.
 - Historical/temporal property queries (`as_of`) — properties carry
   `created_commit`/`deleted_commit` for future temporal support, unused in v1.
 - Per-block property *filtering* on the blocks target — v1 is document-grain;
-  `block_id` is stored for provenance but blocks-target property CEL is later.
+  `block_id` is stored for provenance but blocks-target property filtering is later.
 
 ## 9. Resolved decisions + remaining open questions
 
 **Decided (Brendan):**
 - **Kill `docs.metadata`.** Not demoted — removed. Wrong name, redundant,
   unindexed. (§5)
-- **CEL semantics unchanged; `list()` stays the explicit multi-value tool.**
+- **Query semantics unchanged (by this design); `list()` stays the explicit multi-value tool.**
   Values may be scalar or list (as YAML always allows); `==`/`!=` are scalar,
   `"x" in list(k)` for membership. A `card` flag on each row reproduces the
   scalar-vs-array distinction so `tags == "a"` on a list stays false. (§4)

@@ -3,7 +3,7 @@
 **Status:** normative. SQLite dialect (v1). Column types use SQLite affinities; a future Postgres dialect maps 1:1 (ADR-001).
 **Depends on:** `architecture.md` §3–4, §12.
 
-> **As-built (verified 2026-09-14).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 12`), which remains the authoritative schema.
+> **As-built (verified 2026-09-23).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 13`; v13 dropped `repos.root_path` — a repo's filesystem binding is now an attached `fs` source), which remains the authoritative schema.
 
 ---
 
@@ -30,7 +30,7 @@
 
 ## 2. Database placement
 
-One SQLite database per workspace at `<workspace>/.omgbase/omgbase.db` (WAL mode, `synchronous=NORMAL`, foreign keys ON). `.omgbase/` MUST be listed in the repo's `.gitignore` (the engine offers to append it at `repo attach` time; never edits git config silently).
+One SQLite database per workspace at `<workspace>/.omgbase/omgbase.db` (WAL mode, `synchronous=NORMAL`, foreign keys ON). `.omgbase/` MUST be listed in the repo's `.gitignore` (`omg init` offers to append it to the closest `.gitignore` when the workspace is inside a git tree — `cli/src/cmd/bootstrap.ts`; never edits git config silently).
 
 All writes go through a single serialized writer (one connection; short transactions — one transaction per commit). Readers use separate connections (WAL snapshots).
 

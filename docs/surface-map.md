@@ -86,6 +86,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | Append to a doc / section | `docsAppend`/`sectionsAppend` | `append` | `docs_append` / `sections_append` | ✅ |
 | Set a node property | `nodeSet` | `node set` | `node_set` | ✅ |
 | Whole-document update | `docsUpdate`/`planUpdate` | `update` | `docs_update` / `docs_plan_update` | ✅ |
+| Edit a block in `$EDITOR` (CAS pinned) | `apply` ops | `edit` | `blocks_update` (same op as `update` on a `b_` target) | 🔒 local (spawns `$EDITOR`; not in `REMOTE_OK`) |
 
 ### Document lifecycle
 
@@ -145,9 +146,11 @@ gap tools are in place too: **`read_ref`** (polymorphic doc/block/card read back
 kind=card), `run` (OQX-fence fetch+run), `links` (→`links_stale`), `repos`
 (→`repos`), and the optional `cat --rev`→`docs_read_at` time-travel verb.
 
-**Inherently local (`🔒`)** — `status`'s watcher/sync-process state and
-`node props` (an editability lookup with no remote tool) are about the local
-process, so `--server` rejects them with a clear message. Everything that
+**Inherently local (`🔒`)** — `status`'s watcher/sync-process state,
+`node props` (an editability lookup with no remote tool), and `edit` (it spawns
+the local `$EDITOR`; the update it produces is the same `blocks_update` op that
+`update <b_…>` sends remotely) are about the local process, so `--server`
+rejects them with a clear message. Everything that
 represents a real engine operation now has a remote path.
 
 ## Drift to align (`⚠️`, register-only differences — document, optionally rename)

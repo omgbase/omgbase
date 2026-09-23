@@ -1,20 +1,25 @@
 # Design: `@omgbase/sync` — a standalone store-to-store synchronizer
 
-> **Status: IMPLEMENTED (ADR-014).** All six stages have landed on branch
-> `multi-repo-story` (see §9). This file is retained as the design rationale +
-> stage record; the as-built surface lives in `docs/sync-plugins.md`,
-> `docs/mcp-api.md`, `docs/data-model.md`, and the code (ground truth).
+> **Status: IMPLEMENTED (ADR-014).** All six stages landed on branch
+> `multi-repo-story`, merged to `main` in PR #8 (`bc381c9`) — see §9. This file
+> is retained as the design rationale + stage record; the as-built surface lives
+> in `docs/sync-plugins.md`, `docs/mcp-api.md`, `docs/data-model.md`,
+> `docs/surface-map.md`, and the code (ground truth).
 >
 > **CLI surface (follow-up, done):** there is one sync verb — `omg sync`
 > (one-shot local), `omg sync --watch` (live local; the former `omg watch` is
 > gone), and `omg sync --server <cmd>` (remote over MCP, via the Coordinator).
-> `--server` is a **global** flag (`context.REMOTE_OK`) so any command can adopt
-> remote mode over time (roadmap: reads, `shell`); today only `sync` implements
-> it. `omgbase-sync` is now a thin wrapper over the shared `runFsMirror` — i.e.
-> `omg sync --server … --root X` ≡ `omgbase-sync --root X`.
+> `--server` is a **global** flag; the commands that implement remote mode are
+> the `REMOTE_OK` set in `packages/cli/src/context.ts`: `sync`, `query`,
+> `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`, `new`, `mv`, `meta`,
+> `rm`, `update`, `retarget`, `apply`, `insert`, `move`, `split`, `merge`,
+> `done`, `append`, `node`, `shell` (others reject `--server`; the per-command
+> state is tabulated in `docs/surface-map.md`). `omgbase-sync` is a thin wrapper
+> over the shared `runFsMirror` — i.e. `omg sync --server … --root X` ≡
+> `omgbase-sync --root X`.
 >
-> Not yet done: the optional `subscribe` (D1), durable export-cursor persistence,
-> and per-command remote (`--server`) support beyond `sync`.
+> Not yet done: the optional `subscribe` (D1) and durable export-cursor
+> persistence (`sync_state` is still unused).
 
 ## 1. Motivation
 
@@ -96,7 +101,7 @@ sync_state(repo_id, source_id, path, revision, cursor,   -- engine-owned per-pat
            PK(repo_id,source_id,path))                   -- change tracking; path='' = cursor row
 ```
 
-Changes across the migration:
+Changes across the migration (**as planned** — see the "Superseded" note below):
 
 - **v13 (structural, additive):** seed a built-in `fs` adapter row
   (`command = <node> <fs-adapter/bin.js>`); teach source resolution to read
@@ -109,6 +114,17 @@ Changes across the migration:
   `DROP COLUMN` in old versions we target → table-rebuild migration
   (create `repos_new`, copy, swap) done programmatically in `store.ts` (same
   pattern as v11's `documents`→`docs` rename).
+
+> **Superseded (as-built).** The three-step v13/v14/v15 plan collapsed into a
+> **single schema v13** migration (`SCHEMA_VERSION = 13`, `schema.ts`;
+> `Store.migrateV13` in `core/store/store.ts`): in one transaction it seeds the
+> `fs` adapter row, migrates every non-empty `repos.root_path` into an
+> `<slug>-fs` source (`config.root`) + `attachments` row, then runs
+> `ALTER TABLE repos DROP COLUMN root_path` (better-sqlite3 bundles SQLite ≥
+> 3.35, so no table rebuild was needed). Fresh databases get the columnless
+> `repos` table straight from the DDL, and the migration is idempotent (skips
+> when the column is already gone). The "derived `root_path`" intermediate
+> (v14) exists only as `RepoRow.rootPath`, computed from the attached fs source.
 
 `commits.origin` already admits `'observed'` and `changes_since` already filters
 by origin — **no schema change** for the observe tool.
@@ -285,8 +301,12 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
      `--watch` (live local; `omg watch` removed), and `--server <cmd>` (remote via
      the Coordinator, the global `--server` flag). `omgbase-sync` reduced to a
      thin wrapper over the shared `runFsMirror`.
-   - ⏳ **Deferred** — durable export-cursor persistence; `subscribe` (D1);
-     `--server` support for commands beyond `sync` (roadmap: reads, `shell`).
+   - ⏳ **Deferred** — durable export-cursor persistence (`sync_state`);
+     `subscribe` (D1).
+   - ✅ **`--server` beyond `sync` (done)** — the `REMOTE_OK` set in
+     `cli/src/context.ts` now covers reads, the doc lifecycle, all block-level
+     mutation sugar, `apply`, and `shell` (see the header note and
+     `docs/surface-map.md` for the remaining `▫️` gaps).
 5. **Stage 5 — `attach` populates the registry. ✅ DONE.** Source registration
    now lives in `ensureRepo` itself: given a `rootPath` it seeds the `fs` adapter
    + creates+attaches an `<slug>-fs` source (idempotent). So *every* attach entry

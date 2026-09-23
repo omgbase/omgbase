@@ -1,8 +1,10 @@
 # OQX corpus fixtures
 
 Fixture repositories for high-level OQX tests — queries run against a realistic
-interlinked corpus rather than three throwaway documents. Unit-level coverage
-(grammar, lowering, SQL shape) lives in `src/oqx/*.test.ts`.
+interlinked corpus rather than three throwaway documents. Grammar and engine
+semantics are tested upstream in `@omgbase/oqx`; omgbase's unit-level coverage
+of the SQL pushdown (translator shape) lives in `src/oqx-js/sql/translate.test.ts`,
+and `conformance.test.ts` here proves planned == pure in-memory over every query.
 
 ## `fixtures/alchemy/` — 18 markdown documents
 
@@ -127,6 +129,35 @@ different sets. Several tests depend on this; keep it fully checked.
   and the block tree (`block.children` — a bullet list down to its items),
   including a **nested follow-collect** projecting each process document's
   outline as a subtree.
+- **Ranges** (`lo..hi`, `lo...hi`, open-ended; `range(prop)`) — the practitioner
+  `era` values give `era in 800..1680` vs `800...1680` a real endpoint
+  discriminator (Newton is exactly 1680). The two lab notes carry a month
+  `window: 2026-01-01..2026-01-31` and magnum-opus a `stage_range: 1..4`, both
+  authored as plain strings, so `"2026-01-15" in range(window)` and
+  `2 in range(stage_range)` test point-in-interval while a bare `window` stays a
+  string (`range()` is the explicit opt-in).
+- **`$value` / `values`** (oqx ≥ 0.8) — `select era values order by era` yields
+  the bare `[250, 800, 1530, 1680]`; `select distinct type values` the six type
+  strings; `values` pages like hits (5 + 13 = 18 paths). Inside a block,
+  `tags collect { $value values where $value != "substance" }` names each tag
+  element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
+  the list-authored substances keep their extras — and
+  `tags exists { where $value == "tria-prima" }` equals `"tria-prima" in list(tags)`.
+- **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
+  "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
+  over the open-task complement admits all five substances ("every task done");
+  `$repo.docs none { … }` is the scalar form. `order by era desc limit 2` /
+  `offset 1 limit 2` bound the practitioners; a page `limit` walks *within* the
+  query's bound (`limit 3` paged by 2 → 2 + 1); a bound applies after
+  `distinct`; `first { … offset 1 }` is the second; `exists { offset 3 }` equals
+  `count { … } >= 4`; a non-literal bound is `filter_invalid`.
+- **`entries()` / `$key`** (oqx ≥ 0.10) — salt's frontmatter comes back as seven
+  `{k, v}` entries in key order, valued exactly like the bare reads (`tags` →
+  the array); `entries(frontmatter) exists { where $key == "era" && $value >
+  1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(inline)` is
+  non-empty for exactly the docs with `md:inline_field` nodes (Jabir's keys:
+  `century`, `known_for`); `entries(attrs)` on task nodes inspects the attrs
+  bag per key.
 
 ### Adding to the corpus
 

@@ -1,6 +1,6 @@
 # omgbase — Sync Adapters (External Source Reconciliation)
 
-**Status:** normative design, `proposed`. As-built: an interim *in-process* `SyncSource` seam shipped first (commit `2850b28`); this document supersedes it with the **external-adapter** model — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`). The `@omgbase/fs-adapter` package is the first adapter.
+**Status:** as-built (verified 2026-09-23). The **external-adapter** model is what ships — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`); the earlier interim *in-process* `SyncSource` seam (commit `2850b28`) was superseded by it. The `@omgbase/fs-adapter` package is the first adapter; the source registry (§2) is wired and `omg source` is its UI (ADR-014, all stages done).
 **Depends on:** `architecture.md` §6 (checkpoints), `reconciliation-spec.md` §8 (sync pipeline placement), `data-model.md` §3 (repos), `cli.md` §3.3 (freshness sweep, watch lease). **Parallels:** `graph-and-query.md` §6 + `packages/core/src/search/external.ts` (the embedder external-process pattern this mirrors).
 
 ---
@@ -23,7 +23,7 @@ This is the same architecture decision as the embedder: a capability the core mu
 
 ## 2. Source registry (wired — ADR-014 Stage 3)
 
-The workspace-level registry separates *what a repo is* from *where its bytes come from*: **adapters** (a name → external command), **sources** (a named `{ adapter, config, env }`), **attachments** (a many-to-many join of repo ⇄ source), and per-attachment **sync_state** (revision/cursor tracking). All four tables exist in the schema (v9, `core/store/schema.ts`). As of ADR-014 Stage 3 the first three are **wired**: `core/src/sync/sources.ts` is the CRUD surface (`ensureAdapter`, `createSource`, `attachSourceToRepo`, `sourcesForRepo`, `renderConfigFlags`) and `omg source list/add/attach/detach/rm` (`cli/src/cmd/source.ts`) is the UI. `sync_state` remains reserved (the coordinator's echo/cursor bookkeeping, Stage 4).
+The workspace-level registry separates *what a repo is* from *where its bytes come from*: **adapters** (a name → external command), **sources** (a named `{ adapter, config, env }`), **attachments** (a many-to-many join of repo ⇄ source), and per-attachment **sync_state** (revision/cursor tracking). All four tables exist in the schema (v9, `core/store/schema.ts`). As of ADR-014 Stage 3 the first three are **wired**: `core/src/sync/sources.ts` is the CRUD surface (`ensureAdapter`, `createSource`, `attachSourceToRepo`, `sourcesForRepo`, `renderConfigFlags`) and `omg source list/add/attach/detach/rm` (`cli/src/cmd/source.ts`) is the UI. `sync_state` is still unused: Stage 4 (`@omgbase/sync`) is done, but its coordinator keeps the export cursor per-session; durable cursor persistence into `sync_state` is the deferred follow-up (`sync-service-design.md` §9, Stage 4 "Deferred").
 
 Source resolution reads the **registry**: `omg sync --watch` / `omg mcp` call `openRepoSource(store, repo)` (`cli/src/cmd/_source.ts`), which finds the repo's attached `fs` source and spawns `@omgbase/fs-adapter` (bin **`omgbase-fs-adapter`**) with `renderConfigFlags(config)` (`{ root }` → `--root <root>`). A repo with no attached fs source is **sourceless** and its `sync`/`watch` is a no-op (§7). `attach` (via `ensureRepo`) registers the `fs` source, and `RepoRow.rootPath` is **derived** from it — the `repos.root_path` column was dropped in schema v13 (ADR-014 Stage 6). (`omg sync`'s freshness fast-path uses that derived `rootPath`; it shares the single `observeOne` reconcile primitive with the watcher and the `observe` MCP tool — ADR-014 D2.)
 
@@ -96,7 +96,7 @@ The reserved (inert) `sync_state` table generalizes this per **attachment** — 
 
 ## 7. Repo & source lifecycle
 
-The shipped verbs are minimal — there are no `omg adapter …`, `omg source …`, or `omg repo create/attach/detach/list` commands (those belong to the deferred registry, §2). What exists (`cli/src/cmd/bootstrap.ts`):
+The shipped verbs are minimal — `omg init` / `omg repos` (`cli/src/cmd/bootstrap.ts`) and `omg source add/list/attach/detach/rm` (`cli/src/cmd/source.ts`, the registry UI of §2). There is no `omg adapter …` verb (the `fs` adapter row is seeded implicitly) and no separate `omg repo create/attach/…` family — `omg source add` is the attach. What exists:
 
 ```text
 omg init [dir]                  # workspace only: create .omgbase/ + db (does NOT ingest).
