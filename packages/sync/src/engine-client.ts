@@ -21,6 +21,8 @@ export interface ChangesPage {
   digests: CommitDigest[];
   cursor: number;
   truncated: boolean;
+  /** the repo's current max commit seq — cursor > head means the cursor came from another repo/server */
+  head?: number;
 }
 
 export interface DocBytes {
