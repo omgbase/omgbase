@@ -66,7 +66,7 @@ export interface LinkHealthOptions {
 // Convert a path glob to a SQL LIKE clause + param, mirroring compileWithin
 // (search/cel/compile.ts) and docHistory (graph/history.ts): escape %/_ then
 // map `*`→`%`. A glob without `*` is an exact-path match.
-function globClause(column: string, glob: string): { clause: string; param: string } {
+export function globClause(column: string, glob: string): { clause: string; param: string } {
   if (glob.includes("*")) {
     const like = glob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
     return { clause: `${column} LIKE ? ESCAPE '\\'`, param: like };

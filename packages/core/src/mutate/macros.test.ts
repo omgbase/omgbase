@@ -6,7 +6,7 @@ import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { apply } from "./apply.js";
-import { tasksComplete, sectionsAppend, docsAppend, sectionsRename, linksRetarget } from "./macros.js";
+import { tasksComplete, sectionsAppend, docsAppend, sectionsRename, linksRetarget, linksRepair } from "./macros.js";
 
 let dir: string;
 let store: Store;
@@ -117,5 +117,85 @@ describe("macros expand to kernel ops (visible)", () => {
     const text = readFileSync(join(dir, "l.md"), "utf8");
     expect(text).not.toContain("/old/path.md");
     expect(text.match(/\/new\/path\.md/g)).toHaveLength(2);
+  });
+});
+
+describe("linksRepair rewrites LINK DESTINATIONS, coalesced to top-most blocks", () => {
+  const typeOf = (blockId: string): string =>
+    (store.db.prepare("SELECT type FROM blocks WHERE block_id = ?").get(blockId) as { type: string }).type;
+  const liveBytes = (docId: string, type: string): string[] =>
+    (store.db.prepare(
+      "SELECT b.bytes FROM blocks bl JOIN blobs b ON b.hash = bl.raw_hash WHERE bl.doc_id = ? AND bl.type = ? AND bl.deleted_commit IS NULL",
+    ).all(docId, type) as { bytes: Buffer }[]).map((r) => r.bytes.toString("utf8"));
+
+  it("a link inside a list: one op on the list (the item hit collapses), apply succeeds, list + item bytes both update", () => {
+    const docId = seed("list.md", "# L\n\n- item [b](/b.md) here\n- other\n\nAfter [b](/b.md).\n");
+    // Before the fix this produced an op for the list AND its item; updating the
+    // list re-minted the item, so the item op failed block_missing and sank the
+    // whole changeset.
+    const { ops, hits, pairs } = linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]);
+    expect(ops.map((o) => typeOf((o as { block: string }).block)).sort()).toEqual(["list", "paragraph"]);
+    expect(hits).toHaveLength(2);
+    expect(pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 2 }]);
+    const res = apply(store, { repoId, rootPath: dir, ops, origin: { actor: "agent:test" } });
+    expect(res.committed).toBe(true);
+    const text = readFileSync(join(dir, "list.md"), "utf8");
+    expect(text).toBe("# L\n\n- item [b](/c.md) here\n- other\n\nAfter [b](/c.md).\n");
+    expect(liveBytes(docId, "list")[0]).toContain("[b](/c.md)");
+    expect(liveBytes(docId, "list_item").some((raw) => raw.includes("[b](/c.md)"))).toBe(true);
+  });
+
+  it("rewrites only whole destinations: prose, inline code, code fences, and longer paths stay put", () => {
+    seed("scope.md", [
+      "# S",
+      "Prose mentions /b.md and `[x](/b.md)` inline code.",
+      "```\n[fence](/b.md)\n```",
+      "Real [link](/b.md) and longer [deep](/everland/b.md) and [pre](/b.md.bak).",
+      "Wiki [[/b.md]] and alias [[/b.md|B]] and frag [frag](/b.md#Top) and ref [r](/b.md^abc).",
+    ].join("\n\n") + "\n");
+    const { ops, hits, pairs } = linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]);
+    expect(ops).toHaveLength(2);
+    const all = hits.map((h) => h.newRaw).join("\n");
+    expect(all).toContain("[link](/c.md)");
+    expect(all).toContain("[[/c.md]]");
+    expect(all).toContain("[[/c.md|B]]");
+    expect(all).toContain("[frag](/c.md#Top)");
+    expect(all).toContain("[r](/c.md^abc)");
+    expect(all).toContain("[deep](/everland/b.md)");
+    expect(all).toContain("[pre](/b.md.bak)");
+    expect(pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 5 }]);
+    apply(store, { repoId, rootPath: dir, ops, origin: { actor: "agent:test" } });
+    const text = readFileSync(join(dir, "scope.md"), "utf8");
+    expect(text).toContain("Prose mentions /b.md and `[x](/b.md)` inline code.");
+    expect(text).toContain("```\n[fence](/b.md)\n```");
+    expect(text).not.toContain("//");
+  });
+
+  it("accepts `from` with or without the leading slash (links_stale's `target` form works)", () => {
+    seed("t.md", "# T\n\nSee [b](/b.md) and [rel](b.md).\n");
+    const { hits, pairs } = linksRepair(store, repoId, [{ from: "b.md", to: "/c.md" }]);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.newRaw).toContain("[b](/c.md) and [rel](/c.md)");
+    expect(pairs[0]!.hits).toBe(2);
+  });
+
+  it("scopes source docs with pathGlob and reports each hit's path", () => {
+    seed("j-one.md", "# J\n\n[b](/b.md)\n");
+    seed("g-one.md", "# G\n\n[b](/b.md)\n");
+    const { hits, pairs } = linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }], { pathGlob: "j-*" });
+    expect(hits.map((h) => h.path)).toEqual(["j-one.md"]);
+    expect(pairs[0]!.hits).toBe(1);
+    expect(linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]).hits.map((h) => h.path).sort()).toEqual(["g-one.md", "j-one.md"]);
+  });
+
+  it("each destination takes the first matching pair — no chaining; unmatched pairs report 0", () => {
+    seed("chain.md", "# C\n\n[a](/a.md) [b](/b.md)\n");
+    const { hits, pairs } = linksRepair(store, repoId, [
+      { from: "/a.md", to: "/b.md" },
+      { from: "/b.md", to: "/c.md" },
+      { from: "/nope.md", to: "/x.md" },
+    ]);
+    expect(hits[0]!.newRaw).toContain("[a](/b.md) [b](/c.md)");
+    expect(pairs.map((p) => p.hits)).toEqual([1, 1, 0]);
   });
 });
