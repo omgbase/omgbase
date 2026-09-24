@@ -30,7 +30,7 @@ const company = "Globocorp";
 const employees = oqx`
   name, id, title
   from ${people}
-  where jobs exists { employer == ${company} && !end_date }
+  where jobs exists { where employer == ${company} && !end_date }
 `;
 // → [{ name: "Bob", id: 124, title: "Engineer" }, …]  (current Globocorp employees)
 ```
@@ -46,17 +46,29 @@ template's identity and re-runs with fresh bindings each call.
 
 ## Language tutorial
 
-A query has, in spirit, the shape below — but at the top level the clauses are
-**order-flexible**, so you can lead with the projection (SQL-style) or with
-`from`, whichever reads better:
+A query is a list of clauses in a **fixed order**. Each clause appears at most
+once, and every one is optional except `from` at the top level:
 
 ```
-[ [select] projection ]    name, id, title: label
+[ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
 from <collection>          from ${people}
-[ where <predicate> ]      where age >= 18 && jobs exists { !end }
-[ order by <expr> … ]      order by age desc, name
+[ where <predicate> ]      where age >= 18 && jobs exists { where !end }
 [ follow <relation> … ]    follow children { depth 4 }
+[ order by <expr> … ]      order by age desc, name
+[ limit N ]                limit 10
+[ offset N ]               offset 20
 ```
+
+**`select` is the only keyword you may drop, and only when the projection comes
+first** (`name, id from ${people}`). Every other clause always carries its
+keyword — in particular a predicate is never implicit, so a block filters with
+`where` (`jobs exists { where !end }`), and `from ${people} count` is an error
+rather than a projection of a field called `count`. Writing a clause out of
+order is a parse error that names the order (`` `select` must come before
+`from` — OQX clause order is select, from, where, follow, order by, limit,
+offset ``). The same body grammar applies inside every consumer block
+(`collect { … }`, `exists { … }`, …), where `from` is optional because the
+receiver supplies the rows.
 
 The examples below all use this dataset:
 
@@ -113,8 +125,12 @@ An item that is not a plain navigation — a call, arithmetic, a comparison — 
 no natural key, so it must be aliased (`n: size(jobs)`), unless the projection is
 in `values` mode (next).
 
-The `select` keyword is optional and works in any position — `select name from …`
-is identical to `name from …` (and hosts `select distinct`, §6).
+The `select` keyword may be dropped when the projection is the first clause —
+`select name from …` is identical to `name from …`. The keyword form hosts
+`select distinct` (§6), and is the only way to write a projection whose first
+item would otherwise be misread (there is no other keyword-less clause). The
+projection always comes *before* `from`: `from ${people} select name` is an
+ordering error.
 
 **`values` — scalar projection.** Ordinarily every row projects to a record. Add
 `values` after a projection of exactly **one** item to get the value itself:
@@ -182,8 +198,9 @@ ask for one. As a plain value (not a source) `entries(x)` is an array of
 
 `where` filters rows. The predicate language has comparisons (`== != < <= > >=`),
 boolean operators (`&& || !`) with grouping `( )`, membership (`in`), arithmetic
-(`+ - * / %`), and bare truthiness. The `where` keyword is optional when the
-leading expression is clearly a predicate.
+(`+ - * / %`), and bare truthiness. The `where` keyword is always written — a
+leading expression without it is a projection, and a bare comparison in that
+position is an error that points you at `where`.
 
 ```js
 const min = 40;
@@ -231,6 +248,25 @@ non-range string yields an absent range, so `x in range(bad)` is just false.
 **Interpolations are always values, never syntax.** `where name == ${x}` compares
 against the value of `x`; a string in `x` can't inject operators or identifiers.
 
+**`where` sees the `select` aliases.** A name defined in the same body's
+projection may be used in its `where`; an alias shadows a same-named field
+there. It is a compile-time rewrite — the alias's expression is substituted
+inline — so it costs nothing at run time and a storage planner still sees an
+ordinary predicate:
+
+```js
+oqx`select name, adult: age >= 18 from ${people} where adult`;        // ≡ where age >= 18
+oqx`select name, active: age > 50 from ${people} where active`;       // the ALIAS, not the field → Alice
+oqx`select name, current: jobs collect { employer where !end } from ${people} where current`;
+// a collect alias in predicate position means "non-empty" → Bob, Carol
+```
+
+Inside an alias's own expression its name is still the field
+(`name: name.upper()` is not recursive); a chain of aliases that comes back to
+itself (`a: b, b: a … where a`) is a parse error. Each block rewrites only
+against its *own* `select`; `^name` always reads an enclosing row's field, never
+an alias. `order by` is not rewritten — it reads row fields (§8).
+
 **Scoping: bare names are local, `^` reaches out.** A bare identifier resolves
 against the **current row only**. If the row lacks that property the value is
 absent — it never falls through to an enclosing row. To correlate with an
@@ -242,10 +278,10 @@ const accounts = [
   { owner: "x", budget: 100, orders: [{ amount: 50 }, { amount: 150 }] },
   { owner: "y", budget: 200, orders: [{ amount: 250 }] },
 ];
-oqx`owner from ${accounts} where orders exists { amount > ^budget }`;
+oqx`owner from ${accounts} where orders exists { where amount > ^budget }`;
 // [{ owner: "x" }, { owner: "y" }]   — `^budget` is the enclosing account's budget
 
-oqx`owner from ${accounts} where orders exists { amount > budget }`;
+oqx`owner from ${accounts} where orders exists { where amount > budget }`;
 // []   — a bare `budget` is the ORDER's own budget: absent, so `>` is false
 ```
 
@@ -333,8 +369,9 @@ A consumer shapes a result set. There are six:
 
 The bare `from … ` form is always `collect`. To reduce the **whole** query with a
 different consumer, use the directive form `<source> <consumer> { <body> }` — note
-this is *not* SQL: `count from people` would project a field called `count`, whereas
-a real reduction is a directive:
+this is *not* SQL: `count from people` projects a field called `count`, and
+`from people count` is a parse error that points at the directive form. A real
+reduction is a directive:
 
 ```js
 oqx`${people} exists { where active }`;            // true
@@ -342,8 +379,11 @@ oqx`${people} count { where active }`;             // 2
 oqx`${people} first { name where age > 50 }`;      // { name: "Alice" }
 ```
 
-(Inside a consumer block a bare identifier **projects** — `count { active }` selects
-a field named `active`; write `count { where active }` to filter.)
+(A consumer block follows the same clause grammar as the top level, with `from`
+optional. A leading bare identifier **projects** — `count { active }` selects a
+field named `active`; write `count { where active }` to filter, and always write
+`where` before a predicate: `exists { !end }` is an error, `exists { where !end }`
+is the test.)
 
 ### 6. Nested collections and relations
 
@@ -354,7 +394,7 @@ In `where`, an `exists { … }` tests non-emptiness and `count { … } <op> N` c
 cardinality:
 
 ```js
-oqx`name from ${people} where jobs exists { !end }`;   // has a current job → Bob, Carol
+oqx`name from ${people} where jobs exists { where !end }`;   // has a current job → Bob, Carol
 oqx`name from ${people} where jobs count {} >= 2`;     // ≥2 jobs → Bob, Alice
 oqx`name from ${people} where jobs none { where end }`; // no past job → Carol
 ```
@@ -384,7 +424,7 @@ counts and collections are over distinct projections rather than raw rows. Spell
 it after the consumer (`count distinct { … }`) or inside via `select distinct`:
 
 ```js
-oqx`from ${jobs} select distinct employer`;            // distinct employers
+oqx`select distinct employer from ${jobs}`;            // distinct employers
 oqx`n: jobs collect distinct { select employer } from ${people}`; // per person, unique employers
 oqx`name from ${people} where jobs count distinct { select employer } == 1`; // worked at exactly one employer
 ```
@@ -437,7 +477,9 @@ fully), not a short-circuiting `exists`.
 ### 8. Ordering
 
 `order by <expr> [asc|desc]`, comma-separated for tie-breaks. Absent values sort
-last.
+last. The sort expression reads the row (fields, `$value`, recursion
+intrinsics) — it is not rewritten against the `select` aliases, so
+`order by decade` sorts by a field called `decade`, not by `decade: age / 10`.
 
 ```js
 oqx`name from ${people} where city == "NYC" order by age desc`;
@@ -456,7 +498,7 @@ inside `{ … }`; it must be a non-negative integer.
 
 ```js
 oqx`name values from ${people} order by age desc limit 2`;                 // ["Alice", "Bob"]
-oqx`name values from ${people} order by age desc offset 1 limit 1`;        // ["Bob"]
+oqx`name values from ${people} order by age desc limit 1 offset 1`;        // ["Bob"]
 oqx`name, latest: jobs collect { employer values order by start desc limit 1 } from ${people}`;
 oqx`name from ${people} where jobs exists { offset 1 }`;                   // has a second job
 ```
@@ -513,9 +555,11 @@ your relation returns fresh objects rather than shared references.
 ### Cheat-sheet
 
 ```
-name, alias: expr, nested: rel collect { … }   projection (select optional)
-from ${source}                                  source collection
-where a == b && rel exists { … } || !c          predicate tree + nested ops
+select … from … where … follow … order by … limit N offset N   the fixed clause order (each at most once)
+name, alias: expr, nested: rel collect { … }   projection (`select` may be dropped only here, in first position)
+from ${source}                                  source collection (required at the top level)
+where a == b && rel exists { where … } || !c    predicate tree + nested ops (`where` is never implicit)
+where alias                                      `where` may use this body's select aliases (inlined; an alias shadows a field)
 where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage

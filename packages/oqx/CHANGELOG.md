@@ -4,6 +4,48 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.11.0] - 2026-09-24
+
+### Changed (breaking)
+- **Clause order is fixed** (omgbase ADR-020). Within one clause body — the
+  top level or any consumer block — clauses appear at most once each, in
+  exactly this order: `select … from … where … follow … order by … limit N
+  offset N`. Every clause is optional except a top-level `from` (the
+  `<receiver> <consumer> { … }` form supplies its own source). A clause out
+  of order is a parse error that names the order (`` `select` must come
+  before `from` — OQX clause order is select, from, where, follow, order by,
+  limit, offset ``); a second `from` in one body is a duplicate. The
+  order-flexible grammar (`from ${people} select name where …`, `limit 1 name
+  from …`, `offset 1 limit 1`) no longer parses.
+- **Only `select` may drop its keyword, and only when it is the first clause
+  written** (`name, age from people`). Every other clause always carries its
+  keyword, so a predicate is never implicit: the `looksLikePredicate` shape
+  heuristic is gone. **A block now needs `where`** — `jobs exists { where
+  !end }` — and a bare comparison in leading position (`exists { age > 50 }`,
+  `age > 50 from people`) is a parse error that points at `where`. A bare name
+  in leading position projects, as before (`count { active }` selects
+  `active`).
+- **The `from docs count` footgun is closed.** A bare run after `from` is an
+  error; `from people count` fails at `count` with a hint — write
+  `people count { … }` for the whole-query consumer, or `select count from …`
+  to project a field named `count`. (Previously it silently projected the
+  field.)
+
+### Added
+- **`where` may reference the same body's `select` aliases.** Implemented as a
+  compile-time inline rewrite (not a second execution pass): after a body is
+  parsed, each bare identifier in its `where` that names an alias is replaced
+  by the alias's expression, so the engine and any pushdown planner see an
+  ordinary predicate. An alias shadows a same-named row field inside `where`;
+  an alias's own name inside its own expression is still the field
+  (`name: name.upper()` is not recursive); a chain of aliases that returns to
+  one being resolved (`a: b, b: a … where a`) is a parse error; an alias whose
+  value is a `collect`/`first`/`single { … }` block may stand alone as a
+  where leaf (non-empty test) but not inside an expression. Each body rewrites
+  only against its own `select` (nested blocks and `follow` blocks are their
+  own scopes); `^name` is never an alias. `order by` is unchanged — it reads
+  row fields, not aliases.
+
 ## [0.10.2] - 2026-09-23
 
 Moved into the omgbase monorepo (`packages/oqx`, via `git subtree` — full
