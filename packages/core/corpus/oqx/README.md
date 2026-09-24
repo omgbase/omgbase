@@ -81,8 +81,8 @@ different sets. Several tests depend on this; keep it fully checked.
   relations (asserted to navigate the same content as `under_heading`).
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
-  `from docs where nodes collect { ^open: value where kind == "md:task" &&
-  !attrs.checked } select $path, open` both filter to those docs and capture each
+  `select $path, open from docs where nodes collect { ^open: value where kind ==
+  "md:task" && !attrs.checked }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
 - **Correlation & joins (`^name` outer references + `$repo.*` roots)** — the

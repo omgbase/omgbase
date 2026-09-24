@@ -186,7 +186,7 @@ minus the `substance` tag itself (`$value values` makes it a plain array; a
 scalar-authored `tags: substance` is one element, so mercury's list empties):
 
 ```console
-$ omg query 'from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }' --jsonl
+$ omg query 'select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"' --jsonl
 {"id":"d_0vsapzt","path":"substances/mercury.md","tags":[]}
 {"id":"d_1rren8z","path":"substances/philosophers-stone.md","tags":["goal","legendary"]}
 {"id":"d_prj3j7a","path":"substances/prima-materia.md","tags":["theory"]}
@@ -202,7 +202,7 @@ key and `$value` the value. Salt's frontmatter as `{k, v}` rows — the list key
 comes back as an array, exactly as a bare `tags` reads:
 
 ```console
-$ omg query 'from docs where $path == "substances/salt.md" select fm: entries(frontmatter) collect { k: $key, v: $value }' --jsonl
+$ omg query 'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "substances/salt.md"' --jsonl
 {"id":"d_h73rhv8","path":"substances/salt.md","fm":[{"k":"element","v":"salt"},{"k":"layer","v":"canon"},{"k":"slug","v":"salt"},{"k":"tags","v":["substance","tria-prima"]},{"k":"tradition","v":"western"},{"k":"type","v":"substance"},{"k":"verified","v":true}]}
 ```
 

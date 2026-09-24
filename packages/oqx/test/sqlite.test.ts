@@ -98,7 +98,7 @@ test("sqlite: a query-level limit/offset is honored (no SQL LIMIT underneath fir
     'emp single { name values where dept == "eng" limit 1 }',
     'emp count { where dept == "eng" limit 2 }',
     'emp none { where dept == "eng" offset 3 }',
-    'name values from emp where level >= 4 order by level desc offset 1 limit 1',
+    'name values from emp where level >= 4 order by level desc limit 1 offset 1',
   ]) {
     const q = parse(src);
     assert.deepEqual(new PlannedEngine(planner).run(q, []), run(q, { roots: { emp: employees } }), src);

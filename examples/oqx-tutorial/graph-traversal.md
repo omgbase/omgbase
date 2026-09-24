@@ -62,7 +62,7 @@ why each row ended: `interior` (expanded), `leaf` (no further edges), `frontier`
 citations but treating practitioner pages as the frontier:
 
 ```console
-$ omg query 'from docs where $path == "index.md" select stop: $stop order by $path asc follow distinct doc.out { frontier type == "practitioner" }' --jsonl
+$ omg query 'select stop: $stop from docs where $path == "index.md" follow distinct doc.out { frontier type == "practitioner" } order by $path asc' --jsonl
 {"id":"d_sz1e8z0","path":"index.md","stop":"interior"}
 {"id":"d_w18c2st","path":"lab/2026-02-notes.md","stop":"interior"}
 {"id":"d_nzb61j9","path":"practitioners/jabir-ibn-hayyan.md","stop":"frontier"}
@@ -86,7 +86,7 @@ outline one level per hop — the magnum opus's section and its four subsections
 (`$depth` 1 then 2):
 
 ```console
-$ omg query 'from nodes where kind == "md:section" && name == "The magnum opus" select name, depth: $depth, stop: $stop order by $depth asc, name asc follow section.children' --jsonl
+$ omg query 'select name, depth: $depth, stop: $stop from nodes where kind == "md:section" && name == "The magnum opus" follow section.children order by $depth asc, name asc' --jsonl
 {"id":"n_7a874b74b236","path":"processes/magnum-opus.md","name":"The magnum opus","depth":1,"stop":"interior"}
 {"id":"n_cb7296cac24a","path":"processes/magnum-opus.md","name":"Open questions","depth":2,"stop":"leaf"}
 {"id":"n_e7364dec9d89","path":"processes/magnum-opus.md","name":"Operations","depth":2,"stop":"leaf"}

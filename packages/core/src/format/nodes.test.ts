@@ -140,7 +140,7 @@ describe("node queries — from: nodes", () => {
     ingestFile(store, repoId, "test.md", "# Hello\n\nSee [docs](/guide.md).\n");
     ingestFile(store, repoId, "config.yaml", "database:\n  host: ${DB_HOST}\n");
 
-    const yamlOnly = oqxRun(store, repoId, 'from nodes where doc.format == "yaml" select kind: kind');
+    const yamlOnly = oqxRun(store, repoId, 'select kind: kind from nodes where doc.format == "yaml"');
     expect(yamlOnly.hits.length).toBeGreaterThan(0);
     expect(yamlOnly.hits.every((h) => (h as Record<string, unknown>).kind?.toString().startsWith("yaml:"))).toBe(true);
   });
@@ -172,7 +172,7 @@ describe("node queries — from: nodes", () => {
       expect(oqxRun(store, repoId, 'from nodes where kind == "md:task" && !checked', { plan }).hits.length).toBe(2);
     }
     // the flattened name is exactly what a projection returns
-    const hit = oqxRun(store, repoId, 'from nodes where kind == "md:task" && checked == true select checked').hits[0]!;
+    const hit = oqxRun(store, repoId, 'select checked from nodes where kind == "md:task" && checked == true').hits[0]!;
     expect(hit.checked).toBe(true);
   });
 
@@ -190,7 +190,7 @@ describe("node queries — from: nodes", () => {
     const { store, repoId } = setup();
     ingestFile(store, repoId, "test.md", "# Note\n\nstatus:: active\n");
 
-    const results = oqxRun(store, repoId, 'from nodes where kind == "md:inline_field" select kind: kind, name: name, value: value');
+    const results = oqxRun(store, repoId, 'select kind: kind, name: name, value: value from nodes where kind == "md:inline_field"');
     expect(results.hits.length).toBe(1);
     const hit = results.hits[0]!;
     expect(hit.kind).toBe("md:inline_field");

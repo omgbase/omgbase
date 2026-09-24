@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/oqx",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "description": "OQX (omgbase Query eXpressions): a composable query language and engine for JavaScript collections",
   "keywords": [
     "query",

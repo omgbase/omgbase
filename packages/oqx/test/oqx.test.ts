@@ -31,7 +31,7 @@ const people = [
 
 test("acceptance: current Globocorp employees via nested exists", () => {
   const company = "Globocorp";
-  const employees = oqx`name, id, title from ${people} where jobs exists { employer == ${company} && !end_date }`;
+  const employees = oqx`name, id, title from ${people} where jobs exists { where employer == ${company} && !end_date }`;
   assert.deepEqual(employees, [
     { name: "Bob", id: 124, title: "Engineer" },
     { name: "Carol", id: 55, title: "Analyst" },
@@ -43,7 +43,7 @@ test("acceptance example is whitespace-insensitive (multiline)", () => {
   const employees = oqx`
     name, id, title
     from ${people}
-    where jobs exists { employer == ${company} && !end_date }
+    where jobs exists { where employer == ${company} && !end_date }
   ` as Array<Record<string, unknown>>;
   assert.deepEqual(employees.map((e) => e.name), ["Bob", "Carol"]);
 });
@@ -73,9 +73,140 @@ test("the optional `select` keyword is accepted (hook for future `select distinc
   assert.deepEqual(explicit, implicit);
 });
 
-test("`select` works after `from` too (order-flexible clauses)", () => {
-  const out = oqx`from ${people} select name where age > 50`;
-  assert.deepEqual(out, [{ name: "Alice" }]);
+// ---- the fixed clause order (ADR-020) ----------------------------------------
+
+test("each of the four legal leading forms parses", () => {
+  assert.deepEqual(oqx`select name from ${people} where age > 50`, [{ name: "Alice" }]); // select-first, keyword
+  assert.deepEqual(oqx`name from ${people} where age > 50`, [{ name: "Alice" }]); // select-first, keyword dropped
+  assert.deepEqual(oqx`from ${people} where age > 50`, [people[1]]); // from-first (no projection)
+  assert.equal(oqx`${people} count { where age > 50 }`, 1); // receiver + consumer
+  // inside a block the same rule holds: a leading run is the projection
+  assert.deepEqual(oqx`${people} first { name where age > 50 }`, { name: "Alice" });
+  assert.deepEqual(oqx`${people} first { select name where age > 50 }`, { name: "Alice" });
+});
+
+test("out-of-order clauses fail naming the fixed order", () => {
+  const ordering = /OQX clause order is select, from, where, follow, order by, limit, offset/;
+  const outOfOrder = (src: string, first: string, second: string) => assert.throws(
+    () => parse(src),
+    (e: unknown) => e instanceof OqxError && ordering.test(e.message) && e.message.includes(`\`${first}\` must come before \`${second}\``),
+    src,
+  );
+  outOfOrder("from people select name", "select", "from");
+  outOfOrder("from people where age > 50 select name", "select", "where");
+  outOfOrder("name from people order by age where age > 50", "where", "order by");
+  outOfOrder("name from people follow jobs where age > 50", "where", "follow");
+  outOfOrder("name from people limit 1 order by age", "order by", "limit");
+  outOfOrder("name from people offset 1 limit 1", "limit", "offset");
+  outOfOrder("people count { where age > 50 select name }", "select", "where");
+  // a clause appears at most once
+  assert.throws(() => parse("from people from jobs"), (e: unknown) => e instanceof OqxError && /duplicate `from`/.test(e.message));
+  assert.throws(() => parse("name from people where a where b"), (e: unknown) => e instanceof OqxError && /duplicate `where`/.test(e.message));
+});
+
+test("a bare predicate in a block fails asking for `where` (there is no implicit where)", () => {
+  const wantsWhere = (e: unknown) => e instanceof OqxError && /write `where /.test(e.message) && /never implicit/.test(e.message);
+  assert.throws(() => parse("people exists { age > 50 }"), wantsWhere);
+  assert.throws(() => parse("people exists { !active }"), wantsWhere);
+  assert.throws(() => parse('name from people where jobs exists { employer == "X" && !end_date }'), wantsWhere);
+  assert.throws(() => parse("people exists { jobs count {} >= 2 }"), wantsWhere);
+  // …and a bare leading predicate at the top level is the same mistake
+  assert.throws(() => parse("!active from people"), wantsWhere);
+  assert.throws(() => parse("age > 40 from people"), wantsWhere);
+  // a bare NAME is a projection, at the top level and in a block alike
+  assert.deepEqual(oqx`active from ${people}`, [{ active: true }, { active: true }, { active: false }]);
+  assert.deepEqual(oqx`${people} first { active }`, { active: true });
+});
+
+test("a bare run after `from` is an error; `from people count` gets the consumer hint", () => {
+  assert.throws(
+    () => parse("from people count"),
+    (e: unknown) => e instanceof OqxError
+      && e.message.includes("unexpected `count` after `from`")
+      && e.message.includes("`<collection> count { … }`")
+      && e.message.includes("`select count from …`"),
+  );
+  assert.throws(() => parse("from people exists { where active }"), (e: unknown) => e instanceof OqxError && /unexpected `exists` after `from`/.test(e.message));
+  assert.throws(
+    () => parse("from people active"),
+    (e: unknown) => e instanceof OqxError && /unexpected 'active' after `from`/.test(e.message) && /no implicit where/.test(e.message),
+  );
+  assert.throws(() => parse("from people name, id"), (e: unknown) => e instanceof OqxError && /unexpected 'name' after `from`/.test(e.message));
+  // the legal spellings of what those meant
+  assert.equal(oqx`${people} count { where active }`, 2);
+  assert.deepEqual(oqx`select count from ${[{ count: 3 }]}`, [{ count: 3 }]);
+});
+
+test("`where` may reference `select` aliases (inlined at parse time)", () => {
+  assert.deepEqual(oqx`select name, adult: age >= 30 from ${people} where adult`, [
+    { name: "Bob", adult: true }, { name: "Alice", adult: true },
+  ]);
+  assert.deepEqual(oqx`select name, decade: age / 10 from ${people} where decade > 5`, [{ name: "Alice", decade: 5.2 }]);
+  // the rewrite is inline substitution: the where AST is an ordinary scalar tree
+  const q = parse("select adult: age >= 18 from people where adult && name == \"x\"");
+  assert.deepEqual(q.where, {
+    kind: "and",
+    parts: [
+      { kind: "scalar", expr: { kind: "binary", op: ">=", left: { kind: "ident", name: "age" }, right: { kind: "lit", value: 18 } } },
+      { kind: "scalar", expr: { kind: "binary", op: "==", left: { kind: "ident", name: "name" }, right: { kind: "lit", value: "x" } } },
+    ],
+  });
+  // an alias chain resolves through (b → a's expression)
+  assert.deepEqual(oqx`select senior: age > 50, s: senior from ${people} where s`, [{ senior: true, s: undefined }]);
+  // an unaliased dotted item is an alias for its key
+  const data = [{ meta: { slug: "a" } }, { meta: { slug: "b" } }];
+  assert.deepEqual(oqx`select meta.slug from ${data} where slug == "b"`, [{ slug: "b" }]);
+  // inside a block, the rewrite is against THAT block's select only
+  assert.deepEqual(
+    oqx`name, cur: jobs collect { e: employer, open: !end_date where open } from ${people} where name == "Bob"`,
+    [{ name: "Bob", cur: [{ e: "Globocorp", open: true }] }],
+  );
+  // a collect alias in predicate position means non-empty
+  assert.deepEqual(
+    oqx`name, current: jobs collect { employer where !end_date } from ${people} where current` as Array<{ name: string }>,
+    [{ name: "Bob", current: [{ employer: "Globocorp" }] }, { name: "Carol", current: [{ employer: "Globocorp" }] }],
+  );
+  assert.throws(
+    () => parse("select n: jobs collect { employer } from people where n.size() > 1"),
+    (e: unknown) => e instanceof OqxError && /alias 'n' is a collect/.test(e.message),
+  );
+});
+
+test("an alias shadows a same-named field inside `where`; its own expression reads the field", () => {
+  // every person has `active`; the alias `active` redefines it for the where
+  assert.deepEqual(oqx`select name, active: age > 50 from ${people} where active`, [{ name: "Alice", active: true }]);
+  // `^name` is never an alias — it reads the enclosing ROW
+  assert.deepEqual(
+    oqx`name, peers: ${people} collect { name values where age > ^age } from ${people} where name == "Bob"`,
+    [{ name: "Bob", peers: ["Alice"] }],
+  );
+  // inside its own expression an alias's name is the row field (not recursion)
+  assert.deepEqual(oqx`select name: name.upper() from ${people} where name == "BOB"`, [{ name: "BOB" }]);
+  assert.deepEqual(oqx`select name from ${people} where name == "Bob"`, [{ name: "Bob" }]);
+});
+
+test("a cycle among aliases referenced from `where` is a parse error", () => {
+  assert.throws(
+    () => parse("select a: b, b: a from people where a"),
+    (e: unknown) => e instanceof OqxError && /select aliases form a cycle: a → b → a/.test(e.message),
+  );
+  assert.throws(
+    () => parse("select a: b + 1, b: c, c: a from people where c > 1"),
+    (e: unknown) => e instanceof OqxError && /cycle: c → a → b → c/.test(e.message),
+  );
+  // unreferenced, the same select is fine (it swaps two fields)
+  assert.deepEqual(oqx`select a: b, b: a from ${[{ a: 1, b: 2 }]}`, [{ a: 2, b: 1 }]);
+});
+
+test("`order by` resolves against the row, not the select aliases (unchanged)", () => {
+  // `decade` is not a field: every key is absent, so the order is the input order
+  const out = oqx`select name, decade: age / 10 from ${people} order by decade` as Array<{ name: string }>;
+  assert.deepEqual(out.map((r) => r.name), ["Bob", "Alice", "Carol"]);
+  // …and a field named like an alias sorts by the FIELD
+  assert.deepEqual(
+    (oqx`select name, age: 0 from ${people} order by age desc` as Array<{ name: string }>).map((r) => r.name),
+    ["Alice", "Bob", "Carol"],
+  );
 });
 
 // ---- bindings as values -----------------------------------------------------
@@ -135,14 +266,14 @@ const accounts = [
 const owners = (rows: unknown): unknown[] => (rows as Array<{ owner: unknown }>).map((r) => r.owner);
 
 test("^name correlates a nested predicate with the enclosing row", () => {
-  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { amount > ^budget }`), ["x", "y"]);
+  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { where amount > ^budget }`), ["x", "y"]);
 });
 
 test("a bare identifier resolves against the current row only: an absent local name stays absent", () => {
   // `budget` is not a property of an order. It must NOT resolve to the enclosing
   // account's budget — it is absent, so `>` is false and nothing matches.
-  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { amount > budget }`), []);
-  assert.equal(oqx`${accounts} exists { orders exists { where has(budget) } }`, false);
+  assert.deepEqual(owners(oqx`owner from ${accounts} where orders exists { where amount > budget }`), []);
+  assert.equal(oqx`${accounts} exists { where orders exists { where has(budget) } }`, false);
   // …and projecting it yields an absent value, not the outer one.
   assert.deepEqual(
     oqx`owner, b: orders collect { budget } from ${accounts} where owner == "y"`,
@@ -158,11 +289,11 @@ test("regression: adding a same-named property to an inner row cannot change an 
     { owner: "x", budget: 100, orders: [{ amount: 50, budget: 0 }, { amount: 150, budget: 1000 }] },
     { owner: "y", budget: 200, orders: [{ amount: 250, budget: 1000 }] },
   ];
-  const outer = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { amount > ^budget }`);
+  const outer = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { where amount > ^budget }`);
   assert.deepEqual(outer(accounts), ["x", "y"]);
   assert.deepEqual(outer(shadowed), ["x", "y"]); // unchanged: `^budget` is the account's, always
   // The bare name is, and always was, the ORDER's own property.
-  const local = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { amount > budget }`);
+  const local = (rows: unknown) => owners(oqx`owner from ${rows} where orders exists { where amount > budget }`);
   assert.deepEqual(local(accounts), []); // absent on the order → no match
   assert.deepEqual(local(shadowed), ["x"]); // x: 50 > 0; y: 250 > 1000 is false
 });
@@ -178,8 +309,8 @@ test("present-but-falsy local values are read locally; absence is absence (no ou
     { local: undefined, outer: "outer", present: false },
   ] }]);
   // `== null` matches the null AND the absent item — neither resolves outward.
-  assert.equal(oqx`${rows} exists { items count { where label == null } == 2 }`, true);
-  assert.equal(oqx`${rows} exists { items count { where label == ^label } == 0 }`, true);
+  assert.equal(oqx`${rows} exists { where items count { where label == null } == 2 }`, true);
+  assert.equal(oqx`${rows} exists { where items count { where label == ^label } == 0 }`, true);
 });
 
 test("^ reads exactly one scope out per caret; past the root it is absent", () => {
@@ -205,9 +336,9 @@ test("named roots live on the root scope: reachable from a row only via ^, never
   );
   // A bare `people` inside a person row is that row's (absent) property → an
   // empty receiver → exists is false for every row; `^people` is the root.
-  assert.deepEqual(execute("name from people where people exists { name == ^name }", { people: folks }), []);
+  assert.deepEqual(execute("name from people where people exists { where name == ^name }", { people: folks }), []);
   assert.deepEqual(
-    execute("name from people where ^people exists { city == ^city && name != ^name }", { people: folks }),
+    execute("name from people where ^people exists { where city == ^city && name != ^name }", { people: folks }),
     [{ name: "Ada" }, { name: "Ben" }],
   );
 });
@@ -236,7 +367,7 @@ test("^ outer reference reaches an enclosing row even when the name is shadowed"
 
 test("top-level exists / count directives", () => {
   const company = "Initech";
-  assert.equal(oqx`${people} exists { jobs exists { employer == ${company} } }`, true);
+  assert.equal(oqx`${people} exists { where jobs exists { where employer == ${company} } }`, true);
   assert.equal(oqx`${people} count { where active }`, 2);
 });
 
@@ -396,29 +527,29 @@ test("follow distinct collapses per-path occurrences to reached nodes", () => {
 
 test("select distinct dedups top-level result rows by projection", () => {
   const dupes = [{ id: 1 }, { id: 1 }, { id: 2 }];
-  const rows = oqx`from ${dupes} select distinct id` as { id: number }[];
+  const rows = oqx`select distinct id from ${dupes}` as { id: number }[];
   assert.deepEqual(rows.map((r) => r.id), [1, 2]);
 });
 
 test("collect distinct dedups a nested relation's projected rows", () => {
   const bob = people[0]!; // two jobs, both at Globocorp
-  const employers = oqx`from ${bob.jobs} select distinct employer` as { employer: string }[];
+  const employers = oqx`select distinct employer from ${bob.jobs}` as { employer: string }[];
   assert.deepEqual(employers.map((r) => r.employer), ["Globocorp"]); // 2 rows → 1 distinct
 
-  const collected = oqx`from ${[bob]} select n: jobs collect distinct { select employer }` as Array<{ n: unknown[] }>;
+  const collected = oqx`select n: jobs collect distinct { select employer } from ${[bob]}` as Array<{ n: unknown[] }>;
   assert.equal(collected[0]!.n.length, 1);
 });
 
 test("count distinct { … } counts distinct projections (meaningful counts)", () => {
   const bob = people[0]!; // 2 job rows, both Globocorp → 1 distinct employer
-  assert.equal(oqx`${[bob]} exists { jobs count distinct { select employer } == 1 }` as boolean, true);
-  assert.equal(oqx`${[bob]} exists { jobs count { select employer } == 2 }` as boolean, true); // without distinct: 2 rows
+  assert.equal(oqx`${[bob]} exists { where jobs count distinct { select employer } == 1 }` as boolean, true);
+  assert.equal(oqx`${[bob]} exists { where jobs count { select employer } == 2 }` as boolean, true); // without distinct: 2 rows
 });
 
 test("distinct is also spellable inside the block via `select distinct`", () => {
   const bob = people[0]!;
-  const a = oqx`from ${[bob]} select n: jobs collect distinct { select employer }` as Array<{ n: unknown[] }>;
-  const b = oqx`from ${[bob]} select n: jobs collect { select distinct employer }` as Array<{ n: unknown[] }>;
+  const a = oqx`select n: jobs collect distinct { select employer } from ${[bob]}` as Array<{ n: unknown[] }>;
+  const b = oqx`select n: jobs collect { select distinct employer } from ${[bob]}` as Array<{ n: unknown[] }>;
   assert.deepEqual(a, b);
 });
 
@@ -620,13 +751,13 @@ test("none is a where-position test: not comparable, not a projection", () => {
 
 test("limit/offset bound the ordered top-level result", () => {
   assert.deepEqual(oqx`name values from ${people} order by age desc limit 2`, ["Alice", "Bob"]);
-  assert.deepEqual(oqx`name values from ${people} order by age desc offset 1 limit 1`, ["Bob"]);
+  assert.deepEqual(oqx`name values from ${people} order by age desc limit 1 offset 1`, ["Bob"]);
   assert.deepEqual(oqx`name values from ${people} order by age desc offset 1`, ["Bob", "Carol"]);
   assert.deepEqual(oqx`name values from ${people} offset 5`, []);
   assert.deepEqual(oqx`name values from ${people} limit 0`, []);
-  // clause order is free, and the bound may be a binding
+  // the bound may be a binding
   const n = 1;
-  assert.deepEqual(oqx`limit ${n} name values from ${people} where age > 30 order by name`, ["Alice"]);
+  assert.deepEqual(oqx`name values from ${people} where age > 30 order by name limit ${n}`, ["Alice"]);
 });
 
 test("the bound applies after where/order/distinct and before the consumer reduces", () => {

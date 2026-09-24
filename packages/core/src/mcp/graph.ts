@@ -133,8 +133,8 @@ const EDGE_COLLECT =
 function buildQuery(seed: string, dir: "out" | "in", depth: number, userSelect: string): string {
   const edgesRel = dir === "out" ? "doc.out_edges" : "doc.in_edges";
   return (
-    `from docs where ${seed} ` +
     `select _depth: $depth, _stop: $stop, _edges: ${edgesRel} collect ${EDGE_COLLECT}${userSelect} ` +
+    `from docs where ${seed} ` +
     `follow distinct doc.${dir} { depth ${depth} }`
   );
 }

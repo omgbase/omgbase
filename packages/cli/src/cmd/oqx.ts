@@ -13,12 +13,13 @@ import { readStdin } from "./_mutate.js";
 // belong to OQX (`<receiver> collect|exists|count|first|single { <block> }`).
 // `from E` selects + flattens a relation relative to the current source scope
 // (top-level `from docs` = the repository's docs; `$repo.docs collect { from
-// nodes … }` re-projects each doc through its nodes). Inside a block the
-// `where`/`select` keyword may be omitted: a leading predicate-shaped expression
-// is an implicit `where` (`nodes exists { kind == "md:task" }`), a bare
-// reference / `name: value` list is an implicit `select` (`nodes collect
-// { attrs.text }`); a bare boolean property still projects (filter with
-// `where active` or `active == true`). Features: a boolean where
+// nodes … }` re-projects each doc through its nodes). Clause order is fixed
+// (ADR-020): `select … from … where … follow … order by … limit … offset …`,
+// each at most once, at the top level and inside every block. Only `select` may
+// drop its keyword, and only as the first clause (`nodes collect { attrs.text }`
+// projects); a predicate always needs `where` (`nodes exists { where kind ==
+// "md:task" }`), so a bare boolean property projects rather than filters.
+// `where` may use the body's select aliases. Features: a boolean where
 // tree over scalar predicates and consumer directives, count comparisons
 // (`nodes count { … } >= 2`), nestable collect, one-scope lifts (^name:) that
 // filter + capture, one-scope-outward references (^name) that correlate a nested
@@ -65,24 +66,24 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
       ],
     });
     cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
-    cli.io.out("       query 'from nodes where kind == \"md:section\" select items: section.blocks collect { where type == \"list_item\" }'");
-    cli.io.out("       query 'from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked } select $path, open'");
-    cli.io.out("       query 'from docs select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id }'");
+    cli.io.out("       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'");
+    cli.io.out("       query 'select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }'");
+    cli.io.out("       query 'select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'");
     cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
-    cli.io.out("       query 'from docs where $path == \"x.md\" select fm: entries(frontmatter) collect { k: $key, v: $value }'   # a record as a collection ($key/$value); also entries(attrs), entries(inline)");
-    cli.io.out("       query 'from docs where layer == \"canon\" select $path values'   # `values`: bare values, no {id,path} hits (one item only)");
-    cli.io.out("       query 'from docs select $path, tags: tags collect { $value values where $value != \"draft\" }'   # $value = the current item (here: each tag)");
+    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == \"x.md\"'   # a record as a collection ($key/$value); also entries(attrs), entries(inline)");
+    cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
+    cli.io.out("       query 'select $path, tags: tags collect { $value values where $value != \"draft\" } from docs'   # $value = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
-    cli.io.out("       query 'from blocks where semantic(\"the great work\") > 0.6 select s: semantic(\"the great work\")'  # embedding score (needs a provider)");
+    cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
-    cli.io.out("       query 'from blocks where $id == \"b_x\" select t: text, d: $depth, s: $stop follow block.children'   # recursive walk ($depth/$stop metadata)");
+    cli.io.out("       query 'select t: text, d: $depth, s: $stop from blocks where $id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)");
     cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]");
-    cli.io.out("       query 'from docs where $path == \"index.md\" select p: $path, d: $depth, s: $stop follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
+    cli.io.out("       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
     cli.io.out("       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
-    cli.io.out("       query 'from edges where predicate == \"depends_on\" select src: $src, to: $dst_path'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri");
+    cli.io.out("       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri");
     cli.io.out("       query 'from docs where $path == \"a.md\" follow doc.out { via predicate == \"cites\" }'   # predicate-filtered traversal (via = the licensing edge)");
     return EXIT_OK;
   }

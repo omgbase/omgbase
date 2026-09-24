@@ -68,47 +68,47 @@ const QUERIES: string[] = [
   'from blocks where type == "task" && checked == false',
   'from nodes where kind == "md:section" && level == 1',
   'from docs where nodes exists { where kind == "md:task" && !checked }',
-  'from nodes where kind == "md:task" && checked == false select $path, checked',
+  'select $path, checked from nodes where kind == "md:task" && checked == false',
   // consumers
   '$repo.docs count { where $path.startsWith("substances/") }',
   '$repo.docs exists { where $path == "index.md" }',
   '$repo.docs first { where type == "practitioner" order by era desc }',
-  'from docs where type == "substance" select $path, layer',
+  'select $path, layer from docs where type == "substance"',
   // order by + pagination surface
   'from docs where type == "practitioner" order by era asc',
   'from docs order by $path',
   // distinct
-  'from docs select distinct type',
-  'from docs where $path == "processes/magnum-opus.md" select k: nodes collect distinct { select kind }',
+  'select distinct type from docs',
+  'select k: nodes collect distinct { select kind } from docs where $path == "processes/magnum-opus.md"',
   'from docs where nodes count distinct { select kind } == 3',
   // values / $value (top-level values is shaped by the runner; nested by the engine)
-  'from docs where type == "practitioner" select era values order by era asc',
-  'from docs select distinct type values',
-  '$repo.docs first { where type == "practitioner" select $path values order by era desc }',
-  'from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }',
+  'select era values from docs where type == "practitioner" order by era asc',
+  'select distinct type values from docs',
+  '$repo.docs first { select $path values where type == "practitioner" order by era desc }',
+  'select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"',
   'from docs where tags exists { where $value == "tria-prima" }',
   // none / limit / offset (top-level bounds are applied by the runner, nested by the engine)
   'from docs where type == "substance" && nodes none { where kind == "md:task" }',
   '$repo.docs none { where type == "nope" }',
   'from docs where type == "practitioner" order by era desc limit 2',
-  'from docs where type == "practitioner" order by era desc offset 1 limit 2',
-  'from docs select distinct type values limit 2',
+  'from docs where type == "practitioner" order by era desc limit 2 offset 1',
+  'select distinct type values from docs limit 2',
   'from docs where nodes exists { where kind == "md:task" offset 3 }',
-  '$repo.docs first { where type == "practitioner" select $path values order by era asc offset 1 }',
+  '$repo.docs first { select $path values where type == "practitioner" order by era asc offset 1 }',
   // entries() / $key (a free call → residual; the store context materializes frontmatter/inline)
-  'from docs where $path == "substances/salt.md" select fm: entries(frontmatter) collect { k: $key, v: $value }',
+  'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "substances/salt.md"',
   'from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }',
-  'from docs where entries(inline) exists { } select ks: entries(inline) collect { $key values }',
-  'from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value } select $path',
-  'from docs where $path == "processes/magnum-opus.md" select h: nodes collect { where kind == "md:section" select name values order by first_ordinal limit 2 }',
+  'select ks: entries(inline) collect { $key values } from docs where entries(inline) exists { }',
+  'select $path from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value }',
+  'select h: nodes collect { select name values where kind == "md:section" order by first_ordinal limit 2 } from docs where $path == "processes/magnum-opus.md"',
   // follow (planner declines → in-memory both ways, still must agree)
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',
-  'from nodes where kind == "md:section" && name == "The magnum opus" select n: name, d: $depth follow section.children',
+  'select n: name, d: $depth from nodes where kind == "md:section" && name == "The magnum opus" follow section.children',
   // correlation / lifts
-  'from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug',
-  'from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked } select $path, open',
+  'select slug from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug }',
+  'select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked }',
   // edges target
-  'from edges where predicate == "references" select $src, $dst_path',
+  'select $src, $dst_path from edges where predicate == "references"',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {
