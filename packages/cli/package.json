@@ -58,6 +58,6 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@simplebrains/recital": "^0.8.0"
+    "@simplebrains/recital": "^0.8.1"
   }
 }

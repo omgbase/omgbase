@@ -12,7 +12,7 @@
   "scripts": {
     "build": "pnpm --filter @omgbase/oqx build && tsc -b",
     "typecheck": "pnpm --filter @omgbase/oqx build && tsc -b",
-    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "rlink": "pnpm -r build && for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm add -g .); done"

@@ -9,4 +9,4 @@ allowBuilds:
   sharp: true
 
 minimumReleaseAgeExclude:
-  - '@simplebrains/recital@0.8.0'
+  - '@simplebrains/recital@0.8.0 || 0.8.1'

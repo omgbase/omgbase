@@ -204,8 +204,8 @@ importers:
         version: 2.9.0
     devDependencies:
       '@simplebrains/recital':
-        specifier: ^0.8.0
-        version: 0.8.0(vitest@2.1.9(@types/node@22.20.1)(supports-color@7.2.0))
+        specifier: ^0.8.1
+        version: 0.8.1(vitest@2.1.9(@types/node@22.20.1)(supports-color@7.2.0))
 
   packages/client: {}
 
@@ -860,8 +860,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@simplebrains/recital@0.8.0':
-    resolution: {integrity: sha512-UMQIJ2moVc9CZyYy+FYq9v1Xa20jaLKlctdeUwVDijpkoi8leyCA47obpt0xHwjrmnAOcgX/C+YMQool3WkKmg==}
+  '@simplebrains/recital@0.8.1':
+    resolution: {integrity: sha512-qNpFs8oiihwSxue6YAaJksIezdtnxSUVHYXGx/V9/4kfanUSAxP9LnejWP+qn3ekrOljsgo2WSLpZhwEoXxbLg==}
     engines: {node: '>=18'}
     hasBin: true
     peerDependencies:
@@ -2744,7 +2744,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.63.1':
     optional: true
 
-  '@simplebrains/recital@0.8.0(vitest@2.1.9(@types/node@22.20.1)(supports-color@7.2.0))':
+  '@simplebrains/recital@0.8.1(vitest@2.1.9(@types/node@22.20.1)(supports-color@7.2.0))':
     dependencies:
       yaml: 2.9.1
     optionalDependencies:
