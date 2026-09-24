@@ -62,7 +62,7 @@ The repo is a pnpm workspace of seven packages:
 
 ```
 packages/
-  core/          @omgbase/core — the embedded engine
+  core/          @omgbase/core — the embedded engine (README: packages/core/README.md)
     src/
       core/      parse · blocks · splice · hashing · ids · SQLite store · revisions · commits
       format/    adapter contract · registry · markdown/yaml/json adapters · node projection
@@ -74,12 +74,12 @@ packages/
       search/    FTS · embeddings · vector · RRF · resolve/pipeline
       mcp/       MCP server · tools · error mapping
     corpus/      round-trip + matcher fixtures
-  oqx/           @omgbase/oqx — the OQX query language + engine (standalone, zero deps, own version line; omgbase binds it in core/src/oqx-js/)
-  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync)
-  sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin)
-  client/        @omgbase/client — thin remote MCP client (placeholder)
-  embedder/      @omgbase/embedder — external embedding provider (transformers.js + Xenova/gte-base, 768-dim)
-  fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol)
+  oqx/           @omgbase/oqx — the OQX query language + engine (standalone, zero deps, own version line; omgbase binds it in core/src/oqx-js/) (README: packages/oqx/README.md)
+  cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync) (README: packages/cli/README.md)
+  sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin) (README: packages/sync/README.md)
+  client/        @omgbase/client — thin remote MCP client (placeholder) (README: packages/client/README.md)
+  embedder/      @omgbase/embedder — external embedding provider (transformers.js + Xenova/gte-base, 768-dim) (README: packages/embedder/README.md)
+  fs-adapter/    @omgbase/fs-adapter — external filesystem sync adapter (owns chokidar; stdio protocol) (README: packages/fs-adapter/README.md)
 docs/            as-built design reference · decision log (ADRs)
 ```
 
