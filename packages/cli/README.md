@@ -182,6 +182,7 @@ The global `--server <cmd|url>` flag runs the same command against a **remote en
 Global flags are recognized anywhere on the line: `-C <dir>`, `--repo <slug>`, `--json`, `--jsonl`, `--ids`, `--stale`, `--no-color`, `--dry-run`, `--server <cmd|url>`, `-H <header>`, `--help`/`-h`, `--version`/`-V`.
 
 - Human output (default) is colorized on a TTY; `--no-color`, `NO_COLOR`, or a pipe degrades to plain text.
+- Query hits (`omg q`, `omg run`) print as `<id>  <path>` lines. When the query projects (`select …`), they print as an aligned table instead: a dim header row, the id first, then the path (unless the projection itself selects `$path`), then the projected columns in `select` order. Strings and numbers are verbatim, an absent field is an empty cell, and a nested list/record is compact JSON clipped at 60 characters with `…`; `--jsonl` has the full values.
 - `--json` prints the library's result object verbatim as one JSON document (the same shape the MCP tools return). `--jsonl` flattens list results to one object per line; `--ids` prints bare ids/paths, one per line — pipe fuel for `omg cat -`, `omg show -`, `omg done -`.
 - `--dry-run` is global across every mutator: full validation and render, diffs printed, nothing committed.
 - Errors always go to stderr: `error[<code>]: <message>` plus any conflict payload, or the typed error object as JSON with `--json`.
