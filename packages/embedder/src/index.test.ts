@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { createProvider } from "./index.js";
 
 // Fast, offline shape checks. The actual model download + inference is exercised
-// only when OMGBASE_EMBEDDER_E2E=1 (kept out of CI so no ~90MB weights fetch).
+// only when OMGBASE_EMBEDDER_E2E=1 (kept out of CI: the Xenova/gte-base ONNX
+// weights are a ~435 MB first-run fetch).
 
 describe("createProvider", () => {
   it("returns an EmbeddingProvider with model + dim, without loading weights", () => {
