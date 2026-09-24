@@ -69,7 +69,7 @@ commit timestamp:
 
 ```console
 $ omg hist b_as1y4cr
-#19 edited (1.00) import 2026-09-15T14:23:41.512Z
+#19 edited (1.00) api 2026-09-15T14:23:41.512Z
 #3 inserted observed 2026-09-15T14:23:40.088Z
 ```
 

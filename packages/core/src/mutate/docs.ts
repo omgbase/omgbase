@@ -91,7 +91,7 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
     if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
     docStore.write(rel, content);
     const ts = new Date().toISOString();
-    const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
+    const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `create ${rel}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
     if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, rel, content);
     return { docId: res.docId, path: rel, committed: true };
   });
@@ -254,7 +254,7 @@ export function docsSetMeta(
 
     docStore.write(info.path, content);
     const ts = new Date().toISOString();
-    const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "import", resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
+    const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `set_meta ${info.path}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
     if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, info.path, content);
     return { docId: res.docId, path: info.path, committed: true };
   });

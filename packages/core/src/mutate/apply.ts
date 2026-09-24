@@ -243,7 +243,9 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
       // and thus node — identity on the probabilistic matcher (node-editability).
       ingestFile(store, req.repoId, d.path, rendered, {
         ts,
-        origin: "import",
+        origin: "api",
+        actor: req.origin.actor,
+        reason: req.origin.reason ?? null,
         resolveIds: makeKnownIdResolver(store, req.repoId, d, priorIds.get(docId) ?? new Set(), { path: d.path }),
       });
       // Keep the freshness cache warm so this engine write isn't re-hashed by a

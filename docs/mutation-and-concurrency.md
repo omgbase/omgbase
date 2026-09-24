@@ -133,7 +133,7 @@ apply(changeset):
         (reconciling resolver, observed commit), refresh the stat cache, and
         throw a RETRIABLE `sync_conflict` — the caller re-plans/re-applies
  5. atomic write: temp file → rename
- 6. re-ingest the rendered bytes as a commit with origin:"import" and a KNOWN-ID
+ 6. re-ingest the rendered bytes as a commit with origin:"api" (carrying the caller's actor and reason) and a KNOWN-ID
     resolver: the mutated tree already carries deterministic ids (ops keep/mint
     them), so identity threads onto the re-parsed tree and intent dispositions
     are recorded at confidence 1.0 — never re-derived from the bytes by the

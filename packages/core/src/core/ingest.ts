@@ -146,7 +146,15 @@ export function ingestFile(
   repoId: string,
   path: string,
   content: string,
-  opts: { ts?: string; origin?: "observed" | "import"; resolveIds?: IdResolver; format?: string } = {},
+  opts: {
+    ts?: string;
+    /** Commit provenance. `observed` = a file edit picked up by sync; `api` = an intent write (apply/docs_*), which should also carry `actor`/`reason`; `import` = bulk ingest with no retro history. */
+    origin?: "observed" | "import" | "api";
+    actor?: string | null;
+    reason?: string | null;
+    resolveIds?: IdResolver;
+    format?: string;
+  } = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
   const origin = opts.origin ?? "observed";
@@ -198,7 +206,7 @@ export function ingestFile(
     const assigned = resolved.assigned;
     const rootTreeHex = writeBlockTree(db, assigned);
 
-    const commit = newCommit(db, { repoId, ts, origin });
+    const commit = newCommit(db, { repoId, ts, origin, actor: opts.actor ?? null, reason: opts.reason ?? null });
     const renderedHash = sha256(content);
     const rev = writeRevision(db, {
       docId,
