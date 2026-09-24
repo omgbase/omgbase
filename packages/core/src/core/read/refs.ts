@@ -3,10 +3,11 @@ import { prefixOf } from "../ids.js";
 import { findDoc } from "./reader.js";
 
 // Node-reference resolution shared by the CLI and any client that accepts the
-// same argument forms the API accepts (11 §2.3): a bare id (b_…, d_…) or a
-// document path. Full locators with in-doc anchors (path#Heading/p[2]) are a
-// superset resolved via `resolve`; this helper covers the id/path base cases
-// every read command needs.
+// same argument forms the API accepts (11 §2.3): a bare id (b_…, d_…, n_…) or a
+// repo-relative document path. This is the WHOLE ref grammar as built: in-doc
+// anchor locators (`path#Heading/p[2]`, `#^anchor`) are not parsed anywhere —
+// `resolve` is a ranked text search, not a locator resolver — so a `#…` ref is
+// simply an unknown path (`doc_missing`).
 
 export interface ResolvedRef {
   kind: "block" | "document";

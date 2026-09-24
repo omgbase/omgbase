@@ -30,7 +30,7 @@ These rules apply to every tool and are non-negotiable:
 | `omg://<repo>/block/<block_id>[@<rev_id>]` | Block subtree |
 | `omg://<repo>/path/<filepath>` | Convenience → current document at path |
 
-Tool arguments take bare IDs. **Locators** (`projects/foo.md#Risks/p[2]`, `#^anchor`) are accepted anywhere an ID is; resolved server-side; `ambiguous_locator` errors return ranked candidates. Locators are never returned as the sole address — responses pair `$id` with `$locator` for human legibility.
+Tool arguments take bare IDs. A **ref** argument (`read_ref`, the `blocks_*` sugar, `omg cat`/`show`) is what `resolveRef` (`core/read/refs.ts`) accepts as built: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`, dereferenced to its block), or a repo-relative document path. In-doc anchor **locators** (`projects/foo.md#Risks/p[2]`, `#^anchor`) are a design notion that is **not implemented** — nothing parses them, so such a ref is `doc_missing` (the `ambiguous_locator` error code is declared but never raised). Locators still appear in *output* as a human-legible companion: responses pair `$id` with `$locator`, and IDs are the address to use in follow-ups.
 
 ## 3. Tools
 
@@ -75,7 +75,7 @@ nodes_get_many { doc?, path?, ids[], resolution?, budget_tokens? }   // ≤ 100 
 ```
 read_ref { ref, resolution?: "skeleton"|"outline"|"text"|"raw"|"full" }   // polymorphic: doc OR block, classified
 ```
-`read_ref` is the polymorphic read behind `omg cat`: `ref` is ANY ref — a document (id or path) or a block (id or locator such as `foo.md#Heading/p[2]`) — resolved server-side (`resolveRef`), and the result is classified by `kind`. A document ref returns `{ kind: "document", ...docs_read result }` (complete file bytes + `properties`, no `include_ids`); a block ref returns `{ kind: "block", ...nodes_get result }` at `resolution` (default `raw`, so a block read yields its exact source; `resolution` is ignored for documents). Use it when you hold a ref and want its bytes without first knowing whether it names a document or a block; `docs_read` needs a doc and `nodes_get` needs a block id. A ref that names nothing is `doc_missing` (`block_missing` if the block vanished between resolution and read).
+`read_ref` is the polymorphic read behind `omg cat`: `ref` is ANY ref — a document (`d_…` id or repo-relative path) or a block (`b_…` id, or an `n_…` node id) — resolved server-side (`resolveRef`; no locator syntax, see §2), and the result is classified by `kind`. A document ref returns `{ kind: "document", ...docs_read result }` (complete file bytes + `properties`, no `include_ids`); a block ref returns `{ kind: "block", ...nodes_get result }` at `resolution` (default `raw`, so a block read yields its exact source; `resolution` is ignored for documents). Use it when you hold a ref and want its bytes without first knowing whether it names a document or a block; `docs_read` needs a doc and `nodes_get` needs a block id. A ref that names nothing is `doc_missing` (`block_missing` if the block vanished between resolution and read).
 
 ### Search
 

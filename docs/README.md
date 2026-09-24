@@ -57,7 +57,7 @@ These documents are maintained as **as-built** references to the implementation 
 | **Disposition** | The engine's recorded belief about one block across an observed transition (kind, confidence, reason) |
 | **Checkpoint** | One debounced batch of filesystem changes (`cp_`) |
 | **Section** | Derived range from a heading block to its next peer — never a stored entity |
-| **Locator** | Human-readable address (`path#Heading/p[2]`) — accepted as input, never authoritative |
+| **Locator** | Human-readable address (`path#Heading/p[2]`) — emitted alongside `$id` in output for legibility; **not accepted as input** (nothing parses it — refs are ids or document paths, `core/read/refs.ts`) |
 | **Opaque block** | Unrecognized syntax preserved byte-perfectly; refuses typed edits |
 | **Splice rendering** | Emitting untouched blocks' retained bytes verbatim; only changed blocks serialize anew |
 | **Resurrection pool** | Recently deleted blocks kept for cross-checkpoint move detection |

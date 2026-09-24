@@ -392,7 +392,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "read_ref",
     {
       description:
-        "Read ANY ref — a document (id or path) OR a block (id or locator like `foo.md#Heading/p[2]`) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", content, path, docId, … }` (complete file bytes); a block ref returns `{ kind:\"block\", … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
+        "Read ANY ref — a document (`d_…` id or repo-relative path) OR a block (`b_…` id, or an `n_…` node id which dereferences to its block) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", content, path, docId, … }` (complete file bytes; `resolution` does not apply); a block ref returns `{ kind:\"block\", … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
       inputSchema: {
         ref: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),

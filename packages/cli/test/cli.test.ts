@@ -349,6 +349,23 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
     expect(res.status).toBe(2);
     expect(res.stderr).toMatch(/cat requires a <node>/);
   });
+
+  it("cat <doc> --resolution warns (stderr) and still returns the exact bytes; a block ref does not warn", () => {
+    const doc = piped(["cat", "hub.md", "--resolution", "outline"], "");
+    expect(doc.status).toBe(0);
+    expect(doc.stdout).toContain("# Hub");
+    expect(doc.stderr).toMatch(/--resolution outline ignored for hub\.md/);
+    const { ids } = taskIds();
+    const block = piped(["cat", "-", "--resolution", "text"], ids);
+    expect(block.status).toBe(0);
+    expect(block.stderr).toBe("");
+  });
+
+  it("an in-doc anchor locator is not a ref: it is an unknown path (doc_missing)", () => {
+    const res = piped(["cat", "hub.md#Launch"], "");
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/doc_missing/);
+  });
 });
 
 describe("--json parity", () => {
