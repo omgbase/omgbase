@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { connectHttpEngine, type McpEngineClient } from "./mcp-engine-client.js";
+import { connectHttpEngine, parseEngineSpec, type McpEngineClient } from "./mcp-engine-client.js";
 
 // connectHttpEngine (client Streamable-HTTP transport). Stands up a real MCP
 // server over HTTP mounted at an arbitrary secret-prefixed base path, then
@@ -68,5 +68,36 @@ describe("connectHttpEngine (Streamable HTTP)", () => {
     engine = await connectHttpEngine({ url: baseUrl });
     const res = await engine.callTool<{ seen: string | null }>("whoami", {});
     expect(res.seen).toBeNull();
+  });
+});
+
+// parseEngineSpec — the url-vs-command rule every `--server` consumer shares
+// (`omg --server`, `omg sync --server`, `omgbase-sync --server`). The property
+// that matters: an http(s) URL classifies as HTTP and is never turned into a
+// command to spawn (`omg sync --server <url>` used to do exactly that).
+describe("parseEngineSpec (--server rule)", () => {
+  it("an http(s) URL is an HTTP endpoint, used verbatim, never a spawn", () => {
+    const url = "https://host.example/k/biguglysecret/mcp";
+    expect(parseEngineSpec(url)).toEqual({ kind: "http", url });
+    expect(parseEngineSpec(" HTTP://localhost:8080/mcp ")).toEqual({ kind: "http", url: "HTTP://localhost:8080/mcp" });
+  });
+
+  it("attaches headers to an HTTP spec (and omits the key when there are none)", () => {
+    expect(parseEngineSpec("http://h/mcp", { Authorization: "Bearer x" })).toEqual({
+      kind: "http",
+      url: "http://h/mcp",
+      headers: { Authorization: "Bearer x" },
+    });
+    expect(parseEngineSpec("http://h/mcp", {})).toEqual({ kind: "http", url: "http://h/mcp" });
+  });
+
+  it("anything else is whitespace-split into a stdio command", () => {
+    expect(parseEngineSpec("  omg mcp -C /vault ")).toEqual({ kind: "stdio", command: "omg", args: ["mcp", "-C", "/vault"] });
+    expect(parseEngineSpec("omgbase-mcp")).toEqual({ kind: "stdio", command: "omgbase-mcp", args: [] });
+  });
+
+  it("rejects headers for a stdio command, and an empty spec", () => {
+    expect(() => parseEngineSpec("omg mcp", { "X-A": "1" })).toThrow(/http\(s\)/);
+    expect(() => parseEngineSpec("   ")).toThrow(/empty/);
   });
 });

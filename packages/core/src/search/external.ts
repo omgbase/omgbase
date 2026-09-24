@@ -13,6 +13,9 @@ import type { EmbeddingSettings } from "./provider.js";
 // Wire protocols
 // --------------
 // stdio (newline-delimited JSON):
+//   • The command is spawned with `embedding.model`/`dim`/`maxInputTokens` (when
+//     set) exported as OMGBASE_EMBEDDER_MODEL/_DIM/_MAX_TOKENS over our own env
+//     (`embedderEnv`) — how `omgbase-embedder` is told which model to serve.
 //   • On spawn the embedder writes ONE handshake line: {"model": "...", "dim": N}
 //   • Per request the engine writes: {"id": <n>, "texts": [<string>...]}\n
 //     and reads a matching:          {"id": <n>, "vectors": [[<number>...]...]}\n
@@ -93,7 +96,7 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
   // even after we exit. A private pipe we own severs that coupling.
   let child: ChildProcessByStdio<Writable, Readable, Readable>;
   try {
-    child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
+    child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], env: embedderEnv(settings) });
   } catch (err) {
     throw new Error(`embedding command '${settings.provider}' failed to spawn: ${(err as Error).message}`);
   }
@@ -161,6 +164,24 @@ async function connectStdio(settings: EmbeddingSettings): Promise<ExternalProvid
     });
   };
   return { provider, close };
+}
+
+/**
+ * The environment a stdio embedder is spawned with: our own env, with the
+ * repo's explicit `embedding.model` / `dim` / `maxInputTokens` settings laid over
+ * it as the `OMGBASE_EMBEDDER_*` variables `omgbase-embedder` reads. Explicit
+ * settings win over an inherited variable (config is the deliberate per-repo
+ * choice; the env is ambient); an unset setting leaves the inherited value (or
+ * the embedder's own default) in place. The handshake still has the last word on
+ * what the provider reports back (see connectStdio).
+ */
+export function embedderEnv(settings: EmbeddingSettings, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...base,
+    ...(settings.model !== undefined ? { OMGBASE_EMBEDDER_MODEL: settings.model } : {}),
+    ...(settings.dim !== undefined ? { OMGBASE_EMBEDDER_DIM: String(settings.dim) } : {}),
+    ...(settings.maxInputTokens !== undefined ? { OMGBASE_EMBEDDER_MAX_TOKENS: String(settings.maxInputTokens) } : {}),
+  };
 }
 
 // A pull-based async line reader over a readline Interface: next() resolves with

@@ -6,15 +6,19 @@ import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { remoteSpec } from "./_remote.js";
 import { openRepoSource } from "./_source.js";
 
 // `omg sync` — reconcile a repo with its filesystem source. One verb, three modes:
 //   omg sync                     one-shot local freshness sweep (fs → DB)
 //   omg sync --watch             stay live locally (external fs-adapter watcher)
-//   omg sync --server <cmd> …    the same, but against a remote engine over MCP
+//   omg sync --server <cmd|url>  the same, but against a remote engine over MCP
 //                                (the coordinator — mirrors `omgbase-sync`)
-// The `--server` form is the global remote flag (context REMOTE_OK); it shares
-// `runFsMirror` with the standalone `omgbase-sync` bin. There is no separate
+// The `--server` form is the global remote flag (context REMOTE_OK) and obeys
+// the same rule as every other remote command (`remoteSpec` in _remote.ts): an
+// http(s) URL is reached over Streamable HTTP (with `-H` headers); anything else
+// is a command spawned over stdio. It shares `runFsMirror` with the standalone
+// `omgbase-sync` bin. There is no separate
 // `omg watch` — watching is `omg sync --watch`. The local one-shot IS the
 // explicit form of the freshness sweep every read runs by default.
 
@@ -25,8 +29,8 @@ function help(cli: Cli): number {
     usage: ["sync [--watch]", 'sync --server <cmd|url> [-H "Name: value"]… [--root <dir>] [--out]'],
     options: [
       ["--watch", "stay live and reconcile edits as they land"],
-      ["--server <cmd|url>", "mirror a local directory into a remote engine over MCP (spawns <cmd>, or an http(s) url over Streamable HTTP)"],
-      ['-H "Name: value"', "(--server url) extra HTTP header, repeatable"],
+      ["--server <cmd|url>", "mirror a local directory into a remote engine over MCP: an http(s) url connects over Streamable HTTP; anything else is spawned as a stdio MCP server command"],
+      ['-H "Name: value"', "(--server url only) extra HTTP header, repeatable"],
       ["--root <dir>", "(--server) the directory to mirror (default cwd)"],
       ["--out", "(--server) also export engine-authored changes back to disk"],
     ],
@@ -43,11 +47,12 @@ async function runSync(cli: Cli, args: string[]): Promise<number> {
 
   // Remote mode: run the coordinator against an MCP server (shared with the
   // omgbase-sync bin). No local workspace needed — the fs dir is the source.
+  // `remoteSpec` classifies url-vs-command exactly as the other remote commands
+  // do, so an http(s) --server is connected to, never spawned as a command.
   if (cli.flags.server !== undefined) {
     const root = resolve(cli.cwd, values.root ?? ".");
-    const server = cli.flags.server.split(/\s+/).filter(Boolean);
     await runFsMirror({
-      server,
+      server: remoteSpec(cli),
       root,
       ...(values.watch ? { watch: true } : {}),
       ...(values.out ? { out: true } : {}),

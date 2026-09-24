@@ -1,4 +1,4 @@
-import { connectStdioEngine, connectHttpEngine, type McpEngineClient } from "@omgbase/sync";
+import { connectEngine, parseEngineSpec, type EngineSpec, type McpEngineClient } from "@omgbase/sync";
 import type { Cli } from "../context.js";
 import { CliUsageError } from "../output.js";
 
@@ -10,7 +10,10 @@ import { CliUsageError } from "../output.js";
 // closed via `closeRemote` at the end of a one-shot command or on shell exit.
 //
 // The flag is an http(s) URL to reach a remote server over Streamable HTTP, or
-// otherwise a command to spawn and talk to over stdio.
+// otherwise a command to spawn and talk to over stdio. That one rule lives in
+// `@omgbase/sync`'s `parseEngineSpec`; `remoteSpec` below is its CLI face, and
+// every `--server` consumer goes through it — including `sync`, which hands the
+// spec to `runFsMirror` instead of calling tools itself.
 
 let engine: McpEngineClient | null = null;
 
@@ -19,17 +22,22 @@ let engine: McpEngineClient | null = null;
  *  `remoteCall`. */
 async function remoteEngine(cli: Cli): Promise<McpEngineClient> {
   if (engine) return engine;
-  const spec = (cli.flags.server ?? "").trim();
-  if (/^https?:\/\//i.test(spec)) {
-    const headers = parseHeaders(cli.flags.headers);
-    engine = await connectHttpEngine({ url: spec, ...(Object.keys(headers).length > 0 ? { headers } : {}) });
-    return engine;
-  }
-  if (cli.flags.headers?.length) throw new CliUsageError("-H/--header only applies to an http(s) --server url");
-  const argv = spec.split(/\s+/).filter(Boolean);
-  if (argv.length === 0) throw new CliUsageError("--server requires a command to spawn (e.g. --server \"omg mcp -C /vault\") or an http(s) URL");
-  engine = await connectStdioEngine({ command: argv[0]!, args: argv.slice(1) });
+  engine = await connectEngine(remoteSpec(cli));
   return engine;
+}
+
+/** Classify the global `--server` (+ `-H`) flags into an `EngineSpec`: an
+ *  http(s) URL → Streamable HTTP with the headers attached; anything else → a
+ *  command to spawn over stdio (a URL is never spawned). Usage errors — an empty
+ *  value, `-H` with a stdio command — are `CliUsageError` (exit 2). Pure:
+ *  nothing is connected or spawned here. */
+export function remoteSpec(cli: Cli): EngineSpec {
+  const spec = (cli.flags.server ?? "").trim();
+  const headers = parseHeaders(cli.flags.headers);
+  const isUrl = /^https?:\/\//i.test(spec);
+  if (!isUrl && Object.keys(headers).length > 0) throw new CliUsageError("-H/--header only applies to an http(s) --server url");
+  if (spec.length === 0) throw new CliUsageError("--server requires a command to spawn (e.g. --server \"omg mcp -C /vault\") or an http(s) URL");
+  return parseEngineSpec(spec, headers);
 }
 
 /** Parse repeatable `-H "Name: value"` flags into a header map. Splits on the

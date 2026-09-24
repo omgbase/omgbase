@@ -48,7 +48,7 @@ function runShow(cli: Cli, args: string[]): number {
       summary: "Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)",
       usage: "show <node…|-> [--include history]",
       options: [
-        ["<node…>", "one or more refs: a doc/block id, a path, or a locator"],
+        ["<node…>", "one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path"],
         ["-", `read refs from stdin, one per line (\`${cli.prog} q … --ids | ${cli.prog} show -\`)`],
         ["--include <list>", "comma-separated extras; `history` adds the block's last 5 changes"],
       ],

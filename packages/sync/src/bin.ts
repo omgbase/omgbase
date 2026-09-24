@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { parseEngineSpec } from "./mcp-engine-client.js";
 import { runFsMirror } from "./mirror.js";
 
 // `omgbase-sync` — the standalone synchronizer (ADR-014). A thin wrapper over
@@ -11,13 +12,14 @@ import { runFsMirror } from "./mirror.js";
 //   omgbase-sync --root ./vault              # ingest the tree into the served repo
 //   omgbase-sync --root ./vault --out        # also export engine-authored changes back
 //   omgbase-sync --root ./vault --watch      # stay live: mirror edits as they land
-//   omgbase-sync --root ./vault --server "omg mcp -C ./vault"   # custom / remote server command
+//   omgbase-sync --root ./vault --server "omg mcp -C ./vault"   # custom server command (spawned, stdio)
+//   omgbase-sync --root ./vault --server https://host/k/<secret>/mcp   # remote server (Streamable HTTP)
 
 function usage(): void {
   process.stderr.write(
-    "usage: omgbase-sync --root <dir> [--server \"<cmd>\"] [--out] [--watch]\n" +
-      "  --root <dir>     filesystem directory to mirror (required)\n" +
-      "  --server <cmd>   MCP server command to spawn (default: omg mcp -C <root>)\n" +
+    "usage: omgbase-sync --root <dir> [--server \"<cmd>\"|<url>] [--out] [--watch]\n" +
+      "  --root <dir>         filesystem directory to mirror (required)\n" +
+      "  --server <cmd|url>   MCP server: an http(s) URL (Streamable HTTP), else a command to spawn (default: omg mcp -C <root>)\n" +
       "  --out            also export engine-authored changes back to the directory\n" +
       "  --watch          stay live and mirror edits as they land\n",
   );
@@ -39,7 +41,7 @@ async function main(): Promise<void> {
   }
 
   const root = resolve(values.root);
-  const server = (values.server ?? `omg mcp -C ${root}`).split(/\s+/).filter(Boolean);
+  const server = parseEngineSpec(values.server ?? `omg mcp -C ${root}`);
   await runFsMirror({
     server,
     root,

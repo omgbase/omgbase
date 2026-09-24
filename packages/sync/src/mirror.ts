@@ -1,20 +1,23 @@
 import { execPath } from "node:process";
 import { createExternalSource, type SyncSource } from "@omgbase/core";
 import { fsAdapterBinPath } from "@omgbase/fs-adapter";
-import { connectStdioEngine, type McpEngineClient } from "./mcp-engine-client.js";
+import { connectEngine, type EngineSpec, type McpEngineClient } from "./mcp-engine-client.js";
 import { Coordinator } from "./coordinator.js";
 
 // runFsMirror (ADR-014): mirror a filesystem directory against an omgbase repo
 // reached OVER MCP — the client/remote path shared by the `omgbase-sync` bin and
-// `omg sync --server`. It spawns/connects the MCP server, opens the fs adapter as
+// `omg sync --server`. It connects to the MCP server (spawning a command over
+// stdio, or reaching an http(s) URL over Streamable HTTP), opens the fs adapter as
 // a source, and drives the Coordinator: one initial sync in (+ optional export
 // out), then optionally stays live. The in-process/local path (no server) is
 // handled by the CLI directly (freshness sweep / watcher); this is only the
 // over-the-wire form.
 
 export interface FsMirrorOptions {
-  /** MCP server command argv, e.g. ["omg","mcp","-C","/vault"]. */
-  server: string[];
+  /** The engine to mirror into: a parsed `EngineSpec` (`parseEngineSpec` — an
+   *  http(s) URL over Streamable HTTP, or a command over stdio), or a bare
+   *  command argv such as ["omg","mcp","-C","/vault"] (always spawned). */
+  server: EngineSpec | string[];
   /** Filesystem directory to mirror (absolute). */
   root: string;
   /** Stay live after the initial sync, mirroring edits as they land. */
@@ -32,7 +35,10 @@ export interface FsMirrorOptions {
  */
 export async function runFsMirror(opts: FsMirrorOptions): Promise<void> {
   const log = opts.log ?? (() => {});
-  const engine: McpEngineClient = await connectStdioEngine({ command: opts.server[0]!, args: opts.server.slice(1) });
+  const spec: EngineSpec = Array.isArray(opts.server)
+    ? { kind: "stdio", command: opts.server[0]!, args: opts.server.slice(1) }
+    : opts.server;
+  const engine: McpEngineClient = await connectEngine(spec);
   const source: SyncSource = await createExternalSource({ command: execPath, args: [fsAdapterBinPath(), "--root", opts.root] });
   const coord = new Coordinator(engine, source);
 
