@@ -9,9 +9,22 @@
 //   2. Whitespace directives (collect/exists/count/first/single) belong to OQX —
 //      a consumer is `<receiver> <directive> { <block> }`, never a method.
 //
-// Departure from the reference parser: top-level clauses may appear in any order,
-// so the SQL-style projection-first form `name, id from ${people} where …` is
-// accepted (the reference requires `from` first).
+// Clause order is FIXED (ADR-020). Within one clause body — the top level or a
+// consumer block — each clause appears at most once, in exactly this order:
+//
+//   select <projection>  from <source>  where <predicate>  follow <relation> {…}
+//   order by …  limit N  offset N
+//
+// Every clause is optional except that a top-level body needs `from` (the
+// receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
+// source itself, so its block's `from` is an optional re-projection). Only
+// `select` may drop its keyword, and only when it is the first clause written
+// (`name, age from people`); every other clause always carries its keyword, so
+// a predicate is never implicit — a block filters with `where`. An out-of-order
+// clause is a parse error naming the order. `where` may reference the same
+// body's `select` aliases: after a body is parsed, each bare identifier in its
+// `where` that names an alias is replaced by the alias's expression (a
+// compile-time rewrite — see `inlineAliases`).
 
 import type { Token, TokType } from "./lexer.ts";
 import { lexTemplate, lexString } from "./lexer.ts";
@@ -21,6 +34,9 @@ import type {
 } from "./ast.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
+// The fixed clause order of a body (ADR-020). Each clause appears at most once.
+const CLAUSE_ORDER = ["select", "from", "where", "follow", "order by", "limit", "offset"] as const;
+type Clause = (typeof CLAUSE_ORDER)[number];
 // Contextual clause words lexed as bare idents; an open-ended range must stop
 // before them rather than consume them as its high bound.
 const CLAUSE_WORDS = new Set<string>([
@@ -99,11 +115,11 @@ class Parser {
     }
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
 
-    // Body form: order-flexible clauses; the first `from` is the source.
+    // Body form: the fixed clause list; its `from` is the source.
     const body = this.parseBody(true);
     if (!this.at("eof")) this.fail(`unexpected ${this.tokDesc()} after the query`);
     if (body.froms.length === 0) {
-      this.fail("a query must select a source with `from <collection>`");
+      this.fail("a query must name its source with `from <collection>` (or be `<collection> <consumer> { … }`)");
     }
     return {
       source: body.froms[0]!,
@@ -125,6 +141,10 @@ class Parser {
   }
 
   // ---- clause body (shared by top level and consumer blocks) ----------------
+  // An ordered state machine over the fixed clause sequence: `stage` is the
+  // index (in CLAUSE_ORDER) of the last clause parsed, so a clause with a lower
+  // index is out of order and an equal index is a duplicate. The only
+  // keyword-less clause is a leading projection (while `stage` is still -1).
   private parseBody(orderByAllowed: boolean): BodyClauses {
     const froms: Expr[] = [];
     let where: Where | null = null;
@@ -135,62 +155,90 @@ class Parser {
     let values = false;
     let limit: Expr | null = null;
     let offset: Expr | null = null;
-    let sawWhere = false, sawSelect = false, sawOrder = false;
+    let stage = -1;
+
+    const enter = (clause: Clause): void => {
+      const idx = CLAUSE_ORDER.indexOf(clause);
+      if (idx === stage) this.fail(`duplicate \`${clause}\` clause`);
+      if (idx < stage) {
+        this.fail(`\`${clause}\` must come before \`${CLAUSE_ORDER[stage]}\` — OQX clause order is ${CLAUSE_ORDER.join(", ")}`);
+      }
+      stage = idx;
+    };
 
     while (!this.at("eof") && !this.at("rbrace")) {
-      if (this.atFollow()) {
-        if (follow) this.fail("duplicate `follow` clause");
-        follow = this.parseFollow();
+      if (this.at("kw", "select")) {
+        enter("select");
+        this.next();
+        if (this.at("ident", "distinct")) { this.next(); distinct = true; }
+        ({ items: select, values } = this.parseProjection());
         continue;
       }
       if (this.at("kw", "from")) {
+        enter("from");
         this.next();
         froms.push(this.parseValueExpr());
         continue;
       }
       if (this.at("kw", "where")) {
-        if (sawWhere) this.fail("duplicate `where` clause");
-        sawWhere = true;
+        enter("where");
         this.next();
         where = this.parseWhere();
         continue;
       }
-      if (this.at("kw", "select") || this.at("caret")) {
-        if (sawSelect) this.fail("duplicate projection");
-        sawSelect = true;
-        if (this.at("kw")) { this.next(); if (this.at("ident", "distinct")) { this.next(); distinct = true; } } // consume `select` + optional `distinct`; a leading `^` is part of the item
-        ({ items: select, values } = this.parseProjection());
-        continue;
-      }
-      if (this.atBound()) {
-        const word = this.next().value;
-        const e = this.parsePostfix();
-        if (word === "limit") { if (limit) this.fail("duplicate `limit` clause"); limit = e; }
-        else { if (offset) this.fail("duplicate `offset` clause"); offset = e; }
+      if (this.atFollow()) {
+        enter("follow");
+        follow = this.parseFollow();
         continue;
       }
       if (orderByAllowed && this.atOrderBy()) {
-        if (sawOrder) this.fail("duplicate `order by` clause");
-        sawOrder = true;
+        enter("order by");
         this.next(); this.next(); // `order` `by`
         orderBy = this.parseOrderSpecs();
         continue;
       }
-      if (this.looksLikePredicate()) {
-        if (sawWhere) this.fail("duplicate `where` (an implicit predicate cannot follow a `where`)");
-        sawWhere = true;
-        where = this.parseWhere();
+      if (this.atBound()) {
+        const word = this.peek().value as "limit" | "offset";
+        enter(word);
+        this.next();
+        const e = this.parsePostfix();
+        if (word === "limit") limit = e; else offset = e;
         continue;
       }
-      if (this.at("ident") || this.at("binding")) {
-        if (sawSelect) this.fail("duplicate projection (an implicit select cannot follow a `select`)");
-        sawSelect = true;
+      // A keyword-less run. Before any clause it is the projection (`select` is
+      // the one keyword that may be dropped, and only in first position); after
+      // any clause it is an error — a predicate is never implicit.
+      if (stage === -1 && (this.at("ident") || this.at("binding") || this.at("caret") || this.canStartValue())) {
+        enter("select");
         ({ items: select, values } = this.parseProjection());
         continue;
       }
-      this.fail(`unexpected ${this.tokDesc()} — expected from/where/select${orderByAllowed ? "/order by" : ""}/limit/offset/follow`);
+      this.failUnexpectedInBody(stage, orderByAllowed);
     }
+    where = this.inlineAliases(select, where);
     return { froms, where, select, orderBy, follow, distinct, values, limit, offset };
+  }
+
+  // The error for a token that starts no clause, phrased for the mistake it most
+  // likely is: a bare run right after `from` (the old implicit `where`, or a
+  // consumer word where a whole-query directive was meant), or a stray token.
+  private failUnexpectedInBody(stage: number, orderByAllowed: boolean): never {
+    const t = this.peek();
+    const remaining = CLAUSE_ORDER.slice(stage + 1).filter((c) => orderByAllowed || c !== "order by").join("/");
+    const last = stage >= 0 ? CLAUSE_ORDER[stage] : null;
+    if (last === "from" && t.type === "ident" && CONSUMERS.has(t.value)) {
+      this.fail(`unexpected \`${t.value}\` after \`from\` — a whole-query consumer is written \`<collection> ${t.value} { … }\`; to project a field named ${t.value} write \`select ${t.value} from …\`; a predicate needs \`where\``);
+    }
+    if (last === "from") {
+      this.fail(`unexpected ${this.tokDesc()} after \`from\` — a predicate needs \`where\` (there is no implicit where), and a projection goes before \`from\` (\`select … from …\`); expected ${remaining}`);
+    }
+    // `{ rel exists { … } }` / `{ rel count { … } >= 2 }`: the leading `rel` was
+    // read as the projection, so the consumer word is where the mistake shows.
+    if (last === "select" && t.type === "ident" && CONSUMERS.has(t.value)) {
+      this.fail(`unexpected \`${t.value}\` after a projection — a consumer test is a predicate: write \`where <relation> ${t.value} { … }\` — a predicate is never implicit; a nested block in a projection needs a name (\`name: <relation> collect { … }\`)`);
+    }
+    if (last === null) this.fail(`unexpected ${this.tokDesc()} — expected a projection or ${remaining}`);
+    this.fail(`unexpected ${this.tokDesc()} after \`${last}\` — expected ${remaining}`);
   }
 
   // `limit <n>` / `offset <n>` — the word must be followed by something that can
@@ -203,39 +251,74 @@ class Parser {
     return !!nx && (nx.type === "number" || nx.type === "binding" || nx.type === "caret");
   }
 
-  // Decide, by syntactic shape only, whether a leading unkeyworded run is a
-  // predicate (→ implicit where) or a projection (→ implicit select). A depth-0
-  // comparison / && / || / `in` before any comma/colon marks a predicate; a bare
-  // reference or a `name:`/comma projection list marks a projection.
-  private looksLikePredicate(): boolean {
-    if (this.at("op")) return true; // leading unary `!` (or a stray operator)
-    if (this.at("lparen")) return true; // a grouped boolean expression
-    let depth = 0;
-    for (let i = this.pos; i < this.tokens.length; i++) {
-      const t = this.tokens[i]!;
-      if (t.type === "eof") break;
-      // Skip nested `{ … }` consumer blocks and `( … )` groups: a keyword/select
-      // inside them is not part of the top-level shape (e.g. `count { select x } == N`).
-      if (t.type === "lbrace" || t.type === "lparen") { depth++; continue; }
-      if (t.type === "rbrace" || t.type === "rparen") { if (depth === 0) break; depth--; continue; }
-      if (depth === 0) {
-        if (t.type === "colon" || t.type === "comma") return false;
-        if (t.type === "kw") break;
-        if (t.type === "op" && (CMP_OPS.has(t.value) || t.value === "&&" || t.value === "||")) return true;
-        if (t.type === "ident" && t.value === "in") return true;
-        // A consumer directive in where position (`… exists { … }`, `… count { … }`,
-        // optionally `count distinct { … }`) is a predicate.
-        if (t.type === "ident" && CONSUMERS.has(t.value)) {
-          const nx = this.tokens[i + 1];
-          if (nx && (nx.type === "lbrace" || (nx.type === "ident" && nx.value === "distinct"))) return true;
-        }
-        if (t.type === "ident" && (t.value === "order" || t.value === "follow")) {
-          const nx = this.tokens[i + 1];
-          if (nx && nx.type === "ident") break;
-        }
-      }
+  // ---- alias inlining -------------------------------------------------------
+  // `where` may reference the same body's `select` aliases. This is a
+  // compile-time rewrite, not a second execution pass: every bare identifier in
+  // the where tree that names an alias is replaced by that alias's expression,
+  // so the engine and any pushdown planner see an ordinary where over row
+  // fields. Rules:
+  //   • an alias shadows a same-named row field inside `where`;
+  //   • an alias's own name inside its own expression is the row field
+  //     (`name: name.upper()` is not recursive), but a chain of aliases that
+  //     comes back to one being resolved (`a: b, b: a`) is a cycle → error;
+  //   • an alias whose value is a `collect`/`first`/`single { … }` block may
+  //     stand alone as a where leaf (a collection in predicate position means
+  //     non-empty) but not appear inside an expression;
+  //   • nested blocks (consumer bodies, follow blocks) are their own scopes and
+  //     are not rewritten against this body's select — each body rewrites
+  //     against its own.
+  private inlineAliases(select: SelectItem[], where: Where | null): Where | null {
+    if (!where || select.length === 0) return where;
+    const aliases = new Map<string, SelectItem>();
+    for (const it of select) {
+      if (it.kind === "collect") aliases.set(it.name, it);
+      else if (it.lift === 0 && it.name !== "") aliases.set(it.name, it);
     }
-    return false;
+    if (aliases.size === 0) return where;
+    const resolving: string[] = [];
+    const subst = (e: Expr): Expr => {
+      switch (e.kind) {
+        case "ident": {
+          const a = aliases.get(e.name);
+          if (!a) return e;
+          if (resolving[resolving.length - 1] === e.name) return e; // its own name inside its own expression: the row field
+          if (resolving.includes(e.name)) {
+            const cycle = [...resolving.slice(resolving.indexOf(e.name)), e.name].join(" → ");
+            this.fail(`select aliases form a cycle: ${cycle} — an alias used in \`where\` cannot depend on itself`);
+          }
+          if (a.kind === "collect") {
+            this.fail(`select alias '${e.name}' is a ${a.op.op} { … } block — in \`where\` it can only stand alone as a non-empty test, not inside an expression`);
+          }
+          resolving.push(e.name);
+          const out = subst(a.expr);
+          resolving.pop();
+          return out;
+        }
+        case "member": return { ...e, recv: subst(e.recv) };
+        case "index": return { ...e, recv: subst(e.recv), index: subst(e.index) };
+        case "call": return { ...e, recv: e.recv ? subst(e.recv) : null, args: e.args.map(subst) };
+        case "unary": return { ...e, expr: subst(e.expr) };
+        case "binary": case "logical": case "in": return { ...e, left: subst(e.left), right: subst(e.right) };
+        case "range": return { ...e, lo: e.lo ? subst(e.lo) : null, hi: e.hi ? subst(e.hi) : null };
+        default: return e; // lit, binding, outer (`^name` reads an enclosing row, never an alias)
+      }
+    };
+    const walk = (w: Where): Where => {
+      switch (w.kind) {
+        case "and": return { kind: "and", parts: w.parts.map(walk) };
+        case "or": return { kind: "or", parts: w.parts.map(walk) };
+        case "not": return { kind: "not", expr: walk(w.expr) };
+        case "scalar": {
+          if (w.expr.kind === "ident") {
+            const a = aliases.get(w.expr.name);
+            if (a?.kind === "collect") return a.op; // a collection in predicate position: non-empty
+          }
+          return { kind: "scalar", expr: subst(w.expr) };
+        }
+        case "op": return { ...w, receiver: subst(w.receiver) }; // the receiver is read in this scope; the block is its own scope
+      }
+    };
+    return walk(where);
   }
 
   private atOrderBy(): boolean {
@@ -345,7 +428,7 @@ class Parser {
       if (only.kind === "field" && only.lift > 0) this.fail("a lift (^name: …) cannot be combined with `values`");
     } else {
       for (const it of items) {
-        if (it.name === "") this.fail("a projection item that is not a plain name needs an alias (`name: expr`) unless it is followed by `values`");
+        if (it.name === "") this.fail("a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` — a predicate is never implicit");
       }
     }
     return { items, values };
