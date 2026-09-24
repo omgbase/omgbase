@@ -137,6 +137,63 @@ describe("query (oqx)", () => {
       expect(h.t).toBe("task");
     }
   });
+
+  // Human tier, projected: header + id + path + the select columns, in order.
+  it("a projecting query prints a header and the projected columns in select order", () => {
+    const { stdout } = omg(["query", 'from docs where $path == "hub.md" select title, status, layer']);
+    const lines = stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("id         path    title  status  layer");
+    // hub.md sets no layer → empty last cell, trailing whitespace trimmed.
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md  Hub    active$/);
+  });
+
+  it("a projected $path takes the path column's place (never printed twice)", () => {
+    const { stdout } = omg(["query", 'from docs where $path == "hub.md" select $path, title']);
+    const lines = stdout.trimEnd().split("\n");
+    expect(lines[0]).toBe("id         $path   title");
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md  Hub$/);
+    expect(lines[1]!.split("hub.md")).toHaveLength(2);
+  });
+
+  it("a nested collect renders as compact JSON; an absent field is an empty cell", () => {
+    const { stdout } = omg([
+      "query",
+      'from docs select title, open: blocks collect { where type == "task" && !attrs.checked select t: text } order by $path asc',
+    ]);
+    const lines = stdout.trimEnd().split("\n");
+    expect(lines[0]).toBe("id         path       title  open");
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md     Hub    \[\{"t":"wire the deploy pipeline"\}\]$/);
+    // target.md has no frontmatter title → empty title cell; empty collect → [].
+    expect(lines[2]).toMatch(/^d_[a-z0-9]{7}  target\.md         \[\]$/);
+  });
+
+  it("a long cell is clipped at 60 chars with an ellipsis", () => {
+    const q = 'from docs where $path == "hub.md" select all: blocks collect { select t: text }';
+    const row = omg(["query", q]).stdout.trimEnd().split("\n")[1]!;
+    const cell = row.split(/  +/)[2]!;
+    expect([...cell]).toHaveLength(60);
+    expect(cell.endsWith("…")).toBe(true);
+    // Compact JSON up to the cut; `--jsonl` carries the full value (well past 60).
+    expect(cell.startsWith('[{"t":"')).toBe(true);
+    const full = JSON.stringify((JSON.parse(omg(["query", q, "--jsonl"]).stdout.trim()) as { all: unknown }).all);
+    expect(full.length).toBeGreaterThan(60);
+  });
+
+  it("a non-projecting query is unchanged: `<id>  <path>` lines, no header", () => {
+    const { stdout } = omg(["query", 'from docs order by $path asc']);
+    const lines = stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^d_[a-z0-9]{7}  hub\.md$/);
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  target\.md$/);
+  });
+
+  it("--ids is unaffected by a projection", () => {
+    const { stdout } = omg(["query", 'from docs select title, layer order by $path asc', "--ids"]);
+    const lines = stdout.trimEnd().split("\n");
+    expect(lines).toHaveLength(2);
+    for (const l of lines) expect(l).toMatch(/^d_[a-z0-9]{7}$/);
+  });
 });
 
 describe("freshness (§3.3): reads are current without a watcher", () => {

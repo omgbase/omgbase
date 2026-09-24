@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, findDoc, loadDocBlocks, blockRaw, oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type BlockNode } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp, renderHits } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 
 // `omg run <locator|path>` (11 §5.3) — evaluate the first ```omg fence in a doc
@@ -117,10 +117,9 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     io.err(style.dim("  no hits"));
     return EXIT_OK;
   }
-  for (const h of result.hits) {
-    const preview = typeof h.text === "string" ? String(h.text).split("\n")[0] : "";
-    io.out(`${style.id(h.id)}  ${style.accent(h.path)}  ${preview}`.trimEnd());
-  }
+  // Same renderer as `omg query`: `<id>  <path>` lines, or a column table when
+  // the fence projects (a selected `text` shows as its first line).
+  renderHits(cli, result.hits);
   if (result.truncated) truncationFooter(io, style, result.cursor ?? "");
   return EXIT_OK;
 }

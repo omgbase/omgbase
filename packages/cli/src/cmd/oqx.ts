@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { truncationFooter, EngineErrorLike, EXIT_OK, renderHelp, renderHits } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
@@ -31,8 +31,9 @@ import { readStdin } from "./_mutate.js";
 // `$repo.docs count { … }` / `$repo.docs exists { … }` reduce to a scalar,
 // `$repo.docs first { … }` / `$repo.docs single { … }` to zero-or-one row (bare
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
-// string or -f file|-. Human output: one hit per line (id + path), or the scalar
-// for count/exists; --json/--jsonl/--ids.
+// string or -f file|-. Human output: one hit per line (id + path), or an aligned
+// id/path/columns table when the query projects (`select`), or the scalar for
+// count/exists/none (see output.ts renderHits); --json/--jsonl/--ids.
 
 async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -178,9 +179,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     io.err(style.dim("  no hits"));
     return EXIT_OK;
   }
-  for (const h of result.hits) {
-    io.out(`${style.id(h.id)}  ${style.accent(h.path)}`.trimEnd());
-  }
+  renderHits(cli, result.hits);
   if (result.truncated) truncationFooter(io, style, result.cursor ?? "");
   return EXIT_OK;
 }

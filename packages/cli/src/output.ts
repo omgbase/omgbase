@@ -1,4 +1,4 @@
-import type { IO } from "./render.js";
+import { columns, visibleWidth, type IO } from "./render.js";
 import type { Style } from "./style.js";
 
 // Output contract + error rendering (11 §2.4, §4).
@@ -160,6 +160,90 @@ function indent(s: string, pad: string): string {
     .split("\n")
     .map((l) => pad + l)
     .join("\n");
+}
+
+// ---- query hits (human tier) ------------------------------------------------
+//
+// Every OQX hit carries the injected `id` + `path` (the addressable handle and
+// its locator, 06 §2) plus whatever the query's `select` projected, in select
+// order. Two renderings:
+//
+//   * no projection → `<id>  <path>` per line, no header (the classic list; kept
+//     byte-for-byte so transcripts that don't project stay valid);
+//   * a projection   → an aligned table: dim header row, then per hit the id
+//     (dim), the locator, and the projected columns in select order. Columns are
+//     the union of projected keys across hits in first-seen order (a hit omits
+//     an absent field, so no single hit is authoritative). The injected `path`
+//     column is dropped when the projection itself carries `$path` — a row stays
+//     locatable either way, and the same path never prints twice.
+//
+// Cells: strings verbatim (first line only; `…` marks a cut), numbers/booleans
+// via String, null/absent → empty, arrays/objects → compact JSON. Every cell but
+// the id/locator is capped at HIT_CELL_MAX visible chars. Two-space gutter,
+// trailing whitespace trimmed (render.ts `columns`). Styling goes through
+// `cli.style`, so NO_COLOR / non-TTY degrade to plain text like everything else.
+
+export interface HitLike {
+  id: string;
+  path: string;
+  [k: string]: unknown;
+}
+
+export const HIT_CELL_MAX = 60;
+
+/** Clip `s` to `max` visible characters, marking the cut with `…`. */
+export function truncateCell(s: string, max = HIT_CELL_MAX): string {
+  if (visibleWidth(s) <= max) return s;
+  return [...s].slice(0, Math.max(max - 1, 0)).join("") + "…";
+}
+
+/** Render one projected value as a table cell (unstyled). */
+export function hitCell(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") {
+    const nl = v.indexOf("\n");
+    return truncateCell(nl === -1 ? v : `${v.slice(0, nl)}…`);
+  }
+  if (typeof v === "number" || typeof v === "boolean" || typeof v === "bigint") return String(v);
+  return truncateCell(JSON.stringify(v) ?? String(v));
+}
+
+/** The projected column names across `hits`: every key but the injected id/path,
+ *  in first-seen order. Empty when nothing was projected. */
+export function hitColumns(hits: HitLike[]): string[] {
+  const cols: string[] = [];
+  const seen = new Set<string>(["id", "path"]);
+  for (const h of hits) {
+    for (const k of Object.keys(h)) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      cols.push(k);
+    }
+  }
+  return cols;
+}
+
+/** Human-tier hit list: `<id>  <path>` lines, or an aligned table when projected. */
+export function renderHits(cli: { io: IO; style: Style }, hits: HitLike[]): void {
+  const { io, style } = cli;
+  const projected = hitColumns(hits);
+  if (projected.length === 0) {
+    for (const h of hits) io.out(`${style.id(h.id)}  ${style.accent(h.path)}`.trimEnd());
+    return;
+  }
+  const cols = projected.includes("$path") ? ["id", ...projected] : ["id", "path", ...projected];
+  const rows: string[][] = [cols.map((c) => style.dim(c))];
+  for (const h of hits) {
+    rows.push(
+      cols.map((c) => {
+        if (c === "id") return style.id(h.id);
+        if (c === "path") return style.accent(h.path);
+        if (c === "$path" && typeof h[c] === "string") return style.accent(h[c]);
+        return hitCell(h[c]);
+      }),
+    );
+  }
+  for (const line of columns(rows)) io.out(line);
 }
 
 /** Loud truncation footer to stderr (§4.4). Exit code stays 0. */
