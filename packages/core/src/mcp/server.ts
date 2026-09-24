@@ -1040,7 +1040,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "observe",
     {
       description:
-        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use docs_delete. Returns doc/path/rev plus a disposition summary (how identity threaded).",
+        "SYNC INGEST (ADR-014): record `content` as the current authoritative bytes for `path`, committed as an OBSERVED-origin revision — a write *around* the engine, the way a human/external edit is recorded. Contrast docs_update, which is api-origin (a write *through* the engine, agent intent); both reconcile the new bytes against the current block tree and preserve stable ids, but the origin differs (and thus the change-feed semantics and matcher path). This is the file→DB direction for an out-of-process synchronizer: it never writes a file, so it works on a headless/sourceless server with no working tree. Idempotent: bytes whose hash already equals the stored revision are an ECHO — no commit (`echo:true`, `rev:null`). Bytes with git conflict markers are still ingested (opaque) and the doc is flagged (`conflicted:true`). To mirror a deletion, use `observe_delete` (an observed, resurrection-pooled tombstone — not `docs_delete`, which is an intentional api-origin removal that also unlinks the file). Returns doc/path/rev plus a disposition summary (how identity threaded).",
       inputSchema: { path: z.string(), content: z.string(), ...REPO_ARG },
     },
     async (args) => {
@@ -1057,7 +1057,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "observe_many",
     {
       description:
-        "BATCH sync ingest (ADR-014): observe several files at once — the batch form of `observe`. Give `files` as an array of `{path, content}`; each is echo-gated and reconciled independently, all under one timestamp and a single resurrection-pool sweep (cheaper than N `observe` calls for an initial walk or a large checkpoint). Returns one result per input file (same shape as `observe`). Mirror deletions with `docs_delete`.",
+        "BATCH sync ingest (ADR-014): observe several files at once — the batch form of `observe`. Give `files` as an array of `{path, content}`; each is echo-gated and reconciled independently, all under one timestamp and a single resurrection-pool sweep (cheaper than N `observe` calls for an initial walk or a large checkpoint). Returns one result per input file (same shape as `observe`). Mirror deletions with `observe_delete`, one path at a time.",
       inputSchema: { files: z.array(z.object({ path: z.string(), content: z.string() })), ...REPO_ARG },
     },
     async (args) => {
