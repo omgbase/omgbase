@@ -129,7 +129,7 @@ describe("query (oqx)", () => {
   });
 
   it("a select clause projects fields onto each hit", () => {
-    const { stdout } = omg(["query", 'from blocks where type == "task" select p: $path, t: type', "--json"]);
+    const { stdout } = omg(["query", 'select p: $path, t: type from blocks where type == "task"', "--json"]);
     const { hits } = JSON.parse(stdout) as { hits: Record<string, unknown>[] };
     expect(hits.length).toBeGreaterThan(0);
     for (const h of hits) {

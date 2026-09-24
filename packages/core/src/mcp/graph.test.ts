@@ -58,7 +58,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
     expect(r.queries).toHaveLength(1);
     expect(r.queries[0]).toContain("follow distinct doc.out { depth 2 }");
-    expect(r.queries[0]).toMatch(/^from docs where \$id == "d_/);
+    expect(r.queries[0]).toMatch(/^select _depth: \$depth, .* from docs where \$id == "d_/);
   });
 
   it("degrees 0 — roots only (no hops); roots are the frontier", async () => {

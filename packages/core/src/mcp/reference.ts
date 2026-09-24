@@ -11,9 +11,19 @@ export const QUERY_SYNTAX = `# query — OQX syntax reference
 The \`query\` tool takes ONE plain OQX string (+ optional \`limit\`/\`cursor\`). There
 is no {from, filter, order} envelope: every concern is a clause of the string.
 
-  from <target> [where <pred>] [select <items>] [order by <expr> [asc|desc], …]
-                [limit N] [offset N] [follow <relation> [{ … }]]
+  [select <items>] from <target> [where <pred>] [follow <relation> [{ … }]]
+                   [order by <expr> [asc|desc], …] [limit N] [offset N]
   $repo.<target> count|exists|none|first|single { <block> }     (scalar/one-row form)
+
+CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
+each at most once; an out-of-order clause is a parse error naming the order.
+Only \`select\` may drop its keyword, and only as the first clause
+(\`$path, era from docs where …\`). Every other clause always carries its keyword:
+a predicate is NEVER implicit (\`nodes exists { where kind == "md:task" }\`, not
+\`{ kind == "md:task" }\`), and \`from docs count\` is an error (write
+\`$repo.docs count { … }\`). \`where\` may use the same body's \`select\` aliases
+(\`select $path, old: era < 1000 from docs where old\`; an alias shadows a
+same-named field there).
 
 Results are LEAN hits — {id, path} + whatever \`select\` projects (or \`values\`,
 \`count\`, \`exists\`, \`none\`). Hydrate full content by id via nodes_get/docs_read.
@@ -136,9 +146,10 @@ edges:  (the authored link graph as rows — one per open edge)
   <receiver> collect|exists|none|count|first|single { <block> }
     receiver = a relation (nodes, blocks, doc.out_edges, section.blocks, …), a
     list property (tags), entries(x), or a root ($repo.docs).
-    block    = [where …] [select …] [order by …] [limit N] [offset N]; a leading
-               predicate is an implicit where, a leading name/alias list an
-               implicit select.
+    block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
+               — the same fixed order as the top level (\`from\` optional; the
+               receiver supplies the rows). A leading name/alias list is the
+               projection (\`select\` dropped); a predicate always needs \`where\`.
   exists    ≥1 row      nodes exists { where kind == "md:task" && !checked }
   none      0 rows      nodes none { where kind == "md:task" && !checked }  ("every task done")
   count     a number    nodes count { where kind == "md:task" } >= 2
@@ -149,7 +160,7 @@ edges:  (the authored link graph as rows — one per open edge)
             consumer reduces: nodes exists { offset 1 } = at least two;
             first { … offset 1 } = the second.
   lift      \`^name:\` in a where-collect binds values outward:
-            from docs where nodes collect { ^open: value where kind == "md:task" && !checked } select $path, open
+            select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !checked }
   joins     $repo.<t> exists { where slug == ^ref }  semi-join; !… exists  anti-join;
             $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }  lookup;
             x in ^keys  membership over a lifted set.

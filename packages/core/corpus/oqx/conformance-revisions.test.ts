@@ -64,7 +64,7 @@ const QUERIES = [
   `from docs where $path == "creative/flip-observed.md" && type == "${PROJECT}"`,
   `from docs where $path == "creative/flip-api.md" && type == "${PROJECT}"`,
   `from docs where $path == "creative/flip-api.md" && type == "${IDEA}"`,
-  `from docs where $path.startsWith("creative/") && type == "${PROJECT}" select $path, type`,
+  `select $path, type from docs where $path.startsWith("creative/") && type == "${PROJECT}"`,
   `from docs where $path.startsWith("creative/") && "${PROJECT}" in list(type)`,
   `from docs where type == "${PROJECT}"`,
   `from docs where $path.startsWith("creative/") && frontmatter.type == "${PROJECT}"`,
