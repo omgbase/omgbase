@@ -1,17 +1,22 @@
-// Provider configuration (05 §6). The embedding provider is a plugin named in
-// repo settings (embedding.provider = a package that exports
-// `createProvider(opts?) => EmbeddingProvider`). The dynamic import itself lives
-// in the application (the CLI), not here, so it resolves against the app's
-// dependency tree and core carries no ML dependency. @omgbase/embedder is the
-// default local implementation; a remote HTTP provider is the same contract
-// behind a different package name — nothing privileges local vs. remote.
+// Provider configuration (05 §6). The embedding provider is an external
+// *process or endpoint* named in repo settings — `embedding.provider` is either
+// a shell command (spawned and spoken to over the stdio JSON protocol) or an
+// http(s) URL (GET metadata, POST embed) — see `search/external.ts`. Nothing is
+// imported in-process, so core carries no ML dependency and the embedder can be
+// any language. `@omgbase/embedder`'s `omgbase-embedder` binary is the default
+// local implementation; an HTTP endpoint is the same contract over the wire —
+// nothing privileges local vs. remote.
 
 export interface EmbeddingSettings {
-  /** Package name to import, e.g. "@omgbase/embedder". Absent ⇒ no provider. */
+  /** The embedder: a command to spawn (e.g. "omgbase-embedder") or an http(s)
+   *  URL. Absent ⇒ no provider (`semantic_unavailable`). */
   provider?: string;
-  /** Optional model id passed through to the provider factory. */
+  /** Optional model id. For a spawned command it is exported as
+   *  OMGBASE_EMBEDDER_MODEL (explicit setting wins over an inherited variable);
+   *  the provider's handshake/metadata reply overrides it for reporting. */
   model?: string;
-  /** Optional dimension override passed through to the provider factory. */
+  /** Optional dimension. For a spawned command it is exported as
+   *  OMGBASE_EMBEDDER_DIM; the handshake/metadata reply overrides it. */
   dim?: number;
   /**
    * Optional max input length (tokens) the provider's model accepts before it

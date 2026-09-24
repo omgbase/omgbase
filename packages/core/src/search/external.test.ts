@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server } from "node:http";
-import { createExternalProvider } from "./external.js";
+import { createExternalProvider, embedderEnv } from "./external.js";
 
 const FAKE = fileURLToPath(new URL("../../test/fixtures/fake-embedder.mjs", import.meta.url));
 
@@ -40,6 +40,31 @@ describe("createExternalProvider — stdio", () => {
 
   it("returns null when no provider is configured", async () => {
     expect(await createExternalProvider({})).toBeNull();
+  });
+
+  it("forwards embedding.model to the spawned command as OMGBASE_EMBEDDER_MODEL (the fake echoes it in its handshake)", async () => {
+    const ext = await createExternalProvider({ provider: `node ${FAKE}`, model: "from-settings" });
+    try {
+      expect(ext!.provider.model).toBe("from-settings");
+    } finally {
+      await ext!.close();
+    }
+  });
+});
+
+describe("embedderEnv (settings → OMGBASE_EMBEDDER_* env)", () => {
+  it("explicit settings win over an inherited variable; unset settings leave the env alone", () => {
+    const base = { PATH: "/bin", OMGBASE_EMBEDDER_MODEL: "ambient", OMGBASE_EMBEDDER_DIM: "1" };
+    const env = embedderEnv({ provider: "x", model: "explicit", maxInputTokens: 256 }, base);
+    expect(env.PATH).toBe("/bin");
+    expect(env.OMGBASE_EMBEDDER_MODEL).toBe("explicit");
+    expect(env.OMGBASE_EMBEDDER_DIM).toBe("1"); // not set in settings → inherited
+    expect(env.OMGBASE_EMBEDDER_MAX_TOKENS).toBe("256");
+  });
+
+  it("stringifies dim and sets nothing when no settings are given", () => {
+    expect(embedderEnv({ provider: "x", dim: 384 }, {}).OMGBASE_EMBEDDER_DIM).toBe("384");
+    expect(embedderEnv({ provider: "x" }, { A: "1" })).toEqual({ A: "1" });
   });
 });
 
