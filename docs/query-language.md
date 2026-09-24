@@ -25,14 +25,40 @@ The `query` MCP tool takes a single OQX **string** plus pagination:
 { "query": "<OQX expression>", "limit": 50, "cursor": null }
 ```
 
-Every concern folds into the expression: `from docs|blocks|nodes|edges` (source),
-`where <predicate>`, `select <expr>, name: <expr>, …`, `order by <expr> [asc|desc]`,
+Every concern folds into the expression: `select <expr>, name: <expr>, …`
+(projection), `from docs|blocks|nodes|edges` (source), `where <predicate>`,
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
 correlation/joins (the `^` sigil with `$repo.docs`/`$repo.nodes`/`$repo.blocks`
-roots), and bounded traversal (`follow`). Results are lean projected hits
-(`{id, path, …projections}`), a `count`/`exists`/`none` scalar, or — for a
-`select <expr> values` projection — the bare projected values (`values: […]`,
-§7); never full documents; hydrate by id afterward.
+roots), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
+`limit`/`offset`. Results are lean projected hits (`{id, path, …projections}`),
+a `count`/`exists`/`none` scalar, or — for a `select <expr> values` projection —
+the bare projected values (`values: […]`, §7); never full documents; hydrate by
+id afterward.
+
+**Clause order is fixed (ADR-020, oqx ≥ 0.11).** Within one body — the top level
+or any `{ block }` — clauses appear at most once each, in exactly this order:
+
+```
+[select <projection>] from <source> [where <pred>] [follow <rel> [{…}]] [order by …] [limit N] [offset N]
+```
+
+Every clause is optional except a top-level `from`; the receiver-plus-consumer
+form `$repo.<target> count|exists|none|first|single { <block> }` supplies its own
+source, so the block's `from` is an optional re-projection. A clause out of order
+is a parse error that names the order (`` `select` must come before `from` — OQX
+clause order is select, from, where, follow, order by, limit, offset ``). **Only
+`select` may drop its keyword, and only when it is the first clause written**
+(`$path, era from docs where …`; in a block, `nodes collect { value }` projects
+`value`). Every other clause always carries its keyword — a predicate is never
+implicit: `nodes exists { where kind == "md:task" }` (not `{ kind == "md:task" }`,
+which is an error pointing at `where`), and `from docs count` is an error rather
+than a projection of a field called `count` (write `$repo.docs count { … }`, or
+`select count from docs`). **`where` may reference the same body's `select`
+aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
+expression is inlined at parse time, so the pushdown planner sees an ordinary
+predicate; an alias shadows a same-named field inside `where`; a cycle among
+aliases is a parse error; each block rewrites only against its own `select`.
+`order by` is not rewritten — it reads row fields.
 
 Consumers (oqx ≥ 0.9): `collect` (rows, the default), `exists` (≥ 1 row),
 `none` (0 rows — exactly `!… exists { … }`, and the way to say "every":
@@ -234,7 +260,7 @@ nested/correlated scopes:
 - **`values`** (oqx ≥ 0.8): `select <expr> values` — exactly **one** item — makes
   each row's result the bare value rather than a `{ name: value }` record. At the
   top level the result carries `values: […]` in place of `hits` (empty), paged
-  and `distinct`-deduped exactly like hits (`from docs select distinct type values`
+  and `distinct`-deduped exactly like hits (`select distinct type values from docs`
   → the type strings). Inside a `collect`/`first`/`single` block it yields a plain
   array / scalar (`tags: tags collect { $value values }`, `latest: nodes first
   { value values order by … }`). The runner implements the top-level form by
@@ -283,16 +309,16 @@ projected-query fence (ADR-011, deferred).
 | Guides, recently touched | `from docs where $path.startsWith("guides/") && $updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
 | Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
-| Distinct doc types | `from docs select distinct type` |
-| Distinct doc types as bare strings | `from docs select distinct type values` |
+| Distinct doc types | `select distinct type from docs` |
+| Distinct doc types as bare strings | `select distinct type values from docs` |
 | Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
-| A doc's frontmatter as key/value rows | `from docs where $path == "x.md" select fm: entries(frontmatter) collect { k: $key, v: $value }` |
-| Docs whose frontmatter has any numeric key over 1600 | `from docs where entries(frontmatter) exists { where $value > 1600 } select $path` |
+| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "x.md"` |
+| Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $value > 1600 }` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
-| Each doc's first section heading | `from docs select h: nodes first { name values where kind == "md:section" order by first_ordinal }` |
-| Each substance's tags minus one | `from docs where type == "substance" select tags: tags collect { $value values where $value != "substance" }` |
+| Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
+| Each substance's tags minus one | `select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
 | Everything a note transitively cites | `from docs where $path == "index.md" follow doc.out` |
-| Every `depends_on` edge, both endpoints | `from edges where predicate == "depends_on" select $src, $dst_path` |
+| Every `depends_on` edge, both endpoints | `select $src, $dst_path from edges where predicate == "depends_on"` |

@@ -53,7 +53,7 @@ sweep.ingested;                                       // ["todo.md"]
 
 // Query with OQX. Nodes are projections of blocks; $block_id is the anchor block.
 const open = oqxRun(ws.store, repoId,
-  'from nodes where kind == "md:task" && !attrs.checked select block: $block_id');
+  'select block: $block_id from nodes where kind == "md:task" && !attrs.checked');
 open.hits;  // [{ id: "n_…", path: "todo.md", block: "b_…" }]
 
 // Read a whole document back byte-exact, with block ids + CAS hashes.
@@ -137,15 +137,15 @@ server in your own process with `buildServer(ctx)` and any MCP SDK transport.
 OQX is the standalone [`@omgbase/oqx`](https://www.npmjs.com/package/@omgbase/oqx)
 engine bound to the store (`src/oqx-js/`): omgbase supplies a `DataContext` over
 `docs`/`blocks`/`nodes`/`edges` and a SQLite pushdown planner, and the library
-supplies the language (`from … where … select … order by … limit … follow …`,
+supplies the language (`select … from … where … follow … order by … limit … offset …`, in that fixed order,
 consumers `collect/count/exists/none/first/single`, nested blocks, `^` outer
 references, `entries()`, `values`). Row-scoped predicates like `text("…")` (FTS)
 and `semantic("…")` (embedding score) are omgbase additions.
 
 ```js
 oqxRun(ws.store, repoId, `
+  select $path, $title, open: nodes collect { select $block_id where kind == "md:task" && !attrs.checked }
   from docs where nodes count { where kind == "md:task" && !attrs.checked } >= 2
-  select $path, $title, open: nodes collect { where kind == "md:task" && !attrs.checked select $block_id }
   order by $path limit 10
 `);
 // hits: [{ id: "d_…", path: "more.md", $path: "more.md", $title: "More", open: [{ $block_id: "b_…" }, …] }]

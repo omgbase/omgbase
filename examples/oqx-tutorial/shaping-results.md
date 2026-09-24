@@ -13,7 +13,7 @@ the id and locator, so to *see* projected fields ask for machine output:
 then your selected fields (here a frontmatter number and an inline field):
 
 ```console
-$ omg query 'from docs where type == "practitioner" select era, known: known_for order by era asc' --jsonl
+$ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc' --jsonl
 {"id":"d_9px29y1","path":"practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
 {"id":"d_nzb61j9","path":"practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
 {"id":"d_t5nvj1g","path":"practitioners/paracelsus.md","era":1530,"known":"tria prima"}
@@ -21,6 +21,10 @@ $ omg query 'from docs where type == "practitioner" select era, known: known_for
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
+The projection comes *first*: OQX clauses have one fixed order — `select`, `from`,
+`where`, `follow`, `order by`, `limit`, `offset` — and `select` is the only keyword
+you may drop (`era, known: known_for from docs …` means the same). A `where` may
+refer to a `select` alias (`select $path, old: era < 1000 from docs where old`).
 
 ## `order by`
 
@@ -65,12 +69,12 @@ record), so the human tier prints one value per line — a list of paths, or a
 list of numbers:
 
 ```console
-$ omg query 'from docs where type == "practitioner" select $path values order by era asc'
+$ omg query 'select $path values from docs where type == "practitioner" order by era asc'
 practitioners/maria-prophetissa.md
 practitioners/jabir-ibn-hayyan.md
 practitioners/paracelsus.md
 practitioners/newton.md
-$ omg query 'from docs where type == "practitioner" select era values order by era asc'
+$ omg query 'select era values from docs where type == "practitioner" order by era asc'
 250
 800
 1530
@@ -81,7 +85,7 @@ It composes with `distinct` — the corpus's document types, deduped, as plain
 strings:
 
 ```console
-$ omg query 'from docs select distinct type values'
+$ omg query 'select distinct type values from docs'
 hub
 lab-note
 practitioner
@@ -100,7 +104,7 @@ two most recent practitioners, then the two after skipping the most recent:
 $ omg query 'from docs where type == "practitioner" order by era desc limit 2'
 d_rw4ygr0  practitioners/newton.md
 d_t5nvj1g  practitioners/paracelsus.md
-$ omg query 'from docs where type == "practitioner" order by era desc offset 1 limit 2'
+$ omg query 'from docs where type == "practitioner" order by era desc limit 2 offset 1'
 d_t5nvj1g  practitioners/paracelsus.md
 d_nzb61j9  practitioners/jabir-ibn-hayyan.md
 ```
