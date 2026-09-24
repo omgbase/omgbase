@@ -13,7 +13,7 @@ header row, then per hit the id, the path, and your selected fields as columns
 in `select` order (here a frontmatter number and an inline field):
 
 ```console
-$ omg query 'from docs where type == "practitioner" select era, known: known_for order by era asc'
+$ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc'
 id         path                                era   known
 d_9px29y1  practitioners/maria-prophetissa.md  250   balneum mariae
 d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
@@ -26,7 +26,7 @@ Select `$path` yourself and it takes the path column's place (the same path is
 never printed twice):
 
 ```console
-$ omg query 'from docs where type == "practitioner" select $path, era order by era asc'
+$ omg query 'select $path, era from docs where type == "practitioner" order by era asc'
 id         $path                               era
 d_9px29y1  practitioners/maria-prophetissa.md  250
 d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800
