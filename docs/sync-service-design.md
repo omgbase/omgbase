@@ -242,7 +242,7 @@ There is no top-level `attach`/`ingest`/`load` verb. `omg source add <dir>` is h
 content enters, and it decomposes into:
 
 ```
-omg source add ./foo [--slug s] [--name n]
+omg source add ./foo [--repo slug] [--name n]
   ≡  ensureRepo(slug)                       # repo identity (no auto source when null)
    + ensureFsAdapter + createSource(<slug>-fs, fs, {root: abs}) + attach
    + freshnessSweep(repo, abs)              # the initial sync — the SAME reconcile

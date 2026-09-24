@@ -61,11 +61,11 @@ search setup, which needs an external embedder we don't need here.)
 
 A repo owns identity + history; where its bytes come from is a **source**.
 `omg source add <dir>` registers a filesystem source, creating the repo and
-running the initial sync. We name the repo `alchemy` with `--slug`; `-y` skips
+running the initial sync. We name the repo `alchemy` with `--repo`; `-y` skips
 the "ingest N files?" prompt.
 
 ```console
-$ omg source add . -y --slug alchemy
+$ omg source add . -y --repo alchemy
   * alchemy ← /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  18 files
 ```
 

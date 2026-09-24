@@ -35,7 +35,7 @@ function help(cli: Cli): number {
     summary: "Where a repo's bytes come from (a filesystem directory today; git/S3/… via adapters later)",
     usage: "source <add|list|attach|detach|rm> …",
     options: [
-      ["add <dir> [--slug <s>] [--name <n>] [-y]", "point a repo at a directory: creates the repo + runs the initial sync (-y skips the consent prompt)"],
+      ["add <dir> [--repo <slug>] [--name <n>] [-y]", "point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt)"],
       ["list", "list sources and which repos they feed"],
       ["attach <name> [--repo <slug>]", "attach an existing source to a repo"],
       ["detach <name> [--repo <slug>]", "detach a source from a repo"],
@@ -103,7 +103,7 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { slug: { type: "string" }, name: { type: "string" }, yes: { type: "boolean", short: "y" }, help: { type: "boolean" } },
+    options: { name: { type: "string" }, yes: { type: "boolean", short: "y" }, help: { type: "boolean" } },
   });
   if (values.help) return help(cli);
   const dir = positionals[0];
@@ -111,7 +111,10 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   const abs = resolve(cli.cwd, dir);
   if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new EngineErrorLike("target_missing", `no such directory: ${abs}`);
 
-  const slug = values.slug ?? (basename(abs) || "vault");
+  // `--repo <slug>` is the GLOBAL repo-selection flag (parsed in dispatch.ts, so it
+  // never reaches this parser); for `source add` the selected repo is the one being
+  // created/pointed, defaulting to the directory's name.
+  const slug = cli.flags.repo ?? (basename(abs) || "vault");
   const sourceName = values.name ?? `${slug}-fs`;
   const ws = cli.workspace();
   if (getSourceByName(ws.store, sourceName)) throw new EngineErrorLike("path_taken", `a source named '${sourceName}' already exists`);

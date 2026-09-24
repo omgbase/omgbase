@@ -135,8 +135,8 @@ describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
     writeFileSync(join(ws, "beta", "b.md"), "# BetaDoc\n");
     const env = { ...process.env, NO_COLOR: "1" };
     execFileSync("node", [BIN, "init", ws, "--yes", "--no-embedder"], { encoding: "utf8", env });
-    execFileSync("node", [BIN, "-C", join(ws, "alpha"), "source", "add", ".", "--slug", "alpha", "-y"], { encoding: "utf8", env });
-    execFileSync("node", [BIN, "-C", join(ws, "beta"), "source", "add", ".", "--slug", "beta", "-y"], { encoding: "utf8", env });
+    execFileSync("node", [BIN, "-C", join(ws, "alpha"), "source", "add", ".", "--repo", "alpha", "-y"], { encoding: "utf8", env });
+    execFileSync("node", [BIN, "-C", join(ws, "beta"), "source", "add", ".", "--repo", "beta", "-y"], { encoding: "utf8", env });
   });
   afterAll(() => rmSync(mdir, { recursive: true, force: true }));
 

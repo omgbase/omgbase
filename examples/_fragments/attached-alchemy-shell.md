@@ -36,5 +36,5 @@ setup: |
   cp -R "$repo/packages/core/corpus/oqx/fixtures/alchemy/." "$work"
   cd "$work"
   omg init . --yes --no-embedder >/dev/null
-  omg source add . -y --slug alchemy >/dev/null
+  omg source add . -y --repo alchemy >/dev/null
 -->

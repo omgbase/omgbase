@@ -153,7 +153,7 @@ Four concepts, and getting them straight makes everything else obvious:
 ```bash
 omg init ./my-vault --yes         # create .omgbase/ + the DB (offers to .gitignore it)
 cd ./my-vault
-omg source add . -y --slug notes  # register this dir as the repo's fs source + initial sync
+omg source add . -y --repo notes  # register this dir as the repo's fs source + initial sync
                                   # (slug defaults to the folder name; prompts without -y)
 
 omg status                        # where am I: repo, sync state, watcher, embed queue
@@ -212,7 +212,7 @@ omg sync --watch    # stay live: an external fs-adapter process streams edits; t
 `omg source` manages the registry — a repo can have more than one source, and existing sources can be re-bound:
 
 ```bash
-omg source add ./notes --slug notes   # point a (new or current) repo at a dir + initial sync
+omg source add ./notes --repo notes   # point a (new or current) repo at a dir + initial sync
 omg source list                       # sources + which repos they feed
 omg source attach notes-fs            # attach an existing source to the current repo
 omg source detach notes-fs            # unbind (rm to delete)

@@ -102,7 +102,7 @@ The shipped verbs are minimal — `omg init` / `omg repos` (`cli/src/cmd/bootstr
 omg init [dir]                  # workspace only: create .omgbase/ + db (does NOT ingest).
                                 #   offers a .gitignore entry if dir is inside a git tree;
                                 #   ends by suggesting `omg source add .`.
-omg source add <dir> [--slug <s>] [--name <n>]
+omg source add <dir> [--repo <slug>] [--name <n>]
                                 # point a (new or current) repo at a filesystem dir: create
                                 #   the repo, register + attach an <slug>-fs source, and run
                                 #   the initial sync (freshnessSweep). prompts before
