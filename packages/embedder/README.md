@@ -31,7 +31,7 @@ Both sides are small: `src/bin.ts` here, `connectStdio()` in `packages/core/src/
    Core reads `model`, `dim` and (optionally) `maxInputTokens` from it; whatever the handshake reports **wins** over `embedding.model` / `embedding.dim` / `embedding.maxInputTokens` in repo settings, which are only fallbacks for an embedder whose handshake omits them. A non-JSON first line is a hard `invalid handshake` error.
 2. **Request** — core writes `{"id":<n>,"texts":["…","…"]}` with a monotonically increasing `id` (an empty `texts` array never reaches the process; core short-circuits it).
 3. **Response** — `{"id":<n>,"vectors":[[…768 numbers…],…]}`, one vector per input text, or `{"id":<n>,"error":"<message>"}` if the model load or inference threw. Core matches responses by `id` (tolerating interleaving) and turns an `error` into a thrown `embedder error: …`.
-4. **Shutdown** — core ends stdin; the embedder exits 0 on EOF. If it lingers, core sends SIGTERM and after 2 s SIGKILL.
+4. **Shutdown** — core ends stdin; the embedder answers anything still queued, then exits 0. If it lingers, core sends SIGTERM and after 2 s SIGKILL.
 
 Requests are processed strictly in order through one promise chain, and the (slow) first model load is single-flighted so concurrent requests share it. Constructing the provider is cheap; weights load lazily on the first `embed()`.
 
@@ -55,10 +55,10 @@ The package does not set any transformers.js cache options, so the library defau
 
 ## Running it standalone
 
-The process answers requests only while stdin is open, and exits the moment stdin closes — so a plain `echo … | omgbase-embedder` prints the handshake and quits before the (lazy) model load finishes. Hold stdin open instead:
+The process reads newline-delimited requests until stdin closes, answers every request it received (waiting for the lazy model load if needed), and then exits 0 — so a plain pipe works:
 
 ```bash
-( printf '{"id":1,"texts":["the cat sat on the mat","quarterly projections"]}\n'; sleep 30 ) | omgbase-embedder
+printf '{"id":1,"texts":["the cat sat on the mat","quarterly projections"]}\n' | omgbase-embedder
 # stderr: [omgbase-embedder] ready: Xenova/gte-base (768d)
 # stdout: {"model":"Xenova/gte-base","dim":768,"maxInputTokens":512}
 #         {"id":1,"vectors":[[-0.0241,-0.0508,-0.0098,…],[…]]}     ← two 768-d unit vectors
