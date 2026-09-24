@@ -11,6 +11,9 @@ import type { EngineClient, ChangesPage, DocBytes } from "./engine-client.js";
 // only the transport differs. `connectStdioEngine` spawns an `omg mcp` server
 // and talks over its stdin/stdout; `connectHttpEngine` reaches a truly remote
 // server over Streamable HTTP. Both hand a connected Client to the same wrapper.
+// `parseEngineSpec` + `connectEngine` encode the ONE rule for a `--server`
+// value (shared by `omg --server` and `omgbase-sync --server`): an http(s) URL
+// is reached over Streamable HTTP; anything else is a command to spawn.
 
 interface ToolResult {
   content?: { type: string; text?: string }[];
@@ -99,4 +102,38 @@ export async function connectHttpEngine(spec: { url: string; headers?: Record<st
   }) as Transport;
   await client.connect(transport);
   return new McpEngineClient(client);
+}
+
+/** Where a `--server` value points: an http(s) endpoint (Streamable HTTP, with
+ *  optional extra request headers) or a command to spawn and speak stdio to. */
+export type EngineSpec =
+  | { kind: "http"; url: string; headers?: Record<string, string> }
+  | { kind: "stdio"; command: string; args: string[] };
+
+const HTTP_URL_RE = /^https?:\/\//i;
+
+/**
+ * Classify a raw `--server` value. The rule, shared by every `--server` consumer:
+ * a value starting with `http://` or `https://` is an HTTP endpoint (used
+ * verbatim, including any secret base path; `headers` ride along); anything
+ * else is split on whitespace and spawned as a stdio MCP server command (e.g.
+ * `"omg mcp -C /vault"`). A URL is therefore never spawned. Throws on an empty
+ * value, or on headers given for a stdio command (they have nowhere to go).
+ */
+export function parseEngineSpec(raw: string, headers?: Record<string, string>): EngineSpec {
+  const spec = raw.trim();
+  const hasHeaders = headers !== undefined && Object.keys(headers).length > 0;
+  if (HTTP_URL_RE.test(spec)) return { kind: "http", url: spec, ...(hasHeaders ? { headers } : {}) };
+  if (hasHeaders) throw new Error("extra headers only apply to an http(s) server url, not a command to spawn");
+  const argv = spec.split(/\s+/).filter(Boolean);
+  if (argv.length === 0) throw new Error('server spec is empty — expected a command to spawn (e.g. "omg mcp -C /vault") or an http(s) URL');
+  return { kind: "stdio", command: argv[0]!, args: argv.slice(1) };
+}
+
+/** Connect to the engine an `EngineSpec` names, over the transport its kind
+ *  selects. The single dispatch point behind `omg --server` and `runFsMirror`. */
+export function connectEngine(spec: EngineSpec): Promise<McpEngineClient> {
+  return spec.kind === "http"
+    ? connectHttpEngine({ url: spec.url, ...(spec.headers ? { headers: spec.headers } : {}) })
+    : connectStdioEngine({ command: spec.command, args: spec.args });
 }
