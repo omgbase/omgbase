@@ -7,10 +7,37 @@ fields, sorts, and pages through large results.
 
 ## `select` — project fields
 
-`select` names the fields you want on each hit. The human tier always shows just
-the id and locator, so to *see* projected fields ask for machine output:
-`--jsonl` prints one JSON object per hit. The id and path always come along,
-then your selected fields (here a frontmatter number and an inline field):
+`select` names the fields you want on each hit. As soon as a query projects, the
+human tier switches from `<id>  <locator>` lines to an aligned table: a dim
+header row, then per hit the id, the path, and your selected fields as columns
+in `select` order (here a frontmatter number and an inline field):
+
+```console
+$ omg query 'from docs where type == "practitioner" select era, known: known_for order by era asc'
+id         path                                era   known
+d_9px29y1  practitioners/maria-prophetissa.md  250   balneum mariae
+d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
+d_t5nvj1g  practitioners/paracelsus.md         1530  tria prima
+d_rw4ygr0  practitioners/newton.md             1680  unpublished alchemical corpus
+```
+
+`known: known_for` renames the projected column; a bare `era` keeps its name.
+Select `$path` yourself and it takes the path column's place (the same path is
+never printed twice):
+
+```console
+$ omg query 'from docs where type == "practitioner" select $path, era order by era asc'
+id         $path                               era
+d_9px29y1  practitioners/maria-prophetissa.md  250
+d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800
+d_t5nvj1g  practitioners/paracelsus.md         1530
+d_rw4ygr0  practitioners/newton.md             1680
+```
+
+Cells hold strings and numbers verbatim; a nested `collect` (a list or record)
+renders as compact JSON, clipped at 60 characters with `…`. For the full values
+ask for machine output: `--jsonl` prints one JSON object per hit — the id and
+path always come along, then your selected fields:
 
 ```console
 $ omg query 'from docs where type == "practitioner" select era, known: known_for order by era asc' --jsonl
@@ -19,8 +46,6 @@ $ omg query 'from docs where type == "practitioner" select era, known: known_for
 {"id":"d_t5nvj1g","path":"practitioners/paracelsus.md","era":1530,"known":"tria prima"}
 {"id":"d_rw4ygr0","path":"practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
 ```
-
-`known: known_for` renames the projected column; a bare `era` keeps its name.
 
 ## `order by`
 

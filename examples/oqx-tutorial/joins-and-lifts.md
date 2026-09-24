@@ -53,13 +53,16 @@ $ omg query 'from docs where $path == "index.md" && nodes collect { ^refs: value
 
 Does *any* wikilink in the repo name this substance's slug? `$repo.nodes exists`
 is the global scan; `^slug` ties it to the current row (bound by the trailing
-`select slug`). The three tria-prima substances are cited by name:
+`select slug`). The three tria-prima substances are cited by name — and because
+the query projects, the human tier shows the projected `slug` as a column
+beside the id and path:
 
 ```console
 $ omg query 'from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug'
-d_0vsapzt  substances/mercury.md
-d_h73rhv8  substances/salt.md
-d_5zmf9f7  substances/sulphur.md
+id         path                   slug
+d_0vsapzt  substances/mercury.md  mercury
+d_h73rhv8  substances/salt.md     salt
+d_5zmf9f7  substances/sulphur.md  sulphur
 ```
 
 Negate the `exists` for the anti-join — substances no wikilink points to (the two
@@ -67,8 +70,9 @@ abstractions are named only in prose):
 
 ```console
 $ omg query 'from docs where type == "substance" && !$repo.nodes exists { where kind == "md:wikilink" && value == ^slug } select slug'
-d_1rren8z  substances/philosophers-stone.md
-d_prj3j7a  substances/prima-materia.md
+id         path                              slug
+d_1rren8z  substances/philosophers-stone.md  philosophers-stone
+d_prj3j7a  substances/prima-materia.md       prima-materia
 ```
 
 ## Self-join
