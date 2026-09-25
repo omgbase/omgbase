@@ -217,6 +217,20 @@ struct Loaded {
     problems: Vec<String>,
 }
 
+/// The fixtures live in the monorepo, outside this crate, and are not shipped
+/// in the published package. When the crate is built on its own (e.g. `cargo
+/// test` on a crates.io download), every conformance test skips with a note
+/// instead of failing on a missing directory.
+fn spec_available() -> bool {
+    if Path::new(CASES_DIR).is_dir() {
+        return true;
+    }
+    eprintln!(
+        "spec: fixtures not present at {CASES_DIR} (built outside the omgbase monorepo); skipping"
+    );
+    false
+}
+
 fn load() -> Loaded {
     let dir = Path::new(CASES_DIR);
     let mut file_names: Vec<String> = fs::read_dir(dir)
@@ -496,6 +510,10 @@ fn report(title: &str, ids: &[(String, Option<String>)]) {
 
 #[test]
 fn spec() {
+    if !spec_available() {
+        return;
+    }
+
     let loaded = load();
     assert!(
         loaded.problems.is_empty(),
@@ -640,6 +658,10 @@ fn spec() {
 
 #[test]
 fn fixture_files_are_well_formed_and_every_case_file_was_loaded() {
+    if !spec_available() {
+        return;
+    }
+
     let loaded = load();
     assert_eq!(loaded.problems, Vec::<String>::new());
     assert!(
@@ -660,6 +682,10 @@ fn fixture_files_are_well_formed_and_every_case_file_was_loaded() {
 
 #[test]
 fn case_names_are_unique_per_file() {
+    if !spec_available() {
+        return;
+    }
+
     let loaded = load();
     for f in &loaded.files {
         let mut seen = BTreeSet::new();
@@ -679,6 +705,10 @@ fn case_names_are_unique_per_file() {
 #[cfg(feature = "json")]
 #[test]
 fn runner_conversions_agree_with_oqx_json() {
+    if !spec_available() {
+        return;
+    }
+
     let loaded = load();
     let mut checked = 0usize;
     for f in &loaded.files {
