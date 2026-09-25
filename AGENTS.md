@@ -22,6 +22,9 @@ When you hit a stopping point — work is done, or you're blocked and need input
   - `packages/embedder` — transformers.js / `Xenova/gte-base` (768-dim) embeddings, served as the `omgbase-embedder` stdio binary.
   - `packages/fs-adapter` — chokidar-based filesystem sync adapter (stdio).
   - `packages/client` — thin remote MCP client (placeholder).
+- **Rust side** (`rust` branch; cargo workspace at the root `Cargo.toml` over `crates/*`, independent of the pnpm workspace):
+  - `crates/oqx` — the Rust implementation of OQX. Conformance-first port of `packages/oqx`; `tests/spec.rs` runs `spec/oqx/cases`, gated by `tests/spec-passing.txt` until the port is complete.
+  - `spec/oqx` — **the OQX specification**, owned by neither implementation: `GRAMMAR.md`, `SEMANTICS.md`, `VERSION`, and the executable fixtures `cases/*.json` that both the TypeScript runner (`packages/oqx/test/spec.test.ts`) and the Rust runner execute. Read `spec/oqx/README.md` for the fixture contract and the change rule: **fixture first, TypeScript (reference) second, Rust third**. A language change without a fixture is not done.
 - **Data model** is three layers: **Docs → Blocks** (stable `b_` ids; the mutation anchors) **→ Nodes** (semantic projections: links, tasks, sections, anchors…).
 
 ## Build / verify
@@ -33,6 +36,14 @@ pnpm lint      # pnpm -r lint
 ```
 
 Always run `pnpm build && pnpm test` before considering a change done.
+
+Rust (when touching `crates/` or `spec/`):
+
+```
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+```
 
 ## Where the authoritative truth lives for each surface
 
