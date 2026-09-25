@@ -8,7 +8,8 @@
 // (Performant execution over a real store is the tier-3 seam — see planner.ts —
 // which pushes work into the store instead of driving it row-by-row here.)
 
-import { coerceCollection, BUILTIN_FUNCTIONS, BUILTIN_METHODS } from "./semantics.ts";
+import { coerceCollection, regexMatches, BUILTIN_FUNCTIONS, BUILTIN_METHODS } from "./semantics.ts";
+import type { RegexDialect } from "./regex.ts";
 
 // An array's only properties are its integer indices, spelled canonically
 // (`"0"`, `"12"`; never `"01"`, `"length"`, or a method name).
@@ -39,6 +40,19 @@ export interface DataContext {
   callFunction?(name: string, args: unknown[]): CallResult;
   /** Optional custom method; return `{ handled: false }` to defer. */
   callMethod?(name: string, recv: unknown, args: unknown[]): CallResult;
+  /** The regex dialect `matches()` compiles against. `"oqx"` (the default when
+   * absent) is the portable baseline the spec tests; `"native"` hands the
+   * pattern to the host `RegExp` unvalidated — implementation-defined, not
+   * portable. Note the engine dispatches `matches` through `callMethod`, so
+   * this is read by the context's own `matches` (`DefaultContext` does;
+   * `regexMatches(recv, args, dialect)` is the helper). `BUILTIN_METHODS.matches`
+   * is always the baseline. */
+  readonly regexDialect?: RegexDialect;
+}
+
+export interface DefaultContextOptions {
+  /** See `DataContext.regexDialect`. Default `"oqx"`. */
+  regexDialect?: RegexDialect;
 }
 
 /** The default context: ordinary JavaScript objects. Named roots come from a
@@ -47,9 +61,11 @@ export interface DataContext {
  * when present, else the row itself (the engine keys it structurally). */
 export class DefaultContext implements DataContext {
   private roots: Record<string, unknown>;
+  readonly regexDialect: RegexDialect;
 
-  constructor(roots: Record<string, unknown> = {}) {
+  constructor(roots: Record<string, unknown> = {}, options: DefaultContextOptions = {}) {
     this.roots = roots;
+    this.regexDialect = options.regexDialect ?? "oqx";
   }
 
   root(name: string): unknown {
@@ -77,6 +93,7 @@ export class DefaultContext implements DataContext {
   }
 
   callMethod(name: string, recv: unknown, args: unknown[]): CallResult {
+    if (name === "matches") return { handled: true, value: regexMatches(recv, args, this.regexDialect) };
     const fn = Object.hasOwn(BUILTIN_METHODS, name) ? BUILTIN_METHODS[name] : undefined;
     return fn ? { handled: true, value: fn(recv, args) } : { handled: false };
   }

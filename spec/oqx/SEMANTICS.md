@@ -199,25 +199,108 @@ Methods:
 | `s.lower()` / `s.upper()` | case-mapped string form of the receiver (a number or boolean receiver is rendered as in §7); an **absent receiver yields absent** |
 | `s.contains(v)` | string receiver: substring of `v`'s string form; array receiver: some element `== v`; anything else → false |
 | `s.startsWith(v)` / `s.endsWith(v)` | string receiver only; anything else → false |
-| `s.matches(re)` | absent receiver → false; otherwise the receiver's string form is searched (unanchored unless the pattern anchors) with the pattern compiled in the OQX regex dialect below |
+| `s.matches(re, flags?)` | absent receiver → false; otherwise the receiver's string form is searched (unanchored unless the pattern anchors) with `re`'s string form compiled in the OQX regex baseline below, under the given flags |
 | `x.size()` | as `size(x)` |
 
-**Regex dialect** (portability): literals, `.`, character classes `[…]`,
-`\d \w \s`, the quantifiers `* + ? {m,n}`, alternation `|`, grouping `( )`,
-anchors `^ $`, escaped metacharacters. No flags; matching is case-sensitive.
-Regex is an OQX concern, not the host's: a pattern that does not compile is an
-**eval error** whose message includes `invalid regular expression`, never a host
-exception. **Lookaround** (`(?=`, `(?!`, `(?<=`, `(?<!`) and **backreferences**
-(`\1`…`\9`, `\k<name>`) are rejected with an eval error whose message includes
-`not supported in OQX`, so every pattern that runs is portable. The scan honors
-escapes and classes: `\(\?=` and `[(]` are literals, not lookahead. The error
-is raised when the call is evaluated (an empty source never evaluates it).
-[`strings`]
+**Regular expressions** (portability). `matches(pattern, flags?)` compiles
+`pattern` in the **OQX regex baseline**: a fixed grammar in which every
+construct has one spec-defined meaning, so a pattern that compiles in one
+implementation matches the same strings in every other. Regex is an OQX
+concern, not the host's: the implementation parses the pattern before any host
+engine sees it, and every failure is an **eval error**, never a host exception,
+raised when the call is evaluated (an empty source never evaluates it).
+
+The baseline grammar (whitespace is literal, never ignored):
+
+```text
+Pattern     ::= Alternative ( "|" Alternative )*
+Alternative ::= Term*
+Term        ::= Assertion | Atom Quantifier?
+Assertion   ::= "^" | "$" | "\b" | "\B"
+Quantifier  ::= ( "*" | "+" | "?" | "{" n "}" | "{" n "," "}" | "{" n "," m "}" ) "?"?
+Atom        ::= Literal | "." | Escape | ClassEscape | Class | Group
+Group       ::= "(" Pattern ")" | "(?:" Pattern ")" | "(?<" Name ">" Pattern ")"
+Class       ::= "[" "^"? ClassItem+ "]"
+ClassItem   ::= ClassAtom ( "-" ClassAtom )? | ClassEscape
+ClassAtom   ::= ClassLiteral | Escape
+Escape      ::= "\" MetaChar | "\n" | "\t" | "\r" | "\f" | "\v" | "\u" Hex Hex Hex Hex | "\u{" Hex{1,6} "}"
+ClassEscape ::= "\d" | "\D" | "\w" | "\W" | "\s" | "\S"
+MetaChar    ::= one of   . * + ? ( ) [ ] { } | ^ $ \ / -
+Name        ::= [A-Za-z_] [A-Za-z0-9_]*
+n, m        ::= decimal digits, with m ≥ n
+Literal     ::= any code point that is not a MetaChar
+ClassLiteral ::= any code point other than "\", "[", "]", and a range-forming "-"
+```
+
+Inside a class `^` negates only as the first item, `-` is literal first or
+last (`[-a]`, `[a-]`), every other metacharacter is literal (`[.+]`), and both
+range endpoints must be single code points (`[\d-z]` is invalid). The empty
+classes `[]` and `[^]` do not exist: write `\]` for a literal bracket and
+`[\s\S]` for any character. `{` `}` `]` are metacharacters everywhere outside a
+class and must be escaped when literal. A `Name` is unique within the pattern.
+
+Semantics, fixed by the spec rather than inherited from a host engine:
+
+- Matching is over **code points**: `.` and a class consume one code point
+  (`"😀".matches("^.$")`); `[\u{1F600}-\u{1F64F}]` is a code-point range.
+- `\d` is `[0-9]`; `\w` is `[A-Za-z0-9_]`; `\D` and `\W` are their
+  complements over all code points (`\W` matches `é`; `\d` does not match `٣`).
+- `\s` is exactly U+0009–U+000D, U+0020, U+00A0, U+1680, U+2000–U+200A,
+  U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF (JavaScript's WhiteSpace ∪
+  LineTerminator — notably **not** U+0085); `\S` is its complement.
+- `\b` is a position between a `\w` code point and a non-`\w` code point or
+  a string edge, with `\w` as defined above (`é|a` is a boundary); `\B` is
+  any other position (including inside `éé` and in the empty string).
+- **The line terminator is `\n` alone.** `.` matches any code point except
+  `\n` (`\r`, U+2028, U+2029 are ordinary characters); under flag `s` it also
+  matches `\n`. `^` and `$` match at the string's start and end; under flag
+  `m` they also match immediately after, respectively before, a `\n` — and
+  only a `\n` (`"a\r\nb".matches("a$", "m")` is false).
+- Quantifiers are greedy; a trailing `?` makes them lazy (unobservable to a
+  boolean `matches`, accepted so patterns stay portable).
+- An escape denotes exactly one code point: `\uXXXX` takes exactly four hex
+  digits (a BMP code point; `\u00411` is `A` then `1`), `\u{X…}` one to six
+  (any code point ≤ U+10FFFF). A surrogate code point (U+D800–U+DFFF) is
+  invalid — strings are code points, so `😀` is `\u{1F600}`, never a pair.
+- **Flags** are the optional second argument: a string of distinct letters from
+  `i` (case-insensitive by simple case folding, so `é` matches `É`), `m`, and
+  `s`, in any order. Any other character (`"g"`, `"I"`), a repeated letter, or
+  a non-string is an eval error whose message includes `unknown regex flag`
+  (or `duplicate regex flag`). An absent second argument means no flags. There
+  is **no inline flag syntax**: `(?i)` is a rejected construct.
+
+Everything outside the grammar is rejected before matching with an eval error
+whose message includes `not supported in OQX regular expressions` and names
+the construct: lookahead and lookbehind (`(?=` `(?!` `(?<=` `(?<!`);
+backreferences (`\1`…`\9`, `\k<name>`); inline flags and modifier groups
+(`(?i)`, `(?i:…)`, `(?-i)`); `\p{…}` / `\P{…}`; `\x..`; `\c.`; octal
+escapes (`\0`, and `\1`…`\9` inside a class); identity escapes of
+non-metacharacters (`\q`, `\ `); possessive quantifiers (`*+`, `{n,m}+`);
+atomic groups `(?>…)`; comment groups `(?#…)`; the `(?P<name>…)` spelling;
+`\A \z \Z \G \K \Q \E`; POSIX classes `[[:alpha:]]`; nested classes
+`[a[b]]` and class set operations (`&&`, `~~`); the backspace escape `[\b]`.
+A pattern that is syntactically invalid within the grammar — unbalanced
+parentheses, an unterminated class or group, a reversed range, a quantifier
+with nothing to repeat (`*a`, `a**`, `^*`, `\b+`) or with `m < n`, a lone `{`
+`}` `]`, a trailing backslash, a malformed or out-of-range `\u`, an invalid
+or duplicate group name — is an eval error whose message includes `invalid
+regular expression`. The scan honors escapes and classes: `\(\?=` and `[(]\?=`
+are literals, not lookahead. An implementation may additionally reject, with
+`invalid regular expression`, a pattern whose compiled form exceeds its
+engine's size limit; that bound is implementation-defined.
+
+An implementation may let a **host** opt into its engine's **native dialect**
+(the reference: `DataContext.regexDialect = "native"`; the Rust crate:
+`DataContext::regex_dialect()` returning `Native`). Under it the pattern is
+handed to the engine unvalidated with the flags mapped, an invalid pattern is
+still an eval error, and nothing else is promised: the native dialect is
+implementation-defined and not portable. The fixtures exercise only the
+baseline. [`regex`]
 
 Calling a name not in these tables is an **eval error** (`unknown function
 'f(…)'` / `unknown method '.m(…)'`), raised when the call is evaluated (an empty
 source never evaluates it). A free-function call may be a source or a receiver.
-[`builtins`, `strings`]
+[`builtins`, `strings`, `regex`]
 
 ## 12. Projection and records
 
@@ -412,9 +495,10 @@ pinned by the reference's own tests. [`bindings`]
 Every failure is an `OqxError` whose `stage` is `lex`, `parse`, or `eval`
 (GRAMMAR §6); a host exception never escapes. Eval errors: unknown function or
 method; `single` with more than one row; an invalid `limit`/`offset` value;
-`follow` in a where-position directive; an invalid or unsupported regex (§11);
+`follow` in a where-position directive; an invalid or unsupported regex or
+regex flag (§11);
 a range in a result (§1); a binding out of range (§22). Evaluation is otherwise
 total: absent navigation, arithmetic over absent, comparisons over absent or
 mismatched types, membership in a non-container, and `range()` of a bad string
 all yield a value (absent or `false`), never an error.
-[`errors-lex`, `errors-parse`, `errors-eval`, `logical`]
+[`errors-lex`, `errors-parse`, `errors-eval`, `logical`, `regex`]

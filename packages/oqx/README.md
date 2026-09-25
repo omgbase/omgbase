@@ -351,12 +351,55 @@ oqx`name from ${people} where tags.contains("admin")`;       // array membership
 - `.contains(v)` works on strings (substring) **and arrays** (an element equal
   to `v` under OQX's strict equality); on anything else it is false.
 - `.size()` / `size(x)` is the length of a string or array, the key count of
-  an object, and 0 for absent; `.matches(re)` compiles its argument as a
-  JavaScript `RegExp`.
+  an object, and 0 for absent.
+- `.matches(re, flags?)` searches the receiver's text for a regular expression
+  written in the **OQX regex baseline** (below), unanchored unless the pattern
+  anchors. `flags` is an optional string of `i` (case-insensitive), `m` (`^`/`$`
+  also at newlines), `s` (`.` also matches `\n`); an absent receiver is `false`.
 
 Anything not in these tables is an **eval error** (`unknown function 'f(…)'` /
 `unknown method '.m(…)'`) — see [custom functions](#custom-functions-and-methods)
 for adding your own.
+
+#### The regex baseline
+
+OQX is a language with more than one implementation, so `matches()` does not
+expose the host's `RegExp`. It compiles a fixed, portable dialect whose every
+construct has one spec-defined meaning (`spec/oqx/SEMANTICS.md` §11):
+
+- literals; escaped metacharacters `\. \* \+ \? \( \) \[ \] \{ \} \| \^ \$ \\ \/ \-`;
+  `\n \t \r \f \v`; `\uXXXX` (four hex digits) and `\u{X…}` (any code point);
+- `\d` = `[0-9]`, `\w` = `[A-Za-z0-9_]`, `\s` = JavaScript's white space (one
+  listed set), `\D \W \S` their complements, `\b \B` word boundaries over that
+  `\w`; bracket classes `[…]` / `[^…]` with ranges;
+- `.` = any code point except `\n` (the line terminator is `\n` alone — `\r`
+  is an ordinary character); anchors `^ $`; quantifiers `* + ? {n} {n,} {n,m}`
+  and their lazy `?` forms; alternation `|`; groups `(…)`, `(?:…)`, `(?<name>…)`.
+
+Everything else — lookaround, backreferences, inline flags `(?i)`, `\p{…}`,
+`\x..`, octal, possessive quantifiers, POSIX classes, `\A \z` … — is an
+`OqxError` (stage `eval`) naming the construct: `an inline flag (?i) is not
+supported in OQX regular expressions`. A pattern that is malformed within the
+baseline is `invalid regular expression …`; a bad flag is `unknown regex flag`
+/ `duplicate regex flag`. The pattern is validated and rewritten before
+`RegExp` sees it (`src/regex.ts`), so JavaScript-only behavior never leaks.
+
+```js
+oqx`name from ${people} where title.matches("^(eng|dir)", "i")`;   // Bob, Alice
+oqx`x: "a\nb".matches("a.b") from ${one}`;                         // false: . stops at \n
+oqx`x: "a\nb".matches("a.b", "s") from ${one}`;                    // true
+oqx`x: "٣".matches(${"\\d"}) from ${one}`;                         // false: \d is ASCII
+oqx`x: "é".matches(${"^\\u{e9}$"}) from ${one}`;                   // true
+```
+
+A pattern with backslashes is easiest to pass as a binding (`${"\\d"}`): the
+template's own escaping and the OQX string literal's `\<c>` escape would each
+consume one level otherwise (`"\\\\d"` in the template is `\d` to the regex).
+
+A host that wants JavaScript's own dialect can opt in per context:
+`new DefaultContext(roots, { regexDialect: "native" })` hands patterns to
+`RegExp` unvalidated (with the `u` flag plus the given flags). That is
+implementation-defined and not portable to the Rust implementation.
 
 ### 5. Consumers
 
@@ -747,14 +790,23 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
 - `InMemoryEngine` — `new InMemoryEngine(context?)`; the reference engine over a
   `DataContext` (tier 1/2).
 - `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identity`,
-  plus optional `callFunction` / `callMethod` (above).
+  plus optional `callFunction` / `callMethod` (above) and an optional
+  `regexDialect` (`"oqx"` default | `"native"`). The engine dispatches
+  `matches` through `callMethod`, so a custom context that wants the native
+  dialect answers `matches` itself with `semantics.regexMatches(recv, args,
+  "native")`; `BUILTIN_METHODS.matches` is always the baseline.
 - `CallResult` — `{ handled: boolean; value?: unknown }`, returned by those hooks.
-- `DefaultContext` — `new DefaultContext(roots?)`; plain-object access, `.id`
-  identity, and the builtin function/method tables.
+- `DefaultContext` — `new DefaultContext(roots?, options?)`; plain-object
+  access, `.id` identity, and the builtin function/method tables. `options`:
+  `{ regexDialect?: RegexDialect }` (see the regex baseline, §4).
+- `compileRegex(pattern, flags?, dialect?)` — the `matches()` compiler: a
+  `RegExp`, or an `OqxError` for a bad pattern/flag. `RegexDialect` /
+  `RegexFlags` are the types.
 - `semantics` — the scalar-contract module (`equals`, `relate`, `arith`,
   `membership`, `truthy`, `compareForSort`, `sizeOf`, `toList`,
   `coerceCollection`, ranges: `makeRange` / `isRange` / `rangeCovers` /
-  `parseRangeString`, entries: `makeEntry` / `isEntry` / `entriesOf`, and the
+  `parseRangeString`, entries: `makeEntry` / `isEntry` / `entriesOf`, regex:
+  `compileRegex` / `regexMatches` / `parseRegexFlags`, and the
   `BUILTIN_FUNCTIONS` / `BUILTIN_METHODS` tables). A backend reproducing a rule
   natively must match these.
 

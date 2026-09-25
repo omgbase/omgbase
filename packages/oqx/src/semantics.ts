@@ -22,7 +22,8 @@
 //   • Identity / structural keys: `canonicalKey` — a type-tagged serialization,
 //     so `1` and `"1"` differ and object key order is ignored. Never `String()`.
 
-import { OqxError } from "./errors.ts";
+import { compileRegex } from "./regex.ts";
+import type { RegexDialect } from "./regex.ts";
 
 /** Equality with absence-normalization (undefined ≡ null) and strict typing. */
 export function equals(a: unknown, b: unknown): boolean {
@@ -297,61 +298,22 @@ export const BUILTIN_FUNCTIONS: Record<string, (args: unknown[]) => unknown> = {
   range: (args) => (isRange(args[0]) ? args[0] : typeof args[0] === "string" ? parseRangeString(args[0]) : null),
 };
 
-// ---- regex: the portable OQX dialect ----------------------------------------
+// ---- regex: the OQX baseline ------------------------------------------------
 //
-// `matches(pattern)` compiles the pattern as a regular expression in the dialect
-// both implementations share: literals, `.`, classes `[…]`, `\d \w \s`, the
-// quantifiers `* + ? {m,n}`, alternation, grouping, anchors, escaped
-// metacharacters. Lookaround and backreferences are rejected up front (so a
-// query is portable to an engine without them), and a pattern the host cannot
-// compile is an OQX eval error — never a host exception.
+// `matches(pattern, flags)` compiles the pattern in the OQX regex baseline (see
+// regex.ts): a fixed grammar with spec-pinned semantics, rejected up front when
+// it uses anything else, so every pattern that runs is portable. A host may opt
+// into its engine's native dialect through `DataContext.regexDialect`.
 
-const regexCache = new Map<string, RegExp>();
+export { compileRegex, parseRegexFlags } from "./regex.ts";
+export type { RegexDialect, RegexFlags } from "./regex.ts";
 
-/** Compile a `matches()` pattern, raising an `OqxError` (stage `eval`) for an
- * invalid pattern or one using a construct outside the OQX dialect. */
-export function compileRegex(pattern: string): RegExp {
-  const cached = regexCache.get(pattern);
-  if (cached) return cached;
-  const unsupported = findUnsupportedRegexConstruct(pattern);
-  if (unsupported) {
-    throw new OqxError(`${unsupported} is not supported in OQX regular expressions (pattern ${JSON.stringify(pattern)})`, "eval");
-  }
-  let re: RegExp;
-  try {
-    re = new RegExp(pattern);
-  } catch (e) {
-    throw new OqxError(`invalid regular expression ${JSON.stringify(pattern)}: ${e instanceof Error ? e.message.replace(/^Invalid regular expression: /, "") : String(e)}`, "eval");
-  }
-  if (regexCache.size >= 256) regexCache.clear();
-  regexCache.set(pattern, re);
-  return re;
-}
-
-// Scan a pattern (outside character classes, honoring escapes) for lookaround
-// `(?= (?! (?<= (?<!` and backreferences `\1`..`\9`, `\k<name>`.
-function findUnsupportedRegexConstruct(p: string): string | null {
-  let inClass = false;
-  for (let i = 0; i < p.length; i++) {
-    const c = p[i]!;
-    if (c === "\\") {
-      const n = p[i + 1];
-      if (!inClass && n !== undefined && n >= "1" && n <= "9") return `a backreference (\\${n})`;
-      if (!inClass && n === "k" && p[i + 2] === "<") return "a named backreference (\\k<…>)";
-      i++;
-      continue;
-    }
-    if (inClass) { if (c === "]") inClass = false; continue; }
-    if (c === "[") { inClass = true; continue; }
-    if (c === "(" && p[i + 1] === "?") {
-      const rest = p.slice(i + 2, i + 4);
-      if (rest.startsWith("=") ) return "lookahead (?=…)";
-      if (rest.startsWith("!")) return "negative lookahead (?!…)";
-      if (rest === "<=") return "lookbehind (?<=…)";
-      if (rest === "<!") return "negative lookbehind (?<!…)";
-    }
-  }
-  return null;
+/** `recv.matches(pattern, flags?)`: false for an absent receiver; otherwise
+ * whether the pattern (compiled in `dialect`) matches anywhere in the
+ * receiver's string form. Bad flags or a bad pattern are eval errors. */
+export function regexMatches(recv: unknown, args: unknown[], dialect: RegexDialect = "oqx"): boolean {
+  const s = stringForm(recv);
+  return s !== undefined && compileRegex(String(args[0]), args[1], dialect).test(s);
 }
 
 /** Methods callable as `recv.name(args)`. */
@@ -363,10 +325,7 @@ export const BUILTIN_METHODS: Record<string, (recv: unknown, args: unknown[]) =>
   },
   startsWith: (recv, args) => { const s = stringForm(args[0]); return typeof recv === "string" && s !== undefined && recv.startsWith(s); },
   endsWith: (recv, args) => { const s = stringForm(args[0]); return typeof recv === "string" && s !== undefined && recv.endsWith(s); },
-  matches: (recv, args) => {
-    const s = stringForm(recv);
-    return s !== undefined && compileRegex(String(args[0])).test(s);
-  },
+  matches: (recv, args) => regexMatches(recv, args, "oqx"),
   size: (recv) => sizeOf(recv),
   lower: (recv) => stringForm(recv)?.toLowerCase(),
   upper: (recv) => stringForm(recv)?.toUpperCase(),

@@ -8,7 +8,7 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 
 **OQX is now a language with a specification and two implementations.** The
 spec lives at `spec/oqx` in the monorepo: `GRAMMAR.md`, `SEMANTICS.md`, and
-737 executable fixtures in 27 files that this package and the Rust
+835 executable fixtures in 28 files that this package and the Rust
 crate `oqx` both run. **Versioning changed accordingly:** the language version
 is `spec/oqx/VERSION` (`0.12`) and every implementation's version is
 `<language>.<patch>`, so `@omgbase/oqx 0.12.x` and the `oqx` crate `0.12.x`
@@ -80,6 +80,44 @@ what a careful user would predict.
 - **Chained comparisons** (`a == b == c`) error clearly; **stray tokens** after
   a query or in a block get a located message; clause words without their
   clause (`order age`, bare `follow`, `limit x`) say what they need.
+
+### Changed (breaking) — regular expressions
+- **`matches()` compiles the OQX regex baseline, not a JavaScript `RegExp`.**
+  The baseline (SEMANTICS §11) is a fixed grammar — literals and escaped
+  metacharacters, `\n \t \r \f \v`, `\uXXXX` / `\u{…}`, the classes
+  `\d \D \w \W \s \S` with spec-fixed sets (`\d` = `[0-9]`, `\w` =
+  `[A-Za-z0-9_]`, `\s` = one listed set), `\b \B` over that `\w`, bracket
+  classes, `.`, `^ $`, the quantifiers and their lazy forms, `|`, `(…)`,
+  `(?:…)`, `(?<name>…)` — and the pattern is validated and rewritten before
+  `RegExp` sees it (`src/regex.ts`). **The line terminator is `\n` alone**
+  for `.` and for `m`-mode anchors (`\r`, U+2028, U+2029 are ordinary
+  characters), and `.` consumes a code point. Every construct outside the
+  grammar is an eval error naming it (`an inline flag (?i) is not supported in
+  OQX regular expressions`): lookaround and backreferences (already rejected),
+  now also inline flags `(?i)` / `(?i:…)`, `\p{…}`, `\x..`, `\c.`, octal
+  escapes, identity escapes of non-metacharacters, possessive quantifiers,
+  atomic and comment groups, `(?P<…>)`, `\A \z \Z \G \K \Q \E`, POSIX and
+  nested classes, class set operations, `[\b]`. Malformed patterns that
+  `RegExp` tolerated (`a{`, a lone `]`, `a**`, `[]`, `[^]`, `(?<n>…)` twice)
+  are `invalid regular expression`.
+- **Flags are an explicit second argument**: `matches(pattern, flags)` with
+  `flags` a string of distinct letters from `i` (simple case folding, so `é`
+  matches `É`), `m`, `s`. Anything else is an eval error: `unknown regex
+  flag` (`"g"`, `"I"`, a non-string) or `duplicate regex flag`. There is no
+  inline flag syntax.
+- **Engine-native dialects are a host opt-in, not query syntax.**
+  `DataContext` gains an optional `regexDialect: "oqx" | "native"` (default
+  `"oqx"`); `new DefaultContext(roots, { regexDialect: "native" })` hands
+  patterns to `RegExp` unvalidated with the `u` flag plus the given flags —
+  implementation-defined, not portable, untested by the spec. `DefaultContext`
+  answers `matches` itself so it can read the dialect; `BUILTIN_METHODS.matches`
+  stays the baseline, and `semantics.regexMatches(recv, args, dialect)` is the
+  helper for custom contexts. `compileRegex(pattern, flags?, dialect?)` and the
+  `RegexDialect` / `RegexFlags` types are exported.
+- Fixtures: the `matches` cases moved from `strings.json` to a new
+  `regex.json` (21 moved, 98 added), pinning each baseline construct, the
+  `\n`-only line terminator, ASCII `\d \w \b`, the `\s` set, code-point `.`,
+  flags, and one rejection per construct.
 
 ### Documentation
 - Integer-like object keys enumerate first in JavaScript before OQX sees the

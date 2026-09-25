@@ -1,0 +1,2279 @@
+{
+  "suite": "regex",
+  "cases": [
+    {
+      "name": "matches anchored prefix",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"^Eng\")",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "matches anchored suffix",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"or$\")",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "matches character class and quantifier",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"abc123\".matches(\"[a-z]+[0-9]+\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches alternation and grouping",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"^(Eng|Ana)\")",
+      "expect": {
+        "result": [
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "matches is unanchored by default",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"hello\".matches(\"ell\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches is case-sensitive",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"Hello\".matches(\"^h\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "matches dot and escaped dot",
+      "notes": "The query source contains `a\\.b`: the OQX string escape yields a backslash, which the regex reads as an escaped dot.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a.b\".matches(\"a\\\\.b\") && !\"axb\".matches(\"a\\\\.b\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches digit class",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"2026-01-15\".matches(\"^\\\\d{4}-\\\\d{2}-\\\\d{2}$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches on absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope.matches(\".\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "matches on a number uses its text form",
+      "roots": {
+        "r": [
+          {
+            "n": 42
+          }
+        ]
+      },
+      "query": "r exists { where n.matches(\"^4\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches with an invalid pattern is an eval error",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"a(?=b)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "lookahead (?=…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects negative lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"a(?!c)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "negative lookahead (?!…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects lookbehind",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(?<=a)b\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "lookbehind (?<=…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects negative lookbehind",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(?<!c)b\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "negative lookbehind (?<!…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a backreference",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"(a)\\\\1\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a backreference (\\1)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a named backreference",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"(?<x>a)\\\\k<x>\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a named backreference (\\k<…>)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a parenthesis inside a character class is not a group",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"(\".matches(\"[(]\") && \"(?=\".matches(\"[(]\\\\?=\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an escaped parenthesis is not lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"(?=\".matches(\"\\\\(\\\\?=\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "plain groups still match",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"^(a)(b)$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a regex error is raised only when evaluated",
+      "roots": {
+        "xs": []
+      },
+      "query": "from xs where $value.matches(\"(\")",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "\\d is ASCII 0-9",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"3\".matches(\"^\\\\d$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\d does not match a non-ASCII digit",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "U+0663 ARABIC-INDIC DIGIT THREE. Unicode-aware engines would match; the OQX baseline fixes \\d = [0-9].",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"٣\".matches(\"\\\\d\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "\\D matches a non-ASCII digit",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"٣\".matches(\"^\\\\D$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\w is ASCII letters, digits, underscore",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a_1\".matches(\"^\\\\w+$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\w does not match a non-ASCII letter",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"é\".matches(\"\\\\w\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "\\W matches a non-ASCII letter",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"é\".matches(\"^\\\\W$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\s matches no-break space and BOM",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "The OQX \\s set is JavaScript's WhiteSpace ∪ LineTerminator, which includes U+FEFF.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \" \".matches(\"^\\\\s$\") && \"﻿\".matches(\"^\\\\s$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\s does not match NEL (U+0085)",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "U+0085 is Unicode White_Space but not in JavaScript's \\s; the OQX set follows the latter. Engines whose \\s is White_Space must rewrite it.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\".matches(\"\\\\s\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "\\S matches NEL (U+0085)",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\".matches(\"^\\\\S$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "[\\s\\S] matches a newline",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\n\".matches(\"^[\\\\s\\\\S]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "class escapes inside a bracket class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"5\".matches(\"^[\\\\d_]$\") && \"_\".matches(\"^[\\\\d_]$\") && !\"a\".matches(\"^[\\\\d_]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "negated class escape inside a bracket class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"x\".matches(\"^[\\\\D,]$\") && \",\".matches(\"^[\\\\D,]$\") && !\"7\".matches(\"^[\\\\D,]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "negated bracket class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"x\".matches(\"^[^\\\\d]$\") && !\"7\".matches(\"^[^\\\\d]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "bracket class ranges and escaped hyphen",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"-\".matches(\"^[a\\\\-z]$\") && !\"b\".matches(\"^[a\\\\-z]$\") && \"m\".matches(\"^[a-z]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "hyphen at the edge of a bracket class is literal",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"-\".matches(\"^[-a]$\") && \"-\".matches(\"^[a-]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "escaped bracket inside a bracket class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"]\".matches(\"^[\\\\]]$\") && \"[\".matches(\"^[\\\\[]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a bracket class range spans code points",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"😀\".matches(\"^[\\\\u{1F600}-\\\\u{1F64F}]$\") && !\"a\".matches(\"^[\\\\u{1F600}-\\\\u{1F64F}]$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\b word boundary",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"hello world\".matches(\"\\\\bworld\\\\b\") && !\"helloworld\".matches(\"\\\\bworld\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\b treats a non-ASCII letter as a non-word character",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "\\b is defined over \\w = [A-Za-z0-9_], so é|a is a boundary. A Unicode-aware \\b would not match.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"éa\".matches(\"\\\\ba\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\B finds no non-boundary in aéa",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "Every position in aéa is a boundary over ASCII \\w; a byte-oriented engine must not report the position inside é.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aéa\".matches(\"\\\\B\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "\\B matches between two non-word characters",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"éé\".matches(\"\\\\B\") && \"\".matches(\"\\\\B\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": ". matches one code point",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"😀\".matches(\"^.$\") && !\"😀\".matches(\"^..$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": ". does not match a newline",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"a.b\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": ". matches a carriage return",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "The OQX line terminator is \\n alone: \\r, U+2028, U+2029 are ordinary characters to `.`, `^`, and `$`.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\rb\".matches(\"a.b\") && \"a b\".matches(\"a.b\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": ". matches a newline under the s flag",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"a.b\", \"s\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "^ is the start of the string without m",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"^b\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "^ and $ match at newlines under the m flag",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"^b\", \"m\") && \"a\nb\".matches(\"a$\", \"m\") && \"a\n\nb\".matches(\"^$\", \"m\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "$ under m does not match before a carriage return",
+      "tags": [
+        "regex",
+        "flags",
+        "portability"
+      ],
+      "notes": "Only \\n is a line terminator; `a\\r$` would match.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\r\nb\".matches(\"a$\", \"m\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "$ without m is the end of the string",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"a$\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "\\uXXXX escape",
+      "tags": [
+        "regex"
+      ],
+      "notes": "\\u takes exactly four hex digits; the 1 after \\u0041 is a literal.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"é\".matches(\"^\\\\u00e9$\") && \"A1\".matches(\"^\\\\u00411$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "\\u{…} escape reaches astral code points",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"😀\".matches(\"^\\\\u{1F600}$\") && \"é\".matches(\"^\\\\u{e9}$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "control escapes \\n \\t \\r \\f \\v",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\n\t\r\f\u000b\".matches(\"^\\\\n\\\\t\\\\r\\\\f\\\\v$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "escaped metacharacters are literal",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a+b*c?\".matches(\"^a\\\\+b\\\\*c\\\\?$\") && \"{}[]()|^$\".matches(\"^\\\\{\\\\}\\\\[\\\\]\\\\(\\\\)\\\\|\\\\^\\\\$$\") && \"a/b\\\\c-d\".matches(\"^a\\\\/b\\\\\\\\c\\\\-d$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "counted quantifiers",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"^a{2}$\") && !\"aaa\".matches(\"^a{2}$\") && \"aaa\".matches(\"^a{2,}$\") && \"aaa\".matches(\"^a{2,3}$\") && !\"aaaa\".matches(\"^a{2,3}$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "lazy quantifiers are accepted",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aaa\".matches(\"^a+?a*?a??$\") && \"ab\".matches(\"^a{1,2}?b$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "named and non-capturing groups",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"^(?<first>a)(?<second>b)$\") && \"abab\".matches(\"^(?:ab)+$\") && \"abab\".matches(\"^(ab){2}$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an empty alternative",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\".matches(\"^(a|)$\") && \"a\".matches(\"^(a|)$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an empty pattern matches any present receiver",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"x\".matches(\"\") && \"\".matches(\"\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "i flag on ASCII",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"HELLO\".matches(\"hello\", \"i\") && !\"HELLO\".matches(\"hello\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "i flag folds non-ASCII letters",
+      "tags": [
+        "regex",
+        "flags",
+        "portability"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"É\".matches(\"é\", \"i\") && !\"É\".matches(\"é\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "flags combine",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"x\nB\".matches(\"^b$\", \"im\") && \"A\nB\".matches(\"^a.b$\", \"is\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an absent flags argument means no flags",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\nb\".matches(\"a.b\", nope) == false && \"A\".matches(\"a\", nope) == false }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an unknown flag is an eval error",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\", \"x\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown regex flag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "the g flag does not exist",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "notes": "matches() is a boolean search; there is nothing for g, y, d, or u to do.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\", \"g\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown regex flag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "flags are case-sensitive",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\", \"I\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown regex flag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a repeated flag is an eval error",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\", \"ii\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "duplicate regex flag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "non-string flags are an eval error",
+      "tags": [
+        "regex",
+        "flags"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\", 1) }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown regex flag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects an inline flag",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "Flags are the second argument: matches(\"a\", \"i\").",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"A\".matches(\"(?i)a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an inline flag (?i)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a negated inline flag",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"A\".matches(\"(?-i)a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an inline flag (?-i)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a modifier group",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"A\".matches(\"(?i:a)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a modifier group (?i:…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a Unicode property escape",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\p{L}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a Unicode property escape (\\p{…})"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a negated Unicode property escape",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\P{L}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a Unicode property escape (\\P{…})"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a hex escape",
+      "tags": [
+        "regex"
+      ],
+      "notes": "Write \\u0041.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"A\".matches(\"\\\\x41\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a hex escape (\\x…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a control escape",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\cA\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a control escape (\\c…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects an octal escape",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\0\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an octal escape (\\0)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a digit escape inside a class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[\\\\1]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an octal escape (\\1)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects an identity escape of a non-metacharacter",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"q\".matches(\"\\\\q\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an identity escape (\\q)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects an escaped space",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \" \".matches(\"\\\\ \") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an identity escape (\\ )"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a possessive quantifier",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"a*+\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a possessive quantifier (*+)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a possessive counted quantifier",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"a{1,2}+\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a possessive quantifier ({1,2}+)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects an atomic group",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?>a)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "an atomic group (?>…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a comment group",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?#note)a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a comment group (?#…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects the (?P<name>…) group syntax",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?P<n>a)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the (?P<name>…) group syntax"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\A",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\Aa\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\A"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\z",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\\\\z\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\z"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\Z",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\\\\Z\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\Z"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\G",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\Ga\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\G"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\K",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\\\\K\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\K"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects \\Q…\\E",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\Qa\\\\E\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the escape \\Q"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a POSIX class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[[:alpha:]]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a POSIX class ([[:alpha:]])"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a nested class",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[a[b]]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a nested character class ([[…]])"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects class intersection",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[a-z&&[^aeiou]]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a class set operation (&&)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects class symmetric difference",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[a~~b]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "a class set operation (~~)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects the backspace class escape",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[\\\\b]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "the backspace escape ([\\b])"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a rejected construct inside a group is still rejected",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(a(?=b))\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX regular expressions",
+            "lookahead (?=…)"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unmatched closing parenthesis is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unterminated bracket class is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an empty bracket class is invalid",
+      "tags": [
+        "regex"
+      ],
+      "notes": "Neither `[]` nor `[^]` exists in the baseline; write \\] for a literal bracket and [\\s\\S] for any character.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an empty negated bracket class is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[^]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a reversed range is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[z-a]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a class escape cannot be a range endpoint",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"[\\\\d-z]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a leading quantifier is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"*a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a doubled quantifier is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a**\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a quantifier after an anchor is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"^*a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a quantifier after a word boundary is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\b+a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a quantifier with bounds out of order is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a{2,1}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lone opening brace is invalid",
+      "tags": [
+        "regex"
+      ],
+      "notes": "A literal brace is \\{.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a{\".matches(\"a{\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lone closing brace is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"}\".matches(\"}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lone closing bracket is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"]\".matches(\"]\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a trailing backslash is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"a\\\\\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "\\u with fewer than four hex digits is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\u12\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "\\u{} above U+10FFFF is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\u{110000}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "\\u{} with more than six digits is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"\\\\u{0000041}\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a surrogate code point is invalid",
+      "tags": [
+        "regex",
+        "portability"
+      ],
+      "notes": "Strings are code points, not UTF-16; write \\u{1F600}.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"😀\".matches(\"\\\\uD83D\\\\uDE00\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an invalid group name is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?<1a>a)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unterminated group name is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?<abc\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a duplicate group name is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(?<n>a)(?<n>b)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an unterminated group is invalid",
+      "tags": [
+        "regex"
+      ],
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(?:a\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    }
+  ]
+}

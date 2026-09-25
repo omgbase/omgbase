@@ -12,7 +12,7 @@ owned by neither of them.
 The spec is three artifacts, versioned together by `VERSION`:
 
 - `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`.
-- `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins, `distinct`, `limit`/`offset`, consumers.
+- `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.
 
 ## Versioning: one number for the language
@@ -108,7 +108,7 @@ accident. `SEMANTICS.md` states each as a rule; this is the short list.
 
 - **Numbers are doubles.** There is no integer type. Integer-valued doubles print without a fraction.
 - **Strings order and measure by Unicode code point**, not UTF-16 code unit and not byte.
-- **`matches(pattern)` regex dialect** is the intersection both implementations support: no lookaround, no backreferences. A fixture using either is a spec bug.
+- **`matches(pattern, flags?)` compiles the OQX regex baseline** (SEMANTICS §11), a fixed grammar with spec-defined meanings: `\d` `\w` `\b` are ASCII, `\s` is one listed set, the line terminator is `\n` alone, flags are the second argument. Every construct outside it is rejected by name; a fixture relying on an engine's native behavior (Unicode `\d`, inline `(?i)`, lookaround) is a spec bug.
 - **Object property order is insertion order**, observed by `entries()` and by projection.
 - **Identity** for `follow` dedup and `distinct` over unprojected rows is the row's `id` property when present, else the row's structural value.
 
