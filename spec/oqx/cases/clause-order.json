@@ -1052,6 +1052,32 @@
           ]
         }
       }
+    },
+    {
+      "name": "order without by names the clause",
+      "query": "name from people order age",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'order'",
+            "order by"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow with a block but no relation names the clause",
+      "query": "name from people follow { depth 1 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'follow'",
+            "relation"
+          ]
+        }
+      }
     }
   ]
 }

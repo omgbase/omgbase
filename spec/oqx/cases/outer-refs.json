@@ -642,6 +642,27 @@
           ]
         }
       }
+    },
+    {
+      "name": "^name in a top-level where reads a named root",
+      "notes": "A top-level row's enclosing scope is the root scope, so `^k` there is the named root `k` (compare `^people` as a receiver).",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ],
+        "k": 2
+      },
+      "query": "a values from xs where a == ^k",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
     }
   ]
 }

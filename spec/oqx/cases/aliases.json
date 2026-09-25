@@ -845,6 +845,102 @@
           }
         ]
       }
+    },
+    {
+      "name": "duplicate alias",
+      "tags": [
+        "projection"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "a: 1, a: 2 from xs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate projection name",
+            "a"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate bare field",
+      "tags": [
+        "projection"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "query": "name, name from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate projection name",
+            "name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a dotted default key collides with an alias",
+      "tags": [
+        "projection"
+      ],
+      "roots": {
+        "data": [
+          {
+            "meta": {
+              "slug": "a"
+            },
+            "name": "x"
+          }
+        ]
+      },
+      "query": "meta.slug, slug: name from data",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate projection name",
+            "slug"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate name inside a block",
+      "tags": [
+        "projection"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "age": 1
+          }
+        ]
+      },
+      "query": "people first { name, name: age }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate projection name",
+            "name"
+          ]
+        }
+      }
     }
   ]
 }

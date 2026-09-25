@@ -145,6 +145,184 @@
           ]
         }
       }
+    },
+    {
+      "name": "follow distinct needs a relation",
+      "notes": "After `follow`, `distinct` is a keyword; a relation literally named `distinct` is not supported.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree follow distinct { depth 2 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a relation after `follow distinct`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow distinct at the end of the query",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree follow distinct",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a relation after `follow distinct`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow does not take an outer reference",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree follow ^children",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation",
+            "^"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow distinct does not take an outer reference",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree follow distinct ^children",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation",
+            "^"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stray closing parenthesis after the query",
+      "query": "name from people )",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected ')'",
+            "after the query"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stray colon after the query",
+      "query": "name from people :",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected ':'",
+            "after the query"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stray closing parenthesis inside a block",
+      "query": "people exists { name from jobs ) }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected ')'",
+            "'}'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a literal is not a receiver",
+      "query": "true exists { }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`true` is a literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a literal is not a follow relation",
+      "query": "id from tree follow null",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`null` is a literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "dangling dot in a receiver",
+      "query": "name, x: a. from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "after '.'"
+          ]
+        }
+      }
     }
   ]
 }

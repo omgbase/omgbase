@@ -277,6 +277,94 @@
           ]
         }
       }
+    },
+    {
+      "name": "a lift at the top level has no collect to bind it",
+      "roots": {
+        "r": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "^x: a from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "lift",
+            "collect"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lift in a select-position collect is an error",
+      "roots": {
+        "people": [
+          {
+            "jobs": [
+              {
+                "employer": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "n: jobs collect { ^e: employer } from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "lift",
+            "collect"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lift in an exists block is an error",
+      "roots": {
+        "r": [
+          {
+            "jobs": [
+              {
+                "employer": "x"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "from r where jobs exists { ^e: employer }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "lift",
+            "collect"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a lift in a whole-query directive is an error",
+      "roots": {
+        "r": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "r collect { ^x: a }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "lift",
+            "collect"
+          ]
+        }
+      }
     }
   ]
 }

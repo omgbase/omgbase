@@ -25,6 +25,15 @@
 // body's `select` aliases: after a body is parsed, each bare identifier in its
 // `where` that names an alias is replaced by the alias's expression (a
 // compile-time rewrite — see `inlineAliases`).
+//
+// Principle of least surprise, applied to the grammar: a rule a careful user
+// would not predict is a bug. Hence `!` binds tighter than comparison in every
+// position (`!a == b` is `(!a) == b`, as in C); parentheses in `where` group a
+// predicate OR a scalar, decided by what follows the `)`; a range's open end
+// stops at a clause word; duplicate projection names, a `follow distinct` with
+// no relation, a lift outside a where-position `collect`, and a top-level
+// `limit ^n` (there is no enclosing scope) are parse errors rather than silent
+// misreads.
 
 import type { Token, TokType } from "./lexer.ts";
 import { lexTemplate, lexString } from "./lexer.ts";
@@ -48,6 +57,20 @@ const RELOPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const CMP_OPS = new Set<string>(["==", "!=", "<", "<=", ">", ">="]);
 const ADD_OPS = new Set<string>(["+", "-"]);
 const MUL_OPS = new Set<string>(["*", "/", "%"]);
+// `true`/`false`/`null` are literals in every position, so they can never name a
+// receiver (`true exists { … }`, `follow null`).
+const LITERAL_WORDS = new Set<string>(["true", "false", "null"]);
+
+// Where a clause body sits, for error messages and position-dependent rules.
+interface BodyCtx {
+  /** The top-level body form (a stray token there is "after the query"). */
+  top: boolean;
+  /** The consumer of the enclosing block, when not top-level. */
+  op: Consumer | null;
+  /** Whether `^name: expr` lift items are legal: only in a where-position `collect { … }`. */
+  liftsAllowed: boolean;
+}
+const TOP_CTX: BodyCtx = { top: true, op: null, liftsAllowed: false };
 
 /** Parse a tagged-template call into a Query. */
 export function parseTemplate(fragments: readonly string[], values: number): Query {
@@ -98,7 +121,7 @@ class Parser {
   // ---- top level ------------------------------------------------------------
   parseQuery(): Query {
     // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
-    const directive = this.tryOp();
+    const directive = this.tryOp(false);
     if (directive && this.at("eof")) {
       return {
         source: directive.receiver,
@@ -116,8 +139,8 @@ class Parser {
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
 
     // Body form: the fixed clause list; its `from` is the source.
-    const body = this.parseBody(true);
-    if (!this.at("eof")) this.fail(`unexpected ${this.tokDesc()} after the query`);
+    const body = this.parseBody(TOP_CTX);
+    if (!this.at("eof")) this.fail(`unexpected ${this.tokDesc()} after the query — nothing may follow the last clause`);
     if (body.froms.length === 0) {
       this.fail("a query must name its source with `from <collection>` (or be `<collection> <consumer> { … }`)");
     }
@@ -145,7 +168,7 @@ class Parser {
   // index (in CLAUSE_ORDER) of the last clause parsed, so a clause with a lower
   // index is out of order and an equal index is a duplicate. The only
   // keyword-less clause is a leading projection (while `stage` is still -1).
-  private parseBody(orderByAllowed: boolean): BodyClauses {
+  private parseBody(ctx: BodyCtx): BodyClauses {
     const froms: Expr[] = [];
     let where: Where | null = null;
     let select: SelectItem[] = [];
@@ -171,7 +194,7 @@ class Parser {
         enter("select");
         this.next();
         if (this.at("ident", "distinct")) { this.next(); distinct = true; }
-        ({ items: select, values } = this.parseProjection());
+        ({ items: select, values } = this.parseProjection(ctx));
         continue;
       }
       if (this.at("kw", "from")) {
@@ -191,7 +214,7 @@ class Parser {
         follow = this.parseFollow();
         continue;
       }
-      if (orderByAllowed && this.atOrderBy()) {
+      if (this.atOrderBy()) {
         enter("order by");
         this.next(); this.next(); // `order` `by`
         orderBy = this.parseOrderSpecs();
@@ -201,6 +224,11 @@ class Parser {
         const word = this.peek().value as "limit" | "offset";
         enter(word);
         this.next();
+        // A top-level bound is evaluated at the root scope itself, so `^n` there
+        // has nothing to read: say so now instead of an "absent" error at eval.
+        if (ctx.top && this.at("caret")) {
+          this.fail(`\`${word} ^…\` at the top level has no enclosing scope — a top-level bound is a number literal or a binding; inside a block \`^name\` reads the enclosing row`);
+        }
         const e = this.parsePostfix();
         if (word === "limit") limit = e; else offset = e;
         continue;
@@ -210,10 +238,10 @@ class Parser {
       // any clause it is an error — a predicate is never implicit.
       if (stage === -1 && (this.at("ident") || this.at("binding") || this.at("caret") || this.canStartValue())) {
         enter("select");
-        ({ items: select, values } = this.parseProjection());
+        ({ items: select, values } = this.parseProjection(ctx));
         continue;
       }
-      this.failUnexpectedInBody(stage, orderByAllowed);
+      this.failUnexpectedInBody(stage, ctx);
     }
     where = this.inlineAliases(select, where);
     return { froms, where, select, orderBy, follow, distinct, values, limit, offset };
@@ -222,10 +250,27 @@ class Parser {
   // The error for a token that starts no clause, phrased for the mistake it most
   // likely is: a bare run right after `from` (the old implicit `where`, or a
   // consumer word where a whole-query directive was meant), or a stray token.
-  private failUnexpectedInBody(stage: number, orderByAllowed: boolean): never {
+  private failUnexpectedInBody(stage: number, ctx: BodyCtx): never {
     const t = this.peek();
-    const remaining = CLAUSE_ORDER.slice(stage + 1).filter((c) => orderByAllowed || c !== "order by").join("/");
+    const remaining = CLAUSE_ORDER.slice(stage + 1).join("/");
     const last = stage >= 0 ? CLAUSE_ORDER[stage] : null;
+    const isWord = t.type === "ident" || t.type === "kw" || t.type === "binding" || t.type === "caret";
+    // Punctuation, an operator, or a literal after a complete clause is a stray
+    // token, not a misplaced predicate: name where the body ends. (A comma keeps
+    // the projection hint below — `name from r, id` almost always meant a
+    // projection.)
+    if (last !== null && !isWord && t.type !== "comma") {
+      if (ctx.top) this.fail(`unexpected ${this.tokDesc()} after the query — nothing may follow the last clause (expected ${remaining} or the end of the query)`);
+      this.fail(`unexpected ${this.tokDesc()} in the ${ctx.op} { … } block — expected ${remaining} or '}' to close the block`);
+    }
+    // Clause words that did not form a clause: say what the clause needs.
+    if (last !== null && t.type === "ident") {
+      if (t.value === "order") this.fail(`unexpected 'order' after \`${last}\` — an ordering is written \`order by <expr> [asc|desc]\``);
+      if (t.value === "follow") this.fail(`unexpected 'follow' after \`${last}\` — \`follow\` needs a relation: \`follow <relation>\` or \`follow distinct <relation>\``);
+      if (t.value === "limit" || t.value === "offset") {
+        this.fail(`unexpected '${t.value}' after \`${last}\` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference \`^name\``);
+      }
+    }
     if (last === "from" && t.type === "ident" && CONSUMERS.has(t.value)) {
       this.fail(`unexpected \`${t.value}\` after \`from\` — a whole-query consumer is written \`<collection> ${t.value} { … }\`; to project a field named ${t.value} write \`select ${t.value} from …\`; a predicate needs \`where\``);
     }
@@ -327,19 +372,29 @@ class Parser {
     return t.type === "ident" && t.value === "order" && !!nx && nx.type === "ident" && nx.value === "by";
   }
 
+  // `follow` is a clause when a relation (or something that tries to be one —
+  // `distinct`, an outer reference) follows; otherwise it is a field name.
   private atFollow(): boolean {
     if (!this.at("ident", "follow")) return false;
     const nx = this.peekAt(1);
-    return !!nx && (nx.type === "ident" || nx.type === "binding");
+    return !!nx && (nx.type === "ident" || nx.type === "binding" || nx.type === "caret");
   }
 
   // ---- follow ---------------------------------------------------------------
   private parseFollow(): Follow {
     this.next(); // `follow`
     let distinct = false;
+    // After `follow`, `distinct` is a keyword (a relation literally named
+    // `distinct` is not supported); it must be followed by the relation.
     if (this.at("ident", "distinct")) {
-      const nx = this.peekAt(1);
-      if (nx && (nx.type === "ident" || nx.type === "binding")) { this.next(); distinct = true; }
+      this.next();
+      distinct = true;
+      if (!this.at("ident") && !this.at("binding") && !this.at("caret")) {
+        this.fail("expected a relation after `follow distinct` (`follow distinct <relation>`)");
+      }
+    }
+    if (this.at("caret")) {
+      this.fail("`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there");
     }
     const receiver = this.parseReceiver();
     const follow: Follow = { receiver, distinct, where: null, frontier: null, depth: null, by: null };
@@ -383,6 +438,7 @@ class Parser {
     if (this.at("binding")) return { kind: "binding", index: this.next().index! };
     const levels = this.parseCarets();
     if (!this.at("ident")) this.fail("expected a collection navigation (a property/relation name)");
+    if (LITERAL_WORDS.has(this.peek().value)) this.fail(`\`${this.peek().value}\` is a literal, not a collection`);
     return this.parseNavFrom(this.next(), levels).expr;
   }
 
@@ -402,7 +458,7 @@ class Parser {
     if (levels === 0 && this.at("lparen")) expr = { kind: "call", recv: null, name: head.value, args: this.parseArgs() };
     while (this.at("dot")) {
       this.next();
-      if (!this.at("ident")) this.fail("expected an identifier after '.' in a navigation");
+      if (!this.at("ident")) this.fail("expected a property name after '.'");
       name = this.next().value;
       expr = { kind: "member", recv: expr, name };
     }
@@ -416,9 +472,9 @@ class Parser {
   // meaningless. Without `values`, every item needs a key — a bare/dotted
   // navigation supplies its own (the last segment); any other expression must be
   // aliased (`name: expr`).
-  private parseProjection(): { items: SelectItem[]; values: boolean } {
-    const items = [this.parseSelectItem()];
-    while (this.at("comma")) { this.next(); items.push(this.parseSelectItem()); }
+  private parseProjection(ctx: BodyCtx): { items: SelectItem[]; values: boolean } {
+    const items = [this.parseSelectItem(ctx)];
+    while (this.at("comma")) { this.next(); items.push(this.parseSelectItem(ctx)); }
     let values = false;
     if (this.at("ident", "values")) {
       this.next();
@@ -427,20 +483,36 @@ class Parser {
       const only = items[0]!;
       if (only.kind === "field" && only.lift > 0) this.fail("a lift (^name: …) cannot be combined with `values`");
     } else {
+      // Every item needs a distinct key: two items with one name would silently
+      // overwrite each other in the record. Lifts are keyed per scope (`^x` and
+      // `^^x` bind different rows), so the lift depth is part of the key.
+      const seen = new Set<string>();
       for (const it of items) {
         if (it.name === "") this.fail("a leading expression is a projection (select): an item that is not a plain name needs an alias (`name: expr`) or `values`; to filter by it write `where …` — a predicate is never implicit");
+        const key = `${"^".repeat(it.kind === "field" ? it.lift : 0)}${it.name}`;
+        if (seen.has(key)) this.fail(`duplicate projection name '${it.name}' — each projected item needs its own name (alias one: \`other: expr\`)`);
+        seen.add(key);
       }
     }
     return { items, values };
   }
 
-  private parseSelectItem(): SelectItem {
-    // Leading `^`s mark a lift; the count is how many scopes out it binds.
+  private parseSelectItem(ctx: BodyCtx): SelectItem {
+    // Leading `^`s mark a lift; the count is how many scopes out it binds. A
+    // lift is bound by a `collect { … }` in where position and nowhere else — at
+    // the top level, in a select-position block, or in an exists/none/count
+    // block it would silently do nothing (or act as a plain field), so it is an
+    // error there.
     const lift = this.parseCarets();
+    if (!this.at("ident") && !this.canStartValue()) this.fail("expected a projection name");
+    if (lift > 0 && !ctx.liftsAllowed) {
+      const what = this.at("ident") ? `^${this.peek().value}` : "^name";
+      this.fail(`a lift (${what}) binds a value into the enclosing row and is only valid in a \`collect { … }\` in where position (\`where <relation> collect { ${what}: … }\`)`);
+    }
     if (this.at("ident") && this.peekAt(1)?.type === "colon") {
       const name = this.next().value;
       this.next(); // ':'
-      const op = this.tryOp();
+      const op = this.tryOp(false);
       if (op) {
         if (op.op !== "collect" && op.op !== "first" && op.op !== "single") {
           this.fail(`projection '${name}' must use collect/first/single, not ${op.op} (exists/none/count are where-position tests)`);
@@ -451,7 +523,6 @@ class Parser {
       const expr = this.parseValueExpr();
       return { kind: "field", name, expr, lift };
     }
-    if (!this.at("ident") && !this.canStartValue()) this.fail("expected a projection name");
     // Unaliased item: a bare/dotted navigation keys by its last segment; any
     // other expression is unnamed ("") — legal only under `values` (checked by
     // parseProjection, which sees the whole list).
@@ -474,7 +545,10 @@ class Parser {
     return { expr, desc };
   }
 
-  // ---- where boolean tree: or → and → not → primary -------------------------
+  // ---- where boolean tree: or → and → primary --------------------------------
+  // `!` is handled in `parseWherePrimary`: it applies to the operand right after
+  // it (a consumer test, a parenthesized group, or a scalar primary), never to a
+  // whole comparison — `!a == b` is `(!a) == b`, exactly as in value position.
   private parseWhere(): Where { return this.parseWhereOr(); }
 
   private parseWhereOr(): Where {
@@ -486,30 +560,69 @@ class Parser {
   }
 
   private parseWhereAnd(): Where {
-    const left = this.parseWhereNot();
+    const left = this.parseWherePrimary();
     if (!this.atOp("&&")) return left;
     const parts = [left];
-    while (this.atOp("&&")) { this.next(); parts.push(this.parseWhereNot()); }
+    while (this.atOp("&&")) { this.next(); parts.push(this.parseWherePrimary()); }
     return { kind: "and", parts };
   }
 
-  private parseWhereNot(): Where {
-    if (this.atOp("!")) { this.next(); return { kind: "not", expr: this.parseWhereNot() }; }
-    return this.parseWherePrimary();
-  }
-
+  // A where operand: `[!…] ( where )`, `[!…] <receiver> <consumer> { … }`, or a
+  // scalar leaf (a cmp-level expression, which handles its own `!`).
+  //
+  // Parentheses group EITHER a predicate or a scalar, decided by what follows
+  // the `)`: a comparison, arithmetic, `in`, a range, or `.`-navigation means
+  // the group is a scalar operand (`(a + 1) > 2`, `(a || b) == 5`,
+  // `(x).size() > 1`); anything else means it is a predicate group
+  // (`(a > 1) && b`). A group that contains a consumer test can only be a
+  // predicate.
   private parseWherePrimary(): Where {
+    const start = this.pos;
+    let nots = 0;
+    while (this.atOp("!")) { this.next(); nots++; }
     if (this.at("lparen")) {
       this.next();
-      const e = this.parseWhere();
+      const inner = this.parseWhere();
       if (!this.at("rparen")) this.fail("expected ')' to close a grouped where expression");
       this.next();
-      return e;
+      if (this.atScalarContinuation()) {
+        let e = this.parsePostfix(this.whereToExpr(inner));
+        for (let i = 0; i < nots; i++) e = { kind: "unary", op: "!", expr: e };
+        return { kind: "scalar", expr: this.parseCmp(e) };
+      }
+      return wrapNot(inner, nots);
     }
-    const op = this.tryOp();
-    if (op) return this.finishWhereOp(op);
-    const expr = this.parseCmp();
-    return { kind: "scalar", expr };
+    const op = this.tryOp(true);
+    if (op) return wrapNot(this.finishWhereOp(op), nots);
+    // A scalar leaf, re-read from the first `!` so the scalar grammar gives `!`
+    // its one precedence (tighter than comparison). A leaf whose whole value is
+    // a negation keeps the `not` node shape (`where !active`).
+    this.pos = start;
+    return scalarLeaf(this.parseCmp());
+  }
+
+  // Whether the token after a `)` continues a scalar expression.
+  private atScalarContinuation(): boolean {
+    const t = this.peek();
+    if (t.type === "op") return CMP_OPS.has(t.value) || ADD_OPS.has(t.value) || MUL_OPS.has(t.value);
+    return t.type === "dot" || t.type === "range" || (t.type === "ident" && t.value === "in");
+  }
+
+  // A parenthesized where-group that turned out to be a scalar operand, as an
+  // expression. A consumer test has no scalar value, so it cannot be operated on.
+  private whereToExpr(w: Where): Expr {
+    switch (w.kind) {
+      case "scalar": return w.expr;
+      case "not": return { kind: "unary", op: "!", expr: this.whereToExpr(w.expr) };
+      case "and": case "or": {
+        const op = w.kind === "and" ? "&&" : "||";
+        return w.parts.map((p) => this.whereToExpr(p)).reduce((l, r) => ({ kind: "logical", op, left: l, right: r }));
+      }
+      case "op": {
+        const hint = w.op === "count" ? ` — write \`<relation> count { … } ${this.peek().value} N\` without the parentheses` : "";
+        this.fail(`a consumer test (${w.op} { … }) is a predicate, not a value, so it cannot be compared or operated on${hint}`);
+      }
+    }
   }
 
   // Validate a consumer op used in where position and attach any `count { … } <op> N`.
@@ -534,7 +647,7 @@ class Parser {
 
   // Detect + parse a postfix consumer op `<receiver> <consumer> { <sub> }`.
   // Returns null (rewinding) when the lookahead is not a consumer op.
-  private tryOp(): OpNode | null {
+  private tryOp(inWhere: boolean): OpNode | null {
     const start = this.pos;
     let receiver: Expr;
     if (this.at("binding")) receiver = { kind: "binding", index: this.next().index! };
@@ -550,11 +663,12 @@ class Parser {
       const opThenBrace = after?.type === "lbrace";
       const opDistinctBrace = after?.type === "ident" && after.value === "distinct" && this.peekAt(2)?.type === "lbrace";
       if (opThenBrace || opDistinctBrace) {
+        if (receiver.kind === "ident" && LITERAL_WORDS.has(receiver.name)) this.fail(`\`${receiver.name}\` is a literal, not a collection`);
         const op = this.next().value as Consumer;
         let distinct = false;
         if (this.at("ident", "distinct")) { this.next(); distinct = true; }
         this.next(); // '{'
-        const { sub, distinct: bodyDistinct } = this.parseSubquery();
+        const { sub, distinct: bodyDistinct } = this.parseSubquery({ top: false, op, liftsAllowed: inWhere && op === "collect" });
         if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
         this.next();
         return { kind: "op", receiver, op, sub, distinct: distinct || bodyDistinct };
@@ -564,8 +678,8 @@ class Parser {
     return null;
   }
 
-  private parseSubquery(): { sub: Subquery; distinct: boolean } {
-    const body = this.parseBody(true);
+  private parseSubquery(ctx: BodyCtx): { sub: Subquery; distinct: boolean } {
+    const body = this.parseBody(ctx);
     return {
       sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow, values: body.values, ...bounds(body) },
       distinct: body.distinct,
@@ -589,15 +703,24 @@ class Parser {
   }
 
   // Comparison / membership (also the entry point for a where scalar leaf, so a
-  // where leaf never swallows the where-tree's && / ||).
-  private parseCmp(): Expr {
-    let left = this.parseRange();
-    if (this.peek().type === "op" && CMP_OPS.has(this.peek().value)) {
-      const op = this.next().value;
-      return { kind: "binary", op, left, right: this.parseRange() };
+  // where leaf never swallows the where-tree's && / ||). Non-associative: a
+  // second comparison in a row is an error, not a silent stray token.
+  //
+  // Each level from here down takes an optional already-parsed `left` operand,
+  // so a parenthesized where-group promoted to a scalar continues into the
+  // operator tail without re-reading its tokens.
+  private parseCmp(left?: Expr): Expr {
+    const lhs = this.parseRange(left);
+    const t = this.peek();
+    const isCmp = (): boolean => (this.peek().type === "op" && CMP_OPS.has(this.peek().value)) || this.at("ident", "in");
+    if (!isCmp()) return lhs;
+    const op = this.next().value;
+    const rhs = this.parseRange();
+    const result: Expr = op === "in" ? { kind: "in", left: lhs, right: rhs } : { kind: "binary", op, left: lhs, right: rhs };
+    if (isCmp()) {
+      this.fail(`comparisons do not chain: \`a ${t.value} b ${this.peek().value} c\` — write two comparisons joined with \`&&\``);
     }
-    if (this.at("ident", "in")) { this.next(); return { kind: "in", left, right: this.parseRange() }; }
-    return left;
+    return result;
   }
 
   // Range literal: `lo..hi` / `lo...hi` and the open-ended forms `..hi`, `lo..`.
@@ -605,12 +728,13 @@ class Parser {
   // than comparison / `in` (so `n in 1..5` reads as `n in (1..5)`). A leading
   // `..`/`...` opens the low end; a trailing `..`/`...` with no following value
   // opens the high end.
-  private parseRange(): Expr {
-    if (this.at("range")) {
+  private parseRange(left?: Expr): Expr {
+    if (left === undefined && this.at("range")) {
       const exclusiveEnd = this.next().value === "...";
+      if (!this.canStartValue()) this.fail("a range needs at least one bound: `lo..hi`, `lo..`, or `..hi`");
       return { kind: "range", lo: null, hi: this.parseAdd(), exclusiveEnd };
     }
-    const lo = this.parseAdd();
+    const lo = this.parseAdd(left);
     if (this.at("range")) {
       const exclusiveEnd = this.next().value === "...";
       const hi = this.canStartValue() ? this.parseAdd() : null;
@@ -632,8 +756,8 @@ class Parser {
     return t.type === "op" && (t.value === "-" || t.value === "!");
   }
 
-  private parseAdd(): Expr {
-    let left = this.parseMul();
+  private parseAdd(left?: Expr): Expr {
+    left = this.parseMul(left);
     while (this.peek().type === "op" && ADD_OPS.has(this.peek().value)) {
       const op = this.next().value;
       left = { kind: "binary", op, left, right: this.parseMul() };
@@ -641,8 +765,8 @@ class Parser {
     return left;
   }
 
-  private parseMul(): Expr {
-    let left = this.parseUnary();
+  private parseMul(left?: Expr): Expr {
+    left = this.parseUnary(left);
     while (this.peek().type === "op" && MUL_OPS.has(this.peek().value)) {
       const op = this.next().value;
       left = { kind: "binary", op, left, right: this.parseUnary() };
@@ -650,14 +774,15 @@ class Parser {
     return left;
   }
 
-  private parseUnary(): Expr {
+  private parseUnary(left?: Expr): Expr {
+    if (left !== undefined) return this.parsePostfix(left);
     if (this.atOp("!")) { this.next(); return { kind: "unary", op: "!", expr: this.parseUnary() }; }
     if (this.atOp("-")) { this.next(); return { kind: "unary", op: "-", expr: this.parseUnary() }; }
     return this.parsePostfix();
   }
 
-  private parsePostfix(): Expr {
-    let expr = this.parsePrimary();
+  private parsePostfix(left?: Expr): Expr {
+    let expr = left ?? this.parsePrimary();
     for (;;) {
       if (this.at("dot")) {
         this.next();
@@ -668,8 +793,8 @@ class Parser {
         } else {
           expr = { kind: "member", recv: expr, name };
         }
-      } else if (this.at("lparen") && expr.kind === "ident") {
-        // free function call: name(args)
+      } else if (this.at("lparen") && left === undefined && expr.kind === "ident") {
+        // free function call: name(args) — a bare name read here, not `(f)(x)`
         expr = { kind: "call", recv: null, name: expr.name, args: this.parseArgs() };
       } else if (this.at("lbrace")) {
         break; // a consumer block boundary — not part of a value expression
@@ -733,6 +858,19 @@ function navKey(e: Expr): string | null {
     case "member": return e.name;
     default: return null;
   }
+}
+
+// `!` applied `n` times to a where node.
+function wrapNot(w: Where, n: number): Where {
+  for (let i = 0; i < n; i++) w = { kind: "not", expr: w };
+  return w;
+}
+
+// A scalar where leaf. A leading `!` on the whole leaf becomes a `not` node (so
+// `where !active` keeps its shape); inside a comparison it stays a unary `!`.
+function scalarLeaf(e: Expr): Where {
+  if (e.kind === "unary" && e.op === "!") return { kind: "not", expr: scalarLeaf(e.expr) };
+  return { kind: "scalar", expr: e };
 }
 
 // The optional `limit`/`offset` fields of a Query/Subquery, present only when set

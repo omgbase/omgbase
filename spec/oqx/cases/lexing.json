@@ -1,0 +1,132 @@
+{
+  "suite": "lexing",
+  "cases": [
+    {
+      "name": "inclusive range between integers",
+      "notes": "`1..5` lexes as `1`, `..`, `5`: a `.` is a decimal point only when a digit follows.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 in 1..5 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "exclusive range between integers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 5 in 1...5 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "open low end",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 0 in ..5 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "open high end",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 9 in 1.. }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "decimal bounds",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 2 in 1.5..2.5 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "decimal low bound with an open high end",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 2 in 1.5.. }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "exponents",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "a: 1e2, b: 1E-2, c: 2.5e1, d: 3e+1 from r",
+      "expect": {
+        "result": [
+          {
+            "a": 100,
+            "b": 0.01,
+            "c": 25,
+            "d": 30
+          }
+        ]
+      }
+    },
+    {
+      "name": "a number directly before a clause word",
+      "roots": {
+        "r": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ]
+      },
+      "query": "a values from r where a > 1 order by a",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "navigation after a parenthesized number",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: (1).size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    }
+  ]
+}

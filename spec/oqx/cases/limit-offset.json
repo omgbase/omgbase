@@ -1410,6 +1410,47 @@
           ]
         }
       }
+    },
+    {
+      "name": "a top-level limit cannot be an outer reference",
+      "notes": "A top-level bound is evaluated at the root scope itself, so `^n` there has nothing to read.",
+      "roots": {
+        "people": [
+          {
+            "name": "a"
+          }
+        ],
+        "n": 1
+      },
+      "query": "name from people limit ^n",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "no enclosing scope"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a top-level offset cannot be an outer reference",
+      "roots": {
+        "people": [
+          {
+            "name": "a"
+          }
+        ],
+        "n": 1
+      },
+      "query": "name from people offset ^n",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "no enclosing scope"
+          ]
+        }
+      }
     }
   ]
 }

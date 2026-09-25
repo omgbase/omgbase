@@ -823,16 +823,19 @@
       }
     },
     {
-      "name": "a grouped predicate cannot be compared",
-      "notes": "In `where`, parentheses group predicates, not values. Compare a logical expression through a select alias instead.",
+      "name": "a grouped logical value followed by a comparison is a scalar",
+      "notes": "Parentheses in `where` group a predicate OR a scalar; a `)` followed by a comparison, arithmetic, `in`, a range, or `.` makes the group a scalar operand. `a || b` yields an operand (SEMANTICS §8), so `(a || b) == 5` compares that operand.",
       "query": "r exists { where (a || b) == 5 }",
       "expect": {
-        "error": {
-          "stage": "parse",
-          "includes": [
-            "unexpected '=='"
-          ]
-        }
+        "result": true
+      },
+      "roots": {
+        "r": [
+          {
+            "a": 0,
+            "b": 5
+          }
+        ]
       }
     },
     {
@@ -911,6 +914,398 @@
             "never implicit"
           ]
         }
+      }
+    },
+    {
+      "name": "not binds tighter than comparison",
+      "tags": [
+        "not",
+        "precedence"
+      ],
+      "notes": "`!` is a prefix unary operator in every position: `!a == b` is `(!a) == b`, never `!(a == b)`. Rows p and q distinguish the two readings.",
+      "roots": {
+        "xs": [
+          {
+            "tag": "p",
+            "a": 0,
+            "b": false
+          },
+          {
+            "tag": "q",
+            "a": 1,
+            "b": true
+          },
+          {
+            "tag": "r",
+            "a": false,
+            "b": true
+          },
+          {
+            "tag": "s",
+            "a": 1,
+            "b": 1
+          }
+        ]
+      },
+      "query": "tag values from xs where !a == b",
+      "expect": {
+        "result": [
+          "r"
+        ]
+      }
+    },
+    {
+      "name": "not over a parenthesized comparison",
+      "tags": [
+        "not",
+        "precedence"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "tag": "p",
+            "a": 0,
+            "b": false
+          },
+          {
+            "tag": "q",
+            "a": 1,
+            "b": true
+          },
+          {
+            "tag": "r",
+            "a": false,
+            "b": true
+          },
+          {
+            "tag": "s",
+            "a": 1,
+            "b": 1
+          }
+        ]
+      },
+      "query": "tag values from xs where !(a == b)",
+      "expect": {
+        "result": [
+          "p",
+          "q",
+          "r"
+        ]
+      }
+    },
+    {
+      "name": "not over a group followed by a comparison applies to the group's value",
+      "tags": [
+        "not",
+        "precedence"
+      ],
+      "notes": "`!(a) == false` is `(!a) == false`; the old where-only reading `!(a == false)` would keep both rows.",
+      "roots": {
+        "xs": [
+          {
+            "tag": "p",
+            "a": 0
+          },
+          {
+            "tag": "q",
+            "a": 1
+          }
+        ]
+      },
+      "query": "tag values from xs where !(a) == false",
+      "expect": {
+        "result": [
+          "q"
+        ]
+      }
+    },
+    {
+      "name": "double negation",
+      "tags": [
+        "not"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 0
+          },
+          {
+            "a": 1
+          },
+          {
+            "a": ""
+          }
+        ]
+      },
+      "query": "a values from xs where !!a",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "not before a count test negates the whole test",
+      "tags": [
+        "not",
+        "consumers"
+      ],
+      "notes": "A consumer test including its `<op> N` comparison is one operand of `!`.",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "jobs": []
+          },
+          {
+            "a": 2,
+            "jobs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "a values from xs where !jobs count { } > 1",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "parenthesized arithmetic is a scalar leaf",
+      "tags": [
+        "parentheses"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ]
+      },
+      "query": "a values from xs where (a + 1) > 2",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "parenthesized comparisons joined by and",
+      "tags": [
+        "parentheses"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 2,
+            "b": 1
+          },
+          {
+            "a": 2,
+            "b": 3
+          },
+          {
+            "a": 0,
+            "b": 1
+          }
+        ]
+      },
+      "query": "b values from xs where (a > 1) && (b < 2)",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "nested parentheses around a name",
+      "tags": [
+        "parentheses"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 0
+          },
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "a values from xs where ((a))",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "a grouped consumer test joined with a scalar",
+      "tags": [
+        "parentheses",
+        "consumers"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "jobs": [
+              1
+            ]
+          },
+          {
+            "a": 2,
+            "jobs": []
+          },
+          {
+            "a": 0,
+            "jobs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "a values from xs where (jobs exists { }) && a",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "a group followed by navigation is a scalar",
+      "tags": [
+        "parentheses"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          }
+        ]
+      },
+      "query": "name values from xs where (name).size() > 3",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a grouped consumer test cannot be compared",
+      "tags": [
+        "parentheses",
+        "consumers"
+      ],
+      "notes": "A consumer test is a predicate, not a value. `count { … } > N` is written without parentheses around the test.",
+      "query": "r exists { where (xs count { }) > 1 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "is a predicate, not a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "comparisons do not chain",
+      "tags": [
+        "precedence"
+      ],
+      "query": "from xs where a == 1 == 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "do not chain"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a range with no bounds is an error",
+      "tags": [
+        "ranges"
+      ],
+      "notes": "An open end stops at a clause word, so `..` before `order` has no bound at all.",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "n": 1
+          }
+        ]
+      },
+      "query": "a values from xs where n in .. order by a",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "range",
+            "bound"
+          ]
+        }
+      }
+    },
+    {
+      "name": "an open high end stops before limit",
+      "tags": [
+        "ranges"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 3
+          }
+        ]
+      },
+      "query": "a values from xs where a in 2.. limit 1",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "an open low end is followed by order by",
+      "tags": [
+        "ranges"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 3
+          }
+        ]
+      },
+      "query": "a values from xs where a in ..2 order by a desc",
+      "expect": {
+        "result": [
+          2,
+          1
+        ]
       }
     }
   ]

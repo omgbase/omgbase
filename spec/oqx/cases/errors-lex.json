@@ -120,6 +120,90 @@
           ]
         }
       }
+    },
+    {
+      "name": "exponent without digits",
+      "query": "x: 1e from r",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "exponent with a sign but no digits",
+      "query": "x: 1e+ from r",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "uppercase exponent without digits",
+      "query": "from r where a > 2E",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "trailing decimal point",
+      "query": "x: 1. from r",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "decimal point before a name",
+      "query": "x: 1.foo from r",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "leading-dot numeral",
+      "query": "from r where a > .5",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a digit after a dot is not index access",
+      "query": "x: xs.0 from r",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "malformed number"
+          ]
+        }
+      }
     }
   ]
 }

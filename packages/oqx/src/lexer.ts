@@ -108,9 +108,18 @@ function lexFragment(src: string, base: number, out: Token[]): void {
       push("range", "..", i); i += 2; continue;
     }
 
-    // `.` is a dot only when not the leading part of a number (.5) — but OQX has
-    // no leading-dot numerals, so a bare `.` is always navigation.
-    if (c === "." && !isDigit(src[i + 1] ?? "")) { push("dot", c, i); i++; continue; }
+    // `.` followed by a digit is neither navigation (a property name cannot start
+    // with a digit) nor a number (OQX has no leading-dot numerals): it is a
+    // malformed number, reported as such rather than surfacing as a confusing
+    // parse error downstream. Any other `.` is member navigation.
+    if (c === ".") {
+      if (isDigit(src[i + 1] ?? "")) {
+        const end = scanNumberTail(src, i + 1, base);
+        const lit = src.slice(i, end);
+        throw new OqxError(`malformed number ${JSON.stringify(lit)} at ${base + i} — a number starts with a digit (write 0${lit}), and a property name cannot be a digit (there is no index access)`, "lex");
+      }
+      push("dot", c, i); i++; continue;
+    }
 
     // string literal — decode into its VALUE (quotes stripped, escapes resolved).
     if (c === '"' || c === "'") {
@@ -133,18 +142,14 @@ function lexFragment(src: string, base: number, out: Token[]): void {
       continue;
     }
 
-    // number (integer or decimal, optional exponent)
-    if (isDigit(c) || (c === "." && isDigit(src[i + 1] ?? ""))) {
+    // number: `digits [ "." digits ] [ ("e"|"E") ["+"|"-"] digits ]`. A `.` is a
+    // decimal point only when a digit follows: `1..5` is `1` `..` `5`. A `.`
+    // followed by anything else (`1.`, `1.x`) and an exponent marker without
+    // digits (`1e`, `1e+`) are malformed numbers — lex errors, never a silent
+    // NaN or a dangling dot.
+    if (isDigit(c)) {
       const start = i;
-      while (i < n && isDigit(src[i]!)) i++;
-      // A `.` is a decimal point only when a digit follows; otherwise it belongs
-      // to a range operator (`1..5`) or navigation, so the number stops here.
-      if (src[i] === "." && isDigit(src[i + 1] ?? "")) { i++; while (i < n && isDigit(src[i]!)) i++; }
-      if (src[i] === "e" || src[i] === "E") {
-        i++;
-        if (src[i] === "+" || src[i] === "-") i++;
-        while (i < n && isDigit(src[i]!)) i++;
-      }
+      i = scanNumberTail(src, i, base);
       push("number", src.slice(start, i), start);
       continue;
     }
@@ -166,6 +171,31 @@ function lexFragment(src: string, base: number, out: Token[]): void {
 
     throw new OqxError(`unexpected character ${JSON.stringify(c)} at ${base + i}`, "lex");
   }
+}
+
+// Scan a number whose first digit is at `i`; return the index just past it.
+// Throws the malformed-number lex error for a trailing decimal point or an
+// exponent without digits.
+function scanNumberTail(src: string, i: number, base = 0): number {
+  const start = i;
+  const n = src.length;
+  const fail = (end: number, why: string): never => {
+    throw new OqxError(`malformed number ${JSON.stringify(src.slice(start, end))} at ${base + start} — ${why}`, "lex");
+  };
+  while (i < n && isDigit(src[i]!)) i++;
+  if (src[i] === "." && src[i + 1] !== ".") {
+    if (!isDigit(src[i + 1] ?? "")) fail(i + 1, "a decimal point needs a digit after it (write 1.0, not 1.)");
+    i++;
+    while (i < n && isDigit(src[i]!)) i++;
+  }
+  if (src[i] === "e" || src[i] === "E") {
+    let j = i + 1;
+    if (src[j] === "+" || src[j] === "-") j++;
+    if (!isDigit(src[j] ?? "")) fail(j, "an exponent needs at least one digit (write 1e5)");
+    i = j;
+    while (i < n && isDigit(src[i]!)) i++;
+  }
+  return i;
 }
 
 function unescape(c: string | undefined): string {
