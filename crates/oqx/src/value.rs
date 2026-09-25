@@ -147,7 +147,9 @@ impl Object {
     }
 
     pub fn with_capacity(n: usize) -> Self {
-        Self { entries: Vec::with_capacity(n) }
+        Self {
+            entries: Vec::with_capacity(n),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -233,13 +235,7 @@ impl fmt::Display for Value {
             Value::Undefined => f.write_str("undefined"),
             Value::Null => f.write_str("null"),
             Value::Bool(b) => write!(f, "{b}"),
-            Value::Number(n) => {
-                if n.fract() == 0.0 && n.is_finite() && n.abs() < 1e21 {
-                    write!(f, "{}", *n as i128)
-                } else {
-                    write!(f, "{n}")
-                }
-            }
+            Value::Number(n) => f.write_str(&js_number_to_string(*n)),
             Value::Str(s) => f.write_str(s),
             Value::Array(a) => {
                 for (i, v) in a.iter().enumerate() {
@@ -265,4 +261,60 @@ impl fmt::Display for Value {
             }
         }
     }
+}
+
+/// ECMAScript `Number::toString(10)`: the shortest round-tripping digits laid
+/// out as JavaScript does — integers without a fraction, `0.000001` but `1e-7`,
+/// `123456789012345680000` but `1e+21`, `NaN`, `Infinity`, and `-0` as `0`.
+/// This is what `String(v)` produces for a number, which `+` concatenation,
+/// `.lower()`/`.upper()`, and `matches()` observe.
+pub fn js_number_to_string(n: f64) -> String {
+    if n.is_nan() {
+        return "NaN".to_owned();
+    }
+    if n.is_infinite() {
+        return if n > 0.0 { "Infinity" } else { "-Infinity" }.to_owned();
+    }
+    if n == 0.0 {
+        return "0".to_owned();
+    }
+    // Rust's `{:e}` is the shortest round-trip representation with no trailing
+    // zeros ("1.5e3", "1e21", "1.2345e-7"), which is exactly the digit string
+    // `s` and exponent the ECMAScript algorithm starts from.
+    let sci = format!("{:e}", n.abs());
+    let (mantissa, exp) = sci
+        .split_once('e')
+        .expect("LowerExp always emits an exponent");
+    let exp: i32 = exp.parse().expect("LowerExp exponent is an integer");
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    let k = digits.len() as i32;
+    let point = exp + 1; // ECMAScript's `n`: value = digits × 10^(n − k)
+    let mut out = String::with_capacity(digits.len() + 8);
+    if n < 0.0 {
+        out.push('-');
+    }
+    if k <= point && point <= 21 {
+        out.push_str(&digits);
+        out.extend(std::iter::repeat_n('0', (point - k) as usize));
+    } else if 0 < point && point <= 21 {
+        let split = point as usize;
+        out.push_str(&digits[..split]);
+        out.push('.');
+        out.push_str(&digits[split..]);
+    } else if -6 < point && point <= 0 {
+        out.push_str("0.");
+        out.extend(std::iter::repeat_n('0', (-point) as usize));
+        out.push_str(&digits);
+    } else {
+        let e = point - 1;
+        out.push_str(&digits[..1]);
+        if k > 1 {
+            out.push('.');
+            out.push_str(&digits[1..]);
+        }
+        out.push('e');
+        out.push(if e < 0 { '-' } else { '+' });
+        out.push_str(&e.abs().to_string());
+    }
+    out
 }
