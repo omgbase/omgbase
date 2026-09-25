@@ -16,5 +16,11 @@ pub mod parser;
 pub mod semantics;
 pub mod value;
 
+pub use ast::{
+    BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OrderSpec, Query, RelOp,
+    SelectItem, Subquery, UnaryOp, Where,
+};
 pub use errors::{OqxError, Result, Stage};
+pub use lexer::{TokType, Token, lex_string, lex_template, raw_source};
+pub use parser::{parse_string, parse_template};
 pub use value::{Object, Range, Value};

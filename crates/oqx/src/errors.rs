@@ -31,7 +31,10 @@ pub struct OqxError {
 
 impl OqxError {
     pub fn new(stage: Stage, message: impl Into<String>) -> Self {
-        Self { stage, message: message.into() }
+        Self {
+            stage,
+            message: message.into(),
+        }
     }
     pub fn lex(message: impl Into<String>) -> Self {
         Self::new(Stage::Lex, message)
