@@ -1,6 +1,6 @@
 //! A real storage adapter (feature `sqlite`): pushes the flat core of an OQX
 //! query — the source scan, the translatable conjunctive predicates, and a
-//! `LIMIT` for an unordered `first`/`single` — into SQL over a
+//! `LIMIT 1` for an unordered `first` — into SQL over a
 //! [`rusqlite::Connection`], and leaves everything it cannot translate (nested
 //! consumer ops, `follow`, negation/disjunction at the where level, method
 //! calls like `matches()`, `in`, member navigation, custom functions) as a
@@ -31,10 +31,10 @@
 //! Everything else — `^outer`, `$value`, `.member`, calls, `in`, ranges, and an
 //! identifier that is not a declared column — makes the conjunct residual.
 //! The statement is always `SELECT * FROM "table"`, optionally `WHERE` the
-//! pushed conjuncts joined by `AND`, and `LIMIT 1` / `LIMIT 2` for an unordered
-//! `first` / `single` when nothing is residual and the query has no
-//! `limit`/`offset` of its own (the residual applies those, and a SQL `LIMIT`
-//! underneath would starve them).
+//! pushed conjuncts joined by `AND`, and `LIMIT 1` for an unordered `first`
+//! when nothing is residual and the query has no `limit`/`offset` of its own
+//! (the residual applies those, and a SQL `LIMIT` underneath would starve
+//! them). `single` is never limited: its error reports the true row count.
 //!
 //! # Values
 //!
@@ -166,21 +166,20 @@ impl<'c> SqliteTable<'c> {
             .collect::<Vec<_>>()
             .join(" AND ");
 
-        // A LIMIT is only safe when nothing is left to filter in-memory, the
-        // result is unordered (first/single are "some row" without an order
-        // by), and the query carries no limit/offset of its own (the residual
-        // applies those, so a SQL LIMIT underneath would starve them).
+        // A LIMIT is only safe for `first` when nothing is left to filter
+        // in-memory, the result is unordered ("some row" without an order by),
+        // and the query carries no limit/offset of its own (the residual
+        // applies those, so a SQL LIMIT underneath would starve them). `single`
+        // never gets one: its error must report the true number of matching
+        // rows, so the engine has to see them all.
         let mut tail = "";
-        if residual.is_none()
+        if query.consumer == Consumer::First
+            && residual.is_none()
             && query.order_by.is_none()
             && query.limit.is_none()
             && query.offset.is_none()
         {
-            tail = match query.consumer {
-                Consumer::First => " LIMIT 1",
-                Consumer::Single => " LIMIT 2",
-                _ => "",
-            };
+            tail = " LIMIT 1";
         }
 
         let mut sql = format!("SELECT * FROM {}", quote_ident(&self.table));

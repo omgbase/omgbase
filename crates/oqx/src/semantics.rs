@@ -19,9 +19,13 @@
 //!   Unicode code point; anything else, and any mixed pair, does not order.
 //! * **Truthiness**: JavaScript truthiness ([`Value::truthy`]).
 //! * **`in`**: membership in an array (by `==`), substring in a string, own key
-//!   in an object, or coverage by a range.
-//! * **Arithmetic**: doubles; `+` concatenates when either side is a string
-//!   using JavaScript `String(v)` ([`Value`]'s `Display`).
+//!   in an object, or coverage by a range. An absent needle is never a
+//!   substring or a key.
+//! * **Arithmetic**: doubles; an absent operand makes the result absent (`+`
+//!   included, even when the other side is a string); `+` with a string side
+//!   concatenates the operands' [`string_form`]s.
+//! * **Identity / structural keys**: [`canonical_key`] — a type-tagged
+//!   serialization, so `1` and `"1"` differ and object key order is ignored.
 //!
 //! Where JavaScript and the spec's portability rules (`spec/oqx/README.md`)
 //! disagree — string length and order by code point, no implicit coercion in
@@ -93,10 +97,10 @@ pub fn relate(op: &str, a: &Value, b: &Value) -> Result<bool> {
     match op {
         "==" => Ok(equals(a, b)),
         "!=" => Ok(!equals(a, b)),
-        "<" => Ok(order(a, b).is_some_and(|o| o == Ordering::Less)),
-        "<=" => Ok(order(a, b).is_some_and(|o| o != Ordering::Greater)),
-        ">" => Ok(order(a, b).is_some_and(|o| o == Ordering::Greater)),
-        ">=" => Ok(order(a, b).is_some_and(|o| o != Ordering::Less)),
+        "<" => Ok(compare(a, b).is_some_and(|o| o == Ordering::Less)),
+        "<=" => Ok(compare(a, b).is_some_and(|o| o != Ordering::Greater)),
+        ">" => Ok(compare(a, b).is_some_and(|o| o == Ordering::Greater)),
+        ">=" => Ok(compare(a, b).is_some_and(|o| o != Ordering::Less)),
         _ => Err(OqxError::eval(format!("not a relational operator: {op}"))),
     }
 }
@@ -104,8 +108,8 @@ pub fn relate(op: &str, a: &Value, b: &Value) -> Result<bool> {
 /// The natural order of two present values of the same orderable type:
 /// numbers numerically (`None` when either is NaN), strings by code point.
 /// Everything else — absent operands, booleans, collections, mixed types —
-/// is `None`: it does not order.
-fn order(a: &Value, b: &Value) -> Option<Ordering> {
+/// is `None`: it does not order. (The reference's `compare`.)
+pub fn compare(a: &Value, b: &Value) -> Option<Ordering> {
     match (a, b) {
         (Value::Number(x), Value::Number(y)) => x.partial_cmp(y),
         (Value::Str(x), Value::Str(y)) => Some(x.cmp(y)),
@@ -170,6 +174,94 @@ fn type_rank(v: &Value) -> u8 {
         Value::Range(_) => 5,
         Value::Undefined | Value::Null => 6,
     }
+}
+
+// ---- structural identity ----------------------------------------------------
+
+/// A canonical, type-tagged serialization of a value, used wherever OQX needs a
+/// value's IDENTITY as a key (`follow` path ordering, `distinct`, index keys):
+/// two values get the same key iff they are structurally equal — absent ≡
+/// null, numbers as doubles (`-0` ≡ `0`), object key order ignored. The type
+/// tags keep `1`, `"1"`, and `true` apart, and `{}`/`[]` apart from every
+/// scalar. Byte-for-byte the reference's `canonicalKey` for JSON-shaped values
+/// (a range, which the reference has no key for, is tagged `r`).
+pub fn canonical_key(v: &Value) -> String {
+    let mut out = String::new();
+    write_canonical_key(v, &mut out);
+    out
+}
+
+fn write_canonical_key(v: &Value, out: &mut String) {
+    match v {
+        Value::Undefined | Value::Null => out.push('n'),
+        Value::Bool(true) => out.push('t'),
+        Value::Bool(false) => out.push('f'),
+        Value::Number(n) => {
+            out.push('d');
+            out.push_str(&crate::value::js_number_to_string(if *n == 0.0 {
+                0.0
+            } else {
+                *n
+            }));
+        }
+        Value::Str(s) => {
+            out.push('s');
+            write_json_string(s, out);
+        }
+        Value::Array(xs) => {
+            out.push('[');
+            for (i, x) in xs.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_canonical_key(x, out);
+            }
+            out.push(']');
+        }
+        Value::Object(o) => {
+            let mut keys: Vec<&str> = o.keys().collect();
+            keys.sort_unstable();
+            out.push('{');
+            for (i, k) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_json_string(k, out);
+                out.push(':');
+                write_canonical_key(o.get(k).unwrap_or(&Value::Undefined), out);
+            }
+            out.push('}');
+        }
+        Value::Range(r) => {
+            out.push('r');
+            out.push(if r.exclusive_end { 'x' } else { 'i' });
+            for bound in [&r.lo, &r.hi] {
+                match bound {
+                    None => out.push('-'),
+                    Some(b) => write_canonical_key(b, out),
+                }
+            }
+        }
+    }
+}
+
+/// `JSON.stringify(s)`: the quoted, escaped form of a string.
+fn write_json_string(s: &str, out: &mut String) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 // ---- truthiness and numeric coercion ----------------------------------------
@@ -248,11 +340,28 @@ fn js_string_to_number(s: &str) -> f64 {
 
 // ---- arithmetic -------------------------------------------------------------
 
-/// Arithmetic over doubles. `+` concatenates (JavaScript `String(v)` on both
-/// sides) when either side is a string; every other case coerces both sides
-/// with [`to_number`], so `null + 1` is `1` and `"x" * 2` is NaN. Errors only
-/// for a string that is not an arithmetic operator.
+/// The string form of a scalar — the text `+` concatenates, `.lower()` maps,
+/// and a substring/key test uses: a string is itself; a number renders as a
+/// double with no fraction when integer-valued (`-0` is `"0"`); booleans are
+/// the words. Absent has **no** string form (`None`), so the operation using
+/// it yields absent (or false). Other values use their `String(v)` form.
+pub fn string_form(v: &Value) -> Option<Cow<'_, str>> {
+    match v {
+        Value::Undefined | Value::Null => None,
+        Value::Str(s) => Some(Cow::Borrowed(s)),
+        other => Some(Cow::Owned(other.to_string())),
+    }
+}
+
+/// Arithmetic over doubles. An absent operand on either side makes the result
+/// absent (`Undefined`), even for `+` with a string on the other side. `+`
+/// concatenates the two [`string_form`]s when either side is a string; every
+/// other case coerces both sides with [`to_number`], so `"x" * 2` is NaN.
+/// Errors only for a string that is not an arithmetic operator.
 pub fn arith(op: &str, a: &Value, b: &Value) -> Result<Value> {
+    if a.is_absent() || b.is_absent() {
+        return Ok(Value::Undefined);
+    }
     if op == "+" && (matches!(a, Value::Str(_)) || matches!(b, Value::Str(_))) {
         return Ok(Value::Str(format!("{a}{b}")));
     }
@@ -273,15 +382,16 @@ pub fn arith(op: &str, a: &Value, b: &Value) -> Result<Value> {
 
 /// `needle in haystack`: an absent haystack is false; a range routes to
 /// [`range_covers`]; an array holds `needle` if some element [`equals`] it; a
-/// string contains `String(needle)` as a substring; an object has `String(needle)`
-/// as an own key. Numbers and booleans hold nothing.
+/// string contains the needle's [`string_form`] as a substring; an object has
+/// it as an own key. An absent needle is never a substring or a key (not even
+/// one spelled `"null"` or `"undefined"`). Numbers and booleans hold nothing.
 pub fn membership(needle: &Value, haystack: &Value) -> bool {
     match haystack {
         Value::Undefined | Value::Null => false,
         Value::Range(r) => range_covers(r, needle),
         Value::Array(xs) => xs.iter().any(|x| equals(x, needle)),
-        Value::Str(s) => s.contains(&needle.to_string()),
-        Value::Object(o) => o.contains_key(&needle.to_string()),
+        Value::Str(s) => string_form(needle).is_some_and(|n| s.contains(n.as_ref())),
+        Value::Object(o) => string_form(needle).is_some_and(|n| o.contains_key(&n)),
         Value::Bool(_) | Value::Number(_) => false,
     }
 }
@@ -308,19 +418,19 @@ pub fn is_range(v: &Value) -> bool {
 /// fails). This is also what makes date/time ranges work over ISO-8601 strings,
 /// whose natural code-point order is chronological.
 ///
-/// An absent `x` is never covered, even by a fully open range (`..`). The
-/// reference's bound checks vacuously pass when there is no bound, so it says
-/// `null in ..` is true; the spec rule wins here.
+/// Only a number or a string can be covered: an absent `x` is covered by no
+/// range, not even a fully open one (`..`), and a boolean, array, or object
+/// never is.
 pub fn range_covers(range: &Range, x: &Value) -> bool {
-    if x.is_absent() {
+    if !matches!(x, Value::Number(_) | Value::Str(_)) {
         return false;
     }
     let ge_lo = range
         .lo
         .as_ref()
-        .is_none_or(|lo| order(x, lo).is_some_and(|o| o != Ordering::Less));
+        .is_none_or(|lo| compare(x, lo).is_some_and(|o| o != Ordering::Less));
     let le_hi = range.hi.as_ref().is_none_or(|hi| {
-        order(x, hi).is_some_and(|o| {
+        compare(x, hi).is_some_and(|o| {
             if range.exclusive_end {
                 o == Ordering::Less
             } else {
@@ -544,51 +654,121 @@ pub fn builtin_function(name: &str, args: &[Value]) -> Option<Result<Value>> {
     Some(Ok(v))
 }
 
+// ---- regex: the portable OQX dialect ----------------------------------------
+//
+// `matches(pattern)` compiles the pattern as a regular expression in the dialect
+// both implementations share: literals, `.`, classes `[…]`, `\d \w \s`, the
+// quantifiers `* + ? {m,n}`, alternation, grouping, anchors, escaped
+// metacharacters. Lookaround and backreferences are rejected up front with the
+// spec's wording (the `regex` crate would reject them too, but with its own
+// message), and a pattern that does not compile is an OQX eval error.
+
+/// Compile a `matches()` pattern, raising an eval error for an invalid pattern
+/// (`invalid regular expression`) or one using a construct outside the OQX
+/// dialect (`not supported in OQX`).
+pub fn compile_regex(pattern: &str) -> Result<Regex> {
+    if let Some(what) = find_unsupported_regex_construct(pattern) {
+        return Err(OqxError::eval(format!(
+            "{what} is not supported in OQX regular expressions (pattern {})",
+            json_quoted(pattern)
+        )));
+    }
+    Regex::new(pattern).map_err(|e| {
+        OqxError::eval(format!(
+            "invalid regular expression {}: {e}",
+            json_quoted(pattern)
+        ))
+    })
+}
+
+fn json_quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    write_json_string(s, &mut out);
+    out
+}
+
+/// Scan a pattern — outside character classes, honoring escapes — for
+/// lookaround `(?= (?! (?<= (?<!` and backreferences `\1`..`\9`, `\k<name>`.
+/// `\(\?=` and `[(]` stay literal.
+fn find_unsupported_regex_construct(p: &str) -> Option<&'static str> {
+    let chars: Vec<char> = p.chars().collect();
+    let mut in_class = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' {
+            let n = chars.get(i + 1).copied();
+            if !in_class {
+                if n.is_some_and(|n| ('1'..='9').contains(&n)) {
+                    return Some("a backreference (\\1…\\9)");
+                }
+                if n == Some('k') && chars.get(i + 2) == Some(&'<') {
+                    return Some("a named backreference (\\k<…>)");
+                }
+            }
+            i += 2;
+            continue;
+        }
+        if in_class {
+            if c == ']' {
+                in_class = false;
+            }
+        } else if c == '[' {
+            in_class = true;
+        } else if c == '(' && chars.get(i + 1) == Some(&'?') {
+            match (chars.get(i + 2), chars.get(i + 3)) {
+                (Some('='), _) => return Some("lookahead (?=…)"),
+                (Some('!'), _) => return Some("negative lookahead (?!…)"),
+                (Some('<'), Some('=')) => return Some("lookbehind (?<=…)"),
+                (Some('<'), Some('!')) => return Some("negative lookbehind (?<!…)"),
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Methods callable as `recv.name(args)`. `None` means there is no such
 /// builtin. Every method is total except `matches`, whose pattern must compile.
 ///
-/// * `contains(v)` — substring of a string receiver (`String(v)`), or an
-///   element [`equals`] to `v` in an array receiver; false otherwise.
-/// * `startsWith(s)` / `endsWith(s)` — string receivers only; false otherwise.
+/// * `contains(v)` — substring of a string receiver (the argument's
+///   [`string_form`]; an absent argument is never a substring), or an element
+///   [`equals`] to `v` in an array receiver; false otherwise.
+/// * `startsWith(s)` / `endsWith(s)` — string receivers only; false otherwise
+///   (and for an absent argument).
 /// * `matches(pattern)` — false for an absent receiver; otherwise whether the
-///   regex (compiled by the `regex` crate) matches anywhere in `String(recv)`.
-///   A pattern that does not compile is an eval error. The portable dialect is
-///   the intersection of JavaScript `RegExp` and `regex`: no lookaround and no
-///   backreferences.
+///   pattern ([`compile_regex`]) matches anywhere in the receiver's string
+///   form. An invalid or non-portable pattern is an eval error.
 /// * `size()` — [`size_of`].
-/// * `lower()` / `upper()` — `String(recv)` case-mapped (so an absent receiver
-///   yields `"undefined"` / `"null"`, as in the reference).
+/// * `lower()` / `upper()` — the receiver's [`string_form`] case-mapped; an
+///   absent receiver yields absent.
 pub fn builtin_method(name: &str, recv: &Value, args: &[Value]) -> Option<Result<Value>> {
     let a0 = arg(args, 0);
     let v = match name {
         "contains" => Value::Bool(match recv {
-            Value::Str(s) => s.contains(&a0.to_string()),
+            Value::Str(s) => string_form(a0).is_some_and(|n| s.contains(n.as_ref())),
             Value::Array(xs) => xs.iter().any(|x| equals(x, a0)),
             _ => false,
         }),
         "startsWith" => Value::Bool(
             recv.as_str()
-                .is_some_and(|s| s.starts_with(&a0.to_string())),
+                .is_some_and(|s| string_form(a0).is_some_and(|n| s.starts_with(n.as_ref()))),
         ),
-        "endsWith" => Value::Bool(recv.as_str().is_some_and(|s| s.ends_with(&a0.to_string()))),
-        "matches" => {
-            if recv.is_absent() {
-                Value::Bool(false)
-            } else {
-                let pattern = a0.to_string();
-                match Regex::new(&pattern) {
-                    Ok(re) => Value::Bool(re.is_match(&recv.to_string())),
-                    Err(e) => {
-                        return Some(Err(OqxError::eval(format!(
-                            "matches(…): invalid regular expression /{pattern}/: {e}"
-                        ))));
-                    }
-                }
-            }
-        }
+        "endsWith" => Value::Bool(
+            recv.as_str()
+                .is_some_and(|s| string_form(a0).is_some_and(|n| s.ends_with(n.as_ref()))),
+        ),
+        "matches" => match string_form(recv) {
+            None => Value::Bool(false),
+            Some(subject) => match compile_regex(&a0.to_string()) {
+                Ok(re) => Value::Bool(re.is_match(&subject)),
+                Err(e) => return Some(Err(e)),
+            },
+        },
         "size" => Value::Number(size_of(recv)),
-        "lower" => Value::Str(recv.to_string().to_lowercase()),
-        "upper" => Value::Str(recv.to_string().to_uppercase()),
+        "lower" => string_form(recv).map_or(Value::Undefined, |s| Value::Str(s.to_lowercase())),
+        "upper" => string_form(recv).map_or(Value::Undefined, |s| Value::Str(s.to_uppercase())),
         _ => return None,
     };
     Some(Ok(v))
@@ -930,14 +1110,18 @@ mod tests {
     }
 
     #[test]
-    fn concatenation_uses_javascript_string_of() {
+    fn concatenation_uses_the_string_form() {
         assert_eq!(arith("+", &num(1.0), &s("")).unwrap(), s("1"));
         assert_eq!(arith("+", &s("n="), &num(2.5)).unwrap(), s("n=2.5"));
-        assert_eq!(arith("+", &s("x"), &Value::Null).unwrap(), s("xnull"));
+        assert_eq!(arith("+", &s("n="), &num(2.0)).unwrap(), s("n=2"));
+        assert_eq!(arith("+", &s("n="), &num(-0.0)).unwrap(), s("n=0"));
+        // absent has no string form: the result is absent, never "xnull"
+        assert_eq!(arith("+", &s("x"), &Value::Null).unwrap(), Value::Undefined);
         assert_eq!(
             arith("+", &s("x"), &Value::Undefined).unwrap(),
-            s("xundefined")
+            Value::Undefined
         );
+        assert_eq!(arith("+", &Value::Null, &s("x")).unwrap(), Value::Undefined);
         assert_eq!(arith("+", &s("x"), &Value::Bool(true)).unwrap(), s("xtrue"));
         assert_eq!(
             arith("+", &s("x"), &arr(vec![num(1.0), num(2.0)])).unwrap(),
@@ -947,15 +1131,44 @@ mod tests {
     }
 
     #[test]
+    fn absent_propagates_through_every_arithmetic_operator() {
+        for op in ["+", "-", "*", "/", "%"] {
+            assert_eq!(
+                arith(op, &Value::Null, &num(1.0)).unwrap(),
+                Value::Undefined,
+                "{op}"
+            );
+            assert_eq!(
+                arith(op, &num(1.0), &Value::Undefined).unwrap(),
+                Value::Undefined,
+                "{op}"
+            );
+            assert_eq!(
+                arith(op, &Value::Null, &Value::Null).unwrap(),
+                Value::Undefined,
+                "{op}"
+            );
+        }
+        // and the absent result equals null but does not order
+        let r = arith("+", &Value::Null, &num(1.0)).unwrap();
+        assert!(rel("==", &r, &Value::Null));
+        assert!(!rel("==", &r, &num(1.0)));
+        assert!(!rel("<", &r, &num(5.0)));
+    }
+
+    #[test]
+    fn string_form_of_scalars() {
+        assert_eq!(string_form(&Value::Null), None);
+        assert_eq!(string_form(&Value::Undefined), None);
+        assert_eq!(string_form(&s("x")).as_deref(), Some("x"));
+        assert_eq!(string_form(&num(2.0)).as_deref(), Some("2"));
+        assert_eq!(string_form(&num(2.5)).as_deref(), Some("2.5"));
+        assert_eq!(string_form(&num(-0.0)).as_deref(), Some("0"));
+        assert_eq!(string_form(&Value::Bool(false)).as_deref(), Some("false"));
+    }
+
+    #[test]
     fn arithmetic_over_doubles_follows_javascript_number_coercion() {
-        assert_eq!(arith("+", &Value::Null, &num(1.0)).unwrap(), num(1.0));
-        assert!(
-            arith("+", &Value::Undefined, &num(1.0))
-                .unwrap()
-                .as_f64()
-                .unwrap()
-                .is_nan()
-        );
         assert_eq!(
             arith("+", &Value::Bool(true), &Value::Bool(true)).unwrap(),
             num(2.0)
@@ -1035,11 +1248,24 @@ mod tests {
             &arr(vec![num(1.0)]),
             &arr(vec![arr(vec![num(1.0)])])
         ));
-        // substring and key tests stringify the needle
+        // substring and key tests use the needle's string form
         assert!(membership(&num(1.0), &s("a1b")));
         assert!(membership(&num(1.0), &obj(&[("1", s("x"))])));
         assert!(!membership(&s("toString"), &obj(&[])));
         assert!(membership(&s(""), &s("anything")));
+        // an absent needle is never a substring or a key, whatever the spelling
+        assert!(!membership(&Value::Null, &s("undefined null")));
+        assert!(!membership(&Value::Undefined, &s("undefined null")));
+        assert!(!membership(
+            &Value::Null,
+            &obj(&[("null", num(1.0)), ("undefined", num(2.0))])
+        ));
+        assert!(!membership(
+            &Value::Undefined,
+            &obj(&[("null", num(1.0)), ("undefined", num(2.0))])
+        ));
+        // a null-valued key still counts for a present needle
+        assert!(membership(&s("k"), &obj(&[("k", Value::Null)])));
         // scalars hold nothing
         assert!(!membership(&num(1.0), &num(1.0)));
         assert!(!membership(&Value::Bool(true), &Value::Bool(true)));
@@ -1326,9 +1552,28 @@ mod tests {
         assert_eq!(method("lower", &s("DiReCtOr"), &[]), s("director"));
         assert_eq!(method("upper", &s("straße"), &[]), s("STRASSE"));
         assert_eq!(method("upper", &num(1.5), &[]), s("1.5"));
-        // String(recv) first, as the reference does — even for absent receivers
-        assert_eq!(method("lower", &Value::Undefined, &[]), s("undefined"));
-        assert_eq!(method("upper", &Value::Null, &[]), s("NULL"));
+        assert_eq!(method("upper", &num(2.0), &[]), s("2"));
+        assert_eq!(method("lower", &Value::Bool(true), &[]), s("true"));
+        // an absent receiver yields absent, never "undefined" / "NULL"
+        assert_eq!(method("lower", &Value::Undefined, &[]), Value::Undefined);
+        assert_eq!(method("upper", &Value::Null, &[]), Value::Undefined);
+        // an absent argument is never a substring / prefix / suffix
+        assert_eq!(
+            method("contains", &s("undefined"), &[Value::Undefined]),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            method("startsWith", &s("null"), &[Value::Null]),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            method("endsWith", &s("null"), &[Value::Null]),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            method("startsWith", &s("12x"), &[num(12.0)]),
+            Value::Bool(true)
+        );
         assert_eq!(
             method("size", &arr(vec![num(1.0), num(2.0)]), &[]),
             num(2.0)
@@ -1377,17 +1622,101 @@ mod tests {
             "{}",
             err.message
         );
-        // outside the portable dialect: lookaround and backreferences are errors here
-        assert!(
-            builtin_method("matches", &s("x"), &[s("(?=x)")])
+        // outside the portable dialect: lookaround and backreferences are
+        // rejected with the spec's wording, before the regex crate sees them
+        for (pattern, what) in [
+            ("a(?=b)", "lookahead (?=…)"),
+            ("a(?!c)", "negative lookahead (?!…)"),
+            ("(?<=a)b", "lookbehind (?<=…)"),
+            ("(?<!c)b", "negative lookbehind (?<!…)"),
+            ("(a)\\1", "a backreference"),
+            ("(?<x>a)\\k<x>", "a named backreference"),
+            ("[a]\\9", "a backreference"),
+        ] {
+            let err = builtin_method("matches", &s("ab"), &[s(pattern)])
                 .unwrap()
-                .is_err()
+                .unwrap_err();
+            assert_eq!(err.stage, crate::Stage::Eval, "{pattern}");
+            assert!(
+                err.message.contains("not supported in OQX") && err.message.contains(what),
+                "{pattern}: {}",
+                err.message
+            );
+        }
+        // the scan honors escapes and classes: these are literals, not lookaround
+        assert_eq!(
+            method("matches", &s("(?="), &[s("\\(\\?=")]),
+            Value::Bool(true)
         );
-        assert!(
-            builtin_method("matches", &s("xx"), &[s("(x)\\1")])
-                .unwrap()
-                .is_err()
+        assert_eq!(
+            method("matches", &s("(?"), &[s("[(][?]")]),
+            Value::Bool(true)
         );
+        assert_eq!(
+            method("matches", &s("x(?=y"), &[s("[(]\\?=")]),
+            Value::Bool(true)
+        );
+        // a named group without a backreference is fine
+        assert_eq!(
+            method("matches", &s("aa"), &[s("(?<x>a)a")]),
+            Value::Bool(true)
+        );
+        // a number receiver matches on its string form
+        assert_eq!(method("matches", &num(2.0), &[s("^2$")]), Value::Bool(true));
+    }
+
+    #[test]
+    fn range_covers_only_numbers_and_strings() {
+        let open = make_range(Value::Null, Value::Null, false);
+        assert!(!range_covers(&open, &Value::Bool(true)));
+        assert!(!range_covers(&open, &arr(vec![])));
+        assert!(!range_covers(&open, &obj(&[])));
+        assert!(range_covers(&open, &s("anything")));
+        let to5 = make_range(Value::Null, num(5.0), false);
+        assert!(!range_covers(&to5, &Value::Null)); // `nope in ..5` is false
+        assert!(!range_covers(&to5, &s("3"))); // a string does not order against a number
+    }
+
+    #[test]
+    fn canonical_key_is_structural_and_type_tagged() {
+        assert_eq!(canonical_key(&Value::Null), "n");
+        assert_eq!(canonical_key(&Value::Undefined), "n");
+        assert_eq!(canonical_key(&Value::Bool(true)), "t");
+        assert_eq!(canonical_key(&num(1.0)), "d1");
+        assert_eq!(canonical_key(&num(-0.0)), "d0");
+        assert_eq!(canonical_key(&num(2.5)), "d2.5");
+        assert_eq!(canonical_key(&s("1")), "s\"1\"");
+        assert_eq!(canonical_key(&s("a\"b")), "s\"a\\\"b\"");
+        assert_ne!(canonical_key(&num(1.0)), canonical_key(&s("1")));
+        assert_ne!(canonical_key(&obj(&[])), canonical_key(&arr(vec![])));
+        assert_eq!(canonical_key(&arr(vec![num(1.0), s("a")])), "[d1,s\"a\"]");
+        // key order ignored; undefined ≡ null
+        assert_eq!(
+            canonical_key(&obj(&[("b", num(2.0)), ("a", Value::Undefined)])),
+            canonical_key(&obj(&[("a", Value::Null), ("b", num(2.0))]))
+        );
+        assert_eq!(
+            canonical_key(&obj(&[("b", num(2.0)), ("a", num(1.0))])),
+            "{\"a\":d1,\"b\":d2}"
+        );
+        assert_ne!(
+            canonical_key(&obj(&[("a", num(1.0))])),
+            canonical_key(&obj(&[("a", num(2.0))]))
+        );
+        assert_ne!(
+            canonical_key(&rng(num(1.0), num(2.0), true)),
+            canonical_key(&rng(num(1.0), num(2.0), false))
+        );
+    }
+
+    #[test]
+    fn compare_orders_only_same_kind_numbers_and_strings() {
+        assert_eq!(compare(&num(9.0), &num(10.0)), Some(Ordering::Less));
+        assert_eq!(compare(&s("10"), &s("9")), Some(Ordering::Less));
+        assert_eq!(compare(&num(1.0), &s("2")), None);
+        assert_eq!(compare(&Value::Bool(false), &Value::Bool(true)), None);
+        assert_eq!(compare(&Value::Null, &num(1.0)), None);
+        assert_eq!(compare(&num(f64::NAN), &num(1.0)), None);
     }
 
     #[test]

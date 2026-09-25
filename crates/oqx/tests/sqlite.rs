@@ -286,17 +286,15 @@ fn compile_pins_the_sql_and_parameters() {
     let c = compile("name from emp where dept == null && city == true");
     assert_eq!(c.params, [SqlValue::Null, SqlValue::Integer(1)]);
 
-    // LIMIT for unordered first/single with nothing residual …
+    // LIMIT for an unordered first with nothing residual …
     let c = compile("emp first { name where dept == \"eng\" }");
     assert_eq!(
         c.sql,
         "SELECT * FROM \"emp\" WHERE (\"emp\".\"dept\" = ?) LIMIT 1"
     );
+    // `single` is never limited: its error must report the true row count.
     let c = compile("emp single { name where dept == \"eng\" }");
-    assert_eq!(
-        c.sql,
-        "SELECT * FROM \"emp\" WHERE (\"emp\".\"dept\" = ?) LIMIT 2"
-    );
+    assert_eq!(c.sql, "SELECT * FROM \"emp\" WHERE (\"emp\".\"dept\" = ?)");
     let c = compile("emp first { name }");
     assert_eq!(c.sql, "SELECT * FROM \"emp\" LIMIT 1");
     // … but not when ordered, bounded, residual, or another consumer.

@@ -2,10 +2,11 @@
 //! [`DataContext`]. Port of `packages/oqx/src/engine.ts`.
 //!
 //! Optimizations over a naive walk, as in the reference: `exists` short-circuits
-//! at the first match; `first`/`single` stop early when the result is unordered;
-//! `count` never materializes rows; and within an `&&` the cheap scalar leaves
-//! are evaluated before expensive consumer-op leaves (which each drive a nested
-//! traversal).
+//! at the first match; `first` stops early when the result is unordered;
+//! `count` never materializes rows. (`single` always materializes, so its error
+//! reports the true row count, and `&&` evaluates strictly left to right —
+//! evaluation order is observable through errors, so the engine never reorders
+//! conjuncts.)
 //!
 //! Name resolution is strictly lexical and LOCAL: a bare identifier is read from
 //! the current scope only, and an enclosing scope is reached solely through an
@@ -36,7 +37,8 @@ use crate::ast::{
 use crate::context::{DataContext, DefaultContext};
 use crate::errors::OqxError;
 use crate::semantics::{
-    arith, compare_for_sort_dir, entries_of, equals, make_range, membership, relate, to_number,
+    arith, canonical_key, compare, compare_for_sort_dir, entries_of, equals, is_range, make_range,
+    membership, relate, to_number,
 };
 use crate::value::{Object, Value, js_number_to_string};
 
@@ -207,12 +209,13 @@ struct Occurrence {
     meta: Object,
 }
 
-/// A walked occurrence before ranking: the identity key, the `/`-joined path of
-/// identity string forms, and the categorical stop reason.
+/// A walked occurrence before ranking: the identity, the path of identities
+/// from the seed to this occurrence (compared component-wise as values by
+/// `compare_path`), and the categorical stop reason.
 struct Walked {
     row: Row,
     depth: u32,
-    path: String,
+    path: Vec<Value>,
     key: Value,
     stop: &'static str,
 }
@@ -268,19 +271,15 @@ impl<C: DataContext> Exec<'_, C> {
             });
         }
 
-        // first/single over an unordered, non-distinct set need only the rows up
-        // to the bound: offset + 1 (first) / offset + 2 (single, to detect a second).
-        let want = match query.consumer {
-            Consumer::First => Some(1usize),
-            Consumer::Single => Some(2usize),
-            _ => None,
-        };
-        let cap = match want {
-            Some(w) if query.order_by.is_none() && !query.distinct => {
-                Some(bound.offset.saturating_add(w.min(bound.limit.unwrap_or(w))))
-            }
-            _ => None,
-        };
+        // first over an unordered, non-distinct set needs only the rows up to
+        // the bound (offset + 1). single materializes everything so its error
+        // can report how many rows actually matched.
+        let cap =
+            if query.consumer == Consumer::First && query.order_by.is_none() && !query.distinct {
+                Some(bound.offset.saturating_add(1.min(bound.limit.unwrap_or(1))))
+            } else {
+                None
+            };
         let mut kept: Vec<Scope<'_>> = Vec::new();
         for r in rows {
             let s = self.enter(r, &root, None);
@@ -497,7 +496,9 @@ impl<C: DataContext> Exec<'_, C> {
     //     cycle > frontier > depth > leaf > interior; only `interior` rows expand;
     //   • `$leaf` = (stop == leaf); `$frontier` = (stop ∈ {frontier, depth});
     //   • identity for cycle detection + `distinct` is `by <expr>` when given,
-    //     else `ctx.identity(row)` — compared structurally, not by string form.
+    //     else `ctx.identity(row)` — compared structurally, not by string form;
+    //     `$ordinal` paths compare component-wise as values (`compare_path`),
+    //     so `10` follows `9`.
     fn follow_walk(
         &self,
         seeds: Vec<Row>,
@@ -507,18 +508,8 @@ impl<C: DataContext> Exec<'_, C> {
         let cap = follow.depth.unwrap_or(HARD_DEPTH_CAP);
         let mut walked: Vec<Walked> = Vec::new();
         let mut ancestors: Vec<Value> = Vec::new();
-        let mut path_parts: Vec<String> = Vec::new();
         for r in seeds {
-            self.follow_visit(
-                follow,
-                parent,
-                cap,
-                r,
-                1,
-                &mut ancestors,
-                &mut path_parts,
-                &mut walked,
-            )?;
+            self.follow_visit(follow, parent, cap, r, 1, &mut ancestors, &mut walked)?;
         }
 
         let mut rows = walked;
@@ -529,7 +520,10 @@ impl<C: DataContext> Exec<'_, C> {
                 match best.iter_mut().find(|b| equals(&b.key, &w.key)) {
                     None => best.push(w),
                     Some(prev) => {
-                        if w.depth < prev.depth || (w.depth == prev.depth && w.path < prev.path) {
+                        if w.depth < prev.depth
+                            || (w.depth == prev.depth
+                                && compare_path(&w.path, &prev.path) == Ordering::Less)
+                        {
                             *prev = w;
                         }
                     }
@@ -537,9 +531,12 @@ impl<C: DataContext> Exec<'_, C> {
             }
             rows = best;
         }
-        // $ordinal: a deterministic 1..N rank over (depth, path). Paths compare
-        // as text (code-point order), which a fixture pins.
-        rows.sort_by(|a, b| a.depth.cmp(&b.depth).then_with(|| a.path.cmp(&b.path)));
+        // $ordinal: a deterministic 1..N rank over (depth, path).
+        rows.sort_by(|a, b| {
+            a.depth
+                .cmp(&b.depth)
+                .then_with(|| compare_path(&a.path, &b.path))
+        });
         Ok(rows
             .into_iter()
             .enumerate()
@@ -558,6 +555,9 @@ impl<C: DataContext> Exec<'_, C> {
             .collect())
     }
 
+    // `ancestors` is the identity path of the current branch (the identities
+    // from the seed down to the parent of `row`); each occurrence's path is
+    // that plus its own identity.
     #[allow(clippy::too_many_arguments)]
     fn follow_visit(
         &self,
@@ -567,24 +567,15 @@ impl<C: DataContext> Exec<'_, C> {
         row: Row,
         depth: u32,
         ancestors: &mut Vec<Value>,
-        path_parts: &mut Vec<String>,
         walked: &mut Vec<Walked>,
     ) -> Result<()> {
         let key = match &follow.by {
             Some(by) => self.eval_expr(by, &self.enter(row.clone(), parent, None))?,
             None => self.ctx.identity(&row.value),
         };
-        let key_text = path_component(&key);
-        let path = {
-            let mut p = String::from("/");
-            for part in path_parts.iter() {
-                p.push_str(part);
-                p.push('/');
-            }
-            p.push_str(&key_text);
-            p.push('/');
-            p
-        };
+        let mut path = Vec::with_capacity(ancestors.len() + 1);
+        path.extend(ancestors.iter().cloned());
+        path.push(key.clone());
         let stop: &'static str;
         if ancestors.iter().any(|a| equals(a, &key)) {
             stop = "cycle";
@@ -605,21 +596,10 @@ impl<C: DataContext> Exec<'_, C> {
                     stop: "interior",
                 });
                 ancestors.push(key);
-                path_parts.push(key_text);
                 for s in succ {
-                    self.follow_visit(
-                        follow,
-                        parent,
-                        cap,
-                        s,
-                        depth + 1,
-                        ancestors,
-                        path_parts,
-                        walked,
-                    )?;
+                    self.follow_visit(follow, parent, cap, s, depth + 1, ancestors, walked)?;
                 }
                 ancestors.pop();
-                path_parts.pop();
                 return Ok(());
             }
         }
@@ -696,18 +676,19 @@ impl<C: DataContext> Exec<'_, C> {
     }
 
     // The per-row result: the raw row (empty projection), the single item's
-    // value itself (`values` mode), or a `{ name: value }` record.
+    // value itself (`values` mode), or a `{ name: value }` record. A range is
+    // an evaluation-time value only and never appears in a result.
     fn project_row(&self, proj: Projection<'_>, scope: &Scope<'_>) -> Result<Value> {
         let select = proj.select;
         if select.is_empty() {
-            return Ok(scope.row.clone());
+            return no_range(scope.row.clone());
         }
         if proj.values {
-            return self.item_value(&select[0], scope);
+            return no_range(self.item_value(&select[0], scope)?);
         }
         let mut out = Object::with_capacity(select.len());
         for item in select {
-            out.insert(item.name(), self.item_value(item, scope)?);
+            out.insert(item.name(), no_range(self.item_value(item, scope)?)?);
         }
         Ok(Value::Object(out))
     }
@@ -741,13 +722,13 @@ impl<C: DataContext> Exec<'_, C> {
         }
     }
 
-    /// An `&&` over `parts`: cheap scalar leaves run before consumer-op leaves
-    /// (a stable sort by cost, as the reference's `orderByCost`), and the first
-    /// false conjunct short-circuits. Empty is true.
+    /// An `&&` over `parts`: strictly left to right, short-circuiting at the
+    /// first false conjunct. The engine never reorders conjuncts (not even to
+    /// run a cheap scalar before a consumer test) because evaluation order is
+    /// observable through errors: `false && foo()` is false, `true && foo()`
+    /// raises. Empty is true.
     fn eval_conjuncts(&self, parts: &[&Where], scope: &Scope<'_>) -> Result<bool> {
-        let mut ordered: Vec<&Where> = parts.to_vec();
-        ordered.sort_by_key(|w| where_cost(w));
-        for p in ordered {
+        for p in parts {
             if !self.eval_where(p, scope)? {
                 return Ok(false);
             }
@@ -1010,6 +991,8 @@ impl<C: DataContext> Exec<'_, C> {
                 let v = self.eval_expr(expr, scope)?;
                 Ok(match op {
                     UnaryOp::Not => Value::Bool(!v.truthy()),
+                    // Absent propagates: `-nope` is absent, not NaN.
+                    UnaryOp::Neg if v.is_absent() => Value::Undefined,
                     UnaryOp::Neg => Value::Number(-to_number(&v)),
                 })
             }
@@ -1156,15 +1139,52 @@ fn bounded_count(n: usize, b: Bound) -> usize {
     }
 }
 
-// Cost of a where node, so `&&` conjuncts run cheap scalar leaves first.
-fn where_cost(w: &Where) -> u8 {
-    match w {
-        Where::Op(_) => 2,
-        Where::And { parts } | Where::Or { parts } => {
-            parts.iter().map(where_cost).max().unwrap_or(0)
+// Guard a value bound for a result: a range (`lo..hi`) exists only during
+// evaluation. Checks the value itself and, for an array, its elements — deeper
+// structure is host data (which cannot hold a range) or a nested block's
+// result (already guarded when it was projected).
+fn no_range(v: Value) -> Result<Value> {
+    let holds_range = match &v {
+        Value::Range(_) => true,
+        Value::Array(xs) => xs.iter().any(is_range),
+        _ => false,
+    };
+    if holds_range {
+        return Err(OqxError::eval(
+            "a range (lo..hi) cannot appear in a result; test membership with `x in lo..hi` instead",
+        ));
+    }
+    Ok(v)
+}
+
+// Order two `follow` paths (identity sequences) component-wise: two numbers
+// numerically, two strings by code point; otherwise numbers precede strings
+// precede everything else, and same-kind others order by canonical key. A
+// shorter path that is a prefix of a longer one precedes it.
+fn compare_path(a: &[Value], b: &[Value]) -> Ordering {
+    for (x, y) in a.iter().zip(b) {
+        let c = compare_component(x, y);
+        if c != Ordering::Equal {
+            return c;
         }
-        Where::Not { expr } => where_cost(expr),
-        Where::Scalar { .. } => 0,
+    }
+    a.len().cmp(&b.len())
+}
+
+fn compare_component(x: &Value, y: &Value) -> Ordering {
+    if let Some(c) = compare(x, y) {
+        return c;
+    }
+    component_rank(x)
+        .cmp(&component_rank(y))
+        .then_with(|| canonical_key(x).cmp(&canonical_key(y)))
+}
+
+fn component_rank(v: &Value) -> u8 {
+    match v {
+        Value::Number(_) => 0,
+        Value::Str(_) => 1,
+        _ => 2,
     }
 }
 
@@ -1224,21 +1244,9 @@ fn expr_has_recur(e: &Expr) -> bool {
     }
 }
 
-/// The string form of an identity as a `follow` path component. Scalars use
-/// `String(v)` as the reference does; structural (object/array) identities,
-/// which the reference collapses to `[object Object]`, use their canonical JSON
-/// so distinct identities stay distinct in the path.
-fn path_component(v: &Value) -> String {
-    match v {
-        Value::Object(_) | Value::Array(_) => json_string(v),
-        other => other.to_string(),
-    }
-}
-
 /// `JSON.stringify` of a value: an `Undefined` property is dropped, an
 /// `Undefined` element or top-level value is `null`, non-finite numbers are
-/// `null`, and keys are in insertion order. Used for error messages and path
-/// components.
+/// `null`, and keys are in insertion order. Used for error messages.
 fn json_string(v: &Value) -> String {
     let mut out = String::new();
     json_write(v, &mut out);
@@ -1728,12 +1736,21 @@ mod tests {
         );
         check("people none { where age > 90 }", people(), json!(true));
         check("people none { where active }", people(), json!(false));
-        // The unordered early stop caps at offset + 2 rows, so the count reported
-        // is 2 even over three people — exactly as the reference does.
+        // `single` always materializes, so the error reports the true count.
         check_err(
             "people single { }",
             people(),
+            &["single { … } matched 3 rows"],
+        );
+        check_err(
+            "people single { offset 1 }",
+            people(),
             &["single { … } matched 2 rows"],
+        );
+        check(
+            "people single { name values limit 1 }",
+            people(),
+            json!("Bob"),
         );
         check_err(
             "people single { order by name }",
@@ -1959,11 +1976,14 @@ mod tests {
             json!({ "xs": [] }),
             &["limit must be a non-negative integer", "1.5"],
         );
-        // A top-level bound is read at the root scope: `^n` is one past it, absent.
-        check_err(
-            "from xs offset ^n",
-            json!({ "xs": [], "n": 1 }),
-            &["offset must be a non-negative integer", "null"],
+        // (A top-level `offset ^n` is a parse error — GRAMMAR — so a bound that
+        // evaluates to absent is only reachable through a binding.)
+        let q = parse_template(&["from xs offset ", ""], 1).unwrap();
+        let err = run_query(&q, &[Value::Null], roots(json!({ "xs": [] }))).unwrap_err();
+        assert!(
+            err.message
+                .contains("offset must be a non-negative integer (got null)"),
+            "{err}"
         );
         let q = parse_template(&["from xs offset ", ""], 1).unwrap();
         let err = run_query(&q, &[Value::from(-1)], roots(json!({ "xs": [] }))).unwrap_err();
@@ -2071,11 +2091,29 @@ mod tests {
             tree,
             &["follow"],
         );
-        // Path components compare as text: "10" < "9".
+        // Path components compare as values: 9 < 10, numbers before strings,
+        // strings by code point ("10" < "9"), then other kinds by canonical key.
         check(
             "id values from tree follow children order by $ordinal",
             json!({ "tree": [{ "id": 1, "children": [{ "id": 9 }, { "id": 10 }] }] }),
-            json!([1, 10, 9]),
+            json!([1, 9, 10]),
+        );
+        check(
+            "id values from tree follow children order by $ordinal",
+            json!({ "tree": [{ "id": 1, "children": [{ "id": "9" }, { "id": "10" }, { "id": 2 }] }] }),
+            json!([1, 2, "10", "9"]),
+        );
+        check(
+            "n values from tree follow children { by n } order by $ordinal",
+            json!({ "tree": [{ "n": 1, "children": [{ "n": "s" }, { "n": true }, { "n": 2 }, { "n": false }] }] }),
+            json!([1, 2, "s", false, true]),
+        );
+        // Id-less nodes have structural identity, so their components are the
+        // rows themselves: all one kind, ordered by canonical key.
+        check(
+            "n values from tree follow children order by $ordinal",
+            json!({ "tree": [{ "n": 1, "children": [{ "n": "s" }, { "n": true }, { "n": 2 }, { "n": false }] }] }),
+            json!([1, 2, false, "s", true]),
         );
         // Cycles: a revisit is admitted once as `cycle`.
         let g = json!({ "n1": { "id": 1 } });
@@ -2195,7 +2233,8 @@ mod tests {
         );
         check("r count { where s }", r.clone(), json!(1));
         check("r count { where has(s) }", r, json!(2));
-        // Short-circuit order: cheap scalar leaves before ops, so the op never runs.
+        // `&&` is strictly left to right and short-circuits — never reordered
+        // around consumer tests, so a query can guard an operand by position.
         check(
             "r count { where false && bogus exists { where nope() } }",
             json!({ "r": [1] }),
@@ -2210,6 +2249,26 @@ mod tests {
             "r count { where false && ^bogus exists { where nope() } }",
             json!({ "r": [1], "bogus": [1] }),
             json!(0),
+        );
+        check(
+            "r exists { where xs none { } && foo(1) }",
+            json!({ "r": [{ "xs": [1] }] }),
+            json!(false),
+        );
+        check_err(
+            "r exists { where xs exists { } && foo(1) }",
+            json!({ "r": [{ "xs": [1] }] }),
+            &["unknown function 'foo(…)'"],
+        );
+        check(
+            "r exists { where has(s) && s.matches(\"(\") }",
+            json!({ "r": [{}] }),
+            json!(false),
+        );
+        check(
+            "r exists { where xs exists { } || foo(1) }",
+            json!({ "r": [{ "xs": [1] }] }),
+            json!(true),
         );
         check_err(
             "from r where a.foo()",
@@ -2242,6 +2301,66 @@ mod tests {
             r#"x: 2 in xs, y: "b" in "abc", z: "k" in o, w: 3 in 1..5, v: 5 in 1...5 from r"#,
             json!({ "r": [{ "o": { "k": null }, "xs": [1, 2] }] }),
             json!([{ "x": true, "y": true, "z": true, "w": true, "v": false }]),
+        );
+        // Absent propagates through arithmetic and lower()/upper(); an absent
+        // needle is never a substring or a key; an absent x is covered by no range.
+        check(
+            r#"a: nope + 1, b: "a" + nope, c: -nope, d: 1 + nope * 2, e: n + 1, f: nope.lower(), g: n.upper() from r"#,
+            json!({ "r": [{ "n": null }] }),
+            json!([{}]),
+        );
+        check(
+            r#"a: nope + 1 == null, b: nope + 1 < 5, c: nope in "undefined null", d: nope in o, e: nope in ..5, f: true in 1.. from r"#,
+            json!({ "r": [{ "o": { "undefined": 1, "null": 2 } }] }),
+            json!([{ "a": true, "b": false, "c": false, "d": false, "e": false, "f": false }]),
+        );
+    }
+
+    #[test]
+    fn a_range_cannot_appear_in_a_result() {
+        let r = json!({ "r": [{ "xs": [1] }] });
+        for q in [
+            "x: 1..5 from r",
+            "1..5 values from r",
+            "x: range(\"1..5\") from r",
+            "x: list(1..5) from r",
+            "n: xs collect { 1..2 values } from r",
+            "r first { x: 1.. }",
+            "from list(1..5)",
+        ] {
+            check_err(q, r.clone(), &["range", "cannot appear in a result"]);
+        }
+        // Ranges are fine everywhere else: as an `in` haystack, as an argument.
+        check(
+            "x: 3 in 1..5, y: 3 in range(\"1..5\") from r",
+            r.clone(),
+            json!([{ "x": true, "y": true }]),
+        );
+        check("r count { where 1..5 }", r, json!(1));
+    }
+
+    #[test]
+    fn matches_dialect_errors_surface_through_the_engine() {
+        check_err(
+            r#"r exists { where "ab".matches("a(?=b)") }"#,
+            json!({ "r": [{}] }),
+            &["not supported in OQX", "lookahead"],
+        );
+        check_err(
+            r#"r exists { where "a".matches("(") }"#,
+            json!({ "r": [{}] }),
+            &["invalid regular expression"],
+        );
+        // An empty source never evaluates the pattern.
+        check(
+            r#"r exists { where "ab".matches("a(?=b)") }"#,
+            json!({ "r": [] }),
+            json!(false),
+        );
+        check(
+            r#"r exists { where "(?=".matches("\\(\\?=") }"#,
+            json!({ "r": [{}] }),
+            json!(true),
         );
     }
 
