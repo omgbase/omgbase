@@ -235,7 +235,7 @@
     },
     {
       "name": "mixed number and string never order (string vs number)",
-      "notes": "Also see SEMANTICS §ordering: the reference coerces numeric-looking strings — a known discrepancy not pinned here.",
+      "notes": "Only number/number and string/string pairs order; every other pair is false for all four operators.",
       "roots": {
         "r": [
           {}
@@ -348,6 +348,56 @@
         "result": [
           "b"
         ]
+      }
+    },
+    {
+      "name": "a number and a numeric string never order",
+      "notes": "No cross-type coercion: a numeric-looking string is still a string.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 < \"2\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a numeric string and a number never order in either direction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"2\" > 1 || 1 <= \"1\" || \"1\" >= 1 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "booleans do not order",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true < 2 || false < true || true >= true || 1 > false }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "strings order by code point beyond the BMP",
+      "notes": "U+FF5E precedes U+1F600 by code point; by UTF-16 code unit the surrogate D83D would sort first.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"～\" < \"😀\" && \"😀\" > \"～\" }",
+      "expect": {
+        "result": true
       }
     }
   ]

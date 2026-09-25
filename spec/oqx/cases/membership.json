@@ -517,6 +517,66 @@
           false
         ]
       }
+    },
+    {
+      "name": "an inherited name is not a key",
+      "roots": {
+        "r": [
+          {
+            "o": {}
+          }
+        ]
+      },
+      "query": "r exists { where \"toString\" in o || \"constructor\" in o }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "an own key named like an inherited property counts",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "toString": 1
+            }
+          }
+        ]
+      },
+      "query": "r exists { where \"toString\" in o }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an absent needle is never a key",
+      "notes": "Absent has no string form, so it matches no key — not even one spelled \"undefined\" or \"null\".",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "undefined": 1,
+              "null": 2
+            }
+          }
+        ]
+      },
+      "query": "r exists { where nope in o }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "an absent needle is never a substring",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope in \"undefined null\" }",
+      "expect": {
+        "result": false
+      }
     }
   ]
 }

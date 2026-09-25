@@ -647,6 +647,140 @@
           }
         ]
       }
+    },
+    {
+      "name": "count distinct with an empty projection over id-less objects",
+      "notes": "Rows without an `id` dedup by structural value, never by a host string form.",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "count distinct with an empty projection over structurally equal id-less objects",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "structural identity ignores key order",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "b": 2
+          },
+          {
+            "b": 2,
+            "a": 1
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "structural identity is deep",
+      "roots": {
+        "xs": [
+          {
+            "a": [
+              1,
+              {
+                "b": 2
+              }
+            ]
+          },
+          {
+            "a": [
+              1,
+              {
+                "b": 2
+              }
+            ]
+          },
+          {
+            "a": [
+              1,
+              {
+                "b": 3
+              }
+            ]
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "structural identity keeps a number and a numeric string apart",
+      "roots": {
+        "xs": [
+          1,
+          "1"
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "structural identity keeps falsy scalars apart",
+      "roots": {
+        "xs": [
+          null,
+          false,
+          0,
+          ""
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 4
+      }
+    },
+    {
+      "name": "distinct values keeps a number and a numeric string apart",
+      "roots": {
+        "xs": [
+          1,
+          "1",
+          1
+        ]
+      },
+      "query": "select distinct $value values from xs",
+      "expect": {
+        "result": [
+          1,
+          "1"
+        ]
+      }
     }
   ]
 }

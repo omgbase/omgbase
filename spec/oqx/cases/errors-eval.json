@@ -232,6 +232,107 @@
           ]
         }
       }
+    },
+    {
+      "name": "single reports the true row count at the top level",
+      "notes": "`single` materializes every row before reducing, so the count is exact, not \"at least two\".",
+      "roots": {
+        "xs": [
+          1,
+          2,
+          3
+        ]
+      },
+      "query": "xs single { }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single { … } matched 3 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single reports the true row count in a projection",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "n: xs single { $value values } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single { … }",
+            "matched 3 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single reports the bounded row count",
+      "roots": {
+        "xs": [
+          1,
+          2,
+          3,
+          4
+        ]
+      },
+      "query": "xs single { limit 2 }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "matched 2 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a method named like an inherited property is unknown",
+      "notes": "Builtin lookup is by own name only; host prototype members are not methods.",
+      "roots": {
+        "r": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "from r where a.constructor()",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown method"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a function named like an inherited property is unknown",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from r where constructor(1)",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function"
+          ]
+        }
+      }
     }
   ]
 }

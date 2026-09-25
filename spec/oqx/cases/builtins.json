@@ -491,6 +491,35 @@
           ]
         }
       }
+    },
+    {
+      "name": "has of an inherited name is false",
+      "notes": "Only a plain object's own enumerable keys are properties; the host prototype chain is invisible.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where has(toString) || has(constructor) || has(hasOwnProperty) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "size function counts code points",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: size(\"😀\") from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1
+          }
+        ]
+      }
     }
   ]
 }

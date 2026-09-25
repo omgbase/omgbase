@@ -10,6 +10,12 @@
 
 import { coerceCollection, BUILTIN_FUNCTIONS, BUILTIN_METHODS } from "./semantics.ts";
 
+// An array's only properties are its integer indices, spelled canonically
+// (`"0"`, `"12"`; never `"01"`, `"length"`, or a method name).
+function isIndexKey(key: string): boolean {
+  return /^(0|[1-9]\d*)$/.test(key);
+}
+
 /** Result of a context-provided function/method call: `handled: false` tells the
  * engine to fall back to the builtin table (or error if none). */
 export interface CallResult {
@@ -36,8 +42,9 @@ export interface DataContext {
 }
 
 /** The default context: ordinary JavaScript objects. Named roots come from a
- * plain `{ name: collection }` map; properties are own/inherited keys; identity
- * is `.id` when present, else the object itself (reference identity). */
+ * plain `{ name: collection }` map; properties are OWN keys only (an array
+ * exposes only its integer indices, a primitive has none); identity is `.id`
+ * when present, else the row itself (the engine keys it structurally). */
 export class DefaultContext implements DataContext {
   private roots: Record<string, unknown>;
 
@@ -46,12 +53,13 @@ export class DefaultContext implements DataContext {
   }
 
   root(name: string): unknown {
-    return this.roots[name];
+    return Object.hasOwn(this.roots, name) ? this.roots[name] : undefined;
   }
 
   get(row: unknown, key: string): unknown {
-    if (row == null) return undefined;
-    return (Object(row) as Record<string, unknown>)[key];
+    if (row == null || typeof row !== "object") return undefined;
+    if (Array.isArray(row)) return isIndexKey(key) ? row[Number(key)] : undefined;
+    return Object.hasOwn(row, key) ? (row as Record<string, unknown>)[key] : undefined;
   }
 
   toRows(value: unknown): Iterable<unknown> {
@@ -64,12 +72,12 @@ export class DefaultContext implements DataContext {
   }
 
   callFunction(name: string, args: unknown[]): CallResult {
-    const fn = BUILTIN_FUNCTIONS[name];
+    const fn = Object.hasOwn(BUILTIN_FUNCTIONS, name) ? BUILTIN_FUNCTIONS[name] : undefined;
     return fn ? { handled: true, value: fn(args) } : { handled: false };
   }
 
   callMethod(name: string, recv: unknown, args: unknown[]): CallResult {
-    const fn = BUILTIN_METHODS[name];
+    const fn = Object.hasOwn(BUILTIN_METHODS, name) ? BUILTIN_METHODS[name] : undefined;
     return fn ? { handled: true, value: fn(recv, args) } : { handled: false };
   }
 }

@@ -986,6 +986,245 @@
           }
         ]
       }
+    },
+    {
+      "name": "size counts code points",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"😀\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "size counts code points in a mixed string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"a😀b\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "lower on absent is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope.lower() values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "upper on null is absent",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "n.upper() values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "lower on absent equals null",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope.lower() == null }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches with an invalid pattern is an eval error",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\".matches(\"(\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "invalid regular expression"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"a(?=b)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects negative lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"a(?!c)\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects lookbehind",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(?<=a)b\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects negative lookbehind",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"(?<!c)b\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a backreference",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"(a)\\\\1\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "matches rejects a named backreference",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"aa\".matches(\"(?<x>a)\\\\k<x>\") }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "not supported in OQX"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a parenthesis inside a character class is not a group",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"(\".matches(\"[(]\") && \"(?=\".matches(\"[(]\\\\?=\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an escaped parenthesis is not lookahead",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"(?=\".matches(\"\\\\(\\\\?=\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "plain groups still match",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\".matches(\"^(a)(b)$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a regex error is raised only when evaluated",
+      "roots": {
+        "xs": []
+      },
+      "query": "from xs where $value.matches(\"(\")",
+      "expect": {
+        "result": []
+      }
     }
   ]
 }

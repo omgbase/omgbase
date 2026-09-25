@@ -1,0 +1,174 @@
+{
+  "suite": "logical",
+  "cases": [
+    {
+      "name": "&& short-circuits: a false left never evaluates the right",
+      "notes": "`foo` is unknown and would raise; short-circuit evaluation never reaches it.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where false && foo(1) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "&& evaluates the right when the left is true",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true && foo(1) }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function"
+          ]
+        }
+      }
+    },
+    {
+      "name": "&& is evaluated left to right, not reordered around consumer tests",
+      "notes": "A consumer test on the left guards a scalar on the right; the engine must not run cheap scalars first.",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "r exists { where xs none { } && foo(1) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a scalar on the left of a consumer test is evaluated first",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "r exists { where foo(1) && xs exists { } }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function"
+          ]
+        }
+      }
+    },
+    {
+      "name": "&& stops at the first false conjunct",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true && false && foo(1) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "|| short-circuits: a true left never evaluates the right",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true || foo(1) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "|| evaluates the right when the left is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where false || foo(1) }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function"
+          ]
+        }
+      }
+    },
+    {
+      "name": "negation of a short-circuited conjunction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where !(false && foo(1)) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "&& in value position short-circuits",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: false && foo(1) from r",
+      "expect": {
+        "result": [
+          {
+            "x": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "|| in value position short-circuits",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1 || foo(1) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a guard on the left protects the right",
+      "roots": {
+        "xs": [
+          null,
+          "ab",
+          "b"
+        ]
+      },
+      "query": "$value values from xs where has($value) && $value.matches(\"^a\")",
+      "expect": {
+        "result": [
+          "ab"
+        ]
+      }
+    }
+  ]
+}

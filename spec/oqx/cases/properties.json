@@ -1,0 +1,178 @@
+{
+  "suite": "properties",
+  "cases": [
+    {
+      "name": "arrays have no length property",
+      "notes": "An array's only properties are its integer indices; `size(xs)` is how you measure it.",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "x: xs.length from r",
+      "expect": {
+        "result": [
+          {}
+        ]
+      }
+    },
+    {
+      "name": "size is how an array is measured",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "x: size(xs), y: xs.size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3,
+            "y": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "strings have no length property",
+      "roots": {
+        "r": [
+          {
+            "s": "abc"
+          }
+        ]
+      },
+      "query": "x: s.length from r",
+      "expect": {
+        "result": [
+          {}
+        ]
+      }
+    },
+    {
+      "name": "string rows have no properties",
+      "roots": {
+        "strs": [
+          "abc",
+          "de"
+        ]
+      },
+      "query": "from strs where length == 3",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "numbers and booleans have no properties",
+      "roots": {
+        "r": [
+          {
+            "n": 5,
+            "b": true
+          }
+        ]
+      },
+      "query": "r exists { where has(n.constructor) || has(b.constructor) || has(n.toFixed) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "inherited names are absent on objects",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1
+            }
+          }
+        ]
+      },
+      "query": "x: o.toString, y: o.constructor from r",
+      "expect": {
+        "result": [
+          {}
+        ]
+      }
+    },
+    {
+      "name": "an own property named like an inherited one is visible",
+      "roots": {
+        "r": [
+          {
+            "toString": "yes",
+            "o": {
+              "constructor": 2
+            }
+          }
+        ]
+      },
+      "query": "x: toString, y: o.constructor from r",
+      "expect": {
+        "result": [
+          {
+            "x": "yes",
+            "y": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bare name on an array row is absent",
+      "roots": {
+        "xs": [
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      },
+      "query": "x: length from xs",
+      "expect": {
+        "result": [
+          {}
+        ]
+      }
+    },
+    {
+      "name": "a lift named like an inherited property is only visible when bound",
+      "notes": "The lift table is consulted by own name; an unbound `toString` falls through to the row.",
+      "roots": {
+        "r": [
+          {
+            "toString": "row",
+            "xs": [
+              {
+                "v": 1
+              }
+            ]
+          }
+        ]
+      },
+      "query": "a: toString, b: hasOwnProperty from r where xs collect { ^hasOwnProperty: v }",
+      "expect": {
+        "result": [
+          {
+            "a": "row",
+            "b": [
+              1
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

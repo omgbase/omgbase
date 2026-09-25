@@ -654,6 +654,243 @@
       "expect": {
         "result": true
       }
+    },
+    {
+      "name": "addition with an absent left operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope + 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "addition with an absent right operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "2 + nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "subtraction with an absent left operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope - 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "subtraction with an absent right operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "2 - nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "multiplication with an absent left operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope * 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "multiplication with an absent right operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "2 * nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "division with an absent left operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope / 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "division with an absent right operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "2 / nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "remainder with an absent left operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope % 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "remainder with an absent right operand is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "2 % nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "unary minus on absent is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "-nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "a null field in arithmetic is absent",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "n + 1 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "string plus absent is absent",
+      "notes": "Absent has no string form; it is never rendered as text.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "\"a\" + nope values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "absent plus string is absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "nope + \"a\" values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "absent propagates through a chain",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "1 + nope * 2 values from r",
+      "expect": {
+        "result": [
+          null
+        ]
+      }
+    },
+    {
+      "name": "an absent arithmetic result equals null",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope + 1 == null && !(nope + 1 == 1) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "an absent arithmetic result does not order",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope + 1 < 5 }",
+      "expect": {
+        "result": false
+      }
     }
   ]
 }

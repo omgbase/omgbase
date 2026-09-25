@@ -6,9 +6,10 @@ states its rule and names the fixture file under `cases/` that pins it. Where
 this prose and a fixture disagree, the fixture wins.
 
 Portability rules — the places a second implementation would diverge from
-JavaScript by accident — are marked **(portability)**. The appendix lists the
-spots where the reference itself currently deviates from such a rule; those are
-not pinned by fixtures.
+JavaScript by accident — are marked **(portability)**. Every rule here is pinned
+by a fixture; the reference has no known deviations. The governing principle is
+**least surprise**: where the host language would supply a hidden coercion or a
+leaked host detail, OQX instead follows the rule a careful user would predict.
 
 ## 1. Values
 
@@ -24,14 +25,16 @@ objects, plus two engine-internal value kinds (ranges, entries).
   the escapes in GRAMMAR §1. [`strings`, `scalar-ordering`]
 - **Objects keep insertion order** (portability), observed by `entries()` and
   by projection. Property lookup is by exact key on the object's **own**
-  properties. [`entries`]
+  properties only (§2). [`entries`, `properties`]
 - **Absent** is one value with two host spellings (`null` and JavaScript
   `undefined`). Every rule below treats them identically; results canonicalize
   them per the README (a property is dropped; an element or a top-level result
   is `null`). [`projection`, `values`]
 - **Ranges** (`lo..hi`) and **entries** (from `entries(x)`) are values that
-  exist during evaluation. A range must not appear in a result; an entry appears
-  as a `{ key, value }` record when used as a plain value. [`ranges`, `entries`]
+  exist during evaluation. A range **never appears in a result**: projecting one
+  (as an item, under `values`, or inside a list) is an **eval error** (`a range
+  … cannot appear in a result`). An entry appears as a `{ key, value }` record
+  when used as a plain value. [`ranges`, `entries`]
 
 ## 2. Scopes and names
 
@@ -56,6 +59,18 @@ absent. `.name` navigates the value to its left; navigating from absent yields
 absent, never an error (`a.b.c` on `{}` is absent). `^$value` is the enclosing
 row; `^people` from a top-level row is the named root `people`.
 [`outer-refs`, `projection`]
+
+**Properties are own properties** (portability). Every property read — a bare
+identifier, `.field`, `^field`, `has(x)`, `"k" in obj`, `entries(obj)`, a lift
+name, a named root, a builtin name — consults only the object's **own
+enumerable keys**. A host prototype chain is invisible: `has(toString)` is
+false on `{}`, `"constructor" in {}` is false, `x.constructor()` is an unknown
+method, `from toString` is an unknown root. A plain object may of course own a
+key spelled `toString`, and then it is an ordinary property. An **array's** only
+properties are its integer indices (`"0"`, `"1"`, …); `xs.length` is absent —
+`size(xs)` measures it. **Primitives** (strings, numbers, booleans) have no
+properties at all: `s.length` is absent, `from strs where length == 3` matches
+nothing. [`properties`, `builtins`, `membership`]
 
 ## 3. Collections and coercion
 
@@ -90,11 +105,14 @@ uses host reference identity; fixtures do not rely on it). [`scalar-equality`]
 
 - If either operand is absent the result is **false**, for every operator and
   both operand positions (so `!(age > 0)` keeps rows lacking `age`).
-- Two numbers order numerically; two strings order by code point (portability):
+- Two numbers order numerically; two strings order by **Unicode code point**
+  (portability, not UTF-16 code unit: `"～" < "😀"` since U+FF5E < U+1F600):
   `"B" < "a"`, `"ab" < "abc"`, `"10" < "9"`. ISO-8601 date strings therefore
   order chronologically.
-- Any other pairing (number with string, booleans, arrays, objects) does **not
-  order**: false. [`scalar-ordering`]
+- **Any other pairing does not order**: false for all four operators. There is
+  no cross-type coercion — `1 < "2"`, `1 <= "1"`, `"2" > 1` are false — and
+  booleans, arrays, and objects order against nothing (`true < 2`,
+  `false < true` are false). [`scalar-ordering`]
 
 ## 7. Arithmetic and string forms
 
@@ -102,22 +120,31 @@ uses host reference identity; fixtures do not rely on it). [`scalar-equality`]
 remainder and takes the dividend's sign (`-7 % 3` is `-1`). Unary `-` negates
 a number.
 
-`+` with **either operand a string** concatenates the two operands' **string
-forms**: a string is itself; a number renders as a double with no fraction when
-integer-valued (`2.0` → `"2"`, `2.5` → `"2.5"`, `-3` → `"-3"`, `-0` → `"0"`);
-`true`/`false` render as those words. Concatenation is left-associative
-(`"n:" + 1 + 2` is `"n:12"`).
+**Absent propagates**: any arithmetic operator (`+ - * / %`, unary `-`) with an
+absent operand yields **absent** (`null` in a result), on either side, and even
+when the other side is a string — `"a" + nope` is absent, not `"aundefined"`.
+Absent has no string form. So `nope + 1 == null` is true and `nope + 1 < 5` is
+false. [`arithmetic`]
 
-Arithmetic on any other operand kinds (absent, booleans, non-numeric strings,
-arrays, objects), division by zero, and the string form of very large or very
-small magnitudes are **not specified**; a result that would be NaN or infinite
-must not appear in a fixture. [`arithmetic`]
+`+` with **either operand a string** (and neither absent) concatenates the two
+operands' **string forms**: a string is itself; a number renders as a double
+with no fraction when integer-valued (`2.0` → `"2"`, `2.5` → `"2.5"`, `-3` →
+`"-3"`, `-0` → `"0"`); `true`/`false` render as those words. Concatenation is
+left-associative (`"n:" + 1 + 2` is `"n:12"`).
+
+Arithmetic on other operand kinds (booleans, non-numeric strings, arrays,
+objects), division by zero, and the string form of very large or very small
+magnitudes are **not specified**; a result that would be NaN or infinite must
+not appear in a fixture. [`arithmetic`]
 
 ## 8. Logical operators in value position
 
 Outside the `where` tree, `&&` and `||` are value-producing: `a && b` yields
 `a` when `a` is falsy, else `b`; `a || b` yields `a` when `a` is truthy, else
-`b`. `!x` yields a boolean. Evaluation short-circuits. [`projection`]
+`b`. `!x` yields a boolean. Evaluation is **strictly left to right and
+short-circuits**: the right operand is never evaluated when the left decides,
+so `false && foo()` is `false` even though `foo` is unknown. [`projection`,
+`logical`]
 
 ## 9. Membership (`in`)
 
@@ -127,19 +154,24 @@ Outside the `where` tree, `&&` and `||` are value-producing: `a && b` yields
 - an **array** → some element `== x` (strict equality; absent matches a `null`
   element);
 - a **string** → substring test against `x`'s string form (§7); the empty
-  string is a substring of every string;
-- an **object** → `x`'s string form is one of its own keys (a key whose value is
-  `null` still counts);
+  string is a substring of every string; an absent `x` is never a substring;
+- an **object** → `x`'s string form is one of its **own** keys (§2; a key whose
+  value is `null` still counts; `"toString" in {}` is false); an absent `x` is
+  never a key, not even one spelled `"null"` or `"undefined"`;
 - absent or any other value → false. [`membership`]
 
 ## 10. Ranges
 
 `lo..hi` is inclusive at both ends; `lo...hi` excludes `hi`; either bound may
-be omitted (`..hi`, `lo..`). Coverage of `x` is `lo <= x` (when `lo` is
-present) and `x <= hi` or `x < hi` (when `hi` is present), each through the
-ordering rules of §6 — so an absent `x`, or one that does not order against a
-bound, is not covered. Bounds may be any expressions (fields, bindings,
-arithmetic). Ranges work over numbers and over ISO-8601 strings alike.
+be omitted (`..hi`, `lo..`). Coverage of `x` requires `x` to be a **number or a
+string**, then `lo <= x` (when `lo` is present) and `x <= hi` or `x < hi` (when
+`hi` is present), each through the ordering rules of §6 — so **an absent `x` is
+covered by no range**, however open its ends (`nope in ..5`, `nope in 1..` are
+false), a boolean is never covered, and a value that does not order against a
+bound is not covered (`"3" in 1..5` is false). Bounds may be any expressions
+(fields, bindings, arithmetic). Ranges work over numbers and over ISO-8601
+strings alike. A range is an evaluation-time value only; see §1 for the result
+rule.
 
 `range(s)` reads a string as a range: `lo`, a maximal run of 2 or 3 dots, `hi`;
 the present bounds must be **all numeric** (`-?\d+(\.\d+)?([eE][+-]?\d+)?`) or
@@ -155,8 +187,8 @@ Free functions:
 | Function | Result |
 | --- | --- |
 | `list(x)` | absent → `[]`; an array → itself; anything else → `[x]` (an object is one element, not iterated) |
-| `size(x)` | string → code-point count; array → length; object → own-key count; absent or any scalar → `0` |
-| `has(x)` | `true` iff `x` is not absent (`has(0)`, `has("")`, `has(false)` are true) |
+| `size(x)` | string → **code-point** count (`size("😀")` is 1); array → length; object → own-key count; absent or any scalar → `0` |
+| `has(x)` | `true` iff `x` is not absent (`has(0)`, `has("")`, `has(false)` are true; `has(toString)` on `{}` is false, §2) |
 | `range(s)` | §10 |
 | `entries(x)` | §21 |
 
@@ -164,17 +196,23 @@ Methods:
 
 | Method | Result |
 | --- | --- |
-| `s.lower()` / `s.upper()` | case-mapped string form of the receiver (a number or boolean receiver is rendered as in §7) |
+| `s.lower()` / `s.upper()` | case-mapped string form of the receiver (a number or boolean receiver is rendered as in §7); an **absent receiver yields absent** |
 | `s.contains(v)` | string receiver: substring of `v`'s string form; array receiver: some element `== v`; anything else → false |
 | `s.startsWith(v)` / `s.endsWith(v)` | string receiver only; anything else → false |
-| `s.matches(re)` | absent receiver → false; otherwise the receiver's string form is searched (unanchored unless the pattern anchors) with the pattern compiled as a regex |
+| `s.matches(re)` | absent receiver → false; otherwise the receiver's string form is searched (unanchored unless the pattern anchors) with the pattern compiled in the OQX regex dialect below |
 | `x.size()` | as `size(x)` |
 
-**Regex dialect** (portability): the intersection both implementations support —
-literals, `.`, character classes `[…]`, `\d \w \s`, the quantifiers `* + ? {m,n}`,
-alternation `|`, grouping `( )`, anchors `^ $`, escaped metacharacters. No
-lookaround, no backreferences, no flags; matching is case-sensitive. A fixture
-using anything outside the intersection is a spec bug.
+**Regex dialect** (portability): literals, `.`, character classes `[…]`,
+`\d \w \s`, the quantifiers `* + ? {m,n}`, alternation `|`, grouping `( )`,
+anchors `^ $`, escaped metacharacters. No flags; matching is case-sensitive.
+Regex is an OQX concern, not the host's: a pattern that does not compile is an
+**eval error** whose message includes `invalid regular expression`, never a host
+exception. **Lookaround** (`(?=`, `(?!`, `(?<=`, `(?<!`) and **backreferences**
+(`\1`…`\9`, `\k<name>`) are rejected with an eval error whose message includes
+`not supported in OQX`, so every pattern that runs is portable. The scan honors
+escapes and classes: `\(\?=` and `[(]` are literals, not lookahead. The error
+is raised when the call is evaluated (an empty source never evaluates it).
+[`strings`]
 
 Calling a name not in these tables is an **eval error** (`unknown function
 'f(…)'` / `unknown method '.m(…)'`), raised when the call is evaluated (an empty
@@ -207,9 +245,15 @@ scalar leaf is truthiness (§4), and a consumer test is:
 
 The rows a test sees are the receiver's rows (§3), re-projected by the block's
 `from`, filtered by its `where`, ordered, deduped by `distinct`, and bounded by
-`limit`/`offset` (§18) — so `exists { offset 1 }` asks for a second row. The
-order in which `&&` operands are evaluated is not observable. [`where`,
-`consumers`, `limit-offset`]
+`limit`/`offset` (§18) — so `exists { offset 1 }` asks for a second row.
+
+**`&&` and `||` evaluate strictly left to right and short-circuit**, in `where`
+exactly as in value position (§8). The engine never reorders conjuncts — not
+even to run a cheap scalar before a consumer test — because evaluation order is
+observable through errors: `false && foo(1)` is false, `xs none { } && foo(1)`
+is false when `xs` has rows, and `true && foo(1)` raises `unknown function`. A
+query may therefore guard an operand by position (`has(s) && s.matches(re)`).
+[`where`, `logical`, `consumers`, `limit-offset`]
 
 ## 14. Select aliases in `where`
 
@@ -235,7 +279,7 @@ A bare identifier in a body's `where` that names an alias of the **same body's**
 | `none` | boolean | true iff no rows |
 | `count` | number | rows after where/distinct/bounds |
 | `first` | projected row or `null` | the first row in result order |
-| `single` | projected row or `null` | **eval error** when more than one row remains |
+| `single` | projected row or `null` | **eval error** when more than one row remains; the message reports the **true** number of rows after bounds (`matched 3 rows`), so `single` always materializes |
 
 The same six shapes apply to nested directives, except that only
 `collect`/`first`/`single` are legal in a projection and only
@@ -247,19 +291,28 @@ The same six shapes apply to nested directives, except that only
 `follow distinct` (§20) — keeps the **first** row per distinct **projected
 value**, preserving order, before bounds are applied. Projections compare
 structurally with absent ≡ `null`, key order ignored. With an **empty
-projection** (`count distinct { }`) rows dedup by **identity**: the row's `id`
-property when the row is an object with one, else the row's structural value
-(portability). [`distinct`]
+projection** (`count distinct { }`) rows dedup by **identity** (§20): the row's
+`id` property when the row is an object with one, else the row's structural
+value.
+
+**Identity is structural** (portability). Two values have the same identity iff
+they are structurally equal: absent ≡ `null`; numbers as doubles; strings by
+code point; arrays element-wise; objects by own keys, **order ignored**; and
+types are never conflated — `1`, `"1"`, and `true` are three identities, `{}`
+and `[]` two more. Never a host string form: `{a:1}` and `{a:2}` are different,
+`[{a:1},{a:2}] count distinct { }` is 2. Implementations key identities with a
+canonical, type-tagged serialization (the reference's `canonicalKey`). An
+entry's identity is its value's. [`distinct`, `follow`]
 
 ## 17. `order by`
 
 Rows sort by each key in turn; ties fall through to the next key; the sort is
 **stable** (equal rows keep source order). Within a key, present values order
-by §6 (numbers numerically, strings by code point) and `desc` reverses that
-order of present values only: **absent sorts last in both directions**. Keys
-are arbitrary expressions read in the row's scope (fields, `$value`, intrinsics,
-`^outer`); they are not rewritten against aliases. Ordering of mixed-type or
-boolean keys is not specified. [`order-by`]
+by §6 (numbers numerically, strings by **code point**: `"a"`, `"～"`, `"😀"`)
+and `desc` reverses that order of present values only: **absent sorts last in
+both directions**. Keys are arbitrary expressions read in the row's scope
+(fields, `$value`, intrinsics, `^outer`); they are not rewritten against
+aliases. Ordering of mixed-type or boolean keys is not specified. [`order-by`]
 
 ## 18. `limit` / `offset`
 
@@ -301,13 +354,19 @@ Each occurrence carries intrinsics:
   Only `interior` rows expand;
 - `$leaf` = `$stop == "leaf"`; `$frontier` = `$stop` is `frontier` or `depth`;
 - `$ordinal` — a 1-based rank over all occurrences ordered by `$depth`, then
-  by **path**, the identities' string forms joined by `/` and compared as text.
+  by **path**, the sequence of identities from the seed to the occurrence,
+  compared **component-wise as values**: two numbers numerically, two strings
+  by code point (so `9` precedes `10`, never `"10" < "9"` as text); a number
+  component precedes a string component; any other pairing orders by kind then
+  by canonical serialization (the reference's `comparePath`).
 
 Options: `where P` keeps only successors satisfying `P` (read in the successor's
 scope); `frontier P` marks a row a frontier (not expanded); `depth n` caps
 `$depth` at `n` (1–8; the default and hard cap is 8); `by E` gives the identity
 expression. **Identity** (portability) defaults to the row's `id` property, else
-its structural value. A revisit of an identity on the current path is admitted
+its structural value, compared as §16 describes — id-less nodes with different
+contents are different nodes (not cycles of one another), and an `id` of `1`
+is not an `id` of `"1"`. A revisit of an identity on the current path is admitted
 **once** as `$stop == "cycle"` and not expanded, so cycles terminate. A node
 reached by N distinct paths yields N occurrences; `follow distinct` keeps the
 minimal `(depth, path)` occurrence per identity. Intrinsics belong to the
@@ -318,9 +377,18 @@ error. [`follow`]
 
 ## 21. `entries()` and `$key`
 
-`entries(x)` converts an object into a collection of entries in insertion
-order (portability), an array into `(index, element)` entries, and absent or
-any scalar into nothing. When an entry becomes a scope's row, the scope's row is
+`entries(x)` converts an object into a collection of its **own** entries in
+insertion order (portability), an array into `(index, element)` entries, and
+absent or any scalar into nothing.
+
+**Integer-like keys** (host data model). The reference runs on JavaScript,
+whose objects enumerate integer-like keys (`"0"`, `"42"`) first, in numeric
+order, before the other keys in insertion order; other hosts keep pure insertion
+order. This is a fact about the data a host hands OQX, not about OQX, and no
+implementation undoes it. Fixtures therefore **must not depend on the relative
+order of integer-like and non-integer-like keys** in one object (`{ "b":1,
+"2":2, "a":3 }` yields `["2","b","a"]` in the reference and `["b","2","a"]`
+elsewhere); an object with only one kind of key is safe. When an entry becomes a scope's row, the scope's row is
 the property's **value** (`$value`, bare names, navigation) and `$key` is the
 property's key. `$key` exists only in an entry scope; ordinary rows and array
 elements have none. Entries flow through every place a row does: sources,
@@ -334,33 +402,19 @@ A bound value is exactly the value it was given: a collection in `from` or
 receiver position is the rows; a scalar in a predicate is compared with the §5/§6
 rules; an array is a valid right side of `in`; a number is a valid `limit`; a
 `null` binding is absent. A bound string is never source text (GRAMMAR §1).
-[`bindings`]
+Running a query with **fewer values than it references** is an **eval error**
+(`binding … out of range`), never a silent absent; the template form checks
+arity at parse time, so this is reachable only through a host `run` API and is
+pinned by the reference's own tests. [`bindings`]
 
 ## 23. Errors
 
 Every failure is an `OqxError` whose `stage` is `lex`, `parse`, or `eval`
-(GRAMMAR §6). Eval errors: unknown function or method; `single` with more than
-one row; an invalid `limit`/`offset` value; `follow` in a where-position
-directive. Evaluation is otherwise total: absent navigation, comparisons over
-absent or mismatched types, membership in a non-container, and `range()` of a
-bad string all yield a value (absent or `false`), never an error.
-[`errors-lex`, `errors-parse`, `errors-eval`]
-
-## Appendix — known reference deviations (not pinned)
-
-The reference implementation currently contradicts the rules above in these
-places, each an artifact of JavaScript. No fixture depends on them; a port must
-follow the rule, not the reference.
-
-| Rule | Reference behavior | Exposing query |
-| --- | --- | --- |
-| §1/§6 strings order by code point | UTF-16 code-unit order | `r exists { where "～" < "😀" }` → `false` (spec: `true`) |
-| §1/§11 `.size()` counts code points | counts UTF-16 units | `x: "😀".size() from r` → `2` (spec: `1`) |
-| §6 mixed types do not order | JS coercion orders a numeric string against a number | `r exists { where 1 < "2" }` → `true` (spec: `false`); also affects range coverage: `"3" in 1..5` |
-| §2 own-property lookup | inherited properties are visible | `r exists { where has(toString) }` → `true`; `"toString" in o` → `true`; `where length == 3` on string rows |
-| §1 insertion order | integer-like keys are enumerated first | `$key values from entries(o)` with `{ "b":1, "2":2, "a":3 }` → `["2","b","a"]` |
-| §16/§20 structural identity | identity stringifies to `[object Object]` for objects without `id`, so all such rows collide (`count distinct { }` → 1; every `follow` successor without `id` is a `cycle`); `1` and `"1"` also collide | `xs count distinct { }` with `[{"a":1},{"a":2}]` → `1` (spec: `2`) |
-| §7 absent in arithmetic / string form | `null` → `0`/`"null"`, `undefined` → NaN/`"undefined"` | `x: n + 1` vs `x: nope + 1`; `"a" + nope` → `"aundefined"` |
-| §11 `.lower()` on absent | `"null"` / `"undefined"` | `x: nope.lower() from r` |
-| §11 regex dialect | JavaScript `RegExp`: lookaround works; an invalid pattern throws a host `SyntaxError`, not an `OqxError` | `"ab".matches("a(?=b)")`; `"a".matches("(")` |
-| §1 ranges never appear in results | a range projected as a value leaks its internal record | `x: 1..5 from r` |
+(GRAMMAR §6); a host exception never escapes. Eval errors: unknown function or
+method; `single` with more than one row; an invalid `limit`/`offset` value;
+`follow` in a where-position directive; an invalid or unsupported regex (§11);
+a range in a result (§1); a binding out of range (§22). Evaluation is otherwise
+total: absent navigation, arithmetic over absent, comparisons over absent or
+mismatched types, membership in a non-container, and `range()` of a bad string
+all yield a value (absent or `false`), never an error.
+[`errors-lex`, `errors-parse`, `errors-eval`, `logical`]

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { oqx, execute, parse, run, OqxError } from "../src/index.ts";
+import { oqx, execute, parse, run, OqxError, LANGUAGE_VERSION } from "../src/index.ts";
+import { parseTemplate } from "../src/parser.ts";
 
 // ---- fixtures ---------------------------------------------------------------
 
@@ -882,3 +883,25 @@ test("entries compose with order/limit/distinct and a follow seed keeps its $key
   );
 });
 
+// ---- run(): bindings ---------------------------------------------------------
+
+test("run: a binding the query references but was not given is an eval error, not a silent absent", () => {
+  // The tagged template checks arity at parse time; only the `run` API can
+  // present fewer values than the query references.
+  const query = parseTemplate(["name from ", " where id == ", ""], 2);
+  assert.throws(() => run(query, { values: [people] }), (e: unknown) => {
+    assert.ok(e instanceof OqxError);
+    assert.equal(e.stage, "eval");
+    assert.match(e.message, /binding/);
+    assert.match(e.message, /out of range/);
+    return true;
+  });
+  // The error is raised only when the binding is evaluated (an empty source never is).
+  assert.deepEqual(run(parseTemplate(["name from ", " where id == ", ""], 2), { values: [[]] }), { consumer: "collect", rows: [] });
+  // With every value present the same query runs.
+  assert.deepEqual(run(query, { values: [people, 7] }), { consumer: "collect", rows: [{ name: "Alice" }] });
+});
+
+test("LANGUAGE_VERSION is the spec's major.minor", () => {
+  assert.match(LANGUAGE_VERSION, /^\d+\.\d+$/);
+});

@@ -38,12 +38,12 @@ $ omg query '$repo.docs single { where layer == "draft" }'
 d_f7w5k26  texts/mutus-liber.md
 ```
 
-Point it at the canon documents and it refuses to pick — it stops the moment a
-second match appears:
+Point it at the canon documents and it refuses to pick — and tells you exactly
+how many matched:
 
 ```console
 $ omg query '$repo.docs single { where layer == "canon" }'
-error[error]: single { … } matched 2 rows; use first { … } for zero-or-one
+error[error]: single { … } matched 13 rows; use first { … } for zero-or-one
 ```
 
 ## Full-text with `text()`

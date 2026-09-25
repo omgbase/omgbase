@@ -3,9 +3,10 @@
 // interface so a pushdown planner (tier 3, planner.ts) is a drop-in alternative.
 //
 // Optimizations over a naive walk: `exists` short-circuits at the first match;
-// `first`/`single` stop early when the result is unordered; `count` never
-// materializes rows; and within an `&&` the cheap scalar leaves are evaluated
-// before expensive consumer-op leaves (which each drive a nested traversal).
+// `first` stops early when the result is unordered; `count` never materializes
+// rows. (`single` always materializes, so its error reports the true row count,
+// and `&&` evaluates strictly left to right — evaluation order is observable
+// through errors, so the engine never reorders conjuncts.)
 //
 // Name resolution is strictly lexical and LOCAL: a bare identifier is read from
 // the current scope only, and an enclosing scope is reached solely through an
@@ -19,7 +20,7 @@ import type { DataContext } from "./context.ts";
 import { DefaultContext } from "./context.ts";
 import { OqxError } from "./errors.ts";
 import {
-  relate, arith, membership, truthy, toNumber, compareForSort, makeRange, isEntry,
+  relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange,
 } from "./semantics.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
@@ -95,11 +96,11 @@ export class InMemoryEngine implements Engine {
       return { consumer: "none", none: m === 0 };
     }
 
-    // first/single over an unordered, non-distinct set need only the rows up to
-    // the bound: offset + 1 (first) / offset + 2 (single, to detect a second).
-    const want = query.consumer === "first" ? 1 : query.consumer === "single" ? 2 : Infinity;
-    const cap = !query.orderBy && !query.distinct && want !== Infinity
-      ? bound.offset + Math.min(want, bound.limit ?? want)
+    // first over an unordered, non-distinct set needs only the rows up to the
+    // bound (offset + 1). single materializes everything so its error can
+    // report how many rows actually matched.
+    const cap = query.consumer === "first" && !query.orderBy && !query.distinct
+      ? bound.offset + Math.min(1, bound.limit ?? 1)
       : Infinity;
     let kept: Scope[] = [];
     for (const r of rows) {
@@ -180,14 +181,16 @@ export class InMemoryEngine implements Engine {
 
   // Dedup scopes by their PROJECTED value (`distinct`): keep the first scope per
   // distinct projection, preserving order. An empty projection dedups by row
-  // identity (so `count distinct { }` counts distinct rows).
+  // identity (so `count distinct { }` counts distinct rows). Both keys are
+  // structural (`canonicalKey`): absent ≡ null, key order ignored, types kept
+  // apart — never a host `String()`.
   private dedupByProjection(scopes: Scope[], proj: Projection): Scope[] {
     const seen = new Set<string>();
     const out: Scope[] = [];
     for (const s of scopes) {
       const key = proj.select.length === 0
-        ? `i:${String(this.ctx.identity(s.row))}`
-        : `p:${stableStringify(this.projectRow(proj, s))}`;
+        ? `i:${canonicalKey(this.ctx.identity(s.row))}`
+        : `p:${canonicalKey(this.projectRow(proj, s))}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(s);
@@ -207,12 +210,14 @@ export class InMemoryEngine implements Engine {
   //   • `$leaf` = (stop == leaf); `$frontier` = (stop ∈ {frontier, depth}) — the
   //     "there is unfollowed graph beyond me" signal;
   //   • identity for cycle detection + `distinct` is `by <expr>` when given, else
-  //     `ctx.identity(row)`.
+  //     `ctx.identity(row)` (an entry's identity is its value's); identities are
+  //     compared structurally via `canonicalKey`, and `$ordinal` paths compare
+  //     component-wise (`comparePath`), so `10` follows `9`.
   private followWalk(seedRows: unknown[], follow: Follow, parent: Scope): Occurrence[] {
     const cap = follow.depth ?? HARD_DEPTH_CAP;
     const scopeFor = (row: unknown): Scope => this.enter(row, parent);
-    const keyOf = (row: unknown): string =>
-      String(follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(row));
+    const identityOf = (row: unknown): unknown =>
+      follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(isEntry(row) ? row.value : row);
     const succOf = (row: unknown): unknown[] => {
       const raw = this.rowsOf(this.evalExpr(follow.receiver, scopeFor(row)));
       return follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, scopeFor(x)))) : raw;
@@ -220,12 +225,13 @@ export class InMemoryEngine implements Engine {
     const frontierHit = (row: unknown): boolean =>
       follow.frontier ? truthy(this.evalExpr(follow.frontier, scopeFor(row))) : false;
 
-    interface Walked { row: unknown; depth: number; path: string; key: string; stop: string; }
+    interface Walked { row: unknown; depth: number; path: unknown[]; key: string; stop: string; }
     const walked: Walked[] = [];
 
-    const visit = (row: unknown, depth: number, ancestors: string[]): void => {
-      const key = keyOf(row);
-      const path = `/${[...ancestors, key].join("/")}/`;
+    const visit = (row: unknown, depth: number, ancestors: string[], ancestorIds: unknown[]): void => {
+      const id = identityOf(row);
+      const key = canonicalKey(id);
+      const path = [...ancestorIds, id];
       let stop: string;
       if (ancestors.includes(key)) stop = "cycle";
       else if (frontierHit(row)) stop = "frontier";
@@ -235,13 +241,13 @@ export class InMemoryEngine implements Engine {
         if (succ.length === 0) stop = "leaf";
         else {
           walked.push({ row, depth, path, key, stop: "interior" });
-          for (const s of succ) visit(s, depth + 1, [...ancestors, key]);
+          for (const s of succ) visit(s, depth + 1, [...ancestors, key], path);
           return;
         }
       }
       walked.push({ row, depth, path, key, stop });
     };
-    for (const r of seedRows) visit(r, 1, []);
+    for (const r of seedRows) visit(r, 1, [], []);
 
     let rows = walked;
     if (follow.distinct) {
@@ -249,12 +255,12 @@ export class InMemoryEngine implements Engine {
       const best = new Map<string, Walked>();
       for (const w of rows) {
         const prev = best.get(w.key);
-        if (!prev || w.depth < prev.depth || (w.depth === prev.depth && w.path < prev.path)) best.set(w.key, w);
+        if (!prev || w.depth < prev.depth || (w.depth === prev.depth && comparePath(w.path, prev.path) < 0)) best.set(w.key, w);
       }
       rows = [...best.values()];
     }
     // $ordinal: a deterministic 1..N rank over (depth, path).
-    rows = rows.slice().sort((a, b) => a.depth - b.depth || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    rows = rows.slice().sort((a, b) => a.depth - b.depth || comparePath(a.path, b.path));
     return rows.map((w, i) => ({
       row: w.row,
       meta: {
@@ -283,13 +289,14 @@ export class InMemoryEngine implements Engine {
   }
 
   // The per-row result: the raw row (empty projection), the single item's value
-  // itself (`values` mode), or a `{ name: value }` record.
+  // itself (`values` mode), or a `{ name: value }` record. A range is an
+  // evaluation-time value only and never appears in a result.
   private projectRow(proj: Projection, scope: Scope): unknown {
     const { select } = proj;
-    if (select.length === 0) return scope.row;
-    if (proj.values) return this.itemValue(select[0]!, scope);
+    if (select.length === 0) return noRange(scope.row);
+    if (proj.values) return noRange(this.itemValue(select[0]!, scope));
     const out: Record<string, unknown> = {};
-    for (const item of select) out[item.name] = this.itemValue(item, scope);
+    for (const item of select) out[item.name] = noRange(this.itemValue(item, scope));
     return out;
   }
 
@@ -301,11 +308,9 @@ export class InMemoryEngine implements Engine {
 
   private evalWhere(w: Where, scope: Scope): boolean {
     switch (w.kind) {
-      case "and": {
-        // Cheap scalar leaves before expensive consumer ops; `.every` short-circuits.
-        for (const p of orderByCost(w.parts)) if (!this.evalWhere(p, scope)) return false;
-        return true;
-      }
+      // Strictly left to right, short-circuiting: `false && f()` never evaluates
+      // `f()`, so a query may guard an expensive or failing operand by position.
+      case "and": return w.parts.every((p) => this.evalWhere(p, scope));
       case "or": return w.parts.some((p) => this.evalWhere(p, scope));
       case "not": return !this.evalWhere(w.expr, scope);
       case "scalar": return truthy(this.evalExpr(w.expr, scope));
@@ -427,7 +432,11 @@ export class InMemoryEngine implements Engine {
   private evalExpr(e: Expr, scope: Scope): unknown {
     switch (e.kind) {
       case "lit": return e.value;
-      case "binding": return scope.bindings[e.index];
+      case "binding":
+        if (e.index >= scope.bindings.length) {
+          throw new OqxError(`binding \${${e.index}} is out of range: the query references ${e.index + 1} value${e.index === 0 ? "" : "s"} but ${scope.bindings.length} ${scope.bindings.length === 1 ? "was" : "were"} given`, "eval");
+        }
+        return scope.bindings[e.index];
       case "ident": return this.resolveIn(e.name, scope);
       case "outer": {
         // `^name` reads from EXACTLY `levels` scopes out — the target scope is
@@ -446,8 +455,11 @@ export class InMemoryEngine implements Engine {
         return r == null ? undefined : this.ctx.get(r, String(i));
       }
       case "call": return this.evalCall(e, scope);
-      case "unary":
-        return e.op === "!" ? !truthy(this.evalExpr(e.expr, scope)) : -toNumber(this.evalExpr(e.expr, scope));
+      case "unary": {
+        const v = this.evalExpr(e.expr, scope);
+        if (e.op === "!") return !truthy(v);
+        return v == null ? undefined : -(v as number);
+      }
       case "binary": {
         const l = this.evalExpr(e.left, scope);
         const r = this.evalExpr(e.right, scope);
@@ -483,7 +495,7 @@ export class InMemoryEngine implements Engine {
   private resolveIn(name: string, scope: Scope): unknown {
     if (name === "$value") return scope.parent === null ? undefined : scope.row;
     if (name === KEY || RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
-    if (scope.lifts && name in scope.lifts) return scope.lifts[name];
+    if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
     return this.ctx.get(scope.row, name);
   }
@@ -510,17 +522,40 @@ function isRelOp(op: string): boolean {
   return op === "==" || op === "!=" || op === "<" || op === "<=" || op === ">" || op === ">=";
 }
 
-// Deterministic stringify for `distinct` dedup keys: object keys are emitted in
-// sorted order so two projections that are equal-by-value collide regardless of
-// key insertion order. `undefined` normalizes to null (like an absent value).
-function stableStringify(v: unknown): string {
-  if (v === undefined || v === null) return "null";
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
-  if (typeof v === "object") {
-    const o = v as Record<string, unknown>;
-    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(",")}}`;
+// Guard a value bound for a result: a range (`lo..hi`) exists only during
+// evaluation. Checks the value itself and, for an array, its elements — deeper
+// structure is host data (which cannot hold a range) or a nested block's
+// result (already guarded when it was projected).
+function noRange(v: unknown): unknown {
+  if (isRange(v) || (Array.isArray(v) && v.some(isRange))) {
+    throw new OqxError("a range (lo..hi) cannot appear in a result; test membership with `x in lo..hi` instead", "eval");
   }
-  return JSON.stringify(v);
+  return v;
+}
+
+// Order two `follow` paths (identity sequences of equal depth) component-wise:
+// two numbers numerically, two strings by code point; otherwise numbers precede
+// strings precede everything else, and same-kind others order by canonical key.
+function comparePath(a: unknown[], b: unknown[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const c = compareComponent(a[i], b[i]);
+    if (c !== 0) return c;
+  }
+  return a.length - b.length;
+}
+
+function compareComponent(x: unknown, y: unknown): number {
+  const c = compare(x, y);
+  if (c !== undefined) return c;
+  const rx = componentRank(x), ry = componentRank(y);
+  if (rx !== ry) return rx - ry;
+  const kx = canonicalKey(x), ky = canonicalKey(y);
+  return kx < ky ? -1 : kx > ky ? 1 : 0;
+}
+
+function componentRank(v: unknown): number {
+  return typeof v === "number" ? 0 : typeof v === "string" ? 1 : 2;
 }
 
 function compareCount(n: number, cmp: { op: string; value: number }): boolean {
@@ -535,20 +570,6 @@ function sliceBound<T>(rows: T[], b: Bound): T[] {
 function boundedCount(n: number, b: Bound): number {
   const rest = Math.max(0, n - b.offset);
   return b.limit == null ? rest : Math.min(rest, b.limit);
-}
-
-// Order `&&` conjuncts so cheap scalar leaves run before consumer-op leaves.
-function orderByCost(parts: Where[]): Where[] {
-  return [...parts].sort((a, b) => whereCost(a) - whereCost(b));
-}
-
-function whereCost(w: Where): number {
-  switch (w.kind) {
-    case "op": return 2;
-    case "and": case "or": return Math.max(0, ...w.parts.map(whereCost));
-    case "not": return whereCost(w.expr);
-    case "scalar": return 0;
-  }
 }
 
 function describeReceiver(e: Expr): string {

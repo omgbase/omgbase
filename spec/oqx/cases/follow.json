@@ -234,8 +234,8 @@
       }
     },
     {
-      "name": "$ordinal path components compare as text",
-      "notes": "A path is the identities' string forms joined; \"10\" sorts before \"9\" as text.",
+      "name": "$ordinal path components compare as values",
+      "notes": "A path is the sequence of identities along the walk; components compare as values (two numbers numerically, two strings by code point), never as joined text — so 9 precedes 10.",
       "roots": {
         "tree": [
           {
@@ -257,8 +257,8 @@
       "expect": {
         "result": [
           1,
-          10,
-          9
+          9,
+          10
         ]
       }
     },
@@ -1066,6 +1066,102 @@
             "unexpected 'follow'"
           ]
         }
+      }
+    },
+    {
+      "name": "follow over id-less nodes uses structural identity",
+      "notes": "Without an `id`, identity is the row's structural value; distinct successors are not cycles of each other.",
+      "roots": {
+        "t": [
+          {
+            "n": 1,
+            "children": [
+              {
+                "n": 2,
+                "children": []
+              },
+              {
+                "n": 3,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "n, stop: $stop from t follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "n": 1,
+            "stop": "interior"
+          },
+          {
+            "n": 2,
+            "stop": "leaf"
+          },
+          {
+            "n": 3,
+            "stop": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow identity keeps a number and a numeric string apart",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": "1",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, stop: $stop from t follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "stop": "interior"
+          },
+          {
+            "id": "1",
+            "stop": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "$ordinal path components: numbers precede strings",
+      "notes": "Components of different kinds do not order by §6; a number component sorts before a string component.",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              },
+              {
+                "id": 2,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from t follow children order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2,
+          "a"
+        ]
       }
     }
   ]

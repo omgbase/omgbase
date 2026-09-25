@@ -1812,6 +1812,18 @@
           ]
         }
       }
+    },
+    {
+      "name": "a root named like an inherited property is unknown",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from toString",
+      "expect": {
+        "result": []
+      }
     }
   ]
 }

@@ -970,6 +970,175 @@
       "expect": {
         "result": true
       }
+    },
+    {
+      "name": "a numeric string is not covered by a numeric range",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"3\" in 1..5 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a number is not covered by a string range",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 in \"1\"..\"5\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a boolean is not covered by any range",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true in 0..1 || false in ..1 || true in 0.. }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "an absent value is not covered by an open-low range",
+      "notes": "No range covers absent, however open its ends.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope in ..5 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "an absent value is not covered by an open-high range",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope in 1.. }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a null field is not covered by an open range",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where n in 0.. }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a range cannot be projected",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1..5 from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "range",
+            "cannot appear in a result"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a range cannot be a values result",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "1..5 values from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "range",
+            "cannot appear in a result"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a range from range() cannot be projected",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: range(\"1..5\") from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "range",
+            "cannot appear in a result"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a list holding a range cannot be projected",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: list(1..5) from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "range",
+            "cannot appear in a result"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a range cannot be projected from a nested block",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "n: xs collect { 1..2 values } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "range",
+            "cannot appear in a result"
+          ]
+        }
+      }
     }
   ]
 }

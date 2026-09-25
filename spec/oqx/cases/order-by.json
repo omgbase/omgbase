@@ -551,6 +551,24 @@
           }
         ]
       }
+    },
+    {
+      "name": "strings order by code point beyond the BMP",
+      "roots": {
+        "xs": [
+          "😀",
+          "～",
+          "a"
+        ]
+      },
+      "query": "$value values from xs order by $value",
+      "expect": {
+        "result": [
+          "a",
+          "～",
+          "😀"
+        ]
+      }
     }
   ]
 }
