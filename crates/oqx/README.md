@@ -21,9 +21,29 @@ repository, and each reports the spec version it conforms to.
 
 ## Status
 
-Under construction: the port is conformance-first. `tests/spec.rs` runs every
-fixture in `spec/oqx/cases`; `tests/spec-passing.txt` lists the cases that must
-pass today and grows until it equals the case set. Not yet published.
+Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
+`spec/oqx/cases` (592 cases in 24 files at spec `VERSION` 0.11.0) and all of them
+pass, so `cargo test -p oqx` requires every case to pass. Not yet published.
+
+The runner keeps an allowlist mechanism for the periods when the spec runs
+ahead of the port (from `spec/oqx/README.md`): if `tests/spec-passing.txt`
+exists, it names the case ids (`<file-stem>::<name>`, one per line) that must
+pass; a listed case that fails fails the build, an unlisted case that passes
+fails the build with a message asking for it to be added, and a listed id that
+no longer exists is an error too. When the file is absent — the current state —
+every case must pass. `cargo test -p oqx` prints `spec: N passed, M failed, K
+listed` on stderr and, on failure, the offending case ids grouped by fixture
+file with a one-line reason each.
+
+To (re)generate the allowlist from the currently passing set — for example
+after new fixtures land in `spec/oqx/cases` before the port catches up — run:
+
+```sh
+OQX_SPEC_UPDATE=1 cargo test -p oqx --test spec
+```
+
+This writes the list (and prints any listed case that now fails, so nothing is
+blessed silently), or deletes the file once every case passes.
 
 ## Layering
 
