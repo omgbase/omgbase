@@ -14,12 +14,18 @@ repository.workspace = true
 
 [dependencies]
 regex = "1"
+# `bundled`: compile SQLite from source so the `sqlite` feature needs no system
+# library (CI runs `--all-features` on a clean machine).
+rusqlite = { version = "0.40", optional = true, features = ["bundled"] }
 serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 
 [features]
 default = []
 # `json`: From/Into conversions between `oqx::Value` and `serde_json::Value`.
 json = ["dep:serde_json"]
+# `sqlite`: `adapters::sqlite::SqliteTable`, a `QueryPlanner` pushing the flat
+# query core into SQL over `rusqlite`. Implies `json` for its JSON columns.
+sqlite = ["dep:rusqlite", "json"]
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

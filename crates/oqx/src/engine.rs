@@ -10,14 +10,14 @@
 //! Name resolution is strictly lexical and LOCAL: a bare identifier is read from
 //! the current scope only, and an enclosing scope is reached solely through an
 //! explicit `^name` (exactly one scope out per caret). There is no implicit
-//! fall-through from an inner scope to an outer one — see [`Exec::resolve_in`].
+//! fall-through from an inner scope to an outer one — see the private `Exec::resolve_in`.
 //!
 //! ## Rows and entries
 //!
 //! In the reference an `entries()` entry is a `{ key, value }` object carrying a
 //! hidden symbol tag, and `enter(row)` unwraps a tagged row so the scope's row is
 //! the property's value and `$key` comes from scope metadata. A [`Value`] has no
-//! hidden tag, so the engine carries rows as [`Row`] — a value plus an optional
+//! hidden tag, so the engine carries rows as a private `Row` — a value plus an optional
 //! entry key — and produces keyed rows only where the reference produces tagged
 //! ones: when a source, body-level `from`, directive receiver, or `follow`
 //! relation is literally `entries(x)`. A data row that merely looks like

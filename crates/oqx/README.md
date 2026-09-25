@@ -63,6 +63,10 @@ Mirrors the reference so the two can be read side by side:
 ## Features
 
 - `json` — `From`/`Into` between `oqx::Value` and `serde_json::Value`.
+- `sqlite` — `adapters::sqlite::SqliteTable`, a `QueryPlanner` that pushes the
+  flat query core (scan + translatable conjunctive predicates, `LIMIT` for
+  unordered `first`/`single`) into SQL over a bundled SQLite via `rusqlite`,
+  leaving the rest to the in-memory residual. Implies `json`.
 
 ## License
 

@@ -24,6 +24,8 @@ pub mod semantics;
 pub mod value;
 
 pub use adapters::IndexedCollection;
+#[cfg(feature = "sqlite")]
+pub use adapters::SqliteTable;
 pub use ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OrderSpec, Query, RelOp,
     SelectItem, Subquery, UnaryOp, Where,
