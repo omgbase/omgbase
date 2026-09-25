@@ -1,0 +1,496 @@
+{
+  "suite": "builtins",
+  "cases": [
+    {
+      "name": "list of an array is the array",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "x: list(xs) from r",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              1,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "list of absent is empty",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: list(nope) from r",
+      "expect": {
+        "result": [
+          {
+            "x": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "list of null is empty",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "x: list(n) from r",
+      "expect": {
+        "result": [
+          {
+            "x": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "list of a scalar wraps it",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: list(5) from r",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "list of a string wraps it",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: list(\"ab\") from r",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              "ab"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "list of an object wraps it",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1
+            }
+          }
+        ]
+      },
+      "query": "x: list(o) from r",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              {
+                "a": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on a string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: size(\"abc\") from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on an array",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "x: size(xs) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on an object",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1,
+              "b": 2
+            }
+          }
+        ]
+      },
+      "query": "x: size(o) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on absent",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: size(nope) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on a number",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: size(5) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "size function on a boolean",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: size(true) from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "has of present values",
+      "roots": {
+        "r": [
+          {
+            "z": 0,
+            "e": "",
+            "f": false,
+            "a": []
+          }
+        ]
+      },
+      "query": "r exists { where has(z) && has(e) && has(f) && has(a) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "has of null is false",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where has(n) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "has of absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where has(nope) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "has of a deep absent path is false",
+      "roots": {
+        "r": [
+          {
+            "a": {}
+          }
+        ]
+      },
+      "query": "r exists { where has(a.b.c) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "has in a where",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where has(age) && !has(nickname)",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "has versus truthiness",
+      "roots": {
+        "xs": [
+          0,
+          "",
+          false,
+          null,
+          1
+        ]
+      },
+      "query": "$value values from xs where has($value) && !$value",
+      "expect": {
+        "result": [
+          0,
+          "",
+          false
+        ]
+      }
+    },
+    {
+      "name": "range of a string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 in range(\"1..5\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "entries of an object",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1
+            }
+          }
+        ]
+      },
+      "query": "x: entries(o) from r",
+      "expect": {
+        "result": [
+          {
+            "x": [
+              {
+                "key": "a",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a function call may be a source",
+      "roots": {
+        "n": 5
+      },
+      "query": "$value values from list(n)",
+      "expect": {
+        "result": [
+          5
+        ]
+      }
+    },
+    {
+      "name": "function arguments are expressions",
+      "roots": {
+        "r": [
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "x: size(list(a) ) + size(\"ab\") from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown function is an eval error",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from r where foo(1)",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function 'foo(…)'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown method is an eval error",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from r where a.foo()",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown method '.foo(…)'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown function is not reached when no rows are evaluated",
+      "notes": "Function names are resolved when a call is evaluated, not at parse time.",
+      "roots": {
+        "xs": []
+      },
+      "query": "from xs where foo(1)",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "unclosed call arguments",
+      "query": "x: size(a from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected ')'"
+          ]
+        }
+      }
+    }
+  ]
+}

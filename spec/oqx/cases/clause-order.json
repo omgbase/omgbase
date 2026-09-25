@@ -1,0 +1,1057 @@
+{
+  "suite": "clause-order",
+  "cases": [
+    {
+      "name": "select-first with keyword",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name from people where age > 50",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "select-first keyword dropped",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name from people where age > 50",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice"
+          }
+        ]
+      }
+    },
+    {
+      "name": "from-first has no projection",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "from people where age > 50",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "receiver plus consumer",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people count { where age > 50 }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "block leading run is the projection",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people first { name where age > 50 }",
+      "expect": {
+        "result": {
+          "name": "Alice"
+        }
+      }
+    },
+    {
+      "name": "block select keyword",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people first { select name where age > 50 }",
+      "expect": {
+        "result": {
+          "name": "Alice"
+        }
+      }
+    },
+    {
+      "name": "block order by allowed",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people first { name values order by age }",
+      "expect": {
+        "result": "Carol"
+      }
+    },
+    {
+      "name": "block from re-projects each row",
+      "notes": "Inside a consumer block `from E` is a flatMap over the receiver's rows, not a new source.",
+      "roots": {
+        "r": [
+          {
+            "jobs": [
+              1,
+              2
+            ]
+          },
+          {
+            "jobs": [
+              3
+            ]
+          }
+        ]
+      },
+      "query": "r collect { $value values from jobs }",
+      "expect": {
+        "result": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    {
+      "name": "block from then where",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people count { from jobs where !end_date }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "select after from",
+      "query": "from people select name",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`select` must come before `from`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "select after where",
+      "query": "from people where age > 50 select name",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`select` must come before `where`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "where after order by",
+      "query": "name from people order by age where age > 50",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`where` must come before `order by`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "where after follow",
+      "query": "name from people follow jobs where age > 50",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`where` must come before `follow`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "order by after limit",
+      "query": "name from people limit 1 order by age",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`order by` must come before `limit`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "limit after offset",
+      "query": "name from people offset 1 limit 1",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`limit` must come before `offset`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "block select after where",
+      "query": "people count { where age > 50 select name }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`select` must come before `where`",
+            "OQX clause order is select, from, where, follow, order by, limit, offset"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate from",
+      "query": "from people from jobs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `from`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate where",
+      "query": "name from people where a where b",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `where`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate select",
+      "query": "select a select b from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `select`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate order by",
+      "query": "a from r order by a order by b",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `order by`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate limit",
+      "query": "name from people limit 1 limit 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `limit`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate offset",
+      "query": "a from r offset 1 offset 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `offset`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate follow",
+      "query": "a from r follow x follow y",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `follow`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "consumer word after from gets the directive hint",
+      "query": "from people count",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected `count` after `from`",
+            "<collection> count { … }",
+            "select count from"
+          ]
+        }
+      }
+    },
+    {
+      "name": "exists after from",
+      "query": "from people exists { where active }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected `exists` after `from`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare name after from is not an implicit where",
+      "query": "from people active",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'active' after `from`",
+            "no implicit where"
+          ]
+        }
+      }
+    },
+    {
+      "name": "projection after from",
+      "query": "from people name, id",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'name' after `from`"
+          ]
+        }
+      }
+    },
+    {
+      "name": "select count projects a field named count",
+      "roots": {
+        "r": [
+          {
+            "count": 3
+          }
+        ]
+      },
+      "query": "select count from r",
+      "expect": {
+        "result": [
+          {
+            "count": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit is a field when not followed by a bound",
+      "roots": {
+        "r": [
+          {
+            "limit": 3
+          }
+        ]
+      },
+      "query": "limit from r",
+      "expect": {
+        "result": [
+          {
+            "limit": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "limit as a field in where",
+      "roots": {
+        "r": [
+          {
+            "limit": 3
+          },
+          {
+            "limit": 1
+          }
+        ]
+      },
+      "query": "from r where limit > 2",
+      "expect": {
+        "result": [
+          {
+            "limit": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "order is a field when not followed by by",
+      "roots": {
+        "r": [
+          {
+            "order": 1
+          }
+        ]
+      },
+      "query": "order from r",
+      "expect": {
+        "result": [
+          {
+            "order": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow is a field when not followed by a relation",
+      "roots": {
+        "r": [
+          {
+            "follow": 1
+          }
+        ]
+      },
+      "query": "select follow from r",
+      "expect": {
+        "result": [
+          {
+            "follow": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "keywords are lowercase only",
+      "query": "name FROM r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'FROM'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "reserved keyword cannot be a projection name",
+      "query": "select where from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a projection name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "whitespace is insignificant",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name,\n\tid\r\n  from people\n where\tage > 50",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "id": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "token after a directive",
+      "query": "people count { } extra",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "after the top-level directive"
+          ]
+        }
+      }
+    },
+    {
+      "name": "token after the body",
+      "query": "name from people )",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected ')'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "missing source",
+      "query": "name where active",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "must name its source"
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty query",
+      "query": "",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "must name its source"
+          ]
+        }
+      }
+    },
+    {
+      "name": "from with no source expression",
+      "query": "from",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "select with no items",
+      "query": "select from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a projection name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "where with no predicate",
+      "query": "from r where",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "order by with no expression",
+      "query": "from r order by",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,282 @@
+{
+  "suite": "lifts",
+  "cases": [
+    {
+      "name": "^name binds a per-row array from a where collect",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, currentEmployers from people where jobs collect { ^currentEmployers: employer where !end_date }",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "currentEmployers": [
+              "Globocorp"
+            ]
+          },
+          {
+            "name": "Carol",
+            "currentEmployers": [
+              "Globocorp"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^^ binds two scopes out and flatten-appends",
+      "roots": {
+        "departments": [
+          {
+            "name": "Eng",
+            "teams": [
+              {
+                "id": "t1",
+                "members": [
+                  {
+                    "name": "Ada"
+                  },
+                  {
+                    "name": "Ben"
+                  }
+                ]
+              },
+              {
+                "id": "t2",
+                "members": [
+                  {
+                    "name": "Cy"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "Sales",
+            "teams": [
+              {
+                "id": "t3",
+                "members": [
+                  {
+                    "name": "Dee"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, teamIds, allMembers from departments where teams collect { ^teamIds: id where members collect { ^^allMembers: name } }",
+      "expect": {
+        "result": [
+          {
+            "name": "Eng",
+            "teamIds": [
+              "t1",
+              "t2"
+            ],
+            "allMembers": [
+              "Ada",
+              "Ben",
+              "Cy"
+            ]
+          },
+          {
+            "name": "Sales",
+            "teamIds": [
+              "t3"
+            ],
+            "allMembers": [
+              "Dee"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^^^ binds three scopes out",
+      "roots": {
+        "orgs": [
+          {
+            "name": "Acme",
+            "divisions": [
+              {
+                "d": "D1",
+                "teams": [
+                  {
+                    "members": [
+                      {
+                        "name": "Ada"
+                      }
+                    ]
+                  },
+                  {
+                    "members": [
+                      {
+                        "name": "Ben"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "d": "D2",
+                "teams": [
+                  {
+                    "members": [
+                      {
+                        "name": "Cy"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, everyone from orgs where divisions collect { ^divs: d where teams collect { ^^tc: 1 where members collect { ^^^everyone: name } } }",
+      "expect": {
+        "result": [
+          {
+            "name": "Acme",
+            "everyone": [
+              "Ada",
+              "Ben",
+              "Cy"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a where collect with no matches filters the row out",
+      "roots": {
+        "r": [
+          {
+            "name": "x",
+            "jobs": [
+              {
+                "employer": "G",
+                "end": 1
+              }
+            ]
+          },
+          {
+            "name": "y",
+            "jobs": [
+              {
+                "employer": "H"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, e from r where jobs collect { ^e: employer where !end }",
+      "expect": {
+        "result": [
+          {
+            "name": "y",
+            "e": [
+              "H"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an unaliased ^name item lifts that field",
+      "roots": {
+        "r": [
+          {
+            "v": 1,
+            "mid": [
+              {
+                "l": "a"
+              },
+              {
+                "l": "b"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "v, l from r where mid collect { ^l }",
+      "expect": {
+        "result": [
+          {
+            "v": 1,
+            "l": [
+              "a",
+              "b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a lift value must be scalar",
+      "query": "from r where jobs collect { ^x: jobs collect { } }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "must be a scalar expression"
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,522 @@
+{
+  "suite": "membership",
+  "cases": [
+    {
+      "name": "element of an array",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where 2 in xs }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "missing element",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where 9 in xs }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "array membership is strict",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"1\" in xs }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "string element of an array",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"a\" in tags }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "substring of a string",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"ell\" in s }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "missing substring",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"xyz\" in s }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "the empty string is a substring",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"\" in s }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a number needle in a string uses its text form",
+      "notes": "The needle is rendered as `+` would render it.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 in \"a1b\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "key of an object",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"k\" in o }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a key with a null value is still a key",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"z\" in o }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "missing key",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where \"nope\" in o }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a number needle matches a numeric key",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where 1 in o }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "absent haystack",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 in nope }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "null haystack",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where 1 in n }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a number is not a container",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" in 5 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "a boolean is not a container",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true in true }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "absent needle in an array is false",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where nope in xs }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "null needle matches a null element",
+      "roots": {
+        "r": [
+          {
+            "n": null,
+            "ys": [
+              1,
+              null
+            ]
+          }
+        ]
+      },
+      "query": "r exists { where n in ys }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "absent needle matches a null element",
+      "roots": {
+        "r": [
+          {
+            "ys": [
+              1,
+              null
+            ]
+          }
+        ]
+      },
+      "query": "r exists { where nope in ys }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "negated membership",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ],
+            "tags": [
+              "a",
+              "b"
+            ],
+            "o": {
+              "k": 1,
+              "z": null,
+              "1": "one"
+            },
+            "s": "hello"
+          }
+        ]
+      },
+      "query": "r exists { where !(9 in xs) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "membership filters rows",
+      "roots": {
+        "r": [
+          {
+            "name": "a",
+            "roles": [
+              "admin"
+            ]
+          },
+          {
+            "name": "b",
+            "roles": [
+              "user"
+            ]
+          },
+          {
+            "name": "c"
+          }
+        ]
+      },
+      "query": "name values from r where \"admin\" in roles",
+      "expect": {
+        "result": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "membership under values",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2
+            ]
+          },
+          {
+            "xs": [
+              3
+            ]
+          },
+          {}
+        ]
+      },
+      "query": "2 in xs values from r",
+      "expect": {
+        "result": [
+          true,
+          false,
+          false
+        ]
+      }
+    }
+  ]
+}

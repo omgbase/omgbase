@@ -1,0 +1,354 @@
+{
+  "suite": "scalar-ordering",
+  "cases": [
+    {
+      "name": "greater than null is false",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where 3 > n }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "less than with absent left is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope < 3 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "less-or-equal with absent right is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 <= nope }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "greater-or-equal with absent left is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope >= 3 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "greater with absent right is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 > nope }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "absent compared to absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope <= other }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "null compared to null is false",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where n >= n }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "greater-or-equal on equal numbers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 >= 3 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "less-or-equal on equal numbers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 <= 3 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "strict less on equal numbers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 3 < 3 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "numbers order numerically",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 10 > 9 && 1.5 < 2 && -1 < 0 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "strings order by code point",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" < \"b\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "uppercase precedes lowercase",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"B\" < \"a\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "strings compare position by position",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"abc\" < \"abd\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a prefix precedes its extension",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"ab\" < \"abc\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "digit strings compare as text",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"10\" < \"9\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "equal strings are not less",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" < \"a\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "equal strings are less-or-equal",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" <= \"a\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "ISO dates order as strings",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"2026-01-15\" > \"2025-12-31\" && \"2026-01-15\" < \"2026-02-01\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "mixed number and string never order (string vs number)",
+      "notes": "Also see SEMANTICS §ordering: the reference coerces numeric-looking strings — a known discrepancy not pinned here.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" < 5 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "ordering filters rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where age > 40",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "ordering skips rows lacking the field",
+      "roots": {
+        "r": [
+          {
+            "name": "a",
+            "age": 1
+          },
+          {
+            "name": "b"
+          }
+        ]
+      },
+      "query": "name values from r where age > 0",
+      "expect": {
+        "result": [
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "negated ordering keeps rows lacking the field",
+      "roots": {
+        "r": [
+          {
+            "name": "a",
+            "age": 1
+          },
+          {
+            "name": "b"
+          }
+        ]
+      },
+      "query": "name values from r where !(age > 0)",
+      "expect": {
+        "result": [
+          "b"
+        ]
+      }
+    }
+  ]
+}

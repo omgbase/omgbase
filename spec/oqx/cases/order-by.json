@@ -1,0 +1,556 @@
+{
+  "suite": "order-by",
+  "cases": [
+    {
+      "name": "asc keeps absent last",
+      "roots": {
+        "docs": [
+          {
+            "name": "a",
+            "rank": 2
+          },
+          {
+            "name": "b"
+          },
+          {
+            "name": "c",
+            "rank": 1
+          }
+        ]
+      },
+      "query": "name from docs order by rank asc",
+      "expect": {
+        "result": [
+          {
+            "name": "c"
+          },
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "desc keeps absent last",
+      "roots": {
+        "docs": [
+          {
+            "name": "a",
+            "rank": 2
+          },
+          {
+            "name": "b"
+          },
+          {
+            "name": "c",
+            "rank": 1
+          }
+        ]
+      },
+      "query": "name from docs order by rank desc",
+      "expect": {
+        "result": [
+          {
+            "name": "a"
+          },
+          {
+            "name": "c"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "default direction is ascending",
+      "roots": {
+        "docs": [
+          {
+            "name": "a",
+            "rank": 2
+          },
+          {
+            "name": "b"
+          },
+          {
+            "name": "c",
+            "rank": 1
+          }
+        ]
+      },
+      "query": "name from docs order by rank",
+      "expect": {
+        "result": [
+          {
+            "name": "c"
+          },
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "null sorts with absent",
+      "roots": {
+        "xs": [
+          {
+            "n": "a",
+            "k": null
+          },
+          {
+            "n": "b",
+            "k": 1
+          },
+          {
+            "n": "c"
+          }
+        ]
+      },
+      "query": "n values from xs order by k",
+      "expect": {
+        "result": [
+          "b",
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "numbers order numerically",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people order by age desc",
+      "expect": {
+        "result": [
+          "Alice",
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "strings order by code point",
+      "notes": "Uppercase before lowercase; a prefix before its extension; digit strings compare as text, not as numbers.",
+      "roots": {
+        "xs": [
+          "b",
+          "B",
+          "a",
+          "ab",
+          "A",
+          "10",
+          "9"
+        ]
+      },
+      "query": "$value values from xs order by $value",
+      "expect": {
+        "result": [
+          "10",
+          "9",
+          "A",
+          "B",
+          "a",
+          "ab",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "several keys break ties",
+      "roots": {
+        "xs": [
+          {
+            "name": "a",
+            "city": "SF",
+            "age": 30
+          },
+          {
+            "name": "b",
+            "city": "NYC",
+            "age": 20
+          },
+          {
+            "name": "c",
+            "city": "SF",
+            "age": 40
+          },
+          {
+            "name": "d",
+            "city": "NYC",
+            "age": 25
+          }
+        ]
+      },
+      "query": "name values from xs order by city, age desc",
+      "expect": {
+        "result": [
+          "d",
+          "b",
+          "c",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "sort is stable",
+      "roots": {
+        "xs": [
+          {
+            "n": "a",
+            "k": 1
+          },
+          {
+            "n": "b",
+            "k": 0
+          },
+          {
+            "n": "c",
+            "k": 1
+          },
+          {
+            "n": "d",
+            "k": 0
+          }
+        ]
+      },
+      "query": "n values from xs order by k",
+      "expect": {
+        "result": [
+          "b",
+          "d",
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "explicit asc",
+      "roots": {
+        "xs": [
+          {
+            "n": "a",
+            "k": 2
+          },
+          {
+            "n": "b",
+            "k": 1
+          }
+        ]
+      },
+      "query": "n values from xs order by k asc",
+      "expect": {
+        "result": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "order by an expression",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people order by age % 10",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "order by inside a nested collect",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, js: jobs collect { start_date values order by start_date desc } from people where name == \"Alice\"",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "js": [
+              "2010/06/01",
+              "1999/01/01"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "order by $value over scalars",
+      "roots": {
+        "xs": [
+          1,
+          3,
+          2
+        ]
+      },
+      "query": "$value values from xs order by $value desc",
+      "expect": {
+        "result": [
+          3,
+          2,
+          1
+        ]
+      }
+    },
+    {
+      "name": "order by a nested field",
+      "roots": {
+        "xs": [
+          {
+            "n": "a",
+            "meta": {
+              "rank": 2
+            }
+          },
+          {
+            "n": "b",
+            "meta": {
+              "rank": 1
+            }
+          }
+        ]
+      },
+      "query": "n values from xs order by meta.rank",
+      "expect": {
+        "result": [
+          "b",
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "order by an outer reference is constant",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, js: jobs collect { employer values order by ^age } from people where name == \"Alice\"",
+      "expect": {
+        "result": [
+          {
+            "name": "Alice",
+            "js": [
+              "Initech",
+              "Globocorp"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

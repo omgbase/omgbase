@@ -1,0 +1,917 @@
+{
+  "suite": "where",
+  "cases": [
+    {
+      "name": "bare truthy name",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where active",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "negated bare name",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where !active",
+      "expect": {
+        "result": [
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "comparison",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where age >= 40",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "and",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where active && age > 50",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "or",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where age < 30 || age > 50",
+      "expect": {
+        "result": [
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "and binds tighter than or",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 2,
+            "b": true
+          }
+        ]
+      },
+      "query": "a values from xs where a == 1 || a == 2 && b",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "parentheses group predicates",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 2,
+            "b": true
+          }
+        ]
+      },
+      "query": "a values from xs where (a == 1 || a == 2) && b",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "not binds to the next leaf",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 2,
+            "b": true
+          }
+        ]
+      },
+      "query": "a values from xs where !b && a == 2",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "not over a group",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          },
+          {
+            "a": 2,
+            "b": true
+          }
+        ]
+      },
+      "query": "a values from xs where !(a == 1 || b)",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "not over a consumer op",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "jobs": []
+          },
+          {
+            "a": 2,
+            "jobs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "a values from xs where !jobs exists { }",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "literal true keeps every row",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where true",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "literal false keeps none",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where false",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "truthiness: falsy values",
+      "notes": "Absent, false, 0, and the empty string are falsy; everything else — including an empty array or object — is truthy.",
+      "roots": {
+        "xs": [
+          0,
+          "",
+          null,
+          false,
+          [],
+          {},
+          1,
+          "a"
+        ]
+      },
+      "query": "$value values from xs where $value",
+      "expect": {
+        "result": [
+          [],
+          {},
+          1,
+          "a"
+        ]
+      }
+    },
+    {
+      "name": "truthiness: negation",
+      "roots": {
+        "xs": [
+          0,
+          "",
+          null,
+          false,
+          [],
+          {},
+          1,
+          "a"
+        ]
+      },
+      "query": "$value values from xs where !$value",
+      "expect": {
+        "result": [
+          0,
+          "",
+          null,
+          false
+        ]
+      }
+    },
+    {
+      "name": "absent property is falsy",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where nickname",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "negated absent property is true",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where !nickname",
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "membership leaf",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "ys": [
+              1
+            ]
+          },
+          {
+            "a": 2,
+            "ys": []
+          }
+        ]
+      },
+      "query": "a values from xs where a in ys",
+      "expect": {
+        "result": [
+          1
+        ]
+      }
+    },
+    {
+      "name": "where sees the current row only",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where jobs exists { where employer == \"Initech\" }",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a grouped predicate cannot be compared",
+      "notes": "In `where`, parentheses group predicates, not values. Compare a logical expression through a select alias instead.",
+      "query": "r exists { where (a || b) == 5 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected '=='"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare predicate in a block wants where",
+      "query": "people exists { age > 50 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare negation in a block wants where",
+      "query": "people exists { !active }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare predicate in a nested block wants where",
+      "query": "name from people where jobs exists { employer == \"X\" && !end_date }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare count test in a block wants where",
+      "query": "people exists { jobs count {} >= 2 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare negation at the top level wants where",
+      "query": "!active from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bare comparison at the top level wants where",
+      "query": "age > 40 from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where",
+            "never implicit"
+          ]
+        }
+      }
+    }
+  ]
+}

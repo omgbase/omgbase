@@ -1,0 +1,991 @@
+{
+  "suite": "strings",
+  "cases": [
+    {
+      "name": "lower",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"AbC\".lower() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "abc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "upper",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"AbC\".upper() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "ABC"
+          }
+        ]
+      }
+    },
+    {
+      "name": "lower on a field in where",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.lower() == \"director\"",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "lower on a number is its text form",
+      "roots": {
+        "r": [
+          {
+            "n": 5
+          }
+        ]
+      },
+      "query": "x: n.lower() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "5"
+          }
+        ]
+      }
+    },
+    {
+      "name": "upper on a boolean is its text form",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: true.upper() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "TRUE"
+          }
+        ]
+      }
+    },
+    {
+      "name": "contains substring",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"hello\".contains(\"ell\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "contains is case-sensitive",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"hello\".contains(\"ELL\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "contains on an array uses strict equality",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "r exists { where xs.contains(2) && !xs.contains(\"2\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "contains on a number is false",
+      "roots": {
+        "r": [
+          {
+            "n": 5
+          }
+        ]
+      },
+      "query": "r exists { where n.contains(1) }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "contains on absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope.contains(\"a\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "contains filters rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where jobs.size() > 0 && title.contains(\"ir\")",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "startsWith",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.startsWith(\"Eng\")",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "endsWith",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.endsWith(\"yst\")",
+      "expect": {
+        "result": [
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "startsWith on a non-string is false",
+      "roots": {
+        "r": [
+          {
+            "n": 42
+          }
+        ]
+      },
+      "query": "r exists { where n.startsWith(\"4\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "endsWith on absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope.endsWith(\"\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "matches anchored prefix",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"^Eng\")",
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "matches anchored suffix",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"or$\")",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "matches character class and quantifier",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"abc123\".matches(\"[a-z]+[0-9]+\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches alternation and grouping",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title.matches(\"^(Eng|Ana)\")",
+      "expect": {
+        "result": [
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "matches is unanchored by default",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"hello\".matches(\"ell\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches is case-sensitive",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"Hello\".matches(\"^h\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "matches dot and escaped dot",
+      "notes": "The query source contains `a\\.b`: the OQX string escape yields a backslash, which the regex reads as an escaped dot.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a.b\".matches(\"a\\\\.b\") && !\"axb\".matches(\"a\\\\.b\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches digit class",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"2026-01-15\".matches(\"^\\\\d{4}-\\\\d{2}-\\\\d{2}$\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "matches on absent is false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope.matches(\".\") }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "matches on a number uses its text form",
+      "roots": {
+        "r": [
+          {
+            "n": 42
+          }
+        ]
+      },
+      "query": "r exists { where n.matches(\"^4\") }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "size of a string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"hello\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of the empty string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of an array",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      },
+      "query": "x: xs.size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of an object counts keys",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1,
+              "b": 2
+            }
+          }
+        ]
+      },
+      "query": "x: o.size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of absent is zero",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: nope.size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "size of a number is zero",
+      "roots": {
+        "r": [
+          {
+            "n": 5
+          }
+        ]
+      },
+      "query": "x: n.size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "size in a predicate",
+      "roots": {
+        "players": [
+          {
+            "name": "Ann",
+            "scores": [
+              10,
+              60,
+              70
+            ]
+          },
+          {
+            "name": "Ben",
+            "scores": [
+              45
+            ]
+          },
+          {
+            "name": "Cid",
+            "scores": []
+          }
+        ]
+      },
+      "query": "name values from players where scores.size() > 1",
+      "expect": {
+        "result": [
+          "Ann"
+        ]
+      }
+    },
+    {
+      "name": "double-quoted escapes",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"a\\nb\\t\\\"q\\\"\\\\\" from r",
+      "expect": {
+        "result": [
+          {
+            "x": "a\nb\t\"q\"\\"
+          }
+        ]
+      }
+    },
+    {
+      "name": "single-quoted string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 'NYC' from r",
+      "expect": {
+        "result": [
+          {
+            "x": "NYC"
+          }
+        ]
+      }
+    },
+    {
+      "name": "single-quoted escape",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 'it\\'s' from r",
+      "expect": {
+        "result": [
+          {
+            "x": "it's"
+          }
+        ]
+      }
+    },
+    {
+      "name": "quotes are interchangeable",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 'a' == \"a\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "unknown escape is the character itself",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"\\q\" from r",
+      "expect": {
+        "result": [
+          {
+            "x": "q"
+          }
+        ]
+      }
+    },
+    {
+      "name": "carriage return and nul escapes",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"a\\rb\\0c\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "unicode strings compare by code point",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"é\" == \"é\" && \"e\" < \"é\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "size of a non-ASCII BMP string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"héllo\".size() from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "chained methods",
+      "roots": {
+        "r": [
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "query": "x: name.lower().upper() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "BOB"
+          }
+        ]
+      }
+    },
+    {
+      "name": "method on a navigation",
+      "roots": {
+        "r": [
+          {
+            "meta": {
+              "slug": "a"
+            }
+          }
+        ]
+      },
+      "query": "x: meta.slug.upper() from r",
+      "expect": {
+        "result": [
+          {
+            "x": "A"
+          }
+        ]
+      }
+    }
+  ]
+}

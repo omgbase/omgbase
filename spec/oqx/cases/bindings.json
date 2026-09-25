@@ -1,0 +1,1707 @@
+{
+  "suite": "bindings",
+  "cases": [
+    {
+      "name": "collection in from and a string in a predicate",
+      "template": {
+        "strings": [
+          "name, id, title from ",
+          " where jobs exists { where employer == ",
+          " && !end_date }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "Globocorp"
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer"
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst"
+          }
+        ]
+      }
+    },
+    {
+      "name": "multiline template",
+      "template": {
+        "strings": [
+          "\n    name, id, title\n    from ",
+          "\n    where jobs exists { where employer == ",
+          " && !end_date }\n  "
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "Globocorp"
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer"
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a number in a predicate",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where age >= ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          40
+        ]
+      },
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a bound string is a value never syntax",
+      "template": {
+        "strings": [
+          "name from ",
+          " where name == ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "Bob || true"
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "a bound string cannot close a block",
+      "template": {
+        "strings": [
+          "",
+          " count { where name == ",
+          " }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "\" } || true || { \""
+        ]
+      },
+      "expect": {
+        "result": 0
+      }
+    },
+    {
+      "name": "a bound array as the right side of in",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where city in ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "city": "NYC"
+            },
+            {
+              "name": "Alice",
+              "city": "SF"
+            },
+            {
+              "name": "Carol",
+              "city": "NYC"
+            }
+          ],
+          [
+            "SF",
+            "LA"
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a bound array as the left side of in",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "template": {
+        "strings": [
+          "r exists { where ",
+          " in ",
+          " }"
+        ],
+        "values": [
+          2,
+          [
+            1,
+            2,
+            3
+          ]
+        ]
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a bound value as limit",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where age > 30 order by name limit ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          1
+        ]
+      },
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "a bound value as offset",
+      "template": {
+        "strings": [
+          "name values from ",
+          " order by age offset ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          2
+        ]
+      },
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "bound range bounds",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where age in ",
+          "..",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          30,
+          50
+        ]
+      },
+      "expect": {
+        "result": [
+          "Bob"
+        ]
+      }
+    },
+    {
+      "name": "a bound receiver for a whole-query consumer",
+      "template": {
+        "strings": [
+          "",
+          " count { where active }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "a bound receiver for exists",
+      "template": {
+        "strings": [
+          "",
+          " exists { where jobs exists { where employer == ",
+          " } }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "Initech"
+        ]
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "a bound first",
+      "template": {
+        "strings": [
+          "",
+          " first { name where age > 50 }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": {
+          "name": "Alice"
+        }
+      }
+    },
+    {
+      "name": "a bound collection as a nested receiver",
+      "template": {
+        "strings": [
+          "name, siblings: ",
+          " collect { name where parent == ^parent && name != ^name } from ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Ada",
+              "parent": "Pat"
+            },
+            {
+              "name": "Ben",
+              "parent": "Pat"
+            },
+            {
+              "name": "Cy",
+              "parent": "Sam"
+            }
+          ],
+          [
+            {
+              "name": "Ada",
+              "parent": "Pat"
+            },
+            {
+              "name": "Ben",
+              "parent": "Pat"
+            },
+            {
+              "name": "Cy",
+              "parent": "Sam"
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Ada",
+            "siblings": [
+              {
+                "name": "Ben"
+              }
+            ]
+          },
+          {
+            "name": "Ben",
+            "siblings": [
+              {
+                "name": "Ada"
+              }
+            ]
+          },
+          {
+            "name": "Cy",
+            "siblings": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bound object is one row",
+      "template": {
+        "strings": [
+          "from ",
+          ""
+        ],
+        "values": [
+          {
+            "theme": "dark",
+            "fontSize": 14,
+            "autosave": true
+          }
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "theme": "dark",
+            "fontSize": 14,
+            "autosave": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bound object through entries",
+      "template": {
+        "strings": [
+          "key: $key, value: $value from entries(",
+          ")"
+        ],
+        "values": [
+          {
+            "theme": "dark",
+            "fontSize": 14,
+            "autosave": true
+          }
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "key": "theme",
+            "value": "dark"
+          },
+          {
+            "key": "fontSize",
+            "value": 14
+          },
+          {
+            "key": "autosave",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "bound scalars as a source",
+      "template": {
+        "strings": [
+          "$value values from ",
+          " where $value > 50"
+        ],
+        "values": [
+          [
+            10,
+            60,
+            70,
+            45
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          60,
+          70
+        ]
+      }
+    },
+    {
+      "name": "a bound boolean as a where leaf",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          false
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "a bound null compares equal to absent",
+      "template": {
+        "strings": [
+          "name values from ",
+          " where jobs exists { where end_date == ",
+          " }"
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          null
+        ]
+      },
+      "expect": {
+        "result": [
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "a bound value in a projection",
+      "template": {
+        "strings": [
+          "name, tag: ",
+          " from ",
+          " where name == \"Bob\""
+        ],
+        "values": [
+          "x",
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "tag": "x"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bound value in order by is a constant key",
+      "template": {
+        "strings": [
+          "name values from ",
+          " order by ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          1
+        ]
+      },
+      "expect": {
+        "result": [
+          "Bob",
+          "Alice",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "a bound empty collection",
+      "template": {
+        "strings": [
+          "name from ",
+          ""
+        ],
+        "values": [
+          []
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "a bound null collection is empty",
+      "template": {
+        "strings": [
+          "name from ",
+          ""
+        ],
+        "values": [
+          null
+        ]
+      },
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "a bound string is a one-row collection",
+      "template": {
+        "strings": [
+          "$value values from ",
+          ""
+        ],
+        "values": [
+          "x"
+        ]
+      },
+      "expect": {
+        "result": [
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "a bound array of arrays is nested rows",
+      "template": {
+        "strings": [
+          "n: $value.size() from ",
+          ""
+        ],
+        "values": [
+          [
+            [
+              1,
+              2
+            ],
+            [
+              3
+            ]
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "n": 2
+          },
+          {
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "a negative bound limit is an eval error",
+      "template": {
+        "strings": [
+          "name from ",
+          " limit ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          -1
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a string bound offset is an eval error",
+      "template": {
+        "strings": [
+          "name from ",
+          " offset ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          "2"
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a fractional bound limit is an eval error",
+      "template": {
+        "strings": [
+          "name from ",
+          " limit ",
+          ""
+        ],
+        "values": [
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ],
+          1.5
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a bound array as a follow relation receiver is not allowed to alter grammar",
+      "template": {
+        "strings": [
+          "id values from ",
+          " follow children order by $depth, id"
+        ],
+        "values": [
+          [
+            {
+              "id": "root",
+              "label": "Root",
+              "children": [
+                {
+                  "id": "a",
+                  "label": "A",
+                  "children": [
+                    {
+                      "id": "a1",
+                      "label": "A1",
+                      "children": []
+                    }
+                  ]
+                },
+                {
+                  "id": "b",
+                  "label": "B",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          "root",
+          "a",
+          "b",
+          "a1"
+        ]
+      }
+    },
+    {
+      "name": "a binding cannot be a projection key",
+      "notes": "A bound string is a value: it does not become the identifier `name`.",
+      "template": {
+        "strings": [
+          "",
+          " from ",
+          ""
+        ],
+        "values": [
+          "name",
+          [
+            {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            },
+            {
+              "name": "Alice",
+              "id": 7,
+              "title": "Director",
+              "active": true,
+              "age": 52,
+              "jobs": [
+                {
+                  "employer": "Initech",
+                  "start_date": "1999/01/01",
+                  "end_date": "2005/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2010/06/01",
+                  "end_date": "2015/01/01"
+                }
+              ]
+            },
+            {
+              "name": "Carol",
+              "id": 55,
+              "title": "Analyst",
+              "active": false,
+              "age": 29,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2020/01/01"
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a binding is not a clause keyword",
+      "notes": "A bound string never becomes the keyword `from`; the query has no source.",
+      "template": {
+        "strings": [
+          "name ",
+          " people"
+        ],
+        "values": [
+          "from"
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected"
+          ]
+        }
+      }
+    }
+  ]
+}

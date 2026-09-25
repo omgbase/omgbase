@@ -1,0 +1,237 @@
+{
+  "suite": "errors-eval",
+  "cases": [
+    {
+      "name": "unknown function",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from r where foo(1)",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown function"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown method",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "from r where a.foo()",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "unknown method"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single with several rows at the top level",
+      "roots": {
+        "xs": [
+          1,
+          2
+        ]
+      },
+      "query": "xs single { }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single { … } matched 2 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single with several rows in a projection",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1,
+              2
+            ]
+          }
+        ]
+      },
+      "query": "n: xs single { $value values } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "single { … }",
+            "matched 2 rows"
+          ]
+        }
+      }
+    },
+    {
+      "name": "limit fraction",
+      "roots": {
+        "xs": [
+          1
+        ]
+      },
+      "query": "from xs limit 1.5",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "limit must be a non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "offset fraction",
+      "roots": {
+        "xs": [
+          1
+        ]
+      },
+      "query": "from xs offset 0.5",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset must be a non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "limit from an absent outer field",
+      "roots": {
+        "r": [
+          {
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "n: xs collect { limit ^k } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "limit must be a non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "offset from a string outer field",
+      "roots": {
+        "r": [
+          {
+            "k": "1",
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "n: xs collect { offset ^k } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset must be a non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "offset from a negative outer field",
+      "roots": {
+        "r": [
+          {
+            "k": -1,
+            "xs": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "n: xs collect { offset ^k } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "offset must be a non-negative integer"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow in a where op",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "from tree where children exists { follow children }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "`follow` is only valid on a select-position collect"
+          ]
+        }
+      }
+    },
+    {
+      "name": "errors are raised even when the bound is never reached",
+      "notes": "A block's bound is evaluated before its rows are read.",
+      "roots": {
+        "r": [
+          {
+            "xs": []
+          }
+        ]
+      },
+      "query": "n: xs collect { limit ^k } from r",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "limit must be a non-negative integer"
+          ]
+        }
+      }
+    }
+  ]
+}

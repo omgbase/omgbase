@@ -1,0 +1,659 @@
+{
+  "suite": "arithmetic",
+  "cases": [
+    {
+      "name": "addition",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1 + 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "subtraction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 5 - 7 from r",
+      "expect": {
+        "result": [
+          {
+            "x": -2
+          }
+        ]
+      }
+    },
+    {
+      "name": "multiplication",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 3 * 4 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 12
+          }
+        ]
+      }
+    },
+    {
+      "name": "division",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 7 / 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 3.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "division is exact for integers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 8 / 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "remainder",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 7 % 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "remainder takes the dividend's sign",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: -7 % 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "remainder of a fraction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 5.5 % 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "multiplication before addition",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1 + 2 * 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "parentheses group",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: (1 + 2) * 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 9
+          }
+        ]
+      }
+    },
+    {
+      "name": "left associativity of subtraction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 10 - 2 - 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "left associativity of multiplicative operators",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 2 * 3 % 4 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "division then multiplication",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 8 / 2 * 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 8
+          }
+        ]
+      }
+    },
+    {
+      "name": "unary minus",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: -5 from r",
+      "expect": {
+        "result": [
+          {
+            "x": -5
+          }
+        ]
+      }
+    },
+    {
+      "name": "unary minus on a field",
+      "roots": {
+        "r": [
+          {
+            "age": 41
+          }
+        ]
+      },
+      "query": "x: -age from r",
+      "expect": {
+        "result": [
+          {
+            "x": -41
+          }
+        ]
+      }
+    },
+    {
+      "name": "unary minus binds tighter than multiplication",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: -2 * 3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": -6
+          }
+        ]
+      }
+    },
+    {
+      "name": "double negation",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: --5 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "doubles",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 0.1 + 0.2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 0.30000000000000004
+          }
+        ]
+      }
+    },
+    {
+      "name": "integer-valued result of a fractional product",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 2.5 * 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "exponent literal",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1e3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 1000
+          }
+        ]
+      }
+    },
+    {
+      "name": "negative exponent literal",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 25e-1 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 2.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "fields",
+      "roots": {
+        "r": [
+          {
+            "age": 41
+          }
+        ]
+      },
+      "query": "x: age * 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": 82
+          }
+        ]
+      }
+    },
+    {
+      "name": "string concatenation",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"a\" + \"b\" from r",
+      "expect": {
+        "result": [
+          {
+            "x": "ab"
+          }
+        ]
+      }
+    },
+    {
+      "name": "string plus number concatenates",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"a\" + 1 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "a1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "number plus string concatenates",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: 1 + \"a\" from r",
+      "expect": {
+        "result": [
+          {
+            "x": "1a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "integer-valued doubles print without a fraction",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n\" + 2.0 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fractions print with a point",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n\" + 2.5 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n2.5"
+          }
+        ]
+      }
+    },
+    {
+      "name": "negative numbers print with a sign",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n\" + -3 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n-3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "negative zero prints as zero",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n\" + -0 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n0"
+          }
+        ]
+      }
+    },
+    {
+      "name": "booleans print as words",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"is:\" + true from r",
+      "expect": {
+        "result": [
+          {
+            "x": "is:true"
+          }
+        ]
+      }
+    },
+    {
+      "name": "concatenation is left associative",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n:\" + 1 + 2 from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n:12"
+          }
+        ]
+      }
+    },
+    {
+      "name": "addition inside concatenation needs parentheses",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: \"n:\" + (1 + 2) from r",
+      "expect": {
+        "result": [
+          {
+            "x": "n:3"
+          }
+        ]
+      }
+    },
+    {
+      "name": "arithmetic in a predicate",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where age / 10 > 5",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "arithmetic under values",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "age - 1 values from people where name == \"Carol\"",
+      "expect": {
+        "result": [
+          28
+        ]
+      }
+    },
+    {
+      "name": "comparison binds looser than arithmetic",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 + 1 == 2 && 2 * 2 > 3 }",
+      "expect": {
+        "result": true
+      }
+    }
+  ]
+}

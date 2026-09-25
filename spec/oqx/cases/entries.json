@@ -1,0 +1,653 @@
+{
+  "suite": "entries",
+  "cases": [
+    {
+      "name": "entries yields $key and $value",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "key: $key, value: $value from entries(settings)",
+      "expect": {
+        "result": [
+          {
+            "key": "theme",
+            "value": "dark"
+          },
+          {
+            "key": "fontSize",
+            "value": 14
+          },
+          {
+            "key": "autosave",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "$key values in insertion order",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "$key values from entries(settings)",
+      "expect": {
+        "result": [
+          "theme",
+          "fontSize",
+          "autosave"
+        ]
+      }
+    },
+    {
+      "name": "$value values with a where on $key",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "$value values from entries(settings) where $key != \"theme\"",
+      "expect": {
+        "result": [
+          14,
+          true
+        ]
+      }
+    },
+    {
+      "name": "the entry scope's row is the value",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "from entries(settings)",
+      "expect": {
+        "result": [
+          "dark",
+          14,
+          true
+        ]
+      }
+    },
+    {
+      "name": "bare names navigate the value",
+      "roots": {
+        "flags": {
+          "beta": {
+            "on": true,
+            "since": 2
+          },
+          "legacy": {
+            "on": false,
+            "since": 1
+          }
+        }
+      },
+      "query": "$key values from entries(flags) where on",
+      "expect": {
+        "result": [
+          "beta"
+        ]
+      }
+    },
+    {
+      "name": "projection and order over entry values",
+      "roots": {
+        "flags": {
+          "beta": {
+            "on": true,
+            "since": 2
+          },
+          "legacy": {
+            "on": false,
+            "since": 1
+          }
+        }
+      },
+      "query": "name: $key, since from entries(flags) order by since",
+      "expect": {
+        "result": [
+          {
+            "name": "legacy",
+            "since": 1
+          },
+          {
+            "name": "beta",
+            "since": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "an object does not auto-iterate",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "from settings",
+      "expect": {
+        "result": [
+          {
+            "theme": "dark",
+            "fontSize": 14,
+            "autosave": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "an object receiver is one row",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "settings count { }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "entries receiver counts properties",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "entries(settings) count { }",
+      "expect": {
+        "result": 3
+      }
+    },
+    {
+      "name": "entries of an array gives index keys",
+      "roots": {
+        "xs": [
+          "x",
+          "y"
+        ]
+      },
+      "query": "k: $key, v: $value from entries(xs)",
+      "expect": {
+        "result": [
+          {
+            "k": 0,
+            "v": "x"
+          },
+          {
+            "k": 1,
+            "v": "y"
+          }
+        ]
+      }
+    },
+    {
+      "name": "entries of null is empty",
+      "roots": {
+        "z": null
+      },
+      "query": "from entries(z)",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "entries of a number is empty",
+      "roots": {
+        "n": 42
+      },
+      "query": "from entries(n)",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "entries of a string is empty",
+      "roots": {
+        "s": "str"
+      },
+      "query": "from entries(s)",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "entries of an absent root is empty",
+      "roots": {},
+      "query": "from entries(nope)",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "$key is absent on ordinary rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "k: $key from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {}
+        ]
+      }
+    },
+    {
+      "name": "$key is absent on array elements",
+      "roots": {
+        "xs": [
+          10,
+          20
+        ]
+      },
+      "query": "k: $key from xs",
+      "expect": {
+        "result": [
+          {},
+          {}
+        ]
+      }
+    },
+    {
+      "name": "entries as a nested receiver",
+      "roots": {
+        "users": [
+          {
+            "name": "Ann",
+            "prefs": {
+              "dark": true,
+              "compact": false
+            }
+          },
+          {
+            "name": "Ben",
+            "prefs": {
+              "dark": false
+            }
+          },
+          {
+            "name": "Cid",
+            "prefs": {}
+          }
+        ]
+      },
+      "query": "name, on: entries(prefs) collect { $key values where $value } from users",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "on": [
+              "dark"
+            ]
+          },
+          {
+            "name": "Ben",
+            "on": []
+          },
+          {
+            "name": "Cid",
+            "on": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "entries as a where receiver",
+      "roots": {
+        "users": [
+          {
+            "name": "Ann",
+            "prefs": {
+              "dark": true,
+              "compact": false
+            }
+          },
+          {
+            "name": "Ben",
+            "prefs": {
+              "dark": false
+            }
+          },
+          {
+            "name": "Cid",
+            "prefs": {}
+          }
+        ]
+      },
+      "query": "name values from users where entries(prefs) exists { where $key == \"dark\" && $value }",
+      "expect": {
+        "result": [
+          "Ann"
+        ]
+      }
+    },
+    {
+      "name": "entries none",
+      "roots": {
+        "users": [
+          {
+            "name": "Ann",
+            "prefs": {
+              "dark": true,
+              "compact": false
+            }
+          },
+          {
+            "name": "Ben",
+            "prefs": {
+              "dark": false
+            }
+          },
+          {
+            "name": "Cid",
+            "prefs": {}
+          }
+        ]
+      },
+      "query": "name values from users where entries(prefs) none { }",
+      "expect": {
+        "result": [
+          "Cid"
+        ]
+      }
+    },
+    {
+      "name": "entries count",
+      "roots": {
+        "users": [
+          {
+            "name": "Ann",
+            "prefs": {
+              "dark": true,
+              "compact": false
+            }
+          },
+          {
+            "name": "Ben",
+            "prefs": {
+              "dark": false
+            }
+          },
+          {
+            "name": "Cid",
+            "prefs": {}
+          }
+        ]
+      },
+      "query": "users count { where entries(prefs) count { } >= 2 }",
+      "expect": {
+        "result": 1
+      }
+    },
+    {
+      "name": "$value as a nested receiver",
+      "roots": {
+        "groups": {
+          "a": [
+            1,
+            2,
+            3
+          ],
+          "b": [
+            5
+          ]
+        }
+      },
+      "query": "g: $key, big: $value collect { $value values where $value > 1 } from entries(groups)",
+      "expect": {
+        "result": [
+          {
+            "g": "a",
+            "big": [
+              2,
+              3
+            ]
+          },
+          {
+            "g": "b",
+            "big": [
+              5
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^$key from inside a nested block",
+      "roots": {
+        "groups": {
+          "a": [
+            1,
+            2,
+            3
+          ],
+          "b": [
+            5
+          ]
+        }
+      },
+      "query": "$key values from entries(groups) where $value exists { where $value > 4 && ^$key == \"b\" }",
+      "expect": {
+        "result": [
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "entries as a plain value",
+      "roots": {
+        "xs": [
+          {
+            "prefs": {
+              "x": 1
+            }
+          }
+        ]
+      },
+      "query": "e: entries(prefs) from xs",
+      "expect": {
+        "result": [
+          {
+            "e": [
+              {
+                "key": "x",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "entries as a plain value under values",
+      "roots": {
+        "xs": [
+          {
+            "s": {
+              "a": 1,
+              "b": 2
+            }
+          }
+        ]
+      },
+      "query": "e: entries(s) values from xs",
+      "expect": {
+        "result": [
+          [
+            {
+              "key": "a",
+              "value": 1
+            },
+            {
+              "key": "b",
+              "value": 2
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "name": "entries with order by and limit",
+      "roots": {
+        "settings": {
+          "theme": "dark",
+          "fontSize": 14,
+          "autosave": true
+        }
+      },
+      "query": "$key values from entries(settings) order by $key limit 2",
+      "expect": {
+        "result": [
+          "autosave",
+          "fontSize"
+        ]
+      }
+    },
+    {
+      "name": "entries with distinct values",
+      "roots": {
+        "o": {
+          "a": 1,
+          "b": 1,
+          "c": 2
+        }
+      },
+      "query": "select distinct $value values from entries(o)",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "a follow seed keeps its $key",
+      "roots": {
+        "forest": {
+          "left": {
+            "id": "L",
+            "children": [
+              {
+                "id": "L1",
+                "children": []
+              }
+            ]
+          },
+          "right": {
+            "id": "R",
+            "children": []
+          }
+        }
+      },
+      "query": "id, root: $key from entries(forest) follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "L",
+            "root": "left"
+          },
+          {
+            "id": "R",
+            "root": "right"
+          },
+          {
+            "id": "L1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "block from over entries",
+      "roots": {
+        "r": [
+          {
+            "o": {
+              "a": 1
+            }
+          },
+          {
+            "o": {
+              "b": 2
+            }
+          }
+        ]
+      },
+      "query": "r collect { $key values from entries(o) }",
+      "expect": {
+        "result": [
+          "a",
+          "b"
+        ]
+      }
+    }
+  ]
+}

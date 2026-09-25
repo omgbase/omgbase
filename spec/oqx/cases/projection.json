@@ -1,0 +1,1057 @@
+{
+  "suite": "projection",
+  "cases": [
+    {
+      "name": "bare field",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob"
+          },
+          {
+            "name": "Alice"
+          },
+          {
+            "name": "Carol"
+          }
+        ]
+      }
+    },
+    {
+      "name": "several fields",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, id from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "id": 124
+          },
+          {
+            "name": "Alice",
+            "id": 7
+          },
+          {
+            "name": "Carol",
+            "id": 55
+          }
+        ]
+      }
+    },
+    {
+      "name": "no projection returns raw rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "from people where active",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "dotted navigation keys by its last segment",
+      "roots": {
+        "data": [
+          {
+            "meta": {
+              "slug": "a"
+            }
+          },
+          {
+            "meta": {
+              "slug": "b"
+            }
+          }
+        ]
+      },
+      "query": "meta.slug from data",
+      "expect": {
+        "result": [
+          {
+            "slug": "a"
+          },
+          {
+            "slug": "b"
+          }
+        ]
+      }
+    },
+    {
+      "name": "alias",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "label: name, decade: age from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "label": "Bob",
+            "decade": 41
+          }
+        ]
+      }
+    },
+    {
+      "name": "alias with an expression",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "label: name, decade: age / 10 from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "label": "Bob",
+            "decade": 4.1
+          }
+        ]
+      }
+    },
+    {
+      "name": "select keyword is equivalent",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select name, id from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "id": 124
+          }
+        ]
+      }
+    },
+    {
+      "name": "aliased call",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "n: size(jobs) from people",
+      "expect": {
+        "result": [
+          {
+            "n": 2
+          },
+          {
+            "n": 2
+          },
+          {
+            "n": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "literal items",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "x: null, y: true, z: false, s: \"str\", n: 1.5 from r",
+      "expect": {
+        "result": [
+          {
+            "x": null,
+            "y": true,
+            "z": false,
+            "s": "str",
+            "n": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "absent property is dropped from the record",
+      "notes": "`budget` is not a property of an order; the projected record has no `budget` key after canonicalization.",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50
+              },
+              {
+                "amount": 150
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner, b: orders collect { budget } from accounts where owner == \"y\"",
+      "expect": {
+        "result": [
+          {
+            "owner": "y",
+            "b": [
+              {}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "deep navigation through absent is absent",
+      "roots": {
+        "r": [
+          {},
+          {
+            "a": {}
+          },
+          {
+            "a": {
+              "b": {
+                "c": 1
+              }
+            }
+          }
+        ]
+      },
+      "query": "x: a.b.c from r",
+      "expect": {
+        "result": [
+          {},
+          {},
+          {
+            "x": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "$value projects the whole row",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "employee: $value from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "employee": {
+              "name": "Bob",
+              "id": 124,
+              "title": "Engineer",
+              "active": true,
+              "age": 41,
+              "jobs": [
+                {
+                  "employer": "Globocorp",
+                  "start_date": "1984/05/01",
+                  "end_date": "1990/01/01"
+                },
+                {
+                  "employer": "Globocorp",
+                  "start_date": "2001/03/01"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "bare $value keys by its own name",
+      "roots": {
+        "xs": [
+          1,
+          2
+        ]
+      },
+      "query": "$value from xs",
+      "expect": {
+        "result": [
+          {
+            "$value": 1
+          },
+          {
+            "$value": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "bare active is a projection not a filter",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "active from people",
+      "expect": {
+        "result": [
+          {
+            "active": true
+          },
+          {
+            "active": true
+          },
+          {
+            "active": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "bare name in a block is a projection",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people first { active }",
+      "expect": {
+        "result": {
+          "active": true
+        }
+      }
+    },
+    {
+      "name": "unaliased call needs an alias",
+      "query": "size(jobs) from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unaliased comparison needs an alias",
+      "query": "select age > 40 from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unaliased method call needs an alias",
+      "query": "name.upper() from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "call in a block is a projection needing an alias",
+      "query": "people exists { has(budget) }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs an alias"
+          ]
+        }
+      }
+    },
+    {
+      "name": "projection may not use exists",
+      "query": "n: jobs exists { } from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single"
+          ]
+        }
+      }
+    },
+    {
+      "name": "projection may not use none",
+      "query": "n: jobs none { } from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single"
+          ]
+        }
+      }
+    },
+    {
+      "name": "projection may not use count",
+      "query": "n: jobs count { } from people",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single"
+          ]
+        }
+      }
+    },
+    {
+      "name": "lone caret",
+      "query": "^ from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a projection name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "nested block projected value",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, current: jobs collect { employer where !end_date } from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "current": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "logical operators yield an operand in value position",
+      "notes": "`&&` yields its left operand when that is falsy, else its right; `||` yields its left when truthy, else its right. `f` is absent and drops out.",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "a: 0 || 5, b: \"\" || \"d\", c: 1 && 2, d: 0 && 2, e: nope || \"z\", f: 1 && nope from r",
+      "expect": {
+        "result": [
+          {
+            "a": 5,
+            "b": "d",
+            "c": 2,
+            "d": 0,
+            "e": "z"
+          }
+        ]
+      }
+    }
+  ]
+}

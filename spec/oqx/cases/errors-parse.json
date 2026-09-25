@@ -1,0 +1,150 @@
+{
+  "suite": "errors-parse",
+  "cases": [
+    {
+      "name": "dangling dot",
+      "query": "name. from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "after '.'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "dangling operator",
+      "query": "from r where a ==",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unbalanced parenthesis in where",
+      "query": "from r where (a == 1",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected ')'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unbalanced parenthesis in a value",
+      "query": "x: (1 + 2 from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected ')'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "stray closing brace",
+      "query": "from r }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected '}'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "block without a receiver",
+      "query": "count { } from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected '{'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "consumer after a projection is not a predicate",
+      "query": "people first { jobs exists { } }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "write `where <relation> exists { … }`",
+            "never implicit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "nested block in a projection needs a name",
+      "query": "people first { jobs collect { } }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "needs a name"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow block unclosed",
+      "query": "id from tree follow children { depth 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected '}' to close the follow block"
+          ]
+        }
+      }
+    },
+    {
+      "name": "outer reference needs a name",
+      "query": "from r where ^ == 1",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected an identifier after '^'"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a where clause cannot be empty before a block",
+      "query": "people exists { where }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a value"
+          ]
+        }
+      }
+    },
+    {
+      "name": "order by direction must follow the expression",
+      "query": "name from people order by desc age",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'age'"
+          ]
+        }
+      }
+    }
+  ]
+}

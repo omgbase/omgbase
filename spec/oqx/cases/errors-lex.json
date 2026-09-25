@@ -1,0 +1,125 @@
+{
+  "suite": "errors-lex",
+  "cases": [
+    {
+      "name": "square bracket",
+      "query": "from r where a[0] == 1",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single equals",
+      "query": "from r where a = 1",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single ampersand",
+      "query": "from r where a & b",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "single pipe",
+      "query": "from r where a | b",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "at sign",
+      "query": "from r where @a",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "hash is not a comment",
+      "query": "from r # comment",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "semicolon",
+      "query": "from r;",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unexpected character"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unterminated double-quoted string",
+      "query": "from r where a == \"abc",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated string"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unterminated single-quoted string",
+      "query": "from r where a == 'abc",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated string"
+          ]
+        }
+      }
+    },
+    {
+      "name": "escape at the end of input is unterminated",
+      "query": "from r where a == \"abc\\",
+      "expect": {
+        "error": {
+          "stage": "lex",
+          "includes": [
+            "unterminated string"
+          ]
+        }
+      }
+    }
+  ]
+}

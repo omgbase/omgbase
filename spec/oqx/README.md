@@ -56,7 +56,7 @@ Fields:
 - `name` (required) — unique within the file. `<file>::<name>` is the case id used by allowlists and reports.
 - `tags` (optional) — free-form strings for filtering.
 - `notes` (optional) — why this case exists, if it is not obvious.
-- `roots` (optional) — named collections that `from <name>` and a bare directive receiver resolve against. Plain JSON.
+- `roots` (optional) — named values that `from <name>` and a bare directive receiver resolve against. Plain JSON; usually arrays, but a root may be any JSON value (an object, scalar, or `null`) when a case pins how a non-collection source is coerced.
 - Exactly one of:
   - `query` — the query as a plain string. No interpolations.
   - `template` — a query with bindings, mirroring a JavaScript tagged template exactly: `{ "strings": ["name from ", " where employer == ", ""], "values": [ [...], "Globocorp" ] }`. `strings` has one more element than `values`. A runner parses it with the implementation's template entry point (`parseTemplate` in the reference) so bindings stay typed values, never source text.

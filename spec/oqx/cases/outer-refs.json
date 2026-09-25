@@ -1,0 +1,647 @@
+{
+  "suite": "outer-refs",
+  "cases": [
+    {
+      "name": "^name correlates with the enclosing row",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50
+              },
+              {
+                "amount": 150
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner values from accounts where orders exists { where amount > ^budget }",
+      "expect": {
+        "result": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "a bare name never climbs",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50
+              },
+              {
+                "amount": 150
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner values from accounts where orders exists { where amount > budget }",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "an absent local name is absent for has()",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50
+              },
+              {
+                "amount": 150
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250
+              }
+            ]
+          }
+        ]
+      },
+      "query": "accounts exists { where orders exists { where has(budget) } }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "projecting an absent local name is absent",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50
+              },
+              {
+                "amount": 150
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner, b: orders collect { budget } from accounts where owner == \"y\"",
+      "expect": {
+        "result": [
+          {
+            "owner": "y",
+            "b": [
+              {}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^budget is unchanged when inner rows gain the name",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50,
+                "budget": 0
+              },
+              {
+                "amount": 150,
+                "budget": 1000
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250,
+                "budget": 1000
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner values from accounts where orders exists { where amount > ^budget }",
+      "expect": {
+        "result": [
+          "x",
+          "y"
+        ]
+      }
+    },
+    {
+      "name": "bare budget reads the inner row when it has the name",
+      "roots": {
+        "accounts": [
+          {
+            "owner": "x",
+            "budget": 100,
+            "orders": [
+              {
+                "amount": 50,
+                "budget": 0
+              },
+              {
+                "amount": 150,
+                "budget": 1000
+              }
+            ]
+          },
+          {
+            "owner": "y",
+            "budget": 200,
+            "orders": [
+              {
+                "amount": 250,
+                "budget": 1000
+              }
+            ]
+          }
+        ]
+      },
+      "query": "owner values from accounts where orders exists { where amount > budget }",
+      "expect": {
+        "result": [
+          "x"
+        ]
+      }
+    },
+    {
+      "name": "present-but-falsy locals are read locally",
+      "roots": {
+        "rows": [
+          {
+            "label": "outer",
+            "items": [
+              {
+                "label": null
+              },
+              {
+                "label": false
+              },
+              {
+                "label": 0
+              },
+              {
+                "label": ""
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      "query": "each: items collect { local: label, outer: ^label, present: has(label) } from rows",
+      "expect": {
+        "result": [
+          {
+            "each": [
+              {
+                "local": null,
+                "outer": "outer",
+                "present": false
+              },
+              {
+                "local": false,
+                "outer": "outer",
+                "present": true
+              },
+              {
+                "local": 0,
+                "outer": "outer",
+                "present": true
+              },
+              {
+                "local": "",
+                "outer": "outer",
+                "present": true
+              },
+              {
+                "outer": "outer",
+                "present": false
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "== null matches null and absent locally",
+      "roots": {
+        "rows": [
+          {
+            "label": "outer",
+            "items": [
+              {
+                "label": null
+              },
+              {
+                "label": false
+              },
+              {
+                "label": 0
+              },
+              {
+                "label": ""
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      "query": "rows exists { where items count { where label == null } == 2 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "no inner row equals the outer label",
+      "roots": {
+        "rows": [
+          {
+            "label": "outer",
+            "items": [
+              {
+                "label": null
+              },
+              {
+                "label": false
+              },
+              {
+                "label": 0
+              },
+              {
+                "label": ""
+              },
+              {}
+            ]
+          }
+        ]
+      },
+      "query": "rows exists { where items count { where label == ^label } == 0 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "each caret is exactly one scope; past the root is absent",
+      "notes": "`^^^v` is the root scope, which has no row; `^^^^v` is past the root. Both are absent and drop out of the record.",
+      "roots": {
+        "rows": [
+          {
+            "v": "top",
+            "mid": [
+              {
+                "v": "mid",
+                "leaf": [
+                  {
+                    "v": "leaf"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "m: mid collect { l: leaf collect { own: v, one: ^v, two: ^^v, three: ^^^v, four: ^^^^v } } from rows",
+      "expect": {
+        "result": [
+          {
+            "m": [
+              {
+                "l": [
+                  {
+                    "own": "leaf",
+                    "one": "mid",
+                    "two": "top"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "named roots live on the root scope: ^people from a row",
+      "roots": {
+        "people": [
+          {
+            "name": "Ada",
+            "city": "SF"
+          },
+          {
+            "name": "Ben",
+            "city": "SF"
+          },
+          {
+            "name": "Cy",
+            "city": "NYC"
+          }
+        ]
+      },
+      "query": "name, peers: ^people collect { name where city == ^city && name != ^name } from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Ada",
+            "peers": [
+              {
+                "name": "Ben"
+              }
+            ]
+          },
+          {
+            "name": "Ben",
+            "peers": [
+              {
+                "name": "Ada"
+              }
+            ]
+          },
+          {
+            "name": "Cy",
+            "peers": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a bare root name inside a row is the row's absent property",
+      "roots": {
+        "people": [
+          {
+            "name": "Ada",
+            "city": "SF"
+          },
+          {
+            "name": "Ben",
+            "city": "SF"
+          },
+          {
+            "name": "Cy",
+            "city": "NYC"
+          }
+        ]
+      },
+      "query": "name from people where people exists { where name == ^name }",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "^root as a where receiver",
+      "roots": {
+        "people": [
+          {
+            "name": "Ada",
+            "city": "SF"
+          },
+          {
+            "name": "Ben",
+            "city": "SF"
+          },
+          {
+            "name": "Cy",
+            "city": "NYC"
+          }
+        ]
+      },
+      "query": "name from people where ^people exists { where city == ^city && name != ^name }",
+      "expect": {
+        "result": [
+          {
+            "name": "Ada"
+          },
+          {
+            "name": "Ben"
+          }
+        ]
+      }
+    },
+    {
+      "name": "^ reaches a shadowed name",
+      "roots": {
+        "family": [
+          {
+            "name": "Ada",
+            "parent": "Pat"
+          },
+          {
+            "name": "Ben",
+            "parent": "Pat"
+          },
+          {
+            "name": "Cy",
+            "parent": "Sam"
+          }
+        ]
+      },
+      "query": "name, siblings: ^family collect { name where parent == ^parent && name != ^name } from family",
+      "expect": {
+        "result": [
+          {
+            "name": "Ada",
+            "siblings": [
+              {
+                "name": "Ben"
+              }
+            ]
+          },
+          {
+            "name": "Ben",
+            "siblings": [
+              {
+                "name": "Ada"
+              }
+            ]
+          },
+          {
+            "name": "Cy",
+            "siblings": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "^$value is the enclosing row",
+      "roots": {
+        "players": [
+          {
+            "name": "Ann",
+            "scores": [
+              10,
+              60,
+              70
+            ]
+          },
+          {
+            "name": "Ben",
+            "scores": [
+              45
+            ]
+          },
+          {
+            "name": "Cid",
+            "scores": []
+          }
+        ]
+      },
+      "query": "name, richer: ^players collect { name values where scores.size() > ^$value.scores.size() } from players",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "richer": []
+          },
+          {
+            "name": "Ben",
+            "richer": [
+              "Ann"
+            ]
+          },
+          {
+            "name": "Cid",
+            "richer": [
+              "Ann",
+              "Ben"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "$value is absent at the root scope",
+      "roots": {
+        "xs": [
+          1
+        ]
+      },
+      "query": "xs exists { where $value == ^$value }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "$value inside a block is the inner item",
+      "roots": {
+        "players": [
+          {
+            "name": "Ann",
+            "scores": [
+              10,
+              60,
+              70
+            ]
+          },
+          {
+            "name": "Ben",
+            "scores": [
+              45
+            ]
+          },
+          {
+            "name": "Cid",
+            "scores": []
+          }
+        ]
+      },
+      "query": "name, big: scores collect { $value values where $value > 50 } from players",
+      "expect": {
+        "result": [
+          {
+            "name": "Ann",
+            "big": [
+              60,
+              70
+            ]
+          },
+          {
+            "name": "Ben",
+            "big": []
+          },
+          {
+            "name": "Cid",
+            "big": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "has($value) filters absent scalars",
+      "roots": {
+        "xs": [
+          1,
+          null,
+          2
+        ]
+      },
+      "query": "$value values from xs where has($value)",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "a caret must be followed by a name",
+      "query": "x: ^ from r",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected an identifier after '^'"
+          ]
+        }
+      }
+    }
+  ]
+}

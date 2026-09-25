@@ -1,0 +1,379 @@
+{
+  "suite": "scalar-equality",
+  "cases": [
+    {
+      "name": "same numbers",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 5 == 5 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "integer and float spellings",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 == 1.0 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "zero and negative zero",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 0 == -0 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "number and numeric string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 5 == \"5\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "zero and false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 0 == false }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "empty string and false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"\" == false }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "null and zero",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where n == 0 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "same strings",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" == \"a\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "strings are case-sensitive",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" == \"A\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "booleans",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where true == true && false == false && !(true == false) }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "null literal equals a null field",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where n == null }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "null literal equals an absent field",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope == null }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "absent equals null field",
+      "roots": {
+        "r": [
+          {
+            "n": null
+          }
+        ]
+      },
+      "query": "r exists { where nope == n }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "two absent fields are equal",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope == other }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "absent is not the empty string",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope == \"\" }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "absent is not zero",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope == 0 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "absent is not false",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope == false }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "not-equal over absent and a value",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope != 5 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "not-equal over absent and null",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where nope != null }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "not-equal over two strings",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where \"a\" != \"b\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "not-equal same value",
+      "roots": {
+        "r": [
+          {}
+        ]
+      },
+      "query": "r exists { where 1 != 1 }",
+      "expect": {
+        "result": false
+      }
+    },
+    {
+      "name": "field equals literal",
+      "roots": {
+        "r": [
+          {
+            "age": 41
+          }
+        ]
+      },
+      "query": "r exists { where age == 41 }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "field equals string literal",
+      "roots": {
+        "r": [
+          {
+            "name": "Bob"
+          }
+        ]
+      },
+      "query": "r exists { where name == \"Bob\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "equality filters rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where title == \"Director\"",
+      "expect": {
+        "result": [
+          "Alice"
+        ]
+      }
+    },
+    {
+      "name": "not-equal keeps rows lacking the field",
+      "roots": {
+        "r": [
+          {
+            "name": "a",
+            "kind": "x"
+          },
+          {
+            "name": "b",
+            "kind": "y"
+          },
+          {
+            "name": "c"
+          }
+        ]
+      },
+      "query": "name values from r where kind != \"x\"",
+      "expect": {
+        "result": [
+          "b",
+          "c"
+        ]
+      }
+    }
+  ]
+}

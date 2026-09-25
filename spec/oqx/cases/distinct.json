@@ -1,0 +1,652 @@
+{
+  "suite": "distinct",
+  "cases": [
+    {
+      "name": "select distinct dedups by projection",
+      "roots": {
+        "dupes": [
+          {
+            "id": 1
+          },
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      },
+      "query": "select distinct id from dupes",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "select distinct keeps first occurrence order",
+      "roots": {
+        "jobs": [
+          {
+            "employer": "Globocorp",
+            "start_date": "1984/05/01",
+            "end_date": "1990/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2001/03/01"
+          },
+          {
+            "employer": "Initech",
+            "start_date": "1999/01/01",
+            "end_date": "2005/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2010/06/01",
+            "end_date": "2015/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2020/01/01"
+          }
+        ]
+      },
+      "query": "select distinct employer from jobs",
+      "expect": {
+        "result": [
+          {
+            "employer": "Globocorp"
+          },
+          {
+            "employer": "Initech"
+          }
+        ]
+      }
+    },
+    {
+      "name": "collect distinct in a projection",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "n: jobs collect distinct { select employer } from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "n": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "select distinct inside the block is equivalent",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "n: jobs collect { select distinct employer } from people where name == \"Bob\"",
+      "expect": {
+        "result": [
+          {
+            "n": [
+              {
+                "employer": "Globocorp"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "count distinct counts distinct projections",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people exists { where jobs count distinct { select employer } == 1 && name == \"Bob\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "count without distinct counts rows",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "people exists { where jobs count { select employer } == 2 && name == \"Bob\" }",
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "name": "count distinct as a where test",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name values from people where jobs count distinct { select employer } == 1",
+      "expect": {
+        "result": [
+          "Bob",
+          "Carol"
+        ]
+      }
+    },
+    {
+      "name": "distinct treats null and absent alike",
+      "roots": {
+        "xs": [
+          {
+            "a": null
+          },
+          {}
+        ]
+      },
+      "query": "select distinct a from xs",
+      "expect": {
+        "result": [
+          {
+            "a": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct compares whole projections",
+      "roots": {
+        "xs": [
+          {
+            "a": 1,
+            "b": 1
+          },
+          {
+            "a": 1,
+            "b": 2
+          },
+          {
+            "a": 1,
+            "b": 1
+          }
+        ]
+      },
+      "query": "select distinct a, b from xs",
+      "expect": {
+        "result": [
+          {
+            "a": 1,
+            "b": 1
+          },
+          {
+            "a": 1,
+            "b": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "single after distinct",
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 1
+          }
+        ]
+      },
+      "query": "xs single { select distinct a }",
+      "expect": {
+        "result": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "count distinct with an empty projection dedups by id",
+      "roots": {
+        "xs": [
+          {
+            "id": 1
+          },
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "count distinct with an empty projection over scalars",
+      "roots": {
+        "xs": [
+          1,
+          1,
+          2
+        ]
+      },
+      "query": "xs count distinct { }",
+      "expect": {
+        "result": 2
+      }
+    },
+    {
+      "name": "distinct values",
+      "roots": {
+        "jobs": [
+          {
+            "employer": "Globocorp",
+            "start_date": "1984/05/01",
+            "end_date": "1990/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2001/03/01"
+          },
+          {
+            "employer": "Initech",
+            "start_date": "1999/01/01",
+            "end_date": "2005/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2010/06/01",
+            "end_date": "2015/01/01"
+          },
+          {
+            "employer": "Globocorp",
+            "start_date": "2020/01/01"
+          }
+        ]
+      },
+      "query": "select distinct employer values from jobs",
+      "expect": {
+        "result": [
+          "Globocorp",
+          "Initech"
+        ]
+      }
+    },
+    {
+      "name": "nested collect distinct values",
+      "roots": {
+        "people": [
+          {
+            "name": "Bob",
+            "id": 124,
+            "title": "Engineer",
+            "active": true,
+            "age": 41,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "1984/05/01",
+                "end_date": "1990/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2001/03/01"
+              }
+            ]
+          },
+          {
+            "name": "Alice",
+            "id": 7,
+            "title": "Director",
+            "active": true,
+            "age": 52,
+            "jobs": [
+              {
+                "employer": "Initech",
+                "start_date": "1999/01/01",
+                "end_date": "2005/01/01"
+              },
+              {
+                "employer": "Globocorp",
+                "start_date": "2010/06/01",
+                "end_date": "2015/01/01"
+              }
+            ]
+          },
+          {
+            "name": "Carol",
+            "id": 55,
+            "title": "Analyst",
+            "active": false,
+            "age": 29,
+            "jobs": [
+              {
+                "employer": "Globocorp",
+                "start_date": "2020/01/01"
+              }
+            ]
+          }
+        ]
+      },
+      "query": "name, employers: jobs collect distinct { employer values } from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Bob",
+            "employers": [
+              "Globocorp"
+            ]
+          },
+          {
+            "name": "Alice",
+            "employers": [
+              "Initech",
+              "Globocorp"
+            ]
+          },
+          {
+            "name": "Carol",
+            "employers": [
+              "Globocorp"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "distinct with follow collapses repeated projections",
+      "notes": "The walk yields 1, 2, 1 (the last a cycle occurrence); `select distinct` dedups the projections.",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 1,
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select distinct id from g follow next order by id",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,1072 @@
+{
+  "suite": "follow",
+  "cases": [
+    {
+      "name": "collects reachable rows with $depth",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, depth: $depth from tree follow children order by $depth, id",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "depth": 1
+          },
+          {
+            "id": "a",
+            "depth": 2
+          },
+          {
+            "id": "b",
+            "depth": 2
+          },
+          {
+            "id": "a1",
+            "depth": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "depth cap and $stop",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, stop: $stop from tree follow children { depth 2 } order by id",
+      "expect": {
+        "result": [
+          {
+            "id": "a",
+            "stop": "depth"
+          },
+          {
+            "id": "b",
+            "stop": "depth"
+          },
+          {
+            "id": "root",
+            "stop": "interior"
+          }
+        ]
+      }
+    },
+    {
+      "name": "$leaf and $frontier",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, leaf: $leaf, frontier: $frontier, stop: $stop from tree follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "leaf": false,
+            "frontier": false,
+            "stop": "interior"
+          },
+          {
+            "id": "a",
+            "leaf": false,
+            "frontier": false,
+            "stop": "interior"
+          },
+          {
+            "id": "b",
+            "leaf": true,
+            "frontier": false,
+            "stop": "leaf"
+          },
+          {
+            "id": "a1",
+            "leaf": true,
+            "frontier": false,
+            "stop": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a row without the relation is a leaf",
+      "roots": {
+        "xs": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, stop: $stop from xs follow next order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "stop": "interior"
+          },
+          {
+            "id": 2,
+            "stop": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "$ordinal ranks by depth then path",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, o: $ordinal from tree follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "o": 1
+          },
+          {
+            "id": "a",
+            "o": 2
+          },
+          {
+            "id": "b",
+            "o": 3
+          },
+          {
+            "id": "a1",
+            "o": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "$ordinal path components compare as text",
+      "notes": "A path is the identities' string forms joined; \"10\" sorts before \"9\" as text.",
+      "roots": {
+        "tree": [
+          {
+            "id": 1,
+            "children": [
+              {
+                "id": 9,
+                "children": []
+              },
+              {
+                "id": 10,
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from tree follow children order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          10,
+          9
+        ]
+      }
+    },
+    {
+      "name": "cycles terminate: a revisit is admitted once",
+      "notes": "Identity is the `id` property; the third row is the revisit of node 1 and is never expanded.",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 1,
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, stop: $stop from g follow next order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "stop": "interior"
+          },
+          {
+            "id": 2,
+            "stop": "interior"
+          },
+          {
+            "id": 1,
+            "stop": "cycle"
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow distinct collapses occurrences to nodes",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 1,
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from g follow distinct next order by id",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a node on two paths yields two occurrences",
+      "roots": {
+        "g": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": [
+                  {
+                    "id": "c",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "children": [
+                  {
+                    "id": "c",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "d": 1
+          },
+          {
+            "id": "a",
+            "d": 2
+          },
+          {
+            "id": "b",
+            "d": 2
+          },
+          {
+            "id": "c",
+            "d": 3
+          },
+          {
+            "id": "c",
+            "d": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow distinct keeps one occurrence per identity",
+      "roots": {
+        "g": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": [
+                  {
+                    "id": "c",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "children": [
+                  {
+                    "id": "c",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow distinct children order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "d": 1
+          },
+          {
+            "id": "a",
+            "d": 2
+          },
+          {
+            "id": "b",
+            "d": 2
+          },
+          {
+            "id": "c",
+            "d": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "by supplies the identity",
+      "roots": {
+        "tree": [
+          {
+            "label": "root",
+            "children": [
+              {
+                "label": "a",
+                "children": []
+              },
+              {
+                "label": "b",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "label, stop: $stop from tree follow children { by label } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "label": "root",
+            "stop": "interior"
+          },
+          {
+            "label": "a",
+            "stop": "leaf"
+          },
+          {
+            "label": "b",
+            "stop": "leaf"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the hard depth cap is 8",
+      "roots": {
+        "c": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 3,
+                    "next": [
+                      {
+                        "id": 4,
+                        "next": [
+                          {
+                            "id": 5,
+                            "next": [
+                              {
+                                "id": 6,
+                                "next": [
+                                  {
+                                    "id": 7,
+                                    "next": [
+                                      {
+                                        "id": 8,
+                                        "next": [
+                                          {
+                                            "id": 9,
+                                            "next": [
+                                              {
+                                                "id": 10,
+                                                "next": []
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from c follow next",
+      "expect": {
+        "result": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      }
+    },
+    {
+      "name": "the capped row reports depth",
+      "roots": {
+        "c": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 3,
+                    "next": [
+                      {
+                        "id": 4,
+                        "next": [
+                          {
+                            "id": 5,
+                            "next": [
+                              {
+                                "id": 6,
+                                "next": [
+                                  {
+                                    "id": 7,
+                                    "next": [
+                                      {
+                                        "id": 8,
+                                        "next": [
+                                          {
+                                            "id": 9,
+                                            "next": [
+                                              {
+                                                "id": 10,
+                                                "next": []
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop, f: $frontier from c follow next order by $ordinal offset 6",
+      "expect": {
+        "result": [
+          {
+            "id": 7,
+            "s": "interior",
+            "f": false
+          },
+          {
+            "id": 8,
+            "s": "depth",
+            "f": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontier cuts a relation that could continue",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop, f: $frontier, l: $leaf from tree follow children { frontier id == \"a\" } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "s": "interior",
+            "f": false,
+            "l": false
+          },
+          {
+            "id": "a",
+            "s": "frontier",
+            "f": true,
+            "l": false
+          },
+          {
+            "id": "b",
+            "s": "leaf",
+            "f": false,
+            "l": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "where in the follow block filters successors",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from tree follow children { where id != \"a\" } order by $ordinal",
+      "expect": {
+        "result": [
+          "root",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "top-level where without intrinsics selects seeds",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from tree where id == \"a\" follow children order by $ordinal",
+      "expect": {
+        "result": []
+      }
+    },
+    {
+      "name": "top-level where with intrinsics filters after the walk",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from tree where $depth > 1 follow children order by $ordinal",
+      "expect": {
+        "result": [
+          "a",
+          "b",
+          "a1"
+        ]
+      }
+    },
+    {
+      "name": "mixed where: seed conjuncts and post conjuncts",
+      "notes": "`id != \"b\"` filters seeds only (the root passes); `$depth <= 2` filters the walked occurrences. `b` is reached because seed predicates do not prune the walk.",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from tree where id != \"b\" && $depth <= 2 follow children order by $ordinal",
+      "expect": {
+        "result": [
+          "root",
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "intrinsics belong to the reached row; nested blocks read them via ^",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree follow children { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "kids": [
+              {
+                "id": "a",
+                "parentDepth": 1
+              },
+              {
+                "id": "b",
+                "parentDepth": 1
+              }
+            ]
+          },
+          {
+            "id": "a",
+            "kids": [
+              {
+                "id": "a1",
+                "parentDepth": 2
+              }
+            ]
+          },
+          {
+            "id": "b",
+            "kids": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow inside a select-position collect",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, desc: children collect { id values follow children order by $ordinal } from tree where id == \"root\"",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "desc": [
+              "a",
+              "b",
+              "a1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow with select distinct",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "next": [
+              {
+                "id": 2,
+                "next": [
+                  {
+                    "id": 1,
+                    "next": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "select distinct id from g follow next order by id",
+      "expect": {
+        "result": [
+          {
+            "id": 1
+          },
+          {
+            "id": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow is not valid in a where op",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "label": "Root",
+            "children": [
+              {
+                "id": "a",
+                "label": "A",
+                "children": [
+                  {
+                    "id": "a1",
+                    "label": "A1",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "id": "b",
+                "label": "B",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree where children exists { follow children }",
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "follow"
+          ]
+        }
+      }
+    },
+    {
+      "name": "depth must be at least 1",
+      "query": "id from tree follow children { depth 0 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "between 1 and 8"
+          ]
+        }
+      }
+    },
+    {
+      "name": "depth must be at most 8",
+      "query": "id from tree follow children { depth 9 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "between 1 and 8"
+          ]
+        }
+      }
+    },
+    {
+      "name": "depth must be an integer",
+      "query": "id from tree follow children { depth 1.5 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "between 1 and 8"
+          ]
+        }
+      }
+    },
+    {
+      "name": "unknown word in the follow block",
+      "query": "id from tree follow children { foo 1 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected where/frontier/depth/by"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate where in the follow block",
+      "query": "id from tree follow children { where a where b }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `where` in follow"
+          ]
+        }
+      }
+    },
+    {
+      "name": "duplicate depth in the follow block",
+      "query": "id from tree follow children { depth 1 depth 2 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "duplicate `depth` in follow"
+          ]
+        }
+      }
+    },
+    {
+      "name": "follow needs a relation",
+      "query": "from r follow",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "unexpected 'follow'"
+          ]
+        }
+      }
+    }
+  ]
+}
