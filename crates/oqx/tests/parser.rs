@@ -1,6 +1,8 @@
 //! Parser conformance against the TypeScript reference: every parse-related
-//! assertion in `packages/oqx/test/oqx.test.ts`, plus AST-shape tests for the
-//! README tutorial examples so the engine can trust the tree.
+//! assertion in `packages/oqx/test/oqx.test.ts`, the grammar rules of
+//! `spec/oqx/GRAMMAR.md` (language 0.12, principle of least surprise), plus
+//! AST-shape tests for the README tutorial examples so the engine can trust
+//! the tree.
 
 use oqx::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OqxError, OrderSpec, Query,
@@ -187,6 +189,22 @@ fn parse_err(src: &str) -> OqxError {
 /// Assert a parse error whose message contains every fragment.
 fn assert_parse_error(src: &str, fragments: &[&str]) -> OqxError {
     let e = parse_err(src);
+    for f in fragments {
+        assert!(
+            e.message.contains(f),
+            "{src:?}: expected {f:?} in {:?}",
+            e.message
+        );
+    }
+    e
+}
+
+/// Assert a lex error whose message contains every fragment.
+fn assert_lex_error(src: &str, fragments: &[&str]) -> OqxError {
+    let e = parse_string(src)
+        .err()
+        .unwrap_or_else(|| panic!("{src:?} should fail to lex"));
+    assert_eq!(e.stage, Stage::Lex, "{src:?}: {}", e.message);
     for f in fragments {
         assert!(
             e.message.contains(f),
@@ -541,11 +559,14 @@ fn an_alias_shadows_a_same_named_field_inside_where() {
         q.r#where,
         Some(scalar(bin(BinaryOp::Eq, ident("name"), str_("Bob"))))
     );
-    // a lifted item is not an alias; a `^name` in where still reads the outer scope
-    let q = parse("people exists { ^x: a where x == 1 }");
-    assert_eq!(q.select, vec![lifted(1, "x", ident("a"))]);
+    // a lifted item is not an alias: a bare `x` in the block's where is the row field
+    let q = parse("from r where xs collect { ^x: a where x == 1 }");
+    let Some(Where::Op(o)) = &q.r#where else {
+        panic!("expected an op")
+    };
+    assert_eq!(o.sub.select, vec![lifted(1, "x", ident("a"))]);
     assert_eq!(
-        q.r#where,
+        o.sub.r#where,
         Some(scalar(bin(BinaryOp::Eq, ident("x"), num(1.0))))
     );
 }
@@ -873,9 +894,133 @@ fn trailing_tokens_after_a_directive_or_query_are_errors() {
         "people count { } order by x",
         &["unexpected 'order' after the top-level directive"],
     );
-    assert_parse_error("name from people }", &["unexpected '}' after the query"]);
-    // only `}` escapes the body loop; any other stray token is an in-body error
-    assert_parse_error("name from people )", &["unexpected ')' after `from`"]);
+    assert_parse_error(
+        "name from people }",
+        &["unexpected '}' after the query — nothing may follow the last clause"],
+    );
+    // only `}` escapes the body loop; any other stray token is reported from
+    // inside the body, still as "after the query" at the top level
+    assert_parse_error(
+        "name from people )",
+        &[
+            "unexpected ')' after the query — nothing may follow the last clause (expected where/follow/order by/limit/offset or the end of the query)",
+        ],
+    );
+}
+
+#[test]
+fn stray_tokens_after_a_complete_clause_name_where_the_body_ends() {
+    // punctuation, an operator, or a literal: the body ends here
+    assert_parse_error(
+        "name from people :",
+        &["unexpected ':' after the query — nothing may follow the last clause"],
+    );
+    assert_parse_error(
+        "name from people where a > 1 5",
+        &[
+            "unexpected '5' after the query",
+            "expected follow/order by/limit/offset or the end of the query",
+        ],
+    );
+    assert_parse_error(
+        "name from people where a ==",
+        &["unexpected end of query — expected a value"],
+    );
+    assert_parse_error(
+        "name from people where a *",
+        &["unexpected end of query — expected a value"],
+    );
+    assert_parse_error(
+        "name from people where a > 1 +",
+        &["unexpected end of query — expected a value"],
+    );
+    assert_parse_error(
+        "name from people where a > 1 !",
+        &["unexpected '!' after the query"],
+    );
+    assert_parse_error(
+        "people exists { name from jobs ) }",
+        &[
+            "unexpected ')' in the exists { … } block — expected where/follow/order by/limit/offset or '}' to close the block",
+        ],
+    );
+    assert_parse_error(
+        "people count { where a > 1 \"s\" }",
+        &[
+            "unexpected 's' in the count { … } block — expected follow/order by/limit/offset or '}' to close the block",
+        ],
+    );
+    // after the last clause nothing remains to expect
+    assert_parse_error(
+        "name from people offset 1 )",
+        &[
+            "unexpected ')' after the query — nothing may follow the last clause (expected  or the end of the query)",
+        ],
+    );
+    // a comma keeps the projection hint (`name from r, id` meant a projection)
+    assert_parse_error(
+        "name from r, id",
+        &[
+            "unexpected ',' after `from`",
+            "a projection goes before `from`",
+        ],
+    );
+    // a word (ident, keyword, binding, caret) is still the no-implicit-where message
+    assert_parse_error(
+        "from people active",
+        &["unexpected 'active' after `from`", "no implicit where"],
+    );
+    assert_parse_error(
+        "from people ^k",
+        &["unexpected '^' after `from`", "no implicit where"],
+    );
+    let e = parse_template(&["name from people ", ""], 1).unwrap_err();
+    assert!(
+        e.message.contains("unexpected '${0}' after `from`"),
+        "{}",
+        e.message
+    );
+    // before any clause the message lists everything a body may start with
+    assert_parse_error(
+        ") from xs",
+        &[
+            "unexpected ')' — expected a projection or select/from/where/follow/order by/limit/offset",
+        ],
+    );
+}
+
+#[test]
+fn clause_words_without_their_clause_say_what_the_clause_needs() {
+    assert_parse_error(
+        "name from people order age",
+        &["unexpected 'order' after `from` — an ordering is written `order by <expr> [asc|desc]`"],
+    );
+    assert_parse_error(
+        "name from people follow { depth 1 }",
+        &[
+            "unexpected 'follow' after `from` — `follow` needs a relation: `follow <relation>` or `follow distinct <relation>`",
+        ],
+    );
+    assert_parse_error(
+        "name from people where a limit x",
+        &[
+            "unexpected 'limit' after `where` — a bound is a non-negative number literal, a binding, or (inside a block) an outer reference `^name`",
+        ],
+    );
+    assert_parse_error(
+        "name from people offset -1",
+        &["unexpected 'offset' after `from` — a bound is a non-negative number literal"],
+    );
+    assert_parse_error(
+        "people count { where a order age }",
+        &["unexpected 'order' after `where` — an ordering is written"],
+    );
+    // as a leading run they are still plain field names
+    let q = parse("order, follow, limit, offset from r");
+    assert_eq!(
+        q.select,
+        vec![bare("order"), bare("follow"), bare("limit"), bare("offset")]
+    );
 }
 
 // ---- order by -----------------------------------------------------------------
@@ -1040,12 +1185,29 @@ fn follow_distinct() {
     let f = q.follow.unwrap();
     assert!(f.distinct);
     assert_eq!(f.receiver, ident("next"));
-    // `follow distinct { … }` — `distinct` is the relation's name when nothing follows it
-    let q = parse("from xs follow distinct { depth 2 }");
+    let q = parse("from xs follow distinct rel.next { depth 2 }");
     let f = q.follow.unwrap();
-    assert!(!f.distinct);
-    assert_eq!(f.receiver, ident("distinct"));
+    assert!(f.distinct);
+    assert_eq!(f.receiver, member(ident("rel"), "next"));
     assert_eq!(f.depth, Some(2));
+    let q = parse_template(&["from xs follow distinct ", ""], 1).unwrap();
+    let f = q.follow.unwrap();
+    assert!(f.distinct);
+    assert_eq!(f.receiver, binding(0));
+    // after `follow`, `distinct` is a keyword: it must be followed by the relation
+    // (a relation literally named `distinct` is not supported)
+    assert_parse_error(
+        "from xs follow distinct { depth 2 }",
+        &["expected a relation after `follow distinct` (`follow distinct <relation>`)"],
+    );
+    assert_parse_error(
+        "id from tree follow distinct",
+        &["expected a relation after `follow distinct`"],
+    );
+    assert_parse_error(
+        "id from tree follow distinct 1",
+        &["expected a relation after `follow distinct`"],
+    );
 }
 
 #[test]
@@ -1090,14 +1252,28 @@ fn follow_block_errors() {
         "from tree follow children { depth 1",
         &["expected '}' to close the follow block"],
     );
-    // `follow` not followed by a relation name is not a follow clause at all
-    assert_parse_error("from tree follow", &["unexpected 'follow' after `from`"]);
+    // `follow` not followed by a relation name is not a follow clause at all; the
+    // error says what the clause needs
+    assert_parse_error(
+        "from tree follow",
+        &["unexpected 'follow' after `from` — `follow` needs a relation"],
+    );
     assert_parse_error("from tree follow 1", &["unexpected 'follow' after `from`"]);
-    // …including a `^`-headed relation: at_follow only admits an ident or a binding,
-    // so parse_receiver's caret support is unreachable from `follow` (as in the TS)
+    // a `^`-headed relation IS recognized as a follow clause, and rejected: the
+    // relation is one of the current row's
     assert_parse_error(
         "from tree follow ^rel",
-        &["unexpected 'follow' after `from`"],
+        &[
+            "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there",
+        ],
+    );
+    assert_parse_error(
+        "from tree follow distinct ^rel",
+        &["`follow` takes a relation of the current row"],
+    );
+    assert_parse_error(
+        "from tree follow ^^root.rel",
+        &["`follow` takes a relation of the current row"],
     );
     // `depth 2.0` is an integer-valued number, so it passes the integer check
     assert_eq!(
@@ -1207,11 +1383,41 @@ fn open_ended_ranges() {
             range(None, Some(num(29.0)), true)
         )))
     );
-    // Faithful to the TS: a leading `..` always takes a high bound, so `..` alone
-    // before a clause word reads that word as the bound and fails on the next token.
+    // a leading `..` stops at a clause word like a trailing one, so `..` alone
+    // before `order by` is a range with no bound at all — an error
     assert_parse_error(
         "from xs where n in .. order by a",
-        &["unexpected 'by' after `where`"],
+        &["a range needs at least one bound: `lo..hi`, `lo..`, or `..hi`"],
+    );
+    assert_parse_error(
+        "from xs where n in ..",
+        &["a range needs at least one bound"],
+    );
+    assert_parse_error(
+        "from xs where n in ... limit 1",
+        &["a range needs at least one bound"],
+    );
+    assert_parse_error("r: .. from xs", &["a range needs at least one bound"]);
+    // an open low end followed by a clause
+    let q = parse("a values from xs where a in ..2 order by a desc");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(ident("a"), range(None, Some(num(2.0)), false))))
+    );
+    assert_eq!(q.order_by, Some(vec![desc(ident("a"))]));
+    // decimal bounds lex as numbers around the range operator
+    let q = parse("from xs where 2 in 1.5..2.5");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(
+            num(2.0),
+            range(Some(num(1.5)), Some(num(2.5)), false)
+        )))
+    );
+    let q = parse("people count { where 2 in 1.5.. }");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(num(2.0), range(Some(num(1.5)), None, false))))
     );
 }
 
@@ -1337,17 +1543,16 @@ fn unclosed_blocks_and_groups() {
         "from xs where",
         &["unexpected end of query — expected a value"],
     );
-    assert_parse_error(
-        "from xs where a.",
-        &["expected an identifier after '.' in a navigation"],
-    );
-    // `try_op` runs first on an ident head and throws (it does not rewind) on `a.`
-    assert_parse_error(
-        "x: a. from xs",
-        &["expected an identifier after '.' in a navigation"],
-    );
-    // the value parser's own message needs a head try_op does not take, e.g. a paren
+    // a dangling dot is one message whether the receiver scan (`try_op` runs first
+    // on an ident head and does not rewind on `a.`) or the value parser hits it
+    assert_parse_error("from xs where a.", &["expected a property name after '.'"]);
+    assert_parse_error("x: a. from xs", &["expected a property name after '.'"]);
+    assert_parse_error("name. from r", &["expected a property name after '.'"]);
     assert_parse_error("x: (a). from xs", &["expected a property name after '.'"]);
+    assert_parse_error(
+        "from tree follow rel.",
+        &["expected a property name after '.'"],
+    );
     assert_parse_error(
         "x: ^ from xs",
         &["expected an identifier after '^' (an outer reference)"],
@@ -1368,9 +1573,16 @@ fn stray_tokens_name_the_remaining_clauses() {
         "name from people where a > 1 name",
         &["unexpected 'name' after `where` — expected follow/order by/limit/offset"],
     );
+    // a literal after a complete clause is a stray token, reported where the body ends
     assert_parse_error(
         "name from people order by a 5",
-        &["unexpected '5' after `order by` — expected limit/offset"],
+        &[
+            "unexpected '5' after the query — nothing may follow the last clause (expected limit/offset or the end of the query)",
+        ],
+    );
+    assert_parse_error(
+        "name from people order by a x",
+        &["unexpected 'x' after `order by` — expected limit/offset"],
     );
     assert_parse_error(
         "people count { where a x }",
@@ -1780,8 +1992,50 @@ fn comparison_then_and_then_or_in_value_position() {
             )
         )]
     );
-    // comparison is non-associative: a second comparator is a stray token
-    assert_parse_error("x: a == b == c from xs", &["unexpected '=='"]);
+    // comparison is non-associative: a second comparator is an error naming the shape
+    assert_parse_error(
+        "x: a == b == c from xs",
+        &["comparisons do not chain: `a == b == c` — write two comparisons joined with `&&`"],
+    );
+}
+
+#[test]
+fn comparisons_do_not_chain() {
+    // the message uses the operators actually written, around placeholder operands
+    assert_parse_error(
+        "from xs where a == 1 == 2",
+        &["comparisons do not chain: `a == b == c`"],
+    );
+    assert_parse_error("from xs where a < b <= c", &["`a < b <= c`"]);
+    assert_parse_error("from xs where a < b in c", &["`a < b in c`"]);
+    assert_parse_error("from xs where a in b == c", &["`a in b == c`"]);
+    assert_parse_error("from xs where a in b in c", &["`a in b in c`"]);
+    assert_parse_error(
+        "from xs order by a == b != c",
+        &["comparisons do not chain"],
+    );
+    // …in value position and after a promoted group alike
+    assert_parse_error("x: 1 < 2 < 3 from xs", &["`a < b < c`"]);
+    assert_parse_error("from xs where (a + 1) > 2 > 1", &["`a > b > c`"]);
+    // parenthesized, the second comparison is fine
+    let q = parse("from xs where (a == b) == c");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            bin(BinaryOp::Eq, ident("a"), ident("b")),
+            ident("c")
+        )))
+    );
+    // `in` is at the comparison level
+    let q = parse("x: a in b && c from xs");
+    assert_eq!(
+        q.select,
+        vec![field(
+            "x",
+            logical(LogicalOp::And, in_(ident("a"), ident("b")), ident("c"))
+        )]
+    );
 }
 
 #[test]
@@ -1812,11 +2066,12 @@ fn where_owns_the_boolean_tree() {
             scalar(ident("c"))
         ]))
     );
-    // `!` in where position wraps the whole comparison leaf
+    // `!` has one precedence everywhere: tighter than comparison, so in where
+    // position `!a == b` is `(!a) == b` — a scalar leaf, not a negated comparison
     let q = parse("from xs where !a == b");
     assert_eq!(
         q.r#where,
-        Some(wnot(scalar(bin(BinaryOp::Eq, ident("a"), ident("b")))))
+        Some(scalar(bin(BinaryOp::Eq, not(ident("a")), ident("b"))))
     );
     // a consumer op nests inside the tree and the tree nests inside its block
     let q = parse("from xs where a && (ys exists { where b || zs none { } })");
@@ -1835,14 +2090,99 @@ fn where_owns_the_boolean_tree() {
 }
 
 #[test]
-fn a_parenthesized_arithmetic_head_in_where_is_a_grouped_where() {
-    // Faithful to the TS: `(` in where position opens a grouped WHERE, so the
-    // scalar `(a + 1)` closes the group and the `>` that follows is a stray token.
-    assert_parse_error(
-        "from xs where (a + 1) > 2",
-        &["unexpected '>' after `where`"],
+fn not_has_one_precedence_in_where() {
+    // a leaf that is wholly a negation keeps the where-tree `Not` shape
+    let q = parse("from xs where !active");
+    assert_eq!(q.r#where, Some(wnot(scalar(ident("active")))));
+    let q = parse("from xs where !!a");
+    assert_eq!(q.r#where, Some(wnot(wnot(scalar(ident("a"))))));
+    let q = parse("from xs where !has(x)");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(scalar(call(None, "has", vec![ident("x")]))))
     );
-    // whereas the comparison the other way round is fine
+    let q = parse("from xs where !a.b.c()");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(scalar(call(
+            Some(member(ident("a"), "b")),
+            "c",
+            vec![]
+        ))))
+    );
+    // inside a comparison or arithmetic it is the scalar unary `!`
+    let q = parse("from xs where !a == b");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(BinaryOp::Eq, not(ident("a")), ident("b"))))
+    );
+    let q = parse("from xs where !a != !b");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(BinaryOp::Ne, not(ident("a")), not(ident("b")))))
+    );
+    let q = parse("from xs where !a + 1 > 2");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Gt,
+            bin(BinaryOp::Add, not(ident("a")), num(1.0)),
+            num(2.0)
+        )))
+    );
+    let q = parse("from xs where !a in ys");
+    assert_eq!(q.r#where, Some(scalar(in_(not(ident("a")), ident("ys")))));
+    // `!` on the right of `&&`/`||` is the same rule
+    let q = parse("from xs where a && !b == c || !d");
+    assert_eq!(
+        q.r#where,
+        Some(or(vec![
+            and(vec![
+                scalar(ident("a")),
+                scalar(bin(BinaryOp::Eq, not(ident("b")), ident("c"))),
+            ]),
+            wnot(scalar(ident("d"))),
+        ]))
+    );
+    // `!` before a consumer test negates the whole test, count comparison included
+    let q = parse("from xs where !jobs exists { }");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(wop(op(ident("jobs"), Consumer::Exists, sub()))))
+    );
+    let q = parse("from xs where !jobs count { } > 1");
+    let mut cnt = op(ident("jobs"), Consumer::Count, sub());
+    cnt.count_cmp = Some(CountCmp {
+        op: RelOp::Gt,
+        value: 1.0,
+    });
+    assert_eq!(q.r#where, Some(wnot(wop(cnt))));
+    let q = parse("from xs where !!jobs none { }");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(wnot(wop(op(ident("jobs"), Consumer::None, sub())))))
+    );
+    // and before a `^`-headed receiver
+    let q = parse("from xs where !^ys exists { }");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(wop(op(outer(1, "ys"), Consumer::Exists, sub()))))
+    );
+}
+
+#[test]
+fn parentheses_in_where_group_a_predicate_or_a_scalar() {
+    // a scalar continuation after `)` (comparison, arithmetic, `in`, a range
+    // operator, `.`) makes the group a scalar operand
+    let q = parse("from xs where (a + 1) > 2");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Gt,
+            bin(BinaryOp::Add, ident("a"), num(1.0)),
+            num(2.0)
+        )))
+    );
     let q = parse("from xs where 2 < (a + 1)");
     assert_eq!(
         q.r#where,
@@ -1851,6 +2191,162 @@ fn a_parenthesized_arithmetic_head_in_where_is_a_grouped_where() {
             num(2.0),
             bin(BinaryOp::Add, ident("a"), num(1.0))
         )))
+    );
+    // `||`/`&&` inside the group become scalar logical operands
+    let q = parse("from xs where (a || b) == 5");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            logical(LogicalOp::Or, ident("a"), ident("b")),
+            num(5.0)
+        )))
+    );
+    let q = parse("from xs where (a && b && c) != d");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Ne,
+            logical(
+                LogicalOp::And,
+                logical(LogicalOp::And, ident("a"), ident("b")),
+                ident("c")
+            ),
+            ident("d")
+        )))
+    );
+    let q = parse("from xs where (name).size() > 3");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Gt,
+            call(Some(ident("name")), "size", vec![]),
+            num(3.0)
+        )))
+    );
+    let q = parse("from xs where (a).b.c");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(member(member(ident("a"), "b"), "c")))
+    );
+    let q = parse("from xs where (a) * 2 == 4");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            bin(BinaryOp::Mul, ident("a"), num(2.0)),
+            num(4.0)
+        )))
+    );
+    let q = parse("from xs where (a) in 1..5");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(
+            ident("a"),
+            range(Some(num(1.0)), Some(num(5.0)), false)
+        )))
+    );
+    let q = parse("from xs where n in (a)..(b)");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(in_(
+            ident("n"),
+            range(Some(ident("a")), Some(ident("b")), false)
+        )))
+    );
+    // a negated group inside the scalar: `(!a)` stays a unary inside the operand
+    let q = parse("from xs where (!a) == b");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(BinaryOp::Eq, not(ident("a")), ident("b"))))
+    );
+    // anything else after `)`: a predicate group
+    let q = parse("from xs where (a > 1) && (b < 2)");
+    assert_eq!(
+        q.r#where,
+        Some(and(vec![
+            scalar(bin(BinaryOp::Gt, ident("a"), num(1.0))),
+            scalar(bin(BinaryOp::Lt, ident("b"), num(2.0))),
+        ]))
+    );
+    let q = parse("from xs where ((a))");
+    assert_eq!(q.r#where, Some(scalar(ident("a"))));
+    let q = parse("from xs where (jobs exists { }) && a");
+    assert_eq!(
+        q.r#where,
+        Some(and(vec![
+            wop(op(ident("jobs"), Consumer::Exists, sub())),
+            scalar(ident("a")),
+        ]))
+    );
+    // `!` over a group: a predicate group gets a `Not` node…
+    let q = parse("from xs where !(a == b)");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(scalar(bin(BinaryOp::Eq, ident("a"), ident("b")))))
+    );
+    let q = parse("from xs where !!(a || b)");
+    assert_eq!(
+        q.r#where,
+        Some(wnot(wnot(or(vec![scalar(ident("a")), scalar(ident("b"))]))))
+    );
+    // …while a scalar group is negated as a value, then compared
+    let q = parse("from xs where !(a) == false");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            not(ident("a")),
+            Expr::Lit(Value::Bool(false))
+        )))
+    );
+    let q = parse("from xs where !!(a || b) == c");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            not(not(logical(LogicalOp::Or, ident("a"), ident("b")))),
+            ident("c")
+        )))
+    );
+    // `!` binds to the group before the navigation? no: the postfix chain binds
+    // first (`!(a).b` is `!((a).b)`), as in value position
+    let q = parse("from xs where !(a).b == c");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(
+            BinaryOp::Eq,
+            not(member(ident("a"), "b")),
+            ident("c")
+        )))
+    );
+    // a consumer test has no scalar value, so a group holding one cannot be operated on
+    assert_parse_error(
+        "from xs where (ys count { }) > 1",
+        &[
+            "a consumer test (count { … }) is a predicate, not a value, so it cannot be compared or operated on — write `<relation> count { … } > N` without the parentheses",
+        ],
+    );
+    assert_parse_error(
+        "from xs where (ys exists { }) == true",
+        &[
+            "a consumer test (exists { … }) is a predicate, not a value, so it cannot be compared or operated on",
+        ],
+    );
+    assert_parse_error(
+        "from xs where (a && ys none { }) + 1",
+        &["a consumer test (none { … }) is a predicate, not a value"],
+    );
+    assert_parse_error(
+        "from xs where !(ys exists { }).size()",
+        &["is a predicate, not a value"],
+    );
+    // a group is never a call head
+    assert_parse_error("from xs where (f)(x)", &["unexpected '(' after the query"]);
+    // the group must close
+    assert_parse_error(
+        "from xs where (a + 1 > 2",
+        &["expected ')' to close a grouped where expression"],
     );
 }
 
@@ -1869,24 +2365,228 @@ fn literals() {
             field("g", str_("dq")),
         ]
     );
-    // an exponent with no digits is one number token whose value is NaN (`Number("1e")`)
-    let q = parse("x: 1e from xs");
-    let SelectItem::Field {
-        expr: Expr::Lit(Value::Number(n)),
-        ..
-    } = &q.select[0]
-    else {
-        panic!()
-    };
-    assert!(n.is_nan());
-    // a leading-dot numeral is accepted by the lexer's number rule
-    assert_eq!(parse("x: .5 from xs").select, vec![field("x", num(0.5))]);
-    // `true` etc. as a directive receiver are identifiers (parse_nav_from does not
-    // special-case them); as a value they are literals
-    let q = parse("true count { }");
-    assert_eq!(q.source, ident("true"));
+    let q = parse("a: 1e2, b: 1E-2, c: 2.5e1, d: 3e+1 from xs");
+    assert_eq!(
+        q.select,
+        vec![
+            field("a", num(100.0)),
+            field("b", num(0.01)),
+            field("c", num(25.0)),
+            field("d", num(30.0)),
+        ]
+    );
+    // a number directly before a clause word, and navigation after a parenthesized one
+    let q = parse("a values from r where a > 1 order by a");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(BinaryOp::Gt, ident("a"), num(1.0))))
+    );
+    let q = parse("x: (1).size() from r");
+    assert_eq!(
+        q.select,
+        vec![field("x", call(Some(num(1.0)), "size", vec![]))]
+    );
+    // `true`/`false`/`null` are literals in every position: values, sources…
     let q = parse("from true");
     assert_eq!(q.source, Expr::Lit(Value::Bool(true)));
+    let q = parse("from xs where null");
+    assert_eq!(q.r#where, Some(scalar(Expr::Lit(Value::Null))));
+}
+
+#[test]
+fn malformed_numerals_are_lex_errors() {
+    // an exponent marker with no digits is no longer a silent NaN
+    assert_lex_error(
+        "x: 1e from xs",
+        &[
+            "malformed number \"1e\"",
+            "an exponent needs at least one digit",
+        ],
+    );
+    assert_lex_error("x: 1e+ from xs", &["malformed number \"1e+\""]);
+    assert_lex_error("from r where a > 2E", &["malformed number \"2E\""]);
+    // a trailing decimal point, and a decimal point before a name
+    assert_lex_error(
+        "x: 1. from xs",
+        &["malformed number \"1.\"", "write 1.0, not 1."],
+    );
+    assert_lex_error("x: 1.foo from xs", &["malformed number \"1.\""]);
+    // a leading-dot numeral, and a digit after a navigation dot (no index access)
+    assert_lex_error(
+        "from r where a > .5",
+        &[
+            "malformed number \".5\"",
+            "write 0.5",
+            "there is no index access",
+        ],
+    );
+    assert_lex_error("x: xs.0 from r", &["malformed number \".0\""]);
+    // the ranges that look similar still lex
+    assert_eq!(
+        parse("r: 1..5 from xs").select,
+        vec![field("r", range(Some(num(1.0)), Some(num(5.0)), false))]
+    );
+    assert_eq!(
+        parse("r: 1...5 from xs").select,
+        vec![field("r", range(Some(num(1.0)), Some(num(5.0)), true))]
+    );
+    assert_eq!(
+        parse("r: ..5 from xs").select,
+        vec![field("r", range(None, Some(num(5.0)), false))]
+    );
+    assert_eq!(
+        parse("r: 1.. from xs").select,
+        vec![field("r", range(Some(num(1.0)), None, false))]
+    );
+    assert_eq!(
+        parse("r: 1.5..2.5 from xs").select,
+        vec![field("r", range(Some(num(1.5)), Some(num(2.5)), false))]
+    );
+}
+
+#[test]
+fn literal_words_are_never_receivers() {
+    assert_parse_error("true count { }", &["`true` is a literal, not a collection"]);
+    assert_parse_error(
+        "false exists { }",
+        &["`false` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "from r where null count { } > 0",
+        &["`null` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "n: false collect { } from r",
+        &["`false` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "n: true first distinct { } from r",
+        &["`true` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "id from tree follow null",
+        &["`null` is a literal, not a collection"],
+    );
+    assert_parse_error(
+        "id from tree follow distinct true",
+        &["`true` is a literal, not a collection"],
+    );
+    // a value, though, is fine right next to a consumer word that is a field name
+    let q = parse("select count from r where true");
+    assert_eq!(q.select, vec![bare("count")]);
+    assert_eq!(q.r#where, Some(scalar(Expr::Lit(Value::Bool(true)))));
+}
+
+#[test]
+fn duplicate_projection_names_are_errors() {
+    assert_parse_error(
+        "a: 1, a: 2 from xs",
+        &[
+            "duplicate projection name 'a' — each projected item needs its own name (alias one: `other: expr`)",
+        ],
+    );
+    assert_parse_error(
+        "name, name from people",
+        &["duplicate projection name 'name'"],
+    );
+    assert_parse_error(
+        "meta.slug, slug: name from data",
+        &["duplicate projection name 'slug'"],
+    );
+    assert_parse_error(
+        "select a.x, b.x from data",
+        &["duplicate projection name 'x'"],
+    );
+    assert_parse_error(
+        "people first { name, name: age }",
+        &["duplicate projection name 'name'"],
+    );
+    assert_parse_error(
+        "n: xs collect { }, n from r",
+        &["duplicate projection name 'n'"],
+    );
+    assert_parse_error(
+        "name, j: jobs collect { employer, employer } from people",
+        &["duplicate projection name 'employer'"],
+    );
+    // lifts are keyed per depth: `^x` and `^^x` bind different rows
+    let q = parse("from r where xs collect { ^x: a, ^^x: b }");
+    let Some(Where::Op(o)) = &q.r#where else {
+        panic!()
+    };
+    assert_eq!(
+        o.sub.select,
+        vec![lifted(1, "x", ident("a")), lifted(2, "x", ident("b"))]
+    );
+    assert_parse_error(
+        "from r where xs collect { ^x: a, ^x: b }",
+        &["duplicate projection name 'x'"],
+    );
+}
+
+#[test]
+fn lifts_are_only_legal_in_a_where_position_collect() {
+    let lift_error = |src: &str| {
+        assert_parse_error(
+            src,
+            &[
+                "a lift (^x) binds a value into the enclosing row and is only valid in a `collect { … }` in where position (`where <relation> collect { ^x: … }`)",
+            ],
+        );
+    };
+    lift_error("^x: a from r");
+    lift_error("select ^x: a from r");
+    lift_error("n: jobs collect { ^x: employer } from people");
+    lift_error("from r where jobs exists { ^x: employer }");
+    lift_error("from r where jobs none { ^x: employer }");
+    lift_error("from r where jobs count { ^x: a } > 0");
+    lift_error("r collect { ^x: a }");
+    lift_error("people first { ^x }");
+    lift_error("people first { name, ^^x: a }");
+    // a lift head that is not a name is described generically
+    assert_parse_error("^1 from r", &["a lift (^name) binds a value"]);
+    // a where-position collect nested inside a select-position block is fine
+    let q = parse("n: jobs collect { e: employer where tags collect { ^t: name } } from people");
+    let SelectItem::Collect { op: n, .. } = &q.select[0] else {
+        panic!()
+    };
+    let Some(Where::Op(inner)) = &n.sub.r#where else {
+        panic!()
+    };
+    assert_eq!(inner.sub.select, vec![lifted(1, "t", ident("name"))]);
+    // …and a `^name` VALUE (not a lift) is fine anywhere
+    let q = parse("people exists { b: ^y }");
+    assert_eq!(q.select, vec![field("b", outer(1, "y"))]);
+}
+
+#[test]
+fn top_level_bounds_reject_outer_references() {
+    assert_parse_error(
+        "name from people limit ^n",
+        &[
+            "`limit ^…` at the top level has no enclosing scope — a top-level bound is a number literal or a binding; inside a block `^name` reads the enclosing row",
+        ],
+    );
+    assert_parse_error(
+        "name from people offset ^n",
+        &["`offset ^…` at the top level has no enclosing scope"],
+    );
+    assert_parse_error(
+        "name from people limit 1 offset ^^n",
+        &["`offset ^…` at the top level has no enclosing scope"],
+    );
+    // a top-level `where ^k` legitimately reads a named root
+    let q = parse("a values from xs where a == ^k");
+    assert_eq!(
+        q.r#where,
+        Some(scalar(bin(BinaryOp::Eq, ident("a"), outer(1, "k"))))
+    );
+    // inside any block `^n` is the enclosing row's field
+    let q = parse("people count { limit ^n offset ^^m }");
+    assert_eq!(
+        (q.limit, q.offset),
+        (Some(outer(1, "n")), Some(outer(2, "m")))
+    );
 }
 
 #[test]
@@ -1942,20 +2642,35 @@ fn calls_and_navigation() {
 
 #[test]
 fn projection_items_with_carets() {
-    // `^name: expr` is a lift; `name: ^x` is an outer read
-    let q = parse("people exists { ^a: x, b: ^y, c: ^^z.w }");
+    // `^name: expr` is a lift (legal in a where-position collect); `name: ^x` is an
+    // outer read (legal anywhere)
+    let q = parse("from r where xs collect { ^a: x, ^^b: ^y, ^c: ^^z.w }");
+    let Some(Where::Op(o)) = &q.r#where else {
+        panic!()
+    };
+    assert_eq!(
+        o.sub.select,
+        vec![
+            lifted(1, "a", ident("x")),
+            lifted(2, "b", outer(1, "y")),
+            lifted(1, "c", member(outer(2, "z"), "w"))
+        ]
+    );
+    let q = parse("people exists { b: ^y, c: ^^z.w }");
     assert_eq!(
         q.select,
         vec![
-            lifted(1, "a", ident("x")),
             field("b", outer(1, "y")),
             field("c", member(outer(2, "z"), "w"))
         ]
     );
     // Faithful to the TS: a bare `^name` item has its carets read as a LIFT count,
     // so the expression is the row's own `name` (not an outer reference).
-    let q = parse("people exists { ^name }");
-    assert_eq!(q.select, vec![lifted(1, "name", ident("name"))]);
+    let q = parse("from r where xs collect { ^name }");
+    let Some(Where::Op(o)) = &q.r#where else {
+        panic!()
+    };
+    assert_eq!(o.sub.select, vec![lifted(1, "name", ident("name"))]);
     // …while a parenthesized `(^name)` is an outer read keyed by its name.
     let q = parse("(^name) from xs");
     assert_eq!(q.select, vec![field("name", outer(1, "name"))]);

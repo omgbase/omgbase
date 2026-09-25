@@ -205,9 +205,19 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             continue;
         }
 
-        // `.` is a dot only when not the leading part of a number (.5) — but OQX has
-        // no leading-dot numerals, so a bare `.` is always navigation.
-        if c == '.' && !digit_at(i + 1) {
+        // `.` followed by a digit is neither navigation (a property name cannot start
+        // with a digit) nor a number (OQX has no leading-dot numerals): it is a
+        // malformed number, reported as such rather than surfacing as a confusing
+        // parse error downstream. Any other `.` is member navigation.
+        if c == '.' {
+            if digit_at(i + 1) {
+                let end = scan_number_tail(&chars, i + 1, base)?;
+                let lit: String = chars[i..end].iter().collect();
+                return Err(OqxError::lex(format!(
+                    "malformed number \"{lit}\" at {} — a number starts with a digit (write 0{lit}), and a property name cannot be a digit (there is no index access)",
+                    base + i
+                )));
+            }
             push(TokType::Dot, c.to_string(), i);
             i += 1;
             continue;
@@ -241,29 +251,14 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             continue;
         }
 
-        // number (integer or decimal, optional exponent)
-        if is_digit(c) || (c == '.' && digit_at(i + 1)) {
+        // number: `digits [ "." digits ] [ ("e"|"E") ["+"|"-"] digits ]`. A `.` is a
+        // decimal point only when a digit follows: `1..5` is `1` `..` `5`. A `.`
+        // followed by anything else (`1.`, `1.x`) and an exponent marker without
+        // digits (`1e`, `1e+`) are malformed numbers — lex errors, never a silent
+        // NaN or a dangling dot.
+        if is_digit(c) {
             let start = i;
-            while i < n && is_digit(chars[i]) {
-                i += 1;
-            }
-            // A `.` is a decimal point only when a digit follows; otherwise it belongs
-            // to a range operator (`1..5`) or navigation, so the number stops here.
-            if at(i) == Some('.') && digit_at(i + 1) {
-                i += 1;
-                while i < n && is_digit(chars[i]) {
-                    i += 1;
-                }
-            }
-            if matches!(at(i), Some('e' | 'E')) {
-                i += 1;
-                if matches!(at(i), Some('+' | '-')) {
-                    i += 1;
-                }
-                while i < n && is_digit(chars[i]) {
-                    i += 1;
-                }
-            }
+            i = scan_number_tail(&chars, i, base)?;
             push(TokType::Number, chars[start..i].iter().collect(), start);
             continue;
         }
@@ -307,6 +302,52 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// Scan a number whose first digit is at `i`; return the index just past it.
+/// Fails with the malformed-number lex error for a trailing decimal point or an
+/// exponent without digits.
+fn scan_number_tail(chars: &[char], mut i: usize, base: usize) -> Result<usize> {
+    let start = i;
+    let n = chars.len();
+    let at = |i: usize| chars.get(i).copied();
+    let digit_at = |i: usize| at(i).is_some_and(is_digit);
+    let fail = |end: usize, why: &str| -> Result<usize> {
+        let lit: String = chars[start..end].iter().collect();
+        Err(OqxError::lex(format!(
+            "malformed number \"{lit}\" at {} — {why}",
+            base + start
+        )))
+    };
+    while i < n && is_digit(chars[i]) {
+        i += 1;
+    }
+    if at(i) == Some('.') && at(i + 1) != Some('.') {
+        if !digit_at(i + 1) {
+            return fail(
+                i + 1,
+                "a decimal point needs a digit after it (write 1.0, not 1.)",
+            );
+        }
+        i += 1;
+        while i < n && is_digit(chars[i]) {
+            i += 1;
+        }
+    }
+    if matches!(at(i), Some('e' | 'E')) {
+        let mut j = i + 1;
+        if matches!(at(j), Some('+' | '-')) {
+            j += 1;
+        }
+        if !digit_at(j) {
+            return fail(j, "an exponent needs at least one digit (write 1e5)");
+        }
+        i = j;
+        while i < n && is_digit(chars[i]) {
+            i += 1;
+        }
+    }
+    Ok(i)
 }
 
 fn unescape(c: char) -> char {
@@ -509,13 +550,17 @@ mod tests {
                 tok(Eof, ""),
             ]
         );
-        // `1.` followed by a non-digit: the number stops and the dot is navigation.
+        // A decimal low bound before an open high end: `1.5` then `..`.
         assert_eq!(
-            kinds("1.x"),
+            kinds("1.5.."),
+            vec![tok(Number, "1.5"), tok(Range, ".."), tok(Eof, "")]
+        );
+        assert_eq!(
+            kinds("1.5..2.5"),
             vec![
-                tok(Number, "1"),
-                tok(Dot, "."),
-                tok(Ident, "x"),
+                tok(Number, "1.5"),
+                tok(Range, ".."),
+                tok(Number, "2.5"),
                 tok(Eof, "")
             ]
         );
@@ -529,12 +574,50 @@ mod tests {
         assert_eq!(kinds("1e3"), vec![tok(Number, "1e3"), tok(Eof, "")]);
         assert_eq!(kinds("1.5E-3"), vec![tok(Number, "1.5E-3"), tok(Eof, "")]);
         assert_eq!(kinds("2e+10"), vec![tok(Number, "2e+10"), tok(Eof, "")]);
-        // The TS comment says there are no leading-dot numerals, but its number
-        // rule accepts one (`.5` → Number(".5") = 0.5). Mirrored.
-        assert_eq!(kinds(".5"), vec![tok(Number, ".5"), tok(Eof, "")]);
-        // An exponent marker with no digits is still one number token (`Number("1e")`
-        // is NaN in the TS; the parser mirrors that).
-        assert_eq!(kinds("1e "), vec![tok(Number, "1e"), tok(Eof, "")]);
+        assert_eq!(kinds("1E-2"), vec![tok(Number, "1E-2"), tok(Eof, "")]);
+    }
+
+    #[test]
+    fn malformed_numbers_are_lex_errors() {
+        let malformed = |src: &str| {
+            let e = lex_err(src);
+            assert_eq!(e.stage, Stage::Lex, "{src:?}: {}", e.message);
+            assert!(
+                e.message.starts_with("malformed number"),
+                "{src:?}: {}",
+                e.message
+            );
+            e.message
+        };
+        // A trailing decimal point, at the end and before a name.
+        assert_eq!(
+            malformed("x: 1."),
+            "malformed number \"1.\" at 3 — a decimal point needs a digit after it (write 1.0, not 1.)"
+        );
+        assert!(malformed("1.x").starts_with("malformed number \"1.\" at 0"));
+        assert!(malformed("1.foo").starts_with("malformed number \"1.\" at 0"));
+        // An exponent marker with no digits, with or without a sign, either case.
+        assert_eq!(
+            malformed("1e"),
+            "malformed number \"1e\" at 0 — an exponent needs at least one digit (write 1e5)"
+        );
+        assert!(malformed("1e+ ").starts_with("malformed number \"1e+\" at 0"));
+        assert!(malformed("1e- ").starts_with("malformed number \"1e-\" at 0"));
+        assert!(malformed("a > 2E").starts_with("malformed number \"2E\" at 4"));
+        assert!(malformed("1.5e").starts_with("malformed number \"1.5e\" at 0"));
+        // A leading-dot numeral, and a digit after a navigation dot.
+        assert_eq!(
+            malformed(".5"),
+            "malformed number \".5\" at 0 — a number starts with a digit (write 0.5), and a property name cannot be a digit (there is no index access)"
+        );
+        assert!(malformed("xs.0").starts_with("malformed number \".0\" at 2"));
+        assert!(malformed("xs.12e3").starts_with("malformed number \".12e3\" at 2"));
+        // The tail scan reports its own malformation first (as in the TS).
+        assert!(malformed("xs.1.").starts_with("malformed number \"1.\" at 3"));
+        // Inside a template fragment the offset is the running display offset.
+        let e = lex_template(&["from ", " where a > 1e"], 1).unwrap_err();
+        assert_eq!(e.stage, Stage::Lex);
+        assert!(e.message.contains("\"1e\" at 20"), "{}", e.message);
     }
 
     #[test]
