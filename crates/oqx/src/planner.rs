@@ -169,6 +169,10 @@ impl DataContext for Overlay<'_> {
     fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<Result<Value>> {
         self.inner.call_method(name, recv, args)
     }
+
+    fn regex_dialect(&self) -> crate::regex_dialect::RegexDialect {
+        self.inner.regex_dialect()
+    }
 }
 
 #[cfg(test)]

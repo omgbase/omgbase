@@ -654,79 +654,20 @@ pub fn builtin_function(name: &str, args: &[Value]) -> Option<Result<Value>> {
     Some(Ok(v))
 }
 
-// ---- regex: the portable OQX dialect ----------------------------------------
+// ---- regex: the OQX baseline ------------------------------------------------
 //
-// `matches(pattern)` compiles the pattern as a regular expression in the dialect
-// both implementations share: literals, `.`, classes `[…]`, `\d \w \s`, the
-// quantifiers `* + ? {m,n}`, alternation, grouping, anchors, escaped
-// metacharacters. Lookaround and backreferences are rejected up front with the
-// spec's wording (the `regex` crate would reject them too, but with its own
-// message), and a pattern that does not compile is an OQX eval error.
+// `matches(pattern, flags)` compiles the pattern in the OQX regex baseline (see
+// `crate::regex_dialect`): a fixed grammar with spec-pinned semantics, rejected
+// up front when it uses anything else, so every pattern that runs is portable.
+// A host may opt into the `regex` crate's native dialect through
+// `DataContext::regex_dialect`.
 
-/// Compile a `matches()` pattern, raising an eval error for an invalid pattern
-/// (`invalid regular expression`) or one using a construct outside the OQX
-/// dialect (`not supported in OQX`).
-pub fn compile_regex(pattern: &str) -> Result<Regex> {
-    if let Some(what) = find_unsupported_regex_construct(pattern) {
-        return Err(OqxError::eval(format!(
-            "{what} is not supported in OQX regular expressions (pattern {})",
-            json_quoted(pattern)
-        )));
-    }
-    Regex::new(pattern).map_err(|e| {
-        OqxError::eval(format!(
-            "invalid regular expression {}: {e}",
-            json_quoted(pattern)
-        ))
-    })
-}
+pub use crate::regex_dialect::{CompiledRegex, RegexDialect, compile_regex};
 
-fn json_quoted(s: &str) -> String {
+pub(crate) fn json_quoted(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     write_json_string(s, &mut out);
     out
-}
-
-/// Scan a pattern — outside character classes, honoring escapes — for
-/// lookaround `(?= (?! (?<= (?<!` and backreferences `\1`..`\9`, `\k<name>`.
-/// `\(\?=` and `[(]` stay literal.
-fn find_unsupported_regex_construct(p: &str) -> Option<&'static str> {
-    let chars: Vec<char> = p.chars().collect();
-    let mut in_class = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '\\' {
-            let n = chars.get(i + 1).copied();
-            if !in_class {
-                if n.is_some_and(|n| ('1'..='9').contains(&n)) {
-                    return Some("a backreference (\\1…\\9)");
-                }
-                if n == Some('k') && chars.get(i + 2) == Some(&'<') {
-                    return Some("a named backreference (\\k<…>)");
-                }
-            }
-            i += 2;
-            continue;
-        }
-        if in_class {
-            if c == ']' {
-                in_class = false;
-            }
-        } else if c == '[' {
-            in_class = true;
-        } else if c == '(' && chars.get(i + 1) == Some(&'?') {
-            match (chars.get(i + 2), chars.get(i + 3)) {
-                (Some('='), _) => return Some("lookahead (?=…)"),
-                (Some('!'), _) => return Some("negative lookahead (?!…)"),
-                (Some('<'), Some('=')) => return Some("lookbehind (?<=…)"),
-                (Some('<'), Some('!')) => return Some("negative lookbehind (?<!…)"),
-                _ => {}
-            }
-        }
-        i += 1;
-    }
-    None
 }
 
 /// Methods callable as `recv.name(args)`. `None` means there is no such
@@ -737,13 +678,25 @@ fn find_unsupported_regex_construct(p: &str) -> Option<&'static str> {
 ///   [`equals`] to `v` in an array receiver; false otherwise.
 /// * `startsWith(s)` / `endsWith(s)` — string receivers only; false otherwise
 ///   (and for an absent argument).
-/// * `matches(pattern)` — false for an absent receiver; otherwise whether the
-///   pattern ([`compile_regex`]) matches anywhere in the receiver's string
-///   form. An invalid or non-portable pattern is an eval error.
+/// * `matches(pattern, flags?)` — false for an absent receiver; otherwise
+///   whether the pattern ([`compile_regex`], in the OQX baseline dialect)
+///   matches anywhere in the receiver's string form. Bad flags, an invalid
+///   pattern, or a non-portable construct are eval errors.
 /// * `size()` — [`size_of`].
 /// * `lower()` / `upper()` — the receiver's [`string_form`] case-mapped; an
 ///   absent receiver yields absent.
 pub fn builtin_method(name: &str, recv: &Value, args: &[Value]) -> Option<Result<Value>> {
+    builtin_method_with(RegexDialect::Oqx, name, recv, args)
+}
+
+/// [`builtin_method`] with `matches()` compiled in the given regex dialect —
+/// what a [`crate::DataContext`] that opts into the native dialect calls.
+pub fn builtin_method_with(
+    dialect: RegexDialect,
+    name: &str,
+    recv: &Value,
+    args: &[Value],
+) -> Option<Result<Value>> {
     let a0 = arg(args, 0);
     let v = match name {
         "contains" => Value::Bool(match recv {
@@ -761,7 +714,7 @@ pub fn builtin_method(name: &str, recv: &Value, args: &[Value]) -> Option<Result
         ),
         "matches" => match string_form(recv) {
             None => Value::Bool(false),
-            Some(subject) => match compile_regex(&a0.to_string()) {
+            Some(subject) => match compile_regex(&a0.to_string(), arg(args, 1), dialect) {
                 Ok(re) => Value::Bool(re.is_match(&subject)),
                 Err(e) => return Some(Err(e)),
             },
@@ -1596,7 +1549,7 @@ mod tests {
             Value::Bool(false)
         ); // case-sensitive
         assert_eq!(
-            method("matches", &s("hello"), &[s("(?i)ELL")]),
+            method("matches", &s("hello"), &[s("ELL"), s("i")]),
             Value::Bool(true)
         );
         assert_eq!(
@@ -1625,6 +1578,7 @@ mod tests {
         // outside the portable dialect: lookaround and backreferences are
         // rejected with the spec's wording, before the regex crate sees them
         for (pattern, what) in [
+            ("(?i)ELL", "an inline flag (?i)"),
             ("a(?=b)", "lookahead (?=…)"),
             ("a(?!c)", "negative lookahead (?!…)"),
             ("(?<=a)b", "lookbehind (?<=…)"),

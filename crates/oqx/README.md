@@ -22,7 +22,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (737 cases in 27 files at language version 0.12) and all of them
+`spec/oqx/cases` (835 cases in 28 files at language version 0.12) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Not yet published.
 
 The runner keeps an allowlist mechanism for the periods when the spec runs
@@ -55,6 +55,11 @@ Mirrors the reference so the two can be read side by side:
 - `semantics` — the scalar contract every backend obeys: typed equality with no
   coercion, absent-aware ordering (absent sorts last both ways), membership,
   ranges, arithmetic, builtins.
+- `regex_dialect` — `matches()`: the spec's regex baseline parsed and rewritten
+  for the `regex` crate (`\d`→`[0-9]`, `\b`→`(?-u:\b)`, `\s`→one listed set,
+  flags→`(?ims)`), so a pattern means the same here as in the reference;
+  `DataContext::regex_dialect()` / `DefaultContext::with_regex_dialect` opt a
+  host into the crate's native syntax instead (not portable).
 - `engine` — the in-memory engine over a `DataContext` (the seam that binds the
   language to a data model; the default context is plain `Value`s).
 - `planner` — the seam for pushing work into a store and finishing the residual

@@ -20,6 +20,7 @@ pub mod lexer;
 pub mod parser;
 pub mod plan;
 pub mod planner;
+pub mod regex_dialect;
 pub mod semantics;
 pub mod value;
 
@@ -43,6 +44,7 @@ pub use plan::{
     Equality, ROWS_ROOT, as_equality, const_value, is_const, partition_pushable, residual_query,
 };
 pub use planner::{Plan, PlannedEngine, QueryPlanner};
+pub use regex_dialect::{CompiledRegex, RegexDialect, RegexFlags, compile_regex};
 pub use value::{Object, Range, Value};
 
 /// Parse and run a query string against plain-value named roots (so

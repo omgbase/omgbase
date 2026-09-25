@@ -11,7 +11,8 @@
 //! row by row here.)
 
 use crate::Result;
-use crate::semantics::{builtin_function, builtin_method, coerce_collection};
+use crate::regex_dialect::RegexDialect;
+use crate::semantics::{builtin_function, builtin_method_with, coerce_collection};
 use crate::value::{Object, Value};
 
 pub trait DataContext {
@@ -45,6 +46,18 @@ pub trait DataContext {
         let _ = (name, recv, args);
         None
     }
+
+    /// The regex dialect `matches()` compiles against. [`RegexDialect::Oqx`]
+    /// (the default) is the portable baseline the spec tests;
+    /// [`RegexDialect::Native`] hands the pattern to the `regex` crate as is —
+    /// implementation-defined, not portable. The engine dispatches `matches`
+    /// through [`DataContext::call_method`], so this is read by the context's
+    /// own `matches` ([`DefaultContext`] does, via
+    /// [`crate::semantics::builtin_method_with`]); plain
+    /// [`crate::semantics::builtin_method`] is always the baseline.
+    fn regex_dialect(&self) -> RegexDialect {
+        RegexDialect::Oqx
+    }
 }
 
 /// The default context: plain [`Value`]s. Named roots come from an [`Object`]
@@ -55,11 +68,21 @@ pub trait DataContext {
 #[derive(Clone, Debug, Default)]
 pub struct DefaultContext {
     roots: Object,
+    regex_dialect: RegexDialect,
 }
 
 impl DefaultContext {
     pub fn new(roots: Object) -> Self {
-        Self { roots }
+        Self {
+            roots,
+            regex_dialect: RegexDialect::Oqx,
+        }
+    }
+
+    /// Opt `matches()` into a regex dialect (see [`DataContext::regex_dialect`]).
+    pub fn with_regex_dialect(mut self, dialect: RegexDialect) -> Self {
+        self.regex_dialect = dialect;
+        self
     }
 
     pub fn roots(&self) -> &Object {
@@ -101,6 +124,10 @@ impl DataContext for DefaultContext {
     }
 
     fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<Result<Value>> {
-        builtin_method(name, recv, args)
+        builtin_method_with(self.regex_dialect, name, recv, args)
+    }
+
+    fn regex_dialect(&self) -> RegexDialect {
+        self.regex_dialect
     }
 }
