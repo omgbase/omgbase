@@ -1,0 +1,17 @@
+# Cargo workspace for the Rust side of the monorepo (the pnpm workspace in
+# package.json / pnpm-workspace.yaml is the TypeScript side; they ignore each
+# other). Crates live under crates/; language-neutral conformance fixtures both
+# sides run live under spec/.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Brendan Baldwin"]
+repository = "https://github.com/omgbase/omgbase"
+
+[workspace.lints.clippy]
+all = "warn"

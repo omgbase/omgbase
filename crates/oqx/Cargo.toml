@@ -1,0 +1,28 @@
+[package]
+name = "oqx"
+version = "0.1.0"
+description = "OQX (omgbase Query eXpressions): a composable query language and engine for JSON-shaped collections — Rust implementation"
+keywords = ["query", "query-language", "collections", "json", "oqx"]
+categories = ["parser-implementations", "data-structures"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/oqx#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+regex = "1"
+serde_json = { version = "1", optional = true }
+
+[features]
+default = []
+# `json`: From/Into conversions between `oqx::Value` and `serde_json::Value`.
+json = ["dep:serde_json"]
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true
