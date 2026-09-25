@@ -13,8 +13,10 @@ JavaScript tagged template.
 > is published independently under its own version line and has **zero runtime
 > dependencies** — it is usable without omgbase, and omgbase code is never
 > imported here (omgbase binds it from the outside via the `DataContext` seam).
-> The exported `LANGUAGE_VERSION` (`"0.12"`) is the OQX language version this
-> release conforms to (`spec/oqx/VERSION`), distinct from the package semver.
+> OQX is a language with more than one implementation; the specification is
+> [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
+> language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
+> `"0.12"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 

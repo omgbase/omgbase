@@ -15,13 +15,29 @@ The spec is three artifacts, versioned together by `VERSION`:
 - `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins, `distinct`, `limit`/`offset`, consumers.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.
 
-Each implementation reports the spec version it conforms to alongside its own
-semver. `VERSION` follows the reference package's `major.minor` until the two
-have a reason to diverge.
+## Versioning: one number for the language
+
+OQX is a language, so its version is the version users care about, and both
+implementations share it. `VERSION` holds the language version as
+`major.minor`. Every implementation's package version is
+`<language major>.<language minor>.<patch>`:
+
+- **A language change** (any fixture added or changed that alters behavior)
+  bumps the minor here (pre-1.0) and in every implementation at once, even one
+  whose code did not need to change. The `@omgbase/oqx` npm package and the
+  `oqx` crate at `0.12.x` both mean "the 0.12 language".
+- **The patch digit is per implementation** and free: bug fixes, performance,
+  packaging. An implementation at `0.12.3` conforms to language `0.12` exactly
+  like one at `0.12.0`.
+- Each implementation exports a `LANGUAGE_VERSION` constant equal to `VERSION`
+  so a caller can ask.
+
+There is no separate "spec version" and no separate "component version"; the
+language version is both.
 
 ## The rule for changing the language
 
-1. **Fixture first.** Write the case that expresses the decision. Bump `VERSION` if behavior changes.
+1. **Fixture first.** Write the case that expresses the decision. Bump `VERSION` (and every implementation's minor) if behavior changes.
 2. **Reference second.** Make it pass in `packages/oqx`.
 3. **Rust third**, in the same change when practical. Otherwise the change is not done and must be tracked as an open loop.
 

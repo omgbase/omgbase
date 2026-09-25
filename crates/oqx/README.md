@@ -22,7 +22,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (592 cases in 24 files at spec `VERSION` 0.11.0) and all of them
+`spec/oqx/cases` (737 cases in 27 files at language version 0.12) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Not yet published.
 
 The runner keeps an allowlist mechanism for the periods when the spec runs

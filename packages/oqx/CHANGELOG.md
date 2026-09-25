@@ -4,6 +4,88 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.12.0] - 2026-09-25
+
+**OQX is now a language with a specification and two implementations.** The
+spec lives at `spec/oqx` in the monorepo: `GRAMMAR.md`, `SEMANTICS.md`, and
+737 executable fixtures in 27 files that this package and the Rust
+crate `oqx` both run. **Versioning changed accordingly:** the language version
+is `spec/oqx/VERSION` (`0.12`) and every implementation's version is
+`<language>.<patch>`, so `@omgbase/oqx 0.12.x` and the `oqx` crate `0.12.x`
+both mean "the 0.12 language"; the patch digit is per implementation. The
+package exports `LANGUAGE_VERSION`.
+
+Everything below follows one principle, applied without exception: **least
+surprise.** Where the reference behaved by JavaScript accident, it now does
+what a careful user would predict.
+
+### Changed (breaking) — semantics
+- **Identity is structural.** `distinct` over unprojected rows and `follow`
+  cycle detection/dedup use the `id` property when present, else the row's
+  structural value (deep equality, key order ignored). Previously identities
+  were stringified, so every id-less object collided as `[object Object]`
+  (`count distinct { }` over two different objects gave 1; `follow` over
+  id-less nodes marked every successor a cycle) and `1` equalled `"1"`.
+- **No cross-type ordering.** `<  <=  >  >=` and range coverage order only
+  number/number and string/string; every other pair, including booleans and
+  anything absent, is false. `1 < "2"` and `"3" in 1..5` were true.
+- **Strings order and measure by Unicode code point**, not UTF-16 code unit:
+  `"😀".size()` is 1 and astral characters sort after the BMP.
+- **Own enumerable properties only.** Property reads (`name`, `.name`,
+  `^name`), `has()`, `in` over an object, and `entries()` never see inherited
+  members (`has(toString)` is false). Arrays expose only their integer
+  indices — `.length` is absent; use `size()`. Primitives have no properties.
+- **Absent propagates.** Any arithmetic with an absent operand is absent,
+  including `"a" + missing` (was `"aundefined"`) and `null + 1` (was `1`).
+  `.lower()` / `.upper()` on absent are absent (were `"undefined"` /
+  `"NULL"`).
+- **Regex is an OQX concern.** An invalid `matches()` pattern raises
+  `OqxError` (`eval`, `invalid regular expression`) instead of a raw
+  `SyntaxError`. Lookaround and backreferences are rejected (`not supported in
+  OQX`) so the dialect is the portable intersection.
+- **Ranges never appear in results.** Projecting a range value is an error
+  (`a range … cannot appear in a result`); no range covers an absent value,
+  however open.
+- **`&&` and `||` evaluate strictly left to right** with short-circuit; the
+  engine no longer reorders conjuncts by cost, so `false && bogus()` never
+  errors and `true && bogus()` always does.
+- **`single` reports the true row count** in its error.
+- **`$ordinal` path components compare as values** (numbers numerically,
+  before strings), not as text: `[1, 9, 10]`, not `[1, 10, 9]`.
+- **Bindings out of range** (`run(query, { values })` with fewer values than
+  the query references) raise `OqxError` instead of reading `undefined`.
+
+### Changed (breaking) — grammar
+- **`!` has one precedence everywhere:** a prefix operator binding tighter
+  than comparison, applied to the operand right after it. `where !a == b` is
+  `(!a) == b` (it negated the whole comparison before); `!jobs exists { … }`
+  and `!(a == b)` work as written.
+- **Parenthesized scalars work in `where`:** `where (a + 1) > 2` was a parse
+  error; a group followed by an operator is a scalar.
+- **`follow distinct` requires a relation** (`follow distinct { depth 2 }` no
+  longer treats `distinct` as the relation name); `follow ^rel` is a clear
+  error.
+- **Open-ended ranges stop at clause words** (`in ..5 order by a`); a range
+  with no bound at all is an error.
+- **Duplicate projection names are an error** (`a: 1, a: 2` last-wins is
+  gone), including a dotted default key colliding with an alias.
+- **Malformed numerals are lex errors:** `1e`, `1e+`, `1.`, `.5`, `xs.0`.
+  `1..5`, `1...5`, `..5`, `1..`, `1.5..2.5` are unchanged.
+- **Top-level `limit ^n` / `offset ^n`** are parse errors (`no enclosing
+  scope`); they were always absent and failed at run time.
+- **`true` / `false` / `null` are literals in every position;** as a receiver
+  or follow relation they error instead of resolving a root by that name.
+- **Lifts (`^name:`) outside a where-position `collect`** are parse errors
+  instead of silently doing nothing.
+- **Chained comparisons** (`a == b == c`) error clearly; **stray tokens** after
+  a query or in a block get a located message; clause words without their
+  clause (`order age`, bare `follow`, `limit x`) say what they need.
+
+### Documentation
+- Integer-like object keys enumerate first in JavaScript before OQX sees the
+  object; this is a host fact the reference cannot undo, and fixtures must not
+  depend on the relative order of integer-like and other keys.
+
 ## [0.11.0] - 2026-09-24
 
 ### Changed (breaking)

@@ -30,6 +30,10 @@ pub use ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OrderSpec, Query, RelOp,
     SelectItem, Subquery, UnaryOp, Where,
 };
+/// The OQX language version this crate conforms to (`spec/oqx/VERSION`). It is
+/// also this crate's `major.minor`: the patch digit is the crate's own.
+pub const LANGUAGE_VERSION: &str = "0.12";
+
 pub use context::{DataContext, DefaultContext};
 pub use engine::{Engine, InMemoryEngine, OqxResult, run_query};
 pub use errors::{OqxError, Result, Stage};

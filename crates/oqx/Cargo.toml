@@ -1,6 +1,6 @@
 [package]
 name = "oqx"
-version = "0.1.0"
+version = "0.12.0"
 description = "OQX (omgbase Query eXpressions): a composable query language and engine for JSON-shaped collections — Rust implementation"
 keywords = ["query", "query-language", "collections", "json", "oqx"]
 categories = ["parser-implementations", "data-structures"]

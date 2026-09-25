@@ -32,7 +32,7 @@ const PASSING_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/spec-pass
 /// A wrong `CASES_DIR` must not pass by finding some other, smaller directory.
 const MIN_CASE_FILES: usize = 20;
 /// Cap on detail lines per report section.
-const MAX_REPORT_LINES: usize = 60;
+const MAX_REPORT_LINES: usize = 400;
 
 const PASSING_HEADER: &str = "\
 # OQX spec cases (spec/oqx/cases) that the Rust port must pass, one
