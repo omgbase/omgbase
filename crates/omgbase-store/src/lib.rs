@@ -81,7 +81,7 @@ use rusqlite::functions::{Context, FunctionFlags};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, params};
 
-pub use derived::{GcResult, RebuildTarget};
+pub use derived::{GcResult, LIVE_LEAF_SQL, RebuildTarget};
 pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use error::{Error, Result};

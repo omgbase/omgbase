@@ -2257,7 +2257,7 @@
                 "path": "lab/2026-01-notes.md",
                 "type": "paragraph",
                 "text": "Bench work on [calcination](/processes/calcination.md), chasing the weight gain.",
-                "score": 7.655443273183997
+                "score": 7.944252751888561
               },
               {
                 "blockId": "b_146",
@@ -2265,7 +2265,7 @@
                 "path": "processes/calcination.md",
                 "type": "paragraph",
                 "text": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in weight when calcining a metal is the observation that eventually broke the phlogiston theory — the calx weighs more than the metal, which a theory of escaping substance cannot accommodate.",
-                "score": 3.2907668821302067
+                "score": 3.3060307657249703
               }
             ],
             "truncated": false
@@ -2278,7 +2278,7 @@
                 "path": "substances/mercury.md",
                 "type": "heading",
                 "text": "Mercury",
-                "score": 4.054957546397425
+                "score": 4.26152054296047
               },
               {
                 "blockId": "b_216",
@@ -2286,7 +2286,7 @@
                 "path": "substances/mercury.md",
                 "type": "table_row",
                 "text": "Mercury spirit no",
-                "score": 3.6969324260762733
+                "score": 3.8601132110990592
               },
               {
                 "blockId": "b_5",
@@ -2294,7 +2294,7 @@
                 "path": "index.md",
                 "type": "list_item",
                 "text": "[[mercury]] — the volatile spirit",
-                "score": 3.540625857612904
+                "score": 3.686491529151427
               }
             ],
             "truncated": true
@@ -2329,16 +2329,17 @@
               }
             },
             {
-              "id": "b_85",
-              "locator": "practitioners/jabir-ibn-hayyan.md#heading[3]",
-              "preview": "The mercury–sulphur theory",
+              "id": "b_225",
+              "locator": "substances/mercury.md#list_item[1]",
+              "preview": "[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals",
               "evidence": {
-                "rrf": 0.015625,
+                "rrf": 0.014285714285714285,
                 "boosts": {
                   "heading": 1.15,
+                  "path": 1.1,
                   "layer": 1.3
                 },
-                "ftsRank": 4
+                "ftsRank": 10
               }
             }
           ],
@@ -2370,27 +2371,15 @@
               }
             },
             {
-              "id": "b_26",
-              "locator": "index.md#list[13]",
-              "preview": "[The Emerald Tablet](/texts/emerald-tablet.md) [Mutus Liber](/texts/mutus-liber.md)",
+              "id": "b_254",
+              "locator": "substances/prima-materia.md#paragraph[6]",
+              "preview": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
               "evidence": {
                 "rrf": 0.015873015873015872,
                 "boosts": {
                   "layer": 1.3
                 },
                 "ftsRank": 3
-              }
-            },
-            {
-              "id": "b_254",
-              "locator": "substances/prima-materia.md#paragraph[6]",
-              "preview": "The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.",
-              "evidence": {
-                "rrf": 0.015625,
-                "boosts": {
-                  "layer": 1.3
-                },
-                "ftsRank": 4
               }
             }
           ],

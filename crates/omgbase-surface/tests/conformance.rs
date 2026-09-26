@@ -54,19 +54,21 @@ const QUERIES: &[(&str, Push)] = &[
     ("from blocks where $path.startsWith(\"lab/\")", Planned),
     ("from nodes where $path.startsWith(\"processes/\")", Planned),
     ("from edges where $path.startsWith(\"index\")", Planned),
-    // pushable composed with a non-pushable residual (mixed)
+    // pushable composed with a non-pushable residual (mixed); a call in the
+    // residual could raise, so the whole query declines (surface 1.1 patch)
     (
         "from docs where $path.startsWith(\"substances/\") && \"substance\" in list(tags)",
-        Planned,
+        Declined,
     ),
     (
         "from docs where $path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" }",
         Planned,
     ),
-    // bare document properties push via the properties table
+    // bare document properties push via the properties table — text only: a
+    // number against a property read declines (surface 1.1 patch)
     ("from docs where type == \"substance\"", Planned),
     ("from docs where layer == \"canon\"", Planned),
-    ("from docs where era < 1000", Planned),
+    ("from docs where era < 1000", Declined),
     // range membership (declined → in-memory both ways, must agree)
     ("from docs where era in 800..1680", Declined),
     ("from docs where era in 800...1680", Declined),
@@ -218,9 +220,10 @@ const QUERIES: &[(&str, Push)] = &[
         "select ks: entries(inline) collect { $key values } from docs where entries(inline) exists { }",
         Declined,
     ),
+    // (a call in the residual block's receiver: the whole query declines)
     (
         "select $path from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $value }",
-        Planned,
+        Declined,
     ),
     (
         "select h: nodes collect { select name values where kind == \"md:section\" order by first_ordinal limit 2 } from docs where $path == \"processes/magnum-opus.md\"",
@@ -236,9 +239,10 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     // correlation / lifts
+    // (a `^`-escaped name in the residual block: the whole query declines)
     (
         "select slug from docs where type == \"substance\" && $repo.nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
-        Planned,
+        Declined,
     ),
     (
         "select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }",
@@ -252,9 +256,10 @@ const QUERIES: &[(&str, Push)] = &[
     // row functions rewrite to `$self.fn(…)`, which the translator declines;
     // a pushable sibling still plans
     ("from blocks where text(\"mercury\")", Declined),
+    // (a row function in the residual: the whole query declines)
     (
         "from blocks where type == \"heading\" && within(\"lab/*\")",
-        Planned,
+        Declined,
     ),
     // `||` at the top is the whole residual; `.lower()` pushes explicitly
     (

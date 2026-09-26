@@ -7024,7 +7024,7 @@
                 "path": "processes/dissolution.md",
                 "type": "code_fence",
                 "text": "nitre + vitriol → aqua fortis (nitric acid) aqua fortis + sal → aqua regia (dissolves gold)",
-                "score": 10.706698315935942
+                "score": 10.759606688298451
               },
               {
                 "blockId": "b_185",
@@ -7032,18 +7032,18 @@
                 "path": "processes/dissolution.md",
                 "type": "task",
                 "text": "Prepare aqua regia and test on gold leaf",
-                "score": 9.939515795932842
+                "score": 9.995991114078926
               },
               {
-                "blockId": "b_183",
+                "blockId": "b_178",
                 "docId": "d_9",
                 "path": "processes/dissolution.md",
-                "type": "list",
-                "text": "Distil aqua fortis from nitre and vitriol Prepare aqua regia and test on gold leaf Write up the alkahest arguments and their rebuttals",
-                "score": 7.941778949969121
+                "type": "paragraph",
+                "text": "*Aqua regia* — royal water, because it dissolves the royal metal — is the single most consequential thing to come out of the laboratory tradition. It is a real reagent, it does something no other liquid does, and its discovery was driven entirely by the transmutation programme.",
+                "score": 4.146952390513383
               }
             ],
-            "truncated": true
+            "truncated": false
           },
           [
             {
@@ -7075,9 +7075,9 @@
               }
             },
             {
-              "id": "b_278",
-              "locator": "substances/salt.md#list[14]",
-              "preview": "Buy more salt of tartar Replace the leaching filter papers",
+              "id": "b_265",
+              "locator": "substances/salt.md#paragraph[4]",
+              "preview": "Salt is the third of the tria prima: the body that gives…",
               "evidence": {
                 "rrf": 0.014925373134328358,
                 "boosts": {

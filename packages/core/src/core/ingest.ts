@@ -6,7 +6,7 @@ import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type Tree
 import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
-import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
+import { ftsBeforeEvictRows, ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
 import { writeDocNodes, projectSectionNodes, toByteSpans } from "./store/nodes.js";
 import { flattenFrontmatter, flattenComputed, writeDocProperties, type PropertyRow } from "./store/properties.js";
@@ -425,24 +425,25 @@ export function ingestFile(
 }
 
 // Remove another document's `blocks` row for each id in `ids` (a cross-doc move
-// or a resurrection re-homes the id into `docId`). A live foreign row still has
-// an FTS entry (external-content index: delete with the original text); a
-// tombstoned one does not. The source document, if it commits later in the same
+// or a resurrection re-homes the id into `docId`). A live foreign LEAF row still
+// has an FTS entry (external-content index: delete with the original text); a
+// tombstoned row or a container does not (spec/search §1.1) — ftsBeforeEvictRows
+// decides leaf-ness over the table before any row goes and re-indexes a parent
+// left childless. The source document, if it commits later in the same
 // checkpoint, rewrites its rows wholesale and never lists a carried id as
 // deleted, so nothing there depends on the evicted row.
 function evictForeignBlockRows(db: Database, docId: string, ids: string[]): void {
-  const sel = db.prepare("SELECT rowid, text, deleted_commit FROM blocks WHERE block_id = ? AND doc_id != ?");
-  const ftsDel = db.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?, ?)");
+  const sel = db.prepare("SELECT rowid, block_id, doc_id, parent_block, text, deleted_commit FROM blocks WHERE block_id = ? AND doc_id != ?");
   const del = db.prepare("DELETE FROM blocks WHERE block_id = ? AND doc_id != ?");
   const unpool = db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?");
+  const rows: Parameters<typeof ftsBeforeEvictRows>[1] = [];
   for (const id of ids) {
-    const row = sel.get(id, docId) as { rowid: number; text: string; deleted_commit: string | null } | undefined;
-    if (row) {
-      if (row.deleted_commit === null) ftsDel.run(row.rowid, row.text);
-      del.run(id, docId);
-    }
-    unpool.run(id);
+    const row = sel.get(id, docId) as (typeof rows)[number] | undefined;
+    if (row) rows.push(row);
   }
+  ftsBeforeEvictRows(db, rows);
+  for (const r of rows) del.run(r.block_id, docId);
+  for (const id of ids) unpool.run(id);
 }
 
 // Zip assigned block ids onto the parsed RawBlocks for node projection. The

@@ -52,4 +52,4 @@ pub use planner::SqlitePlanner;
 pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query, rewrite_query};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "1.2";

@@ -1,11 +1,13 @@
 //! The sync source contract (`spec/sync/README.md` §5): the in-engine view
 //! of an adapter — capabilities, `enumerate`/`fetch`, `write`/`remove` when
-//! it writes through, a `watch` stream when it can watch. Every call crosses
-//! a pipe in production ([`crate::external::ExternalSource`]); an in-memory
-//! source serves tests.
+//! it writes through, a `watch` stream of [`WatchEvent`]s when it can watch
+//! (one `Ready` once the feed is primed, then `Batch`es — §5 "Readiness").
+//! Every call crosses a pipe in production
+//! ([`crate::external::ExternalSource`]); an in-memory source serves tests.
 
 use std::collections::BTreeMap;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -157,6 +159,64 @@ impl SourceItem {
     }
 }
 
+/// One unsolicited line of a live watch, as the wire carries it (§5):
+/// `{"event":"ready"}` once the feed is primed, then `{"event":"batch",
+/// "paths":[…]}` per debounced batch of changed paths.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WatchEvent {
+    /// Every change from now on will be reported (sent once, after the
+    /// `watch` response). An in-process source is ready at once.
+    Ready,
+    /// A batch of changed repo-relative paths.
+    Batch(Vec<String>),
+}
+
+impl WatchEvent {
+    /// The event as the protocol spells it (what the fixtures record).
+    #[must_use]
+    pub fn to_json(&self) -> Value {
+        match self {
+            WatchEvent::Ready => serde_json::json!({ "event": "ready" }),
+            WatchEvent::Batch(paths) => {
+                serde_json::json!({ "event": "batch", "paths": paths })
+            }
+        }
+    }
+}
+
+/// How [`wait_ready`] ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Readiness {
+    /// `Ready` arrived.
+    Ready,
+    /// Patience ran out first (an adapter built before sync 1.2 never says
+    /// `ready`); a host proceeds as if ready, with a warning (§5).
+    TimedOut,
+    /// The stream closed first (the adapter exited or was unwatched).
+    Ended,
+}
+
+/// Wait up to `patience` for the stream's `Ready`. Any `Batch` that arrives
+/// first is returned alongside, in order, so nothing the adapter reported
+/// before readiness is lost to the caller.
+#[must_use]
+pub fn wait_ready(rx: &Receiver<WatchEvent>, patience: Duration) -> (Readiness, Vec<Vec<String>>) {
+    let deadline = Instant::now() + patience;
+    let mut early = Vec::new();
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            return (Readiness::TimedOut, early);
+        }
+        match rx.recv_timeout(deadline - now) {
+            Ok(WatchEvent::Ready) => return (Readiness::Ready, early),
+            Ok(WatchEvent::Batch(paths)) => early.push(paths),
+            Err(RecvTimeoutError::Timeout) => return (Readiness::TimedOut, early),
+            Err(RecvTimeoutError::Disconnected) => return (Readiness::Ended, early),
+        }
+    }
+}
+
 /// The in-engine handle to a source.
 pub trait SyncSource {
     fn capabilities(&self) -> SourceCapabilities;
@@ -177,9 +237,10 @@ pub trait SyncSource {
         Err(Error::Unsupported("remove".to_owned()))
     }
 
-    /// Subscribe to change batches: each received value is one batch of
-    /// changed paths (watching sources only).
-    fn watch(&mut self) -> Result<Receiver<Vec<String>>> {
+    /// Subscribe to the watch stream (watching sources only): one
+    /// [`WatchEvent::Ready`] once the feed is primed, then one
+    /// [`WatchEvent::Batch`] per batch of changed paths.
+    fn watch(&mut self) -> Result<Receiver<WatchEvent>> {
         Err(Error::Unsupported("watch".to_owned()))
     }
 
@@ -204,7 +265,7 @@ pub struct MemSource {
     pub log: Vec<(&'static str, String, String)>,
     /// Revision counter per path (bumped on every write).
     revisions: BTreeMap<String, u64>,
-    batches: Option<std::sync::mpsc::Sender<Vec<String>>>,
+    events: Option<std::sync::mpsc::Sender<WatchEvent>>,
 }
 
 impl MemSource {
@@ -238,8 +299,10 @@ impl MemSource {
 
     /// Emit a watch batch (a no-op when nothing watches).
     pub fn emit(&self, paths: &[&str]) {
-        if let Some(tx) = &self.batches {
-            let _ = tx.send(paths.iter().map(|p| (*p).to_owned()).collect());
+        if let Some(tx) = &self.events {
+            let _ = tx.send(WatchEvent::Batch(
+                paths.iter().map(|p| (*p).to_owned()).collect(),
+            ));
         }
     }
 
@@ -287,17 +350,20 @@ impl SyncSource for MemSource {
         Ok(())
     }
 
-    fn watch(&mut self) -> Result<Receiver<Vec<String>>> {
+    /// An in-process source is ready at once: `Ready` is queued before
+    /// `watch` returns.
+    fn watch(&mut self) -> Result<Receiver<WatchEvent>> {
         if !self.caps.watch {
             return Err(Error::Unsupported("watch".to_owned()));
         }
         let (tx, rx) = std::sync::mpsc::channel();
-        self.batches = Some(tx);
+        let _ = tx.send(WatchEvent::Ready);
+        self.events = Some(tx);
         Ok(rx)
     }
 
     fn unwatch(&mut self) -> Result<()> {
-        self.batches = None;
+        self.events = None;
         Ok(())
     }
 }
@@ -376,12 +442,62 @@ mod tests {
         assert_eq!(s.log.len(), 2);
         let rx = s.watch().unwrap();
         s.emit(&["b.md"]);
-        assert_eq!(rx.recv().unwrap(), ["b.md"]);
+        assert_eq!(rx.recv().unwrap(), WatchEvent::Ready, "ready at once");
+        assert_eq!(
+            rx.recv().unwrap(),
+            WatchEvent::Batch(vec!["b.md".to_owned()])
+        );
         s.unwatch().unwrap();
+        assert!(rx.recv().is_err(), "unwatch closes the stream");
         s.close().unwrap();
         let mut ro = MemSource::new(SourceCapabilities::default());
         assert!(matches!(ro.write("x", "y"), Err(Error::Unsupported(_))));
         assert!(matches!(ro.remove("x"), Err(Error::Unsupported(_))));
         assert!(matches!(ro.watch(), Err(Error::Unsupported(_))));
+    }
+
+    #[test]
+    fn watch_events_spell_the_wire() {
+        assert_eq!(WatchEvent::Ready.to_json(), json!({"event": "ready"}));
+        assert_eq!(
+            WatchEvent::Batch(vec!["a.md".into(), "sub/b.md".into()]).to_json(),
+            json!({"event": "batch", "paths": ["a.md", "sub/b.md"]})
+        );
+    }
+
+    #[test]
+    fn wait_ready_keeps_early_batches_and_bounds_the_wait() {
+        let patience = Duration::from_millis(200);
+        // Ready after an early batch: both are reported.
+        let (tx, rx) = std::sync::mpsc::channel();
+        tx.send(WatchEvent::Batch(vec!["early.md".into()])).unwrap();
+        tx.send(WatchEvent::Ready).unwrap();
+        tx.send(WatchEvent::Batch(vec!["later.md".into()])).unwrap();
+        assert_eq!(
+            wait_ready(&rx, patience),
+            (Readiness::Ready, vec![vec!["early.md".to_owned()]])
+        );
+        assert_eq!(
+            rx.try_recv().unwrap(),
+            WatchEvent::Batch(vec!["later.md".into()]),
+            "what follows ready stays in the stream"
+        );
+        // No ready within patience: a timeout, with what did arrive.
+        let (tx, rx) = std::sync::mpsc::channel::<WatchEvent>();
+        tx.send(WatchEvent::Batch(vec!["a.md".into()])).unwrap();
+        let started = Instant::now();
+        assert_eq!(
+            wait_ready(&rx, patience),
+            (Readiness::TimedOut, vec![vec!["a.md".to_owned()]])
+        );
+        assert!(started.elapsed() >= patience);
+        // The stream closes first.
+        let (tx, rx) = std::sync::mpsc::channel::<WatchEvent>();
+        drop(tx);
+        assert_eq!(wait_ready(&rx, patience), (Readiness::Ended, vec![]));
+        // In-process sources are ready at once.
+        let mut s = MemSource::with_files(&[]);
+        let rx = s.watch().unwrap();
+        assert_eq!(wait_ready(&rx, patience), (Readiness::Ready, vec![]));
     }
 }

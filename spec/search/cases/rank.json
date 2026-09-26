@@ -3201,18 +3201,6 @@
                   },
                   "fts_rank": 3
                 }
-              },
-              {
-                "id": "b_2",
-                "locator": "a.md#list[2]",
-                "preview": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor…",
-                "evidence": {
-                  "rrf": 0.015625,
-                  "boosts": {
-                    "heading": 1.15
-                  },
-                  "fts_rank": 4
-                }
               }
             ]
           }
@@ -3222,11 +3210,6 @@
             "block_id": "b_3",
             "content_hash": "30168c25873a40d34a41b00091d8fac99a66351c41e9a74661da3a3cfdc606c3",
             "ctx": "Harbor · a.md · Harbor · list_item"
-          },
-          {
-            "block_id": "b_2",
-            "content_hash": "0f294d5342b06a4298cf3e6eda8be21d3734f52ffe4819a989e47d84be25e69d",
-            "ctx": "Harbor · a.md · Harbor · list"
           }
         ],
         "doc_tasks": [
@@ -3239,10 +3222,6 @@
               {
                 "content_hash": "30168c25873a40d34a41b00091d8fac99a66351c41e9a74661da3a3cfdc606c3",
                 "tokens": 32
-              },
-              {
-                "content_hash": "0f294d5342b06a4298cf3e6eda8be21d3734f52ffe4819a989e47d84be25e69d",
-                "tokens": 37
               }
             ]
           }

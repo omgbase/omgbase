@@ -301,7 +301,21 @@ nested/correlated scopes:
   **residual** finished in-memory. The translator is **semantics-faithful** — e.g.
   `==`/`!=` → SQLite `IS`/`IS NOT` (null-safe), string ops → case-sensitive
   `substr`/`instr` (never `LIKE`). **[was CEL: the whole query compiled to a
-  single SQL statement; now it is pushdown + residual.]**
+  single SQL statement; now it is pushdown + residual.]** Invisibility is kept
+  by declining (spec/surface §1, the 1.1 patch): a comparison is pushed only
+  when its operand kinds (text, int, num, bool, null, json = an `attrs` read,
+  prop = a document property) are provably compared the same way — equality
+  only when one side is text, or one side is null and the other is not a
+  property, or both are numeric; `<`/`<=`/`>`/`>=` only when both are text or
+  both numeric (`sql/translate.ts`, `comparable`). Everything else — `checked
+  == 1`, `$ordinal == checked`, `tags != null`, `$ordinal < "3"`, `level <
+  "x"` — stays residual. A name that is a relation, reach-through or source
+  handle or the `attrs` bag (`nodes`, `blocks`, `out`, `children`, `section`,
+  `doc`, `frontmatter`, `attrs`, …) is never read as a property
+  (`NON_PROPERTY_NAMES`). When a residual conjunct could raise an OQX eval error
+  (any function/method call, a `single` block, a `^` name, a bare reserved docs
+  basename), the whole query runs unplanned so an emptying pushed conjunct
+  cannot hide the error (`planner.ts`, `residualMayRaise`).
 - **Correctness is guaranteed** by the residual fallback and verified by the
   differential conformance suite (`corpus/oqx/conformance.test.ts`): every query
   returns identical results planned vs. pure in-memory.

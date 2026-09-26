@@ -9,11 +9,12 @@
 //! `omgbase-sync`'s, the tools are `omgbase-surface`'s, the transport is
 //! [`mcp`]. Around the loop, two long-lived helpers mirror the reference's
 //! `omg mcp`: the in-process filesystem [`watch`]er (on by default; off with
-//! `--no-watch` or when another live watcher holds the lease) and the
-//! background embed [`drain`]er (when the repo's `embedding.*` settings name
-//! a provider). The embedding provider is wired when it can be spawned (a
-//! failure is reported on stderr and semantic queries fail
-//! `semantic_unavailable`).
+//! `--no-watch` or when another live watcher holds the lease; started as
+//! `spec/sync` §5 orders it — lease, adapter, `watch`, wait for `ready`,
+//! priming sweep, then "watcher live") and the background embed
+//! [`drain`]er (when the repo's `embedding.*` settings name a provider). The
+//! embedding provider is wired when it can be spawned (a failure is reported
+//! on stderr and semantic queries fail `semantic_unavailable`).
 //!
 //! Threads: the MCP loop runs on the main thread and owns the surface's
 //! store and provider; the watcher and the drainer each own a store
@@ -65,8 +66,10 @@ omgbase — a versioned, addressable graph layer over authored Markdown
 Usage:
   omgbase mcp [--workspace DIR] [--repo SLUG] [--no-watch]
                          serve the tool catalog over MCP stdio; by default an
-                         in-process watcher keeps the repo fresh (needs the
-                         `omgbase-fs-adapter` bin, see OMGBASE_FS_ADAPTER) and,
+                         in-process watcher keeps the repo fresh (it launches
+                         the `omgbase-fs-adapter` bin from PATH, or the command
+                         line in OMGBASE_FS_ADAPTER; waits up to 30 s for the
+                         adapter's `ready`, then sweeps, then goes live) and,
                          with an embedding provider configured, a background
                          drain embeds what mutations and checkpoints touch
   omgbase --version      print the version
@@ -80,9 +83,10 @@ Options:
 
 Environment:
   OMGBASE_WORKSPACE      the workspace when no --workspace is given
-  OMGBASE_FS_ADAPTER     the command line that runs the `fs` adapter instead
-                         of the registry's `omgbase-fs-adapter` (e.g. `node
-                         /path/to/fs-adapter/dist/src/bin.js`)
+  OMGBASE_FS_ADAPTER     the command line that launches the `fs` adapter
+                         instead of `omgbase-fs-adapter` from PATH (e.g. `node
+                         /path/to/fs-adapter/dist/src/bin.js`); the registry
+                         row's command is never run (spec/sync §5)
   OMGBASE_SPEC_MINTER    conformance seam (spec/surface §7.1): `sequential`
                          installs the fixture id minter for the process
   OMGBASE_SPEC_CLOCK     conformance seam: an RFC 3339 instant that is \"now\"
@@ -448,7 +452,8 @@ fn run_mcp(args: &[String]) -> Result<(), String> {
     let drain_handle = drainer.as_ref().map(Drainer::handle);
 
     // The watcher: off with --no-watch or when another live watcher holds
-    // the lease; otherwise prime, spawn the adapter, stream.
+    // the lease; otherwise spawn the adapter, watch, wait for ready, prime,
+    // stream (spec/sync §5) — "watcher live" is reported only after that.
     let mut watcher = None;
     let status = if opts.no_watch {
         "watcher off (--no-watch)".to_owned()
@@ -460,6 +465,7 @@ fn run_mcp(args: &[String]) -> Result<(), String> {
             minters: minters.clone(),
             clock: seams.clock.clone(),
             adapter_override: watch::adapter_override_from_env(),
+            ready_patience: watch::READY_PATIENCE,
             drain: drain_handle.clone(),
         })? {
             watch::Outcome::Live(w) => {

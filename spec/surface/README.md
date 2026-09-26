@@ -46,21 +46,28 @@ finishes in memory over the produced rows). Invisibility is kept by
 **declining** rather than by cleverness; since the 1.1 patch of 2026-09-26
 (§9) the planner declines, in both translators:
 
-- a comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) whose one operand is a
-  **boolean or number** literal or binding and whose other operand is a
-  JSON or property read (an `attrs` path, a bare attribute name on blocks
-  or nodes, a document property, `doc.<k>`) — SQLite sees JSON `true` and
-  `1`, `val_bool` and `val_num` alike; a boolean literal against an
-  integer intrinsic (`$ordinal`, `$depth`) is declined for the same reason.
-  Number against an integer intrinsic, and any comparison with a string
-  literal, a text column or `null` stays pushable — except `null` against a
-  **property** read, which is declined too (a list-valued or nested key has
-  no scalar row, so SQL reads `NULL` where the in-memory value is an array
-  or an object);
-- a bare identifier or member head that names a **relation, reach-through
-  handle or source handle** of the target (§1.2: `blocks`, `nodes`, `out`,
-  `in`, `out_edges`, `in_edges`, `frontmatter`, `inline`, `doc`, `children`,
-  `section`, `block`, `subsections`, …) — it is not a property read;
+- a comparison whose operand kinds are not **provably comparable the same
+  way** in SQLite and in memory. Operand kinds: *text* (a string literal or
+  binding, a text column or intrinsic, `lower()`/`upper()` output), *int*
+  (an integer intrinsic: `$ordinal`, `$depth`), *num*, *bool* and *null*
+  (literals or bindings; an absent binding is null), *json* (an `attrs`
+  path or a bare attribute name on blocks or nodes), *prop* (a document
+  property or `doc.<k>`). **Equality** (`==`, `!=`) pushes only when one
+  operand is text (SQLite's typed comparison and the in-memory strict
+  equality agree that a string equals nothing but an equal string), when one
+  operand is null and the other is not a property read (a list-valued or
+  nested key has no scalar row, so SQL reads `NULL` where the in-memory value
+  is an array or an object), or when both operands are numeric (int or
+  num). **Relational** (`<`, `<=`, `>`, `>=`) pushes only when both operands
+  are text or both are numeric. Every other pair is declined: SQLite sees
+  JSON `true` and `1`, `val_bool` and `val_num` alike (`checked == 1`,
+  `$ordinal == checked`), orders every integer before every text
+  (`$ordinal < "3"`, `level < "x"`), and two JSON or property reads carry no
+  type at plan time;- a bare identifier or member head that names a **relation, reach-through
+  handle, source handle or the `attrs` bag** of the target (§1.2: `blocks`,
+  `nodes`, `out`, `in`, `out_edges`, `in_edges`, `frontmatter`, `inline`,
+  `doc`, `children`, `section`, `block`, `subsections`, `attrs`, …) — it is
+  not a property read;
 - the **whole query**, when any residual conjunct could raise an OQX eval
   error the pushed conjuncts might hide by emptying the scan: a residual
   that contains any function or method call, a nested block with the
@@ -602,7 +609,12 @@ both and runs both harnesses.
   $path == "nope.md"` was `[]` planned, `filter_invalid` in memory). A
   fourth surfaced while fixing: `null` against a property read (`tags !=
   null` on a list-valued key was `NULL IS NOT NULL`, no row, where in memory
-  the array is not null). §1 now lists the declines; each is a query-suite
+  the array is not null), then a relational comparison across text and
+  numeric kinds (`$ordinal < "3"` was every row in SQL, none in memory), an
+  integer intrinsic against a JSON read (`$ordinal == checked`), and the
+  bare `attrs` bag reading as `attrs.attrs` — at which point the rule was
+  restated positively (§1: push only pairs provably comparable the same
+  way) instead of growing a list of declined cells. Each is a query-suite
   fixture proven by the differential. Declining costs the push on
   `checked == false`-style queries (residual, correct); a typed translation
   (`json_type`, `properties.type`) could restore it later without a spec

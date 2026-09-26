@@ -8,6 +8,11 @@ import type { SyncSource, SourceWatch } from "./plugin.js";
 // the batch callback to the reconciliation driver. A source must advertise
 // `watch` capability. Async throughout (13 §9): batches trigger a fire-and-report
 // reconcile; onCheckpoint fires when a batch produced changes.
+//
+// Readiness (spec/sync §5, 1.2): `start()` resolves once the source acknowledged
+// the subscription; `ready()` is the source's `ready` promise, which a host awaits
+// (bounded — `awaitReady`) BEFORE its priming freshness sweep, so an edit landing
+// before the feed is primed is caught by the sweep and one after it by the feed.
 
 export interface WatcherOptions {
   onCheckpoint?: (result: CheckpointResult) => void;
@@ -27,10 +32,17 @@ export class Watcher {
 
   async start(): Promise<void> {
     if (!this.source.watch) throw new Error("source does not support watch()");
-    this.sub = await this.source.watch((paths) => {
+    this.sub = await this.source.watch((ev) => {
+      if (ev.event !== "batch") return; // `ready` is surfaced through ready()
       // A batch arrives from the adapter's stream; reconcile it off the callback.
-      void this.ingest(paths).catch((err) => this.opts.onError?.(err));
+      void this.ingest(ev.paths).catch((err) => this.opts.onError?.(err));
     });
+  }
+
+  /** The live subscription's `ready` (spec/sync §5); throws before `start()`. */
+  ready(): Promise<void> {
+    if (!this.sub) throw new Error("watcher not started");
+    return this.sub.ready;
   }
 
   private async ingest(paths: string[]): Promise<CheckpointResult | null> {

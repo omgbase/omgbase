@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { reconstructContent } from "../core/read/document.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
+import { LIVE_LEAF_SQL } from "../core/store/fts.js";
 import { contextPrefix, shouldEmbed, estimateTokens, type EmbedTask, type DocEmbedTask, type DocEmbedBlockRef } from "./embeddings.js";
 
 // Build the embedding task list for a repo (05 §6). Walks every live block,
@@ -117,14 +118,19 @@ export function makeBlockContextResolver(store: Store, scope: { repoId: string }
   };
 }
 
-/** Build EmbedTask[] for every embeddable live block in the repo. */
+/**
+ * Build EmbedTask[] for every embeddable live block in the repo: the live
+ * LEAF blocks (spec/search §2.1, 1.2 — a container's text is its children's
+ * text, so embedding it would pool the same words twice) whose text clears the
+ * `shouldEmbed` floor.
+ */
 export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
   const blocks = store.db
     .prepare(
       `SELECT b.block_id, b.doc_id, d.path AS path,
               b.ordinal, b.type, b.text, b.raw_hash
        FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-       WHERE b.repo_id = ? AND b.deleted_commit IS NULL
+       WHERE b.repo_id = ? AND ${LIVE_LEAF_SQL}
        ORDER BY d.path, b.ordinal`,
     )
     .all(repoId) as BlockRow[];

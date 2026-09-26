@@ -103,6 +103,8 @@ CREATE TABLE file_stats (
 
 `omg sync --watch` (and `omg mcp`'s in-process watcher) holds an advisory lock on `<workspace>/.omgbase/watch.lock` for its lifetime — the same O_EXCL lockfile substitution as the writer lock (`sync/watch-lease.ts`). The holder records its pid in the file; liveness is a pid check (read the holder pid, `kill(pid, 0)`), and a lockfile whose holder pid is dead is stolen — no heartbeats, no stale-lease sweeper. Commands use the probe to skip the freshness sweep; `omg status` reports it (`watcher: live` / `watcher: none`).
 
+**Watcher startup order** (spec/sync §5, 1.2; `cmd/sync.ts` `runLocalWatch`, `cmd/mcp.ts`): take the lease → spawn the fs adapter (`openRepoSource`; `$OMGBASE_FS_ADAPTER` overrides the launcher, `sync-plugins.md` §3) → `watch` → wait for the adapter's `{"event":"ready"}` (up to 30 s; a timeout is a dim stderr warning and the host proceeds as if ready) → **then** the priming freshness sweep → then the `watching …` / `watcher live` line. The sweep runs after readiness on purpose: an edit landing before the feed is primed is caught by the sweep, one landing after it by the feed, and one caught by both is an echo. `omg sync --server --watch` (`runFsMirror`) waits for `ready` the same way before its `watching` line.
+
 ### 3.5 Semantic staleness
 
 Semantic search from a one-shot process serves whatever vectors exist; hits backed by stale embeddings are flagged (`~` suffix in human output, `stale: true` in JSON) per 05 §6. `omg embed drain` processes the queue on demand; `omg status` shows queue depth.

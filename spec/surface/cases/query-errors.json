@@ -245,6 +245,33 @@
         "error": "filter_invalid",
         "message_includes": "cursor"
       }
+    },
+    {
+      "name": "planned-residual-error-not-hidden",
+      "notes": "§1 planner decline (c): a residual bare reserved basename raises in memory; the pushed `$path == \"nope.md\"` empties the scan, so a planned run saw no rows and no error. The whole query runs unplanned.",
+      "query": "from docs where path == \"x\" && $path == \"nope.md\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "bare 'path' reads a frontmatter key; did you mean the intrinsic $path? (use frontmatter.path to force the property)"
+      }
+    },
+    {
+      "name": "planned-residual-bad-regex-not-hidden",
+      "notes": "§1 planner decline (c): a residual method call (matches with an invalid pattern) raises in memory; the emptying pushed conjunct must not hide it.",
+      "query": "from docs where $path.matches(\"[\") && $path == \"nope.md\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "invalid regular expression \"[\": unterminated character class (missing ']')"
+      }
+    },
+    {
+      "name": "planned-residual-unknown-function-not-hidden",
+      "notes": "§1 planner decline (c): a residual free call to an unknown function raises in memory; the emptying pushed conjunct must not hide it.",
+      "query": "from docs where nope(\"x\") && $path == \"nope.md\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "unknown function 'nope(…)'"
+      }
     }
   ]
 }

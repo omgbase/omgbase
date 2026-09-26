@@ -1,7 +1,7 @@
 import type { Store } from "./store.js";
 import { rebuildSections } from "./sections.js";
 import { rebuildDocEdges } from "./edges.js";
-import { ftsIndexDoc } from "./fts.js";
+import { ftsRebuild } from "./fts.js";
 
 // Rebuild derived tables from durable tables only (02 §6, invariant #8). Every
 // table in 02 §4 can be dropped and reconstructed with zero information loss
@@ -26,8 +26,10 @@ export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void 
     }
 
     if (target === "fts" || target === "all") {
-      // Rebuild the external-content FTS index from current block text.
-      db.exec("INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')");
+      // spec/search §1.1: 'delete-all', then every live leaf of every live doc
+      // (FTS5's 'rebuild' would index the content table wholesale, containers
+      // included).
+      ftsRebuild(db);
     }
 
     if (target === "block_changes" || target === "all") {
@@ -39,5 +41,4 @@ export function rebuildIndex(store: Store, target: RebuildTarget = "all"): void 
       );
     }
   });
-  void ftsIndexDoc; // fts rebuild uses the FTS5 'rebuild' command directly
 }

@@ -2,8 +2,10 @@
 //! command with `args + render_config_flags(config)` and the source's `env`,
 //! then speak newline-delimited JSON over its stdio — a handshake line, then
 //! id-matched requests and responses with ids from 1, plus the unsolicited
-//! `{"event":"batch"}` stream while a watch is live. stdout is the protocol;
-//! stderr is inherited for logs.
+//! event stream while a watch is live — one `{"event":"ready"}` once the
+//! adapter's feed is primed, then `{"event":"batch","paths":[…]}` lines —
+//! surfaced as [`WatchEvent`]s; an event outside a live watch is dropped
+//! (§5 "Readiness", §9). stdout is the protocol; stderr is inherited for logs.
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -19,7 +21,7 @@ use serde_json::{Map, Value};
 use crate::PROTOCOL_VERSION;
 use crate::error::{Error, Result};
 use crate::registry::{AdapterRow, SourceRow, render_config_flags};
-use crate::source::{SourceCapabilities, SourceEntry, SourceItem, SyncSource};
+use crate::source::{SourceCapabilities, SourceEntry, SourceItem, SyncSource, WatchEvent};
 
 /// A connected adapter.
 pub struct ExternalSource {
@@ -27,9 +29,9 @@ pub struct ExternalSource {
     caps: SourceCapabilities,
     stdin: Option<Box<dyn Write + Send>>,
     responses: Receiver<String>,
-    batches: Option<Receiver<Vec<String>>>,
-    /// Set while a watch is live; a batch event arriving otherwise is dropped
-    /// (§9: never buffered as a response).
+    events: Option<Receiver<WatchEvent>>,
+    /// Set while a watch is live; a `ready` or `batch` event arriving
+    /// otherwise is dropped (§9: never buffered as a response).
     watching: Arc<AtomicBool>,
     next_id: u64,
     child: Option<Child>,
@@ -49,13 +51,34 @@ impl std::fmt::Debug for ExternalSource {
     }
 }
 
-/// Demultiplex adapter stdout: `{"event":"batch"}` lines go to `batches`
-/// while `watching` (dropped otherwise), every other non-empty line to
+/// The `WatchEvent` an unsolicited line spells, if it is one:
+/// `{"event":"ready"}` or `{"event":"batch","paths":[…]}` (non-string
+/// members of `paths` are skipped, a missing `paths` is an empty batch).
+fn parse_event(obj: &Map<String, Value>) -> Option<WatchEvent> {
+    match obj.get("event").and_then(Value::as_str)? {
+        "ready" => Some(WatchEvent::Ready),
+        "batch" => Some(WatchEvent::Batch(
+            obj.get("paths")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        )),
+        _ => None,
+    }
+}
+
+/// Demultiplex adapter stdout: `{"event":…}` lines go to `events` while
+/// `watching` (dropped otherwise), every other non-empty line to
 /// `responses`. Ends at EOF.
 fn route(
     reader: Box<dyn Read + Send>,
     responses: Sender<String>,
-    batches: Sender<Vec<String>>,
+    events: Sender<WatchEvent>,
     watching: Arc<AtomicBool>,
 ) {
     let buf = BufReader::new(reader);
@@ -66,19 +89,9 @@ fn route(
             continue;
         }
         if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(trimmed) {
-            if obj.get("event").and_then(Value::as_str) == Some("batch") {
-                let paths: Vec<String> = obj
-                    .get("paths")
-                    .and_then(Value::as_array)
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default();
+            if let Some(event) = parse_event(&obj) {
                 if watching.load(Ordering::SeqCst) {
-                    let _ = batches.send(paths);
+                    let _ = events.send(event);
                 }
                 continue;
             }
@@ -152,16 +165,16 @@ impl ExternalSource {
         child: Option<Child>,
     ) -> Result<Self> {
         let (resp_tx, resp_rx) = channel();
-        let (batch_tx, batch_rx) = channel();
+        let (event_tx, event_rx) = channel();
         let watching = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&watching);
-        let reader = std::thread::spawn(move || route(from_adapter, resp_tx, batch_tx, flag));
+        let reader = std::thread::spawn(move || route(from_adapter, resp_tx, event_tx, flag));
         let mut source = Self {
             command: command.to_owned(),
             caps: SourceCapabilities::default(),
             stdin: Some(to_adapter),
             responses: resp_rx,
-            batches: Some(batch_rx),
+            events: Some(event_rx),
             watching,
             next_id: 1,
             child,
@@ -293,19 +306,22 @@ impl SyncSource for ExternalSource {
         Ok(())
     }
 
-    fn watch(&mut self) -> Result<Receiver<Vec<String>>> {
+    /// Subscribe: the stream yields the adapter's `Ready` once its feed is
+    /// primed (an adapter built before sync 1.2 never sends it — bound the
+    /// wait with [`crate::wait_ready`]), then its batches.
+    fn watch(&mut self) -> Result<Receiver<WatchEvent>> {
         if !self.caps.watch {
             return Err(Error::Unsupported("watch".to_owned()));
         }
         let rx = self
-            .batches
+            .events
             .take()
             .ok_or_else(|| Error::Other("the watch stream was already taken".to_owned()))?;
         // The listener is live before the request goes out (as the reference).
         self.watching.store(true, Ordering::SeqCst);
         if let Err(e) = self.call("watch", Value::Object(Map::new())) {
             self.watching.store(false, Ordering::SeqCst);
-            self.batches = Some(rx);
+            self.events = Some(rx);
             return Err(e);
         }
         Ok(rx)
@@ -412,6 +428,7 @@ mod tests {
             ),
             t(Dir::In, ""),
             t(Dir::In, r#"{"event":"batch","paths":["early.md"]}"#),
+            t(Dir::In, r#"{"event":"ready"}"#),
             t(Dir::Out, r#"{"id":1,"method":"enumerate","params":{}}"#),
             t(
                 Dir::In,
@@ -443,6 +460,7 @@ mod tests {
             t(Dir::In, r#"{"id":5,"error":"nope"}"#),
             t(Dir::Out, r#"{"id":6,"method":"watch","params":{}}"#),
             t(Dir::In, r#"{"id":6,"result":{"ok":true}}"#),
+            t(Dir::In, r#"{"event":"ready"}"#),
             t(Dir::In, r#"{"event":"batch","paths":["a.md","b.md"]}"#),
             t(Dir::Out, r#"{"id":7,"method":"unwatch","params":{}}"#),
             t(Dir::In, r#"{"id":7,"result":{"ok":true}}"#),
@@ -489,9 +507,14 @@ mod tests {
         let rx = src.watch().unwrap();
         assert_eq!(
             rx.recv().unwrap(),
-            ["a.md", "b.md"],
-            "the pre-watch event was dropped"
+            WatchEvent::Ready,
+            "the pre-watch batch and ready were dropped"
         );
+        assert_eq!(
+            rx.recv().unwrap(),
+            WatchEvent::Batch(vec!["a.md".into(), "b.md".into()])
+        );
+        // §8 Ordering: both promised events were delivered before `unwatch`.
         src.unwatch().unwrap();
         assert!(rx.try_recv().is_err());
         assert_eq!(src.sent, expected_out);

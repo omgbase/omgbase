@@ -1454,3 +1454,198 @@ fn a_document_without_properties_has_no_rows_and_a_collision_keeps_the_later_row
         (Source::Frontmatter, "meta.owner", Some("b"))
     );
 }
+
+// ---- FTS: leaf-only index (spec/search §1.1, 1.2) ---------------------------------------
+
+/// The rowids `blocks_fts` indexes (its `_docsize` shadow table has one row
+/// per indexed document) and the live-leaf rowids of `blocks`.
+fn fts_indexed_and_leaves(store: &Store) -> (Vec<i64>, Vec<i64>) {
+    let ids = |sql: &str| -> Vec<i64> {
+        let mut stmt = store.conn().prepare(sql).unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    };
+    (
+        ids("SELECT id FROM blocks_fts_docsize ORDER BY id"),
+        ids(&format!(
+            "SELECT b.rowid FROM blocks b WHERE {LIVE_LEAF_SQL} ORDER BY b.rowid"
+        )),
+    )
+}
+
+fn assert_fts_is_leaves(store: &Store, at: &str) {
+    let (indexed, leaves) = fts_indexed_and_leaves(store);
+    assert_eq!(indexed, leaves, "{at}: blocks_fts rows vs live leaves");
+}
+
+fn text_hits(store: &Store, repo: &str, q: &str) -> Vec<(String, String)> {
+    store
+        .text_search(repo, q, 50)
+        .unwrap()
+        .hits
+        .into_iter()
+        .map(|h| (h.path, h.block_type))
+        .collect()
+}
+
+const FILLER: &str = "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n";
+
+#[test]
+fn fts_indexes_leaves_only_through_edits_and_rebuild() {
+    let (mut store, repo) = fixture_store();
+    observe(
+        &mut store,
+        &repo,
+        "a.md",
+        &format!(
+            "# Reef\n\n- corals build reefs\n  - polyps secrete calcium\n    - zooxanthellae photosynthesize here\n- fish shelter\n\n{FILLER}"
+        ),
+        T0,
+    );
+    assert_fts_is_leaves(&store, "after ingest");
+    assert_eq!(
+        text_hits(&store, &repo, "zooxanthellae"),
+        [("a.md".to_owned(), "list_item".to_owned())],
+        "one hit, the innermost item"
+    );
+    let containers: i64 = store
+        .conn()
+        .query_row(
+            &format!("SELECT count(*) FROM blocks b WHERE b.deleted_commit IS NULL AND NOT ({LIVE_LEAF_SQL})"),
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(containers, 5, "list, item, sublist, item, sub-sublist");
+
+    // An edit re-nests; the index follows the new leaf set.
+    observe(
+        &mut store,
+        &repo,
+        "a.md",
+        &format!(
+            "# Reef\n\n- corals build reefs\n- zooxanthellae photosynthesize here\n\n{FILLER}"
+        ),
+        T1,
+    );
+    assert_fts_is_leaves(&store, "after edit");
+
+    // FTS5's wholesale 'rebuild' indexes containers; ours restores the leaf set.
+    let (before, _) = fts_indexed_and_leaves(&store);
+    store
+        .conn()
+        .execute_batch("INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')")
+        .unwrap();
+    assert!(fts_indexed_and_leaves(&store).0.len() > before.len());
+    store.rebuild_index(RebuildTarget::Fts).unwrap();
+    assert_eq!(fts_indexed_and_leaves(&store).0, before);
+    assert_fts_is_leaves(&store, "after rebuild");
+}
+
+#[test]
+fn cross_document_move_of_a_list_keeps_the_fts_index_equal_to_the_leaves() {
+    let (mut store, repo) = fixture_store();
+    let list =
+        "- kelp grows fast in cold water\n  - giant kelp forms canopies\n- otters eat urchins\n";
+    store
+        .observe_batch(
+            &repo,
+            &[
+                BatchItem::observed("a.md", &format!("# A\n\n{list}\n{FILLER}")),
+                BatchItem::observed("b.md", "# B\n\nquiet paragraph about quails.\n"),
+            ],
+            T0,
+            &Config::default(),
+        )
+        .unwrap();
+    assert_fts_is_leaves(&store, "after first batch");
+    // Destination before source, so the carried ids are live foreign rows when
+    // the destination evicts them (§5.4 step 8).
+    let out = store
+        .observe_batch(
+            &repo,
+            &[
+                BatchItem::observed(
+                    "b.md",
+                    &format!("# B\n\nquiet paragraph about quails.\n\n{list}"),
+                ),
+                BatchItem::observed("a.md", &format!("# A\n\n{FILLER}")),
+            ],
+            T1,
+            &Config::default(),
+        )
+        .unwrap();
+    let b = out[0].as_observed().unwrap();
+    assert!(
+        b.dispositions.get("moved").is_some_and(|n| *n > 0),
+        "the move was recognized: {:?}",
+        kinds(b)
+    );
+    assert_fts_is_leaves(&store, "after the move");
+    let mut kelp = text_hits(&store, &repo, "kelp");
+    kelp.sort();
+    assert_eq!(
+        kelp,
+        [
+            ("b.md".to_owned(), "list_item".to_owned()),
+            ("b.md".to_owned(), "paragraph".to_owned()),
+        ]
+    );
+    assert_eq!(
+        text_hits(&store, &repo, "urchins"),
+        [("b.md".to_owned(), "list_item".to_owned())]
+    );
+}
+
+#[test]
+fn evicting_a_lists_only_child_reindexes_the_parent() {
+    let (mut store, repo) = fixture_store();
+    store
+        .observe_batch(
+            &repo,
+            &[
+                BatchItem::observed(
+                    "a.md",
+                    &format!(
+                        "# A\n\n- the solitary item about lighthouses and their keepers\n\n{FILLER}"
+                    ),
+                ),
+                BatchItem::observed("b.md", "# B\n\nquiet paragraph about quails.\n"),
+            ],
+            T0,
+            &Config::default(),
+        )
+        .unwrap();
+    // The item moves to b.md while a.md keeps a list with a new item;
+    // destination first, so a.md's list is left childless in the table until
+    // a.md commits and must be re-indexed for the source's delete pass to
+    // stay symmetric.
+    store
+        .observe_batch(
+            &repo,
+            &[
+                BatchItem::observed(
+                    "b.md",
+                    "# B\n\nquiet paragraph about quails.\n\n- the solitary item about lighthouses and their keepers\n",
+                ),
+                BatchItem::observed(
+                    "a.md",
+                    &format!("# A\n\n- a fresh replacement item about harbors\n\n{FILLER}"),
+                ),
+            ],
+            T1,
+            &Config::default(),
+        )
+        .unwrap();
+    assert_fts_is_leaves(&store, "after the move");
+    assert_eq!(
+        text_hits(&store, &repo, "lighthouses"),
+        [("b.md".to_owned(), "list_item".to_owned())]
+    );
+    assert_eq!(
+        text_hits(&store, &repo, "harbors"),
+        [("a.md".to_owned(), "list_item".to_owned())]
+    );
+}

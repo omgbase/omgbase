@@ -16,6 +16,34 @@ export function fsAdapterBinPath(): string {
   return fileURLToPath(new URL("./bin.js", import.meta.url));
 }
 
+/** The environment variable that overrides how a host launches the built-in `fs` adapter (spec/sync §5). */
+export const FS_ADAPTER_ENV = "OMGBASE_FS_ADAPTER";
+
+export interface AdapterLaunch {
+  command: string;
+  args: string[];
+}
+
+/**
+ * The argv a host runs for the built-in `fs` adapter (spec/sync §5 "Launching the
+ * built-in fs adapter", 1.2), as a pure function: `override` (the value of
+ * `$OMGBASE_FS_ADAPTER`) set and non-blank is whitespace-split into the command
+ * and its leading arguments; otherwise `fallback` is the host's own launcher (the
+ * reference: the running `node` + `fsAdapterBinPath()`). Either way the registry
+ * row's fixed `args` follow, then the rendered config flags. The row's `command`
+ * is never consulted for `fs`.
+ */
+export function resolveFsAdapterArgv(override: string | undefined, fallback: AdapterLaunch, fixedArgs: readonly string[], flags: readonly string[]): AdapterLaunch {
+  const words = override === undefined ? [] : override.trim().split(/\s+/).filter((w) => w !== "");
+  const [command, ...lead] = words.length > 0 ? words : [fallback.command, ...fallback.args];
+  return { command: command!, args: [...lead, ...fixedArgs, ...flags] };
+}
+
+/** `resolveFsAdapterArgv` over the process environment and this package's bundled bin. */
+export function fsAdapterLaunch(fixedArgs: readonly string[], flags: readonly string[]): AdapterLaunch {
+  return resolveFsAdapterArgv(process.env[FS_ADAPTER_ENV], { command: process.execPath, args: [fsAdapterBinPath()] }, fixedArgs, flags);
+}
+
 export interface FsEntry {
   path: string;
   revision: string;
@@ -94,8 +122,12 @@ export class FsAdapter {
     rmSync(join(this.root, path), { force: true });
   }
 
-  /** Watch the tree; deliver debounced batches of repo-relative changed paths. */
-  watch(onBatch: (paths: string[]) => void): { stop(): Promise<void> } {
+  /**
+   * Watch the tree; deliver debounced batches of repo-relative changed paths.
+   * `ready` resolves once chokidar's initial scan has completed — from then on
+   * every change is reported (spec/sync §5 readiness; bin.ts puts it on the wire).
+   */
+  watch(onBatch: (paths: string[]) => void): { ready: Promise<void>; stop(): Promise<void> } {
     const pending = new Set<string>();
     let timer: NodeJS.Timeout | null = null;
     const flush = (): void => {
@@ -120,7 +152,9 @@ export class FsAdapter {
       schedule();
     };
     watcher.on("add", onEvent).on("change", onEvent).on("unlink", onEvent);
+    const ready = new Promise<void>((resolve) => watcher.once("ready", () => resolve()));
     return {
+      ready,
       async stop() {
         if (timer) { clearTimeout(timer); timer = null; }
         await watcher.close();

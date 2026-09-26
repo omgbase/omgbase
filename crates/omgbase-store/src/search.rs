@@ -16,6 +16,7 @@ use omgbase_search::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value as Json;
 
+use crate::derived::LIVE_LEAF_SQL;
 use crate::error::Result;
 use crate::read::reconstruct;
 use crate::tree::from_hex;
@@ -203,8 +204,10 @@ impl BlockContexts {
     }
 }
 
-/// §2.2: an [`EmbedTask`] for every embeddable live block of the repo, in
-/// `(path, ordinal, block_id)` order.
+/// §2.1–§2.2: an [`EmbedTask`] for every embeddable live block of the repo —
+/// the live **leaves** (1.2: a container's text is its children's text, so
+/// embedding it would pool the same words twice) that clear `should_embed` —
+/// in `(path, ordinal, block_id)` order.
 pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTask>> {
     struct BlockRow {
         block_id: String,
@@ -216,12 +219,12 @@ pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTa
         raw_hash: Vec<u8>,
     }
     let blocks: Vec<BlockRow> = {
-        let mut stmt = conn.prepare_cached(
+        let mut stmt = conn.prepare_cached(&format!(
             "SELECT b.block_id, b.doc_id, d.path, b.ordinal, b.type, b.text, b.raw_hash
              FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-             WHERE b.repo_id = ?1 AND b.deleted_commit IS NULL
-             ORDER BY d.path, b.ordinal, b.block_id",
-        )?;
+             WHERE b.repo_id = ?1 AND {LIVE_LEAF_SQL}
+             ORDER BY d.path, b.ordinal, b.block_id"
+        ))?;
         let it = stmt.query_map(params![repo_id], |r| {
             Ok(BlockRow {
                 block_id: r.get(0)?,

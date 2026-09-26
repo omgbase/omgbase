@@ -25,6 +25,8 @@ import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
 import { cosineFloat32 } from "../../src/core/vec.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
+import { rebuildIndex } from "../../src/core/store/rebuild.js";
+import { LIVE_LEAF_SQL } from "../../src/core/store/fts.js";
 import { observeBatch } from "../../src/sync/observe.js";
 import { sanitizeFtsQuery } from "../../src/search/fts-query.js";
 import { EmbeddingWorker, estimateTokens, type EmbeddingProvider } from "../../src/search/embeddings.js";
@@ -95,7 +97,7 @@ export interface CosineCase {
 
 export type SearchQuery = { text?: string; semantic?: string; limit?: number };
 export type ResolveQuery = { query: string; semantic?: string; limit?: number };
-export type Step = StoreStep | { drain: true } | { search: SearchQuery } | { resolve: ResolveQuery };
+export type Step = StoreStep | { drain: true } | { search: SearchQuery } | { resolve: ResolveQuery } | { rebuild: "fts" };
 
 export interface DrainOutcome {
   embedded: number;
@@ -143,7 +145,8 @@ export type SearchOutcome =
   | { hits: VectorHitRow[] }
   | { hits: HybridHitRow[] };
 export type ResolveOutcome = { hits: ResolveHitRow[] };
-export type StepOutcome = StoreStepOutcome | DrainOutcome | SearchOutcome | ResolveOutcome;
+export type RebuildOutcome = { rebuilt: "fts" };
+export type StepOutcome = StoreStepOutcome | DrainOutcome | SearchOutcome | ResolveOutcome | RebuildOutcome;
 
 export interface EmbedTaskRow {
   block_id: string;
@@ -300,12 +303,16 @@ export async function runObserveCase(c: ObserveCaseInput): Promise<Evaluation> {
         steps.push({ embedded: blocks.embedded, cached: blocks.cached, doc_embedded: docs.embedded, doc_cached: docs.cached, doc_pooled: docs.pooled });
       } else if ("search" in step) {
         steps.push(await runSearch(store, repoId, provider, step.search));
+      } else if ("rebuild" in step) {
+        // README §1.1 / §7: 'delete-all' then every live leaf of every live doc.
+        rebuildIndex(store, step.rebuild);
+        steps.push({ rebuilt: step.rebuild });
       } else {
         steps.push(await runResolve(store, repoId, provider, step.resolve));
       }
     }
     const projected: Projection = { steps, ...projectSearch(store, repoId, provider) };
-    return { expect: projected, problems: checkSearch(store, provider, projected) };
+    return { expect: projected, problems: [...checkFtsLeaves(store), ...checkSearch(store, provider, projected)] };
   } finally {
     store.close();
     setIdMinter(null);
@@ -390,6 +397,21 @@ export function projectSearch(store: Store, repoId: string, provider: EmbeddingP
 }
 
 // ---- runner checks -----------------------------------------------------------------------
+
+/**
+ * README §1.1: the FTS index holds exactly the live leaf rows of `blocks`. The
+ * external-content table answers `count(*)` from the content table, so the
+ * indexed rowids are read off the `blocks_fts_docsize` shadow table (one row
+ * per indexed document).
+ */
+export function checkFtsLeaves(store: Store): string[] {
+  const indexed = (store.db.prepare("SELECT id FROM blocks_fts_docsize ORDER BY id").all() as { id: number }[]).map((r) => r.id);
+  const leaves = (store.db.prepare(`SELECT b.rowid AS id FROM blocks b WHERE ${LIVE_LEAF_SQL} ORDER BY b.rowid`).all() as { id: number }[]).map((r) => r.id);
+  if (indexed.length !== leaves.length || indexed.some((id, i) => id !== leaves[i])) {
+    return [`blocks_fts indexes rowids [${indexed.join(",")}] but the live leaves are [${leaves.join(",")}]`];
+  }
+  return [];
+}
 
 /**
  * Checks a runner applies after the last step:
@@ -477,10 +499,13 @@ export interface ValidateOptions {
 
 const optPosInt = (v: unknown): boolean => v === undefined || (typeof v === "number" && Number.isInteger(v) && v >= 1);
 
-/** The two search-spec steps (README §7) plus `resolve` (§4). */
+/** The search-spec steps (README §7): `drain`, `search`, `resolve` (§4), `rebuild` (§1.1). */
 export const EXTRA_STEPS = {
   drain: (body: unknown, here: string, problems: string[]): void => {
     if (body !== true) problems.push(`${here}: \`drain\` is exactly \`true\``);
+  },
+  rebuild: (body: unknown, here: string, problems: string[]): void => {
+    if (body !== "fts") problems.push(`${here}: \`rebuild\` is exactly \`"fts"\``);
   },
   search: (body: unknown, here: string, problems: string[]): void => {
     if (!isRecord(body)) {

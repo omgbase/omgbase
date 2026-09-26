@@ -420,7 +420,10 @@ prepared result):
    `expires_ts = ts + 30 days`. (A row that does not exist inserts nothing.)
 8. **Evict foreign rows.** For each id in `cross_doc_ids` then
    `consumed_pool`: delete the `blocks` row with that id whose `doc_id` is
-   **not** this doc (its FTS entry first when it was live), and delete the
+   **not** this doc (its FTS entry first when it was an indexed live leaf,
+   `spec/search` §1.1 — decided over the table before any of the batch's
+   rows goes, and a live parent the eviction leaves childless is
+   re-indexed, since it is a leaf now), and delete the
    id's `resurrection_pool` row. The id is live here now; `block_id` is a
    primary key, and the source document — which commits later in the batch
    or was tombstoned — never lists a carried id as deleted. A live foreign
@@ -429,12 +432,13 @@ prepared result):
    live row (I6), so a resurrection evicts only tombstoned rows
    (`pool::resurrect-into-another-doc-evicts-tombstoned-row`).
 9. **Refresh the blocks.** Delete every `blocks` row of this doc (tombstoned
-   included; FTS entries of the live ones first), then insert one row per
+   included; FTS entries of the live leaves first — `spec/search` §1.1 owns
+   which rows are indexed), then insert one row per
    body block in pre-order with `parent_block`, `order_key`, `ordinal`,
    `depth`, `ancestor_path` (§4.3), `type`, `attrs`, `text`, `raw_hash`,
    `norm_hash`, `trivia_hash` (`NULL` when the trivia is empty; nested blocks
    always), `created_commit = this commit`, `deleted_commit = NULL`. Then
-   rebuild `sections` (§4.5) and the FTS rows for the doc.
+   rebuild `sections` (§4.5) and the FTS rows for the doc (live leaves).
 10. **Dispositions.** For each disposition of the result: `INSERT OR IGNORE`
     `(commit_id, block_id, kind, confidence, reason, matcher_v, detail as
     JSON)` into `dispositions`, and `INSERT OR IGNORE (block_id, commit_id,
@@ -537,7 +541,9 @@ honest signal.
 **Rebuild.** `sections` is recomputed per live doc from `blocks` (§4.5);
 `block_changes` is `INSERT OR IGNORE … SELECT block_id, commit_id, kind FROM
 dispositions` after a `DELETE`; the FTS index is `INSERT INTO
-blocks_fts(blocks_fts) VALUES('rebuild')`; `doc_edges` is the graph
+blocks_fts(blocks_fts) VALUES('delete-all')` followed by one insert per
+live leaf of every live doc (`spec/search` §1.1; FTS5's `'rebuild'` would
+index the whole content table, containers included); `doc_edges` is the graph
 component's. A rebuilt deterministic table equals the maintained one row for
 row (§8 I8).
 

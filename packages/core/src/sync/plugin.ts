@@ -40,13 +40,44 @@ export interface SourceItem extends SourceEntry {
   content: string;
 }
 
-/** A batch of changed storage-keys delivered by a live watch (13 §4.3). */
-export type WatchListener = (paths: string[]) => void;
+/**
+ * An unsolicited event of a live watch (spec/sync §5): `ready` once — the feed
+ * is primed and every change from now on will be reported — then `batch` lines
+ * of changed storage keys. An adapter built before sync 1.2 never sends `ready`.
+ */
+export type WatchEvent = { event: "ready" } | { event: "batch"; paths: string[] };
+
+/** Receives every event of a live watch, in wire order. */
+export type WatchListener = (event: WatchEvent) => void;
 
 /** A live subscription created by SyncSource.watch. */
 export interface SourceWatch {
-  /** Stop delivering batches and release resources. */
+  /**
+   * Resolves when the source reported `ready` (spec/sync §5). An in-process
+   * source resolves it at once; an adapter that never reports leaves it pending,
+   * so a host bounds the wait (`awaitReady`).
+   */
+  ready: Promise<void>;
+  /** Stop delivering events and release resources. */
   stop(): Promise<void>;
+}
+
+/** How long a host waits for `ready` before proceeding as if ready (spec/sync §5: unpinned; 30 s). */
+export const WATCH_READY_PATIENCE_MS = 30_000;
+
+/**
+ * Wait for a watch's `ready` with bounded patience: `true` when it resolved in
+ * time, `false` on timeout (the host proceeds as if ready, with a warning — an
+ * adapter without `ready` still works, with the old window).
+ */
+export function awaitReady(ready: Promise<void>, patienceMs: number = WATCH_READY_PATIENCE_MS): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), patienceMs);
+    ready.then(
+      () => { clearTimeout(timer); resolve(true); },
+      () => { clearTimeout(timer); resolve(false); },
+    );
+  });
 }
 
 /**
@@ -63,8 +94,8 @@ export interface SyncSource {
   /** Current state of one member, or null if it left the scope (a delete). */
   fetch(path: string): Promise<SourceItem | null>;
 
-  /** Subscribe to debounced change batches (push sources). */
-  watch?(onBatch: WatchListener): Promise<SourceWatch>;
+  /** Subscribe to the change feed (push sources): `ready` once, then debounced `batch` events. */
+  watch?(listener: WatchListener): Promise<SourceWatch>;
 
   /** Persist engine-authored bytes back to the source (writeThrough only). */
   write?(path: string, content: string): Promise<void>;

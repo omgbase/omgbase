@@ -192,13 +192,80 @@
           }
         ],
         "events": [
-          [
-            "a.md"
-          ],
-          [
-            "b.md",
-            "sub/c.md"
-          ]
+          {
+            "event": "batch",
+            "paths": [
+              "a.md"
+            ]
+          },
+          {
+            "event": "batch",
+            "paths": [
+              "b.md",
+              "sub/c.md"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "watch-ready-then-events",
+      "kind": "adapter",
+      "notes": "README §5 readiness (1.2): after the watch response the adapter reports {\"event\":\"ready\"} once its feed is primed, then batches; the listener receives both as events in wire order; unwatch stops the feed.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":true}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"watch\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"ok\":true}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"event\":\"ready\"}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"event\":\"batch\",\"paths\":[\"a.md\"]}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":2,\"method\":\"unwatch\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":2,\"result\":{\"ok\":true}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": true,
+          "watch": true
+        },
+        "results": [
+          {
+            "ok": true
+          },
+          {
+            "ok": true
+          }
+        ],
+        "events": [
+          {
+            "event": "ready"
+          },
+          {
+            "event": "batch",
+            "paths": [
+              "a.md"
+            ]
+          }
         ]
       }
     },

@@ -6,7 +6,8 @@
 //                           filesystem, spec/store §8 invariants after every ingesting step, projected
 //   runAdapterCase()        `protocol.json` (kind `adapter`): a scripted fake adapter process plays the
 //                           transcript's `in` lines; the engine's request lines are captured and compared
-//                           byte for byte with the `out` lines
+//                           byte for byte with the `out` lines; before each request the runner waits for
+//                           the watch events the transcript promised so far (§8 Ordering, 1.2)
 //   MemoryFs                the in-memory `SyncFs` (path → { content, mtime_ns }) — the walk is §4.2's bytewise order
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
 //
@@ -24,6 +25,7 @@ import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, withIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
 import { selectRepo, RepoSelectionError, type RepoRow } from "../../src/sync/workspace.js";
+import type { WatchEvent } from "../../src/sync/plugin.js";
 import { renderConfigFlags, ensureAdapter, createSource, deleteSource, attachSourceToRepo, detachSourceFromRepo } from "../../src/sync/sources.js";
 import { deepMerge, resolveSettings, writeRepoSettings, writeWorkspaceSettings, type Settings } from "../../src/sync/settings.js";
 import { freshnessSweep, detectDiskDrift, rebuildFileStats, sweepPlan, type StatCacheRow, type SnapshotEntry } from "../../src/sync/freshness.js";
@@ -420,8 +422,8 @@ export interface AdapterExpect {
   capabilities?: { identity: string; write_through: boolean; watch: boolean };
   /** one entry per `out` line, in order */
   results?: unknown[];
-  /** every `{"event":"batch"}` delivered to the watch listener, in order */
-  events?: string[][];
+  /** every event delivered to the watch listener, in order, as parsed JSON: `{"event":"ready"}` | `{"event":"batch","paths":[…]}` (§8, 1.2) */
+  events?: WatchEvent[];
   /** the source failed to connect: `invalid_handshake` | `exited` | `spawn` */
   error?: string;
 }
@@ -454,7 +456,67 @@ function classifyConnectError(e: unknown): string {
   throw e;
 }
 
-async function playRequest(source: SyncSource, line: string, watches: SourceWatch[], events: string[][]): Promise<unknown> {
+/** How long the runner waits for the events a transcript promises before its next request (§8 Ordering); a shortfall fails the case. */
+const EVENT_PATIENCE_MS = 5_000;
+
+/**
+ * The watch listener's log: every event in arrival order, plus `waitFor(n)` —
+ * resolves once at least `n` events arrived, rejects after `EVENT_PATIENCE_MS`.
+ */
+class EventLog {
+  readonly events: WatchEvent[] = [];
+  private waiters: { n: number; resolve: () => void }[] = [];
+  push(ev: WatchEvent): void {
+    this.events.push(ev);
+    const ready = this.waiters.filter((w) => this.events.length >= w.n);
+    this.waiters = this.waiters.filter((w) => this.events.length < w.n);
+    for (const w of ready) w.resolve();
+  }
+  waitFor(n: number, what: string): Promise<void> {
+    if (this.events.length >= n) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiters = this.waiters.filter((w) => w.resolve !== done);
+        reject(new Error(`§8 Ordering: waited ${EVENT_PATIENCE_MS} ms for ${n} watch event(s) before ${what}, received ${this.events.length}: ${JSON.stringify(this.events)}`));
+      }, EVENT_PATIENCE_MS);
+      const done = (): void => { clearTimeout(timer); resolve(); };
+      this.waiters.push({ n, resolve: done });
+    });
+  }
+}
+
+/**
+ * §8 Ordering (1.2): for each `out` entry, how many watch events the listener
+ * must have received before the runner issues it — the `in` event lines (a line
+ * whose JSON has an `event` key) between the `watch` request and that entry.
+ * Event lines before any `watch` request are engine-dropped and not counted;
+ * nor are those after an `unwatch` request (the listener is gone by then).
+ */
+export function promisedEventsBefore(transcript: readonly TranscriptEntry[]): number[] {
+  const counts: number[] = [];
+  let live = false;
+  let n = 0;
+  for (const e of transcript) {
+    if (e.dir === "out") {
+      counts.push(n);
+      const method = (JSON.parse(e.line) as { method?: string }).method;
+      if (method === "watch") live = true;
+      else if (method === "unwatch") live = false;
+    } else if (live && isEventLine(e.line)) n++;
+  }
+  return counts;
+}
+
+function isEventLine(line: string): boolean {
+  try {
+    const v = JSON.parse(line) as unknown;
+    return isRecord(v) && typeof v.event === "string";
+  } catch {
+    return false;
+  }
+}
+
+async function playRequest(source: SyncSource, line: string, watches: SourceWatch[], events: EventLog): Promise<unknown> {
   const req = JSON.parse(line) as { method: string; params?: Record<string, unknown> };
   const p = req.params ?? {};
   try {
@@ -473,7 +535,7 @@ async function playRequest(source: SyncSource, line: string, watches: SourceWatc
         return { ok: true };
       case "watch": {
         if (!source.watch) return { error: "unsupported" };
-        watches.push(await source.watch((paths) => events.push(paths)));
+        watches.push(await source.watch((ev) => events.push(ev)));
         return { ok: true };
       }
       case "unwatch": {
@@ -493,10 +555,12 @@ async function playRequest(source: SyncSource, line: string, watches: SourceWatc
 }
 
 /**
- * Spawn `fake-adapter.mjs` with the transcript; for every `out` entry issue the
- * request it spells through the `SyncSource` and record the result; the adapter
- * plays each `in` line when its turn comes. Returns the expectation and the
- * request lines the adapter received (the runner compares them to the `out` lines).
+ * Spawn `fake-adapter.mjs` with the transcript; for every `out` entry — after
+ * waiting for the watch events the transcript promised before it (§8 Ordering) —
+ * issue the request it spells through the `SyncSource` and record the result;
+ * the adapter plays each `in` line when its turn comes. Returns the expectation
+ * and the request lines the adapter received (the runner compares them to the
+ * `out` lines).
  */
 export async function runAdapterCase(c: Omit<AdapterCase, "expect">, fakeAdapterPath: string): Promise<AdapterEvaluation> {
   const dir = mkdtempSync(join(tmpdir(), "omgbase-sync-spec-"));
@@ -521,17 +585,22 @@ export async function runAdapterCase(c: Omit<AdapterCase, "expect">, fakeAdapter
     }
     const caps = source.capabilities();
     const results: unknown[] = [];
-    const events: string[][] = [];
+    const events = new EventLog();
     const watches: SourceWatch[] = [];
+    const promised = promisedEventsBefore(c.transcript);
     try {
+      let k = 0;
       for (const entry of c.transcript) {
-        if (entry.dir === "out") results.push(await playRequest(source, entry.line, watches, events));
+        if (entry.dir !== "out") continue;
+        await events.waitFor(promised[k]!, `out[${k}] ${entry.line}`);
+        results.push(await playRequest(source, entry.line, watches, events));
+        k++;
       }
     } finally {
       await source.close();
     }
     return {
-      expect: { capabilities: { identity: caps.identity, write_through: caps.writeThrough, watch: caps.watch }, results, events },
+      expect: { capabilities: { identity: caps.identity, write_through: caps.writeThrough, watch: caps.watch }, results, events: events.events },
       received: received(),
     };
   } finally {
@@ -776,6 +845,21 @@ function validateTranscript(at: string, t: unknown, problems: string[]): void {
   if ((t[0] as TranscriptEntry).dir !== "in") problems.push(`${at}.transcript[0]: the first line is the adapter's handshake (dir "in")`);
 }
 
+/** `expect.events` (§8, 1.2): parsed event objects — `{"event":"ready"}` or `{"event":"batch","paths":[string…]}`. */
+function validateWatchEvents(at: string, events: unknown, problems: string[]): void {
+  if (!Array.isArray(events)) {
+    problems.push(`${at}: must be an array of watch events`);
+    return;
+  }
+  events.forEach((ev, i) => {
+    const ok =
+      isRecord(ev) &&
+      ((ev.event === "ready" && Object.keys(ev).length === 1) ||
+        (ev.event === "batch" && Object.keys(ev).length === 2 && Array.isArray(ev.paths) && ev.paths.every((p) => typeof p === "string")));
+    if (!ok) problems.push(`${at}[${i}]: an event is {"event":"ready"} or {"event":"batch","paths":[…]} (got ${JSON.stringify(ev)})`);
+  });
+}
+
 /**
  * Validate a parsed `cases/<suite>.json`; returns the problems found (empty = valid).
  * `file` is the file name (with `.json`); the suite must equal its stem.
@@ -838,7 +922,11 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
         return;
       }
       if (!isRecord(c.expect)) problems.push(`${at}.expect: must be an object`);
-      else if (!("error" in c.expect) && !validateExactKeys(`${at}.expect`, c.expect, ["capabilities", "results", "events"], problems)) return;
+      else if (!("error" in c.expect)) {
+        if (!validateExactKeys(`${at}.expect`, c.expect, ["capabilities", "results", "events"], problems)) return;
+        // A regeneration rewrites `expect`, so its content is only checked when it is trusted.
+        if (requireExpect) validateWatchEvents(`${at}.expect.events`, c.expect.events, problems);
+      }
     } else if (c.kind === "coordinator") {
       // Outline only — packages/sync/corpus/sync validates and runs these.
       onlyKeys(c, ["name", "kind", "notes", "source", "page_limit", "steps", "expect"], at, problems);

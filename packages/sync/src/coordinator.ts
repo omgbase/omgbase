@@ -102,14 +102,16 @@ export class Coordinator {
 
   /**
    * Live source→engine sync: subscribe to the source's change batches and
-   * reconcile each. Returns the subscription (call `.stop()`), or null if the
+   * reconcile each. Returns the subscription (`.ready` resolves once the source
+   * reported its feed primed — spec/sync §5; call `.stop()`), or null if the
    * source cannot watch. Reconcile runs off the batch callback; `onSummary`
    * observes each batch's result, `onError` any failure.
    */
   async watchIn(handlers: { onSummary?: (s: SyncInSummary) => void; onError?: (err: unknown) => void } = {}): Promise<SourceWatch | null> {
     if (!this.source.watch) return null;
-    return this.source.watch((paths) => {
-      this.reconcile(paths).then(
+    return this.source.watch((ev) => {
+      if (ev.event !== "batch") return;
+      this.reconcile(ev.paths).then(
         (s) => handlers.onSummary?.(s),
         (err) => handlers.onError?.(err),
       );

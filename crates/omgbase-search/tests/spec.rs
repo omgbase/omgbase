@@ -29,7 +29,9 @@ use omgbase_search::{
     DocEmbedMethod, EmbeddingProvider, FixtureEmbedder, cosine_f32, hex, sanitize_fts_query,
     token_budget,
 };
-use omgbase_store::{BatchItem, BatchOutcome, HybridQuery, QueryVector, SequentialMinter, Store};
+use omgbase_store::{
+    BatchItem, BatchOutcome, HybridQuery, QueryVector, RebuildTarget, SequentialMinter, Store,
+};
 use rusqlite::Connection;
 use rusqlite::types::Value as Sql;
 use serde_json::{Map as JsonMap, Value as Json, json};
@@ -64,7 +66,7 @@ const CONFIG_KEYS: [&str; 13] = [
 ];
 /// §7: the projections an observation case may carry besides `steps`.
 const PROJECTED_KEYS: [&str; 4] = ["embed_tasks", "doc_tasks", "embeddings", "doc_embeddings"];
-const STEP_KINDS: [&str; 5] = ["observe", "sweep", "drain", "search", "resolve"];
+const STEP_KINDS: [&str; 6] = ["observe", "sweep", "drain", "search", "resolve", "rebuild"];
 
 const PASSING_HEADER: &str = "\
 # Search spec cases (spec/search/cases) that the Rust port must pass, one
@@ -235,6 +237,11 @@ fn validate_steps(at: &str, steps: Option<&Json>, problems: &mut Vec<String>) ->
             "drain" => {
                 if body != &Json::Bool(true) {
                     problems.push(format!("{here}: drain is `true`"));
+                }
+            }
+            "rebuild" => {
+                if body != &Json::String("fts".to_owned()) {
+                    problems.push(format!("{here}: rebuild is `\"fts\"`"));
                 }
             }
             "search" | "resolve" => {
@@ -732,6 +739,12 @@ fn run_case_script(c: &Json) -> Result<Evaluation, String> {
             steps.push(
                 resolve_step(&store, &repo_id, resolve).map_err(|e| format!("step {i}: {e}"))?,
             );
+        } else if step.get("rebuild").is_some() {
+            // README §1.1 / §7: 'delete-all' then every live leaf of every live doc.
+            store
+                .rebuild_index(RebuildTarget::Fts)
+                .map_err(|e| format!("step {i}: {e}"))?;
+            steps.push(json!({ "rebuilt": "fts" }));
         } else {
             return Err(format!("step {i}: unknown step"));
         }
@@ -805,6 +818,25 @@ fn project_search(store: &Store, repo_id: &str) -> omgbase_store::Result<Vec<(St
 /// and (the fixture embedder being the only provider) the fixture model.
 fn check_search(conn: &Connection, _repo_id: &str) -> Vec<String> {
     let mut problems = Vec::new();
+    // README §1.1: the index holds exactly the live leaf rows (the indexed
+    // rowids are read off the `blocks_fts_docsize` shadow table).
+    let ids = |sql: &str| -> Vec<i64> {
+        let mut stmt = conn.prepare(sql).expect("shadow table query");
+        stmt.query_map([], |r| r.get::<_, i64>(0))
+            .expect("query")
+            .map(|r| r.expect("row"))
+            .collect()
+    };
+    let indexed = ids("SELECT id FROM blocks_fts_docsize ORDER BY id");
+    let leaves = ids(&format!(
+        "SELECT b.rowid FROM blocks b WHERE {} ORDER BY b.rowid",
+        omgbase_store::LIVE_LEAF_SQL
+    ));
+    if indexed != leaves {
+        problems.push(format!(
+            "blocks_fts indexes rowids {indexed:?} but the live leaves are {leaves:?}"
+        ));
+    }
     for row in query_rows(
         conn,
         "SELECT content_hash, ctx_hash, model, dim, length(vec) AS len FROM embeddings",

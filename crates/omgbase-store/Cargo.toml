@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-store"
-version = "13.4.4"
+version = "13.4.5"
 description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
 keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -29,7 +29,7 @@ omgbase-graph = { version = "1.1.0", path = "../omgbase-graph" }
 # The search layer (`spec/search`): the FTS sanitizer, embedding inputs and
 # cache keys, pooling, cosine, fusion and boosts, the provider seam; the
 # store runs the queries and the drain over its caches (store 13.3).
-omgbase-search = { version = "1.1.0", path = "../omgbase-search" }
+omgbase-search = { version = "1.2.0", path = "../omgbase-search" }
 # The mutation kernel (`spec/mutate`): the working tree, the six ops, the
 # renderer, the lowering and the opset; the store loads, applies, commits
 # (`api` ingest with known ids), runs the macros and document operations

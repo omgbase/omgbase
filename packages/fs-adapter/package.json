@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/fs-adapter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open Markdown Graph Base — filesystem sync adapter (walk/watch/read/write a directory tree), spoken to over stdio",
   "license": "MIT",
   "repository": {

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, EngineError, type RepoRow, type Workspace } from "@omgbase/core";
+import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EngineError, type RepoRow, type Workspace } from "@omgbase/core";
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -100,8 +100,11 @@ function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
   return EXIT_OK;
 }
 
-// Local live watcher (the former `omg watch`): prime with a sweep, then run the
-// external fs-adapter watcher until a signal, keeping embeddings warm.
+// Local live watcher (the former `omg watch`), in the order of spec/sync §5:
+// take the lease, open the source, `watch`, wait for `ready` (bounded), THEN the
+// priming sweep, then report live — so an edit landing before the feed is primed
+// is caught by the sweep and one landing after it by the feed. Runs until a
+// signal, keeping embeddings warm.
 async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<number> {
   const lease = WatchLease.tryAcquire(ws.omgbaseDir);
   if (!lease) throw new EngineErrorLike("target_missing", "another watcher already holds the lease for this workspace");
@@ -125,8 +128,6 @@ async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<nu
       })
     : null;
 
-  if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // start fresh
-
   const source = await openRepoSource(ws.store, repo);
   if (!source) {
     cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to watch`));
@@ -146,6 +147,10 @@ async function runLocalWatch(cli: Cli, ws: Workspace, repo: RepoRow): Promise<nu
     onError: (err) => cli.io.err(cli.style.err(`  watch error: ${String(err)}`)),
   });
   await watcher.start();
+  if (!(await awaitReady(watcher.ready(), WATCH_READY_PATIENCE_MS))) {
+    cli.io.err(cli.style.dim(`  the fs adapter did not report ready within ${WATCH_READY_PATIENCE_MS / 1000}s — proceeding as if ready (an edit made before now may be missed until the next sweep)`));
+  }
+  if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // prime: anything that landed before the feed was ready
   drainer?.schedule(); // embed anything already stale at startup, in the background
   cli.io.err(cli.style.dim(`  watching ${repo.slug} — Ctrl-C to stop${drainer ? " · auto-embed on" : ""}`));
 

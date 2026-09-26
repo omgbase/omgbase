@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::engine::{EngineClient, FileBytes};
 use crate::error::Result;
-use crate::source::SyncSource;
+use crate::source::{SyncSource, WatchEvent};
 
 /// What a `sync_in`/`reconcile` did, by path.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -155,9 +155,12 @@ impl<'a> Coordinator<'a> {
     }
 
     /// Live source → engine: subscribe when the source can watch; `None`
-    /// otherwise. Drive the stream with [`Coordinator::handle_batches`] or
-    /// call [`Coordinator::reconcile`] per received batch.
-    pub fn watch_in(&mut self) -> Result<Option<Receiver<Vec<String>>>> {
+    /// otherwise. The stream yields [`WatchEvent::Ready`] once the feed is
+    /// primed (a host waits for it — [`crate::wait_ready`] — before its
+    /// priming sweep, §5), then batches. Drive it with
+    /// [`Coordinator::handle_batches`] or call [`Coordinator::reconcile`] per
+    /// received batch.
+    pub fn watch_in(&mut self) -> Result<Option<Receiver<WatchEvent>>> {
         if !self.source.capabilities().watch {
             return Ok(None);
         }
@@ -165,14 +168,18 @@ impl<'a> Coordinator<'a> {
     }
 
     /// Reconcile every batch the stream yields until it closes (the adapter
-    /// exited or `unwatch` ran), reporting each summary or error.
+    /// exited or `unwatch` ran), reporting each summary or error. `Ready` is
+    /// not a batch and is skipped.
     pub fn handle_batches(
         &mut self,
-        batches: &Receiver<Vec<String>>,
+        events: &Receiver<WatchEvent>,
         mut on_summary: impl FnMut(SyncInSummary),
         mut on_error: impl FnMut(crate::error::Error),
     ) {
-        for paths in batches.iter() {
+        for event in events.iter() {
+            let WatchEvent::Batch(paths) = event else {
+                continue;
+            };
             match self.reconcile(&paths) {
                 Ok(s) => on_summary(s),
                 Err(e) => on_error(e),
@@ -323,7 +330,7 @@ mod tests {
         let mut co = Coordinator::new(&mut engine, &mut source);
         let mut summaries = Vec::new();
         co.handle_batches(&rx, |s| summaries.push(s), |e| panic!("{e}"));
-        assert_eq!(summaries.len(), 2);
+        assert_eq!(summaries.len(), 2, "the leading `Ready` is not a batch");
         assert_eq!(summaries[0].ingested, ["a.md"]);
         assert!(
             summaries[1].deleted.is_empty(),

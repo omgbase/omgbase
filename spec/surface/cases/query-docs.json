@@ -1785,6 +1785,164 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "planned-null-vs-list-property",
+      "notes": "§1 planner decline (a): `null` against a property read is declined — `tags` is list-valued on 17 docs (a scalar only on substances/mercury.md); the scalar-in-scope subquery reads NULL for a list, so a pushed `tags != null` kept only mercury where in memory the array is not null. Every doc.",
+      "query": "select $path from docs where tags != null",
+      "limit": 100,
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "index.md",
+            "$path": "index.md"
+          },
+          {
+            "id": "d_1",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "d_2",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md"
+          },
+          {
+            "id": "d_3",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "d_4",
+            "path": "practitioners/maria-prophetissa.md",
+            "$path": "practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "d_5",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md"
+          },
+          {
+            "id": "d_6",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md"
+          },
+          {
+            "id": "d_7",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md"
+          },
+          {
+            "id": "d_8",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md"
+          },
+          {
+            "id": "d_9",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md"
+          },
+          {
+            "id": "d_10",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md"
+          },
+          {
+            "id": "d_11",
+            "path": "substances/mercury.md",
+            "$path": "substances/mercury.md"
+          },
+          {
+            "id": "d_12",
+            "path": "substances/philosophers-stone.md",
+            "$path": "substances/philosophers-stone.md"
+          },
+          {
+            "id": "d_13",
+            "path": "substances/prima-materia.md",
+            "$path": "substances/prima-materia.md"
+          },
+          {
+            "id": "d_14",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md"
+          },
+          {
+            "id": "d_15",
+            "path": "substances/sulphur.md",
+            "$path": "substances/sulphur.md"
+          },
+          {
+            "id": "d_16",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md"
+          },
+          {
+            "id": "d_17",
+            "path": "texts/mutus-liber.md",
+            "$path": "texts/mutus-liber.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-null-vs-list-property-negative",
+      "notes": "§1 planner decline (a): the complement: a pushed `tags == null` was NULL IS NULL on the 17 list-valued docs; in memory no doc lacks tags. Zero hits.",
+      "query": "from docs where tags == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-bool-property-vs-number-literal",
+      "notes": "§1 planner decline (a): a number literal against a property read is declined — `val_bool` is 1/0 in the properties table, so a pushed `verified == 1` matched the 14 verified docs; in memory `true == 1` is false. Zero hits.",
+      "query": "from docs where verified == 1",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-source-handle-is-not-a-property",
+      "notes": "§1 planner decline (b): `frontmatter` is a source handle, not a property key — a pushed read was the scalar-property subquery for key 'frontmatter' (NULL) IS NULL on every doc; in memory the handle is an object. Zero hits.",
+      "query": "from docs where frontmatter == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-doc-relation-is-not-a-property",
+      "notes": "§1 planner decline (b): `nodes` on docs is a relation (§9: `nodes == null` was NULL IS NULL, every row). Zero hits.",
+      "query": "from docs where nodes == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-relational-text-vs-num",
+      "notes": "§1 planner decline (a), the relational shape: a relational comparison between a text column and a number literal is declined — a pushed `path > 5` kept every doc (text sorts after integers in SQLite); in memory mixed kinds never order. Zero hits.",
+      "query": "from docs where $path > 5",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
     }
   ]
 }

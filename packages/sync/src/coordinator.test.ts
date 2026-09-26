@@ -27,16 +27,17 @@ class MemorySource implements SyncSource {
     this.files.delete(path);
     return Promise.resolve();
   }
-  watch(onBatch: WatchListener): Promise<SourceWatch> {
-    this.listener = onBatch;
-    return Promise.resolve({ stop: () => { this.listener = null; return Promise.resolve(); } });
+  watch(listener: WatchListener): Promise<SourceWatch> {
+    this.listener = listener;
+    listener({ event: "ready" }); // an in-process source is primed at once
+    return Promise.resolve({ ready: Promise.resolve(), stop: () => { this.listener = null; return Promise.resolve(); } });
   }
   close(): Promise<void> {
     return Promise.resolve();
   }
   /** test helper: pretend the source emitted a change batch. */
   emit(paths: string[]): void {
-    this.listener?.(paths);
+    this.listener?.({ event: "batch", paths });
   }
 }
 
@@ -104,6 +105,7 @@ describe("Coordinator", () => {
     const summaries: number[] = [];
     const sub = await coord.watchIn({ onSummary: (s) => summaries.push(s.ingested.length) });
     expect(sub).not.toBeNull();
+    await expect(sub!.ready).resolves.toBeUndefined(); // spec/sync §5: the subscription surfaces readiness
 
     source.files.set("w.md", "# W\n");
     source.emit(["w.md"]);

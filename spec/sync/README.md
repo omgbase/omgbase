@@ -350,7 +350,10 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   delivered: the response is awaited by the call itself, and before the
   next request the runner waits (bounded, a shortfall is a failure) until
   the listener has received as many events as there are `in` event lines
-  between the `watch` request and that `out` entry — so an event the
+  inside a **live watch window** — after a `watch` request and before the
+  next `unwatch` request — that precede that `out` entry (an event line
+  after `unwatch` is dropped by the engine, whose listener is gone before
+  the request goes out, and is not waited for either) — so an event the
   adapter emits between a response and the next request is never lost to
   the runner sending `unwatch` first (§9: `watch-events-unwatch` was
   timing-dependent in both runners). Event lines before a `watch` request

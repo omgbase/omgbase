@@ -16,7 +16,9 @@ use omgbase_reconcile::{
 };
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::derived::{fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool};
+use crate::derived::{
+    EvictRow, fts_before_evict_rows, fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool,
+};
 use crate::error::{Error, Result};
 use crate::graph::{
     adopt_phantoms, maintain_edges, project_section_nodes, resolve_edges, write_doc_nodes,
@@ -390,28 +392,41 @@ fn flatten_rows(
 }
 
 /// §5.4 step 8: delete another document's `blocks` row for each id (its FTS
-/// entry first when live) and the id's pool row.
+/// entry first when it is a live leaf, `spec/search` §1.1 — leaf-ness decided
+/// over the table before any row goes, a parent left childless re-indexed)
+/// and the id's pool row.
 fn evict_foreign_block_rows(conn: &Connection, doc_id: &str, ids: &[String]) -> Result<()> {
+    let mut rows = Vec::new();
     for id in ids {
-        let row: Option<(i64, String, Option<String>)> = conn
+        let row: Option<EvictRow> = conn
             .query_row(
-                "SELECT rowid, text, deleted_commit FROM blocks WHERE block_id = ?1 AND doc_id != ?2",
+                "SELECT rowid, block_id, doc_id, parent_block, text, deleted_commit IS NULL
+                 FROM blocks WHERE block_id = ?1 AND doc_id != ?2",
                 params![id, doc_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| {
+                    Ok(EvictRow {
+                        rowid: r.get(0)?,
+                        block_id: r.get(1)?,
+                        doc_id: r.get(2)?,
+                        parent_block: r.get(3)?,
+                        text: r.get(4)?,
+                        live: r.get(5)?,
+                    })
+                },
             )
             .optional()?;
-        if let Some((rowid, text, deleted_commit)) = row {
-            if deleted_commit.is_none() {
-                conn.execute(
-                    "INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?1, ?2)",
-                    params![rowid, text],
-                )?;
-            }
-            conn.execute(
-                "DELETE FROM blocks WHERE block_id = ?1 AND doc_id != ?2",
-                params![id, doc_id],
-            )?;
+        if let Some(row) = row {
+            rows.push(row);
         }
+    }
+    fts_before_evict_rows(conn, &rows)?;
+    for r in &rows {
+        conn.execute(
+            "DELETE FROM blocks WHERE block_id = ?1 AND doc_id != ?2",
+            params![r.block_id, doc_id],
+        )?;
+    }
+    for id in ids {
         conn.execute(
             "DELETE FROM resurrection_pool WHERE block_id = ?1",
             params![id],

@@ -26,6 +26,22 @@
 //! translated (the only context [`oqx::partition_pushable`] pushes into):
 //! `||`, `!`, `in`, `matches` (no regexp UDF) and bare content-property
 //! routing are declined and stay residual.
+//!
+//! The surface 1.1 patch (`spec/surface` §1, §9) added two more declines
+//! here, both about SQLite seeing less type than the in-memory engine does:
+//!
+//! * **Operand typing** ([`Ty`], [`comparable`]): JSON `true` and `1` are
+//!   both `1` after `json_extract`, and a property's `val_bool` / `val_num`
+//!   coalesce into one column, so a boolean or number literal against a JSON
+//!   or property read cannot be compared faithfully; `null` against a
+//!   property read cannot either (a list-valued or nested key has no scalar
+//!   row, so SQL reads `NULL` where the in-memory value is an array or an
+//!   object). See the matrix at [`comparable`].
+//! * **Handles are not properties** ([`non_property_handles`]): a bare
+//!   identifier or `doc.<k>` head that names a relation, reach-through
+//!   handle, source handle or bag (`nodes`, `doc`, `frontmatter`, `attrs`, …)
+//!   resolves to rows or an object in memory, never to a property row or a
+//!   JSON attribute, so it is declined rather than read as a key.
 
 use oqx::Value;
 use oqx::ast::{BinaryOp, Expr, LogicalOp};
@@ -60,15 +76,157 @@ impl Frag {
     }
 }
 
+// ---- operand typing ----------------------------------------------------------------
+
+/// What a translated operand carries in SQL, as far as the translator can
+/// tell statically. The comparison gate ([`comparable`]) declines the pairs
+/// SQLite would compare with less type than the in-memory engine has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ty {
+    /// A string literal or binding, a text column, a text intrinsic,
+    /// `lower()` / `upper()` output.
+    Text,
+    /// An integer intrinsic (`$ordinal`, `$depth`).
+    Int,
+    /// A number literal or binding.
+    Num,
+    /// A boolean literal or binding.
+    Bool,
+    /// A `json_extract` read (an `attrs` path or a bare attribute name):
+    /// JSON `true` and `1` both surface as `1`.
+    Json,
+    /// A document property scalar (bare key on docs, `doc.<k>`): `val_bool`,
+    /// `val_num` and `val_text` coalesce into one column, and a list-valued or
+    /// nested key has no scalar row (`NULL`).
+    Prop,
+    /// `null` (or an absent binding).
+    Null,
+}
+
+/// The comparison gate (`spec/surface` §1), stated positively: a pair pushes
+/// only when it is provably compared the same way in SQLite and in memory.
+///
+/// **Equality** (`==`, `!=`) pushes iff one operand is `Text` (SQLite's typed
+/// comparison and strict equality agree that a string equals nothing but an
+/// equal string), or one is `Null` and the other is not `Prop` (a list-valued
+/// or nested key has no scalar row, so SQL reads `NULL` where memory has an
+/// array or an object), or both are numeric (`Int` / `Num`):
+///
+/// ```text
+///          Text   Int    Num    Bool   Null   Json   Prop
+///   Text   push   push   push   push   push   push   push
+///   Int    push   push   push   decl   push   decl   decl
+///   Num    push   push   push   decl   push   decl   decl
+///   Bool   push   decl   decl   decl   push   decl   decl
+///   Null   push   push   push   push   push   push   decl
+///   Json   push   decl   decl   decl   push   decl   decl
+///   Prop   push   decl   decl   decl   decl   decl   decl
+/// ```
+///
+/// **Relational** (`<`, `<=`, `>`, `>=`) pushes iff both operands are `Text`
+/// or both are numeric; every other cell declines (SQLite orders every
+/// integer before every text, `NULL` compares to nothing):
+///
+/// ```text
+///          Text   Int    Num    Bool   Null   Json   Prop
+///   Text   push   decl   decl   decl   decl   decl   decl
+///   Int    decl   push   push   decl   decl   decl   decl
+///   Num    decl   push   push   decl   decl   decl   decl
+///   Bool   decl   decl   decl   decl   decl   decl   decl
+///   Null   decl   decl   decl   decl   decl   decl   decl
+///   Json   decl   decl   decl   decl   decl   decl   decl
+///   Prop   decl   decl   decl   decl   decl   decl   decl
+/// ```
+///
+/// Why the declines: SQLite sees JSON `true` and `1`, `val_bool` and
+/// `val_num` alike (`checked == 1`, `$ordinal == checked`, `true == 1`
+/// binds as `1 IS 1`), orders every integer before every text
+/// (`$ordinal < "3"`, `level < "x"`), and two JSON or property reads carry
+/// no type at plan time.
+#[must_use]
+pub fn comparable(op: BinaryOp, a: Ty, b: Ty) -> bool {
+    use Ty::{Int, Null, Num, Prop, Text};
+    let numeric = |t: Ty| matches!(t, Int | Num);
+    let both_numeric = numeric(a) && numeric(b);
+    if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+        a == Text
+            || b == Text
+            || (a == Null && b != Prop)
+            || (b == Null && a != Prop)
+            || both_numeric
+    } else {
+        (a == Text && b == Text) || both_numeric
+    }
+}
+
+/// The [`Ty`] of a literal or bound value; `None` for a non-scalar (an array,
+/// an object, a range), which has no faithful SQL binding.
+fn const_ty(v: &Value) -> Option<Ty> {
+    Some(match v {
+        Value::Str(_) => Ty::Text,
+        Value::Number(_) => Ty::Num,
+        Value::Bool(_) => Ty::Bool,
+        Value::Null | Value::Undefined => Ty::Null,
+        Value::Array(_) | Value::Object(_) | Value::Range(_) => return None,
+    })
+}
+
+// ---- handles -----------------------------------------------------------------------
+
+/// The bare names that resolve to something other than a property or
+/// attribute on each target — the self alias, the reach-through handles, the
+/// relations and the bags (`spec/surface` §1.2) — exactly the keys
+/// [`crate::StoreContext`]'s `get` answers before its property fallback. A
+/// comparison against one of these is declined rather than read as a key
+/// (`nodes == null` is not `NULL IS NULL`). A unit test proves the sets
+/// match the context.
+#[must_use]
+pub fn non_property_handles(t: Target) -> &'static [&'static str] {
+    match t {
+        Target::Docs => &[
+            "doc",
+            "blocks",
+            "nodes",
+            "out",
+            "in",
+            "out_edges",
+            "in_edges",
+            "frontmatter",
+            "inline",
+        ],
+        Target::Blocks => &[
+            "block",
+            "doc",
+            "children",
+            "nodes",
+            "out_edges",
+            "section",
+            "attrs",
+        ],
+        Target::Nodes => &[
+            "section",
+            "doc",
+            "block",
+            "blocks",
+            "subsections",
+            "children",
+            "attrs",
+        ],
+        Target::Edges => &["doc"],
+    }
+}
+
 // ---- intrinsics ------------------------------------------------------------------
 
-/// A `$`-namespaced intrinsic → a param-free SQL scalar, per target. Anything
-/// not mapped (docs `$body`, reconstructed; `$title` / `$tags`, computed;
-/// blocks `$updated_at`; nodes `$locator`) returns `None` → residual.
-/// `$updated_at` / `$dst_path` / `$dst_uri` are correlated subqueries.
-fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<String> {
+/// A `$`-namespaced intrinsic → a param-free SQL scalar and its type, per
+/// target. Anything not mapped (docs `$body`, reconstructed; `$title` /
+/// `$tags`, computed; blocks `$updated_at`; nodes `$locator`) returns `None`
+/// → residual. `$updated_at` / `$dst_path` / `$dst_uri` are correlated
+/// subqueries. Only `$ordinal` / `$depth` are integers; every other mapped
+/// intrinsic is text.
+fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
     let (s, d) = (ctx.self_alias, ctx.doc_alias);
-    Some(match (ctx.target, name) {
+    let sql = match (ctx.target, name) {
         (Target::Docs, "$id") => format!("{s}.doc_id"),
         (Target::Docs, "$path") => format!("{d}.path"),
         (Target::Docs, "$content_hash") => format!("lower(hex({s}.file_hash))"),
@@ -78,8 +236,8 @@ fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<String> {
         (Target::Blocks, "$id") => format!("{s}.block_id"),
         (Target::Blocks, "$doc") => format!("{s}.doc_id"),
         (Target::Blocks, "$path") => format!("{d}.path"),
-        (Target::Blocks, "$ordinal") => format!("{s}.ordinal"),
-        (Target::Blocks, "$depth") => format!("{s}.depth"),
+        (Target::Blocks, "$ordinal") => return Some((format!("{s}.ordinal"), Ty::Int)),
+        (Target::Blocks, "$depth") => return Some((format!("{s}.depth"), Ty::Int)),
         (Target::Blocks, "$body") => format!("{s}.text"),
         (Target::Blocks, "$content_hash") => format!("lower(hex({s}.raw_hash))"),
         (Target::Nodes, "$id" | "$node_id") => format!("{s}.node_id"),
@@ -100,12 +258,15 @@ fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<String> {
             format!("(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = {s}.dst_node)")
         }
         _ => return None,
-    })
+    };
+    Some((sql, Ty::Text))
 }
 
 /// docs intrinsics whose BARE (non-`$`) form is a loud error in-memory — not
-/// pushable, so the residual raises the guard.
-const RESERVED_DOC_BASENAMES: [&str; 5] = ["id", "path", "updated_at", "content_hash", "body"];
+/// pushable, so the residual raises the guard (and the planner declines the
+/// whole query when such a read is left residual, see [`crate::planner`]).
+pub(crate) const RESERVED_DOC_BASENAMES: [&str; 5] =
+    ["id", "path", "updated_at", "content_hash", "body"];
 
 /// An injection-safe inlined identifier: `^[A-Za-z_][A-Za-z0-9_]*$`.
 fn is_seg(s: &str) -> bool {
@@ -161,53 +322,69 @@ fn member_segments(e: &Expr) -> Option<Vec<&str>> {
 /// receiver, function argument) to a SQL scalar. `None` if not faithfully
 /// translatable.
 pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
+    typed_value(e, ctx).map(|(frag, _)| frag)
+}
+
+/// [`translate_value`] plus the operand's [`Ty`], for the comparison gate.
+pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
     let (s, d, target) = (ctx.self_alias, ctx.doc_alias, ctx.target);
+    let text = |sql: String| Some((Frag::bare(sql), Ty::Text));
+    let constant = |v: &Value| {
+        Some((
+            Frag {
+                sql: "?".to_owned(),
+                params: vec![to_sql(v)],
+            },
+            const_ty(v)?,
+        ))
+    };
     match e {
-        Expr::Lit(v) => Some(Frag {
-            sql: "?".to_owned(),
-            params: vec![to_sql(v)],
-        }),
-        Expr::Binding { index } => Some(Frag {
-            sql: "?".to_owned(),
-            params: vec![to_sql(ctx.params.get(*index).unwrap_or(&Value::Undefined))],
-        }),
+        Expr::Lit(v) => constant(v),
+        Expr::Binding { index } => constant(ctx.params.get(*index).unwrap_or(&Value::Undefined)),
         Expr::Ident { name } => {
             if name.starts_with('$') {
-                return intrinsic_sql(name, ctx).map(Frag::bare);
+                return intrinsic_sql(name, ctx).map(|(sql, ty)| (Frag::bare(sql), ty));
             }
             let name = name.as_str();
+            // A relation, reach-through handle, source handle or bag is not a
+            // property read (§1): rows or an object in memory, never a key.
+            if non_property_handles(target).contains(&name) {
+                return None;
+            }
             match target {
                 Target::Docs => {
                     // `format` is a column, not a property.
                     if name == "format" {
-                        return Some(Frag::bare(format!("{s}.format")));
+                        return text(format!("{s}.format"));
                     }
                     // A reserved basename stays residual so the guard fires.
                     if RESERVED_DOC_BASENAMES.contains(&name) {
                         return None;
                     }
-                    prop_scalar(d, name).map(Frag::bare)
+                    prop_scalar(d, name).map(|sql| (Frag::bare(sql), Ty::Prop))
                 }
                 Target::Blocks => {
                     if name == "type" || name == "text" {
-                        return Some(Frag::bare(format!("{s}.{name}")));
+                        return text(format!("{s}.{name}"));
                     }
                     // A bare non-structural identifier flattens into attrs —
                     // the same pushdown as the `attrs.<k>` member form.
-                    json_extract(&format!("{s}.attrs"), &[name]).map(Frag::bare)
+                    json_extract(&format!("{s}.attrs"), &[name])
+                        .map(|sql| (Frag::bare(sql), Ty::Json))
                 }
                 Target::Nodes => {
                     if matches!(name, "kind" | "name" | "value") {
-                        return Some(Frag::bare(format!("{s}.{name}")));
+                        return text(format!("{s}.{name}"));
                     }
-                    json_extract(&format!("{s}.attrs"), &[name]).map(Frag::bare)
+                    json_extract(&format!("{s}.attrs"), &[name])
+                        .map(|sql| (Frag::bare(sql), Ty::Json))
                 }
                 Target::Edges => {
                     if matches!(
                         name,
                         "predicate" | "provenance" | "dst_kind" | "anchor" | "src_field"
                     ) {
-                        return Some(Frag::bare(format!("{s}.{name}")));
+                        return text(format!("{s}.{name}"));
                     }
                     None
                 }
@@ -221,7 +398,8 @@ pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
             }
             // attrs.<path> → json_extract on the row's attrs (blocks/nodes).
             if *head == "attrs" && matches!(target, Target::Blocks | Target::Nodes) {
-                return json_extract(&format!("{s}.attrs"), rest).map(Frag::bare);
+                return json_extract(&format!("{s}.attrs"), rest)
+                    .map(|sql| (Frag::bare(sql), Ty::Json));
             }
             // doc.<x> reach-through — the owning doc (alias `doc`). On the docs
             // target `doc` is the row itself; either way it resolves against `d`.
@@ -231,15 +409,20 @@ pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
                 }
                 let k = rest[0];
                 if k == "$path" {
-                    return Some(Frag::bare(format!("{d}.path")));
+                    return text(format!("{d}.path"));
                 }
                 if k == "format" {
-                    return Some(Frag::bare(format!("{d}.format")));
+                    return text(format!("{d}.format"));
                 }
-                if k.starts_with('$') || RESERVED_DOC_BASENAMES.contains(&k) {
+                // `doc.nodes`, `doc.frontmatter`, `doc.doc`… are the doc's
+                // handles, not its properties.
+                if k.starts_with('$')
+                    || RESERVED_DOC_BASENAMES.contains(&k)
+                    || non_property_handles(Target::Docs).contains(&k)
+                {
                     return None;
                 }
-                return prop_scalar(d, k).map(Frag::bare);
+                return prop_scalar(d, k).map(|sql| (Frag::bare(sql), Ty::Prop));
             }
             // block.type / block.text reach-through from a node.
             if *head == "block"
@@ -247,10 +430,10 @@ pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
                 && rest.len() == 1
                 && matches!(rest[0], "type" | "text")
             {
-                return Some(Frag::bare(format!(
+                return text(format!(
                     "(SELECT bb.{} FROM blocks bb WHERE bb.block_id = {s}.block_id)",
                     rest[0]
-                )));
+                ));
             }
             None
         }
@@ -261,10 +444,13 @@ pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
             args,
         } if args.is_empty() && (name == "lower" || name == "upper") => {
             let recv = translate_value(recv, ctx)?;
-            Some(Frag {
-                sql: format!("{name}({})", recv.sql),
-                params: recv.params,
-            })
+            Some((
+                Frag {
+                    sql: format!("{name}({})", recv.sql),
+                    params: recv.params,
+                },
+                Ty::Text,
+            ))
         }
         _ => None,
     }
@@ -306,9 +492,15 @@ pub fn translate_predicate(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
         ),
         Expr::Binary { op, left, right } => {
             // An arithmetic operator in predicate position → residual.
-            let op = is_op(*op)?;
-            let l = translate_value(left, ctx)?;
-            let r = translate_value(right, ctx)?;
+            let sql_op = is_op(*op)?;
+            let (l, lt) = typed_value(left, ctx)?;
+            let (r, rt) = typed_value(right, ctx)?;
+            // The operand-typing gate (§1): the pairs SQLite would compare
+            // with less type than the engine has stay residual.
+            if !comparable(*op, lt, rt) {
+                return None;
+            }
+            let op = sql_op;
             // `==`/`!=` → IS / IS NOT (absence-normalized equality, faithful in
             // any context). Relational ops → plain SQL: a NULL operand yields
             // NULL, which is excluded in the positive AND context these
@@ -549,22 +741,431 @@ mod tests {
 
     #[test]
     fn booleans_bind_as_one_and_zero() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        // (against a text column — a boolean against a JSON or property read
+        // is declined, see the matrix tests)
         assert_eq!(
-            translate_predicate(&pred("verified == true"), &DOCS).map(|f| f.params),
+            translate_predicate(&pred("type == true"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Integer(1)])
         );
         assert_eq!(
-            translate_predicate(&pred("verified == false"), &DOCS).map(|f| f.params),
+            translate_predicate(&pred("type == false"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Integer(0)])
         );
         assert_eq!(
-            translate_predicate(&pred("era < 1000"), &DOCS).map(|f| f.params),
+            translate_predicate(&pred("$ordinal < 1000"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Real(1000.0)])
         );
         assert_eq!(
-            translate_predicate(&pred("layer == null"), &DOCS).map(|f| f.params),
+            translate_predicate(&pred("$path == null"), &DOCS).map(|f| f.params),
             Some(vec![SqlValue::Null])
         );
+    }
+
+    // -- decline (a): operand typing (spec/surface §1) --
+
+    /// One representative expression per [`Ty`] on the blocks target (the only
+    /// target with an integer intrinsic; `doc.<k>` is its property read).
+    const REPRESENTATIVES: [(Ty, &str); 7] = [
+        (Ty::Text, "$path"),
+        (Ty::Int, "$ordinal"),
+        (Ty::Num, "1"),
+        (Ty::Bool, "true"),
+        (Ty::Null, "null"),
+        (Ty::Json, "checked"),
+        (Ty::Prop, "doc.layer"),
+    ];
+
+    #[test]
+    fn representatives_carry_their_type() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        for (ty, src) in REPRESENTATIVES {
+            let (_, got) = typed_value(&pred(src), &blocks).expect(src);
+            assert_eq!(got, ty, "{src}");
+        }
+        assert_eq!(
+            typed_value(&pred("attrs.a.b"), &blocks).map(|(_, t)| t),
+            Some(Ty::Json)
+        );
+        assert_eq!(
+            typed_value(&pred("$depth"), &blocks).map(|(_, t)| t),
+            Some(Ty::Int)
+        );
+        assert_eq!(
+            typed_value(&pred("type.lower()"), &blocks).map(|(_, t)| t),
+            Some(Ty::Text)
+        );
+        assert_eq!(
+            typed_value(&pred("checked.upper()"), &blocks).map(|(_, t)| t),
+            Some(Ty::Text)
+        );
+        assert_eq!(
+            typed_value(&pred("layer"), &DOCS).map(|(_, t)| t),
+            Some(Ty::Prop)
+        );
+        assert_eq!(
+            typed_value(&pred("format"), &DOCS).map(|(_, t)| t),
+            Some(Ty::Text)
+        );
+    }
+
+    #[test]
+    fn the_comparison_matrix_decides_every_cell() {
+        // Row/column order: Text Int Num Bool Null Json Prop.
+        const P: bool = true;
+        const D: bool = false;
+        // Equality: one side text, or null against a non-property, or both numeric.
+        #[rustfmt::skip]
+        const EQUALITY: [[bool; 7]; 7] = [
+            /* Text */ [P, P, P, P, P, P, P],
+            /* Int  */ [P, P, P, D, P, D, D],
+            /* Num  */ [P, P, P, D, P, D, D],
+            /* Bool */ [P, D, D, D, P, D, D],
+            /* Null */ [P, P, P, P, P, P, D],
+            /* Json */ [P, D, D, D, P, D, D],
+            /* Prop */ [P, D, D, D, D, D, D],
+        ];
+        // Relational: both text or both numeric, nothing else.
+        #[rustfmt::skip]
+        const RELATIONAL: [[bool; 7]; 7] = [
+            /* Text */ [P, D, D, D, D, D, D],
+            /* Int  */ [D, P, P, D, D, D, D],
+            /* Num  */ [D, P, P, D, D, D, D],
+            /* Bool */ [D, D, D, D, D, D, D],
+            /* Null */ [D, D, D, D, D, D, D],
+            /* Json */ [D, D, D, D, D, D, D],
+            /* Prop */ [D, D, D, D, D, D, D],
+        ];
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        let ops = [
+            (BinaryOp::Eq, "==", &EQUALITY),
+            (BinaryOp::Ne, "!=", &EQUALITY),
+            (BinaryOp::Lt, "<", &RELATIONAL),
+            (BinaryOp::Le, "<=", &RELATIONAL),
+            (BinaryOp::Gt, ">", &RELATIONAL),
+            (BinaryOp::Ge, ">=", &RELATIONAL),
+        ];
+        for (i, (a, l)) in REPRESENTATIVES.iter().enumerate() {
+            for (j, (b, r)) in REPRESENTATIVES.iter().enumerate() {
+                for (op, spelled, matrix) in ops {
+                    let want = matrix[i][j];
+                    assert_eq!(matrix[j][i], want, "the matrix is symmetric ({a:?}, {b:?})");
+                    assert_eq!(
+                        comparable(op, *a, *b),
+                        want,
+                        "comparable({spelled}, {a:?}, {b:?})"
+                    );
+                    let src = format!("{l} {spelled} {r}");
+                    assert_eq!(
+                        translate_predicate(&pred(&src), &blocks).is_some(),
+                        want,
+                        "{src}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_spec_shapes_of_decline_a() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        // a boolean or number against a JSON read
+        assert_eq!(translate_predicate(&pred("checked == 1"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("checked == true"), &blocks), None);
+        assert_eq!(
+            translate_predicate(&pred("attrs.checked == true"), &blocks),
+            None
+        );
+        // … or a property read (bare on docs, `doc.<k>` elsewhere)
+        assert_eq!(translate_predicate(&pred("verified == 1"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("verified == true"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("era < 1000"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("doc.era < 1000"), &blocks), None);
+        // a boolean against an integer intrinsic; a number stays pushable
+        assert_eq!(
+            translate_predicate(&pred("$ordinal == true"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("$ordinal == 1"), &blocks),
+            frag("(b.ordinal IS ?)", &[SqlValue::Real(1.0)])
+        );
+        // null against a property read; against a JSON read or a column it pushes
+        assert_eq!(translate_predicate(&pred("tags != null"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("tags == null"), &DOCS), None);
+        assert_eq!(
+            translate_predicate(&pred("doc.tags == null"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("checked == null"), &blocks),
+            frag(
+                "(json_extract(b.attrs, '$.checked') IS ?)",
+                &[SqlValue::Null]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("$ordinal != null"), &blocks),
+            frag("(b.ordinal IS NOT ?)", &[SqlValue::Null])
+        );
+        // a string literal against anything pushes under equality
+        assert_eq!(
+            translate_predicate(&pred("checked == \"x\""), &blocks),
+            frag("(json_extract(b.attrs, '$.checked') IS ?)", &[text("x")])
+        );
+        assert!(translate_predicate(&pred("layer == \"canon\""), &DOCS).is_some());
+        assert!(translate_predicate(&pred("$ordinal == \"1\""), &blocks).is_some());
+        assert!(translate_predicate(&pred("$ordinal != \"1\""), &blocks).is_some());
+        // … but a relational comparison across text and a number / integer
+        // declines (the fifth shape): SQLite orders integers before text
+        assert_eq!(
+            translate_predicate(&pred("$ordinal < \"3\""), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("\"3\" >= $ordinal"), &blocks),
+            None
+        );
+        assert_eq!(translate_predicate(&pred("$path > 5"), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("type <= 1"), &blocks), None);
+        assert_eq!(
+            translate_predicate(&pred("$ordinal < 3"), &blocks),
+            frag("(b.ordinal < ?)", &[SqlValue::Real(3.0)])
+        );
+        assert_eq!(
+            translate_predicate(&pred("$path > \"m\""), &DOCS),
+            frag("(d.path > ?)", &[text("m")])
+        );
+        // two reads carry no type at plan time; a boolean equals only text/null
+        assert_eq!(
+            translate_predicate(&pred("$ordinal == checked"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("checked == level"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("doc.era == doc.year"), &blocks),
+            None
+        );
+        assert_eq!(translate_predicate(&pred("level < \"x\""), &blocks), None);
+        assert_eq!(translate_predicate(&pred("level < 3"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("true == false"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("$ordinal > null"), &blocks), None);
+        assert!(translate_predicate(&pred("$ordinal == $depth"), &blocks).is_some());
+        assert!(translate_predicate(&pred("$ordinal <= $depth"), &blocks).is_some());
+        assert!(translate_predicate(&pred("type == null"), &blocks).is_some());
+    }
+
+    #[test]
+    fn bindings_are_typed_by_their_value() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        let params = [
+            Value::from("s"),
+            Value::from(1.0),
+            Value::Bool(true),
+            Value::Null,
+            Value::Array(vec![]),
+        ];
+        let ctx = TranslateCtx {
+            params: &params,
+            ..blocks
+        };
+        let against = |i: usize, rhs: &str| {
+            let e = Expr::Binary {
+                op: BinaryOp::Eq,
+                left: Box::new(Expr::Binding { index: i }),
+                right: Box::new(pred(rhs)),
+            };
+            translate_predicate(&e, &ctx).is_some()
+        };
+        // text binding pushes against anything; number/boolean not against JSON
+        assert!(against(0, "checked"));
+        assert!(!against(1, "checked"));
+        assert!(!against(2, "checked"));
+        assert!(!against(2, "$ordinal"));
+        assert!(against(1, "$ordinal"));
+        // a null binding pushes against JSON, not against a property
+        assert!(against(3, "checked"));
+        assert!(!against(3, "doc.tags"));
+        // an absent binding (past the end) is null
+        assert!(against(9, "checked"));
+        assert!(!against(9, "doc.tags"));
+        // a non-scalar binding has no faithful SQL value
+        assert!(!against(4, "type"));
+    }
+
+    // -- decline (b): handles are not property reads --
+
+    #[test]
+    fn relation_and_handle_names_are_not_property_reads() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        let nodes = TranslateCtx {
+            target: Target::Nodes,
+            self_alias: "n",
+            ..DOCS
+        };
+        let edges = TranslateCtx {
+            target: Target::Edges,
+            self_alias: "e",
+            ..DOCS
+        };
+        for (ctx, target) in [
+            (&DOCS, Target::Docs),
+            (&blocks, Target::Blocks),
+            (&nodes, Target::Nodes),
+            (&edges, Target::Edges),
+        ] {
+            for name in non_property_handles(target) {
+                let src = format!("{name} == null");
+                assert_eq!(
+                    translate_predicate(&pred(&src), ctx),
+                    None,
+                    "{target:?}: {src}"
+                );
+                let src = format!("{name} == \"x\"");
+                assert_eq!(
+                    translate_predicate(&pred(&src), ctx),
+                    None,
+                    "{target:?}: {src}"
+                );
+            }
+        }
+        // the fixtures' shapes
+        assert_eq!(translate_predicate(&pred("nodes == null"), &DOCS), None);
+        assert_eq!(
+            translate_predicate(&pred("frontmatter == null"), &DOCS),
+            None
+        );
+        assert_eq!(translate_predicate(&pred("nodes == null"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("attrs == null"), &blocks), None);
+        // `doc.<handle>` is the doc's handle, not its property; `doc.<k>` still pushes
+        assert_eq!(
+            translate_predicate(&pred("doc.nodes == null"), &blocks),
+            None
+        );
+        assert_eq!(
+            translate_predicate(&pred("doc.frontmatter == null"), &blocks),
+            None
+        );
+        assert_eq!(translate_predicate(&pred("doc.doc == null"), &DOCS), None);
+        assert!(translate_predicate(&pred("doc.layer == \"canon\""), &blocks).is_some());
+        // a plain attribute or property of the same spelling elsewhere still pushes
+        assert!(translate_predicate(&pred("section == \"x\""), &DOCS).is_some());
+        assert!(translate_predicate(&pred("frontmatter == \"x\""), &blocks).is_some());
+    }
+
+    /// The handle sets are exactly the keys the store context resolves to
+    /// rows, a row or a bag before its property fallback: over a small
+    /// observed corpus, on every row of a target, a name in the set never
+    /// reads as a scalar, and at least one row resolves it to rows / a row /
+    /// an object; a name outside the set never does.
+    #[test]
+    fn handle_sets_match_the_store_context() {
+        use std::collections::HashMap;
+
+        use omgbase_reconcile::Config;
+        use omgbase_store::{BatchItem, Store};
+        use oqx::DataContext;
+
+        use crate::context::StoreContext;
+
+        let mut store = Store::open_in_memory().expect("store");
+        let repo = store.create_repo("handles").expect("repo");
+        let items = [
+            BatchItem::observed(
+                "a.md",
+                "---\ntitle: A\nlayer: canon\nverified: true\n---\n# Heading\n\nSee [b](b.md) and [[b]].\n\n- [ ] task\n  - nested\n\nkey:: value\n\n## Sub\n\ntext\n",
+            ),
+            BatchItem::observed("b.md", "# B\n\nBack to [a](a.md).\n"),
+        ];
+        store
+            .observe_batch(
+                &repo,
+                &items,
+                "2026-09-26T00:00:00.000Z",
+                &Config::default(),
+            )
+            .expect("observe");
+        let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
+
+        let mut universe: Vec<&str> = [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges]
+            .into_iter()
+            .flat_map(|t| non_property_handles(t).iter().copied())
+            .collect();
+        universe.extend([
+            "layer",
+            "title",
+            "verified",
+            "checked",
+            "level",
+            "format",
+            "type",
+            "text",
+            "kind",
+            "name",
+            "value",
+            "predicate",
+            "key",
+            "nope",
+        ]);
+        universe.sort_unstable();
+        universe.dedup();
+
+        let is_shape = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
+        for target in [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges] {
+            let Value::Array(rows) = ctx.root(target.as_str()) else {
+                panic!("{target:?} root is not an array");
+            };
+            assert!(!rows.is_empty(), "{target:?} has rows");
+            let set = non_property_handles(target);
+            for name in &universe {
+                let mut shaped = 0;
+                for row in &rows {
+                    let v = ctx.get(row, name).expect("get");
+                    if set.contains(name) {
+                        assert!(
+                            v.is_absent() || is_shape(&v),
+                            "{target:?}.{name} read as a scalar: {v:?}"
+                        );
+                    } else {
+                        assert!(!is_shape(&v), "{target:?}.{name} is a handle: {v:?}");
+                    }
+                    shaped += usize::from(is_shape(&v));
+                }
+                if set.contains(name) {
+                    assert!(
+                        shaped > 0,
+                        "{target:?}.{name} never resolved to rows or a bag"
+                    );
+                }
+            }
+        }
     }
 
     // -- declines (left residual) return None --
@@ -718,21 +1319,23 @@ mod tests {
         let both = Expr::Logical {
             op: LogicalOp::And,
             left: eq(ident("type"), lit("task")),
-            right: eq(ident("checked"), Box::new(Expr::Lit(Value::Bool(false)))),
+            right: eq(ident("marker"), lit("x")),
         };
         assert_eq!(
             translate_predicate(&both, &blocks),
             frag(
-                "((b.type IS ?) AND (json_extract(b.attrs, '$.checked') IS ?))",
-                &[text("task"), SqlValue::Integer(0)]
+                "((b.type IS ?) AND (json_extract(b.attrs, '$.marker') IS ?))",
+                &[text("task"), text("x")]
             )
         );
         assert_eq!(
+            translate_predicate(&pred("attrs.marker == \"x\""), &blocks),
+            frag("(json_extract(b.attrs, '$.marker') IS ?)", &[text("x")])
+        );
+        // (a boolean or number against a JSON read is declined — the matrix)
+        assert_eq!(
             translate_predicate(&pred("attrs.checked == true"), &blocks),
-            frag(
-                "(json_extract(b.attrs, '$.checked') IS ?)",
-                &[SqlValue::Integer(1)]
-            )
+            None
         );
         let nodes = TranslateCtx {
             target: Target::Nodes,
@@ -744,22 +1347,17 @@ mod tests {
             frag("(n.kind IS ?)", &[text("md:section")])
         );
         assert_eq!(
-            translate_predicate(&pred("level == 1"), &nodes),
-            frag(
-                "(json_extract(n.attrs, '$.level') IS ?)",
-                &[SqlValue::Real(1.0)]
-            )
+            translate_predicate(&pred("level == \"1\""), &nodes),
+            frag("(json_extract(n.attrs, '$.level') IS ?)", &[text("1")])
         );
+        assert_eq!(translate_predicate(&pred("level == 1"), &nodes), None);
         assert_eq!(
-            translate_predicate(&pred("attrs.a.b == 1"), &nodes),
-            frag(
-                "(json_extract(n.attrs, '$.a.b') IS ?)",
-                &[SqlValue::Real(1.0)]
-            )
+            translate_predicate(&pred("attrs.a.b == \"c\""), &nodes),
+            frag("(json_extract(n.attrs, '$.a.b') IS ?)", &[text("c")])
         );
         // `attrs.<k>` is a blocks/nodes form; on docs it is not a column.
         assert_eq!(
-            translate_predicate(&pred("attrs.checked == true"), &DOCS),
+            translate_predicate(&pred("attrs.marker == \"x\""), &DOCS),
             None
         );
     }

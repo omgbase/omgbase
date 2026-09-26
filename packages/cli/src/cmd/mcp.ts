@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, EmbedDrainer, EngineError, pinClock, sequentialMinter, setIdMinter, type SyncSource } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, pinClock, sequentialMinter, setIdMinter, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
@@ -134,9 +134,10 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
   if (wantWatch) {
     lease = WatchLease.tryAcquire(ws.omgbaseDir);
     if (lease) {
-      // Prime with a one-shot sweep so the session starts fresh, then watch via
-      // the external fs-adapter process (chokidar lives there, not in-engine).
-      if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+      // spec/sync §5 order: open the source (the external fs-adapter process —
+      // chokidar lives there, not in-engine), `watch`, wait for `ready` (bounded),
+      // THEN the priming sweep, then report live. An edit landing before the feed
+      // is primed is caught by the sweep, one after it by the feed.
       source = await openRepoSource(ws.store, repo);
       if (source) {
         watcher = new Watcher(ws.store, repo.repoId, source, {
@@ -150,6 +151,10 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
           onError: (err) => cli.io.err(cli.style.dim(`[watch] error: ${String(err)}`)),
         });
         await watcher.start();
+        if (!(await awaitReady(watcher.ready(), WATCH_READY_PATIENCE_MS))) {
+          cli.io.err(cli.style.dim(`[watch] the fs adapter did not report ready within ${WATCH_READY_PATIENCE_MS / 1000}s — proceeding as if ready`));
+        }
+        if (repo.rootPath) freshnessSweep(ws.store, repo.repoId, repo.rootPath); // prime: anything that landed before the feed was ready
         cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · watcher live`));
       } else {
         cli.io.err(cli.style.dim(`[mcp] serving ${repo.slug} on stdio · sourceless (no watch)`));

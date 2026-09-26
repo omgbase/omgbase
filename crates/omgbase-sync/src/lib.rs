@@ -69,11 +69,14 @@ pub use settings::{
     Settings, deep_merge, repo_own_settings, resolve_settings, workspace_settings,
     write_repo_settings, write_workspace_settings,
 };
-pub use source::{SourceCapabilities, SourceEntry, SourceIdentity, SourceItem, SyncSource};
+pub use source::{
+    Readiness, SourceCapabilities, SourceEntry, SourceIdentity, SourceItem, SyncSource, WatchEvent,
+    wait_ready,
+};
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "1.2";
 
 /// The adapter protocol number the handshake must carry (`spec/sync` §5).
 pub const PROTOCOL_VERSION: u64 = 1;

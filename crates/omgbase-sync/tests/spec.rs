@@ -29,6 +29,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
@@ -43,7 +44,7 @@ use omgbase_sync::registry::NewSource;
 use omgbase_sync::source::{SourceCapabilities, SourceEntry, SourceIdentity, SourceItem};
 use omgbase_sync::{
     ChangesPage, Coordinator, DeleteOutcome, Error as SyncError, ExternalSource, FileStat,
-    MemFileSystem, ObserveOutcome, RepoRow, SyncSource, deep_merge, detect_disk_drift,
+    MemFileSystem, ObserveOutcome, RepoRow, SyncSource, WatchEvent, deep_merge, detect_disk_drift,
     freshness_sweep, process_checkpoint, rebuild_file_stats, recover_repo, registry,
     render_config_flags, repos_status, select_repo, settings, sweep_plan,
 };
@@ -619,6 +620,35 @@ fn validate_transcript(at: &str, t: Option<&Json>, problems: &mut Vec<String>) {
     }
 }
 
+/// §8 (1.2): `events` is the ordered list of parsed event objects the watch
+/// listener received — `{"event":"ready"}` or `{"event":"batch","paths":
+/// [<string>…]}` — never the pre-1.2 `[[paths]]` shape.
+fn validate_events(at: &str, events: &Json, problems: &mut Vec<String>) {
+    let Some(list) = events.as_array() else {
+        problems.push(format!("{at}: must be an array of event objects"));
+        return;
+    };
+    for (i, e) in list.iter().enumerate() {
+        let ok = e
+            .as_object()
+            .is_some_and(|o| match o.get("event").and_then(Json::as_str) {
+                Some("ready") => o.len() == 1,
+                Some("batch") => {
+                    o.len() == 2
+                        && o.get("paths")
+                            .and_then(Json::as_array)
+                            .is_some_and(|p| p.iter().all(Json::is_string))
+                }
+                _ => false,
+            });
+        if !ok {
+            problems.push(format!(
+                "{at}[{i}]: an event is {{\"event\":\"ready\"}} or {{\"event\":\"batch\",\"paths\":[…]}} (sync 1.2)"
+            ));
+        }
+    }
+}
+
 fn validate_coordinator_case(at: &str, c: &JsonMap<String, Json>, problems: &mut Vec<String>) {
     only_keys(
         c,
@@ -823,6 +853,13 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
                                     &["capabilities", "results", "events"],
                                     &mut problems,
                                 );
+                                if let Some(events) = o.get("events") {
+                                    validate_events(
+                                        &format!("{at}.expect.events"),
+                                        events,
+                                        &mut problems,
+                                    );
+                                }
                             }
                             Some(_) => {}
                         },
@@ -1375,7 +1412,7 @@ fn classify_connect_error(e: &SyncError) -> Result<&'static str, String> {
 fn play_request(
     source: &mut ExternalSource,
     line: &str,
-    watches: &mut Vec<Receiver<Vec<String>>>,
+    watches: &mut Vec<Receiver<WatchEvent>>,
 ) -> Result<Json, String> {
     let req: Json = serde_json::from_str(line).map_err(|e| format!("out line: {e}"))?;
     let method = req["method"].as_str().unwrap_or("");
@@ -1440,7 +1477,57 @@ fn play_request(
     }
 }
 
+/// Whether an `in` transcript line is an unsolicited event (`{"event": …}`)
+/// rather than a response.
+fn is_event_line(line: &str) -> bool {
+    serde_json::from_str::<Json>(line)
+        .ok()
+        .and_then(|v| v.get("event").and_then(Json::as_str).map(str::to_owned))
+        .is_some()
+}
+
+/// The runner's patience for the events a transcript promises (§8 Ordering:
+/// a shortfall is a failure, not a wait forever).
+const EVENT_PATIENCE: Duration = Duration::from_secs(5);
+
+/// §8 Ordering (1.2): before the next `out` request, receive from the live
+/// watch stream until `events` holds as many as the transcript promised
+/// (the `in` event lines since the `watch` request); a shortfall within
+/// [`EVENT_PATIENCE`] fails the case by name.
+fn await_promised_events(
+    case: &str,
+    rx: Option<&Receiver<WatchEvent>>,
+    events: &mut Vec<Json>,
+    promised: usize,
+    before: &str,
+) -> Result<(), String> {
+    if events.len() >= promised {
+        return Ok(());
+    }
+    let Some(rx) = rx else {
+        return Err(format!(
+            "{case}: the transcript promises {promised} event(s) before `{before}` but no watch is live"
+        ));
+    };
+    let deadline = Instant::now() + EVENT_PATIENCE;
+    while events.len() < promised {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(ev) => events.push(ev.to_json()),
+            Err(_) => {
+                return Err(format!(
+                    "{case}: the watch stream yielded {} event(s) where the transcript promises {promised} before `{before}` (waited {EVENT_PATIENCE:?}); received so far: {}",
+                    events.len(),
+                    Json::Array(events.clone())
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn run_adapter_case(c: &Json) -> Result<AdapterEvaluation, String> {
+    let case = c["name"].as_str().unwrap_or("<unnamed>");
     let transcript: Vec<(Dir, String)> = c["transcript"]
         .as_array()
         .ok_or("transcript")?
@@ -1465,17 +1552,46 @@ fn run_adapter_case(c: &Json) -> Result<AdapterEvaluation, String> {
     };
     let caps = source.capabilities();
     let mut results = Vec::new();
-    let mut watches: Vec<Receiver<Vec<String>>> = Vec::new();
+    let mut watches: Vec<Receiver<WatchEvent>> = Vec::new();
+    // The events the listener received, in order, as the wire spells them.
+    let mut events: Vec<Json> = Vec::new();
+    // §8 Ordering: `in` event lines since the `watch` request (while the
+    // transcript's watch is live — the engine drops events outside one, so
+    // lines before `watch` or after `unwatch` are not waited for).
+    let mut promised = 0usize;
+    let mut watch_live = false;
     let mut failure = None;
     for (dir, line) in &transcript {
-        if *dir != Dir::Out {
-            continue;
-        }
-        match play_request(&mut source, line, &mut watches) {
-            Ok(r) => results.push(r),
-            Err(e) => {
-                failure = Some(e);
-                break;
+        match dir {
+            Dir::In => {
+                if watch_live && is_event_line(line) {
+                    promised += 1;
+                }
+            }
+            Dir::Out => {
+                if let Err(e) =
+                    await_promised_events(case, watches.last(), &mut events, promised, line)
+                {
+                    failure = Some(e);
+                    break;
+                }
+                let method = serde_json::from_str::<Json>(line)
+                    .ok()
+                    .and_then(|r| r["method"].as_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let before = watches.len();
+                match play_request(&mut source, line, &mut watches) {
+                    Ok(r) => results.push(r),
+                    Err(e) => {
+                        failure = Some(e);
+                        break;
+                    }
+                }
+                if method == "watch" && watches.len() > before {
+                    watch_live = true;
+                } else if method == "unwatch" {
+                    watch_live = false;
+                }
             }
         }
     }
@@ -1483,10 +1599,10 @@ fn run_adapter_case(c: &Json) -> Result<AdapterEvaluation, String> {
     if let Some(e) = failure {
         return Err(e);
     }
-    let mut events: Vec<Json> = Vec::new();
+    // Whatever else the streams carried (the adapter has closed by now).
     for rx in &watches {
-        while let Ok(paths) = rx.try_recv() {
-            events.push(json!(paths));
+        while let Ok(ev) = rx.try_recv() {
+            events.push(ev.to_json());
         }
     }
     Ok(AdapterEvaluation {

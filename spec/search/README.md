@@ -280,10 +280,12 @@ ordering, fusion) and is exactly reproducible.
   with the vectors given as float32-representable decimals; compared within
   1e-9.
 - **Observation scripts** (as `spec/store` §9.4: `steps` of
-  `observe`/`sweep`, plus two new steps `{ "drain": true }` — run the block
-  pass then the document pass with the fixture embedder — and `{ "search":
+  `observe`/`sweep`, plus three new steps `{ "drain": true }` — run the block
+  pass then the document pass with the fixture embedder — `{ "search":
   { "text"?, "semantic"?, "limit"? } }` whose outcome is recorded in
-  `expect.steps`). `expect` after the last step:
+  `expect.steps`, and `{ "rebuild": "fts" }` — the §1.1 rebuild,
+  `'delete-all'` plus every live leaf, outcome `{ "rebuilt": "fts" }`).
+  `expect` after the last step:
   - `steps`: per step as in `spec/store`, plus for `drain` `{ embedded,
     cached, doc_embedded, doc_cached, doc_pooled }`; for `search` the hits:
     text-only → `text_search` hits (`score` within 1e-6); semantic-only →

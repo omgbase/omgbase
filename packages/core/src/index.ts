@@ -45,8 +45,10 @@ export type {
   SourceEntry,
   SourceItem,
   SourceWatch,
+  WatchEvent,
   WatchListener,
 } from "./sync/plugin.js";
+export { awaitReady, WATCH_READY_PATIENCE_MS } from "./sync/plugin.js";
 export { createExternalSource, type ExternalSourceSpec } from "./sync/external-source.js";
 export {
   ensureAdapter,

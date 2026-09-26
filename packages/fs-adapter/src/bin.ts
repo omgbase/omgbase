@@ -9,8 +9,13 @@ import { FsAdapter } from "./index.js";
 //   handshake  → {"protocol":1,"capabilities":{identity,writeThrough,watch}}
 //   request    ← {"id":n,"method":"enumerate|fetch|write|remove|watch|unwatch","params":{…}}
 //   response   → {"id":n,"result":{…}}  | {"id":n,"error":"…"}
-//   watch feed → {"event":"batch","paths":[…]}   (unsolicited, while watching)
+//   watch feed → {"event":"ready"}                (once, after the watch response, when
+//                                                 chokidar's initial scan has completed —
+//                                                 spec/sync §5 readiness, 1.2)
+//              → {"event":"batch","paths":[…]}   (unsolicited, while watching)
 //
+// A host waits for `ready` before its priming sweep, so an edit landing while the
+// scan runs is caught by the sweep and one landing after it by the feed.
 // stdout carries ONLY protocol JSON; all logs go to stderr.
 
 const { values } = parseArgs({
@@ -55,10 +60,16 @@ function handle(req: { id?: number; method?: string; params?: Record<string, unk
         adapter.remove(String(params.path));
         write({ id, result: { ok: true } });
         break;
-      case "watch":
-        if (!watch) watch = adapter.watch((paths) => write({ event: "batch", paths }));
+      case "watch": {
+        if (!watch) {
+          const w = adapter.watch((paths) => write({ event: "batch", paths }));
+          watch = w;
+          // `ready` after the response (below): the ack first, then the feed's readiness.
+          void w.ready.then(() => { if (watch === w) write({ event: "ready" }); });
+        }
         write({ id, result: { ok: true } });
         break;
+      }
       case "unwatch":
         void watch?.stop();
         watch = null;

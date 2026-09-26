@@ -7,6 +7,7 @@ import type {
   SourceEntry,
   SourceItem,
   SourceWatch,
+  WatchEvent,
   WatchListener,
 } from "./plugin.js";
 
@@ -14,14 +15,17 @@ import type {
 // speaks the newline-delimited JSON protocol, presenting the process as a
 // SyncSource. Mirrors the embedder bridge (search/external.ts): a handshake
 // line, then id-matched request/response — with one extension, an unsolicited
-// {"event":"batch"} stream while a watch is live.
+// event stream while a watch is live (spec/sync §5).
 //
 //   handshake  ← {"protocol":1,"capabilities":{identity,writeThrough,watch}}
 //   request    → {"id":n,"method":"enumerate|fetch|write|remove|watch|unwatch","params":{…}}
 //   response   ← {"id":n,"result":{…}}  | {"id":n,"error":"…"}
-//   watch feed ← {"event":"batch","paths":[…]}   (no id; server-initiated)
+//   watch feed ← {"event":"ready"}                once, after the watch response (1.2)
+//              ← {"event":"batch","paths":[…]}   (no id; server-initiated)
 //
-// stdout is protocol only; the adapter's stderr is inherited for logs.
+// An event line with no live watch (before `watch`, after `unwatch`) is dropped,
+// never buffered as a response. stdout is protocol only; the adapter's stderr is
+// inherited for logs.
 
 export interface ExternalSourceSpec {
   /** Adapter command (argv[0]). */
@@ -61,7 +65,7 @@ export async function createExternalSource(spec: ExternalSourceSpec): Promise<Sy
 
   const rl = createInterface({ input: child.stdout });
   let watchListener: WatchListener | null = null;
-  const router = messageRouter(rl, (paths) => watchListener?.(paths));
+  const router = messageRouter(rl, (ev) => watchListener?.(ev));
   const died = new Promise<never>((_, reject) => {
     child.once("error", (err) => reject(new Error(`sync adapter '${spec.command}' failed to spawn: ${err.message}`)));
     child.once("exit", (code) => reject(new Error(`sync adapter '${spec.command}' exited early (code ${code ?? "?"})`)));
@@ -115,10 +119,18 @@ export async function createExternalSource(spec: ExternalSourceSpec): Promise<Sy
 
     ...(caps.watch
       ? {
-          async watch(onBatch: WatchListener): Promise<SourceWatch> {
-            watchListener = onBatch;
+          async watch(listener: WatchListener): Promise<SourceWatch> {
+            // `ready` resolves on the adapter's {"event":"ready"}; the listener sees
+            // it as an event too, in wire order with the batches (spec/sync §5, §8).
+            let markReady: () => void = () => {};
+            const ready = new Promise<void>((resolve) => { markReady = resolve; });
+            watchListener = (ev) => {
+              if (ev.event === "ready") markReady();
+              listener(ev);
+            };
             await call("watch");
             return {
+              ready,
               async stop(): Promise<void> {
                 watchListener = null;
                 try {
@@ -153,9 +165,9 @@ export async function createExternalSource(spec: ExternalSourceSpec): Promise<Sy
   return source;
 }
 
-// Demultiplex adapter stdout: {"event":"batch"} lines feed the watch listener;
-// every other line is an id-addressed response buffered for nextResponse().
-function messageRouter(rl: Interface, onBatch: (paths: string[]) => void): { nextResponse(): Promise<string> } {
+// Demultiplex adapter stdout: {"event":…} lines feed the watch listener (ready,
+// batch); every other line is an id-addressed response buffered for nextResponse().
+function messageRouter(rl: Interface, onEvent: (ev: WatchEvent) => void): { nextResponse(): Promise<string> } {
   const buffered: string[] = [];
   const waiters: ((line: string) => void)[] = [];
   rl.on("line", (line) => {
@@ -164,7 +176,11 @@ function messageRouter(rl: Interface, onBatch: (paths: string[]) => void): { nex
     try {
       const peek = JSON.parse(trimmed) as ResponseMsg;
       if (peek.event === "batch") {
-        onBatch(peek.paths ?? []);
+        onEvent({ event: "batch", paths: peek.paths ?? [] });
+        return;
+      }
+      if (peek.event === "ready") {
+        onEvent({ event: "ready" });
         return;
       }
     } catch {

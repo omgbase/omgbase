@@ -1230,11 +1230,6 @@
             "text": "*Aqua regia* — royal water, because it dissolves the royal metal — is the single most consequential thing to come out of the laboratory tradition. It is a real reagent, it does something no other liquid does, and its discovery was driven entirely by the transmutation programme."
           },
           {
-            "id": "b_183",
-            "path": "processes/dissolution.md",
-            "text": "Distil aqua fortis from nitre and vitriol Prepare aqua regia and test on gold leaf Write up the alkahest arguments and their rebuttals"
-          },
-          {
             "id": "b_185",
             "path": "processes/dissolution.md",
             "text": "Prepare aqua regia and test on gold leaf"
@@ -1253,7 +1248,7 @@
         "truncated": false,
         "cursor": null,
         "consumer": "count",
-        "count": 23
+        "count": 18
       }
     },
     {
@@ -1382,6 +1377,130 @@
         ],
         "truncated": true,
         "cursor": "WyJwcmFjdGl0aW9uZXJzL25ld3Rvbi5tZCIsImJfMTExIl0",
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-bool-literal-residual-positive",
+      "notes": "§1 planner decline (a): a boolean literal against a bare attribute (json_extract) is declined, so `checked == true` runs as the residual over the rows `$path.startsWith` pushed; the checked tasks under lab/ come back.",
+      "query": "from blocks where $path.startsWith(\"lab/\") && checked == true",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_52",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_53",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_54",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_55",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_78",
+            "path": "lab/2026-02-notes.md"
+          },
+          {
+            "id": "b_79",
+            "path": "lab/2026-02-notes.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-bool-vs-number-literal",
+      "notes": "§1 planner decline (a): a number literal against a JSON read is declined — SQLite reads JSON `true` as 1, so a pushed `checked == 1` found every checked task; in memory `true == 1` is false. Zero hits.",
+      "query": "from blocks where checked == 1",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-bool-vs-integer-intrinsic",
+      "notes": "§1 planner decline (a): a boolean literal against an integer intrinsic ($ordinal/$depth) is declined — a pushed `ordinal IS 1` matched the second sibling; in memory `1 == true` is false. Zero hits.",
+      "query": "from blocks where $ordinal == true",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-relation-is-not-a-property",
+      "notes": "§1 planner decline (b): `nodes` names a relation of blocks, not an attribute — a pushed read was `json_extract(attrs,'$.nodes') IS NULL` (every row); in memory the relation is an array, never null. Zero hits.",
+      "query": "from blocks where nodes == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-reach-through-relation-is-not-a-property",
+      "notes": "§1 planner decline (b): `doc.nodes` is the owning doc's relation, not a document property — a pushed read was the scalar-property subquery (NULL) IS NULL. Zero hits.",
+      "query": "from blocks where doc.nodes == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-attrs-is-not-a-scalar-read",
+      "notes": "§1 planner decline (b): the bare `attrs` field is the whole parsed object, not a scalar — a pushed read was `json_extract(attrs,'$.attrs') IS NULL` (every row); in memory the object is never null. Zero hits.",
+      "query": "from blocks where attrs == null",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-relational-int-vs-text",
+      "notes": "§1 planner decline (a), the relational shape: a relational comparison between an integer intrinsic and a text literal is declined — SQLite orders every integer before every text, so a pushed `ordinal < '3'` kept every block; in memory `compare` of mixed kinds is undefined and the row is dropped. Zero hits.",
+      "query": "from blocks where $ordinal < \"3\"",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-int-vs-json",
+      "notes": "§1 planner comparison rule: equality pushes only when one side is text, one side is null against a non-property, or both are numeric — an integer intrinsic against a JSON read is none of these: a pushed `ordinal IS json_extract(attrs,'$.checked')` matched checked tasks at ordinal 1 (JSON true reads as 1); in memory a number never equals a boolean. Zero hits.",
+      "query": "from blocks where $ordinal == checked",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-relational-json-vs-text",
+      "notes": "§1 planner comparison rule: a relational comparison pushes only when both sides are text or both numeric — a JSON read against a text literal is declined: a pushed `json_extract(attrs,'$.level') < 'x'` ordered every heading's integer level before the text; in memory a number and a string never order. Zero hits.",
+      "query": "from blocks where level < \"x\"",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
         "consumer": "collect"
       }
     }

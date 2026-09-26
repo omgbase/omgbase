@@ -5,7 +5,7 @@
 use std::collections::HashSet;
 
 use omgbase_format::hash::hex;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::Result;
 use crate::tree::{from_hex, parse_tree_entries};
@@ -52,39 +52,124 @@ pub fn rebuild_sections(conn: &Connection, doc_id: &str) -> Result<()> {
     Ok(())
 }
 
-// ---- FTS (external content) ---------------------------------------------------------
+// ---- FTS (external content, spec/search §1.1) -----------------------------------------
 
-/// Remove a document's live block rows from `blocks_fts` (external-content
+/// SQL predicate: the `blocks` row aliased `b` is a live **leaf** — no live
+/// row of the same document names it as `parent_block` (search 1.2: a
+/// container's text is its children's text joined, so only leaves are
+/// indexed). `c.doc_id = b.doc_id` lets the subquery use `idx_blocks_doc`.
+pub const LIVE_LEAF_SQL: &str = "b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_commit IS NULL)";
+
+fn live_leaf_rows(conn: &Connection, doc_id: &str) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare_cached(&format!(
+        "SELECT b.rowid, b.text FROM blocks b WHERE b.doc_id = ?1 AND {LIVE_LEAF_SQL}"
+    ))?;
+    let it = stmt.query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(it.collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
+/// Remove a document's live leaf rows from `blocks_fts` (external-content
 /// index: a `'delete'` command with the original text, before the rows
-/// change). Only live rows are indexed, so only those are deleted.
+/// change). Only live leaves are indexed, so only those are deleted — a
+/// `'delete'` for an unindexed row skews the index statistics.
 pub fn fts_delete_doc(conn: &Connection, doc_id: &str) -> Result<()> {
-    let rows: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT rowid, text FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
-        )?;
-        let it = stmt.query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        it.collect::<std::result::Result<Vec<_>, _>>()?
-    };
     let mut del =
         conn.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?1, ?2)")?;
-    for (rowid, text) in rows {
+    for (rowid, text) in live_leaf_rows(conn, doc_id)? {
         del.execute(params![rowid, text])?;
     }
     Ok(())
 }
 
-/// Index a document's live block rows.
+/// Index a document's live leaf rows.
 pub fn fts_index_doc(conn: &Connection, doc_id: &str) -> Result<()> {
-    let rows: Vec<(i64, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT rowid, text FROM blocks WHERE doc_id = ?1 AND deleted_commit IS NULL",
-        )?;
-        let it = stmt.query_map(params![doc_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut ins = conn.prepare("INSERT INTO blocks_fts(rowid, text) VALUES(?1, ?2)")?;
+    for (rowid, text) in live_leaf_rows(conn, doc_id)? {
+        ins.execute(params![rowid, text])?;
+    }
+    Ok(())
+}
+
+/// Rebuild the whole index: `'delete-all'`, then every live leaf of every
+/// live document (FTS5's own `'rebuild'` reads the content table wholesale,
+/// containers included, and is not used).
+pub fn fts_rebuild(conn: &Connection) -> Result<()> {
+    conn.execute_batch("INSERT INTO blocks_fts(blocks_fts) VALUES('delete-all')")?;
+    let doc_ids: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL")?;
+        let it = stmt.query_map([], |r| r.get(0))?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
+    for id in &doc_ids {
+        fts_index_doc(conn, id)?;
+    }
+    Ok(())
+}
+
+/// A `blocks` row about to be evicted out of another document's row set
+/// (spec/store §5.4 step 8).
+pub(crate) struct EvictRow {
+    pub rowid: i64,
+    pub block_id: String,
+    pub doc_id: String,
+    pub parent_block: Option<String>,
+    pub text: String,
+    pub live: bool,
+}
+
+/// Keep the index equal to the table's live leaves across the deletion of
+/// `rows` (the caller deletes them right after). Leaf-ness is decided over
+/// the table **before** any row goes, so a list moving with its items is
+/// order-independent (the items lose their entries; the list never had one),
+/// and a live parent that keeps its row but loses its last live child becomes
+/// a leaf and gains an entry.
+pub(crate) fn fts_before_evict_rows(conn: &Connection, rows: &[EvictRow]) -> Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let evicted: HashSet<&str> = rows.iter().map(|r| r.block_id.as_str()).collect();
+    let mut has_live_child = conn.prepare_cached(
+        "SELECT 1 FROM blocks c WHERE c.doc_id = ?1 AND c.parent_block = ?2 AND c.deleted_commit IS NULL LIMIT 1",
+    )?;
+    let mut leaves = Vec::new();
+    for r in rows.iter().filter(|r| r.live) {
+        let child: Option<i64> = has_live_child
+            .query_row(params![r.doc_id, r.block_id], |row| row.get(0))
+            .optional()?;
+        if child.is_none() {
+            leaves.push(r);
+        }
+    }
+    let mut del =
+        conn.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?1, ?2)")?;
+    for r in &leaves {
+        del.execute(params![r.rowid, r.text])?;
+    }
+    // Parents that stay live but are left childless are leaves from now on.
+    let mut parent_row = conn.prepare(
+        "SELECT b.rowid, b.text FROM blocks b WHERE b.block_id = ?1 AND b.doc_id = ?2 AND b.deleted_commit IS NULL
+           AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id
+                           AND c.deleted_commit IS NULL AND c.block_id NOT IN (SELECT value FROM json_each(?3)))",
+    )?;
+    let evicted_json = serde_json::to_string(&rows.iter().map(|r| &r.block_id).collect::<Vec<_>>())
+        .expect("ids serialize");
     let mut ins = conn.prepare("INSERT INTO blocks_fts(rowid, text) VALUES(?1, ?2)")?;
-    for (rowid, text) in rows {
-        ins.execute(params![rowid, text])?;
+    let mut seen: HashSet<&str> = HashSet::new();
+    for r in rows.iter().filter(|r| r.live) {
+        let Some(parent) = r.parent_block.as_deref() else {
+            continue;
+        };
+        if evicted.contains(parent) || !seen.insert(parent) {
+            continue;
+        }
+        let p: Option<(i64, String)> = parent_row
+            .query_row(params![parent, r.doc_id, evicted_json], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .optional()?;
+        if let Some((rowid, text)) = p {
+            ins.execute(params![rowid, text])?;
+        }
     }
     Ok(())
 }
@@ -101,7 +186,8 @@ pub enum RebuildTarget {
 }
 
 /// Recompute derived tables from the durable ones: `sections` per live doc,
-/// the FTS index (`'rebuild'`), `block_changes` from `dispositions`.
+/// the FTS index (`'delete-all'` + every live leaf, `spec/search` §1.1),
+/// `block_changes` from `dispositions`.
 /// `doc_edges` belongs to the graph component and is not touched.
 pub fn rebuild_index(conn: &Connection, target: RebuildTarget) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
@@ -116,7 +202,7 @@ pub fn rebuild_index(conn: &Connection, target: RebuildTarget) -> Result<()> {
         }
     }
     if matches!(target, RebuildTarget::Fts | RebuildTarget::All) {
-        tx.execute_batch("INSERT INTO blocks_fts(blocks_fts) VALUES('rebuild')")?;
+        fts_rebuild(&tx)?;
     }
     if matches!(target, RebuildTarget::BlockChanges | RebuildTarget::All) {
         tx.execute_batch(

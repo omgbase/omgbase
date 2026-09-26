@@ -1,6 +1,5 @@
-import { execPath } from "node:process";
-import { createExternalSource, type SyncSource } from "@omgbase/core";
-import { fsAdapterBinPath } from "@omgbase/fs-adapter";
+import { createExternalSource, awaitReady, WATCH_READY_PATIENCE_MS, type SyncSource } from "@omgbase/core";
+import { fsAdapterLaunch } from "@omgbase/fs-adapter";
 import { connectEngine, type EngineSpec, type McpEngineClient } from "./mcp-engine-client.js";
 import { Coordinator } from "./coordinator.js";
 
@@ -39,7 +38,10 @@ export async function runFsMirror(opts: FsMirrorOptions): Promise<void> {
     ? { kind: "stdio", command: opts.server[0]!, args: opts.server.slice(1) }
     : opts.server;
   const engine: McpEngineClient = await connectEngine(spec);
-  const source: SyncSource = await createExternalSource({ command: execPath, args: [fsAdapterBinPath(), "--root", opts.root] });
+  // The built-in fs adapter, launched per spec/sync §5 (1.2): `$OMGBASE_FS_ADAPTER`
+  // when set, else the bundled bin under the running node; no registry here, so
+  // no fixed args — just the rendered `--root`.
+  const source: SyncSource = await createExternalSource(fsAdapterLaunch([], ["--root", opts.root]));
   const coord = new Coordinator(engine, source);
 
   const shutdown = async (): Promise<void> => {
@@ -67,6 +69,8 @@ export async function runFsMirror(opts: FsMirrorOptions): Promise<void> {
         await shutdown();
         return;
       }
+      // spec/sync §5: report live only once the feed is primed (bounded patience).
+      if (!(await awaitReady(sub.ready, WATCH_READY_PATIENCE_MS))) log(`the fs adapter did not report ready within ${WATCH_READY_PATIENCE_MS / 1000}s — proceeding as if ready`);
       log("watching — Ctrl-C to stop");
       await new Promise<void>((resolve) => {
         const stop = (): void => {

@@ -23,13 +23,14 @@
 //! ([`crate::StoreContext::with_rows_root`]) — the same six lines
 //! `oqx::PlannedEngine::run` would execute.
 
-use oqx::ast::{Expr, Query};
+use oqx::Consumer;
+use oqx::ast::{Expr, Follow, OpNode, Query, SelectItem, Subquery, Where};
 use oqx::{Plan, QueryPlanner, Value, partition_pushable, residual_query};
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
 
 use crate::context::{Target, fetch_rows, tag_rows};
-use crate::translate::{TranslateCtx, translate_predicate};
+use crate::translate::{RESERVED_DOC_BASENAMES, TranslateCtx, translate_predicate};
 
 /// The SQL aliases of the scanned row (`self`) and its owning doc (`doc`).
 fn aliases(t: Target) -> (&'static str, &'static str) {
@@ -94,6 +95,103 @@ fn root_target(source: &Expr) -> Option<Target> {
     }
 }
 
+// ---- the residual-error decline (surface 1.1 patch, §1) ---------------------------------
+
+/// Whether a residual `where` could raise an OQX eval error the pushed
+/// conjuncts might hide by emptying the scan. In memory every conjunct of the
+/// original `&&` is evaluated for the first row and a throwing one aborts the
+/// run; planned, a pushed conjunct that matches no row means the residual
+/// never runs and the error vanishes. So a residual containing any function
+/// or method call (an unknown function, a bad regex, a wrong arity…), a
+/// nested block with the `single` consumer (more than one row raises), a
+/// `^`-escaped name (no enclosing scope at the top level) or a bare reserved
+/// docs basename (`path` for `$path`…, the guard in `get`) sends the whole
+/// query to the in-memory engine unplanned. Only comparisons, logical
+/// operators, `in`, `!`, literals, bindings and plain reads keep the push.
+///
+/// The walk is generic over the whole `oqx` AST — every `Where` node, every
+/// nested block (its `from`, `where`, `select`, `order by`, `follow`,
+/// `limit` / `offset`) and every `Expr`. A `^name:` lift in a nested select
+/// counts as a `^`-escaped name. Inside a block the rows are a different
+/// scope (a relation's rows), so a bare reserved name is an ordinary read
+/// there (`root` is false) — only `doc.<reserved>` still raises at any depth.
+/// Same decisions as the reference's `residualMayRaise`.
+fn residual_may_raise(w: &Where, target: Target) -> bool {
+    where_may_raise(w, target, true)
+}
+
+fn where_may_raise(w: &Where, target: Target, root: bool) -> bool {
+    match w {
+        Where::And { parts } | Where::Or { parts } => {
+            parts.iter().any(|p| where_may_raise(p, target, root))
+        }
+        Where::Not { expr } => where_may_raise(expr, target, root),
+        Where::Scalar { expr } => expr_may_raise(expr, target, root),
+        Where::Op(op) => op_may_raise(op, target, root),
+    }
+}
+
+fn op_may_raise(op: &OpNode, target: Target, root: bool) -> bool {
+    op.op == Consumer::Single
+        || expr_may_raise(&op.receiver, target, root)
+        || subquery_may_raise(&op.sub, target)
+}
+
+fn subquery_may_raise(sub: &Subquery, target: Target) -> bool {
+    let inner = |e: &Expr| expr_may_raise(e, target, false);
+    sub.from.iter().any(inner)
+        || sub
+            .r#where
+            .as_ref()
+            .is_some_and(|w| where_may_raise(w, target, false))
+        || sub.select.iter().any(|item| match item {
+            SelectItem::Field { expr, lift, .. } => *lift > 0 || inner(expr),
+            SelectItem::Collect { op, .. } => op_may_raise(op, target, false),
+        })
+        || sub.order_by.iter().flatten().any(|o| inner(&o.expr))
+        || sub
+            .follow
+            .as_ref()
+            .is_some_and(|f| follow_may_raise(f, target))
+        || sub.limit.as_ref().is_some_and(inner)
+        || sub.offset.as_ref().is_some_and(inner)
+}
+
+fn follow_may_raise(f: &Follow, target: Target) -> bool {
+    let inner = |e: &Expr| expr_may_raise(e, target, false);
+    inner(&f.receiver)
+        || f.r#where.as_ref().is_some_and(inner)
+        || f.frontier.as_ref().is_some_and(inner)
+        || f.by.as_ref().is_some_and(inner)
+}
+
+fn is_reserved(name: &str) -> bool {
+    RESERVED_DOC_BASENAMES.contains(&name)
+}
+
+fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
+    let again = |e: &Expr| expr_may_raise(e, target, root);
+    match e {
+        Expr::Lit(_) | Expr::Binding { .. } => false,
+        Expr::Ident { name } => root && target == Target::Docs && is_reserved(name),
+        Expr::Outer { .. } | Expr::Call { .. } => true,
+        // `doc.<reserved>`: the reach-through row is a doc (the row itself on
+        // docs), so the guard fires on any target at any depth.
+        Expr::Member { recv, name } => {
+            (is_reserved(name) && matches!(&**recv, Expr::Ident { name } if name == "doc"))
+                || again(recv)
+        }
+        Expr::Index { recv, index } => again(recv) || again(index),
+        Expr::Unary { expr, .. } => again(expr),
+        Expr::Binary { left, right, .. }
+        | Expr::Logical { left, right, .. }
+        | Expr::In { left, right } => again(left) || again(right),
+        Expr::Range { lo, hi, .. } => {
+            lo.as_deref().is_some_and(again) || hi.as_deref().is_some_and(again)
+        }
+    }
+}
+
 /// A compiled plan before execution: the statement, its params and the
 /// residual query. Pure — what the planner would run, for inspection.
 #[derive(Clone, Debug, PartialEq)]
@@ -124,6 +222,14 @@ pub fn compile(query: &Query, params: &[Value], repo_id: &str) -> Option<Compile
         translate_predicate(e, &ctx).is_some()
     });
     if pushed.is_empty() {
+        return None;
+    }
+    // Decline (c): a residual that could raise must not be hidden behind an
+    // emptied scan — the whole query runs in memory.
+    if residual
+        .as_ref()
+        .is_some_and(|w| residual_may_raise(w, target))
+    {
         return None;
     }
     let mut where_sql = guards(target).to_owned();
@@ -333,6 +439,62 @@ mod tests {
             name: "nodes".to_owned(),
         });
         assert!(compile(&q, &[], "r").is_none());
+    }
+
+    // -- decline (c): a residual that could raise sends the whole query in memory --
+
+    #[test]
+    fn a_residual_that_could_raise_declines_the_whole_query() {
+        let declined = |src: &str| {
+            assert!(
+                compile(&parse(src), &[], "r").is_none(),
+                "should decline: {src}"
+            );
+        };
+        let planned = |src: &str| {
+            assert!(
+                compile(&parse(src), &[], "r").is_some(),
+                "should plan: {src}"
+            );
+        };
+        // a bare reserved docs basename (the guard in `get`)
+        declined("from docs where path == \"x\" && $path == \"nope.md\"");
+        declined("from docs where $path == \"nope.md\" && !body");
+        // `doc.<reserved>` on any target, at any depth
+        declined("from blocks where $path == \"x\" && doc.path == \"y\"");
+        declined("from blocks where $path == \"x\" && nodes exists { where doc.path == \"y\" }");
+        // a function or method call
+        declined("from docs where $path.matches(\"[\") && $path == \"nope.md\"");
+        declined("from docs where nope(\"x\") && $path == \"nope.md\"");
+        declined("from docs where $path == \"x\" && size(tags) > 1");
+        declined("from docs where $path == \"x\" && nodes exists { where name.lower() == \"a\" }");
+        declined(
+            "from docs where $path == \"x\" && nodes count { where kind == \"a\" order by size(name) } > 1",
+        );
+        // a `^`-escaped name: an outer reference or a lift
+        declined("from docs where $path == \"x\" && ^slug == \"y\"");
+        declined("from docs where $path == \"x\" && nodes exists { where name == ^title }");
+        declined("from docs where $path == \"x\" && nodes collect { ^first_task: name }");
+        // a nested block with the `single` consumer
+        declined(
+            "from docs where $path == \"x\" && blocks exists { select t: nodes single { where kind == \"md:task\" } }",
+        );
+        // the pushed side raising is impossible; only the residual matters
+        planned("from docs where $path.startsWith(\"lab/\") && $path == \"x\"");
+        // plain reads, comparisons, `in`, `!`, literals and bindings keep the push
+        planned("from docs where $path == \"x\" && era in 800..1680");
+        planned("from docs where $path == \"x\" && !verified");
+        planned("from docs where $path == \"x\" && (layer == \"a\" || layer == \"b\")");
+        planned("from docs where $path == \"x\" && verified == true");
+        planned("from docs where $path == \"x\" && nodes exists { where kind == \"md:task\" }");
+        planned(
+            "from docs where $path == \"x\" && nodes count { where kind == \"md:task\" limit 5 } > 1",
+        );
+        // on blocks a bare `path` is an attribute, and inside a block the rows
+        // are another scope — an ordinary read, not the guard
+        planned("from blocks where $path == \"x\" && !path");
+        planned("from docs where $path == \"x\" && nodes exists { where path == \"y\" }");
+        planned("from docs where $path == \"x\" && frontmatter.path == \"y\"");
     }
 
     #[test]

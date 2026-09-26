@@ -914,7 +914,7 @@
     },
     {
       "name": "hit-fields-heading-list-and-item",
-      "notes": "Every live block is indexed, containers included: a word in a list item hits the heading, the `list` (its text is the joined children) and the `list_item`; `type`/`text` are the block's.",
+      "notes": "§1.1 (1.2): only leaves are indexed — a word in a list item hits the heading and the `list_item`; the `list`, whose text is the joined children, has no row of its own. `type`/`text` are the block's.",
       "steps": [
         {
           "observe": {
@@ -957,7 +957,7 @@
                 "path": "a.md",
                 "type": "heading",
                 "text": "Kelp forests",
-                "score": 0.766624715046118
+                "score": 1.1586516734978363
               },
               {
                 "block_id": "b_2",
@@ -965,15 +965,7 @@
                 "path": "a.md",
                 "type": "list_item",
                 "text": "kelp grows fast",
-                "score": 0.6759727414421245
-              },
-              {
-                "block_id": "b_1",
-                "doc_id": "d_0",
-                "path": "a.md",
-                "type": "list",
-                "text": "kelp grows fast otters eat urchins",
-                "score": 0.4989669481550164
+                "score": 1.0148190519601736
               }
             ],
             "truncated": false
@@ -1219,6 +1211,186 @@
             "header": "a.md · a.md",
             "input_hash": "52202f3de0b0c0f4221bf123f27369e6992d58e7cb281b5106b8ec178fe01e86",
             "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "containers-have-no-row",
+      "notes": "§1.1 (1.2): a word in a list item nested two lists deep is exactly one hit, the innermost `list_item`; the enclosing `list`/`list_item`/`list` containers — whose text is the joined children — have no index row (before 1.2 this was six hits for one occurrence). Four filler blocks keep bm25's idf positive.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Reef notes\n\n- corals build reefs\n  - polyps secrete calcium\n    - zooxanthellae photosynthesize inside coral tissue\n- fish shelter among branches\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "zooxanthellae"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 14
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_8",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list_item",
+                "text": "zooxanthellae photosynthesize inside coral tissue",
+                "score": 1.5099764582874884
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Reef notes · a.md",
+            "input_hash": "a792940c074314785f0552e1ec1f0597492bd9732c3b77e55508a94044de1335",
+            "method_if_embedded": "pooled",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "rebuild-indexes-leaves-only",
+      "notes": "§1.1 (1.2): a rebuild is `'delete-all'` plus the insert of every live leaf, so the hits (and their bm25 scores) are identical before and after; FTS5's own `'rebuild'` would have re-indexed the content table wholesale, containers included, and `corals` would hit the `list` and the outer `list_item` as well as the leaf paragraph. The runner also checks the indexed rowids are exactly the live leaves.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Reef notes\n\n- corals build reefs\n  - polyps secrete calcium\n    - zooxanthellae photosynthesize inside coral tissue\n- fish shelter among branches\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "zooxanthellae"
+          }
+        },
+        {
+          "rebuild": "fts"
+        },
+        {
+          "search": {
+            "text": "zooxanthellae"
+          }
+        },
+        {
+          "search": {
+            "text": "corals"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 14
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_8",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list_item",
+                "text": "zooxanthellae photosynthesize inside coral tissue",
+                "score": 1.5099764582874884
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "rebuilt": "fts"
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_8",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list_item",
+                "text": "zooxanthellae photosynthesize inside coral tissue",
+                "score": 1.5099764582874884
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_3",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "corals build reefs",
+                "score": 1.1868936332932258
+              },
+              {
+                "block_id": "b_8",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list_item",
+                "text": "zooxanthellae photosynthesize inside coral tissue",
+                "score": 0.9563459491283546
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Reef notes · a.md",
+            "input_hash": "a792940c074314785f0552e1ec1f0597492bd9732c3b77e55508a94044de1335",
+            "method_if_embedded": "pooled",
             "blocks": []
           }
         ],
