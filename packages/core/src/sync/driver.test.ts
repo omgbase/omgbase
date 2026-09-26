@@ -83,6 +83,36 @@ describe("reconcile driver over a non-filesystem source", () => {
     expect(pooled.c).toBeGreaterThanOrEqual(1);
   });
 
+  it("carries a block cut from one member and pasted into another in the same batch (cross-doc move)", async () => {
+    store = new Store({ path: ":memory:" });
+    const P = "the quick brown fox jumps over the lazy dog while the cat watches from the warm kitchen window sill";
+    const files = new Map([
+      ["a.md", `# A\n\nalpha intro about apples\n\n${P}\n`],
+      ["b.md", "# B\n\nbeta intro about boats\n"],
+    ]);
+    const src = new MemorySource(files);
+    const repoId = ensureRepo(store, "mem", null);
+    await reconcileChanges(store, repoId, src, [{ path: "a.md" }, { path: "b.md" }]);
+    const before = store.db.prepare("SELECT block_id id FROM blocks WHERE text LIKE 'the quick brown fox%' AND deleted_commit IS NULL").get() as { id: string };
+
+    // One watcher batch: the paragraph leaves a.md and lands in b.md (b listed first).
+    files.set("a.md", "# A\n\nalpha intro about apples\n");
+    files.set("b.md", `# B\n\nbeta intro about boats\n\n${P}\n`);
+    const res = await reconcileChanges(store, repoId, src, [{ path: "b.md" }, { path: "a.md" }]);
+    expect(res.ingested).toEqual(["b.md", "a.md"]);
+
+    const after = store.db.prepare("SELECT b.block_id id, d.path FROM blocks b JOIN docs d ON d.doc_id=b.doc_id WHERE b.text LIKE 'the quick brown fox%'").all() as { id: string; path: string }[];
+    expect(after).toEqual([{ id: before.id, path: "b.md" }]);
+    const kinds = (store.db.prepare("SELECT kind FROM dispositions WHERE block_id=? ORDER BY rowid").all(before.id) as { kind: string }[]).map((d) => d.kind);
+    expect(kinds).toEqual(["inserted", "moved"]);
+    const pooled = store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE block_id=?").get(before.id) as { c: number };
+    expect(pooled.c).toBe(0);
+    // Convergence for both members.
+    const docs = store.db.prepare("SELECT d.path, d.file_hash, r.rendered_hash FROM docs d JOIN revisions r ON r.rev_id=d.current_rev").all() as { path: string; file_hash: Buffer; rendered_hash: Buffer }[];
+    expect(docs).toHaveLength(2);
+    for (const d of docs) expect(d.file_hash.equals(d.rendered_hash), d.path).toBe(true);
+  });
+
   it("re-ingests a genuinely changed member as a new revision", async () => {
     store = new Store({ path: ":memory:" });
     const files = new Map([["a.md", "# A\n"]]);

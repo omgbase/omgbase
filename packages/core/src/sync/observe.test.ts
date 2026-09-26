@@ -68,6 +68,27 @@ describe("observeFile", () => {
 });
 
 describe("observeMany (batch)", () => {
+  it("cross-document move inside one batch keeps the block id (moved), in either order", () => {
+    const P = "the quick brown fox jumps over the lazy dog while the cat watches from the warm kitchen window sill";
+    observeMany(store, repoId, [
+      { path: "a.md", content: `# A\n\nalpha intro about apples\n\n${P}\n` },
+      { path: "b.md", content: "# B\n\nbeta intro about boats\n" },
+    ]);
+    const id = (store.db.prepare("SELECT block_id id FROM blocks WHERE text LIKE 'the quick brown fox%'").get() as { id: string }).id;
+    const res = observeMany(store, repoId, [
+      { path: "b.md", content: `# B\n\nbeta intro about boats\n\n${P}\n` },
+      { path: "a.md", content: "# A\n\nalpha intro about apples\n" },
+    ]);
+    expect(res.map((r) => r.echo)).toEqual([false, false]);
+    expect(res.every((r) => r.converged)).toBe(true);
+    expect(res[0]!.dispositions.find((d) => d.kind === "moved")?.count).toBe(1);
+    expect(res[0]!.dispositions.find((d) => d.kind === "inserted")).toBeUndefined();
+    expect(res[1]!.dispositions.find((d) => d.kind === "deleted")).toBeUndefined();
+    const after = store.db.prepare("SELECT b.block_id id, d.path FROM blocks b JOIN docs d ON d.doc_id=b.doc_id WHERE b.text LIKE 'the quick brown fox%'").all();
+    expect(after).toEqual([{ id, path: "b.md" }]);
+    expect(store.db.prepare("SELECT count(*) c FROM resurrection_pool WHERE block_id=?").get(id)).toEqual({ c: 0 });
+  });
+
   it("observes several files in one call, echo-gating each", () => {
     const results = observeMany(store, repoId, [
       { path: "a.md", content: "# A\n" },

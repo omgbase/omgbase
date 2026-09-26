@@ -1,13 +1,10 @@
 import type { Store } from "../core/store/store.js";
-import { mintId } from "../core/ids.js";
 import { ingestFile } from "../core/ingest.js";
 import { ensureRepo } from "../core/attach.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
-import { observeOne } from "./observe.js";
-import { sweepResurrectionPool } from "../core/store/gc.js";
-import { tombstoneObservedDeletion } from "./tombstone.js";
+import { observeBatch, type BatchItem } from "./observe.js";
 import type { SyncSource } from "./plugin.js";
-import type { FileChange, CheckpointResult } from "./checkpoint.js";
+import { finishCheckpoint, type FileChange, type CheckpointResult } from "./checkpoint.js";
 
 // Source-agnostic reconciliation driver (sync-plugins §5, §10). One loop for
 // every EXTERNAL source: fetch each changed member through the SyncSource (a pipe
@@ -23,7 +20,14 @@ export type { FileChange, CheckpointResult };
  * Reconcile a batch of changed members against a repo as one checkpoint.
  * `source.fetch(path)` supplies current bytes (or null = left the scope). The
  * engine hashes the bytes itself: a hash equal to the stored file_hash is an
- * echo (no commit); otherwise the member is ingested as an observed commit.
+ * echo (no commit); otherwise the member is ingested as an observed commit; a
+ * member that left the scope tombstones its live doc (drop FTS, tombstone
+ * blocks + doc, pool blocks) so it stops being served. Every member is fetched
+ * first, then the whole batch goes through `observeBatch` — the one
+ * implementation of echo gate + identity threading + conflict flagging (D2),
+ * including the cross-document move phase over the batch — so a live watcher
+ * batch that cuts a block from one member and pastes it into another keeps the
+ * id. (v1 sources are identity-inferred; borne identity is deferred, ADR-010/D4.)
  */
 export async function reconcileChanges(
   store: Store,
@@ -33,46 +37,12 @@ export async function reconcileChanges(
   opts: { ts?: string; gitHead?: string | null } = {},
 ): Promise<CheckpointResult> {
   const ts = opts.ts ?? new Date().toISOString();
-  const checkpointId = mintId("cp");
-  const ingested: string[] = [];
-  const suppressed: string[] = [];
-  const deleted: string[] = [];
-  const conflicted: string[] = [];
-  const fileEntries: [string, string | null, string | null][] = [];
-
+  const items: BatchItem[] = [];
   for (const change of changes) {
     const item = await source.fetch(change.path);
-    if (item === null) {
-      // Member left the source scope (deleted/moved out): tombstone the live doc
-      // (drop FTS, tombstone blocks + doc, pool blocks) so it stops being served.
-      const existing = store.db
-        .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
-        .get(repoId, change.path) as { doc_id: string; file_hash: Buffer | null } | undefined;
-      if (existing) {
-        tombstoneObservedDeletion(store, repoId, existing.doc_id, ts);
-        deleted.push(change.path);
-      }
-      fileEntries.push([change.path, existing?.file_hash?.toString("hex") ?? null, null]);
-      continue;
-    }
-
-    // Reconcile the fetched bytes through the shared observe primitive — the one
-    // implementation of echo gate + identity threading + conflict flagging (D2).
-    // (v1 sources are identity-inferred; borne identity is deferred, ADR-010/D4.)
-    const r = observeOne(store, repoId, change.path, item.content, ts);
-    if (r.echo) suppressed.push(change.path);
-    else if (r.conflicted) conflicted.push(change.path);
-    else ingested.push(change.path);
-    fileEntries.push([change.path, r.oldHashHex, r.newHashHex]);
+    items.push({ path: change.path, content: item === null ? null : item.content });
   }
-
-  store.db
-    .prepare("INSERT INTO checkpoints (id, repo_id, ts, files, git_head) VALUES (?, ?, ?, ?, ?)")
-    .run(checkpointId, repoId, ts, JSON.stringify(fileEntries), opts.gitHead ?? null);
-
-  sweepResurrectionPool(store, ts);
-
-  return { checkpointId, ingested, suppressed, deleted, conflicted };
+  return finishCheckpoint(store, repoId, observeBatch(store, repoId, items, ts), { ts, gitHead: opts.gitHead ?? null });
 }
 
 export interface AttachResult {

@@ -288,6 +288,10 @@ Additive → structural → breaking. Every stage ends green on `pnpm build && p
      implementation. Behavior-preserving (all sync tests green).
    - ✅ **D3 done** — `observe_many` MCP tool + `observeMany` core, sharing
      `observeOne`.
+     `observe_many` is a checkpoint: members are reconciled first, cross-document
+     moves are matched across the batch (`spec/reconcile` §7), then each commits —
+     so a coordinator should send one file's cut and another's paste in the same
+     call when it can.
    - ✅ **`@omgbase/sync` package done** — `packages/sync`: `EngineClient` seam
      (`InProcessEngineClient` for local/tests; `McpEngineClient` +
      `connectStdioEngine` for remote over MCP), `Coordinator` (`syncIn` /

@@ -1,13 +1,13 @@
 import type { Database } from "better-sqlite3";
 import type { Store } from "../core/store/store.js";
-import type { RawBlock } from "../core/parse/types.js";
+import type { RawBlock, BlockTree } from "../core/parse/types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
-import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest.js";
+import { parseForIngest, type IdResolver, type DispositionRow, type ResolvedEdgeRow } from "../core/ingest.js";
 import { mintId } from "../core/ids.js";
 import { extractFromBlock, extractFromFrontmatter, resolveRelativePath } from "../graph/extract.js";
 import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
 import { sha256, childQuoteDepth, visibleText, type VisibleTextBlock } from "../core/hash.js";
-import { reconcileDocument, type ResurrectionCandidate } from "../reconcile/reconcile.js";
+import { reconcileDocument, type ResurrectionCandidate, type DocReconcileResult } from "../reconcile/reconcile.js";
 import { flatten, type FlatSource } from "../reconcile/flatten.js";
 import { DEFAULT_CONFIG, type MatchBlock, type ReconcileConfig } from "../reconcile/types.js";
 import { adapterForPath, type AdapterEdge } from "../format/index.js";
@@ -105,7 +105,11 @@ export function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
   });
 }
 
-function loadPool(db: Database, repoId: string, ts: string): ResurrectionCandidate[] {
+/** The live resurrection pool for a repo (rows not yet expired at `ts`). A batch
+ * caller loads it ONCE per checkpoint and threads a shared consumed-set through
+ * `prepareReconcile`, so two documents reconciled before either commits cannot
+ * both resurrect the same pooled id. */
+export function loadPool(db: Database, repoId: string, ts: string): ResurrectionCandidate[] {
   const rows = db
     .prepare("SELECT block_id, raw_hash, norm_hash, type FROM resurrection_pool WHERE repo_id = ? AND expires_ts > ?")
     .all(repoId, ts) as { block_id: string; raw_hash: Buffer; norm_hash: Buffer; type: string }[];
@@ -129,12 +133,65 @@ function assignFromMap(blocks: RawBlock[], assignment: Map<string, string>): Tre
   return walk(blocks, null);
 }
 
+/** One document parsed + reconciled but NOT committed: the first pass of a
+ * checkpoint (reconciliation-spec §8). The cross-document phase reads
+ * `oldBlocks`/`newBlocks`/`result` across every prepared doc, rewrites `result`
+ * in place (`applyCrossDocMatches`) and records the ids it carried in; the
+ * second pass commits by handing this to `makeReconcilingResolver({ prepared })`
+ * + `ingestFile({ parsed: tree })`. */
+export interface PreparedReconcile {
+  path: string;
+  content: string;
+  /** the doc row at `path` (live or tombstoned), or null when the path is new —
+   * exactly the docId ingestFile will pass the resolver. */
+  docId: string | null;
+  tree: BlockTree;
+  oldBlocks: MatchBlock[];
+  newBlocks: MatchBlock[];
+  result: DocReconcileResult;
+  /** ids carried into this document by the cross-doc phase (filled by it). */
+  crossDocIds: string[];
+}
+
+/**
+ * Pass 1 of an observed ingest: parse `content`, load the document's current
+ * tree, and reconcile — without writing. `pool`/`consumed` let a batch share one
+ * pool snapshot: candidates already in `consumed` are hidden from this document,
+ * and the ids this document resurrects are added to it.
+ */
+export function prepareReconcile(
+  store: Store,
+  repoId: string,
+  path: string,
+  content: string,
+  opts: { ts?: string; config?: ReconcileConfig; pool?: ResurrectionCandidate[]; consumed?: Set<string> } = {},
+): PreparedReconcile {
+  const db = store.db;
+  const ts = opts.ts ?? new Date().toISOString();
+  const config = opts.config ?? DEFAULT_CONFIG;
+  // Same lookup ingestFile does (a tombstoned row still owns the path's identity).
+  const doc = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as { doc_id: string } | undefined;
+  const docId = doc?.doc_id ?? null;
+  const { tree, rest } = parseForIngest(path, content);
+  const oldBlocks = docId ? loadOldMatchBlocks(db, docId) : [];
+  const newBlocks = flatten(rest.map(toFlatSource));
+  let pool: ResurrectionCandidate[] = [];
+  if (docId) {
+    pool = opts.pool ?? loadPool(db, repoId, ts);
+    if (opts.consumed) pool = pool.filter((c) => !opts.consumed!.has(c.blockId));
+  }
+  const result = reconcileDocument(oldBlocks, newBlocks, { config, pool });
+  if (opts.consumed) for (const id of result.consumedPool) opts.consumed.add(id);
+  return { path, content, docId, tree, oldBlocks, newBlocks, result, crossDocIds: [] };
+}
+
 /** Build an IdResolver bound to this store + repo, reconciling against the
- * document's current revision. */
+ * document's current revision. With `prepared` (from `prepareReconcile`, after
+ * the cross-doc phase) the resolver skips the reconcile and applies that result. */
 export function makeReconcilingResolver(
   store: Store,
   repoId: string,
-  opts: { ts?: string; config?: ReconcileConfig; path?: string } = {},
+  opts: { ts?: string; config?: ReconcileConfig; path?: string; prepared?: PreparedReconcile } = {},
 ): IdResolver {
   const ts = opts.ts ?? new Date().toISOString();
   const config = opts.config ?? DEFAULT_CONFIG;
@@ -142,11 +199,17 @@ export function makeReconcilingResolver(
   const docDir = opts.path ? opts.path.replace(/[^/]*$/, "") : "";
   return (rest: RawBlock[], docId: string | null) => {
     const db = store.db;
-    const oldBlocks = docId ? loadOldMatchBlocks(db, docId) : [];
-    const newBlocks = flatten(rest.map(toFlatSource));
-    const pool = docId ? loadPool(db, repoId, ts) : [];
-
-    const result = reconcileDocument(oldBlocks, newBlocks, { config, pool });
+    let result: DocReconcileResult;
+    let crossDocIds: string[] = [];
+    if (opts.prepared) {
+      result = opts.prepared.result;
+      crossDocIds = opts.prepared.crossDocIds;
+    } else {
+      const oldBlocks = docId ? loadOldMatchBlocks(db, docId) : [];
+      const newBlocks = flatten(rest.map(toFlatSource));
+      const pool = docId ? loadPool(db, repoId, ts) : [];
+      result = reconcileDocument(oldBlocks, newBlocks, { config, pool });
+    }
 
     const assigned = assignFromMap(rest, result.assignment);
     const dispositions: DispositionRow[] = result.dispositions.map((d) => ({
@@ -186,7 +249,7 @@ export function makeReconcilingResolver(
       return out;
     };
 
-    return { assigned, dispositions, deleted: result.deleted, consumedPool: result.consumedPool, extractEdges };
+    return { assigned, dispositions, deleted: result.deleted, consumedPool: result.consumedPool, crossDocIds, extractEdges };
   };
 }
 

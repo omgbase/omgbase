@@ -13,6 +13,7 @@ import { flattenFrontmatter, flattenComputed, writeDocProperties, type PropertyR
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
 import type { RawBlock, BlockTree } from "./parse/types.js";
+import type { Database } from "better-sqlite3";
 import { adapterForPath } from "../format/index.js";
 
 // Ingest path (07 task 1.4): parse → assign ids → commit. By default every
@@ -58,8 +59,23 @@ export type IdResolver = (
   dispositions: DispositionRow[];
   deleted: string[];
   consumedPool?: string[];
+  /** Ids carried INTO this document from another one in the same checkpoint
+   * (cross-document moves, reconciliation-spec §8). The other doc may still hold
+   * a `blocks` row for them (it commits later in the batch, or was tombstoned);
+   * ingest evicts those rows so the id can be re-homed regardless of order. */
+  crossDocIds?: string[];
   extractEdges?: (docId: string, frontmatter: Record<string, unknown>) => ResolvedEdgeRow[];
 };
+
+/** The parse step of ingest, exported so a batch caller can parse + reconcile
+ * every document of a checkpoint BEFORE committing any (the cross-document
+ * phase needs all per-doc results first) and hand the tree back via
+ * `opts.parsed`. Frontmatter is split off: `rest` is what the IdResolver sees. */
+export function parseForIngest(path: string, content: string): { tree: BlockTree; fmBlock: RawBlock | null; rest: RawBlock[] } {
+  const adapter = adapterForPath(path);
+  const tree: BlockTree = adapter ? adapter.parse(content) : parseTree(content);
+  return { tree, ...extractFrontmatter(tree.children) };
+}
 
 export interface IngestResult {
   docId: string;
@@ -157,6 +173,9 @@ export function ingestFile(
     reason?: string | null;
     resolveIds?: IdResolver;
     format?: string;
+    /** A tree already parsed from `content` (via `parseForIngest`) — skips the
+     * re-parse. The caller guarantees it is the parse of these exact bytes. */
+    parsed?: BlockTree;
   } = {},
 ): IngestResult {
   const ts = opts.ts ?? new Date().toISOString();
@@ -165,7 +184,7 @@ export function ingestFile(
   const format = opts.format ?? adapter?.format ?? "markdown";
 
   return store.write((db): IngestResult => {
-    const tree: BlockTree = adapter ? adapter.parse(content) : parseTree(content);
+    const tree: BlockTree = opts.parsed ?? (adapter ? adapter.parse(content) : parseTree(content));
     const { fmBlock, rest } = extractFrontmatter(tree.children);
 
     // Frontmatter blob (markdown-specific) preserved for revision history.
@@ -230,6 +249,14 @@ export function ingestFile(
       );
       for (const id of resolved.deleted) pool.run(commit.commitId, expires, id, docId);
     }
+
+    // Ids arriving from ANOTHER document — a cross-document move whose source
+    // commits later in this checkpoint (or was tombstoned in it), or a
+    // resurrection out of a tombstoned doc whose rows still sit in `blocks` —
+    // must not collide on the block_id primary key. Evict the foreign row (and
+    // its FTS entry when live) and drop any pool row: the id is live here now.
+    const incoming = [...(resolved.crossDocIds ?? []), ...(resolved.consumedPool ?? [])];
+    if (incoming.length > 0) evictForeignBlockRows(db, docId, incoming);
 
     // Refresh current-state blocks (clear + repopulate with carried/minted ids).
     // FTS is external-content: delete old index rows before dropping blocks.
@@ -374,6 +401,27 @@ export function ingestFile(
       converged,
     };
   });
+}
+
+// Remove another document's `blocks` row for each id in `ids` (a cross-doc move
+// or a resurrection re-homes the id into `docId`). A live foreign row still has
+// an FTS entry (external-content index: delete with the original text); a
+// tombstoned one does not. The source document, if it commits later in the same
+// checkpoint, rewrites its rows wholesale and never lists a carried id as
+// deleted, so nothing there depends on the evicted row.
+function evictForeignBlockRows(db: Database, docId: string, ids: string[]): void {
+  const sel = db.prepare("SELECT rowid, text, deleted_commit FROM blocks WHERE block_id = ? AND doc_id != ?");
+  const ftsDel = db.prepare("INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete', ?, ?)");
+  const del = db.prepare("DELETE FROM blocks WHERE block_id = ? AND doc_id != ?");
+  const unpool = db.prepare("DELETE FROM resurrection_pool WHERE block_id = ?");
+  for (const id of ids) {
+    const row = sel.get(id, docId) as { rowid: number; text: string; deleted_commit: string | null } | undefined;
+    if (row) {
+      if (row.deleted_commit === null) ftsDel.run(row.rowid, row.text);
+      del.run(id, docId);
+    }
+    unpool.run(id);
+  }
 }
 
 // Zip assigned block ids onto the parsed RawBlocks for node projection. The
