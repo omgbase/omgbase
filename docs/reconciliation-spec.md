@@ -87,7 +87,23 @@ Same over `norm_hash`. Reason `normalized_hash`, confidence 0.99.
 Blocks carrying the same authored `^block-ref` anchor pair directly (unique on both sides). Reason `anchor`, confidence 0.99.
 
 ### Phase 4 — context propagation
-For each parent pair already matched: if exactly one unmatched old child and one unmatched new child of the same type remain **between the same matched neighbors**, pair them if `text_sim ≥ 0.35`. Reason `context_unique`, confidence `0.75 + 0.2 × text_sim`.
+For each parent pair already matched (or both roots): if exactly one unmatched old child remains, pair it with its best-matching unmatched new child of the same type under the new parent if `text_sim ≥ contextSimFloor` (0.35) and the best is unique. Reason `context_unique`, confidence `0.75 + 0.2 × text_sim`. Insertions in the gap lose to the better-matching candidate rather than blocking the carry.
+
+### Phase 4b — children vouch for their parent
+The converse of Phase 4: matched children carry their container. A container's visible text is its children's text joined by spaces (`spec/format` §4.1), so a list of short items has little or no shingle evidence of its own — `- one / - two / - three` vs `- one / - two changed / - three` has `text_sim = 0` — while two of its three items lock exactly (Phase 1) inside the new list. That is the evidence this phase reads.
+
+For each unmatched old block O that has children, tally where O's already-carried children landed (the new parent key of each carried child). O pairs with the unmatched new block N when all of:
+
+- `fraction = |children of O carried under N| / |children of O| ≥ children.vouch_frac` (0.5);
+- N is the **unique** destination maximum for O's carried children, and O is the **unique** source maximum for N's carried children (mutual best by children; a 2 + 2 scatter or a 3 + 3 merge of two old lists ties and mints — R4);
+- `type(O) == type(N)` (R2);
+- the containers' own parents do not contradict the pairing: both roots, an already-matched pair, or **both still unmatched** (so nested containers resolve bottom-up); one at root and one nested, or either parent matched elsewhere, rejects.
+
+Text is deliberately not consulted. Reason `context_children`, confidence `0.75 + 0.2 × fraction`; `detail` records `children_carried` and `children_total`. Kind is classified as for any carry (`edited` when the raw differs and position is unchanged, `edited_moved` otherwise).
+
+**Fixed point.** Phases 4 and 4b feed each other — a list paired by its children unlocks Phase 4 for the one edited item under it; an inner list paired by its items unlocks the item that contains it, which unlocks the outer list. The reconciler therefore runs `4 → 4b` repeatedly until neither adds a pair (each round consumes ≥ 1 old block, so it terminates). Phase 4 runs first in each round, so a container that *does* have text evidence still carries as `context_unique`.
+
+Note that a one- or two-token edited item (`two` → `two changed`) is **not** carried afterwards: it is the lone unmatched old child of the now-matched list, but texts under three tokens shingle to a single whole-text shingle, so `text_sim` is 0 unless identical, and Phase 5 prunes the pair for the same reason. Its id resets (small-block policy, §6; `update-opsets.md` "Small-block matcher policy"). The kernel promise "updates a list as a unit" is about the list's identity, not the edited item's.
 
 ### Phase 5 — scored assignment
 For remaining candidates (same type, candidate pruning below):
@@ -123,6 +139,8 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 |---|---|---|
 | `θ_accept` | 0.62 | Phase-5 acceptance |
 | `θ_small` | 0.80 | Acceptance for blocks with < 8 tokens |
+| `context.sim_floor` | 0.35 | Phase-4 `text_sim` floor (`contextSimFloor`) |
+| `children.vouch_frac` | 0.50 | Phase-4b: fraction of an old container's children that must have carried into the one new container (`childrenVouchFrac`) |
 | `θ_xdoc` | 0.80 | Cross-document acceptance |
 | `split.coverage` | 0.80 | Split/merge concat coverage |
 | `split.dominant_share` | 0.70 | Dominant-fragment inheritance |
@@ -138,7 +156,9 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 ## 7. Determinism & versioning
 
 - The matcher MUST be deterministic for a given (old tree, new bytes, config). No RNG, no wall-clock influence.
-- `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major.
+- `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`.
+  - `m1.0` — phases 1–7 as first shipped.
+  - `m2.0` — Phase 4b (children vouch for their parent, reason `context_children`) and the Phase 4/4b fixed point (2026-09-25, alongside the "visible text" rule for container `text`).
 - Re-running a newer matcher NEVER rewrites committed dispositions (R6).
 
 ## 8. Sync pipeline placement

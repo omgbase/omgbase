@@ -1,7 +1,7 @@
 import { mintId } from "../core/ids.js";
 import type { MatchBlock, Disposition, ReconcileConfig, MatchResult } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
-import { phase1Exact, phase2Normalized, phase3Anchor, phase4Context, type PhaseState } from "./phases.js";
+import { phase1Exact, phase2Normalized, phase3Anchor, phase4Propagate, type PhaseState } from "./phases.js";
 import { phase5Scored } from "./phase5.js";
 import { phase6aCompound } from "./phase6a.js";
 
@@ -81,7 +81,7 @@ export function reconcileDocument(
   }
 
   phase3Anchor(state);
-  phase4Context(state);
+  phase4Propagate(state); // phases 4 + 4b to a fixed point
   phase5Scored(state);
   phase6aCompound(state);
   if (opts.pool && opts.pool.length > 0) phase6bResurrection(state, opts.pool, consumedPool);

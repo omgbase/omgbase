@@ -8,7 +8,7 @@ export type DispositionKind =
   | "split_from" | "merged_into" | "copied_from" | "resurrected" | "bulk_rewrite";
 
 export type Reason =
-  | "exact_hash" | "normalized_hash" | "anchor" | "context_unique"
+  | "exact_hash" | "normalized_hash" | "anchor" | "context_unique" | "context_children"
   | "scored" | "tombstone" | "api";
 
 // A flattened block for matching. Old blocks carry their id; new blocks don't
@@ -50,10 +50,15 @@ export interface ReconcileConfig {
   maxScoredBlocks: number;
   smallBlockTokens: number;
   contextSimFloor: number; // phase-4 text_sim floor (0.35)
+  /** phase-4b: minimum fraction of an old container's children that must have
+   * carried into one new container for the children to vouch for it (0.5). */
+  childrenVouchFrac: number;
 }
 
 export const DEFAULT_CONFIG: ReconcileConfig = {
-  matcherV: "m1.0",
+  // m2.0: phase 4b (children vouch for their parent, reason context_children)
+  // and the phase-4 fixed point; a phase change bumps the major (03 §7).
+  matcherV: "m2.0",
   thetaAccept: 0.62,
   thetaSmall: 0.8,
   thetaXdoc: 0.8,
@@ -65,6 +70,7 @@ export const DEFAULT_CONFIG: ReconcileConfig = {
   maxScoredBlocks: 2000,
   smallBlockTokens: 8,
   contextSimFloor: 0.35,
+  childrenVouchFrac: 0.5,
 };
 
 /** The result of matching one document's old tree against new blocks. */
