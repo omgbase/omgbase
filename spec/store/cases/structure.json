@@ -1,0 +1,3690 @@
+{
+  "suite": "structure",
+  "cases": [
+    {
+      "name": "nested-list",
+      "notes": "list > list_item > list > list_item: order keys restart at V per sibling list, depth and ancestor_path follow §4.3, nested trivia_hash is NULL, nested tree entries carry null trivia.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- a\n  - b\n  - c\n- d\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "9b7240d86a4117c00d4d1f643400aeebd49ee0a08cac4086ace56e6c146e8a25",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "7b283c97b146652ce9997bfeafa464a0fcc59652e587988786a1f1b91b04bd5b",
+            "frontmatter_blob": null,
+            "rendered_hash": "9b7240d86a4117c00d4d1f643400aeebd49ee0a08cac4086ace56e6c146e8a25",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "647a2b9cd5edbdaa1bea694e97b11f9095cd47fa9bc3235271b883ac4e4ad1f5",
+            "size": 19,
+            "bytes": "- a\n  - b\n  - c\n- d"
+          },
+          {
+            "hash": "7c1d851fd45138f28218046b0bdea4a2ef7e18e0340957171b2259bb8bf527e2",
+            "size": 9,
+            "bytes": "- b\n  - c"
+          },
+          {
+            "hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "size": 1,
+            "bytes": "a"
+          },
+          {
+            "hash": "d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113",
+            "size": 3,
+            "bytes": "- b"
+          },
+          {
+            "hash": "dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341",
+            "size": 3,
+            "bytes": "- c"
+          },
+          {
+            "hash": "f5ae19f39bb8f5e280fd49aab73849028f469fee25959d2db2409d08e605681e",
+            "size": 3,
+            "bytes": "- d"
+          },
+          {
+            "hash": "f825b22be93643e4482ae3376e580d5c5e384a593e3a3b84f8a4dc48587ee388",
+            "size": 15,
+            "bytes": "- a\n  - b\n  - c"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "1c8574230aea2157fbeb55528f66761001fdb703f705c9fb15c0223d7df65d80",
+            "entries": "[[\"b_4\",\"d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113\",null,\"list_item\",{},null],[\"b_5\",\"dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341\",null,\"list_item\",{},null]]"
+          },
+          {
+            "hash": "491f6500e50d04a45685d81bec828c2888d87fc86770132ebc99bad8be202dba",
+            "entries": "[[\"b_2\",\"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb\",null,\"paragraph\",{},null],[\"b_3\",\"7c1d851fd45138f28218046b0bdea4a2ef7e18e0340957171b2259bb8bf527e2\",\"1c8574230aea2157fbeb55528f66761001fdb703f705c9fb15c0223d7df65d80\",\"list\",{\"ordered\":false},null]]"
+          },
+          {
+            "hash": "7b283c97b146652ce9997bfeafa464a0fcc59652e587988786a1f1b91b04bd5b",
+            "entries": "[[\"b_0\",\"647a2b9cd5edbdaa1bea694e97b11f9095cd47fa9bc3235271b883ac4e4ad1f5\",\"9b72b279d335ebdc8f64e9ddd580adcf50b7a1d7a2e4302e2ab7ea1285765ab6\",\"list\",{\"ordered\":false},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "9b72b279d335ebdc8f64e9ddd580adcf50b7a1d7a2e4302e2ab7ea1285765ab6",
+            "entries": "[[\"b_1\",\"f825b22be93643e4482ae3376e580d5c5e384a593e3a3b84f8a4dc48587ee388\",\"491f6500e50d04a45685d81bec828c2888d87fc86770132ebc99bad8be202dba\",\"list_item\",{},null],[\"b_6\",\"f5ae19f39bb8f5e280fd49aab73849028f469fee25959d2db2409d08e605681e\",null,\"list_item\",{},null]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "a b c d",
+            "raw_hash": "647a2b9cd5edbdaa1bea694e97b11f9095cd47fa9bc3235271b883ac4e4ad1f5",
+            "norm_hash": "f82ce1b653e30b1ceb5711bbf75965dd24513011d7daa48bbd8610550154a1fd",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "a b c",
+            "raw_hash": "f825b22be93643e4482ae3376e580d5c5e384a593e3a3b84f8a4dc48587ee388",
+            "norm_hash": "0e9f64031fcb2bc708b531c2a20441580425d151a38503f38592a7dd36019d3b",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "a",
+            "raw_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "norm_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "b c",
+            "raw_hash": "7c1d851fd45138f28218046b0bdea4a2ef7e18e0340957171b2259bb8bf527e2",
+            "norm_hash": "47d8a4a86c7433e263d0404a445daabd421cffeeb1d4a38315138a26c9453575",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_3",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_1/b_3/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "b",
+            "raw_hash": "d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113",
+            "norm_hash": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": "b_3",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_1/b_3/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "c",
+            "raw_hash": "dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341",
+            "norm_hash": "2e7d2c03a9507ae265ecf5b5356885a53393a2029d241394997265a1a25aefc6",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "d",
+            "raw_hash": "f5ae19f39bb8f5e280fd49aab73849028f469fee25959d2db2409d08e605681e",
+            "norm_hash": "18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "blockquote",
+      "notes": "Paragraphs inside a blockquote: nested raws keep their `> ` prefixes, text loses them (norm_hash over the visible text).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "> quoted line\n> continues here\n>\n> second paragraph\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "feb06511e0f14d3dea1a450f6b5705bea480d6fbbac99bd4e513e10ff9714989",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "3c6134089968665a04a290a1373f54759b14f8b7602a4654b68bb6ef4c7efe6a",
+            "frontmatter_blob": null,
+            "rendered_hash": "feb06511e0f14d3dea1a450f6b5705bea480d6fbbac99bd4e513e10ff9714989",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "d5c033180fdbb3eac4c097a47929d291ae623a4399c5ce5e99a1b7be30d7cd6f",
+            "size": 28,
+            "bytes": "quoted line\n> continues here"
+          },
+          {
+            "hash": "e75eaf9cf64ab9a68fd6afe05c7d50f3f65d3706da5f0bf8a02461c44bfdd64a",
+            "size": 16,
+            "bytes": "second paragraph"
+          },
+          {
+            "hash": "f05dc17f8f302ffc0f32391023bf8e4735cf8e78469ceff4cebcfea6a735225b",
+            "size": 51,
+            "bytes": "> quoted line\n> continues here\n>\n> second paragraph"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "3c6134089968665a04a290a1373f54759b14f8b7602a4654b68bb6ef4c7efe6a",
+            "entries": "[[\"b_0\",\"f05dc17f8f302ffc0f32391023bf8e4735cf8e78469ceff4cebcfea6a735225b\",\"db2a841e5ff598a84316f1df128d67d88ecfeda9d5b837252b9928e27904778d\",\"blockquote\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "db2a841e5ff598a84316f1df128d67d88ecfeda9d5b837252b9928e27904778d",
+            "entries": "[[\"b_1\",\"d5c033180fdbb3eac4c097a47929d291ae623a4399c5ce5e99a1b7be30d7cd6f\",null,\"paragraph\",{},null],[\"b_2\",\"e75eaf9cf64ab9a68fd6afe05c7d50f3f65d3706da5f0bf8a02461c44bfdd64a\",null,\"paragraph\",{},null]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "blockquote",
+            "attrs": {},
+            "text": "quoted line continues here second paragraph",
+            "raw_hash": "f05dc17f8f302ffc0f32391023bf8e4735cf8e78469ceff4cebcfea6a735225b",
+            "norm_hash": "095e18383f21ac381b59094091cebdebebcb4cc2011206a5fc235bf4ed6d0550",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "quoted line continues here",
+            "raw_hash": "d5c033180fdbb3eac4c097a47929d291ae623a4399c5ce5e99a1b7be30d7cd6f",
+            "norm_hash": "0bc093553ee1071dfddf2be311d477f172368d17c0a1c2e5b7754a30757267d5",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "second paragraph",
+            "raw_hash": "e75eaf9cf64ab9a68fd6afe05c7d50f3f65d3706da5f0bf8a02461c44bfdd64a",
+            "norm_hash": "e75eaf9cf64ab9a68fd6afe05c7d50f3f65d3706da5f0bf8a02461c44bfdd64a",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "table",
+      "notes": "table > table_row rows; row text is the cells joined by spaces.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "| a | b |\n| - | - |\n| 1 | 2 |\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "fa83320d8507c1c768af6c87a36be27806aacdc5146f0749a6a2f6c51550dba2",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "5f70d55463e3756f3c92ab54d99e7f184327d6ab58a56acf83c9279fbde85a40",
+            "frontmatter_blob": null,
+            "rendered_hash": "fa83320d8507c1c768af6c87a36be27806aacdc5146f0749a6a2f6c51550dba2",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "8490aeb3afa5e1d9b4ec60476c0bcd742c316e147a86b4ac03764bc50de7ec46",
+            "size": 29,
+            "bytes": "| a | b |\n| - | - |\n| 1 | 2 |"
+          },
+          {
+            "hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
+            "size": 9,
+            "bytes": "| a | b |"
+          },
+          {
+            "hash": "db18e4fde9daa6d8d355f9721b2d0a04e0981ec74ded0285efbdf5be5d8f22f2",
+            "size": 9,
+            "bytes": "| 1 | 2 |"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "01853417e4a7e13f9a50953ad85b796aa6d073f6a730c6087dbf16c17e618e8a",
+            "entries": "[[\"b_1\",\"881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650\",null,\"table_row\",{},null],[\"b_2\",\"db18e4fde9daa6d8d355f9721b2d0a04e0981ec74ded0285efbdf5be5d8f22f2\",null,\"table_row\",{},null]]"
+          },
+          {
+            "hash": "5f70d55463e3756f3c92ab54d99e7f184327d6ab58a56acf83c9279fbde85a40",
+            "entries": "[[\"b_0\",\"8490aeb3afa5e1d9b4ec60476c0bcd742c316e147a86b4ac03764bc50de7ec46\",\"01853417e4a7e13f9a50953ad85b796aa6d073f6a730c6087dbf16c17e618e8a\",\"table\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "table",
+            "attrs": {},
+            "text": "a b 1 2",
+            "raw_hash": "8490aeb3afa5e1d9b4ec60476c0bcd742c316e147a86b4ac03764bc50de7ec46",
+            "norm_hash": "50e04a386cc9cdc42b20b09836db68d0dacba58a9b347f37498496254d6087c5",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "table_row",
+            "attrs": {},
+            "text": "a b",
+            "raw_hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
+            "norm_hash": "c8687a08aa5d6ed2044328fa6a697ab8e96dc34291e8c2034ae8c38e6fcc6d65",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "table_row",
+            "attrs": {},
+            "text": "1 2",
+            "raw_hash": "db18e4fde9daa6d8d355f9721b2d0a04e0981ec74ded0285efbdf5be5d8f22f2",
+            "norm_hash": "f71998fe363b9c29116c80b5eecf33a2fedca3b6159724384485804b71651029",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "task-items",
+      "notes": "task blocks with their checked attr.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- [ ] todo\n- [x] done\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "f6b1e242c13e478640b0c41428426568188f879a1a1eccaaeca060b529c1fa07",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2f75d9ef88cdb8d65d4b91f2b99af17615b77c73fe957fab4bfa7acc170ae30a",
+            "frontmatter_blob": null,
+            "rendered_hash": "f6b1e242c13e478640b0c41428426568188f879a1a1eccaaeca060b529c1fa07",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "09b9ee5ee817c3bc03013143723b3e5a22019192d800ff9ce9b43117791df131",
+            "size": 10,
+            "bytes": "- [x] done"
+          },
+          {
+            "hash": "3c95deb7a0ed0ab258bd51def87161befb022ec23b2f3757ce03e6141547d1ae",
+            "size": 21,
+            "bytes": "- [ ] todo\n- [x] done"
+          },
+          {
+            "hash": "7f8906c49fd2ee26fee06fae87eab84331034f894e1704528c266242eb19ee1d",
+            "size": 10,
+            "bytes": "- [ ] todo"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "2f75d9ef88cdb8d65d4b91f2b99af17615b77c73fe957fab4bfa7acc170ae30a",
+            "entries": "[[\"b_0\",\"3c95deb7a0ed0ab258bd51def87161befb022ec23b2f3757ce03e6141547d1ae\",\"69a88a4013d1bb22334b96128dc1a3064d6523755b073b45d82bcc5085d0df11\",\"list\",{\"ordered\":false},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "69a88a4013d1bb22334b96128dc1a3064d6523755b073b45d82bcc5085d0df11",
+            "entries": "[[\"b_1\",\"7f8906c49fd2ee26fee06fae87eab84331034f894e1704528c266242eb19ee1d\",null,\"task\",{\"checked\":false},null],[\"b_2\",\"09b9ee5ee817c3bc03013143723b3e5a22019192d800ff9ce9b43117791df131\",null,\"task\",{\"checked\":true},null]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "todo done",
+            "raw_hash": "3c95deb7a0ed0ab258bd51def87161befb022ec23b2f3757ce03e6141547d1ae",
+            "norm_hash": "e6200223e2e087f3fa312d1468ebdf7f2e969fe5e3c954c911b35743b62d8075",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "task",
+            "attrs": {
+              "checked": false
+            },
+            "text": "todo",
+            "raw_hash": "7f8906c49fd2ee26fee06fae87eab84331034f894e1704528c266242eb19ee1d",
+            "norm_hash": "602fae580f5863abfb31bf356decfdc73bf1224a62aacf6b4829ffa2dbe58390",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "task",
+            "attrs": {
+              "checked": true
+            },
+            "text": "done",
+            "raw_hash": "09b9ee5ee817c3bc03013143723b3e5a22019192d800ff9ce9b43117791df131",
+            "norm_hash": "a4c3ed04a95a3da14a9d235c83d868bed7c0f45cf7f3faa751ee8f50598d2211",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "thirty-four-siblings",
+      "notes": "README §4.3: append keys run V, W, …, z (31 keys, digit indexes 31..61) and then extend: zV, zW, zX.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "p0\n\np1\n\np2\n\np3\n\np4\n\np5\n\np6\n\np7\n\np8\n\np9\n\np10\n\np11\n\np12\n\np13\n\np14\n\np15\n\np16\n\np17\n\np18\n\np19\n\np20\n\np21\n\np22\n\np23\n\np24\n\np25\n\np26\n\np27\n\np28\n\np29\n\np30\n\np31\n\np32\n\np33\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 34
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "aebccfb5d97da0fc99c1358f8feba2ba25ee89d095a8f06862ad8ab3600b7df9",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "4ca0106d9ea50fbeedc0552e980f0ba8d43a65ea583ed2cd45444f66018cc3ee",
+            "frontmatter_blob": null,
+            "rendered_hash": "aebccfb5d97da0fc99c1358f8feba2ba25ee89d095a8f06862ad8ab3600b7df9",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "03fbd36c05856bca596b0bcb4466f4f30f0119a41be2b9fcebfa71d68178b116",
+            "size": 2,
+            "bytes": "p7"
+          },
+          {
+            "hash": "105f9853bcaf06ecc1c11fe1e8533399547a52ffd7f1cf9937faedc127bb5ef4",
+            "size": 3,
+            "bytes": "p17"
+          },
+          {
+            "hash": "169b5b823c62b64ca7e5f8456a13c8d5d06f4ece522a58bc2b8a784dcf3609b0",
+            "size": 2,
+            "bytes": "p0"
+          },
+          {
+            "hash": "16d37a12d731597bf021f4f08349f0ea51c5d3506408b6083ef0d4c1bb578455",
+            "size": 3,
+            "bytes": "p33"
+          },
+          {
+            "hash": "26148c43a19c95f0115e594c688e9f6e92d0bcdbdb6a75187b732fc593875e7e",
+            "size": 2,
+            "bytes": "p9"
+          },
+          {
+            "hash": "274c9ccdd7cc9ac3308242b83d561a72542058757f2943fc03a8575c736a5d52",
+            "size": 3,
+            "bytes": "p11"
+          },
+          {
+            "hash": "2a97ed0770313b86c2dbcd883fc481a46f7a1f91c02ae0f98e94794df83bf4a7",
+            "size": 3,
+            "bytes": "p28"
+          },
+          {
+            "hash": "3946ca64ff78d93ca61090a437cbb6b3d2ca0d488f5f9ccf3059608368b27693",
+            "size": 2,
+            "bytes": "p2"
+          },
+          {
+            "hash": "3be1c6007b673f2174bbd21980ca12087ac3312614497a01ae80d8e26f6694a1",
+            "size": 3,
+            "bytes": "p23"
+          },
+          {
+            "hash": "43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d",
+            "size": 2,
+            "bytes": "p3"
+          },
+          {
+            "hash": "536c351ae15e5f5e3dc37bcc5dea8ab641e70fc0431a088a1d684aef2ebf3e5b",
+            "size": 2,
+            "bytes": "p5"
+          },
+          {
+            "hash": "57b8361ff5051fb43910564c505852cd5ee21105b07ac006ab313ebb16327b51",
+            "size": 3,
+            "bytes": "p31"
+          },
+          {
+            "hash": "63d6b15848b22a70a7aaa05c5702ac065c65ce71b41fe91a4fb72a1973fbeae0",
+            "size": 3,
+            "bytes": "p16"
+          },
+          {
+            "hash": "666d9c694fba4946f6891b3330512660bd0c4601c32f2bff55f2a29418a1ed5c",
+            "size": 3,
+            "bytes": "p25"
+          },
+          {
+            "hash": "689771c7fe3352ffd549e7ccd105408db5b25575370f6c534810460881e693d3",
+            "size": 3,
+            "bytes": "p21"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "7d087a2e212c110e851c7b6fdc2853a41e7db1690beef7a9c11b3a26ee77e853",
+            "size": 2,
+            "bytes": "p6"
+          },
+          {
+            "hash": "839dcfec1c9ef8996da83aae57997c1d21e7464afd8280338a0ee8dcc99aa2e4",
+            "size": 3,
+            "bytes": "p15"
+          },
+          {
+            "hash": "8860646b40f17b10cfcb90a2c717a4df6c5976b9bd38201d2cd231d5a6d30e83",
+            "size": 3,
+            "bytes": "p10"
+          },
+          {
+            "hash": "925f2764b49772a0b3c8c1becf027310a7821654908f49dd2ab49261da1671bf",
+            "size": 3,
+            "bytes": "p26"
+          },
+          {
+            "hash": "9b85c0828dcfbc883726fc200c987baa9826da6ba6a358643a69a52d8698d72e",
+            "size": 2,
+            "bytes": "p8"
+          },
+          {
+            "hash": "9f4aa745d9a5704e7de0633fb26ec61ba533cd67955877b3f0a648b49d03d3f8",
+            "size": 3,
+            "bytes": "p32"
+          },
+          {
+            "hash": "a331387e771578fb33893475ddee1da9d609faa5cf49049f47f7cc14550c0fc5",
+            "size": 3,
+            "bytes": "p19"
+          },
+          {
+            "hash": "ab71fc4c8a1c4d62b9202b36ee7c07dd398a0907a37037bd8c3959d6af573608",
+            "size": 2,
+            "bytes": "p4"
+          },
+          {
+            "hash": "b11e9a1a5e0b8e5337cb811eebf06f53697da186f85f4b862056d0b8ba88ae70",
+            "size": 3,
+            "bytes": "p14"
+          },
+          {
+            "hash": "b136c7591ff4ce4395c6e32058f8fdd8680935dd933a22e76f10afbafbe46afd",
+            "size": 3,
+            "bytes": "p29"
+          },
+          {
+            "hash": "bdcfc6ac707b82e80835a09d425b5e4bc6cfc96d97e12e3d70286066a0afe491",
+            "size": 3,
+            "bytes": "p12"
+          },
+          {
+            "hash": "bf72ebe163453b3ae5c46794ac14e77265edf567e109f08c780a91db9b9d61f4",
+            "size": 3,
+            "bytes": "p27"
+          },
+          {
+            "hash": "c1e2cf4aaa4b3565abc34ba4f2990a58588fe0198bf3cc3dd8e63ec4bc846710",
+            "size": 3,
+            "bytes": "p20"
+          },
+          {
+            "hash": "d841fc3d554f5465d8a93738d68604c2e0d9d033efd049f5fa0793427623819b",
+            "size": 3,
+            "bytes": "p24"
+          },
+          {
+            "hash": "dc9251edd5241fd47e9ee44441d5860fe579536a51596744ca4df76f89e13eba",
+            "size": 3,
+            "bytes": "p13"
+          },
+          {
+            "hash": "e4e81fe70854bfeea0ca76e3651f4d4def7eba9554f910898cc3fb9a0eed8749",
+            "size": 3,
+            "bytes": "p22"
+          },
+          {
+            "hash": "e9266ccd10a1aeb5c92fa19ee74155b21c32bb6d17c20830c702a0ed0bc04902",
+            "size": 3,
+            "bytes": "p30"
+          },
+          {
+            "hash": "f58f9349cec93ac8f0c239992e21b1d6ef06b65d35519c970aef6e6fddfaf3da",
+            "size": 3,
+            "bytes": "p18"
+          },
+          {
+            "hash": "f64551fcd6f07823cb87971cfb91446425da18286b3ab1ef935e0cbd7a69f68a",
+            "size": 2,
+            "bytes": "p1"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "4ca0106d9ea50fbeedc0552e980f0ba8d43a65ea583ed2cd45444f66018cc3ee",
+            "entries": "[[\"b_0\",\"169b5b823c62b64ca7e5f8456a13c8d5d06f4ece522a58bc2b8a784dcf3609b0\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"f64551fcd6f07823cb87971cfb91446425da18286b3ab1ef935e0cbd7a69f68a\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"3946ca64ff78d93ca61090a437cbb6b3d2ca0d488f5f9ccf3059608368b27693\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_4\",\"ab71fc4c8a1c4d62b9202b36ee7c07dd398a0907a37037bd8c3959d6af573608\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_5\",\"536c351ae15e5f5e3dc37bcc5dea8ab641e70fc0431a088a1d684aef2ebf3e5b\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_6\",\"7d087a2e212c110e851c7b6fdc2853a41e7db1690beef7a9c11b3a26ee77e853\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_7\",\"03fbd36c05856bca596b0bcb4466f4f30f0119a41be2b9fcebfa71d68178b116\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_8\",\"9b85c0828dcfbc883726fc200c987baa9826da6ba6a358643a69a52d8698d72e\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_9\",\"26148c43a19c95f0115e594c688e9f6e92d0bcdbdb6a75187b732fc593875e7e\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_10\",\"8860646b40f17b10cfcb90a2c717a4df6c5976b9bd38201d2cd231d5a6d30e83\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_11\",\"274c9ccdd7cc9ac3308242b83d561a72542058757f2943fc03a8575c736a5d52\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_12\",\"bdcfc6ac707b82e80835a09d425b5e4bc6cfc96d97e12e3d70286066a0afe491\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_13\",\"dc9251edd5241fd47e9ee44441d5860fe579536a51596744ca4df76f89e13eba\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_14\",\"b11e9a1a5e0b8e5337cb811eebf06f53697da186f85f4b862056d0b8ba88ae70\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_15\",\"839dcfec1c9ef8996da83aae57997c1d21e7464afd8280338a0ee8dcc99aa2e4\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_16\",\"63d6b15848b22a70a7aaa05c5702ac065c65ce71b41fe91a4fb72a1973fbeae0\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_17\",\"105f9853bcaf06ecc1c11fe1e8533399547a52ffd7f1cf9937faedc127bb5ef4\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_18\",\"f58f9349cec93ac8f0c239992e21b1d6ef06b65d35519c970aef6e6fddfaf3da\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_19\",\"a331387e771578fb33893475ddee1da9d609faa5cf49049f47f7cc14550c0fc5\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_20\",\"c1e2cf4aaa4b3565abc34ba4f2990a58588fe0198bf3cc3dd8e63ec4bc846710\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_21\",\"689771c7fe3352ffd549e7ccd105408db5b25575370f6c534810460881e693d3\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_22\",\"e4e81fe70854bfeea0ca76e3651f4d4def7eba9554f910898cc3fb9a0eed8749\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_23\",\"3be1c6007b673f2174bbd21980ca12087ac3312614497a01ae80d8e26f6694a1\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_24\",\"d841fc3d554f5465d8a93738d68604c2e0d9d033efd049f5fa0793427623819b\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_25\",\"666d9c694fba4946f6891b3330512660bd0c4601c32f2bff55f2a29418a1ed5c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_26\",\"925f2764b49772a0b3c8c1becf027310a7821654908f49dd2ab49261da1671bf\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_27\",\"bf72ebe163453b3ae5c46794ac14e77265edf567e109f08c780a91db9b9d61f4\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_28\",\"2a97ed0770313b86c2dbcd883fc481a46f7a1f91c02ae0f98e94794df83bf4a7\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_29\",\"b136c7591ff4ce4395c6e32058f8fdd8680935dd933a22e76f10afbafbe46afd\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_30\",\"e9266ccd10a1aeb5c92fa19ee74155b21c32bb6d17c20830c702a0ed0bc04902\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_31\",\"57b8361ff5051fb43910564c505852cd5ee21105b07ac006ab313ebb16327b51\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_32\",\"9f4aa745d9a5704e7de0633fb26ec61ba533cd67955877b3f0a648b49d03d3f8\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_33\",\"16d37a12d731597bf021f4f08349f0ea51c5d3506408b6083ef0d4c1bb578455\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p0",
+            "raw_hash": "169b5b823c62b64ca7e5f8456a13c8d5d06f4ece522a58bc2b8a784dcf3609b0",
+            "norm_hash": "169b5b823c62b64ca7e5f8456a13c8d5d06f4ece522a58bc2b8a784dcf3609b0",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p1",
+            "raw_hash": "f64551fcd6f07823cb87971cfb91446425da18286b3ab1ef935e0cbd7a69f68a",
+            "norm_hash": "f64551fcd6f07823cb87971cfb91446425da18286b3ab1ef935e0cbd7a69f68a",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p2",
+            "raw_hash": "3946ca64ff78d93ca61090a437cbb6b3d2ca0d488f5f9ccf3059608368b27693",
+            "norm_hash": "3946ca64ff78d93ca61090a437cbb6b3d2ca0d488f5f9ccf3059608368b27693",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p3",
+            "raw_hash": "43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d",
+            "norm_hash": "43bb00d0ce7790a53b91256b370c887b24791a5539a6fbfb70c5870e8c91ae5d",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Z",
+            "ordinal": 4,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p4",
+            "raw_hash": "ab71fc4c8a1c4d62b9202b36ee7c07dd398a0907a37037bd8c3959d6af573608",
+            "norm_hash": "ab71fc4c8a1c4d62b9202b36ee7c07dd398a0907a37037bd8c3959d6af573608",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "a",
+            "ordinal": 5,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p5",
+            "raw_hash": "536c351ae15e5f5e3dc37bcc5dea8ab641e70fc0431a088a1d684aef2ebf3e5b",
+            "norm_hash": "536c351ae15e5f5e3dc37bcc5dea8ab641e70fc0431a088a1d684aef2ebf3e5b",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "b",
+            "ordinal": 6,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p6",
+            "raw_hash": "7d087a2e212c110e851c7b6fdc2853a41e7db1690beef7a9c11b3a26ee77e853",
+            "norm_hash": "7d087a2e212c110e851c7b6fdc2853a41e7db1690beef7a9c11b3a26ee77e853",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_7",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "c",
+            "ordinal": 7,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p7",
+            "raw_hash": "03fbd36c05856bca596b0bcb4466f4f30f0119a41be2b9fcebfa71d68178b116",
+            "norm_hash": "03fbd36c05856bca596b0bcb4466f4f30f0119a41be2b9fcebfa71d68178b116",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_8",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "d",
+            "ordinal": 8,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p8",
+            "raw_hash": "9b85c0828dcfbc883726fc200c987baa9826da6ba6a358643a69a52d8698d72e",
+            "norm_hash": "9b85c0828dcfbc883726fc200c987baa9826da6ba6a358643a69a52d8698d72e",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_9",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "e",
+            "ordinal": 9,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p9",
+            "raw_hash": "26148c43a19c95f0115e594c688e9f6e92d0bcdbdb6a75187b732fc593875e7e",
+            "norm_hash": "26148c43a19c95f0115e594c688e9f6e92d0bcdbdb6a75187b732fc593875e7e",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_10",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "f",
+            "ordinal": 10,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p10",
+            "raw_hash": "8860646b40f17b10cfcb90a2c717a4df6c5976b9bd38201d2cd231d5a6d30e83",
+            "norm_hash": "8860646b40f17b10cfcb90a2c717a4df6c5976b9bd38201d2cd231d5a6d30e83",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_11",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "g",
+            "ordinal": 11,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p11",
+            "raw_hash": "274c9ccdd7cc9ac3308242b83d561a72542058757f2943fc03a8575c736a5d52",
+            "norm_hash": "274c9ccdd7cc9ac3308242b83d561a72542058757f2943fc03a8575c736a5d52",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_12",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "h",
+            "ordinal": 12,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p12",
+            "raw_hash": "bdcfc6ac707b82e80835a09d425b5e4bc6cfc96d97e12e3d70286066a0afe491",
+            "norm_hash": "bdcfc6ac707b82e80835a09d425b5e4bc6cfc96d97e12e3d70286066a0afe491",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_13",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "i",
+            "ordinal": 13,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p13",
+            "raw_hash": "dc9251edd5241fd47e9ee44441d5860fe579536a51596744ca4df76f89e13eba",
+            "norm_hash": "dc9251edd5241fd47e9ee44441d5860fe579536a51596744ca4df76f89e13eba",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_14",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "j",
+            "ordinal": 14,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p14",
+            "raw_hash": "b11e9a1a5e0b8e5337cb811eebf06f53697da186f85f4b862056d0b8ba88ae70",
+            "norm_hash": "b11e9a1a5e0b8e5337cb811eebf06f53697da186f85f4b862056d0b8ba88ae70",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_15",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "k",
+            "ordinal": 15,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p15",
+            "raw_hash": "839dcfec1c9ef8996da83aae57997c1d21e7464afd8280338a0ee8dcc99aa2e4",
+            "norm_hash": "839dcfec1c9ef8996da83aae57997c1d21e7464afd8280338a0ee8dcc99aa2e4",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_16",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "l",
+            "ordinal": 16,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p16",
+            "raw_hash": "63d6b15848b22a70a7aaa05c5702ac065c65ce71b41fe91a4fb72a1973fbeae0",
+            "norm_hash": "63d6b15848b22a70a7aaa05c5702ac065c65ce71b41fe91a4fb72a1973fbeae0",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_17",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "m",
+            "ordinal": 17,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p17",
+            "raw_hash": "105f9853bcaf06ecc1c11fe1e8533399547a52ffd7f1cf9937faedc127bb5ef4",
+            "norm_hash": "105f9853bcaf06ecc1c11fe1e8533399547a52ffd7f1cf9937faedc127bb5ef4",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_18",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "n",
+            "ordinal": 18,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p18",
+            "raw_hash": "f58f9349cec93ac8f0c239992e21b1d6ef06b65d35519c970aef6e6fddfaf3da",
+            "norm_hash": "f58f9349cec93ac8f0c239992e21b1d6ef06b65d35519c970aef6e6fddfaf3da",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_19",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "o",
+            "ordinal": 19,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p19",
+            "raw_hash": "a331387e771578fb33893475ddee1da9d609faa5cf49049f47f7cc14550c0fc5",
+            "norm_hash": "a331387e771578fb33893475ddee1da9d609faa5cf49049f47f7cc14550c0fc5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_20",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "p",
+            "ordinal": 20,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p20",
+            "raw_hash": "c1e2cf4aaa4b3565abc34ba4f2990a58588fe0198bf3cc3dd8e63ec4bc846710",
+            "norm_hash": "c1e2cf4aaa4b3565abc34ba4f2990a58588fe0198bf3cc3dd8e63ec4bc846710",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_21",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "q",
+            "ordinal": 21,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p21",
+            "raw_hash": "689771c7fe3352ffd549e7ccd105408db5b25575370f6c534810460881e693d3",
+            "norm_hash": "689771c7fe3352ffd549e7ccd105408db5b25575370f6c534810460881e693d3",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_22",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "r",
+            "ordinal": 22,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p22",
+            "raw_hash": "e4e81fe70854bfeea0ca76e3651f4d4def7eba9554f910898cc3fb9a0eed8749",
+            "norm_hash": "e4e81fe70854bfeea0ca76e3651f4d4def7eba9554f910898cc3fb9a0eed8749",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_23",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "s",
+            "ordinal": 23,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p23",
+            "raw_hash": "3be1c6007b673f2174bbd21980ca12087ac3312614497a01ae80d8e26f6694a1",
+            "norm_hash": "3be1c6007b673f2174bbd21980ca12087ac3312614497a01ae80d8e26f6694a1",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_24",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "t",
+            "ordinal": 24,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p24",
+            "raw_hash": "d841fc3d554f5465d8a93738d68604c2e0d9d033efd049f5fa0793427623819b",
+            "norm_hash": "d841fc3d554f5465d8a93738d68604c2e0d9d033efd049f5fa0793427623819b",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_25",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "u",
+            "ordinal": 25,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p25",
+            "raw_hash": "666d9c694fba4946f6891b3330512660bd0c4601c32f2bff55f2a29418a1ed5c",
+            "norm_hash": "666d9c694fba4946f6891b3330512660bd0c4601c32f2bff55f2a29418a1ed5c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_26",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "v",
+            "ordinal": 26,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p26",
+            "raw_hash": "925f2764b49772a0b3c8c1becf027310a7821654908f49dd2ab49261da1671bf",
+            "norm_hash": "925f2764b49772a0b3c8c1becf027310a7821654908f49dd2ab49261da1671bf",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_27",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "w",
+            "ordinal": 27,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p27",
+            "raw_hash": "bf72ebe163453b3ae5c46794ac14e77265edf567e109f08c780a91db9b9d61f4",
+            "norm_hash": "bf72ebe163453b3ae5c46794ac14e77265edf567e109f08c780a91db9b9d61f4",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_28",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "x",
+            "ordinal": 28,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p28",
+            "raw_hash": "2a97ed0770313b86c2dbcd883fc481a46f7a1f91c02ae0f98e94794df83bf4a7",
+            "norm_hash": "2a97ed0770313b86c2dbcd883fc481a46f7a1f91c02ae0f98e94794df83bf4a7",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_29",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "y",
+            "ordinal": 29,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p29",
+            "raw_hash": "b136c7591ff4ce4395c6e32058f8fdd8680935dd933a22e76f10afbafbe46afd",
+            "norm_hash": "b136c7591ff4ce4395c6e32058f8fdd8680935dd933a22e76f10afbafbe46afd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_30",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "z",
+            "ordinal": 30,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p30",
+            "raw_hash": "e9266ccd10a1aeb5c92fa19ee74155b21c32bb6d17c20830c702a0ed0bc04902",
+            "norm_hash": "e9266ccd10a1aeb5c92fa19ee74155b21c32bb6d17c20830c702a0ed0bc04902",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_31",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "zV",
+            "ordinal": 31,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p31",
+            "raw_hash": "57b8361ff5051fb43910564c505852cd5ee21105b07ac006ab313ebb16327b51",
+            "norm_hash": "57b8361ff5051fb43910564c505852cd5ee21105b07ac006ab313ebb16327b51",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_32",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "zW",
+            "ordinal": 32,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p32",
+            "raw_hash": "9f4aa745d9a5704e7de0633fb26ec61ba533cd67955877b3f0a648b49d03d3f8",
+            "norm_hash": "9f4aa745d9a5704e7de0633fb26ec61ba533cd67955877b3f0a648b49d03d3f8",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_33",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "zX",
+            "ordinal": 33,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "p33",
+            "raw_hash": "16d37a12d731597bf021f4f08349f0ea51c5d3506408b6083ef0d4c1bb578455",
+            "norm_hash": "16d37a12d731597bf021f4f08349f0ea51c5d3506408b6083ef0d4c1bb578455",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_10",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_11",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_12",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_13",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_14",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_15",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_16",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_17",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_18",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_19",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_20",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_21",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_22",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_23",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_24",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_25",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_26",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_27",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_28",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_29",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_30",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_31",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_32",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_33",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_7",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_8",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_9",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_10",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_11",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_12",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_13",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_14",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_15",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_16",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_17",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_18",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_19",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_20",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_21",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_22",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_23",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_24",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_25",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_26",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_27",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_28",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_29",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_30",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_31",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_32",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_33",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_7",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_8",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_9",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "structural-sharing",
+      "notes": "Editing the paragraph after an unchanged nested list: the list's child tree_node row is the same across both revisions (one row, referenced by both roots).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- a\n  - b\n- c\n\nTail paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- a\n  - b\n- c\n\nTail paragraph, edited.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 6
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "6daf4a6e77f884f89153f088312a1fac09a2e6ebf8ee24c295ceed8a59e9e3a7",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "e1c56568c0b8f85a460025aadd6fcce156da134eb76b8d047c9abc0cbaf7611a",
+            "frontmatter_blob": null,
+            "rendered_hash": "a8654b2b8bc5c7d226fd1118bdb726316020104708d5b899504999e55b4ac586",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "e49980486c5596d2dd915d02945a7e59d84fbc70d017a4dfbdee6fe7608df55a",
+            "frontmatter_blob": null,
+            "rendered_hash": "6daf4a6e77f884f89153f088312a1fac09a2e6ebf8ee24c295ceed8a59e9e3a7",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1cec310d9e5780cafc316b69ff0912578e8dc98f73dd53dc1453463268718a46",
+            "size": 9,
+            "bytes": "- a\n  - b"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "9ef3a9f43d7d4818475333f1e3c0ff04aadfd35139720cf0a6e56f2f26284c13",
+            "size": 13,
+            "bytes": "- a\n  - b\n- c"
+          },
+          {
+            "hash": "c0ccd35e94dcc8372723e1a51ea21a7bd8e94c89405e1f69e65201dba1afe4bb",
+            "size": 23,
+            "bytes": "Tail paragraph, edited."
+          },
+          {
+            "hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "size": 1,
+            "bytes": "a"
+          },
+          {
+            "hash": "d615576e022f9afe9ad9a5285eca01285464dcbefe66aefdc2cf0c343be1a022",
+            "size": 15,
+            "bytes": "Tail paragraph."
+          },
+          {
+            "hash": "d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113",
+            "size": 3,
+            "bytes": "- b"
+          },
+          {
+            "hash": "dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341",
+            "size": 3,
+            "bytes": "- c"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "1059e2619b007a00c35add4726e697e234db22ed414df845ece5c8a768a95256",
+            "entries": "[[\"b_2\",\"ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb\",null,\"paragraph\",{},null],[\"b_3\",\"d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113\",\"3a0c725f809869b1a8834fc5d4e6c98724d81b464554a46312d2c849e9fb0c44\",\"list\",{\"ordered\":false},null]]"
+          },
+          {
+            "hash": "3a0c725f809869b1a8834fc5d4e6c98724d81b464554a46312d2c849e9fb0c44",
+            "entries": "[[\"b_4\",\"d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113\",null,\"list_item\",{},null]]"
+          },
+          {
+            "hash": "ca80b238e25a2e0acbf138b5d36c16f96377ba705779637c861ddc9667430546",
+            "entries": "[[\"b_1\",\"1cec310d9e5780cafc316b69ff0912578e8dc98f73dd53dc1453463268718a46\",\"1059e2619b007a00c35add4726e697e234db22ed414df845ece5c8a768a95256\",\"list_item\",{},null],[\"b_5\",\"dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341\",null,\"list_item\",{},null]]"
+          },
+          {
+            "hash": "e1c56568c0b8f85a460025aadd6fcce156da134eb76b8d047c9abc0cbaf7611a",
+            "entries": "[[\"b_0\",\"9ef3a9f43d7d4818475333f1e3c0ff04aadfd35139720cf0a6e56f2f26284c13\",\"ca80b238e25a2e0acbf138b5d36c16f96377ba705779637c861ddc9667430546\",\"list\",{\"ordered\":false},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_6\",\"d615576e022f9afe9ad9a5285eca01285464dcbefe66aefdc2cf0c343be1a022\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "e49980486c5596d2dd915d02945a7e59d84fbc70d017a4dfbdee6fe7608df55a",
+            "entries": "[[\"b_0\",\"9ef3a9f43d7d4818475333f1e3c0ff04aadfd35139720cf0a6e56f2f26284c13\",\"ca80b238e25a2e0acbf138b5d36c16f96377ba705779637c861ddc9667430546\",\"list\",{\"ordered\":false},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_7\",\"c0ccd35e94dcc8372723e1a51ea21a7bd8e94c89405e1f69e65201dba1afe4bb\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "a b c",
+            "raw_hash": "9ef3a9f43d7d4818475333f1e3c0ff04aadfd35139720cf0a6e56f2f26284c13",
+            "norm_hash": "0e9f64031fcb2bc708b531c2a20441580425d151a38503f38592a7dd36019d3b",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "a b",
+            "raw_hash": "1cec310d9e5780cafc316b69ff0912578e8dc98f73dd53dc1453463268718a46",
+            "norm_hash": "c8687a08aa5d6ed2044328fa6a697ab8e96dc34291e8c2034ae8c38e6fcc6d65",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "a",
+            "raw_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "norm_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "b",
+            "raw_hash": "d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113",
+            "norm_hash": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_3",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_1/b_3/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "b",
+            "raw_hash": "d919ba095531b7a20d97aa2403aba5d01c8d8236ceb67080b2c47dfe7e103113",
+            "norm_hash": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "c",
+            "raw_hash": "dca09a2483a98746b7a7cc43df6aa3401e84a2b7d970d7cf51c539b934f5f341",
+            "norm_hash": "2e7d2c03a9507ae265ecf5b5356885a53393a2029d241394997265a1a25aefc6",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_7",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Tail paragraph, edited.",
+            "raw_hash": "c0ccd35e94dcc8372723e1a51ea21a7bd8e94c89405e1f69e65201dba1afe4bb",
+            "norm_hash": "c0ccd35e94dcc8372723e1a51ea21a7bd8e94c89405e1f69e65201dba1afe4bb",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_5",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_6",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_7",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_1",
+            "kind": "deleted"
+          },
+          {
+            "block_id": "b_7",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "raw_hash": "d615576e022f9afe9ad9a5285eca01285464dcbefe66aefdc2cf0c343be1a022",
+            "norm_hash": "d615576e022f9afe9ad9a5285eca01285464dcbefe66aefdc2cf0c343be1a022",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "sections": []
+      }
+    },
+    {
+      "name": "blob-dedup",
+      "notes": "Identical raws share one blob within a doc and across docs (content-addressed, INSERT OR IGNORE).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Same words.\n\nSame words.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "Same words.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "f9c6f399124c6d7a0f818956c110c6bb55b5803f7331235a49094cfc42301a67",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "6b812904e836717fb40b4970cc2d258aaf9e313c858e5a41fbe821c48bed7099",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "86e3f70b8eb714e2971cacb29cc657079e45c9603f73b4fa506c395d557124f4",
+            "frontmatter_blob": null,
+            "rendered_hash": "f9c6f399124c6d7a0f818956c110c6bb55b5803f7331235a49094cfc42301a67",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "82f61a673ff1112aba90a269e39400baf944eca7cbb03cc58bda341f21dceeea",
+            "frontmatter_blob": null,
+            "rendered_hash": "6b812904e836717fb40b4970cc2d258aaf9e313c858e5a41fbe821c48bed7099",
+            "path": "b.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "size": 11,
+            "bytes": "Same words."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "82f61a673ff1112aba90a269e39400baf944eca7cbb03cc58bda341f21dceeea",
+            "entries": "[[\"b_2\",\"02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "86e3f70b8eb714e2971cacb29cc657079e45c9603f73b4fa506c395d557124f4",
+            "entries": "[[\"b_0\",\"02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Same words.",
+            "raw_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "norm_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Same words.",
+            "raw_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "norm_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Same words.",
+            "raw_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "norm_hash": "02e63b158e9ce00472cf8fd29c4fbf860f869ce7796c094e1335a711207a94e7",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "headings-and-sections",
+      "notes": "README §4.5: a section runs to the ordinal before the next heading of equal or higher level, or to the last top-level ordinal.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\n## B\n\nunder b\n\n### C\n\nunder c\n\n# D\n\nunder d\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "2465da1b6cc9a6d4caa72d68d4a553711c1ae4b90bdc2bc4dc8aece685421b10",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "85506141a94a6fb15eff06e4db71afef4a815837dd4e40dd2b39ed6342c3071b",
+            "frontmatter_blob": null,
+            "rendered_hash": "2465da1b6cc9a6d4caa72d68d4a553711c1ae4b90bdc2bc4dc8aece685421b10",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "15a05308827421986621238be86b092e7cdd445d5c8106751d0c6e8e70a8d960",
+            "size": 7,
+            "bytes": "under c"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "42393a610de48adf09ed1a78717aca8d5d4bc7e4d4e3fad93c954735495a856c",
+            "size": 7,
+            "bytes": "under d"
+          },
+          {
+            "hash": "6ccc57b7f32eb97db03afcddffd284c00cb90c47cacf05c2bfa6e3efff3615ad",
+            "size": 7,
+            "bytes": "under b"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "89dd6e6ef5940b255b9e823bcd0fd61369917e98351521914c8fd373fdeed4ba",
+            "size": 5,
+            "bytes": "### C"
+          },
+          {
+            "hash": "bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb",
+            "size": 3,
+            "bytes": "# D"
+          },
+          {
+            "hash": "cff807caa4d4952af6e96d61fc6cabf3fe4a28bb40a416f29d6efcd59c08b148",
+            "size": 4,
+            "bytes": "## B"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "85506141a94a6fb15eff06e4db71afef4a815837dd4e40dd2b39ed6342c3071b",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"cff807caa4d4952af6e96d61fc6cabf3fe4a28bb40a416f29d6efcd59c08b148\",null,\"heading\",{\"level\":2},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"6ccc57b7f32eb97db03afcddffd284c00cb90c47cacf05c2bfa6e3efff3615ad\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"89dd6e6ef5940b255b9e823bcd0fd61369917e98351521914c8fd373fdeed4ba\",null,\"heading\",{\"level\":3},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_4\",\"15a05308827421986621238be86b092e7cdd445d5c8106751d0c6e8e70a8d960\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_5\",\"bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_6\",\"42393a610de48adf09ed1a78717aca8d5d4bc7e4d4e3fad93c954735495a856c\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "text": "B",
+            "raw_hash": "cff807caa4d4952af6e96d61fc6cabf3fe4a28bb40a416f29d6efcd59c08b148",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "under b",
+            "raw_hash": "6ccc57b7f32eb97db03afcddffd284c00cb90c47cacf05c2bfa6e3efff3615ad",
+            "norm_hash": "6ccc57b7f32eb97db03afcddffd284c00cb90c47cacf05c2bfa6e3efff3615ad",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 3
+            },
+            "text": "C",
+            "raw_hash": "89dd6e6ef5940b255b9e823bcd0fd61369917e98351521914c8fd373fdeed4ba",
+            "norm_hash": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Z",
+            "ordinal": 4,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "under c",
+            "raw_hash": "15a05308827421986621238be86b092e7cdd445d5c8106751d0c6e8e70a8d960",
+            "norm_hash": "15a05308827421986621238be86b092e7cdd445d5c8106751d0c6e8e70a8d960",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "a",
+            "ordinal": 5,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "D",
+            "raw_hash": "bb0de842239a9d3446332f6532dc72ddaa13034f49ab8ea86bd7bd53787e81eb",
+            "norm_hash": "3f39d5c348e5b79d06e842c114e6cc571583bbf44e4b0ebfda1a01ec05745d43",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "b",
+            "ordinal": 6,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "under d",
+            "raw_hash": "42393a610de48adf09ed1a78717aca8d5d4bc7e4d4e3fad93c954735495a856c",
+            "norm_hash": "42393a610de48adf09ed1a78717aca8d5d4bc7e4d4e3fad93c954735495a856c",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_4",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_5",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_6",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 4
+          },
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_1",
+            "level": 2,
+            "first_ordinal": 1,
+            "last_ordinal": 4
+          },
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_3",
+            "level": 3,
+            "first_ordinal": 3,
+            "last_ordinal": 4
+          },
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_5",
+            "level": 1,
+            "first_ordinal": 5,
+            "last_ordinal": 6
+          }
+        ]
+      }
+    },
+    {
+      "name": "code-fence-break-html",
+      "notes": "code_fence (lang attr), thematic_break (empty text), html_block.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "```js\nlet x = 1;\n```\n\n---\n\n<div>x</div>\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "dca664438b93c56cae409a4e877de2a9560b3e5c23d6b4a57e79f1fbf97a37b0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "c00d86fefb9c5152901732beac62862ab1270add9c0814cf841cfbc305228f56",
+            "frontmatter_blob": null,
+            "rendered_hash": "dca664438b93c56cae409a4e877de2a9560b3e5c23d6b4a57e79f1fbf97a37b0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "287e68a278f3061aa5d083c2cd7dbb0bf821c624f32fe274b409e1b65f59f08d",
+            "size": 20,
+            "bytes": "```js\nlet x = 1;\n```"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b",
+            "size": 3,
+            "bytes": "---"
+          },
+          {
+            "hash": "ead7fe23046fb14ed8156eaffd3a2a59a08c905fbcce053d6d242c1265c0407e",
+            "size": 12,
+            "bytes": "<div>x</div>"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "c00d86fefb9c5152901732beac62862ab1270add9c0814cf841cfbc305228f56",
+            "entries": "[[\"b_0\",\"287e68a278f3061aa5d083c2cd7dbb0bf821c624f32fe274b409e1b65f59f08d\",null,\"code_fence\",{\"lang\":\"js\"},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b\",null,\"thematic_break\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"ead7fe23046fb14ed8156eaffd3a2a59a08c905fbcce053d6d242c1265c0407e\",null,\"html_block\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "code_fence",
+            "attrs": {
+              "lang": "js"
+            },
+            "text": "let x = 1;",
+            "raw_hash": "287e68a278f3061aa5d083c2cd7dbb0bf821c624f32fe274b409e1b65f59f08d",
+            "norm_hash": "aad7378dfeb851703927a534da47d0d02be7f54cf8c1751a37734d515811dafe",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "thematic_break",
+            "attrs": {},
+            "text": "",
+            "raw_hash": "cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b",
+            "norm_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "html_block",
+            "attrs": {},
+            "text": "<div>x</div>",
+            "raw_hash": "ead7fe23046fb14ed8156eaffd3a2a59a08c905fbcce053d6d242c1265c0407e",
+            "norm_hash": "ead7fe23046fb14ed8156eaffd3a2a59a08c905fbcce053d6d242c1265c0407e",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    }
+  ]
+}

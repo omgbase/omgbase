@@ -216,7 +216,11 @@ export function ingestFile(
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
-      db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ? WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
+      // A tombstoned row still owns the path's identity (spec/store §5.6
+      // "Re-creation"): bytes observed again at the path revive it — the row is
+      // live again, so reads that filter `deleted_commit IS NULL` see it and the
+      // next identical observation echo-gates instead of re-ingesting.
+      db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ?, deleted_commit = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against

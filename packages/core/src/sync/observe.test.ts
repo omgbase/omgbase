@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
-import { observeFile, observeMany } from "./observe.js";
+import { observeFile, observeMany, observeDelete } from "./observe.js";
 import { changesSince } from "../graph/history.js";
 
 let store: Store;
@@ -122,5 +122,35 @@ describe("changesSince contentHash enrichment", () => {
     // compare it against what it last wrote to detect an echo.
     const doc = store.db.prepare("SELECT file_hash FROM docs WHERE doc_id = ?").get(res.docId) as { file_hash: Buffer };
     expect(rev!.contentHash).toBe(doc.file_hash.toString("hex"));
+  });
+});
+
+// spec/store §5.6 "Re-creation" / §10 "Fixed — a re-created path stayed
+// tombstoned": bytes observed again at a tombstoned path revive the doc row.
+describe("observeFile after observeDelete (re-creation)", () => {
+  it("clears the tombstone, converges, and echo-gates the next identical observation", () => {
+    const content = "# Doc\n\nfirst paragraph stays put across the cycle\n";
+    const first = observeFile(store, repoId, "a.md", content, { ts: "2026-09-26T10:00:00.000Z" });
+    const gone = observeDelete(store, repoId, "a.md", { ts: "2026-09-26T10:01:00.000Z" });
+    expect(gone.deleted).toBe(true);
+    const tombstoned = store.db.prepare("SELECT deleted_commit FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_commit: string | null };
+    expect(tombstoned.deleted_commit).not.toBeNull();
+
+    const back = observeFile(store, repoId, "a.md", content, { ts: "2026-09-26T10:02:00.000Z" });
+    expect(back.docId).toBe(first.docId); // the path keeps its identity
+    expect(back.echo).toBe(false);
+    expect(back.converged).toBe(true);
+    const revived = store.db.prepare("SELECT deleted_commit, current_rev FROM docs WHERE doc_id = ?").get(first.docId) as { deleted_commit: string | null; current_rev: string };
+    expect(revived.deleted_commit).toBeNull();
+    expect(revived.current_rev).toBe(back.rev);
+    // Every live block resurrected out of the pool, which is now empty.
+    expect(back.dispositions).toEqual([{ kind: "resurrected", count: 2 }]);
+    expect((store.db.prepare("SELECT count(*) c FROM resurrection_pool").get() as { c: number }).c).toBe(0);
+
+    const before = commitCount();
+    const echo = observeFile(store, repoId, "a.md", content, { ts: "2026-09-26T10:03:00.000Z" });
+    expect(echo.echo).toBe(true);
+    expect(echo.commitId).toBeNull();
+    expect(commitCount()).toBe(before);
   });
 });

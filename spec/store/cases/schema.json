@@ -1,0 +1,2290 @@
+{
+  "suite": "schema",
+  "cases": [
+    {
+      "name": "fresh",
+      "notes": "The fingerprint of a fresh database (README §3.3, §9.2): every table's columns and foreign keys, every index, user_version.",
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "adapters": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "command",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "args",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'[]'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "attachments": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "source_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "source_id",
+                "table": "sources",
+                "to": "source_id"
+              },
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
+          "blobs": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "bytes",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "size",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "block_changes": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              }
+            ],
+            "foreign_keys": []
+          },
+          "blocks": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "parent_block",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "order_key",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "ordinal",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "depth",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "ancestor_path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "attrs",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              },
+              {
+                "cid": 10,
+                "name": "text",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 11,
+                "name": "raw_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 12,
+                "name": "norm_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 13,
+                "name": "trivia_hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 14,
+                "name": "created_commit",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 15,
+                "name": "deleted_commit",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "doc_id",
+                "table": "docs",
+                "to": "doc_id"
+              },
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
+          "blocks_fts": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "text",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "blocks_fts_config": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "k",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "v",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "blocks_fts_data": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "block",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "blocks_fts_docsize": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "sz",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "blocks_fts_idx": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "segid",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "term",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "pgno",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "checkpoints": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "ts",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "files",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "git_head",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "collections": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "node_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "spec",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "commits": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "ts",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "origin",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "actor",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "reason",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "checkpoint_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "ops",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
+          "dispositions": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "confidence",
+                "type": "REAL",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "reason",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "matcher_v",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "detail",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "commit_id",
+                "table": "commits",
+                "to": "commit_id"
+              }
+            ]
+          },
+          "doc_edges": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "src_doc",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "predicate",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "dst_node",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "dst_kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "count",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "samples",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "doc_embeddings": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "model",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "input_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "method",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "dim",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "vec",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "docs": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "format",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'markdown'",
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "current_rev",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "file_hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "conflicted",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": "0",
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "leading_trivia",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "''",
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "frontmatter_trivia",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "deleted_commit",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "repo_id",
+                "table": "repos",
+                "to": "repo_id"
+              }
+            ]
+          },
+          "edges": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "edge_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "src_doc",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "src_block",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "src_field",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "predicate",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "dst_kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "dst_node",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "anchor",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "provenance",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 10,
+                "name": "via_node",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 11,
+                "name": "from_commit",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 12,
+                "name": "to_commit",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "embeddings": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "content_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "ctx_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "model",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "dim",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "vec",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "external_nodes": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "node_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "uri",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "title",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "file_stats": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "mtime_ns",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "size",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "inferred_edges": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "src_node",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "dst_node",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "predicate",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "method",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 4
+              },
+              {
+                "cid": 4,
+                "name": "score",
+                "type": "REAL",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "model_v",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "computed_at",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "node_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "kind",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "value",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "span_start",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "span_end",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "attrs",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes_fts": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "name",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 1,
+                "name": "value",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes_fts_config": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "k",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "v",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes_fts_data": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "block",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes_fts_docsize": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "sz",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "nodes_fts_idx": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "segid",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "term",
+                "type": "",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "pgno",
+                "type": "",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "properties": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "prop_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "source",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "key",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "card",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "ord",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": "0",
+                "pk": 0
+              },
+              {
+                "cid": 8,
+                "name": "val_text",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 9,
+                "name": "val_num",
+                "type": "REAL",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 10,
+                "name": "val_bool",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 11,
+                "name": "val_json",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 12,
+                "name": "type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 13,
+                "name": "created_commit",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 14,
+                "name": "deleted_commit",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "repos": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "slug",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "settings",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "resurrection_pool": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "block_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "raw_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "norm_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "type",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "deleted_commit",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "expires_ts",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "revisions": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "rev_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "seq",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "root_tree",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "frontmatter_blob",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 5,
+                "name": "rendered_hash",
+                "type": "BLOB",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 6,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 7,
+                "name": "commit_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "commit_id",
+                "table": "commits",
+                "to": "commit_id"
+              },
+              {
+                "from": "frontmatter_blob",
+                "table": "blobs",
+                "to": "hash"
+              },
+              {
+                "from": "root_tree",
+                "table": "tree_nodes",
+                "to": "hash"
+              },
+              {
+                "from": "doc_id",
+                "table": "docs",
+                "to": "doc_id"
+              }
+            ]
+          },
+          "sections": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "heading_block",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 1,
+                "name": "doc_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 2,
+                "name": "level",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "first_ordinal",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "last_ordinal",
+                "type": "INTEGER",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "sources": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "source_id",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "name",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 2,
+                "name": "adapter",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 3,
+                "name": "config",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "env",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": [
+              {
+                "from": "adapter",
+                "table": "adapters",
+                "to": "name"
+              }
+            ]
+          },
+          "sync_state": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "repo_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "source_id",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 2
+              },
+              {
+                "cid": 2,
+                "name": "path",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 3
+              },
+              {
+                "cid": 3,
+                "name": "revision",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              },
+              {
+                "cid": 4,
+                "name": "cursor",
+                "type": "TEXT",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "tree_nodes": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "hash",
+                "type": "BLOB",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "entries",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": null,
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          },
+          "workspace_settings": {
+            "columns": [
+              {
+                "cid": 0,
+                "name": "id",
+                "type": "INTEGER",
+                "notnull": 0,
+                "dflt_value": null,
+                "pk": 1
+              },
+              {
+                "cid": 1,
+                "name": "settings",
+                "type": "TEXT",
+                "notnull": 1,
+                "dflt_value": "'{}'",
+                "pk": 0
+              }
+            ],
+            "foreign_keys": []
+          }
+        },
+        "indexes": {
+          "idx_blocks_ancestor": {
+            "table": "blocks",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "doc_id",
+              "ancestor_path"
+            ]
+          },
+          "idx_blocks_doc": {
+            "table": "blocks",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "doc_id",
+              "parent_block",
+              "order_key"
+            ]
+          },
+          "idx_blocks_rawhash": {
+            "table": "blocks",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "raw_hash"
+            ]
+          },
+          "idx_blocks_type": {
+            "table": "blocks",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "repo_id",
+              "type"
+            ]
+          },
+          "idx_edges_dst": {
+            "table": "edges",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "dst_node",
+              "predicate"
+            ]
+          },
+          "idx_edges_src": {
+            "table": "edges",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "src_doc",
+              "predicate"
+            ]
+          },
+          "idx_edges_temporal": {
+            "table": "edges",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "from_commit",
+              "to_commit"
+            ]
+          },
+          "idx_nodes_doc": {
+            "table": "nodes",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "doc_id"
+            ]
+          },
+          "idx_nodes_kind": {
+            "table": "nodes",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "kind"
+            ]
+          },
+          "idx_nodes_name": {
+            "table": "nodes",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "name"
+            ]
+          },
+          "idx_props_doc": {
+            "table": "properties",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "doc_id"
+            ]
+          },
+          "idx_props_key_num": {
+            "table": "properties",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "repo_id",
+              "key",
+              "val_num"
+            ]
+          },
+          "idx_props_key_text": {
+            "table": "properties",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "repo_id",
+              "key",
+              "val_text"
+            ]
+          },
+          "idx_props_src_key": {
+            "table": "properties",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "repo_id",
+              "source",
+              "key"
+            ]
+          },
+          "sqlite_autoindex_adapters_1": {
+            "table": "adapters",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "name"
+            ]
+          },
+          "sqlite_autoindex_attachments_1": {
+            "table": "attachments",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "source_id"
+            ]
+          },
+          "sqlite_autoindex_blobs_1": {
+            "table": "blobs",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "hash"
+            ]
+          },
+          "sqlite_autoindex_block_changes_1": {
+            "table": "block_changes",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "block_id",
+              "commit_id",
+              "kind"
+            ]
+          },
+          "sqlite_autoindex_blocks_1": {
+            "table": "blocks",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "block_id"
+            ]
+          },
+          "sqlite_autoindex_blocks_fts_config_1": {
+            "table": "blocks_fts_config",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "k"
+            ]
+          },
+          "sqlite_autoindex_blocks_fts_idx_1": {
+            "table": "blocks_fts_idx",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "segid",
+              "term"
+            ]
+          },
+          "sqlite_autoindex_checkpoints_1": {
+            "table": "checkpoints",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "id"
+            ]
+          },
+          "sqlite_autoindex_collections_1": {
+            "table": "collections",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "node_id"
+            ]
+          },
+          "sqlite_autoindex_commits_1": {
+            "table": "commits",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "commit_id"
+            ]
+          },
+          "sqlite_autoindex_commits_2": {
+            "table": "commits",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "seq"
+            ]
+          },
+          "sqlite_autoindex_dispositions_1": {
+            "table": "dispositions",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "commit_id",
+              "block_id",
+              "kind"
+            ]
+          },
+          "sqlite_autoindex_doc_edges_1": {
+            "table": "doc_edges",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "src_doc",
+              "predicate",
+              "dst_node"
+            ]
+          },
+          "sqlite_autoindex_doc_embeddings_1": {
+            "table": "doc_embeddings",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "doc_id",
+              "model"
+            ]
+          },
+          "sqlite_autoindex_docs_1": {
+            "table": "docs",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "doc_id"
+            ]
+          },
+          "sqlite_autoindex_docs_2": {
+            "table": "docs",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "path"
+            ]
+          },
+          "sqlite_autoindex_edges_1": {
+            "table": "edges",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "edge_id"
+            ]
+          },
+          "sqlite_autoindex_embeddings_1": {
+            "table": "embeddings",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "content_hash",
+              "ctx_hash",
+              "model"
+            ]
+          },
+          "sqlite_autoindex_external_nodes_1": {
+            "table": "external_nodes",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "node_id"
+            ]
+          },
+          "sqlite_autoindex_external_nodes_2": {
+            "table": "external_nodes",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "uri"
+            ]
+          },
+          "sqlite_autoindex_file_stats_1": {
+            "table": "file_stats",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "path"
+            ]
+          },
+          "sqlite_autoindex_inferred_edges_1": {
+            "table": "inferred_edges",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "src_node",
+              "dst_node",
+              "predicate",
+              "method"
+            ]
+          },
+          "sqlite_autoindex_nodes_1": {
+            "table": "nodes",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "node_id"
+            ]
+          },
+          "sqlite_autoindex_nodes_fts_config_1": {
+            "table": "nodes_fts_config",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "k"
+            ]
+          },
+          "sqlite_autoindex_nodes_fts_idx_1": {
+            "table": "nodes_fts_idx",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "segid",
+              "term"
+            ]
+          },
+          "sqlite_autoindex_properties_1": {
+            "table": "properties",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "prop_id"
+            ]
+          },
+          "sqlite_autoindex_repos_1": {
+            "table": "repos",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id"
+            ]
+          },
+          "sqlite_autoindex_repos_2": {
+            "table": "repos",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "slug"
+            ]
+          },
+          "sqlite_autoindex_resurrection_pool_1": {
+            "table": "resurrection_pool",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "block_id"
+            ]
+          },
+          "sqlite_autoindex_revisions_1": {
+            "table": "revisions",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "rev_id"
+            ]
+          },
+          "sqlite_autoindex_revisions_2": {
+            "table": "revisions",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "doc_id",
+              "seq"
+            ]
+          },
+          "sqlite_autoindex_sections_1": {
+            "table": "sections",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "doc_id",
+              "heading_block"
+            ]
+          },
+          "sqlite_autoindex_sources_1": {
+            "table": "sources",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "source_id"
+            ]
+          },
+          "sqlite_autoindex_sources_2": {
+            "table": "sources",
+            "unique": 1,
+            "origin": "u",
+            "partial": 0,
+            "columns": [
+              "name"
+            ]
+          },
+          "sqlite_autoindex_sync_state_1": {
+            "table": "sync_state",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "repo_id",
+              "source_id",
+              "path"
+            ]
+          },
+          "sqlite_autoindex_tree_nodes_1": {
+            "table": "tree_nodes",
+            "unique": 1,
+            "origin": "pk",
+            "partial": 0,
+            "columns": [
+              "hash"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1607 @@
+{
+  "suite": "deletion",
+  "cases": [
+    {
+      "name": "gone-path-tombstones-and-pools",
+      "notes": "README §5.6: a tombstone commit (reason 'observed deletion'), every live block pooled, blocks and doc get deleted_commit; no revision, no dispositions. Note the doc's `sections` rows survive the tombstone.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# H\n\nAlpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "acef3b6ca44a269c6635408204954013257aefab0d3182171cf1950c6d4c3944",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": "c_1"
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "52f8d46d60a4c7779d4361ff1a30ad51fd15473ed134d2799d94c5b4e20539ef",
+            "frontmatter_blob": null,
+            "rendered_hash": "acef3b6ca44a269c6635408204954013257aefab0d3182171cf1950c6d4c3944",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
+            "size": 3,
+            "bytes": "# H"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "52f8d46d60a4c7779d4361ff1a30ad51fd15473ed134d2799d94c5b4e20539ef",
+            "entries": "[[\"b_0\",\"39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "H",
+            "raw_hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
+            "norm_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": "c_1"
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": "c_1"
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey.",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "raw_hash": "39c412f8961291d398515498bbe0922f8108b44f48405cd9e264f4e7c0e619b3",
+            "norm_hash": "44bd7ae60f478fae1061e11a7739f4b94d1daf917982d33b6fc8a01a63f89c21",
+            "type": "heading",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "gone-path-with-no-live-doc-is-a-no-op",
+      "notes": "Nothing minted: the following ingest still gets d_0/c_0/r_0.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "ghost.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "ghost.md",
+              "deleted": false,
+              "doc": null
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey.",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "gone-twice",
+      "notes": "A second gone observation of a tombstoned path is a no-op (doc null).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": false,
+              "doc": null
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": "c_1"
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": "c_1"
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey.",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "sections": []
+      }
+    },
+    {
+      "name": "recreate-revives-doc-row",
+      "notes": "README §10 'Fixed': bytes observed again at a tombstoned path resurrect the pooled blocks, reuse the doc row AND clear deleted_commit; the next identical observation is an echo.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:03:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "resurrected": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": true,
+              "doc": "d_0",
+              "commit": null,
+              "rev": null,
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {}
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_2"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey.",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_0",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_2",
+            "kind": "resurrected"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "resurrected"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    },
+    {
+      "name": "recreate-with-changes",
+      "notes": "Re-creation with one paragraph changed: the unchanged one resurrects, the new one is inserted, the old one stays pooled.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nGamma paragraph about goats and cheese.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1,
+                "resurrected": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "11f8bc20639eb5fcdbd27d7f47ad4ccae16c60f4ff60ede659fd87ac431b5aaf",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": "observed deletion",
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "ae4ad934a9db386237f5b095521ea2319c84a018af073bc5e40f15949dd1114f",
+            "frontmatter_blob": null,
+            "rendered_hash": "11f8bc20639eb5fcdbd27d7f47ad4ccae16c60f4ff60ede659fd87ac431b5aaf",
+            "path": "a.md",
+            "commit_id": "c_2"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316",
+            "size": 39,
+            "bytes": "Gamma paragraph about goats and cheese."
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ae4ad934a9db386237f5b095521ea2319c84a018af073bc5e40f15949dd1114f",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Gamma paragraph about goats and cheese.",
+            "raw_hash": "863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316",
+            "norm_hash": "863e060416f4f0c75920d93cf9c2a8d80bd07115a7e5d8e4a09c4ddb3ad5a316",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_0",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_2",
+            "kind": "resurrected"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_2",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "sections": []
+      }
+    },
+    {
+      "name": "delete-block-then-restore-it",
+      "notes": "A paragraph removed in one revision and put back in the next comes back with its old id (`resurrected`), consuming the pool row.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Alpha paragraph about apples and orchards.\n\nBeta paragraph about bees and honey.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "same": 1
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "resurrected": 1,
+                "same": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_2",
+            "file_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "ec8bc294d9af9681430e69d1f9100acfacd5387bd646a598a6b37cfd8d15a9ab",
+            "frontmatter_blob": null,
+            "rendered_hash": "c193bd37f009b03b7613e8820c8eb88aad6a14617ff0246712bd11f59b4e7335",
+            "path": "a.md",
+            "commit_id": "c_1"
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_0",
+            "seq": 3,
+            "root_tree": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "frontmatter_blob": null,
+            "rendered_hash": "0926b44c67cf6af00228d275f826a628c728038d83bf29dd6fdef51e7d0c4fa4",
+            "path": "a.md",
+            "commit_id": "c_2"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "size": 42,
+            "bytes": "Alpha paragraph about apples and orchards."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "size": 36,
+            "bytes": "Beta paragraph about bees and honey."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "aa8789bfb3b82bc8bd24811da81f7dea6ee807141f235d612392c4654acaf8db",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ec8bc294d9af9681430e69d1f9100acfacd5387bd646a598a6b37cfd8d15a9ab",
+            "entries": "[[\"b_0\",\"1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and orchards.",
+            "raw_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "norm_hash": "1bf8f68b8c1553b02c143043950242e081472d04353f6c9c646ff1fcee13ee1c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and honey.",
+            "raw_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "norm_hash": "87f4a52388def442f542b8136b9ea750654e962751ed32cb7b66653a970ea899",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_1",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "matcher_v": "m2.2",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "deleted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_2",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_2",
+            "kind": "resurrected"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": []
+      }
+    }
+  ]
+}

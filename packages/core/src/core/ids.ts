@@ -15,8 +15,50 @@ export function randomSuffix(len = ID_LEN): string {
   return s;
 }
 
+/** A replacement id generator (spec/store §2.2): given a prefix, return the whole id. */
+export type IdMinter = (prefix: IdPrefix) => string;
+
+// The installed minter, or null for production (CSPRNG). spec/store §2.2: the
+// store's tree hashes contain block ids, so a fixture runner installs a
+// deterministic per-prefix counter here to make ids comparable across
+// implementations. Every mint in the engine — documents, blocks (including
+// the reconcile module's phase 7 mints), commits, revisions, repos, sources —
+// goes through `mintId`, so one seam covers them all.
+let installed: IdMinter | null = null;
+
+/** Install a replacement minter (null restores the CSPRNG default). */
+export function setIdMinter(minter: IdMinter | null): void {
+  installed = minter;
+}
+
+/** Run `body` with `minter` installed, restoring the previous minter afterwards (also on throw). */
+export function withIdMinter<T>(minter: IdMinter, body: () => T): T {
+  const previous = installed;
+  installed = minter;
+  try {
+    return body();
+  } finally {
+    installed = previous;
+  }
+}
+
+/**
+ * The fixture minter (spec/store §2.2): a sequential per-prefix counter —
+ * `d_0, d_1, …`, `b_0, …`, each prefix counting from 0 independently. A fresh
+ * instance per case resets every counter.
+ */
+export function sequentialMinter(): IdMinter {
+  const counters = new Map<string, number>();
+  return (prefix) => {
+    const n = counters.get(prefix) ?? 0;
+    counters.set(prefix, n + 1);
+    return `${prefix}_${n}`;
+  };
+}
+
 /** Mint an ID with the given prefix. Collision checking is the store's job. */
 export function mintId(prefix: IdPrefix): string {
+  if (installed) return installed(prefix);
   return `${prefix}_${randomSuffix()}`;
 }
 

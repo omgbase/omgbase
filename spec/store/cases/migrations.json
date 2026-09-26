@@ -1,0 +1,398 @@
+{
+  "suite": "migrations",
+  "cases": [
+    {
+      "name": "v1-to-v13-minimal",
+      "notes": "A v1 database with only a repos table (root_path still present, no rows): every create-step runs, the fs adapter row is ensured, root_path is dropped. Mirrors store.test.ts 'migrates an older (v1) database forward'.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT, root_path TEXT, settings TEXT)"
+      ],
+      "user_version": 1,
+      "rows": [
+        "repos",
+        "adapters",
+        "sources",
+        "attachments",
+        "workspace_settings"
+      ],
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "adapters": [
+            "name",
+            "command",
+            "args"
+          ],
+          "attachments": [
+            "repo_id",
+            "source_id"
+          ],
+          "doc_embeddings": [
+            "doc_id",
+            "model",
+            "input_hash",
+            "method",
+            "dim",
+            "vec"
+          ],
+          "file_stats": [
+            "repo_id",
+            "path",
+            "mtime_ns",
+            "size",
+            "hash"
+          ],
+          "nodes": [
+            "node_id",
+            "repo_id",
+            "doc_id",
+            "block_id",
+            "kind",
+            "name",
+            "value",
+            "span_start",
+            "span_end",
+            "attrs"
+          ],
+          "nodes_fts": [
+            "name",
+            "value"
+          ],
+          "nodes_fts_config": [
+            "k",
+            "v"
+          ],
+          "nodes_fts_data": [
+            "id",
+            "block"
+          ],
+          "nodes_fts_docsize": [
+            "id",
+            "sz"
+          ],
+          "nodes_fts_idx": [
+            "segid",
+            "term",
+            "pgno"
+          ],
+          "properties": [
+            "prop_id",
+            "repo_id",
+            "doc_id",
+            "block_id",
+            "source",
+            "key",
+            "card",
+            "ord",
+            "val_text",
+            "val_num",
+            "val_bool",
+            "val_json",
+            "type",
+            "created_commit",
+            "deleted_commit"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "sources": [
+            "source_id",
+            "name",
+            "adapter",
+            "config",
+            "env"
+          ],
+          "sync_state": [
+            "repo_id",
+            "source_id",
+            "path",
+            "revision",
+            "cursor"
+          ],
+          "workspace_settings": [
+            "id",
+            "settings"
+          ]
+        },
+        "rows": {
+          "repos": [],
+          "adapters": [
+            {
+              "name": "fs",
+              "command": "omgbase-fs-adapter",
+              "args": "[]"
+            }
+          ],
+          "sources": [],
+          "attachments": [],
+          "workspace_settings": [
+            {
+              "id": 0,
+              "settings": "{}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "v12-to-v13-root-path-becomes-fs-source",
+      "notes": "README §3.4 step 13: the repo's root_path becomes a source `<slug>-fs` (source_id minted with prefix src → src_0), attached to the repo; the column is dropped.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, root_path TEXT, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE adapters (name TEXT PRIMARY KEY, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]')",
+        "CREATE TABLE sources (source_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, adapter TEXT NOT NULL REFERENCES adapters(name), config TEXT NOT NULL DEFAULT '{}', env TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE attachments (repo_id TEXT NOT NULL REFERENCES repos(repo_id), source_id TEXT NOT NULL REFERENCES sources(source_id), PRIMARY KEY (repo_id, source_id))",
+        "INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_1','vault','/data/vault')"
+      ],
+      "user_version": 12,
+      "rows": [
+        "adapters",
+        "sources",
+        "attachments",
+        "repos"
+      ],
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "adapters": [
+            "name",
+            "command",
+            "args"
+          ],
+          "attachments": [
+            "repo_id",
+            "source_id"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "sources": [
+            "source_id",
+            "name",
+            "adapter",
+            "config",
+            "env"
+          ]
+        },
+        "rows": {
+          "adapters": [
+            {
+              "name": "fs",
+              "command": "omgbase-fs-adapter",
+              "args": "[]"
+            }
+          ],
+          "sources": [
+            {
+              "source_id": "src_0",
+              "name": "vault-fs",
+              "adapter": "fs",
+              "config": "{\"root\":\"/data/vault\"}",
+              "env": "{}"
+            }
+          ],
+          "attachments": [
+            {
+              "repo_id": "rp_1",
+              "source_id": "src_0"
+            }
+          ],
+          "repos": [
+            {
+              "repo_id": "rp_1",
+              "slug": "vault",
+              "settings": "{}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "v12-to-v13-empty-root-path-gets-no-source",
+      "notes": "A repo whose root_path is NULL or '' gets no source and no attachment; the adapter row is still ensured and the column still dropped.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, root_path TEXT, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE adapters (name TEXT PRIMARY KEY, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]')",
+        "CREATE TABLE sources (source_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, adapter TEXT NOT NULL REFERENCES adapters(name), config TEXT NOT NULL DEFAULT '{}', env TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE attachments (repo_id TEXT NOT NULL REFERENCES repos(repo_id), source_id TEXT NOT NULL REFERENCES sources(source_id), PRIMARY KEY (repo_id, source_id))",
+        "INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_1','headless',NULL)",
+        "INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_2','blank','')"
+      ],
+      "user_version": 12,
+      "rows": [
+        "adapters",
+        "sources",
+        "attachments",
+        "repos"
+      ],
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "adapters": [
+            "name",
+            "command",
+            "args"
+          ],
+          "attachments": [
+            "repo_id",
+            "source_id"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "sources": [
+            "source_id",
+            "name",
+            "adapter",
+            "config",
+            "env"
+          ]
+        },
+        "rows": {
+          "adapters": [
+            {
+              "name": "fs",
+              "command": "omgbase-fs-adapter",
+              "args": "[]"
+            }
+          ],
+          "sources": [],
+          "attachments": [],
+          "repos": [
+            {
+              "repo_id": "rp_1",
+              "slug": "headless",
+              "settings": "{}"
+            },
+            {
+              "repo_id": "rp_2",
+              "slug": "blank",
+              "settings": "{}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "v12-to-v13-existing-source-is-reused",
+      "notes": "When a source named `<slug>-fs` already exists it is reused (nothing minted) and the attachment is INSERT OR IGNOREd.",
+      "setup": [
+        "CREATE TABLE repos (repo_id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, root_path TEXT, settings TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE adapters (name TEXT PRIMARY KEY, command TEXT NOT NULL, args TEXT NOT NULL DEFAULT '[]')",
+        "CREATE TABLE sources (source_id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, adapter TEXT NOT NULL REFERENCES adapters(name), config TEXT NOT NULL DEFAULT '{}', env TEXT NOT NULL DEFAULT '{}')",
+        "CREATE TABLE attachments (repo_id TEXT NOT NULL REFERENCES repos(repo_id), source_id TEXT NOT NULL REFERENCES sources(source_id), PRIMARY KEY (repo_id, source_id))",
+        "INSERT INTO adapters (name, command, args) VALUES ('fs','omgbase-fs-adapter','[]')",
+        "INSERT INTO sources (source_id, name, adapter, config, env) VALUES ('src_keep','vault-fs','fs','{\"root\":\"/elsewhere\"}','{}')",
+        "INSERT INTO repos (repo_id, slug, root_path) VALUES ('rp_1','vault','/data/vault')",
+        "INSERT INTO attachments (repo_id, source_id) VALUES ('rp_1','src_keep')"
+      ],
+      "user_version": 12,
+      "rows": [
+        "adapters",
+        "sources",
+        "attachments",
+        "repos"
+      ],
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "adapters": [
+            "name",
+            "command",
+            "args"
+          ],
+          "attachments": [
+            "repo_id",
+            "source_id"
+          ],
+          "repos": [
+            "repo_id",
+            "slug",
+            "settings"
+          ],
+          "sources": [
+            "source_id",
+            "name",
+            "adapter",
+            "config",
+            "env"
+          ]
+        },
+        "rows": {
+          "adapters": [
+            {
+              "name": "fs",
+              "command": "omgbase-fs-adapter",
+              "args": "[]"
+            }
+          ],
+          "sources": [
+            {
+              "source_id": "src_keep",
+              "name": "vault-fs",
+              "adapter": "fs",
+              "config": "{\"root\":\"/elsewhere\"}",
+              "env": "{}"
+            }
+          ],
+          "attachments": [
+            {
+              "repo_id": "rp_1",
+              "source_id": "src_keep"
+            }
+          ],
+          "repos": [
+            {
+              "repo_id": "rp_1",
+              "slug": "vault",
+              "settings": "{}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "already-current-is-untouched",
+      "notes": "README §1 step 2: a database already at the schema version is opened without executing the DDL — the odd table is all there is afterwards.",
+      "setup": [
+        "CREATE TABLE only_this (x TEXT)",
+        "INSERT INTO only_this (x) VALUES ('kept')"
+      ],
+      "user_version": 13,
+      "rows": [
+        "only_this"
+      ],
+      "expect": {
+        "user_version": 13,
+        "tables": {
+          "only_this": [
+            "x"
+          ]
+        },
+        "rows": {
+          "only_this": [
+            {
+              "x": "kept"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "newer-version-is-refused",
+      "notes": "README §1 step 3: a database from a newer build is refused with the exact message; nothing is read or written.",
+      "setup": [],
+      "user_version": 14,
+      "rows": [],
+      "expect": {
+        "error": "database schema (v14) is newer than this build (v13); upgrade omgbase"
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@
 **Status:** normative. SQLite dialect (v1). Column types use SQLite affinities; a future Postgres dialect maps 1:1 (ADR-001).
 **Depends on:** `architecture.md` §3–4, §12.
 
-> **As-built (verified 2026-09-23).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 13`; v13 dropped `repos.root_path` — a repo's filesystem binding is now an attached `fs` source), which remains the authoritative schema.
+> **As-built (verified 2026-09-26).** This DDL mirrors `packages/core/src/core/store/schema.ts` (`SCHEMA_VERSION = 13`; v13 dropped `repos.root_path` — a repo's filesystem binding is now an attached `fs` source), which remains the authoritative schema and is kept byte-identical to `spec/store/schema.sql`. The store is specified language-neutrally in `spec/store/README.md` (table meanings, canonical encodings, the observe/commit procedure as an exact rule, the invariants, the fixture contract, and the reference oddities the Rust port surfaced) with fixtures under `spec/store/cases`; the Rust crate `crates/omgbase-store` opens the same database and passes the same fixtures. Where this document and the spec differ in detail, the spec (and its fixtures) win.
 
 ---
 
@@ -22,7 +22,7 @@
 | Repo | `rp_` | same | `rp_a30f9kd` |
 | Projection (reserved) | `v_` | same | `v_1c8bb0p` |
 
-- Mint with retry on unique-constraint violation. IDs are repo-scoped, never reused, never re-assigned.
+- IDs are repo-scoped, never reused, never re-assigned. As built, minting is not collision-checked (the 32⁷ space and the primary keys are relied on — `spec/store` §10); the store exposes a minter seam so conformance runners can install a sequential one.
 - Content hashes are **sha256** stored as 32-byte BLOBs; displayed truncated to 16 hex chars. Two hash flavors per block:
   - `raw_hash` — sha256 of exact raw source bytes (blob key, splice identity).
   - `norm_hash` — sha256 of the block's visible text (`text`: block-level syntax stripped, whitespace collapsed — §5.2, `spec/format` §4.1) used by reconciliation phase 2. Stored on `blocks`, not on blobs.
@@ -83,7 +83,7 @@ CREATE TABLE blocks (
   raw_hash      BLOB NOT NULL,             -- REFERENCES blobs(hash)
   norm_hash     BLOB NOT NULL,
   trivia_hash   BLOB,                      -- trailing-trivia blob hash (NULL = no trivia)
-  created_commit TEXT NOT NULL,
+  created_commit TEXT NOT NULL,            -- the commit that last WROTE this row (rows are rebuilt per commit; a carried block does not keep its birth commit — spec/store §10)
   deleted_commit TEXT                      -- tombstone; NULL = live
 );
 CREATE INDEX idx_blocks_doc      ON blocks(doc_id, parent_block, order_key) WHERE deleted_commit IS NULL;
