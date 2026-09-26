@@ -13,6 +13,8 @@ export type EditClass = "edit" | "insert" | "delete" | "move" | "reorder" | "spl
 export type StructuredEditClass =
   | "item-edit-mid" | "item-edit-last" | "item-insert" | "item-delete" | "item-move"
   | "item-gains-nested-list" | "item-reorder"
+  /** an item deleted and an unrelated item inserted in its slot (the new item must mint; m2.3 singleton-rule cost) */
+  | "item-replace"
   /** the list container whose items were edited (must carry) */
   | "list"
   /** any block the script did not touch (must carry) */
@@ -174,8 +176,9 @@ export function generateCase(seed: number, opts: { size?: number; intensity?: nu
 // lines only (source slice starting at content).
 //
 // Ground truth: the list carries; every untouched block carries; the edited
-// item SHOULD carry (that is the question the mode measures); inserted items
-// and the new nested blocks are minted; deleted items are deleted.
+// item SHOULD carry (that is the question the mode measures); inserted items,
+// replacement items and the new nested blocks are minted; deleted and replaced
+// items are deleted.
 
 export interface StructuredOpts {
   /** top-level blocks in the base document (default 10) */
@@ -251,6 +254,7 @@ function walkKeys(list: FlatSource[], parentKey: string | null, fn: (b: FlatSour
 
 export const STRUCTURED_ITEM_CLASSES: readonly Cls[] = [
   "item-edit-mid", "item-edit-last", "item-insert", "item-delete", "item-move", "item-gains-nested-list", "item-reorder",
+  "item-replace",
 ];
 
 /** Generate one structured case (see the mode comment above). */
@@ -362,6 +366,14 @@ export function generateStructuredCase(seed: number, opts: StructuredOpts = {}):
         if (other.id === null || other.cls !== null) continue;
         list.items[idx] = other; list.items[j] = it;
         it.cls = cls; other.cls = cls;
+        break;
+      }
+      case "item-replace": {
+        // Delete the item and put an unrelated fresh item in its slot: the same
+        // shape the singleton rule (spec/reconcile §5 phase 4a step 5) reads as
+        // an edit, so this class measures its cost (the new item must mint).
+        deleted.add(it.id!);
+        list.items[idx] = { id: null, words: freshWords(wordCount()), cls, nested: null };
         break;
       }
       case "item-gains-nested-list": {

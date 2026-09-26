@@ -105,12 +105,24 @@ export function phase3Anchor(state: PhaseState): void {
 }
 
 /**
- * Phase 4 — context propagation (03 §4). Matched siblings vouch for the
- * stranger between them: within a gap bounded by matched blocks, if exactly one
- * unmatched OLD child remains, pair it with its best-matching unmatched NEW
- * child in that same gap (text_sim ≥ floor, unique best). Insertions in the gap
- * do not block the carry — they simply lose to the better-matching candidate,
- * which is why an inserted block never steals an edited block's identity.
+ * Phase 4a — context propagation (spec/reconcile §5). Matched siblings vouch
+ * for the stranger between them: within a gap bounded by matched blocks, if
+ * exactly one unmatched OLD child remains, pair it with its best-matching
+ * unmatched NEW child in that same gap (text_sim ≥ floor, unique best).
+ * Insertions in the gap do not block the carry — they simply lose to the
+ * better-matching candidate, which is why an inserted block never steals an
+ * edited block's identity.
+ *
+ * Step 5, the singleton rule (m2.3): when the floor test fails (or there is
+ * no best), a carried container (not the root pair) with exactly one unmatched
+ * old child and exactly one unmatched new child of its type carries them
+ * without a text floor, provided the new child sits in the SAME SLOT — same
+ * index, or the siblings just before both (or just after both) are a carried
+ * pair — and anchors do not veto (if either block has anchors they must share
+ * one). Reason `context_unique`, confidence 0.75 + 0.2 × text_sim, whatever
+ * text_sim is (0 for a two-word item whose one word changed). Root-level
+ * singletons are excluded: an unrelated replacement paragraph is common there
+ * and paragraphs carry the block references R4 protects.
  */
 export function phase4Context(state: PhaseState): void {
   const parentPairs = matchedParentPairs(state);
@@ -133,8 +145,39 @@ export function phase4Context(state: PhaseState): void {
     }
     if (best && !tie && bestSim >= state.config.contextSimFloor) {
       carry(state, o, best, classifyKind(o, best), 0.75 + 0.2 * bestSim, "context_unique");
+      continue;
     }
+
+    // Step 5 — singleton rule (m2.3): nested containers only, one candidate,
+    // same slot, anchors not contradicting.
+    if (oldParent === null || newParent === null) continue;
+    if (candidates.length !== 1) continue;
+    const n = candidates[0]!;
+    if (!sameSlot(state, o, n)) continue;
+    if (anchorsVeto(o, n)) continue;
+    carry(state, o, n, classifyKind(o, n), 0.75 + 0.2 * textSim(o.text, n.text), "context_unique");
   }
+}
+
+// The singleton rule's slot test: same sibling index, or the siblings just
+// before both (or just after both) are a carried pair. The neighbours are
+// looked up under each block's own parent; a missing neighbour on either side
+// makes that clause false.
+function sameSlot(state: PhaseState, o: MatchBlock, n: MatchBlock): boolean {
+  if (o.index === n.index) return true;
+  for (const d of [-1, 1]) {
+    const os = state.old.find((b) => b.parentKey === o.parentKey && b.index === o.index + d);
+    const ns = state.neu.find((b) => b.parentKey === n.parentKey && b.index === n.index + d);
+    if (os && ns && state.matched.get(ns.key) === os.blockId) return true;
+  }
+  return false;
+}
+
+// Anchors veto a singleton carry: if either block carries anchors, they must
+// share one (an authored ^ref that moved elsewhere is evidence against).
+function anchorsVeto(o: MatchBlock, n: MatchBlock): boolean {
+  if (o.anchors.length === 0 && n.anchors.length === 0) return false;
+  return !o.anchors.some((a) => n.anchors.includes(a));
 }
 
 /**

@@ -1,0 +1,954 @@
+{
+  "suite": "singleton",
+  "cases": [
+    {
+      "name": "two-word-item-one-word-changed",
+      "notes": "Three two-word items, one word of the middle one changed. text_sim is 0 (texts under three tokens share a shingle only when identical) and phase 5 prunes the pair, so before m2.3 the item minted. The list is the lone unmatched root block but its text_sim is 0.25 and the root pair is excluded from the singleton rule, so it carries by 4b (2/3); the next round's 4a then finds one unmatched child on each side of the (list, list) pair in the same index and the singleton rule carries it at 0.75 + 0.2 × 0.",
+      "old": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n"
+      },
+      "new": {
+        "source": "- alpha bravo\n- charlie golf\n- echo foxtrot\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "two-word-last-item-gains-nested-list",
+      "notes": "The last two-word item gains a nested list: it becomes a container whose text is 'echo foxtrot nested one nested two' (text_sim 0 against 'echo foxtrot'). Same index under the carried list → singleton rule carries the item; its new paragraph child, nested list and nested items are minted. There is no next sibling and the previous one is carried; the same-index clause alone decides.",
+      "old": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n"
+      },
+      "new": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n  - nested one\n  - nested two\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/2": "b_3",
+          "/0/2/0": null,
+          "/0/2/1": null,
+          "/0/2/1/0": null,
+          "/0/2/1/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/2/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/2/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/2/1/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/2/1/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "index-shift-task-inserted-above",
+      "notes": "A task item (type `task`, so not a candidate for a `list_item`) is inserted above the edited two-word item, shifting its index 1 → 2. The indices differ but the previous siblings ('alpha bravo' at old 0 and new 1) are a carried pair → same slot → the item carries as `edited_moved`; the task is minted.",
+      "old": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n"
+      },
+      "new": {
+        "source": "- alpha bravo\n- [ ] a new task\n- charlie golf\n- echo foxtrot\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": null,
+          "/0/2": "b_2",
+          "/0/3": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "index-shift-heading-inserted-in-blockquote",
+      "notes": "Inside a blockquote a heading is inserted above two paragraphs, the second of which is a two-word edit ('second para' → 'second para edited', text_sim 0). The blockquote carries by context at the root (text_sim 0.75); under the (blockquote, blockquote) pair the edited paragraph is the lone unmatched child on each side, index 1 → 2, previous siblings carried → same slot → carries `edited_moved`.",
+      "old": {
+        "source": "> Intro line here.\n>\n> second para\n"
+      },
+      "new": {
+        "source": "> # Added\n>\n> Intro line here.\n>\n> second para edited\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": null,
+          "/0/1": "b_1",
+          "/0/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.9,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "index-shift-next-sibling-clause",
+      "notes": "The edited two-word paragraph is the blockquote's first child, a heading is inserted above it (index 0 → 1) and there is no previous sibling: the same-slot test succeeds on the NEXT siblings ('Intro line here.' at old 1 and new 2, a carried pair). The blockquote itself has text_sim 0.286 at the root, so it carries by 4b (1 of 2 children, exactly the 0.5 floor).",
+      "old": {
+        "source": "> Two words\n>\n> Intro line here.\n"
+      },
+      "new": {
+        "source": "> # Added\n>\n> Two changed\n>\n> Intro line here.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": null,
+          "/0/1": "b_1",
+          "/0/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.85,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 1,
+              "children_total": 2
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "edited_moved",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "singleton-chain-item-then-inner-list",
+      "notes": "Fixed point through singleton carries: an outer list whose middle item holds only a nested list (blocks form, no paragraph child) with two of three inner items edited. Round 1: 4b carries the outer list by 'first'/'last' (2/3); the inner list's one carried child (1/3) is under the vouch fraction. Round 2: under (outer, outer) the middle item is the lone unmatched child on each side, same index, text_sim 0 → singleton rule. Round 3: under the newly paired (mid, mid) the inner list is the lone unmatched child → singleton rule again. Round 4: (inner, inner) has two unmatched old children → step 1 fails; 'yy' and 'zz' mint and 'y'/'z' are deleted.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_0",
+            "type": "list",
+            "raw": "- first\n- mid\n  - x\n  - y\n  - z\n- last",
+            "children": [
+              {
+                "id": "b_1",
+                "type": "list_item",
+                "raw": "- first",
+                "children": []
+              },
+              {
+                "id": "b_2",
+                "type": "list_item",
+                "raw": "- mid\n  - x\n  - y\n  - z",
+                "children": [
+                  {
+                    "id": "b_3",
+                    "type": "list",
+                    "raw": "- x\n  - y\n  - z",
+                    "children": [
+                      {
+                        "id": "b_4",
+                        "type": "list_item",
+                        "raw": "- x",
+                        "children": []
+                      },
+                      {
+                        "id": "b_5",
+                        "type": "list_item",
+                        "raw": "- y",
+                        "children": []
+                      },
+                      {
+                        "id": "b_6",
+                        "type": "list_item",
+                        "raw": "- z",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "b_7",
+                "type": "list_item",
+                "raw": "- last",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "list",
+            "raw": "- first\n- mid\n  - x\n  - yy\n  - zz\n- last",
+            "children": [
+              {
+                "type": "list_item",
+                "raw": "- first",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "raw": "- mid\n  - x\n  - yy\n  - zz",
+                "children": [
+                  {
+                    "type": "list",
+                    "raw": "- x\n  - yy\n  - zz",
+                    "children": [
+                      {
+                        "type": "list_item",
+                        "raw": "- x",
+                        "children": []
+                      },
+                      {
+                        "type": "list_item",
+                        "raw": "- yy",
+                        "children": []
+                      },
+                      {
+                        "type": "list_item",
+                        "raw": "- zz",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "list_item",
+                "raw": "- last",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/1/0": "b_3",
+          "/0/1/0/0": "b_4",
+          "/0/1/0/1": null,
+          "/0/1/0/2": null,
+          "/0/2": "b_7"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_6",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_7",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/0/2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_5",
+          "b_6"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "root-paragraph-replaced-mints",
+      "notes": "Negative: at the document root a two-word paragraph is replaced by an unrelated one in the same slot. (root, root) has exactly one unmatched old block and one candidate, but the singleton rule is confined to nested containers (spec §5 phase 4a step 5) → the paragraph mints and the old one is deleted; the list and heading lock exactly.",
+      "old": {
+        "source": "# Title\n\nalpha beta\n\n- one\n- two\n"
+      },
+      "new": {
+        "source": "# Title\n\ngamma delta\n\n- one\n- two\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": "b_2",
+          "/2/0": "b_3",
+          "/2/1": "b_4"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "two-candidates-floor-applies",
+      "notes": "Negative: the edited two-word item and an inserted item are both unmatched under the carried list → two candidates, both at text_sim 0 (a tie, so no best) and the singleton rule requires exactly one → nothing carries in 4a; phase 5 prunes the disjoint-shingle pairs → the old item is deleted and both new items mint.",
+      "old": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n"
+      },
+      "new": {
+        "source": "- alpha bravo\n- charlie golf\n- hotel india\n- echo foxtrot\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": null,
+          "/0/2": null,
+          "/0/3": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "delete-then-append-unrelated-mints",
+      "notes": "Negative: the item at index 1 is deleted and an unrelated item appended at the end. One unmatched old (index 1) and one candidate (index 3) under the carried list (4b, 3/4), but the slot differs: indices differ, the previous siblings ('alpha bravo' / 'golf hotel') are not a pair and the old item's next sibling has no counterpart at new index 4 → no carry; deleted + inserted.",
+      "old": {
+        "source": "- alpha bravo\n- charlie delta\n- echo foxtrot\n- golf hotel\n"
+      },
+      "new": {
+        "source": "- alpha bravo\n- echo foxtrot\n- golf hotel\n- india juliet\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_3",
+          "/0/2": "b_4",
+          "/0/3": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.9,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 3,
+              "children_total": 4
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "anchor-veto-different-anchors",
+      "notes": "Negative: same slot, one candidate, but the old item carries ^keep and the new one ^other — they share no anchor, so the singleton rule does not carry (phase 3 did not either: no anchor is common). The old item is deleted and the new one minted.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_0",
+            "type": "list",
+            "raw": "- alpha bravo\n- charlie delta ^keep\n- echo foxtrot",
+            "children": [
+              {
+                "id": "b_1",
+                "type": "list_item",
+                "raw": "- alpha bravo",
+                "children": []
+              },
+              {
+                "id": "b_2",
+                "type": "list_item",
+                "raw": "- charlie delta ^keep",
+                "anchors": [
+                  "^keep"
+                ],
+                "children": []
+              },
+              {
+                "id": "b_3",
+                "type": "list_item",
+                "raw": "- echo foxtrot",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "list",
+            "raw": "- alpha bravo\n- charlie golf ^other\n- echo foxtrot",
+            "children": [
+              {
+                "type": "list_item",
+                "raw": "- alpha bravo",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "raw": "- charlie golf ^other",
+                "anchors": [
+                  "^other"
+                ],
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "raw": "- echo foxtrot",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": null,
+          "/0/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "anchor-veto-anchor-moved-to-paragraph",
+      "notes": "Negative: the old item's ^keep now sits on a new paragraph (a type mismatch for phase 3), and the item in the old slot has no anchors. One side has anchors and they share none → veto → the item mints; the anchored paragraph is inserted.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_0",
+            "type": "list",
+            "raw": "- alpha bravo\n- charlie delta ^keep\n- echo foxtrot",
+            "children": [
+              {
+                "id": "b_1",
+                "type": "list_item",
+                "raw": "- alpha bravo",
+                "children": []
+              },
+              {
+                "id": "b_2",
+                "type": "list_item",
+                "raw": "- charlie delta ^keep",
+                "anchors": [
+                  "^keep"
+                ],
+                "children": []
+              },
+              {
+                "id": "b_3",
+                "type": "list_item",
+                "raw": "- echo foxtrot",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "list",
+            "raw": "- alpha bravo\n- charlie golf\n- echo foxtrot",
+            "children": [
+              {
+                "type": "list_item",
+                "raw": "- alpha bravo",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "raw": "- charlie golf",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "raw": "- echo foxtrot",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "raw": "Moved here ^keep",
+            "anchors": [
+              "^keep"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": null,
+          "/0/2": "b_3",
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

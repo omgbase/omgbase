@@ -41,12 +41,27 @@ describe("phase 4b — children vouch for their parent", () => {
     expect(d.detail).toEqual({ children_carried: 2, children_total: 3 });
     expect(d.matcherV).toBe(DEFAULT_CONFIG.matcherV);
 
-    // Untouched items carry exactly; the edited one-word item is NOT carried
-    // ("two" vs "two changed" has no shared shingle; small-block policy mints).
+    // Untouched items carry exactly. The edited one-word item has no shared
+    // shingle ("two" vs "two changed", text_sim 0), so no floor reaches it —
+    // but once the list has carried it is the lone unmatched child on each side
+    // in the same slot: the singleton rule (m2.3, phase 4a step 5) carries it
+    // in the next round of the fixed point at 0.75 + 0.2 × 0.
     expect(res.assignment.get("/1/0")).toBe(itemIds[0]);
     expect(res.assignment.get("/1/2")).toBe(itemIds[2]);
-    expect(res.assignment.get("/1/1")).not.toBe(itemIds[1]);
-    expect(res.deleted).toEqual([itemIds[1]]);
+    expect(res.assignment.get("/1/1")).toBe(itemIds[1]);
+    expect(dispositionOf(res, itemIds[1]!)).toMatchObject({ reason: "context_unique", kind: "edited", confidence: 0.75, detail: {} });
+    expect(res.deleted).toEqual([]);
+  });
+
+  it("does not apply the singleton rule at the document root (an unrelated replacement paragraph mints)", () => {
+    const old = [block("heading", "# Title"), block("paragraph", "alpha beta"), list(["one", "two"])];
+    const paraId = old[1]!.blockId!;
+    const neu = strip([block("heading", "# Title"), block("paragraph", "gamma delta"), list(["one", "two"])]);
+    const res = reconcileDocument(flatten(old), flatten(neu));
+    // (root, root) has exactly one unmatched old and one candidate in the same
+    // slot, but step 5 is confined to nested containers (spec/reconcile §5).
+    expect(res.assignment.get("/1")).not.toBe(paraId);
+    expect(res.deleted).toEqual([paraId]);
   });
 
   it("carries the edited item too when its text is long enough to share a shingle", () => {
@@ -88,15 +103,20 @@ describe("phase 4b — children vouch for their parent", () => {
     expect(res.assignment.get("/0")).toBe(outer.blockId);
     expect(res.assignment.get("/0/1")).toBe(midItem.blockId);
     expect(res.assignment.get("/0/1/0")).toBe(inner.blockId);
-    // the inner list is vouched for by 2/3 children (parents still undecided
-    // at that point); the middle item by its sole child (1/1); the outer list
-    // by "first"/"last" (2/3).
+    // Round 1, 4b: the inner list is vouched for by 2/3 children (parents still
+    // undecided at that point) and the outer list by "first"/"last" (2/3); the
+    // middle item's only child was not yet carried when the tallies were taken.
+    // Round 2, 4a: under the (outer, outer) pair the middle item is the lone
+    // unmatched child on each side in the same slot — text_sim 0 ("x y z" vs
+    // "x y changed z"), so the singleton rule (m2.3) carries it at 0.75, ahead
+    // of the 4b vouch (1/1, 0.95) it would have received in the same round.
     expect(dispositionOf(res, inner.blockId!)).toMatchObject({ reason: "context_children", detail: { children_carried: 2, children_total: 3 } });
-    expect(dispositionOf(res, midItem.blockId!)).toMatchObject({ reason: "context_children", detail: { children_carried: 1, children_total: 1 } });
+    expect(dispositionOf(res, midItem.blockId!)).toMatchObject({ reason: "context_unique", kind: "edited", confidence: 0.75, detail: {} });
     expect(dispositionOf(res, outer.blockId!)).toMatchObject({ reason: "context_children", detail: { children_carried: 2, children_total: 3 } });
-    expect(dispositionOf(res, midItem.blockId!).confidence).toBe(0.95);
-    // only the edited one-word inner item resets
-    expect(res.deleted).toEqual([inner.children[1]!.blockId]);
+    // … and the edited one-word inner item carries by the same rule under (inner, inner).
+    expect(res.assignment.get("/0/1/0/1")).toBe(inner.children[1]!.blockId);
+    expect(dispositionOf(res, inner.children[1]!.blockId!)).toMatchObject({ reason: "context_unique", confidence: 0.75 });
+    expect(res.deleted).toEqual([]);
   });
 
   it("does not vouch when the children scatter evenly across two new containers", () => {
@@ -168,6 +188,8 @@ describe("phase 4b — children vouch for their parent", () => {
     const a = build();
     const b = build();
     expect(a).toEqual(b);
-    expect(a.dispos.filter((d) => d.reason === "context_children").length).toBe(4); // inner, mid item, outer list, one-two-three list
+    // inner, outer list, one-two-three list; the mid item goes to the singleton rule (m2.3) in round 2's 4a
+    expect(a.dispos.filter((d) => d.reason === "context_children").length).toBe(3);
+    expect(a.dispos.filter((d) => d.reason === "context_unique").length).toBe(2); // mid item, "y" → "y!"
   });
 });

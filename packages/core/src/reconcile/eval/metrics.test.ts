@@ -97,7 +97,7 @@ describe("eval harness — structured mode", () => {
       for (const id of oldIds) expect(carried.has(id) !== c.truth.deleted.has(id)).toBe(true);
       // minted classes never carry; carried classes always do
       for (const [key, cls] of c.truth.classOf) {
-        if (cls === "item-insert" || cls === "nested-new") expect(c.truth.carries.has(key)).toBe(false);
+        if (cls === "item-insert" || cls === "item-replace" || cls === "nested-new") expect(c.truth.carries.has(key)).toBe(false);
         else expect(c.truth.carries.has(key)).toBe(true);
       }
     }
@@ -114,6 +114,7 @@ describe("eval harness — structured mode", () => {
     }
     expect(report.perClass["list"]!.truePairs).toBeGreaterThan(0);
     expect(report.perClass["nested-new"]!.truePairs).toBe(0);
+    expect(report.perClass["item-replace"]!.truePairs).toBe(0); // deleted + unrelated in the slot: never a true pair
     expect(report.deleted.expected).toBeGreaterThan(0);
     for (const m of [report.overall, ...Object.values(report.perClass)]) {
       expect(m.precision).toBeGreaterThanOrEqual(0);

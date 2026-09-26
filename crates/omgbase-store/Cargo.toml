@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-store"
-version = "13.0.0"
+version = "13.0.1"
 description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
 keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -18,7 +18,7 @@ repository.workspace = true
 omgbase-format = { version = "0.2.1", path = "../omgbase-format", features = ["json"] }
 # The matcher: `reconcile_document`, the pool, cross-document moves. `json`
 # for the disposition `detail` the store persists.
-omgbase-reconcile = { version = "2.2.0", path = "../omgbase-reconcile", features = ["json"] }
+omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile", features = ["json"] }
 # `bundled`: compile SQLite from source (FTS5 + JSON1 included) so the crate
 # needs no system library; the same version the `oqx` crate uses, so the
 # workspace builds one SQLite. `functions`: the `cosine` scalar.

@@ -666,7 +666,7 @@ pins `database schema (v14) is newer than this build (v13); upgrade omgbase`.
         "blobs":       [ { "hash": "<hex>", "size": 7, "bytes": "# Title" }, … ],
         "tree_nodes":  [ { "hash": "<hex>", "entries": "[[\"b_0\",\"…\",null,\"heading\",{\"level\":1},\"…\"],…]" }, … ],
         "blocks":      [ { "block_id": "b_0", "doc_id": "d_0", "parent_block": null, "order_key": "V", "ordinal": 0, "depth": 0, "ancestor_path": "/", "type": "heading", "attrs": { "level": 1 }, "text": "Title", "raw_hash": "<hex>", "norm_hash": "<hex>", "trivia_hash": "<hex>", "created_commit": "c_1", "deleted_commit": null }, … ],
-        "dispositions": [ { "commit_id": "c_0", "block_id": "b_0", "kind": "inserted", "confidence": null, "reason": null, "matcher_v": "m2.2", "detail": {} }, … ],
+        "dispositions": [ { "commit_id": "c_0", "block_id": "b_0", "kind": "inserted", "confidence": null, "reason": null, "matcher_v": "m2.3", "detail": {} }, … ],
         "block_changes": [ { "block_id": "b_0", "commit_id": "c_0", "kind": "inserted" }, … ],
         "resurrection_pool": [ { "block_id": "b_1", "doc_id": "d_0", "raw_hash": "<hex>", "norm_hash": "<hex>", "type": "paragraph", "deleted_commit": "c_1", "expires_ts": "…" } ],
         "sections":    [ { "doc_id": "d_0", "heading_block": "b_0", "level": 1, "first_ordinal": 0, "last_ordinal": 1 } ]

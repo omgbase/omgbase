@@ -91,6 +91,8 @@ Blocks carrying the same authored `^block-ref` anchor pair directly (unique on b
 ### Phase 4 — context propagation
 For each parent pair already matched (or both roots): if exactly one unmatched old child remains, pair it with its best-matching unmatched new child of the same type under the new parent if `text_sim ≥ contextSimFloor` (0.35) and the best is unique. Reason `context_unique`, confidence `0.75 + 0.2 × text_sim`. Insertions in the gap lose to the better-matching candidate rather than blocking the carry.
 
+**Singleton rule (m2.3; `spec/reconcile` §5 phase 4a step 5, §10).** When the floor test fails — or there is no unique best — and the parent pair is a real carried pair (not the roots), exactly one unmatched new child of the old child's type remains, and it sits in the **same slot** (same sibling index, or the siblings just before both — or just after both — are already a carried pair), the pair carries anyway: reason `context_unique`, confidence `0.75 + 0.2 × text_sim` whatever `text_sim` is (0.75 for a two-word item whose one word changed). Anchors veto it: if either block carries anchors they must share one. The rule reads the evidence Phase 4 already has — a container both sides agree on with one slot changed is one edited item, which is what a line diff shows — and is confined to nested containers because at the document root an unrelated replacement paragraph is common and paragraphs carry the block references R4 protects; the slot test keeps "delete item 1, append an unrelated item" a delete plus an insert. Its deliberate cost is an item deleted and replaced by an unrelated one in the same slot of a list, which now carries as `edited` (the harness's `item-replace` class, §9); the structured eval (n=300 per cell) put that at 69–83 % of such replacements while `item-edit-mid` recall on 2–3-word items went from 0 to 0.60–0.70 and the flat-suite gates held. Because 4a runs before 4b in every round of the fixed point, a container that is itself the lone changed slot (a list item holding only an edited nested list) is carried by this rule at 0.75 rather than by its children at `0.75 + 0.2 × fraction`.
+
 ### Phase 4b — children vouch for their parent
 The converse of Phase 4: matched children carry their container. A container's visible text is its children's text joined by spaces (`spec/format` §4.1), so a list of short items has little or no shingle evidence of its own — `- one / - two / - three` vs `- one / - two changed / - three` has `text_sim = 0` — while two of its three items lock exactly (Phase 1) inside the new list. That is the evidence this phase reads.
 
@@ -105,7 +107,7 @@ Text is deliberately not consulted. Reason `context_children`, confidence `0.75 
 
 **Fixed point.** Phases 4 and 4b feed each other — a list paired by its children unlocks Phase 4 for the one edited item under it; an inner list paired by its items unlocks the item that contains it, which unlocks the outer list. The reconciler therefore runs `4 → 4b` repeatedly until neither adds a pair (each round consumes ≥ 1 old block, so it terminates). Phase 4 runs first in each round, so a container that *does* have text evidence still carries as `context_unique`.
 
-Note that a one- or two-token edited item (`two` → `two changed`) is **not** carried afterwards: it is the lone unmatched old child of the now-matched list, but texts under three tokens shingle to a single whole-text shingle, so `text_sim` is 0 unless identical, and Phase 5 prunes the pair for the same reason. Its id resets (small-block policy, §6; `update-opsets.md` "Small-block matcher policy"). The kernel promise "updates a list as a unit" is about the list's identity, not the edited item's.
+A one- or two-token edited item (`two` → `two changed`) has `text_sim` 0 — texts under three tokens shingle to a single whole-text shingle — and Phase 5 prunes the pair for the same reason, so until m2.2 its id reset once the list had carried (small-block policy, §6). Since m2.3 it is exactly the case the singleton rule above carries: the lone unmatched child on each side of the now-matched (list, list) pair, in the same slot. Two edited short items under one list still mint (the rule needs exactly one on each side), as does a short item whose list did not carry.
 
 ### Phase 5 — scored assignment
 For remaining candidates (same type, candidate pruning below):
@@ -143,7 +145,7 @@ Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted`
 |---|---|---|
 | `θ_accept` | 0.62 | Phase-5 acceptance |
 | `θ_small` | 0.62 | Acceptance for blocks with < 8 tokens (0.80 until m2.1; lowered in m2.2 after the structured eval suite showed precision 1.000 at both and multi-edit lists recovering their items) |
-| `context.sim_floor` | 0.35 | Phase-4 `text_sim` floor (`contextSimFloor`) |
+| `context.sim_floor` | 0.35 | Phase-4 `text_sim` floor (`contextSimFloor`); the m2.3 singleton rule has none |
 | `children.vouch_frac` | 0.50 | Phase-4b: fraction of an old container's children that must have carried into the one new container (`childrenVouchFrac`) |
 | `θ_xdoc` | 0.80 | Cross-document acceptance |
 | `split.coverage` | 0.80 | Split/merge concat coverage |
@@ -154,7 +156,7 @@ Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted`
 ## 6. Deliberate give-ups
 
 - **Bulk rewrite:** if after Phase 2 more than `bulk.unmatched_frac` of a ≥`bulk.min_blocks` document (counted over the flattened block list) is unmatched: skip Phases 3–6, mint everything — the Phase 1–2 pairs included — and emit one `bulk_rewrite` disposition (doc-scoped) plus `deleted` for all old blocks. Document-level continuity survives; block continuity is honestly surrendered. (An earlier draft also required a mean best-candidate `text_sim < 0.35`; the implementation never had that clause.)
-- **Tiny blocks:** a new block with < 8 tokens uses `θ_small` in Phase 5; a tiny block's candidate falling short of `θ_small` is skipped and costs the other candidates nothing. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule). (An earlier draft capped tiny-block confidence at 0.8; not implemented — a Phase 5 carry's confidence is its score, and an exact lock on a tiny block is 1.0.)
+- **Tiny blocks:** a new block with < 8 tokens uses `θ_small` in Phase 5; a tiny block's candidate falling short of `θ_small` is skipped and costs the other candidates nothing. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule). Since m2.3 a tiny list item that is the one changed slot of a carried list keeps its id through the Phase 4 singleton rule; a tiny block anywhere else still lives or dies by `θ_small`. (An earlier draft capped tiny-block confidence at 0.8; not implemented — a Phase 5 carry's confidence is its score, and an exact lock on a tiny block is 1.0.)
 - **Many-to-many ambiguity:** overlapping split/merge candidate sets ⇒ take none; mint; record near-misses.
 
 ## 7. Determinism & versioning
@@ -162,6 +164,7 @@ Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted`
 - The matcher MUST be deterministic for a given (old tree, new bytes, config). No RNG, no wall-clock influence.
 - `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`; it equals `"m" + spec/reconcile/VERSION`, and the Rust crate `omgbase-reconcile` is versioned `<major>.<minor>.<patch>` against the same number.
   - `m1.0` — phases 1–7 as first shipped.
+  - `m2.3` — Phase 4a singleton rule: the lone unmatched child of a carried container carries into the lone unmatched child in the same slot without a text floor (2026-09-26; `spec/reconcile` §10, eval `item-replace` class added to measure the cost).
   - `m2.2` — `θ_small` 0.80 → 0.62 (2026-09-26, eval-harness driven).
   - `m2.0` — Phase 4b (children vouch for their parent, reason `context_children`) and the Phase 4/4b fixed point (2026-09-25, alongside the "visible text" rule for container `text`).
   - `m2.1` — the four `spec/reconcile` §10 fixes, rule refinements within phases 5–7 (2026-09-25): Phase 5 skips a sub-threshold candidate instead of ending the walk; `position_prior` over the block's sibling count; every split and merge resolved per run; non-dominant split tombstones listed in `deleted`.
@@ -194,7 +197,7 @@ Engine-authored writes are echo-suppressed by expected-hash match at the watcher
 
 `packages/core/corpus/matcher/` + `omg eval-matcher` (runs `runEval` in `reconcile/eval/`):
 
-- **Synthetic suite:** a generator applies scripted edit sequences (edit / insert / delete / move / reorder / split / merge / copy / cross-doc move / bulk rewrite, parameterized by intensity) to corpus documents. Ground truth is exact by construction. This is the only suite built in v1.
+- **Synthetic suite:** a generator applies scripted edit sequences (edit / insert / delete / move / reorder / split / merge / copy / cross-doc move / bulk rewrite, parameterized by intensity) to corpus documents. Ground truth is exact by construction. This is the only suite built in v1. The **structured mode** (`--mode structured`, `--item-words N`) builds documents of paragraphs, headings and lists of 2–6-word items and scripts list-item edits — `item-edit-mid`, `item-edit-last`, `item-insert`, `item-delete`, `item-move`, `item-reorder`, `item-gains-nested-list`, and since m2.3 `item-replace` (an item deleted and an unrelated one inserted in its slot; the new item must mint, so this class measures the singleton rule's cost as `wronglyCarried`). Its numbers inform threshold decisions (`spec/reconcile` "Decisions"); the release gates are defined over the flat suite.
 - **Metrics per edit class:** identity precision (carried pairs that are true pairs), identity recall (true pairs carried), split/merge F1, mean confidence calibration error.
 - **Release gates (v1):** precision ≥ 0.995 overall and ≥ 0.98 per class; recall ≥ 0.95 for edit/move/reorder classes; recall for split/merge ≥ 0.75. Precision is the non-negotiable side (R4).
 - Harness output feeds threshold tuning; tuned defaults are committed to config with the harness run ID in the commit message.

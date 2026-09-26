@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "one-word-items-list-carries",
-      "notes": "Phase 4b: 'one two three' vs 'one two changed three' share no 3-gram, but two of three items locked under the new list → the list carries (context_children, 0.75 + 0.2 × 2/3, `edited`); the edited one-word item mints.",
+      "notes": "Phase 4b: 'one two three' vs 'one two changed three' share no 3-gram, but two of three items locked under the new list → the list carries (context_children, 0.75 + 0.2 × 2/3, `edited`). The edited one-word item (text_sim 0) then carries in the next round by the singleton rule (m2.3: lone unmatched child on each side of the (list, list) pair, same index) at 0.75.",
       "old": {
         "blocks": [
           {
@@ -74,7 +74,7 @@
           "/0": "b_0",
           "/1": "b_1",
           "/1/0": "b_2",
-          "/1/1": null,
+          "/1/1": "b_3",
           "/1/2": "b_4"
         },
         "dispositions": [
@@ -104,9 +104,9 @@
           },
           {
             "block": "b_3",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -115,24 +115,15 @@
             "confidence": 1,
             "reason": "exact_hash",
             "detail": {}
-          },
-          {
-            "block": "new:/1/1",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "detail": {}
           }
         ],
-        "deleted": [
-          "b_3"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },
     {
       "name": "one-word-items-list-carries-source",
-      "notes": "The same case from Markdown sources: the parser's tree (list → childless items) yields the same decisions.",
+      "notes": "The same case from Markdown sources: the parser's tree (list → childless items) yields the same decisions, the singleton carry of the edited item included.",
       "old": {
         "source": "# Title\n\n- one\n- two\n- three\n"
       },
@@ -144,7 +135,7 @@
           "/0": "b_0",
           "/1": "b_1",
           "/1/0": "b_2",
-          "/1/1": null,
+          "/1/1": "b_3",
           "/1/2": "b_4"
         },
         "dispositions": [
@@ -174,9 +165,9 @@
           },
           {
             "block": "b_3",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -185,18 +176,9 @@
             "confidence": 1,
             "reason": "exact_hash",
             "detail": {}
-          },
-          {
-            "block": "new:/1/1",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "detail": {}
           }
         ],
-        "deleted": [
-          "b_3"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },
@@ -300,7 +282,7 @@
     },
     {
       "name": "nested-fixed-point",
-      "notes": "list > item > list: the inner list is vouched for by 2/3 (parents both undecided), then the middle item by its sole child (1/1, confidence 0.95), then the outer list by 2/3. Only the edited one-word inner item resets.",
+      "notes": "list > item > list: round 1's 4b vouches for the inner list by 2/3 (parents both undecided) and for the outer list by 2/3. In round 2, 4a runs first: under (outer, outer) the middle item is the lone unmatched child on each side in the same slot (text_sim 0, 'x y z' vs 'x y changed z'), so the singleton rule (m2.3) carries it as context_unique 0.75 — ahead of the 1/1 children vouch (0.95) it received before m2.3 — and under (inner, inner) the edited one-word item carries the same way. Nothing resets.",
       "old": {
         "blocks": [
           {
@@ -410,7 +392,7 @@
           "/0/1": "b_2",
           "/0/1/0": "b_3",
           "/0/1/0/0": "b_4",
-          "/0/1/0/1": null,
+          "/0/1/0/1": "b_5",
           "/0/1/0/2": "b_6",
           "/0/2": "b_7"
         },
@@ -435,12 +417,9 @@
           {
             "block": "b_2",
             "kind": "edited",
-            "confidence": 0.95,
-            "reason": "context_children",
-            "detail": {
-              "children_carried": 1,
-              "children_total": 1
-            }
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
           },
           {
             "block": "b_3",
@@ -461,9 +440,9 @@
           },
           {
             "block": "b_5",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -479,18 +458,9 @@
             "confidence": 1,
             "reason": "exact_hash",
             "detail": {}
-          },
-          {
-            "block": "new:/0/1/0/1",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "detail": {}
           }
         ],
-        "deleted": [
-          "b_5"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },
@@ -1036,7 +1006,7 @@
     },
     {
       "name": "composite-nested-and-split-list",
-      "notes": "Composite: a nested one-word-item list edited at the leaf plus a 4-item list split 3 + 1; four context_children carries (inner, mid item, outer list, the one-two-three list).",
+      "notes": "Composite: a nested one-word-item list edited at the leaf plus a 4-item list split 3 + 1; three context_children carries (inner, outer list, the one-two-three list) and two singleton carries (the mid item, which 4a reaches before 4b in round 2, and the edited leaf).",
       "old": {
         "blocks": [
           {
@@ -1226,7 +1196,7 @@
           "/1/1": "b_3",
           "/1/1/0": "b_4",
           "/1/1/0/0": "b_5",
-          "/1/1/0/1": null,
+          "/1/1/0/1": "b_6",
           "/1/1/0/2": "b_7",
           "/1/2": "b_8",
           "/2": "b_9",
@@ -1293,12 +1263,9 @@
           {
             "block": "b_3",
             "kind": "edited",
-            "confidence": 0.95,
-            "reason": "context_children",
-            "detail": {
-              "children_carried": 1,
-              "children_total": 1
-            }
+            "confidence": 0.75,
+            "reason": "context_unique",
+            "detail": {}
           },
           {
             "block": "b_4",
@@ -1319,9 +1286,9 @@
           },
           {
             "block": "b_6",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -1349,13 +1316,6 @@
             }
           },
           {
-            "block": "new:/1/1/0/1",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "detail": {}
-          },
-          {
             "block": "new:/3",
             "kind": "inserted",
             "confidence": null,
@@ -1370,9 +1330,7 @@
             "detail": {}
           }
         ],
-        "deleted": [
-          "b_6"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },

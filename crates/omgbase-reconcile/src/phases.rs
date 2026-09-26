@@ -288,12 +288,52 @@ fn matched_parent_pairs(state: &PhaseState<'_>) -> Vec<(Option<String>, Option<S
     pairs
 }
 
+/// The singleton rule's slot test (§5 phase 4a step 5): *n* sits in the
+/// same slot as *o* when `o.index == n.index`, or the siblings just before
+/// both are a carried pair, or the siblings just after both are.
+fn same_slot(
+    o: &MatchBlock,
+    n: &MatchBlock,
+    state: &PhaseState<'_>,
+    old_by_key: &HashMap<&str, &MatchBlock>,
+    new_by_key: &HashMap<&str, &MatchBlock>,
+) -> bool {
+    if o.index == n.index {
+        return true;
+    }
+    let carried_pair = |oi: usize, ni: usize| -> bool {
+        let ok = MatchBlock::positional_key(o.parent_key.as_deref(), oi);
+        let nk = MatchBlock::positional_key(n.parent_key.as_deref(), ni);
+        match (old_by_key.get(ok.as_str()), new_by_key.get(nk.as_str())) {
+            (Some(os), Some(ns)) => state.matched_id(&ns.key) == Some(old_id(os)),
+            _ => false,
+        }
+    };
+    (o.index > 0 && n.index > 0 && carried_pair(o.index - 1, n.index - 1))
+        || carried_pair(o.index + 1, n.index + 1)
+}
+
+/// The anchor veto (§5 phase 4a step 5): if either block carries anchors,
+/// they must share one.
+fn anchors_agree(o: &MatchBlock, n: &MatchBlock) -> bool {
+    (o.anchors.is_empty() && n.anchors.is_empty())
+        || o.anchors.iter().any(|a| n.anchors.contains(a))
+}
+
 /// Phase 4a — context (`context_unique`, `0.75 + 0.2 × text_sim`). For each
 /// parent pair `(P, Q)`: when exactly one unmatched old block has
 /// `parent_key = P`, its candidates are the unmatched new blocks with
 /// `parent_key = Q` and the same type; the strictly best `text_sim` at or
-/// above `context_sim_floor` carries. A tie for best is no best.
+/// above `context_sim_floor` carries. A tie for best is no best. Otherwise
+/// the **singleton rule** (m2.3): under a real (non-root) parent pair, a
+/// lone candidate in the same slot as *o* — equal index, or the previous or
+/// next siblings are a carried pair — carries at the same confidence
+/// whatever `text_sim` is, unless the blocks carry anchors that share none.
 pub fn phase4_context(state: &mut PhaseState<'_>) {
+    let old_by_key: HashMap<&str, &MatchBlock> =
+        state.old.iter().map(|b| (b.key.as_str(), b)).collect();
+    let new_by_key: HashMap<&str, &MatchBlock> =
+        state.neu.iter().map(|b| (b.key.as_str(), b)).collect();
     for (old_parent, new_parent) in matched_parent_pairs(state) {
         let old_kids: Vec<&MatchBlock> = state
             .unmatched_old()
@@ -312,6 +352,7 @@ pub fn phase4_context(state: &mut PhaseState<'_>) {
         if candidates.is_empty() {
             continue;
         }
+        let single = (candidates.len() == 1).then(|| candidates[0]);
         let mut best: Option<&MatchBlock> = None;
         let mut best_sim = -1.0;
         let mut tie = false;
@@ -335,8 +376,27 @@ pub fn phase4_context(state: &mut PhaseState<'_>) {
                     Reason::ContextUnique,
                     Detail::new(),
                 );
+                continue;
             }
         }
+        // Step 5 — the singleton rule (m2.3).
+        let Some(n) = single else {
+            continue;
+        };
+        if old_parent.is_none() || new_parent.is_none() {
+            continue;
+        }
+        if !same_slot(o, n, state, &old_by_key, &new_by_key) || !anchors_agree(o, n) {
+            continue;
+        }
+        state.carry(
+            o,
+            n,
+            classify_kind(o, n),
+            0.75 + 0.2 * best_sim,
+            Reason::ContextUnique,
+            Detail::new(),
+        );
     }
 }
 
@@ -542,7 +602,7 @@ pub(crate) mod testutil {
 
 #[cfg(test)]
 mod tests {
-    use super::testutil::{mb, para};
+    use super::testutil::{mb, mb_under, para};
     use super::*;
 
     fn state<'a>(
@@ -759,6 +819,234 @@ mod tests {
         let mut s = state(&old, &neu, &cfg);
         phase4_context(&mut s);
         assert_eq!(s.matched_len(), 0);
+    }
+
+    /// A carried `list` at `/0` on both sides, with `old_items` and
+    /// `new_items` as `(raw, anchors)` under it. Returns the state after the
+    /// list is carried and phase 1 has run over the items.
+    fn nested_list<'a>(
+        old: &'a mut Vec<MatchBlock>,
+        neu: &'a mut Vec<MatchBlock>,
+        cfg: &'a Config,
+        old_items: &[(&str, &[&str])],
+        new_items: &[(&str, &[&str])],
+    ) -> PhaseState<'a> {
+        old.push(mb("- x", 0, Some("b_list"), "list", &[]));
+        for (i, (raw, anchors)) in old_items.iter().enumerate() {
+            let id = format!("b_{i}");
+            old.push(mb_under(
+                raw,
+                i,
+                Some(&id),
+                "list_item",
+                anchors,
+                Some("/0"),
+            ));
+        }
+        neu.push(mb("- y", 0, None, "list", &[]));
+        for (i, (raw, anchors)) in new_items.iter().enumerate() {
+            neu.push(mb_under(raw, i, None, "list_item", anchors, Some("/0")));
+        }
+        let mut s = PhaseState::new(old, neu, cfg);
+        let (o, n) = (&old[0], &neu[0]);
+        s.carry(
+            o,
+            n,
+            classify_kind(o, n),
+            0.99,
+            Reason::Anchor,
+            Detail::new(),
+        );
+        phase1_exact(&mut s);
+        s
+    }
+
+    #[test]
+    fn singleton_rule_carries_the_lone_changed_slot_at_the_same_index() {
+        let cfg = Config::default();
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[
+                ("alpha beta", &[]),
+                ("gamma delta", &[]),
+                ("epsilon zeta", &[]),
+            ],
+            &[
+                ("alpha beta", &[]),
+                ("gamma omega", &[]),
+                ("epsilon zeta", &[]),
+            ],
+        );
+        assert_eq!(s.matched_id("/0/1"), None);
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), Some("b_1"));
+        let d = find(&s, "b_1");
+        assert_eq!(d.reason, Some(Reason::ContextUnique));
+        assert_eq!(d.kind, DispositionKind::Edited);
+        // Two-word items share no shingle: text_sim is 0, so no floor
+        // reaches them; the singleton rule carries at 0.75 + 0.2 × 0.
+        assert_eq!(d.confidence, Some(0.75));
+    }
+
+    #[test]
+    fn singleton_rule_slot_via_carried_previous_sibling() {
+        let cfg = Config::default();
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        // Old item 0 deleted, so the changed item shifts from index 2 to 1;
+        // the pair just before it (old 1 → new 0) is carried.
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[
+                ("alpha beta", &[]),
+                ("gamma delta", &[]),
+                ("epsilon zeta", &[]),
+            ],
+            &[("gamma delta", &[]), ("epsilon omega", &[])],
+        );
+        assert_eq!(s.matched_id("/0/0"), Some("b_1"));
+        phase4_context(&mut s);
+        // Two unmatched old items (b_0, b_2): step 1 skips the pair. Mark
+        // b_0 deleted to isolate the rule.
+        assert_eq!(s.matched_id("/0/1"), None);
+        s.mark_old_used("b_0");
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), Some("b_2"));
+        assert_eq!(find(&s, "b_2").kind, DispositionKind::EditedMoved);
+    }
+
+    #[test]
+    fn singleton_rule_slot_via_carried_next_sibling() {
+        let cfg = Config::default();
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        // A new item inserted at 0 shifts the changed item from 0 to 1; the
+        // pair just after (old 1 → new 2) is carried.
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[("alpha beta", &[]), ("gamma delta", &[])],
+            &[
+                ("new thing", &[]),
+                ("alpha omega", &[]),
+                ("gamma delta", &[]),
+            ],
+        );
+        assert_eq!(s.matched_id("/0/2"), Some("b_1"));
+        // Two candidates (new 0 and new 1): the rule does not apply.
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), None);
+        assert_eq!(s.matched_id("/0/0"), None);
+        s.mark_new_used("/0/0");
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), Some("b_0"));
+        assert_eq!(find(&s, "b_0").kind, DispositionKind::EditedMoved);
+    }
+
+    #[test]
+    fn singleton_rule_does_not_apply_at_the_root_pair() {
+        let cfg = Config::default();
+        let old = [
+            para("alpha beta", 0, Some("b_1")),
+            para("Tail.", 1, Some("b_2")),
+        ];
+        let neu = [para("gamma delta", 0, None), para("Tail.", 1, None)];
+        let mut s = state(&old, &neu, &cfg);
+        phase1_exact(&mut s);
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0"), None);
+    }
+
+    #[test]
+    fn singleton_rule_requires_exactly_one_candidate() {
+        let cfg = Config::default();
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[("alpha beta", &[]), ("gamma delta", &[])],
+            &[
+                ("alpha beta", &[]),
+                ("gamma omega", &[]),
+                ("kappa lambda", &[]),
+            ],
+        );
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), None);
+        assert_eq!(s.matched_id("/0/2"), None);
+    }
+
+    #[test]
+    fn singleton_rule_requires_the_same_slot() {
+        let cfg = Config::default();
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        // Old item 0 deleted and an unrelated item appended at the end: the
+        // indices differ (0 vs 2), and neither neighbour pair is carried
+        // (the old has no previous sibling and its next, b_1, carried to
+        // new 0, not new 3; the new has no next sibling).
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[
+                ("alpha beta", &[]),
+                ("gamma delta", &[]),
+                ("epsilon zeta", &[]),
+            ],
+            &[
+                ("gamma delta", &[]),
+                ("epsilon zeta", &[]),
+                ("kappa lambda", &[]),
+            ],
+        );
+        assert_eq!(s.matched_id("/0/0"), Some("b_1"));
+        assert_eq!(s.matched_id("/0/1"), Some("b_2"));
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/2"), None);
+        assert!(!s.is_old_used("b_0"));
+    }
+
+    #[test]
+    fn singleton_rule_is_vetoed_by_disagreeing_anchors() {
+        let cfg = Config::default();
+        // Anchors on both sides that share none.
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[("alpha beta", &[]), ("gamma delta", &["^one"])],
+            &[("alpha beta", &[]), ("gamma omega", &["^two"])],
+        );
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), None);
+        // An anchor on one side only vetoes too.
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[("alpha beta", &[]), ("gamma delta", &["^one"])],
+            &[("alpha beta", &[]), ("gamma omega", &[])],
+        );
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), None);
+        // A shared anchor (with another unshared one) does not.
+        let (mut old, mut neu) = (Vec::new(), Vec::new());
+        let mut s = nested_list(
+            &mut old,
+            &mut neu,
+            &cfg,
+            &[("alpha beta", &[]), ("gamma delta", &["^one", "^shared"])],
+            &[("alpha beta", &[]), ("gamma omega", &["^shared"])],
+        );
+        phase4_context(&mut s);
+        assert_eq!(s.matched_id("/0/1"), Some("b_1"));
     }
 
     #[test]

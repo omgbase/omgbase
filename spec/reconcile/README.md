@@ -31,7 +31,7 @@ contract that the rationale describes.
 Every disposition is stamped with a **matcher version** so a database can say
 which matcher made a decision, and a newer matcher never rewrites committed
 dispositions (R6 below). That version is the spec version: `VERSION` holds it
-as `major.minor` (`2.2`), the stamp is `"m" + VERSION` (`m2.2`), and the
+as `major.minor` (`2.3`), the stamp is `"m" + VERSION` (`m2.3`), and the
 `omgbase-reconcile` crate is versioned `<major>.<minor>.<patch>` with the
 patch digit free for bug fixes and packaging, exactly as `oqx` and
 `omgbase-format` track their specs. The reference lives inside
@@ -50,7 +50,9 @@ for their parent) and the phase 4/4b fixed point (2026-09-25); `m2.1` the
 four fixes of §10 (phase 5 keeps walking past a sub-threshold candidate,
 `position_prior` over sibling count, every split and merge per run, split
 tombstones listed in `deleted`) (2026-09-25); `m2.2` `theta_small` 0.80 → 0.62
-(2026-09-26).
+(2026-09-26); `m2.3` phase 4a's singleton rule — the lone unmatched child of a
+carried container carries into the lone unmatched child in the same slot
+without a text floor (2026-09-26).
 
 ## The rule for changing the matcher
 
@@ -265,10 +267,35 @@ in the next round. For each parent pair `(P, Q)`:
    n.text)`. If another candidate ties the greatest value, there is no best.
 4. If there is a best and `text_sim ≥ context_sim_floor`, carry (kind
    classified) with confidence `0.75 + 0.2 × text_sim`.
+5. **Singleton rule (m2.3).** Otherwise, if *P* and *Q* are real blocks (not
+   the root pair), there is exactly one candidate *n*, and *n* sits in the
+   **same slot** as *o* — `o.index = n.index`, **or** the siblings just before
+   both (`o.index − 1` under *P*, `n.index − 1` under *Q*) are a carried pair,
+   **or** the siblings just after both are a carried pair — carry (kind
+   classified) with confidence `0.75 + 0.2 × text_sim`, reason
+   `context_unique`, whatever `text_sim` is. Anchors veto: if either block
+   carries anchors and they share none, no carry.
 
 Insertions in the gap lose to the better-matching candidate rather than
 blocking the carry; that is how an inserted paragraph never steals an edited
-paragraph's identity.
+paragraph's identity. Three consequences of step 5 worth knowing: with a
+single candidate a tie is impossible, so "otherwise" means "the floor test
+failed or there was no best"; the previous/next-sibling clause can only fire
+when the inserted or deleted sibling that shifted the index has a
+**different type** (a same-type insert above makes two candidates, a
+same-type delete above makes two unmatched old — `singleton::index-shift-task-inserted-above`);
+and because 4a runs before 4b in every round, a **container** that is itself
+the lone changed slot carries here as `context_unique` 0.75 + 0.2 × text_sim
+with `detail {}` rather than as `context_children` in 4b
+(`children::nested-fixed-point`) — the carry is the same, only the recorded
+evidence differs. The singleton rule is the structural reading of the
+same evidence: a container both sides agree on, with one slot changed, is one
+edited item — which is what a line diff shows and what a reader expects of a
+two-word list item whose one word changed (`text_sim` is 0 there, so no floor
+can reach it). It is confined to nested containers because at the document
+root an unrelated replacement paragraph is common and paragraphs carry the
+block references that R4 protects; and to a single slot because a deleted
+item plus an unrelated item appended elsewhere is not the same slot.
 
 #### Phase 4b — children vouch for their parent (`context_children`, `0.75 + 0.2 × fraction`)
 
@@ -454,11 +481,11 @@ entry.
 
 | Fixture name | Default | Meaning |
 | --- | --- | --- |
-| `matcher_v` | `"m2.2"` | stamped on every disposition (`"m" + VERSION`) |
+| `matcher_v` | `"m2.3"` | stamped on every disposition (`"m" + VERSION`) |
 | `theta_accept` | 0.62 | phase 5 acceptance |
 | `theta_small` | 0.62 | phase 5 acceptance when the new block has fewer than `small_block_tokens` tokens (0.80 before m2.2) |
 | `small_block_tokens` | 8 | the tiny-block boundary |
-| `context_sim_floor` | 0.35 | phase 4a `text_sim` floor |
+| `context_sim_floor` | 0.35 | phase 4a `text_sim` floor (step 4; the singleton rule of step 5 has none) |
 | `children_vouch_frac` | 0.50 | phase 4b: fraction of an old container's children that must have carried into one new container |
 | `split_coverage` | 0.80 | phase 6a split/merge coverage |
 | `split_dominant_share` | 0.70 | phase 6a dominant-fragment inheritance; `1.01` disables it |
@@ -654,6 +681,14 @@ the fix and the reference was brought to it).
   old block got a `deleted` disposition (with `splitInto`) but phase 7 did
   not list it, so it never entered the resurrection pool. `deleted` is now
   every `deleted` disposition (`compound::split-disabled-tombstone-in-deleted`).
+- **Fixed in m2.3 — short list items lost identity on a mid-item edit.** A
+  five-word item with two words changed, or any 2–3-word item with one word
+  changed, had `text_sim` under the 4a floor (0 for the short ones) and a
+  phase 5 score under `theta_small`, so it minted while its list and siblings
+  carried (`structure::edit-one-item-in-long-list`,
+  `structure::add-nested-list-under-item`). The eval harness showed no floor
+  can reach 2–3-word items; the singleton rule (phase 4a step 5) carries the
+  lone changed slot of a carried container instead.
 - **Pinned — resurrection reason.** A norm-hash resurrection records reason
   `exact_hash`, and a consumed raw-hash hit does not fall back to the
   norm-hash entry.
@@ -665,16 +700,6 @@ the fix and the reference was brought to it).
   parent's positional key or its sibling index differs between the trees;
   after an insertion above it, every following sibling is `moved` (or
   `edited_moved`) even though its parent is the same block.
-- **Observed — mid-item edits on short items lose identity.** A five-word
-  list item with two words changed mid-item shares one of its three shingles
-  (`text_sim` 0.333, under the 0.35 floor) and scores about 0.53 in phase 5
-  (under 0.62), so it is deleted and re-minted while its siblings and the
-  list carry (`structure::edit-one-item-in-long-list`; the same edit on the
-  last word carries, `structure::edit-one-item-last-word`). Likewise a
-  three-word item that gains a nested list
-  (`structure::add-nested-list-under-item`). Not a reference bug — the
-  thresholds behaving as tuned — but the small-block policy's cost on real
-  lists, recorded for the threshold decision it invites.
 - **Observed — byte-equal blocks whose groups differ in size carry as
   `edited`.** One `---` in old and two in new skip phase 1 (1 ≠ 2), tie in
   phase 4a (both `text_sim` 1) and reach phase 5, where the survivor carries
@@ -698,6 +723,21 @@ the fix and the reference was brought to it).
   `deleted`) as one minor bump, to wire cross-document matching into the
   checkpoint, and to leave the short-item threshold question to the eval
   harness (extend it with list-item edit classes, measure, then decide).
+- 2026-09-26, matcher 2.3: the singleton rule. Brendan asked for the least
+  surprising behavior on the open short-item question; lowering
+  `context_sim_floor` (0.30 rescues only 5-word mid edits, 0.25 adds 6-word,
+  2–3-word items are unreachable by any floor) was not it. The rule reads the
+  evidence phase 4a already has — a carried container with one unmatched
+  child on each side in the same slot — and the eval harness gained an
+  `item-replace` class (an item deleted and an unrelated one inserted in its
+  slot) so the cost of the rule is measured, not assumed. Measured (structured
+  mode, n=300 per cell, 2–6-word items): `item-edit-mid` recall 0 → 0.60 at
+  two words and 0 → 0.70 at three (0.12 → 0.70 over 2–6), `item-edit-last`
+  0.51 → 0.78, `item-gains-nested-list` 0.76 → 0.93; the cost is
+  `item-replace` carried in about 74% of cells' cases (the same slot, an
+  unrelated item — the deliberate trade), taking structured-mode precision
+  from 1.000 to 0.993; the flat-suite release gates are identical before and
+  after. `context_sim_floor` stays 0.35.
 - 2026-09-26, matcher 2.2: `theta_small` lowered from 0.80 to 0.62, equal to
   `theta_accept`. The eval harness (structured mode, n=300 per cell) showed
   precision 1.000 under both values while the multi-edit-list classes, which

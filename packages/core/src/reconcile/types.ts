@@ -49,7 +49,7 @@ export interface ReconcileConfig {
   bulkMinBlocks: number;
   maxScoredBlocks: number;
   smallBlockTokens: number;
-  contextSimFloor: number; // phase-4 text_sim floor (0.35)
+  contextSimFloor: number; // phase-4a step 4 text_sim floor (0.35); the step 5 singleton rule has none
   /** phase-4b: minimum fraction of an old container's children that must have
    * carried into one new container for the children to vouch for it (0.5). */
   childrenVouchFrac: number;
@@ -60,9 +60,11 @@ export const DEFAULT_CONFIG: ReconcileConfig = {
   // parent) and the phase-4 fixed point. m2.1: the four spec §10 fixes — phase 5
   // skips (not stops at) a sub-threshold candidate, position_prior over the
   // sibling count, every split and merge per run, split tombstones listed in
-  // `deleted`. m2.2: thetaSmall 0.80 → 0.62 (eval harness, 2026-09-26). Rule
-  // refinements bump the minor; phase changes bump the major.
-  matcherV: "m2.2",
+  // `deleted`. m2.2: thetaSmall 0.80 → 0.62 (eval harness, 2026-09-26). m2.3:
+  // phase 4a's singleton rule — the lone unmatched child of a carried container
+  // carries into the lone unmatched child in the same slot without a text floor
+  // (2026-09-26). Rule refinements bump the minor; phase changes bump the major.
+  matcherV: "m2.3",
   thetaAccept: 0.62,
   thetaSmall: 0.62,
   thetaXdoc: 0.8,

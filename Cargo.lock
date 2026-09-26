@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-reconcile"
-version = "2.2.0"
+version = "2.3.0"
 dependencies = [
  "omgbase-format",
  "serde_json",
@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-store"
-version = "13.0.0"
+version = "13.0.1"
 dependencies = [
  "getrandom",
  "omgbase-format",

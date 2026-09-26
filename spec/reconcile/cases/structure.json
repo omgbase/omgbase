@@ -186,7 +186,7 @@
     },
     {
       "name": "edit-one-item-in-long-list",
-      "notes": "Six five-word items, two words changed mid-item: five items lock and the list carries by context (0.929), but the edited item shares only 1 of 3 shingles (text_sim 0.333 < 0.35 floor) and phase 5 scores it 0.533 < 0.62 → it loses its identity (deleted + inserted). Compare edit-one-item-last-word.",
+      "notes": "Six five-word items, two words changed mid-item: five items lock and the list carries by context (0.929). The edited item shares only 1 of 3 shingles (text_sim 0.333 < 0.35 floor) and phase 5 would score it 0.533 < 0.62, so before m2.3 it lost its identity; the singleton rule (phase 4a step 5) now carries it — lone unmatched child on each side of the (list, list) pair, same index — at 0.75 + 0.2 × 0.333. Compare edit-one-item-last-word, which clears the floor.",
       "old": {
         "source": "- first item with some words\n- second item with some words\n- third item with some words\n- fourth item with some words\n- fifth item with some words\n- sixth item with some words\n"
       },
@@ -199,7 +199,7 @@
           "/0/0": "b_1",
           "/0/1": "b_2",
           "/0/2": "b_3",
-          "/0/3": null,
+          "/0/3": "b_4",
           "/0/4": "b_5",
           "/0/5": "b_6"
         },
@@ -234,9 +234,9 @@
           },
           {
             "block": "b_4",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.8166666666666667,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -252,18 +252,9 @@
             "confidence": 1,
             "reason": "exact_hash",
             "detail": {}
-          },
-          {
-            "block": "new:/0/3",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
-            "detail": {}
           }
         ],
-        "deleted": [
-          "b_4"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },
@@ -481,7 +472,7 @@
     },
     {
       "name": "add-nested-list-under-item",
-      "notes": "A three-word item gains a nested list: it now has children (paragraph + list) and its text becomes 'second item text nested one nested two'. The list (lone unmatched root) carries by context; the item shares 1 of 6 shingles (0.333 < 0.35) and scores 0.514 in phase 5 → it loses its identity; its new children are minted. Compare add-nested-list-under-wordy-item.",
+      "notes": "A three-word item gains a nested list: it now has children (paragraph + list) and its text becomes 'second item text nested one nested two'. The list (lone unmatched root) carries by context; the item shares 1 of 6 shingles (0.333 < 0.35) and would score 0.514 in phase 5, so before m2.3 it lost its identity — the singleton rule now carries it in the same slot at 0.75 + 0.2 × 0.333; its new children are minted. Compare add-nested-list-under-wordy-item.",
       "old": {
         "source": "- first item text\n- second item text\n- third item text\n"
       },
@@ -492,7 +483,7 @@
         "assignment": {
           "/0": "b_0",
           "/0/0": "b_1",
-          "/0/1": null,
+          "/0/1": "b_2",
           "/0/1/0": null,
           "/0/1/1": null,
           "/0/1/1/0": null,
@@ -516,9 +507,9 @@
           },
           {
             "block": "b_2",
-            "kind": "deleted",
-            "confidence": null,
-            "reason": "tombstone",
+            "kind": "edited",
+            "confidence": 0.8166666666666667,
+            "reason": "context_unique",
             "detail": {}
           },
           {
@@ -526,13 +517,6 @@
             "kind": "same",
             "confidence": 1,
             "reason": "exact_hash",
-            "detail": {}
-          },
-          {
-            "block": "new:/0/1",
-            "kind": "inserted",
-            "confidence": null,
-            "reason": null,
             "detail": {}
           },
           {
@@ -564,9 +548,7 @@
             "detail": {}
           }
         ],
-        "deleted": [
-          "b_2"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },
