@@ -1,6 +1,6 @@
 //! Parser conformance against the TypeScript reference: every parse-related
 //! assertion in `packages/oqx/test/oqx.test.ts`, the grammar rules of
-//! `spec/oqx/GRAMMAR.md` (language 0.12, principle of least surprise), plus
+//! `spec/oqx/GRAMMAR.md` (language 0.13, principle of least surprise), plus
 //! AST-shape tests for the README tutorial examples so the engine can trust
 //! the tree.
 

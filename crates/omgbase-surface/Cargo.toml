@@ -15,7 +15,7 @@ repository.workspace = true
 [dependencies]
 # The query language: parser, AST, the in-memory engine and its `DataContext`
 # seam (`spec/surface` §1). `json` for the `Value` ↔ `serde_json` bridge.
-oqx = { version = "0.12.0", path = "../oqx", features = ["json"] }
+oqx = { version = "0.13.0", path = "../oqx", features = ["json"] }
 # The store every read, query and mutation runs against.
 omgbase-store = { version = "13.4.1", path = "../omgbase-store" }
 # Workspace discovery, repo listing with derived roots, `repos_status` /

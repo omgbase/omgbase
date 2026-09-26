@@ -25,10 +25,10 @@ implementations share it. `VERSION` holds the language version as
 - **A language change** (any fixture added or changed that alters behavior)
   bumps the minor here (pre-1.0) and in every implementation at once, even one
   whose code did not need to change. The `@omgbase/oqx` npm package and the
-  `oqx` crate at `0.12.x` both mean "the 0.12 language".
+  `oqx` crate at `0.13.x` both mean "the 0.13 language".
 - **The patch digit is per implementation** and free: bug fixes, performance,
-  packaging. An implementation at `0.12.3` conforms to language `0.12` exactly
-  like one at `0.12.0`.
+  packaging. An implementation at `0.13.3` conforms to language `0.13` exactly
+  like one at `0.13.0`.
 - Each implementation exports a `LANGUAGE_VERSION` constant equal to `VERSION`
   so a caller can ask.
 

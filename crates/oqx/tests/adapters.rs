@@ -2,8 +2,8 @@
 //! `DataContext`) and tier-3 (planner) seams, through the public API only.
 
 use oqx::{
-    DataContext, DefaultContext, Engine, InMemoryEngine, IndexedCollection, Object, OqxResult,
-    PlannedEngine, QueryPlanner, Value, parse_string, run_query,
+    DataContext, DefaultContext, Engine, InMemoryEngine, IndexedCollection, Object, OqxError,
+    OqxResult, PlannedEngine, QueryPlanner, Result, Stage, Value, parse_string, run_query,
 };
 
 fn num(n: f64) -> Value {
@@ -92,7 +92,7 @@ impl DataContext for Graph {
         }
     }
 
-    fn get(&self, row: &Value, key: &str) -> Value {
+    fn get(&self, row: &Value, key: &str) -> Result<Value> {
         // `children` is a computed relation, not a stored key. Since a bare
         // name is read from the current row only (via `get`), nothing else is
         // needed for the engine to see it.
@@ -102,9 +102,11 @@ impl DataContext for Graph {
                 .and_then(|o| o.get("childIds"))
                 .and_then(Value::as_array)
                 .unwrap_or(&[]);
-            return Value::Array(ids.iter().map(|i| self.node(i.as_f64().unwrap())).collect());
+            return Ok(Value::Array(
+                ids.iter().map(|i| self.node(i.as_f64().unwrap())).collect(),
+            ));
         }
-        DefaultContext::default().get(row, key)
+        Ok(DefaultContext::read(row, key))
     }
 
     fn to_rows(&self, value: &Value) -> Vec<Value> {
@@ -138,6 +140,70 @@ fn tier_2_a_custom_data_context_resolves_relations_its_own_way() {
             obj(&[("id", num(4.0)), ("depth", num(3.0))]),
         ])
     );
+}
+
+/// A context that refuses one property name: the host's error channel on
+/// `get` (language 0.13; the reference's `get` may throw the same way).
+struct Guarded;
+
+impl DataContext for Guarded {
+    fn root(&self, name: &str) -> Value {
+        if name == "rows" {
+            Value::Array(vec![
+                obj(&[
+                    ("id", num(1.0)),
+                    ("kids", Value::Array(vec![obj(&[("id", num(2.0))])])),
+                ]),
+                obj(&[("id", num(3.0)), ("secret", s("x"))]),
+            ])
+        } else {
+            Value::Undefined
+        }
+    }
+
+    fn get(&self, row: &Value, key: &str) -> Result<Value> {
+        if key == "secret" {
+            return Err(OqxError::eval(format!("'{key}' is reserved")));
+        }
+        Ok(DefaultContext::read(row, key))
+    }
+
+    fn to_rows(&self, value: &Value) -> Vec<Value> {
+        DefaultContext::default().to_rows(value)
+    }
+
+    fn identity(&self, row: &Value) -> Value {
+        DefaultContext::default().identity(row)
+    }
+}
+
+#[test]
+fn tier_2_an_err_from_get_is_the_query_s_eval_error() {
+    let engine = InMemoryEngine::new(Guarded);
+    let run = |q: &str| engine.run(&parse_string(q).unwrap(), &[]);
+    // A query that never touches the key runs.
+    assert_eq!(
+        run("id values from rows").unwrap(),
+        OqxResult::Collect(vec![num(1.0), num(3.0)])
+    );
+    // A bare name (in select, where, order by), a `.field`, a `^field` from a
+    // nested block, and a read inside a follow all reach `get`; each Err
+    // surfaces as the eval error itself.
+    for q in [
+        "secret from rows",
+        "id values from rows where secret == \"x\"",
+        "id values from rows order by secret",
+        "x: $value.secret from rows",
+        "id values from rows where kids exists { where ^secret == \"x\" }",
+        "id values from rows where secret == \"x\" follow kids",
+        "id values from rows follow kids { where secret == \"x\" }",
+    ] {
+        let err = run(q).unwrap_err();
+        assert_eq!(err.stage, Stage::Eval, "{q}");
+        assert!(err.message.contains("'secret' is reserved"), "{q}: {err}");
+    }
+    // Reading past absent never asks the context, so it cannot fail.
+    assert!(run("x: nope.secret from rows").is_ok());
 }
 
 // ---- tier 3: the indexed optimizing planner ---------------------------------

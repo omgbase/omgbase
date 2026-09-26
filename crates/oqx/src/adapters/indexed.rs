@@ -42,7 +42,7 @@
 use std::collections::HashMap;
 
 use crate::ast::Query;
-use crate::context::{DataContext, DefaultContext};
+use crate::context::DefaultContext;
 use crate::plan::{as_equality, const_value, partition_pushable, residual_query};
 use crate::planner::{Plan, QueryPlanner};
 use crate::value::Value;
@@ -59,15 +59,14 @@ pub struct IndexedCollection {
 impl IndexedCollection {
     /// Index `rows` (exposed as root `name`) on each field in `index_fields`.
     /// A field is read off each row exactly as the default context would
-    /// (object property; array element for an integer-spelled name); a row
-    /// without it is indexed under the absent key.
+    /// ([`DefaultContext::read`]: object property; array element for an
+    /// integer-spelled name); a row without it is indexed under the absent key.
     pub fn new(name: impl Into<String>, rows: Vec<Value>, index_fields: &[&str]) -> Self {
-        let reader = DefaultContext::default();
         let mut indexes = HashMap::with_capacity(index_fields.len());
         for &field in index_fields {
             let mut idx: HashMap<String, Vec<usize>> = HashMap::new();
             for (pos, row) in rows.iter().enumerate() {
-                if let Some(key) = index_key(&reader.get(row, field)) {
+                if let Some(key) = index_key(&DefaultContext::read(row, field)) {
                     idx.entry(key).or_default().push(pos);
                 }
             }

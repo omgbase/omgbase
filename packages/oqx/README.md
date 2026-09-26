@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.12"`); the patch digit is this implementation's own.
+> `"0.13"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -584,8 +584,14 @@ oqx`id, stop: $stop from ${tree} follow children { depth 2 } order by $ordinal`;
 ```
 
 The intrinsics belong to the reached row's own scope like any other name: inside
-a nested block (`kids: children collect { … }`) a bare `$depth` is absent, and
-the occurrence's depth is `^$depth`.
+a nested block (`kids: children collect { … }`) a bare `$depth` is the nested
+row's own `$depth` property (absent unless the data carries one), and the
+occurrence's depth is `^$depth`. The same holds everywhere the metadata is not
+present — outside a `follow`, `$depth`/`$ordinal`/`$stop`/`$leaf`/`$frontier`
+are ordinary property reads (a row `{ "$depth": 3 }` projects `3`), and `$key`
+is likewise an ordinary property read outside an `entries()` scope. Where the
+metadata exists it wins over a same-named property (language 0.13; before, the
+six names read absent everywhere they were not metadata).
 
 The walk is **per-path**: a node reached by N distinct paths yields N
 occurrences, and revisiting an identity already on the current path is admitted

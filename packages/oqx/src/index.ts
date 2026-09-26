@@ -30,7 +30,7 @@ export { OqxError } from "./errors.ts";
 
 /** The OQX spec version (`spec/oqx/VERSION`, `major.minor`) this implementation
  * conforms to — distinct from the package's own semver. */
-export const LANGUAGE_VERSION = "0.12";
+export const LANGUAGE_VERSION = "0.13";
 export type { OqxResult, Engine } from "./engine.ts";
 export { InMemoryEngine, runQuery } from "./engine.ts";
 export type { DataContext, CallResult, DefaultContextOptions } from "./context.ts";
