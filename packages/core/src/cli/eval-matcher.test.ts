@@ -16,3 +16,18 @@ describe("omg eval-matcher", () => {
     expect(text).toMatch(/edit\s+precision=/);
   });
 });
+
+describe("omg eval-matcher — structured mode", () => {
+  it("runs the structured suite with threshold overrides and labels the header", () => {
+    const { report, text } = evalMatcher({ n: 20, mode: "structured", itemWords: 5, contextSimFloor: 0.3 });
+    expect(report.mode).toBe("structured");
+    expect(report.config.contextSimFloor).toBe(0.3);
+    expect(text).toContain("mode=structured");
+    expect(text).toMatch(/item-edit-mid\s+precision=/);
+  });
+
+  it("default output does not mention the mode", () => {
+    const { text } = evalMatcher({ n: 5 });
+    expect(text).not.toContain("mode=");
+  });
+});
