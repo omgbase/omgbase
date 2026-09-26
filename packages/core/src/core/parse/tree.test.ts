@@ -21,6 +21,24 @@ describe("parseTree — trivia attachment", () => {
     expect(tree.children[0]?.type).toBe("html_block");
   });
 
+  it("puts a leading byte-order mark in leadingTrivia, not in the first block", () => {
+    const src = "\uFEFF# Doc with BOM\n\nBody.\n";
+    const tree = parseTree(src);
+    expect(tree.leadingTrivia).toBe("\uFEFF");
+    expect(tree.children[0]?.raw).toBe("# Doc with BOM");
+    expect(tree.children[0]?.trivia).toBe("\n\n");
+    expect(tree.children[1]?.raw).toBe("Body.");
+    expect(tree.children[1]?.trivia).toBe("\n");
+    expect(assertFullCoverage(tree)).toBe(true);
+  });
+
+  it("treats a BOM-only file as pure leading trivia", () => {
+    const tree = parseTree("\uFEFF");
+    expect(tree.children).toHaveLength(0);
+    expect(tree.leadingTrivia).toBe("\uFEFF");
+    expect(assertFullCoverage(tree)).toBe(true);
+  });
+
   it("treats an all-whitespace file as pure leading trivia", () => {
     const src = "\n\n   \n";
     const tree = parseTree(src);

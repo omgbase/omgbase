@@ -1,0 +1,3557 @@
+{
+  "suite": "real",
+  "format": "markdown",
+  "cases": [
+    {
+      "name": "changelog-style",
+      "source": "# Changelog\n\n## [1.2.0] - 2026-01-01\n\n### Added\n\n- Feature A\n- Feature B\n\n### Fixed\n\n- Bug X\n\n## [1.1.0] - 2025-12-01\n\n### Changed\n\n- Behavior Y\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              11
+            ],
+            "text": "Changelog",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "4bf8b81ff9c0302132a0717589744f30d0127cc1ebe9a32aa08a4c0fa624737a",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              13,
+              36
+            ],
+            "text": "[1.2.0] - 2026-01-01",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "db9c171391bc59869c6d6bc7b18687385e78e8664e9a87082de5878fc5ce77ed",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              38,
+              47
+            ],
+            "text": "Added",
+            "attrs": {
+              "level": 3
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2e16922cfc13e312852c6144c96a660b62f84a31c48753006e257073ab60ac7a",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              49,
+              72
+            ],
+            "text": "- Feature A - Feature B",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "4241714cafd721e8bde233ae30cca9e54246a851d2f1ec6ebce0035e884be57d",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  49,
+                  60
+                ],
+                "text": "Feature A",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "87cb65d186c413457c1891e852d1f74585ba9e7557c52f19d735471ec394812a",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "span": [
+                  61,
+                  72
+                ],
+                "text": "Feature B",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "78ef37a3003744f5e113a047a98d8b1b71a9cdc2b5689500323ca29e0ff87a13",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              74,
+              83
+            ],
+            "text": "Fixed",
+            "attrs": {
+              "level": 3
+            },
+            "trivia": "\n\n",
+            "raw_hash": "afe76b8d59a6bcbdf3e9631b1e14b79320892d2487b0ce2be8f3bf96e7635c1f",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              85,
+              92
+            ],
+            "text": "- Bug X",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2085ba9075c674a4092ca5815a7ce9e6203891b72081fc41fb9ee05c3dc37f80",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  85,
+                  92
+                ],
+                "text": "Bug X",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "2085ba9075c674a4092ca5815a7ce9e6203891b72081fc41fb9ee05c3dc37f80",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              94,
+              117
+            ],
+            "text": "[1.1.0] - 2025-12-01",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "418c43e7c0456551f329b6f0e261774ee24db9c02cb54245dac03214f57addab",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              119,
+              130
+            ],
+            "text": "Changed",
+            "attrs": {
+              "level": 3
+            },
+            "trivia": "\n\n",
+            "raw_hash": "5b8861877035762f0f64f423a06b02779a191d09c6065203cae06f6feee1960b",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              132,
+              144
+            ],
+            "text": "- Behavior Y",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n",
+            "raw_hash": "daccc63d34be6e57d9c348b763d9b83fdbbbb18e94b456d99c54c4bf773bf85b",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  132,
+                  144
+                ],
+                "text": "Behavior Y",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "daccc63d34be6e57d9c348b763d9b83fdbbbb18e94b456d99c54c4bf773bf85b",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "code-heavy",
+      "source": "# API\n\n```ts\ninterface Foo {\n  bar: string;\n  baz: number;\n}\n```\n\nUse it:\n\n```ts\nconst f: Foo = { bar: 'x', baz: 1 };\n```\n\n```json\n{\n  \"key\": \"value\"\n}\n```\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              5
+            ],
+            "text": "API",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "b0d67a4666b3952ae73dfbd2f0ebf13789a6270d02b5b24066cf7eb53a5943de",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              7,
+              64
+            ],
+            "text": "```ts interface Foo { bar: string; baz: number; } ```",
+            "attrs": {
+              "lang": "ts"
+            },
+            "trivia": "\n\n",
+            "raw_hash": "86e1527546ac69b9f2d6b1281726b9fc37290d839cd02f4f5f2ae1eb27ba46e5",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              66,
+              73
+            ],
+            "text": "Use it:",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "5344cf58445cd21d5cf7307f8a8d2859e44900e892b72b6bacce6f4d75d8ca2c",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              75,
+              121
+            ],
+            "text": "```ts const f: Foo = { bar: 'x', baz: 1 }; ```",
+            "attrs": {
+              "lang": "ts"
+            },
+            "trivia": "\n\n",
+            "raw_hash": "af1e3f9520ead1496fa1b69a21a1afec3b2c517565521df99e0f81a1b6de130c",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              123,
+              155
+            ],
+            "text": "```json { \"key\": \"value\" } ```",
+            "attrs": {
+              "lang": "json"
+            },
+            "trivia": "\n",
+            "raw_hash": "ca2f0910ed30a17c6a7781b89a954389147873e7cacfc45b4c3574f360ebe100",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "deeply-nested",
+      "source": "# Outline\n\n- L1\n  - L2\n    - L3\n      - L4\n        - L5\n- back to L1\n\n> quote\n> > nested\n> > > deep\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              9
+            ],
+            "text": "Outline",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "aa38d276b7a0dd473987cc0e9f591d7f5a6cf55a09a343ef32cc4e4cbb458269",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              11,
+              68
+            ],
+            "text": "- L1 - L2 - L3 - L4 - L5 - back to L1",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "4ea36db122fb166d63df5ffe57f5b39c9c1132530e4af5585e267efdbb720ed5",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  11,
+                  55
+                ],
+                "text": "L1 - L2 - L3 - L4 - L5",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "a2135d5c3c710f36328abcc6d307508558a1b0ac0699002e39f46daa00d09eb7",
+                "children": [
+                  {
+                    "type": "paragraph",
+                    "span": [
+                      13,
+                      15
+                    ],
+                    "text": "L1",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "dffe8596427fc50e8f64654a609af134d45552f18bbecef90b31135a9e7acaa0",
+                    "children": []
+                  },
+                  {
+                    "type": "list",
+                    "span": [
+                      18,
+                      55
+                    ],
+                    "text": "- L2 - L3 - L4 - L5",
+                    "attrs": {
+                      "ordered": false
+                    },
+                    "trivia": "",
+                    "raw_hash": "0a0aa4d88ad65c98410abe39ff1f660f53e1462f34921e24342685383277230c",
+                    "children": [
+                      {
+                        "type": "list_item",
+                        "span": [
+                          18,
+                          55
+                        ],
+                        "text": "L2 - L3 - L4 - L5",
+                        "attrs": {},
+                        "trivia": "",
+                        "raw_hash": "0a0aa4d88ad65c98410abe39ff1f660f53e1462f34921e24342685383277230c",
+                        "children": [
+                          {
+                            "type": "paragraph",
+                            "span": [
+                              20,
+                              22
+                            ],
+                            "text": "L2",
+                            "attrs": {},
+                            "trivia": "",
+                            "raw_hash": "d76354d8457898445bb69e0dc0dc95fb74cc3cf334f8c1859162a16ad0041f8d",
+                            "children": []
+                          },
+                          {
+                            "type": "list",
+                            "span": [
+                              27,
+                              55
+                            ],
+                            "text": "- L3 - L4 - L5",
+                            "attrs": {
+                              "ordered": false
+                            },
+                            "trivia": "",
+                            "raw_hash": "ab242563bafe9c5d2437e80afc73bf2d5c0201bfbac4f37d6c8f5cac56ee9b46",
+                            "children": [
+                              {
+                                "type": "list_item",
+                                "span": [
+                                  27,
+                                  55
+                                ],
+                                "text": "L3 - L4 - L5",
+                                "attrs": {},
+                                "trivia": "",
+                                "raw_hash": "ab242563bafe9c5d2437e80afc73bf2d5c0201bfbac4f37d6c8f5cac56ee9b46",
+                                "children": [
+                                  {
+                                    "type": "paragraph",
+                                    "span": [
+                                      29,
+                                      31
+                                    ],
+                                    "text": "L3",
+                                    "attrs": {},
+                                    "trivia": "",
+                                    "raw_hash": "842983de8fb1d277a3fad5c8295c7a14317c458718a10c5a35b23e7f992a5c80",
+                                    "children": []
+                                  },
+                                  {
+                                    "type": "list",
+                                    "span": [
+                                      38,
+                                      55
+                                    ],
+                                    "text": "- L4 - L5",
+                                    "attrs": {
+                                      "ordered": false
+                                    },
+                                    "trivia": "",
+                                    "raw_hash": "467796930ca3ff999e6822208355c634c7aacad998f94ede090e43ecc3604a52",
+                                    "children": [
+                                      {
+                                        "type": "list_item",
+                                        "span": [
+                                          38,
+                                          55
+                                        ],
+                                        "text": "L4 - L5",
+                                        "attrs": {},
+                                        "trivia": "",
+                                        "raw_hash": "467796930ca3ff999e6822208355c634c7aacad998f94ede090e43ecc3604a52",
+                                        "children": [
+                                          {
+                                            "type": "paragraph",
+                                            "span": [
+                                              40,
+                                              42
+                                            ],
+                                            "text": "L4",
+                                            "attrs": {},
+                                            "trivia": "",
+                                            "raw_hash": "4a5a97c6433c4c062457e9335709d57493e75527809d8a9586c141e591ac9f2c",
+                                            "children": []
+                                          },
+                                          {
+                                            "type": "list",
+                                            "span": [
+                                              51,
+                                              55
+                                            ],
+                                            "text": "- L5",
+                                            "attrs": {
+                                              "ordered": false
+                                            },
+                                            "trivia": "",
+                                            "raw_hash": "135fc2ce38c02e8ce7351391e0405b5b2016908fc1583832f006375c8775f717",
+                                            "children": [
+                                              {
+                                                "type": "list_item",
+                                                "span": [
+                                                  51,
+                                                  55
+                                                ],
+                                                "text": "L5",
+                                                "attrs": {},
+                                                "trivia": "",
+                                                "raw_hash": "135fc2ce38c02e8ce7351391e0405b5b2016908fc1583832f006375c8775f717",
+                                                "children": []
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "list_item",
+                "span": [
+                  56,
+                  68
+                ],
+                "text": "back to L1",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "221c44c4da02da371295cada01fcc067a813ca535344ff50b15457719116be88",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "blockquote",
+            "span": [
+              70,
+              99
+            ],
+            "text": "> quote > > nested > > > deep",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "28c16b8929585a36e857ad195f48ffeaebd3be631b795630714f6ba987705857",
+            "children": [
+              {
+                "type": "paragraph",
+                "span": [
+                  72,
+                  77
+                ],
+                "text": "quote",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "6327245c3a45d3d9ea72b70fbb671926e7b80f63d311bfd73dde876d5df02b26",
+                "children": []
+              },
+              {
+                "type": "blockquote",
+                "span": [
+                  80,
+                  99
+                ],
+                "text": "> nested > > > deep",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "42e8b86ad9ddbd08af61753cd062375dd30d7bcb0240755e55cdc31b775e5956",
+                "children": [
+                  {
+                    "type": "paragraph",
+                    "span": [
+                      82,
+                      88
+                    ],
+                    "text": "nested",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "233562de1a0288b139c4fa40b7d189f806e906eeb048517aeb67f34ac0e2faf1",
+                    "children": []
+                  },
+                  {
+                    "type": "blockquote",
+                    "span": [
+                      93,
+                      99
+                    ],
+                    "text": "> deep",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "4afff78e390ef12e6539cf6afb9b0ac0c813f6aa3c59aabe8a9e005f076d8365",
+                    "children": [
+                      {
+                        "type": "paragraph",
+                        "span": [
+                          95,
+                          99
+                        ],
+                        "text": "deep",
+                        "attrs": {},
+                        "trivia": "",
+                        "raw_hash": "74611c1d6455b534323a21f8133a6f43dc3a8188e7b946f96dcc28dde932fcb2",
+                        "children": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "long-prose",
+      "source": "# Essay\n\nParagraph 1. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n\nParagraph 2. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n\nParagraph 3. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n\nParagraph 4. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n\nParagraph 5. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n\nParagraph 6. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. \n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              7
+            ],
+            "text": "Essay",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2596d184a82533172fcffeaaf921f89c1c0a9a5f1653c532e6dc255cb652fd75",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              9,
+              193
+            ],
+            "text": "Paragraph 1. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "2f70b8b2ded247d40843d19d8ad109ad1e654c8688911d6eaf7f3eb8f68a0745",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              195,
+              379
+            ],
+            "text": "Paragraph 2. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "e5888ae59fb860d28f15966773b819389ca86fa5f72e5d2cc0eb373097db0b10",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              381,
+              565
+            ],
+            "text": "Paragraph 3. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "581116106fbd50565c573c919fa21576e328eb985a4cf91b49493e188b90ffdc",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              567,
+              751
+            ],
+            "text": "Paragraph 4. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "45ea2d60dc5dd2894fe3f8733e0d1b2b5bc2fd40b32657cb471030c6a501e01b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              753,
+              937
+            ],
+            "text": "Paragraph 5. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "9f739b22c0a565c65df02e0e257c783fb9b04ab3cb0d81bdb941d2616a0f1403",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              939,
+              1123
+            ],
+            "text": "Paragraph 6. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "7d0e23b11ffffcbbb18c9a7faf258c8696230896889c9060a047ae83c13916a0",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "meeting-notes",
+      "source": "---\ntype: meeting\ndate: 2026-09-03\nattendees: [alice, bob]\n---\n\n# Sync Meeting\n\n## Agenda\n\n1. Status\n2. Blockers\n3. Next steps\n\n## Decisions\n\n- [x] Ship on Friday\n- [ ] Follow up with design\n\n## Notes\n\nDiscussed [[Roadmap Q4]] at length.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              62
+            ],
+            "text": "--- type: meeting date: 2026-09-03 attendees: [alice, bob] ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a97675e80614f6520cf7c61bf947f401bfc480e85df9202821f6693a023c5a53",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              64,
+              78
+            ],
+            "text": "Sync Meeting",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "a6ba5499f4aa97dfd53545f80ecdc0ea9eaac69087d20f94fca0e25802b66db5",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              80,
+              89
+            ],
+            "text": "Agenda",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "98003e5c8b372df838e17a8a6b06b9bc94b992d2b46856f8c1f822ca884e7d79",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              91,
+              126
+            ],
+            "text": "1. Status 2. Blockers 3. Next steps",
+            "attrs": {
+              "ordered": true,
+              "start": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "9f941f1ca3bc28275839332918a11ba1e087b158e1d8873910c8004f02c128af",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  91,
+                  100
+                ],
+                "text": "Status",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "33db209a655a06d7a44deb83ea5303ad12b1a3e941600e1a2a7f429e7ad0e490",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "span": [
+                  101,
+                  112
+                ],
+                "text": "Blockers",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "3b0330311d26d0ffc4d0998e9f436826558759b8ed6380a5b49ac3c1c2489c0d",
+                "children": []
+              },
+              {
+                "type": "list_item",
+                "span": [
+                  113,
+                  126
+                ],
+                "text": "Next steps",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "a4d5dd6cadc4d7de9d3fcbecd9b9c9b4bb10f20d2cce7eb868888f8b220338c5",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              128,
+              140
+            ],
+            "text": "Decisions",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "a69ccdf682630a3a88d62385b6c2895d5410b7f36ee52d046c9e8403a33b8eaa",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              142,
+              190
+            ],
+            "text": "- [x] Ship on Friday - [ ] Follow up with design",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "f00847fdb29c9ff0e7dd1abfcea0f0f5765b389c1f3796913a89fb5a1c62e68e",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  142,
+                  162
+                ],
+                "text": "Ship on Friday",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "589a157d65b2420d5583120287c312134d57bde87bfb93676c7a9a487a4a0aa2",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  163,
+                  190
+                ],
+                "text": "Follow up with design",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "0475676d8c74fd74138922b409743c834759fae3cb368a067c465b134f533eb3",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              192,
+              200
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              202,
+              237
+            ],
+            "text": "Discussed [[Roadmap Q4]] at length.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "a58d3f64f9470e43343fcb8d203b4de893532a008b29dff65dcc058499522738",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-01",
+      "source": "---\ntitle: Note 1\nlayer: proposed\ntopics:\n  - impl\n  - omgbase\n---\n\n# Note 1\n\nThis references [[Other Note 2]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 1]]\nstatus:: proposed\n\n## Open loops\n\n- [ ] resolve question 1\n- [x] closed item 1\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 1 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              66
+            ],
+            "text": "--- title: Note 1 layer: proposed topics: - impl - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "16c267f11a986fac4657f7d2c7665469db46d87614b60f870890dfa5f095db17",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              68,
+              76
+            ],
+            "text": "Note 1",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "e6991ceb5b34f45804620706b3d53637e886719b5cc278270f6cffc3a5551fef",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              78,
+              156
+            ],
+            "text": "This references [[Other Note 2]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "657c2d58a34e3b5f84be31aa1cefc05d5f97a8a23681482bc764da2641096ab6",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              158,
+              199
+            ],
+            "text": "Related:: [[Concept 1]] status:: proposed",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "3de709247d2a67b3b40621a1fe65d7df37e33d1755aedcf0a8b4e367176b28a7",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              201,
+              214
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              216,
+              260
+            ],
+            "text": "- [ ] resolve question 1 - [x] closed item 1",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "5882b3bae595551a6b787430c4a0ebb5aab8f34d2246116032939b5a36a3b91d",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  216,
+                  240
+                ],
+                "text": "resolve question 1",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "a35a528c8977ae5c867e66c839bb57c189802ab6713d40c1832a16e73742a874",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  241,
+                  260
+                ],
+                "text": "closed item 1",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "d879dc2200fd7d3468b56aa5d433c6495c9f32495a76659a5b50efb7d75fd1e3",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              338
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 1 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "504015eb9a8409d15791115a080ddf28964323a3dca24b6281165a2a4be13ee4",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-02",
+      "source": "---\ntitle: Note 2\nlayer: working\ntopics:\n  - review\n  - omgbase\n---\n\n# Note 2\n\nThis references [[Other Note 3]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 2]]\nstatus:: working\n\n## Open loops\n\n- [ ] resolve question 2\n- [x] closed item 2\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 2 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              67
+            ],
+            "text": "--- title: Note 2 layer: working topics: - review - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "7998ffdd770240bd339b01bfa5b3290a180020716f8a7c17df5b36363445382c",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              69,
+              77
+            ],
+            "text": "Note 2",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "72de39840ac244c303df8d08e2fe5167db9124ccfc0dc7b10cc167b614b8eb6c",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              79,
+              157
+            ],
+            "text": "This references [[Other Note 3]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "fe109d041692bfaea8c819a98802ba56d89de0be450b76390b1f163876be8be0",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              159,
+              199
+            ],
+            "text": "Related:: [[Concept 2]] status:: working",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "932503dcc27c68017f22123c65733fccbcc7d3f522beae69680aced921513edc",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              201,
+              214
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              216,
+              260
+            ],
+            "text": "- [ ] resolve question 2 - [x] closed item 2",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "29055fd06bb5ff9eecc8af88618535b33f2a822432901420eaf40fecc6f253c5",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  216,
+                  240
+                ],
+                "text": "resolve question 2",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "6c4a43c785855fc289fab146544eca288aed6db93a4c09b6882d29fbb4b7ed16",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  241,
+                  260
+                ],
+                "text": "closed item 2",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "f57569601ff1a0422ec4b4779606ce5154e704372cad4568d38872808cfe8afd",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              338
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 2 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "53f4350c10d88e13fb98ad77b9339cd958a5cf1498bbf13aefd512f6a9ecbf90",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-03",
+      "source": "---\ntitle: Note 3\nlayer: canon\ntopics:\n  - ops\n  - omgbase\n---\n\n# Note 3\n\nThis references [[Other Note 4]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 3]]\nstatus:: canon\n\n## Open loops\n\n- [ ] resolve question 3\n- [x] closed item 3\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 3 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              62
+            ],
+            "text": "--- title: Note 3 layer: canon topics: - ops - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "229e1cf2afa6659a0cc0dba58d4849ee2d69aaaebb6669476dfcd0d15e13b811",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              64,
+              72
+            ],
+            "text": "Note 3",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "747cd05abe6471eaaab541c5a8c5b2a7ed51e50b70b64174b3fb49e8a1ea9872",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              74,
+              152
+            ],
+            "text": "This references [[Other Note 4]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "9e05d633f562cb300bd88d75f1d80b32eb3734fb116d0d1dbd2cc577cad2260b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              154,
+              192
+            ],
+            "text": "Related:: [[Concept 3]] status:: canon",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "1f1ffab9e9ffdaca7cc3b32814749546b039bcc74ce1771bc8931ac684083f71",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              194,
+              207
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              209,
+              253
+            ],
+            "text": "- [ ] resolve question 3 - [x] closed item 3",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "a07631dc6a5ca23f666cc87e901adf824adc014d70390385ba637beb182c7afc",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  209,
+                  233
+                ],
+                "text": "resolve question 3",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "d63cb5510d94d6aab6dc9424b2175c6168045b2cab49d85216a8fb9d55c42759",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  234,
+                  253
+                ],
+                "text": "closed item 3",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "b9edec3afb15211e45cab49cc10c754ce6e4e49fef9b81e1605ff061abe64798",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              255,
+              263
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              265,
+              331
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 3 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "8fe7988f0477ef6e95afad29880ec28624176d25472b9d2aa04364bb9d639513",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-04",
+      "source": "---\ntitle: Note 4\nlayer: draft\ntopics:\n  - design\n  - omgbase\n---\n\n# Note 4\n\nThis references [[Other Note 5]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 4]]\nstatus:: draft\n\n## Open loops\n\n- [ ] resolve question 4\n- [x] closed item 4\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 4 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              65
+            ],
+            "text": "--- title: Note 4 layer: draft topics: - design - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "399ed28b99bc80f019575f26ec33186bf21ad84287ee004487b47ef9b281677e",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              67,
+              75
+            ],
+            "text": "Note 4",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "71282fc1321a4a6a52391f6ca12667f4851a5c8c4a31db7897ea794b49dc63b5",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              155
+            ],
+            "text": "This references [[Other Note 5]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "7a88d3ef90735df084a679f7edab8407f9ae68397349a3f49022ffd744f566f8",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              157,
+              195
+            ],
+            "text": "Related:: [[Concept 4]] status:: draft",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "defd5b617538894367b046b4ac5f8040d49f908fd2c1ca44f825f330dfdbee70",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              197,
+              210
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              212,
+              256
+            ],
+            "text": "- [ ] resolve question 4 - [x] closed item 4",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "032eebc39f0ab81a7a23b2b7e6d06d03a4110364b37b59702a58a7bb7156d172",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  212,
+                  236
+                ],
+                "text": "resolve question 4",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "5ebea4c62bbddd8d835a89edfa4f092a4fe34dfa5dc8ff97eff6170f029d7bb8",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  237,
+                  256
+                ],
+                "text": "closed item 4",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "0e01ff246ce61da6f287433b1966061850031e4e29d24b51a671979dc7a51a82",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              258,
+              266
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              268,
+              334
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 4 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "8a5d49620dbdfa703055d8ddb95820001aa26a6cda0b9d03845e3ca9a31fca97",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-05",
+      "source": "---\ntitle: Note 5\nlayer: proposed\ntopics:\n  - arch\n  - omgbase\n---\n\n# Note 5\n\nThis references [[Other Note 6]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 5]]\nstatus:: proposed\n\n## Open loops\n\n- [ ] resolve question 5\n- [x] closed item 5\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 5 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              66
+            ],
+            "text": "--- title: Note 5 layer: proposed topics: - arch - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "daca397a5ce983d51036fd28b40c252f75db2554281e733bb9b472a800e4462a",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              68,
+              76
+            ],
+            "text": "Note 5",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "4a8d7320a16ef718feb55c564629c1b330c021368e423e682f1445f718dacdb3",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              78,
+              156
+            ],
+            "text": "This references [[Other Note 6]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "155e85978afa9b1113c8f05b817a3083cf4ea284db5b05210308f4005a8e9897",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              158,
+              199
+            ],
+            "text": "Related:: [[Concept 5]] status:: proposed",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "0c236fa9a157527eeb8f2b43c84bfa0a5a3a2c23fc34652eb59305ef3b69ee47",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              201,
+              214
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              216,
+              260
+            ],
+            "text": "- [ ] resolve question 5 - [x] closed item 5",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "c129cc78bc75088a12f98bc6ae620fef4edbd29e5492e228aed30d14aad1ff85",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  216,
+                  240
+                ],
+                "text": "resolve question 5",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "37ec7cde7bb4273a44c3f9a02e618f31e2631cae70fc364aedf83dbab9fb4fe4",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  241,
+                  260
+                ],
+                "text": "closed item 5",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "7fdee7f634f03294219684db5707e4401d371bec90a067aa8f3983402ba88c2a",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              338
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 5 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "ae80d26d953705f049957f6315877202bf03db100cc4683a975265f2e47a0987",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-06",
+      "source": "---\ntitle: Note 6\nlayer: working\ntopics:\n  - impl\n  - omgbase\n---\n\n# Note 6\n\nThis references [[Other Note 7]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 6]]\nstatus:: working\n\n## Open loops\n\n- [ ] resolve question 6\n- [x] closed item 6\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 6 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              65
+            ],
+            "text": "--- title: Note 6 layer: working topics: - impl - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "87418c4d7aba308f230ab384caabc545805fb371c13ba71dd656487e815e1e86",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              67,
+              75
+            ],
+            "text": "Note 6",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "7c9e88eaa61f913db599a2dab643a445c702f83ac800f1fc4ab43c6b957531bf",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              155
+            ],
+            "text": "This references [[Other Note 7]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "334057cd8d9583fc27a3876e26737c5d8068a0dea7ce518aed4c7ec242c33b36",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              157,
+              197
+            ],
+            "text": "Related:: [[Concept 6]] status:: working",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "142d16c50722b6a6f54fcd4281ce957e9b6ef979190f9c3f43a66e41dfe2863a",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              199,
+              212
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              214,
+              258
+            ],
+            "text": "- [ ] resolve question 6 - [x] closed item 6",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1c086e26df5be4456bdb46cf5f694cf75a156fe5ab39b471b0ba18976bb76a10",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  214,
+                  238
+                ],
+                "text": "resolve question 6",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "69164850b7a7a7bd86e58f422224a46cfa3f6ce1e9ffa4f859c563432d463b75",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  239,
+                  258
+                ],
+                "text": "closed item 6",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "924faaddecf674b87d64b406141ce0aa6cb085cd1c7963da7be5db817446d80a",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              260,
+              268
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              270,
+              336
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 6 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "3cf14fa920288d53393884dcee5a5d7495005b5fbf270c5be372d7320c2ed9f9",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-07",
+      "source": "---\ntitle: Note 7\nlayer: canon\ntopics:\n  - review\n  - omgbase\n---\n\n# Note 7\n\nThis references [[Other Note 8]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 7]]\nstatus:: canon\n\n## Open loops\n\n- [ ] resolve question 7\n- [x] closed item 7\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 7 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              65
+            ],
+            "text": "--- title: Note 7 layer: canon topics: - review - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "ebbb85fad44f52566de65a519818ebc84fe95b09dbb08159468a045e9dcec846",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              67,
+              75
+            ],
+            "text": "Note 7",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1553be1a89fd66171f32e5cd5cbbfc8e7cda5e352e6a29354594ab9fccbdf0f0",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              155
+            ],
+            "text": "This references [[Other Note 8]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "da5fdc2146f7545db827472e7b7bd60083733f4da8d085d1893ee9e54bd88c17",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              157,
+              195
+            ],
+            "text": "Related:: [[Concept 7]] status:: canon",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "0b72e8aee3c095aa10923035f0b07bb15ef4099c53ab6f64bb761820dff18ac2",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              197,
+              210
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              212,
+              256
+            ],
+            "text": "- [ ] resolve question 7 - [x] closed item 7",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "d5134a1acdfbccafe91e7ae56b06ecdf8ead23b36c8286f33e4ad0ae4f4fb99a",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  212,
+                  236
+                ],
+                "text": "resolve question 7",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "e7e1ad36e861578c3716600bf251bc5bc0ec037cb9e99d5cc284c4d18dbe038d",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  237,
+                  256
+                ],
+                "text": "closed item 7",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "4469d855798ac572ae1d4a1a99576b8909d5055994d783e50affb0756aa34bb6",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              258,
+              266
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              268,
+              334
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 7 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "7c916dcb57aa7664b7e1f8eed91ccb21cf5fb77a7751a9f8d0ef89df8f871f3c",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-08",
+      "source": "---\ntitle: Note 8\nlayer: draft\ntopics:\n  - ops\n  - omgbase\n---\n\n# Note 8\n\nThis references [[Other Note 9]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 8]]\nstatus:: draft\n\n## Open loops\n\n- [ ] resolve question 8\n- [x] closed item 8\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 8 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              62
+            ],
+            "text": "--- title: Note 8 layer: draft topics: - ops - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "9cff22be062643540e4b6f2a698f5322358c35dba0bdf7bb2628d2d68f1f99e7",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              64,
+              72
+            ],
+            "text": "Note 8",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "921d040683ae355c295eeeb21964fe8dd4fc15d25a6ec5cb5633954e52bdd665",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              74,
+              152
+            ],
+            "text": "This references [[Other Note 9]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "323315e16ee7dbcc97d379b0d94aaa914ab585e723ca0baa0a0689146c777490",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              154,
+              192
+            ],
+            "text": "Related:: [[Concept 8]] status:: draft",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "c42cef181a4f31cbefadca26fc1a6341996a139b64929e57f38ef7283bc208e1",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              194,
+              207
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              209,
+              253
+            ],
+            "text": "- [ ] resolve question 8 - [x] closed item 8",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "bef94d7ee17a0d9979087609d29494772538158d38a2bbb58e04ccda9e4794d8",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  209,
+                  233
+                ],
+                "text": "resolve question 8",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "9f64f23906a16ea80c087b81d25e435929993a30dfd7a7a79b278dbb23f44f14",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  234,
+                  253
+                ],
+                "text": "closed item 8",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "e71490301d1c74544c0f9e045c50c589a57168a2490d768c98e3f870ccb020b1",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              255,
+              263
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              265,
+              331
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 8 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "363a20859481521ea3f76e233f2f13dcf9eacba9e8d17bc7f7f540e668483fd6",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-09",
+      "source": "---\ntitle: Note 9\nlayer: proposed\ntopics:\n  - design\n  - omgbase\n---\n\n# Note 9\n\nThis references [[Other Note 10]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 9]]\nstatus:: proposed\n\n## Open loops\n\n- [ ] resolve question 9\n- [x] closed item 9\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 9 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              68
+            ],
+            "text": "--- title: Note 9 layer: proposed topics: - design - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "81d51f3833141eaa3cac61f6741e7c8bd6cb62469fa6ddd894818801cbf09d49",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              70,
+              78
+            ],
+            "text": "Note 9",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "509f924dfd788d5bbb4e9736ee6ea1eb930efd2474743dfe75ad325defea8562",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              80,
+              159
+            ],
+            "text": "This references [[Other Note 10]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a92a7058280131ba349cb2f2f622e1f7a537dce389926daaa1c0deae0dab9436",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              161,
+              202
+            ],
+            "text": "Related:: [[Concept 9]] status:: proposed",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "ad3484382b39b12f1913fcea6101c0fd42beae1240e9754145878db99b829bb9",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              204,
+              217
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              219,
+              263
+            ],
+            "text": "- [ ] resolve question 9 - [x] closed item 9",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "80d6ee5b5779eed6534fe5a27ebf2c337670c25996e8296611f9c6d5c727afd0",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  219,
+                  243
+                ],
+                "text": "resolve question 9",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "942f4eb7a8cb123843a9c79d8d735e72439d0b91374652188613a976c0e8555b",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  244,
+                  263
+                ],
+                "text": "closed item 9",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "9383f0671d238bf83d29d64c26dd458ee716feba139b541ee8ac45da1c8e474b",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              265,
+              273
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              275,
+              341
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 9 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "9b166b3b9e7edceb7289cfb74d8af557b57bb168316d739442db313d87526b53",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-10",
+      "source": "---\ntitle: Note 10\nlayer: working\ntopics:\n  - arch\n  - omgbase\n---\n\n# Note 10\n\nThis references [[Other Note 11]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 10]]\nstatus:: working\n\n## Open loops\n\n- [ ] resolve question 10\n- [x] closed item 10\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 10 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              66
+            ],
+            "text": "--- title: Note 10 layer: working topics: - arch - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "39916e5dbf538e70d720059f5fe9df9802ec8ad3648499e01cd6e8be268cf37f",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              68,
+              77
+            ],
+            "text": "Note 10",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "3c6d8c54ef152ed26f6c2dd1fa16e2b9dccc79192f8efb780b3a77f5a44dd77a",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              79,
+              158
+            ],
+            "text": "This references [[Other Note 11]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "0b92ed5ca421bb4eed89469a6e6eb555a51c164da6da46981355912a3366eb66",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              160,
+              201
+            ],
+            "text": "Related:: [[Concept 10]] status:: working",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "cc53ea3e8dcd94ec40f4695084d9d1b386c557cb525606fcac5510dc09aceb41",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              203,
+              216
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              218,
+              264
+            ],
+            "text": "- [ ] resolve question 10 - [x] closed item 10",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "f85a3ff3f8005a0bc60f156b12d0e77f50f08ff9906ebf83370784acbb1f117c",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  218,
+                  243
+                ],
+                "text": "resolve question 10",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "a9af4bdea1c3c4f2f2b03828979158507c57ce339fdf7dabe2cf784de9e3cb9c",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  244,
+                  264
+                ],
+                "text": "closed item 10",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "fa47b18ce064c74850537a9f0eaa747e1c7b01cad66dedfa1f2cfbfbe4c84a31",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              266,
+              274
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              276,
+              343
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 10 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "dc14fa2682ff0ea3741ad754b4577cd249decb521e390ca90fcdf49360a36588",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-11",
+      "source": "---\ntitle: Note 11\nlayer: canon\ntopics:\n  - impl\n  - omgbase\n---\n\n# Note 11\n\nThis references [[Other Note 12]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 11]]\nstatus:: canon\n\n## Open loops\n\n- [ ] resolve question 11\n- [x] closed item 11\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 11 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              64
+            ],
+            "text": "--- title: Note 11 layer: canon topics: - impl - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "2081d1ea0f8bad615d8b50f4a4cd2de4f073edeeea619025d8c72ddadda1e5d4",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              66,
+              75
+            ],
+            "text": "Note 11",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "bf0b31d71b2884086970743c8a424c730aabade06ffe72e08d962863022cb64a",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              156
+            ],
+            "text": "This references [[Other Note 12]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "8f6473ead73fd41e72677ebd22d12b35159ef224ae21f6461c7633f7641fa181",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              158,
+              197
+            ],
+            "text": "Related:: [[Concept 11]] status:: canon",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a2c8e92ae51994b02998dd76efa859ba3b295da76b1437bc0d5817589ba93cb9",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              199,
+              212
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              214,
+              260
+            ],
+            "text": "- [ ] resolve question 11 - [x] closed item 11",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "49f3fc93e1f1373cbd0ba64ed989af664e6521002ed9369bf3300d5582b70ddf",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  214,
+                  239
+                ],
+                "text": "resolve question 11",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "cf88e965b3a0654c953e987529cadb23e5c0a9cfada8b54b2500e75f95a7a0ec",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  240,
+                  260
+                ],
+                "text": "closed item 11",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "3d3b326b76f1e9473beaaf1fb281cd888c61949917f11778b4d1cdfc3b8332c7",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              339
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 11 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "feb59c8386f89202196ed85e6bb57d8ff78076742d65827a084a213aa8313af3",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-12",
+      "source": "---\ntitle: Note 12\nlayer: draft\ntopics:\n  - review\n  - omgbase\n---\n\n# Note 12\n\nThis references [[Other Note 13]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 12]]\nstatus:: draft\n\n## Open loops\n\n- [ ] resolve question 12\n- [x] closed item 12\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 12 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              66
+            ],
+            "text": "--- title: Note 12 layer: draft topics: - review - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "397c0a3ff0652adfd54be846331d3b815a645c10c715322d7b72759042bbbf38",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              68,
+              77
+            ],
+            "text": "Note 12",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1b617598e63b02530c0038d3f2590d56b0b8f8d04e685308bb8cb98993cac4b6",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              79,
+              158
+            ],
+            "text": "This references [[Other Note 13]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "b472a142116c98905b03a0dd12100e0e540e2de31487ebb2ae5c70a27707ce0e",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              160,
+              199
+            ],
+            "text": "Related:: [[Concept 12]] status:: draft",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "5ead0ae1bc862dccffd75af4debc9a59540b5b042b7eb10065bca8c2bb18cdae",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              201,
+              214
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              216,
+              262
+            ],
+            "text": "- [ ] resolve question 12 - [x] closed item 12",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "e2346ebddbe2af497d71f5858bfeb81d72bf19ed8cb6a7e8442ac687143a248e",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  216,
+                  241
+                ],
+                "text": "resolve question 12",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "d8c89924ff0d1d0b05751559f137729fec5706d7d7ad54eeb4e5d02607b5c0ba",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  242,
+                  262
+                ],
+                "text": "closed item 12",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "dcc51e2e7d640e56e79115fecca948ae2021fcca91f1e7d48e97cbbb4bd34f28",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              264,
+              272
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              274,
+              341
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 12 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "3a1da1cf7e28674193a62b15f349395418c2ab20c45e7cbbebfa2beb3cab2a9f",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-13",
+      "source": "---\ntitle: Note 13\nlayer: proposed\ntopics:\n  - ops\n  - omgbase\n---\n\n# Note 13\n\nThis references [[Other Note 14]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 13]]\nstatus:: proposed\n\n## Open loops\n\n- [ ] resolve question 13\n- [x] closed item 13\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 13 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              66
+            ],
+            "text": "--- title: Note 13 layer: proposed topics: - ops - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "736a5102d36fea0fb534c2557a3238183e2ff384ca105c4abd61426d99f6aefc",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              68,
+              77
+            ],
+            "text": "Note 13",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1610ea6e1efe3b513bfc98f7c2350d2faa4739b8e7c26adbb10a1dbd896c37c8",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              79,
+              158
+            ],
+            "text": "This references [[Other Note 14]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "4f6c2f55e17e32c39d123379ea472d13a1beea4b2f9eba401848a686436f457b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              160,
+              202
+            ],
+            "text": "Related:: [[Concept 13]] status:: proposed",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "999d418fac6a9fd19fd7d47b1eac1f7efbc25a215f49263d35f2353a634f3400",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              204,
+              217
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              219,
+              265
+            ],
+            "text": "- [ ] resolve question 13 - [x] closed item 13",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "bc67143516a4ee1e834b166d0f6932132c2febb820ed00333017d37856d7b5ec",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  219,
+                  244
+                ],
+                "text": "resolve question 13",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "99d5dad945d7d95e160d33a33c47ca0dca119b095238a3f06f8c20954bbe6587",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  245,
+                  265
+                ],
+                "text": "closed item 13",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "d2dedd7a8a0966bef1e2c5703433fd71c5b4f72a4581378cd5574921174cca75",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              267,
+              275
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              277,
+              344
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 13 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "00831debe36f136195d8c72460873fc23982f29ee9768ef1041e728fccbb2ad0",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-14",
+      "source": "---\ntitle: Note 14\nlayer: working\ntopics:\n  - design\n  - omgbase\n---\n\n# Note 14\n\nThis references [[Other Note 15]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 14]]\nstatus:: working\n\n## Open loops\n\n- [ ] resolve question 14\n- [x] closed item 14\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 14 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              68
+            ],
+            "text": "--- title: Note 14 layer: working topics: - design - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "5d685db7d18868e1a4d7101d6bf79ffc953f5ef252e37d7683b1a9e56a3eb8b1",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              70,
+              79
+            ],
+            "text": "Note 14",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "3480876e6f4e95865a3a273404da4642ae34a7a3d362a55b7284640c297b31d5",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              81,
+              160
+            ],
+            "text": "This references [[Other Note 15]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "e27ab50e3bf28029a2931c402a35fa51aed8601ca936832274744f83073348fe",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              162,
+              203
+            ],
+            "text": "Related:: [[Concept 14]] status:: working",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "7d81906fea4bf018607b5f592b3df9c8d1960d6cbdbba8a1e78c90bc14ccf374",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              205,
+              218
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              220,
+              266
+            ],
+            "text": "- [ ] resolve question 14 - [x] closed item 14",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "357c412522fd44665716ef12d796875606fa1806aa1beca4a9c8f8e4a567c76b",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  220,
+                  245
+                ],
+                "text": "resolve question 14",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "425ec9429182c6248f745307081e70c74ff20c8c3a6fa2886ff6b14d51614cc2",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  246,
+                  266
+                ],
+                "text": "closed item 14",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "565eb5db87dc0a7e6fb307d47bb19a5a9595ad8f8bcf8c09a5ea2c3b132db94a",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              268,
+              276
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              278,
+              345
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 14 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "7a470a60a87f21a377ddd00d91d0ad5e18643147bfa0d2c6a55d11d0443d2254",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-15",
+      "source": "---\ntitle: Note 15\nlayer: canon\ntopics:\n  - arch\n  - omgbase\n---\n\n# Note 15\n\nThis references [[Other Note 16]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 15]]\nstatus:: canon\n\n## Open loops\n\n- [ ] resolve question 15\n- [x] closed item 15\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 15 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              64
+            ],
+            "text": "--- title: Note 15 layer: canon topics: - arch - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "46532dbe3ae8ffcc41cda39bc6e00d41bc42076c5b75c388fa0bbba41dbd47b3",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              66,
+              75
+            ],
+            "text": "Note 15",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "38c7ccce8406ef72f471ba34ca31b355979fd96caa73e15aaf68b857ab39b541",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              156
+            ],
+            "text": "This references [[Other Note 16]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "af1b72326302a67a0a2780c3a40ecd0822c47537626442967203e2bcf8f91072",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              158,
+              197
+            ],
+            "text": "Related:: [[Concept 15]] status:: canon",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "29e9e92dd2582215c6edfef619dbff4c846345ff0db4c3f8b201bc8dc6367d93",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              199,
+              212
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              214,
+              260
+            ],
+            "text": "- [ ] resolve question 15 - [x] closed item 15",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "17dd6377d361c95bbb9ac80aa9fea4083e9ccf673c6ccc11b6dbef0c13a1852e",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  214,
+                  239
+                ],
+                "text": "resolve question 15",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "efb8612ee516f10c9d49e680c4630226c82be00a1fc04bd22e09f2ce49886e56",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  240,
+                  260
+                ],
+                "text": "closed item 15",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "de71beb82ece41b7ee58d00901772a563531af9ea51043851cb772e26f90ea51",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              339
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 15 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "5fb01cfed79394b434995a83d253c44863ac842440171e1cd03e66ab162d6134",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-16",
+      "source": "---\ntitle: Note 16\nlayer: draft\ntopics:\n  - impl\n  - omgbase\n---\n\n# Note 16\n\nThis references [[Other Note 17]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 16]]\nstatus:: draft\n\n## Open loops\n\n- [ ] resolve question 16\n- [x] closed item 16\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 16 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              64
+            ],
+            "text": "--- title: Note 16 layer: draft topics: - impl - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a1365ceccdf2196440e5fbce947d959805083ae6445b8e2423a8ca6e7ae533bb",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              66,
+              75
+            ],
+            "text": "Note 16",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "6c9290ddebb0e6172a8673f6fcadb4c8f01844069f357e0d867c0b8f16b69f2b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              77,
+              156
+            ],
+            "text": "This references [[Other Note 17]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "0711979e77a4c6cf1a0647f4cba2eced099603ef686147c66faa0314b25fee64",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              158,
+              197
+            ],
+            "text": "Related:: [[Concept 16]] status:: draft",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "8881f087a227f47658993e24568c069133fbe86f3b69afd24fb58f01edb20633",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              199,
+              212
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              214,
+              260
+            ],
+            "text": "- [ ] resolve question 16 - [x] closed item 16",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "86f49228f6ab8a7f7017e4e69277208aad1c21e15e9c8e6ccd85116b4b3a88ca",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  214,
+                  239
+                ],
+                "text": "resolve question 16",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "cf3e55ebf103866796896c8ad69c54e741ee0fcdfdb69d45d3fbe9bd70475cab",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  240,
+                  260
+                ],
+                "text": "closed item 16",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "98972626e70ebc5c822aff0b910fea1a0819c18fc5c33b60b2c65ab3490c1ab4",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              262,
+              270
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              272,
+              339
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 16 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "baba30af13ef75216ed023272372d1696efff38b5a9155e0872e0033a3953284",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-17",
+      "source": "---\ntitle: Note 17\nlayer: proposed\ntopics:\n  - review\n  - omgbase\n---\n\n# Note 17\n\nThis references [[Other Note 18]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 17]]\nstatus:: proposed\n\n## Open loops\n\n- [ ] resolve question 17\n- [x] closed item 17\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 17 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              69
+            ],
+            "text": "--- title: Note 17 layer: proposed topics: - review - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "4987768451b5c1df2fd934801e25c1ee1d23409dcad32b685fd106213e836825",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              71,
+              80
+            ],
+            "text": "Note 17",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "3a5ad3760766530eaee6ab08ddf5c6f7b883887643aa5d311b9bbec283e28db8",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              82,
+              161
+            ],
+            "text": "This references [[Other Note 18]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "92e3ea6e936301da5acc608b5b046d438c052fb0d65211324350f911e0ac70fc",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              163,
+              205
+            ],
+            "text": "Related:: [[Concept 17]] status:: proposed",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "03aaafca04e4f584893d4d5bbd2da81726658c763e3f3d2b4d60f3693508b04b",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              207,
+              220
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              222,
+              268
+            ],
+            "text": "- [ ] resolve question 17 - [x] closed item 17",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "8fc2e8fad503b05262f744d476bed369d1eb0e657af8603e4b0dd1b6fad25d14",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  222,
+                  247
+                ],
+                "text": "resolve question 17",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "a2ab2f8d05fd03026cdf8a7085e093ff9ff3451bca4331bd05909ffe15546f4e",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  248,
+                  268
+                ],
+                "text": "closed item 17",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "d2b0f6f8d9a55959c5484409138830b7133b98031624c973659705db76bb101f",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              270,
+              278
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              280,
+              347
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 17 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "56c6ad94e56b456c60b5192e8b87dd80b9505c7de0c501ec0e6b8c7382729417",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "note-18",
+      "source": "---\ntitle: Note 18\nlayer: working\ntopics:\n  - ops\n  - omgbase\n---\n\n# Note 18\n\nThis references [[Other Note 19]] and links to [the hub](/projects/omgbase.md).\n\nRelated:: [[Concept 18]]\nstatus:: working\n\n## Open loops\n\n- [ ] resolve question 18\n- [x] closed item 18\n\n## Notes\n\nParagraph with some **bold** and a `code span`. See 18 for context.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              65
+            ],
+            "text": "--- title: Note 18 layer: working topics: - ops - omgbase ---",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "b345280ff11084cf0d0831ce937535182467d152e898b2dac1142a61a81be5af",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              67,
+              76
+            ],
+            "text": "Note 18",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "a6ceda625157ece729ba845aa2b7b0831bc748408512afb88d72a0b0cef691de",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              78,
+              157
+            ],
+            "text": "This references [[Other Note 19]] and links to [the hub](/projects/omgbase.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "40f523e2d5ed295013e7f08726a5677cf0177cc7e8239541d3df9dbfb3617f70",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              159,
+              200
+            ],
+            "text": "Related:: [[Concept 18]] status:: working",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "7a2b3f0dba68b73c40df4dc807cde1b173a813102299d902650ebe18443b67ae",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              202,
+              215
+            ],
+            "text": "Open loops",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "2b14aee015dbca317fc35b319ce88c9cfc6ad362f0fb4ef889b8b93c71ad01f8",
+            "children": []
+          },
+          {
+            "type": "list",
+            "span": [
+              217,
+              263
+            ],
+            "text": "- [ ] resolve question 18 - [x] closed item 18",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "6dbf7bb1fab07b94e841b970791ded7effe28713a2e23e22bfb7553ebba82722",
+            "children": [
+              {
+                "type": "task",
+                "span": [
+                  217,
+                  242
+                ],
+                "text": "resolve question 18",
+                "attrs": {
+                  "checked": false
+                },
+                "trivia": "",
+                "raw_hash": "b841386dbdede68c73d8629e05267496f433b606b07acc68620063076ec589f7",
+                "children": []
+              },
+              {
+                "type": "task",
+                "span": [
+                  243,
+                  263
+                ],
+                "text": "closed item 18",
+                "attrs": {
+                  "checked": true
+                },
+                "trivia": "",
+                "raw_hash": "a12f6bdde1ef677baacd0eaa37eaecf01d7e72d342c85c91c2820addb7b0d2c9",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              265,
+              273
+            ],
+            "text": "Notes",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              275,
+              342
+            ],
+            "text": "Paragraph with some **bold** and a `code span`. See 18 for context.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "62b01c9f57aed126f968e8823a7a063d8a99db8d22a866fe26a8406f66b89532",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "readme-style",
+      "source": "# my-project\n\n> A one-line description.\n\n## Install\n\n```bash\nnpm install my-project\n```\n\n## Usage\n\n```js\nimport { thing } from 'my-project';\nthing();\n```\n\n## Contributing\n\nPRs welcome. See [CONTRIBUTING](./CONTRIBUTING.md).\n\n## License\n\nMIT\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              12
+            ],
+            "text": "my-project",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "0383e8895ffb757252a75988cd485b946236dc93bd465f7b743a39ac14d3a484",
+            "children": []
+          },
+          {
+            "type": "blockquote",
+            "span": [
+              14,
+              39
+            ],
+            "text": "> A one-line description.",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "84c64ca5e0e121ecf374ab5cf7ffe1da9ce4c91020d16ab56d21dafff119c286",
+            "children": [
+              {
+                "type": "paragraph",
+                "span": [
+                  16,
+                  39
+                ],
+                "text": "A one-line description.",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "1e50b3ec3bee14b47e9b0644a8642c7143c0732dbc989f6179c4e01d41507e8c",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "span": [
+              41,
+              51
+            ],
+            "text": "Install",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "98304b8243bd9f261f5ba797a519b567d87e41b428d72cf53d374f83e67950e1",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              53,
+              87
+            ],
+            "text": "```bash npm install my-project ```",
+            "attrs": {
+              "lang": "bash"
+            },
+            "trivia": "\n\n",
+            "raw_hash": "387bd79217edc4c2a6782af0396d4647487d9b39a23d6b8640b129bfbd26dacc",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              89,
+              97
+            ],
+            "text": "Usage",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "63bfd61a0561b255a2caa0a2e3add091ca7e327f2fa06a407cbb2ff341b858d8",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              99,
+              153
+            ],
+            "text": "```js import { thing } from 'my-project'; thing(); ```",
+            "attrs": {
+              "lang": "js"
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1e3df2bdd54a8f63ea0b8ffc119f2eb283e8840d936da999213bc3450e833b8e",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              155,
+              170
+            ],
+            "text": "Contributing",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "47964f2d9e2f904f6d8d7e6a7bc401ec09137d666cb8d4c614b14a329d8a5333",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              172,
+              223
+            ],
+            "text": "PRs welcome. See [CONTRIBUTING](./CONTRIBUTING.md).",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "1648cc49d86874b8cff7c0ad348ea024d8282b88268a4bedcb4dff79444cad1f",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              225,
+              235
+            ],
+            "text": "License",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "6c549a56db01e021f248d8da78289a3197d3db86fe0d36d33381d0dfc711e8bc",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              237,
+              240
+            ],
+            "text": "MIT",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "e5dcffe836b6ec8a58e492419b550e65fb8cbdc308503979e5dacb33ac7ea3b7",
+            "children": []
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -33,6 +33,33 @@ const edge = {
 };
 for (const [name, body] of Object.entries(edge)) write(`edge/${name}`, body);
 
+// Divergence classes a second Markdown parser is likely to hit (spec/format §6):
+// block ends at EOF, list looseness, marker variants, heading closers, tabs,
+// the JS trim set, NFC, and constructs that must fall through to `opaque`.
+const edgeDivergence = {
+  "unclosed-fence-eof.md": "# Unclosed\n\n```js\nconst x = 1;\nnever closed\n",
+  "fence-no-trailing-newline.md": "```\ncode\n```",
+  "list-blank-then-eof.md": "- a\n\n- b\n\n",
+  "cr-only.md": "# CR only\r\rOld Mac line endings.\r\r- a\r- b\r",
+  "footnote-definition.md": "Text with a footnote[^1].\n\n[^1]: note\n",
+  "blockquote-task-list.md": "> Quoted tasks:\n>\n> - [ ] open\n> - [x] done\n>   - [ ] nested open\n\nafter\n",
+  "list-item-with-fence.md": "- item with code:\n\n  ```sh\n  echo hi\n  ```\n\n- plain\n",
+  "list-tight-loose-mix.md": "- a\n- b\n\n- c\n- d\n",
+  "ordered-paren-delimiter.md": "1) one\n2) two\n3) three\n",
+  "ordered-start-100.md": "100. hundred\n101. hundred one\n",
+  "heading-closing-hashes.md": "## Title ##\n\n# Spaced #   \n\n### Trailing spaces   \n\nBody.\n",
+  "setext-underline-trailing-spaces.md": "Title\n=====   \n\nSub\n---  \n\nBody.\n",
+  "tabs-list-indent.md": "- a\n\t- a1\n\t- a2\n\t\t- a2a\n- b\n",
+  "nbsp-and-feff-paragraph.md": " lead nbsp and inner nbsp \n﻿feff-led line and﻿ inner feff﻿\n\nnext\n",
+  "nfd-composed.md": "# Café NFD\n\nrésumé with combining acute; é already NFC.\n",
+  "html-comment-inline.md": "Text before <!-- inline comment --> text after.\n\n<!-- standalone -->\n",
+  "table-then-paragraph.md": "| a | b |\n| - | - |\n| 1 | 2 |\nparagraph right after the table\n",
+  "indented-code-eof-no-newline.md": "para\n\n    indented code\n    last line",
+  "only-thematic-break.md": "---\n",
+  "single-word-no-newline.md": "word",
+};
+for (const [name, body] of Object.entries(edgeDivergence)) write(`edge/${name}`, body);
+
 // ---- spec/ : CommonMark & GFM construct coverage ---------------------------
 const spec = {
   "atx-headings.md": "# H1\n\n## H2\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6\n",
