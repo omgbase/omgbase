@@ -30,11 +30,15 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::block::{Block, BlockKind};
 
-/// The JavaScript `String.prototype.trim` set as the reference (V8) applies
-/// it: Unicode `White_Space` plus U+FEFF (§4.1 step 4, §6 "Trim set").
+/// The JavaScript whitespace set — `String.prototype.trim` and `\s` — as the
+/// reference (V8) applies it: Unicode `White_Space` **minus U+0085 (NEL)**,
+/// plus U+FEFF (§4.1 step 4, §6 "Trim set"). It differs from
+/// [`char::is_whitespace`] in exactly those two code points: JavaScript
+/// neither trims nor splits on U+0085, and it does both on U+FEFF (verified
+/// against Node 22). U+180E and U+200B are whitespace in neither host.
 #[must_use]
 pub fn is_js_whitespace(c: char) -> bool {
-    c.is_whitespace() || c == '\u{FEFF}'
+    (c.is_whitespace() && c != '\u{0085}') || c == '\u{FEFF}'
 }
 
 const fn is_blank(b: u8) -> bool {
@@ -475,11 +479,36 @@ mod tests {
     fn js_trim_set_includes_bom_and_unicode_spaces() {
         assert_eq!(normalize_text("\u{FEFF}hello\u{FEFF}"), "hello");
         assert_eq!(normalize_text("\u{3000}\u{00A0}x\u{2003}"), "x");
-        assert_eq!(normalize_text("\u{0085}x\u{000B}\u{000C}"), "x");
+        assert_eq!(normalize_text("\u{000B}x\u{000C}"), "x");
+        assert_eq!(
+            normalize_text("\u{2028}\u{1680}x\u{2029}\u{202F}\u{205F}"),
+            "x"
+        );
         // Not whitespace in JS either: zero-width space, Mongolian vowel separator.
         assert_eq!(normalize_text("\u{200B}x\u{180E}"), "\u{200B}x\u{180E}");
         assert!(is_js_whitespace('\u{FEFF}'));
         assert!(!is_js_whitespace('\u{200B}'));
+    }
+
+    #[test]
+    fn nel_is_not_javascript_whitespace() {
+        // U+0085 is Unicode White_Space but not in JavaScript's `\s`/trim set:
+        // it is neither trimmed at line ends nor collapsed inside a line.
+        assert!(!is_js_whitespace('\u{0085}'));
+        assert!('\u{0085}'.is_whitespace(), "Rust alone would strip it");
+        assert_eq!(normalize_text("\u{0085}x\u{0085}"), "\u{0085}x\u{0085}");
+        assert_eq!(normalize_text("a\u{0085}b"), "a\u{0085}b");
+        assert_eq!(
+            normalize_text(" a\u{0085} \n b\u{0085}"),
+            "a\u{0085} b\u{0085}"
+        );
+        // The only two code points where the two sets differ.
+        let differ: Vec<u32> = (0..=0x10FFFF)
+            .filter_map(char::from_u32)
+            .filter(|&c| c.is_whitespace() != is_js_whitespace(c))
+            .map(u32::from)
+            .collect();
+        assert_eq!(differ, [0x0085, 0xFEFF]);
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-format"
-version = "0.2.0"
+version = "0.2.1"
 description = "omgbase format layer: source files to block trees (spans, trivia, normalized text, hashes) — Rust implementation"
 keywords = ["markdown", "parser", "blocks", "round-trip", "omgbase"]
 categories = ["parser-implementations", "text-processing"]

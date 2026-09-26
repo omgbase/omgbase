@@ -1,0 +1,33 @@
+[package]
+name = "omgbase-reconcile"
+version = "2.0.0"
+description = "omgbase reconciliation: keeps block identity across edits — the matcher that decides which blocks carry an id and which are minted — Rust implementation"
+keywords = ["markdown", "diff", "matching", "reconciliation", "omgbase"]
+categories = ["text-processing", "algorithms"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-reconcile#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The block model: `parse_markdown`, `BlockKind`, the spec/format §4.1 visible
+# text rules and the §4.2 hashes. 0.2.1 or later: the JavaScript whitespace
+# set (U+0085 is not whitespace) that the tokenizer and the trim rule share.
+omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
+
+[features]
+default = []
+# `json`: `Disposition::to_json`, `ReconcileResult::to_json` and
+# `From<&DetailValue> for serde_json::Value` — the shape a store persists and
+# the conformance runner compares. The core matcher needs no serde.
+json = ["dep:serde_json"]
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true

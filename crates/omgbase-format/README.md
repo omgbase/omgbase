@@ -31,8 +31,8 @@ version this crate implements, and the crate version tracks it as
 ## Status
 
 Conformance-first, and conformant for Markdown: `tests/spec.rs` runs every
-fixture in `spec/format/cases` (97 cases in 3 files at block-model version 0.2,
-crate 0.2.0) and all of them pass, so `cargo test -p omgbase-format` requires
+fixture in `spec/format/cases` (98 cases in 3 files at block-model version 0.2,
+crate 0.2.1) and all of them pass, so `cargo test -p omgbase-format` requires
 every case to pass. `tests/roundtrip.rs` additionally parses every file of the reference's
 round-trip corpus (`packages/core/corpus/roundtrip`) and asserts the §1
 invariants directly. YAML and JSON adapters exist in the reference and are not
@@ -77,8 +77,9 @@ Mirrors the spec so the two can be read side by side:
   and code fences (indented code untouched), list markers and task
   checkboxes, table pipes (escaped `\|` stays), a thematic break entirely —
   then `normalize_text`: line split on `\r\n` | `\r` | `\n`, the
-  **JavaScript trim set** (Unicode `White_Space` plus U+FEFF — Rust's
-  `str::trim` alone is not it), `[ \t]+` collapse, empty-line drop, NFC.
+  **JavaScript trim set** (Unicode `White_Space` minus U+0085, plus U+FEFF —
+  Rust's `str::trim` alone is not it; `text::is_js_whitespace` is), `[ \t]+`
+  collapse, empty-line drop, NFC.
   Containers (`list`, `blockquote`, `table`, and an item with children) are
   their children's texts joined by one space, empties skipped (`join_texts`).
   `block_text(kind, raw, children, quote_depth)` picks the rule for a block
