@@ -1,0 +1,3424 @@
+{
+  "suite": "render",
+  "cases": [
+    {
+      "name": "ordered-list-renumbers-after-insert",
+      "notes": "§3 list rule: an item inserted mid-list renumbers the ordered list from `start` (default 1); the inserted `- ` seed marker is replaced.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "1. alpha\n2. beta\n3. gamma\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": "b_0",
+                  "at": {
+                    "after": "b_1"
+                  }
+                },
+                "markdown": "- inserted"
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_5"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "1. alpha\n2. inserted\n3. beta\n4. gamma\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "58e7c4b2aebbc7cd6bc23a5d8968f6fa9446ee05509ba101d216269720bdded5",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": true,
+              "start": 1
+            },
+            "text": "alpha inserted beta gamma",
+            "raw_hash": "4f7cf33c536a9748b90d2eceb26026f4e982e96c964fdfe14c9362c7c26baae1",
+            "norm_hash": "404fa2923fa418f8d9b8474ed3ee9c8fcd76de207711c665db6bd55481760945",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "alpha",
+            "raw_hash": "cf13d57543a8e3381381e645c50ea3cf1eb7376bd04d26de7d9df8ed0c0648fa",
+            "norm_hash": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "inserted",
+            "raw_hash": "bb3874c4eba034e0728cbfc386d2e63386efab0bcac085443bf4f5b346f556c6",
+            "norm_hash": "e8dd6642d2075c9218b3f9ee3a3455518f16affaedb111b6e7a77a8e6ca5f7ad",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "beta",
+            "raw_hash": "c7592e396512082a2515e44b3db481dcff3bbed621c915157a7538a50de4d4c7",
+            "norm_hash": "f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "gamma",
+            "raw_hash": "872b700c6a70573830c69662ce98fa5f63931fb1438459ee59cbac794480a017",
+            "norm_hash": "be9d587defa1f0c09ef49eb17e206983a5f8f8289e4281860bd0ee5a19592c67",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "16c0d1d687fa28fcafc1e738b0dcac3bbee65073793699ecfd089a35354398fb",
+            "frontmatter_blob": null,
+            "rendered_hash": "a681c5b6ce5fd90d9438729311f58c0b3c0fa83fbc9c6803b148eaa3900816c6",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "3ae3f823b5510ddd2d8bd335341fafa9c81fbdeda67347049948f3481b2d5941",
+            "frontmatter_blob": null,
+            "rendered_hash": "58e7c4b2aebbc7cd6bc23a5d8968f6fa9446ee05509ba101d216269720bdded5",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "ordered-list-renumbers-after-move",
+      "notes": "§3: moving the last item to the front renumbers.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "1. alpha\n2. beta\n3. gamma\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "move",
+                "blocks": [
+                  "b_3"
+                ],
+                "to": {
+                  "parent": "b_0",
+                  "at": "start"
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_3"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "1. gamma\n2. alpha\n3. beta\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "e817e39f1e0d836498f409b65a2c46c0cbe1b78d3c4c7c0b39b713289401a32c",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": true,
+              "start": 1
+            },
+            "text": "gamma alpha beta",
+            "raw_hash": "b827af7b8a5ae4132dadbf0da250036439ff65de2fdf408102ecb87ba4618950",
+            "norm_hash": "7dfe54fb25669e9ed4aef1b2e79503670e9390f4974b3354ab1f635139f6229f",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "gamma",
+            "raw_hash": "e97d246f13c3c348423cc54d178e089db32b415f32749728e4a5011b20a45528",
+            "norm_hash": "be9d587defa1f0c09ef49eb17e206983a5f8f8289e4281860bd0ee5a19592c67",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "alpha",
+            "raw_hash": "3bd6757d17f33f04f712346259a9d34d97c1198be0bffcd9782ded94e7b2aab2",
+            "norm_hash": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "beta",
+            "raw_hash": "c7592e396512082a2515e44b3db481dcff3bbed621c915157a7538a50de4d4c7",
+            "norm_hash": "f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "16c0d1d687fa28fcafc1e738b0dcac3bbee65073793699ecfd089a35354398fb",
+            "frontmatter_blob": null,
+            "rendered_hash": "a681c5b6ce5fd90d9438729311f58c0b3c0fa83fbc9c6803b148eaa3900816c6",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7794cb980f6e0385b4cdfb70009957921925bcb1148e8e0e045e21134062a23c",
+            "frontmatter_blob": null,
+            "rendered_hash": "e817e39f1e0d836498f409b65a2c46c0cbe1b78d3c4c7c0b39b713289401a32c",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "ordered-list-honours-start",
+      "notes": "§3: numbering starts at `attrs.start`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "3. three\n4. four\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": "b_0",
+                  "at": "end"
+                },
+                "markdown": "five"
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_4"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "3. three\n4. four\n5. five\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "deb76b15b7c0a8ce4df7e3d369e36c963775687fdcdd3a6b2d541b07c4a3cbef",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": true,
+              "start": 3
+            },
+            "text": "three four five",
+            "raw_hash": "a9ac1faef333170461ea148365f49e8b2eee027b96eb234b4fdc17869381871d",
+            "norm_hash": "7deaf5e2f640ecc12e997b12b62ebd235a5d39837c884860b42ef168475c2482",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "three",
+            "raw_hash": "307e3b3a19f2902833a9cfd2e8d338d97e02f72c7e7f912b46825fb668fed4dd",
+            "norm_hash": "8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "four",
+            "raw_hash": "1083041f9889a0fc21778f1ca871b81c77f9b15d752b82d221727fafc79b1c07",
+            "norm_hash": "04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "five",
+            "raw_hash": "1d173dd5013917aefa839cc54438697caa3a5ae72e80580f46df6cd91aa71aa0",
+            "norm_hash": "222b0bd51fcef7e65c2e62db2ed65457013bab56be6fafeb19ee11d453153c80",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "5f2cc1e0f825038a93994e8679f92c8172ffe61099a1c357d8d9ca67317c6300",
+            "frontmatter_blob": null,
+            "rendered_hash": "31857a2076bbabaf06f441c7babad33024ee8f80a2e684f721e2b32c49d35e27",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "29e7930e1d258d40fab3b15ee22b15c1364d0a6beeda4e679e1b123963bc2f7b",
+            "frontmatter_blob": null,
+            "rendered_hash": "deb76b15b7c0a8ce4df7e3d369e36c963775687fdcdd3a6b2d541b07c4a3cbef",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "tight-list-separator",
+      "notes": "§3: a list whose raw has no blank line joins its items with `\\n`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- one\n- two\n- three\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": "b_0",
+                  "at": "end"
+                },
+                "markdown": "- four"
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_5"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "- one\n- two\n- three\n- four\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "6782cf537f96176fe5b0f1d860c8cc7d9d1a58e30c506d9b33232cf4a1af67d7",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "one two three four",
+            "raw_hash": "5c9067e7ee4491bb2540a196af7ce78e418f971934c5bf6775d7195db7d59897",
+            "norm_hash": "113f69ccf08f80a63beba2f49218eaa72a183f374065e6cb56ebe9bd68eb79cc",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "one",
+            "raw_hash": "3a98d5a78bbcc750be2bc111322c8860e49bdee85b32a070fc29fffec36ab57a",
+            "norm_hash": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "two",
+            "raw_hash": "9bd7b8eb63ca9dc53bb85ee36933297a19e9afc45dc33ed369db066ee2cd0e32",
+            "norm_hash": "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "three",
+            "raw_hash": "658d2a8430253c99dd4988d74130ab339774779e307f798f7b6a5ba7fd593133",
+            "norm_hash": "8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "four",
+            "raw_hash": "18ecdf5c32417dd547c59f99e3bc90fdb84cbd725038a09bfb56f80c2431476f",
+            "norm_hash": "04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "93dc7c7342d83f8c3b77d96097cbb5b0f1015e1b1bcfeb72f0244990c528fa90",
+            "frontmatter_blob": null,
+            "rendered_hash": "327cab65c1e05c5fdd5bc739c0e33679d095739287bbf55e9925fc1bc76e3b97",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "82bf5fd375f22fe12ba8129bbbe0e0e897270340e9e62e43e8ec913c999cf534",
+            "frontmatter_blob": null,
+            "rendered_hash": "6782cf537f96176fe5b0f1d860c8cc7d9d1a58e30c506d9b33232cf4a1af67d7",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "loose-list-separator",
+      "notes": "§3: a list whose raw contains `\\n\\n` joins its items with a blank line.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- alpha\n\n- beta\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "insert",
+                "to": {
+                  "parent": "b_0",
+                  "at": "end"
+                },
+                "markdown": "- gamma"
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_4"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "- alpha\n\n- beta\n\n- gamma\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "ecb11f3c985c2ae85c38462cdcd5ed4b95d4200be36018c3a13d2c06af1d9560",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "alpha beta gamma",
+            "raw_hash": "e9fd18fb85f2a192d904914c6d0ed5ee0ee9f7e36a0d02b3dd51f1d510dbea23",
+            "norm_hash": "64989ccbf3efa9c84e2afe7cee9bc5828bf0fcb91e44f8c1e591638a2c2e90e3",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "alpha",
+            "raw_hash": "64ebdafa21919d0f97ee39dd8cbc2cd313938a20892c957a14f7d890d4a41b33",
+            "norm_hash": "8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "beta",
+            "raw_hash": "9822c709c7417b87817b9094a14bbc0f10c041ae6c7b5277ad25018c1a2049b6",
+            "norm_hash": "f44e64e75f3948e9f73f8dfa94721c4ce8cbb4f265c4790c702b2d41cfbf2753",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "gamma",
+            "raw_hash": "101d1f97045d313cecfc601ec4bd95e8dd4f5e1b6793d0da1a2f6a6141e05672",
+            "norm_hash": "be9d587defa1f0c09ef49eb17e206983a5f8f8289e4281860bd0ee5a19592c67",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "ec35c7b2b80d21dd94ae05565e518db835feaa6431dd2aaedaa6a205fc369b80",
+            "frontmatter_blob": null,
+            "rendered_hash": "361a4b39bb40dcbeec1ca95a25a5f07fbb36ab2181b4fd0ee8e5127e371e9051",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "7d8181430bb23c2706b4b9a8dbffab0103e0432372cb4a002d8b29e5779472a2",
+            "frontmatter_blob": null,
+            "rendered_hash": "ecb11f3c985c2ae85c38462cdcd5ed4b95d4200be36018c3a13d2c06af1d9560",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "blockquote-rebuild-from-nested-update",
+      "notes": "§3: the updated paragraph is clean (raw exact); the blockquote whose child changed is rebuilt — children joined by a blank line, `> ` on every line, `>` on the blank one.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "> quoted one\n>\n> quoted two\n\nAfter.\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_2",
+                "markdown": "quoted two, edited",
+                "expect": {
+                  "content_hash": "7ffc3f80218f0e30389d6c31152ec1c1699ed1fae739ac5d7fb5582a09267368"
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_2"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "> quoted one\n>\n> quoted two, edited\n\nAfter.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "4a17298d31d11b8971c917b75a2b081d2c386f7e4c25e1e977dddf0336743391",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "blockquote",
+            "attrs": {},
+            "text": "quoted one quoted two, edited",
+            "raw_hash": "8ea62b557d18cb17ff20a57ae23bb6953aa87e807d5b0e71d4a2fd26a9b450f7",
+            "norm_hash": "08fabaa0c49009783e4ef9db5d545df6a757086cc059f53a5e2c1e9ba94425d0",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "quoted one",
+            "raw_hash": "a95aa27b0d82f8fe983c9808708c2ea01560b77525cc6af6f7e5300a4ba73f7c",
+            "norm_hash": "a95aa27b0d82f8fe983c9808708c2ea01560b77525cc6af6f7e5300a4ba73f7c",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "quoted two, edited",
+            "raw_hash": "b8f91e6551f93fdc43f4581f56639cf0840dc34d1faba35d907fe13488cf0c09",
+            "norm_hash": "b8f91e6551f93fdc43f4581f56639cf0840dc34d1faba35d907fe13488cf0c09",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "After.",
+            "raw_hash": "0306b48ad9dd5473e42bb337d264bfadd2e1407a343f7d9a855ad5bb78ebb941",
+            "norm_hash": "0306b48ad9dd5473e42bb337d264bfadd2e1407a343f7d9a855ad5bb78ebb941",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "9222d76ce6236e8640eeca09681b11909bef99b16807d19f075723376e5b9be5",
+            "frontmatter_blob": null,
+            "rendered_hash": "68a0cb712ba09a95c1e0f3418551ed36b86cf994c13db1d39ce2ceb96bed9d94",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "1aa836b359c3a74c6aef48920564bacbcb37169d64c339b6d4d25acbafaa6de6",
+            "frontmatter_blob": null,
+            "rendered_hash": "4a17298d31d11b8971c917b75a2b081d2c386f7e4c25e1e977dddf0336743391",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "table-row-update-reinserts-delimiter",
+      "notes": "§3: rows are rendered and the raw's delimiter row (second line) is re-inserted after the header row.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_3",
+                "markdown": "| 3 | 40 |",
+                "expect": {
+                  "content_hash": "66ff9734c0bcc58d11ad16e3e1a15779ee49aff4ae3d98cf48d5b975dd8555a4"
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_3"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 40 |\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "aa66034ccc42881a07941de2c80472bc9b24228cc783816e9a1a67646f10632d",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "table",
+            "attrs": {},
+            "text": "a b 1 2 3 40",
+            "raw_hash": "a66b5247dfb093c348908532b82618a50e3f0febdb64a1eaccf02fbb7802df17",
+            "norm_hash": "8bca28ff1bbeb6f5289bc54eeea78aa215a146a8caa5060c9317e8b1a6ca8aaa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "table_row",
+            "attrs": {},
+            "text": "a b",
+            "raw_hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
+            "norm_hash": "c8687a08aa5d6ed2044328fa6a697ab8e96dc34291e8c2034ae8c38e6fcc6d65",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "table_row",
+            "attrs": {},
+            "text": "1 2",
+            "raw_hash": "db18e4fde9daa6d8d355f9721b2d0a04e0981ec74ded0285efbdf5be5d8f22f2",
+            "norm_hash": "f71998fe363b9c29116c80b5eecf33a2fedca3b6159724384485804b71651029",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "table_row",
+            "attrs": {},
+            "text": "3 40",
+            "raw_hash": "b0a9b42ad3c3a3c0ea958b8098a1de92b8aa85b97440f838f619fd1e458c6c11",
+            "norm_hash": "19818280fb1b5ba1e6d9c07f7d60d55c3f2bc3f7566eb589a94e2f9f515a7bcf",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "403a143b1016b8fe79afb484e0fa1a077fe0d9286409875ee50483fc4666b963",
+            "frontmatter_blob": null,
+            "rendered_hash": "7b777037c2cca5cbfaf23001d661a54c37327fcb584f2f1830916a710ac72289",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "3ef1b41838dada2f9b5fc7ebbcd27c7385107177cdba0a6c71d3b89c653d1849",
+            "frontmatter_blob": null,
+            "rendered_hash": "aa66034ccc42881a07941de2c80472bc9b24228cc783816e9a1a67646f10632d",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "nested-item-update-reindents",
+      "notes": "§3 render_item: the parent item has a dirty descendant, so its body is its children (paragraph + the sub-list by the list rule) joined by `\\n`, then the marker is applied and continuation lines indented by its width.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- parent\n  - child one\n  - child two\n- sibling\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_5",
+                "markdown": "- child two, edited",
+                "expect": {
+                  "content_hash": "ebe35961ee65c5419c25853de6341e43e16ea0e22316e088fe221689c9ae9b18"
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_5"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "- parent\n  - child one\n  - child two, edited\n- sibling\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "f88d83870fea6256c6eaf9f877e44738203a04416abce2d852e51809405cb120",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "parent child one child two, edited sibling",
+            "raw_hash": "e1687f5841b3b9513a14dd33bfc4bd1cc01e77412ffa147ee4ddd0a07c470afb",
+            "norm_hash": "eede834cbe81299f60dabc2e00365e43282bb8246e43b5550663f7f4482055a4",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "parent child one child two, edited",
+            "raw_hash": "713da5f6947a3fb906f7b5d2a9005840207c6092b1dbb90f4ccb2641f871d596",
+            "norm_hash": "2b2990458dc29d20a28b7f48b840666cf65d01848c0a010da0f858d1b553c8e6",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "parent",
+            "raw_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "norm_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_1/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "child one child two, edited",
+            "raw_hash": "6aa240c9d59d756ef7172577ba7127f25453935b9311f3b05c15f84f05f75ec7",
+            "norm_hash": "da5de08f61ea1e1e440fffd8e368869ed738b756119d5e91d977c190bdcc28ca",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_3",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_1/b_3/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "child one",
+            "raw_hash": "a256e99b121989f26b8d1e7667debf13ba05456af597640eed45d39cf9916a25",
+            "norm_hash": "ec8f713c4d1569c00e64ea80e3dd15eda6ee518149e146fff23142eeea848b51",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "parent_block": "b_3",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_1/b_3/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "child two, edited",
+            "raw_hash": "cf16fd9136ad56cdc42b1172d27dc92b81d0e1c9d1e1d5eb2e5b81b27a57290e",
+            "norm_hash": "e7baa7e12b573faf227f8a9647c53786417fd36a6773bd876767b458e5317bbe",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "sibling",
+            "raw_hash": "dff45511fa7542905ec26f2b0300e4ebf2e00b7914f436672689838c9ea58519",
+            "norm_hash": "7d10de8554ed5ca40f9d0f0e0f4375b5b338af3fb96d33c9b2f53b5289b8f4fe",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "b661ea99a60524838574acab19456e44745717c7a45cd4557f33cc9d3755f0f5",
+            "frontmatter_blob": null,
+            "rendered_hash": "91f4fef1a6a90f55565899de4e961364bfe67dc410b6011ebeec5a48e05ff2d3",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "a1f57fb0b1e3378ff9f242389c5f79fc08b08fe4a1582a46c64319967c0b1c8b",
+            "frontmatter_blob": null,
+            "rendered_hash": "f88d83870fea6256c6eaf9f877e44738203a04416abce2d852e51809405cb120",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_5",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_6",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "container-update-keeps-exact-bytes",
+      "notes": "§3: a block whose raw an op supplied is clean — the list is emitted verbatim (four-space nested indent preserved), never rebuilt; its children exist only to carry ids.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- parent\n  - child one\n  - child two\n- sibling\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_0",
+                "markdown": "- parent\n    - child one\n- sibling",
+                "expect": {
+                  "content_hash": "b5d30035ef85d8b1dc488d5015f10b983f145b300ad03963209281127c723c9a"
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_0"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "- parent\n    - child one\n- sibling\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "fdd378d1571fcddfed366b3b781ca73095aaae7a63e204295c32101c105c78c2",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "parent child one sibling",
+            "raw_hash": "ab161b5dca4313d0bd42206c93840c770696e8265e06b9fa9b00a9b8835cc607",
+            "norm_hash": "6d3d2092499a23b805982dbfe4c4533ec0c7a9193f06229a11de5d6df478bbe6",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_8",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "parent child one",
+            "raw_hash": "f35ee4baf726b20c5f8531fd222425af277df29dababdac7ca1bf2d0013ecbcf",
+            "norm_hash": "87c13c7aec73ab1536fcc5826564f360d728bd962ba9011b72902b0d425e335d",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_9",
+            "doc_id": "d_0",
+            "parent_block": "b_8",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_8/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "parent",
+            "raw_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "norm_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_10",
+            "doc_id": "d_0",
+            "parent_block": "b_8",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 2,
+            "ancestor_path": "/b_0/b_8/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "child one",
+            "raw_hash": "a256e99b121989f26b8d1e7667debf13ba05456af597640eed45d39cf9916a25",
+            "norm_hash": "ec8f713c4d1569c00e64ea80e3dd15eda6ee518149e146fff23142eeea848b51",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_11",
+            "doc_id": "d_0",
+            "parent_block": "b_10",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 3,
+            "ancestor_path": "/b_0/b_8/b_10/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "child one",
+            "raw_hash": "a256e99b121989f26b8d1e7667debf13ba05456af597640eed45d39cf9916a25",
+            "norm_hash": "ec8f713c4d1569c00e64ea80e3dd15eda6ee518149e146fff23142eeea848b51",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_12",
+            "doc_id": "d_0",
+            "parent_block": "b_0",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_0/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "sibling",
+            "raw_hash": "dff45511fa7542905ec26f2b0300e4ebf2e00b7914f436672689838c9ea58519",
+            "norm_hash": "7d10de8554ed5ca40f9d0f0e0f4375b5b338af3fb96d33c9b2f53b5289b8f4fe",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "b661ea99a60524838574acab19456e44745717c7a45cd4557f33cc9d3755f0f5",
+            "frontmatter_blob": null,
+            "rendered_hash": "91f4fef1a6a90f55565899de4e961364bfe67dc410b6011ebeec5a48e05ff2d3",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "bc4f3ec0755d3c3ec0d7c252c1e8aeaeb5908c1fc85ebf55b2df9eac43d00833",
+            "frontmatter_blob": null,
+            "rendered_hash": "fdd378d1571fcddfed366b3b781ca73095aaae7a63e204295c32101c105c78c2",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_10",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_11",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_12",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_8",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_9",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "raw_hash": "c92ed4325a940a834233878fa047d865adcc13db084f916929bb8b5539c149b6",
+            "norm_hash": "08dba14446719fdab6b2cb77f4c597bed964087c72a88f8fcb673939d8840838",
+            "type": "list_item",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "raw_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "norm_hash": "e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "raw_hash": "48e6e3556b069843fe3070006d9f9f5692fdce5e1b19480865ca853275649938",
+            "norm_hash": "28fafd5ec80483f7de5f4df87e4433a04b2aeb7ec4038172616f3ef8dd5f5873",
+            "type": "list",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "raw_hash": "a256e99b121989f26b8d1e7667debf13ba05456af597640eed45d39cf9916a25",
+            "norm_hash": "ec8f713c4d1569c00e64ea80e3dd15eda6ee518149e146fff23142eeea848b51",
+            "type": "list_item",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_0",
+            "raw_hash": "ebe35961ee65c5419c25853de6341e43e16ea0e22316e088fe221689c9ae9b18",
+            "norm_hash": "8f9ce0348b0abc38e06d60c810ee442208f01036618b1b37c33dec2e34a1a34c",
+            "type": "list_item",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          },
+          {
+            "block_id": "b_6",
+            "doc_id": "d_0",
+            "raw_hash": "dff45511fa7542905ec26f2b0300e4ebf2e00b7914f436672689838c9ea58519",
+            "norm_hash": "7d10de8554ed5ca40f9d0f0e0f4375b5b338af3fb96d33c9b2f53b5289b8f4fe",
+            "type": "list_item",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "checked-toggles-task",
+      "notes": "§2.2 attrs: `checked` rewrites the first checkbox — `[ ]`→`[x]` on b_2 and `[x]`→`[ ]` on b_3 — and the list re-renders from its items.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Tasks\n\n- [ ] one\n- [x] two\n- three\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_2",
+                "attrs": {
+                  "checked": true
+                }
+              },
+              {
+                "op": "update",
+                "block": "b_3",
+                "attrs": {
+                  "checked": false
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_2"
+                ]
+              },
+              {
+                "ids": [
+                  "b_3"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "# Tasks\n\n- [x] one\n- [ ] two\n- three\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "ba9e08c0abb8b9f6f0469e7cee2fe808135509c968b65831ac18f6a2ae39cf4d",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Tasks",
+            "raw_hash": "970146a02b39726be39daff5d8eb80b058c8395a68f0df1acda6e08965e885f4",
+            "norm_hash": "b3a60e61a5233d0506ac737405a2a45280349683cac68722f18d0b73eb495ef4",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "one two three",
+            "raw_hash": "5a1f93f16711497ce406983e527e4ac7bedb96a71785a20d455c03c5b6821471",
+            "norm_hash": "6899ee404683a14e8c2a03149860df25d67d34d9cd4dae7350cbe91e4b3976be",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "task",
+            "attrs": {
+              "checked": true
+            },
+            "text": "one",
+            "raw_hash": "a85afd2ecb75e6f84ff4c2361692179ada28e5ae6a5136e1799ac7e8910addf9",
+            "norm_hash": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "task",
+            "attrs": {
+              "checked": false
+            },
+            "text": "two",
+            "raw_hash": "f3b813159f6c702293e5abbc450e725c4793ba9903d52a9256f5a0f933ebf756",
+            "norm_hash": "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "three",
+            "raw_hash": "658d2a8430253c99dd4988d74130ab339774779e307f798f7b6a5ba7fd593133",
+            "norm_hash": "8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "4b7c6c66f1ce211b3b7f74f30f4dab019fc2642953d30c3a4dbae28c1257d6e3",
+            "frontmatter_blob": null,
+            "rendered_hash": "56100733632a8df6329586ea9d611951d0d33222beb24bfd9da6ddb1b3bb206e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "576fda8acd40c1a32034557f436435e6cf8759214542804b67f5ad266e0dfbac",
+            "frontmatter_blob": null,
+            "rendered_hash": "ba9e08c0abb8b9f6f0469e7cee2fe808135509c968b65831ac18f6a2ae39cf4d",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "checked-on-list-item-without-checkbox",
+      "notes": "§2.2 + §10 Pinned: `checked` on a `list_item` with no checkbox rewrites nothing and retypes it to `task` in the working tree; the committed re-parse sees the unchanged bytes and stores it as `list_item` again — a new revision with identical content.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Tasks\n\n- [ ] one\n- [x] two\n- three\n"
+              }
+            ]
+          }
+        },
+        {
+          "apply": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "ops": [
+              {
+                "op": "update",
+                "block": "b_4",
+                "attrs": {
+                  "checked": true
+                }
+              }
+            ],
+            "origin": {
+              "actor": "agent:test",
+              "reason": "fixture"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_4"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "a.md"
+              }
+            ],
+            "committed": true
+          }
+        ],
+        "files": {
+          "a.md": "# Tasks\n\n- [ ] one\n- [x] two\n- three\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "56100733632a8df6329586ea9d611951d0d33222beb24bfd9da6ddb1b3bb206e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Tasks",
+            "raw_hash": "970146a02b39726be39daff5d8eb80b058c8395a68f0df1acda6e08965e885f4",
+            "norm_hash": "b3a60e61a5233d0506ac737405a2a45280349683cac68722f18d0b73eb495ef4",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "one two three",
+            "raw_hash": "2a1de11fd596cf29ca6544c5ceb19af96e13c039bc0884f2009571e15ba50e3c",
+            "norm_hash": "6899ee404683a14e8c2a03149860df25d67d34d9cd4dae7350cbe91e4b3976be",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "task",
+            "attrs": {
+              "checked": false
+            },
+            "text": "one",
+            "raw_hash": "96ee26405bff04aa979e427928b28197bfab88c7ca93748e851163602e2a6bd9",
+            "norm_hash": "7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "task",
+            "attrs": {
+              "checked": true
+            },
+            "text": "two",
+            "raw_hash": "e4d6807ff18d730ce2d3049cf4d0293521b983c9e0d35480452565108cd67d5f",
+            "norm_hash": "3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "three",
+            "raw_hash": "658d2a8430253c99dd4988d74130ab339774779e307f798f7b6a5ba7fd593133",
+            "norm_hash": "8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+            "trivia_hash": null,
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "fixture",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "4b7c6c66f1ce211b3b7f74f30f4dab019fc2642953d30c3a4dbae28c1257d6e3",
+            "frontmatter_blob": null,
+            "rendered_hash": "56100733632a8df6329586ea9d611951d0d33222beb24bfd9da6ddb1b3bb206e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "4b7c6c66f1ce211b3b7f74f30f4dab019fc2642953d30c3a4dbae28c1257d6e3",
+            "frontmatter_blob": null,
+            "rendered_hash": "56100733632a8df6329586ea9d611951d0d33222beb24bfd9da6ddb1b3bb206e",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_4",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    }
+  ]
+}

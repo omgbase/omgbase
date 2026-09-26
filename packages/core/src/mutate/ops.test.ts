@@ -178,3 +178,48 @@ describe("kernel ops", () => {
     expect(renderDoc(d)).toBe("> first para\n>\n> second para edited\n\n| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 40 |\n");
   });
 });
+
+// spec/mutate §2.5 (§10 "Fixed"): `split.at` are UTF-8 byte offsets, not the
+// UTF-16 indices a JavaScript string slices at. Non-ASCII text BEFORE the cut
+// makes the two disagree.
+describe("split — byte offsets", () => {
+  it("cuts at UTF-8 byte offsets when multi-byte characters precede the cut", () => {
+    const d = doc("héllo wörld — café tail\n");
+    const raw = d.children[0]!.raw;
+    // "héllo wörld — café " is 19 characters but 24 bytes (é ö é = 2 bytes each, — = 3).
+    const cutBytes = Buffer.byteLength("héllo wörld — café ", "utf8");
+    expect(cutBytes).toBe(24);
+    const { ids } = opSplit(d, idAt(d, 0), [cutBytes], 0, { content_hash: hashAt(d, 0) });
+    expect(ids).toHaveLength(2);
+    expect(d.children[0]!.raw).toBe("héllo wörld — café ");
+    expect(d.children[1]!.raw).toBe("tail");
+    void raw;
+  });
+
+  it("an offset inside a multi-byte sequence rounds down to the character's start", () => {
+    const d = doc("aé b\n");
+    // bytes: a(0) é(1,2) ' '(3) b(4); byte 2 is inside é → cut before é.
+    opSplit(d, idAt(d, 0), [2], 0, { content_hash: hashAt(d, 0) });
+    expect(d.children.map((b) => b.raw)).toEqual(["a", "é b"]);
+  });
+});
+
+// spec/mutate §2.5: split seams follow update's extra-sibling path — the target's
+// trailing trivia moves to the LAST piece, earlier pieces get the separator.
+describe("split — seams", () => {
+  it("splitting a document's last block keeps the pieces apart and moves the tail trivia to the last piece", () => {
+    const d = doc("Alpha beta gamma.\n");
+    expect(d.children[0]!.trivia).toBe("\n");
+    const { ids } = opSplit(d, idAt(d, 0), [6], 0, { content_hash: hashAt(d, 0) });
+    expect(ids).toHaveLength(2);
+    expect(d.children.map((b) => b.trivia)).toEqual(["\n\n", "\n"]);
+    expect(renderDoc(d)).toBe("Alpha \n\nbeta gamma.\n");
+  });
+
+  it("three pieces: every earlier piece separates, the last carries the original trivia", () => {
+    const d = doc("one two three\n\nTail.\n");
+    opSplit(d, idAt(d, 0), [4, 8], 0, { content_hash: hashAt(d, 0) });
+    expect(d.children.map((b) => b.trivia)).toEqual(["\n\n", "\n\n", "\n\n", "\n"]);
+    expect(renderDoc(d)).toBe("one \n\ntwo \n\nthree\n\nTail.\n");
+  });
+});

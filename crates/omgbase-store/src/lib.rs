@@ -40,7 +40,12 @@
 //! rows of `spec/graph`, written in §5.4), [`search`] (`spec/search`:
 //! `text_search`, the embedding drain over the `embeddings`/`doc_embeddings`
 //! caches, vector, hybrid and `resolve`), [`read`] (§5.2, §6), [`derived`]
-//! (§4.5 sections, FTS, §7 rebuild and GC).
+//! (§4.5 sections, FTS, §7 rebuild and GC), and the `spec/mutate` host side
+//! (store 13.4): [`mutate`] (loading the working tree, `apply` with the
+//! file-CAS + known-id `api` commit), [`doc_store`] (the write-target seam),
+//! [`macros`], [`links`] (link-destination rewriting), [`docs_ops`] (create /
+//! move / delete / set_meta, [`yaml_emit`]) and [`plan`] (the whole-document
+//! update planner).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
@@ -49,11 +54,17 @@
 #![forbid(unsafe_code)]
 
 pub mod derived;
+pub mod doc_store;
+pub mod docs_ops;
 pub mod error;
 pub mod graph;
 pub mod ids;
+pub mod links;
+pub mod macros;
+pub mod mutate;
 pub mod observe;
 pub mod order_key;
+pub mod plan;
 pub mod properties;
 pub mod read;
 pub mod schema;
@@ -61,6 +72,7 @@ pub mod search;
 pub mod time;
 pub mod tree;
 pub mod writers;
+pub mod yaml_emit;
 
 use std::path::Path;
 
@@ -69,11 +81,23 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Transaction, params};
 
 pub use derived::{GcResult, RebuildTarget};
+pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
+pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use error::{Error, Result};
 pub use graph::ResolvedEdge;
 pub use ids::{IdMinter, RandomMinter, SequentialMinter, is_valid_id, prefix_of};
+pub use links::InboundLink;
+pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
+pub use mutate::{
+    ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, SetFrontmatter,
+    find_doc_by_ref, is_id_ref, load_mut_doc,
+};
 pub use observe::{BatchItem, BatchOutcome, DeleteOutcome, ObserveOutcome, has_conflict_markers};
 pub use omgbase_graph::{EdgeDescriptor, ProjectedNode};
+pub use omgbase_mutate::{
+    self as mutate_kernel, At, Expect, MutBlock, MutDoc, MutationError, Op, OpResult, Opset,
+    Parent, PlanOp, To,
+};
 pub use omgbase_properties::PropertyRow;
 pub use omgbase_reconcile::{Config, MatchBlock, PoolEntry};
 pub use omgbase_search::{
@@ -90,7 +114,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.3";
+pub const SPEC_VERSION: &str = "13.4";
 
 /// The one format this crate ingests (`docs.format`).
 pub const FORMAT_MARKDOWN: &str = "markdown";

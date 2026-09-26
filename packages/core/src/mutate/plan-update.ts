@@ -11,6 +11,7 @@ import { loadOldMatchBlocks } from "../sync/reconciling-ingest.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, MutationError } from "./tree.js";
 import { apply, type ApplyResult, type Op } from "./apply.js";
+import type { DocStore } from "./doc-store.js";
 import { lowerTopLevel, lowerReplace, type LowerResult } from "./lower.js";
 import { summarizeOps, opsetKernelOps, type Opset, type PlanOp } from "./opset.js";
 
@@ -158,11 +159,16 @@ function describeDivergence(v: Verified, proposed: RawBlock[], expected: string)
 
 export interface ApplyOpsetRequest {
   repoId: string;
-  rootPath: string;
+  /** Working-tree root for the default filesystem write target; omit only with an explicit `docStore`. */
+  rootPath?: string;
+  /** Write target (ADR-014 §5); defaults to a filesystem store at `rootPath`. */
+  docStore?: DocStore;
   opset: Opset;
   origin: { actor: string; reason?: string };
   dryRun?: boolean;
   omgbaseDir?: string;
+  /** Commit timestamp (RFC 3339 UTC); defaults to now (see `ApplyRequest.ts`). */
+  ts?: string;
 }
 
 /**
@@ -193,11 +199,13 @@ export function applyOpset(store: Store, req: ApplyOpsetRequest): ApplyResult {
 
   return apply(store, {
     repoId: req.repoId,
-    rootPath: req.rootPath,
+    ...(req.rootPath !== undefined ? { rootPath: req.rootPath } : {}),
+    ...(req.docStore !== undefined ? { docStore: req.docStore } : {}),
     ops: opsetKernelOps(opset),
     origin: req.origin,
     ...(req.dryRun !== undefined ? { dryRun: req.dryRun } : {}),
     ...(req.omgbaseDir !== undefined ? { omgbaseDir: req.omgbaseDir } : {}),
+    ...(req.ts !== undefined ? { ts: req.ts } : {}),
     ...(opset.frontmatter ? { setFrontmatter: [{ doc: opset.precondition.doc, raw: opset.frontmatter.raw }] } : {}),
   });
 }

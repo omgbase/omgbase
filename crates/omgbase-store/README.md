@@ -38,4 +38,12 @@ embedding drain (`build_embed_tasks`/`embed_process`,
 `build_doc_embed_tasks`/`embed_process_docs`) over the `embeddings` and
 `doc_embeddings` caches with any `omgbase_search::EmbeddingProvider`,
 `vector_search`/`doc_vector_search`, `hybrid_search` and `resolve`; the
-search conformance runner is `crates/omgbase-search/tests/spec.rs`.
+search conformance runner is `crates/omgbase-search/tests/spec.rs`. Since
+store 13.4 the store applies `spec/mutate` changesets with `omgbase-mutate`:
+`load_mut_doc`, `apply` (file-CAS against a `DocStore` — `FsDocStore`,
+`MemDocStore`, `NullDocStore` — then the `api` ingest with the ops' known
+ids), the macros (`tasks_complete` … `links_repair`), the document
+operations (`docs_create`/`docs_move`/`docs_delete`/`docs_set_meta`, with a
+YAML emitter matching the reference's `stringify`) and the whole-document
+planner (`plan_update`/`apply_opset`/`docs_update`); the mutation
+conformance runner is `crates/omgbase-mutate/tests/spec.rs`.

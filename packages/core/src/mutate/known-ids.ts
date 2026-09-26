@@ -108,6 +108,14 @@ export function makeKnownIdResolver(
       detail: {},
     }));
     const deleted: string[] = [...priorIds].filter((id) => !nowSet.has(id));
+    // Ids new to THIS document may already exist elsewhere: a cross-document
+    // move carries a block whose source document still holds its row (it
+    // commits later in the same changeset) or already pooled it (it committed
+    // first). Report them so ingest evicts the foreign row and drops the pool
+    // row (spec/store §5.4) — otherwise a live block would sit in the pool, or
+    // the destination's INSERT would collide on the block_id key. A freshly
+    // minted id matches nothing and the eviction is a no-op.
+    const crossDocIds: string[] = nowIds.filter((id) => !priorIds.has(id));
 
     const extractEdges = (thisDocId: string, metadata: Record<string, unknown>): ResolvedEdgeRow[] => {
       const out: ResolvedEdgeRow[] = [];
@@ -128,7 +136,7 @@ export function makeKnownIdResolver(
     };
 
     void docId;
-    return { assigned, dispositions, deleted, extractEdges };
+    return { assigned, dispositions, deleted, crossDocIds, extractEdges };
   };
 }
 

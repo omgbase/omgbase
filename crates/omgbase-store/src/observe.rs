@@ -28,7 +28,7 @@ use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
 use crate::tree::canonical_attrs;
 use crate::writers::{
-    NewCommit, NewRevision, TreeInputBlock, assign_from_map, new_commit, put_blob,
+    NewCommit, NewRevision, Origin, TreeInputBlock, assign_from_map, new_commit, put_blob,
     write_block_tree, write_revision,
 };
 use crate::{FORMAT_MARKDOWN, Store};
@@ -421,11 +421,57 @@ fn evict_foreign_block_rows(conn: &Connection, doc_id: &str, ids: &[String]) -> 
 }
 
 /// What §5.4 steps 1–13 produce.
-struct Committed {
-    doc_id: String,
-    commit_id: String,
-    rev_id: String,
-    converged: bool,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Committed {
+    pub doc_id: String,
+    pub commit_id: String,
+    pub rev_id: String,
+    pub converged: bool,
+}
+
+/// A disposition to persist (§5.4 step 10): the matcher's, or the `api`
+/// intent rows of `spec/mutate` §4 (`matcher_v` null, `detail` `{}`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DispositionRow {
+    pub block_id: String,
+    pub kind: String,
+    pub confidence: Option<f64>,
+    pub reason: Option<String>,
+    pub matcher_v: Option<String>,
+    /// JSON text.
+    pub detail: String,
+}
+
+/// Everything §5.4 needs to commit one document: the parsed tree and the
+/// id-assigned body, the identity decisions, and the commit row's provenance.
+pub(crate) struct IngestPlan<'a> {
+    pub path: &'a str,
+    pub source: &'a str,
+    pub tree: &'a BlockTree,
+    pub assigned: Vec<TreeInputBlock>,
+    pub dispositions: Vec<DispositionRow>,
+    /// Pooled (step 7).
+    pub deleted: Vec<String>,
+    pub consumed_pool: Vec<String>,
+    pub cross_doc_ids: Vec<String>,
+    pub origin: Origin,
+    pub actor: Option<&'a str>,
+    pub reason: Option<&'a str>,
+}
+
+fn disposition_rows(result: &ReconcileResult) -> Vec<DispositionRow> {
+    result
+        .dispositions
+        .iter()
+        .map(|d| DispositionRow {
+            block_id: d.block_id.clone(),
+            kind: d.kind.as_str().to_owned(),
+            confidence: d.confidence,
+            reason: d.reason.map(|r| r.as_str().to_owned()),
+            matcher_v: Some(d.matcher_v.clone()),
+            detail: detail_to_json(&d.detail).to_string(),
+        })
+        .collect()
 }
 
 impl Store {
@@ -567,7 +613,8 @@ impl Store {
         Ok(out)
     }
 
-    /// §5.4 steps 1–13 in one transaction.
+    /// §5.4 steps 1–13 for a prepared (reconciled) member: an `observed`
+    /// commit with the matcher's dispositions.
     fn commit_prepared(
         &mut self,
         repo_id: &str,
@@ -575,11 +622,87 @@ impl Store {
         ts: &str,
         expires: &str,
     ) -> Result<Committed> {
+        let (_, rest) = split_frontmatter(&prepared.tree);
+        // 3. Assign ids (nothing mints: the matcher assigned every key).
+        let assigned = assign_from_map(rest, &prepared.result.assignment, &mut *self.minter);
+        let plan = IngestPlan {
+            path: &prepared.path,
+            source: &prepared.source,
+            tree: &prepared.tree,
+            assigned,
+            dispositions: disposition_rows(&prepared.result),
+            deleted: prepared.result.deleted.clone(),
+            consumed_pool: prepared.result.consumed_pool.clone(),
+            cross_doc_ids: prepared.cross_doc_ids.clone(),
+            origin: Origin::Observed,
+            actor: None,
+            reason: None,
+        };
+        self.commit_ingest(repo_id, &plan, ts, expires)
+    }
+
+    /// Parse and reconcile `source` at `path` against the stored tree (the
+    /// pool offered when a doc row exists, §5.1 step 4) and commit it with
+    /// the given provenance — the reference's `ingestFile` with
+    /// `makeReconcilingResolver`: `docs_create`/`docs_set_meta` (`api`) and
+    /// the file-CAS conflict ingest of `spec/mutate` §4 (`observed`). No echo
+    /// gate, no `conflicted` update, no sweep.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn reconciling_ingest(
+        &mut self,
+        repo_id: &str,
+        path: &str,
+        source: &str,
+        ts: &str,
+        origin: Origin,
+        actor: Option<&str>,
+        reason: Option<&str>,
+        config: &Config,
+    ) -> Result<Committed> {
+        let expires = pool_expiry(ts)?;
+        let pool = load_pool(&self.conn, repo_id, ts)?;
+        let mut consumed = HashSet::new();
+        let prepared = prepare_reconcile(
+            &self.conn,
+            &mut *self.minter,
+            repo_id,
+            path,
+            source,
+            config,
+            &pool,
+            &mut consumed,
+        )?;
+        let (_, rest) = split_frontmatter(&prepared.tree);
+        let assigned = assign_from_map(rest, &prepared.result.assignment, &mut *self.minter);
+        let plan = IngestPlan {
+            path,
+            source,
+            tree: &prepared.tree,
+            assigned,
+            dispositions: disposition_rows(&prepared.result),
+            deleted: prepared.result.deleted.clone(),
+            consumed_pool: prepared.result.consumed_pool.clone(),
+            cross_doc_ids: Vec::new(),
+            origin,
+            actor,
+            reason,
+        };
+        self.commit_ingest(repo_id, &plan, ts, &expires)
+    }
+
+    /// §5.4 steps 1–13 in one transaction (the reference's `ingestFile`).
+    pub(crate) fn commit_ingest(
+        &mut self,
+        repo_id: &str,
+        plan: &IngestPlan<'_>,
+        ts: &str,
+        expires: &str,
+    ) -> Result<Committed> {
         let tx = self.conn.unchecked_transaction()?;
         let minter: &mut dyn IdMinter = &mut *self.minter;
-        let tree = &prepared.tree;
-        let source = prepared.source.as_str();
-        let (fm_block, rest) = split_frontmatter(tree);
+        let tree = plan.tree;
+        let source = plan.source;
+        let (fm_block, _) = split_frontmatter(tree);
 
         // 2. Frontmatter blob (the reference puts it before the doc row; blobs
         //    are content-addressed, so the order is unobservable).
@@ -591,7 +714,7 @@ impl Store {
         let existing: Option<(String, Option<String>)> = tx
             .query_row(
                 "SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
-                params![repo_id, prepared.path],
+                params![repo_id, plan.path],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -605,7 +728,7 @@ impl Store {
                 // phantom edges that accrued at its path while it was
                 // tombstoned re-point to it.
                 if deleted_commit.is_some() {
-                    adopt_phantoms(&tx, &prepared.path, &id)?;
+                    adopt_phantoms(&tx, plan.path, &id)?;
                 }
                 id
             }
@@ -613,22 +736,34 @@ impl Store {
                 let id = minter.mint("d");
                 tx.execute(
                     "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![id, repo_id, prepared.path, FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia],
+                    params![id, repo_id, plan.path, FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia],
                 )?;
                 // spec/graph §3.5: a new row at this path adopts the open
                 // phantom edges that pointed at it (the reference runs this
                 // right after the INSERT; nothing is minted).
-                adopt_phantoms(&tx, &prepared.path, &id)?;
+                adopt_phantoms(&tx, plan.path, &id)?;
                 id
             }
         };
 
-        // 3–4. Assign ids, write the tree.
-        let assigned = assign_from_map(rest, &prepared.result.assignment, minter);
-        let root_tree_hex = write_block_tree(&tx, &assigned)?;
+        // 4. Write the tree.
+        let assigned = &plan.assigned;
+        let root_tree_hex = write_block_tree(&tx, assigned)?;
 
         // 5–6. Commit and revision rows.
-        let (commit_id, _) = new_commit(&tx, minter, &NewCommit::observed(repo_id, ts))?;
+        let (commit_id, _) = new_commit(
+            &tx,
+            minter,
+            &NewCommit {
+                repo_id,
+                ts,
+                origin: plan.origin,
+                actor: plan.actor,
+                reason: plan.reason,
+                checkpoint_id: None,
+                ops: None,
+            },
+        )?;
         let rendered_hash = sha256(source.as_bytes());
         let (rev_id, _) = write_revision(
             &tx,
@@ -638,7 +773,7 @@ impl Store {
                 root_tree_hex: &root_tree_hex,
                 frontmatter_blob_hex: fm_blob_hex.as_deref(),
                 rendered_hash,
-                path: &prepared.path,
+                path: plan.path,
                 commit_id: &commit_id,
             },
         )?;
@@ -649,16 +784,16 @@ impl Store {
                 "INSERT OR REPLACE INTO resurrection_pool (block_id, repo_id, doc_id, raw_hash, norm_hash, type, deleted_commit, expires_ts)
                  SELECT block_id, repo_id, doc_id, raw_hash, norm_hash, type, ?1, ?2 FROM blocks WHERE block_id = ?3 AND doc_id = ?4",
             )?;
-            for id in &prepared.result.deleted {
+            for id in &plan.deleted {
                 pool.execute(params![commit_id, expires, id, doc_id])?;
             }
         }
 
         // 8. Evict foreign rows.
-        let incoming: Vec<String> = prepared
+        let incoming: Vec<String> = plan
             .cross_doc_ids
             .iter()
-            .chain(prepared.result.consumed_pool.iter())
+            .chain(plan.consumed_pool.iter())
             .cloned()
             .collect();
         if !incoming.is_empty() {
@@ -669,7 +804,7 @@ impl Store {
         fts_delete_doc(&tx, &doc_id)?;
         tx.execute("DELETE FROM blocks WHERE doc_id = ?1", params![doc_id])?;
         let mut rows = Vec::new();
-        flatten_rows(&assigned, None, 0, "/", &mut rows);
+        flatten_rows(assigned, None, 0, "/", &mut rows);
         {
             let mut insert = tx.prepare(
                 "INSERT INTO blocks
@@ -703,7 +838,7 @@ impl Store {
         // 9a. Nodes (spec/graph §2): the adapter's projections over the
         //     assigned body, then the `md:section` nodes from the sections just
         //     rebuilt; deleted (FTS first) and reinserted.
-        let body = doc_blocks(&assigned);
+        let body = doc_blocks(assigned);
         let mut nodes = project_nodes(&body);
         nodes.extend(project_section_nodes(&tx, &doc_id)?);
         write_doc_nodes(&tx, repo_id, &doc_id, &nodes)?;
@@ -720,7 +855,7 @@ impl Store {
         //     edge) and the rollup.
         let mapping = fm_block.and_then(|b| parse_frontmatter(frontmatter_yaml(&b.raw)));
         let descriptors = extract_doc_edges(&body, mapping.as_ref());
-        let resolved = resolve_edges(&tx, minter, repo_id, &doc_id, &prepared.path, &descriptors)?;
+        let resolved = resolve_edges(&tx, minter, repo_id, &doc_id, plan.path, &descriptors)?;
         maintain_edges(&tx, minter, repo_id, &doc_id, &commit_id, &resolved)?;
 
         // 10. Dispositions and block_changes.
@@ -732,22 +867,22 @@ impl Store {
             let mut bc = tx.prepare(
                 "INSERT OR IGNORE INTO block_changes (block_id, commit_id, kind) VALUES (?1, ?2, ?3)",
             )?;
-            for d in &prepared.result.dispositions {
+            for d in &plan.dispositions {
                 ins.execute(params![
                     commit_id,
                     d.block_id,
-                    d.kind.as_str(),
+                    d.kind,
                     d.confidence,
-                    d.reason.map(|r| r.as_str()),
+                    d.reason,
                     d.matcher_v,
-                    detail_to_json(&d.detail).to_string(),
+                    d.detail,
                 ])?;
-                bc.execute(params![d.block_id, commit_id, d.kind.as_str()])?;
+                bc.execute(params![d.block_id, commit_id, d.kind])?;
             }
         }
 
         // 11. Consume the pool.
-        for id in &prepared.result.consumed_pool {
+        for id in &plan.consumed_pool {
             tx.execute(
                 "DELETE FROM resurrection_pool WHERE block_id = ?1",
                 params![id],

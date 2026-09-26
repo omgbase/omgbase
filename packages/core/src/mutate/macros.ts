@@ -239,8 +239,12 @@ export function linksRepair(store: Store, repoId: string, repairs: LinkRepair[],
      JOIN blobs b ON b.hash = bl.raw_hash
      JOIN docs d ON d.doc_id = bl.doc_id
      WHERE bl.repo_id = ? AND bl.deleted_commit IS NULL AND d.deleted_commit IS NULL
-       AND bl.type != 'code_fence' AND instr(b.bytes, ?) > 0 ${globSql}`,
+       AND bl.type != 'code_fence' AND instr(b.bytes, ?) > 0 ${globSql}
+     ORDER BY d.path, bl.depth, bl.ordinal, bl.block_id`,
   );
+  // The ORDER BY fixes the order of `ops`/`hits` (document path, then shallow
+  // before deep, then sibling order) so two engines emit the same changeset;
+  // an unordered join would leave it to the query planner (spec/mutate §5).
   const candidates = new Map<string, { parent: string | null; path: string; raw: string }>();
   for (const key of new Set(effective.map((r) => stripSlash(r.from)))) {
     const rows = stmt.all(repoId, key, ...params) as { block_id: string; parent_block: string | null; path: string; bytes: Buffer }[];

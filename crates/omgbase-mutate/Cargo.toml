@@ -1,0 +1,36 @@
+[package]
+name = "omgbase-mutate"
+version = "1.0.0"
+description = "omgbase mutation kernel: the working block tree, the six ops (insert/update/move/remove/split/merge) with placement addressing and CAS, the splice renderer's dirty rules, changeset placeholders, the whole-document lowering and the opset — Rust implementation"
+keywords = ["markdown", "mutation", "blocks", "changeset", "omgbase"]
+categories = ["text-processing", "data-structures"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-mutate#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The block model: op-supplied content is parsed per spec/format; hashes for
+# the CAS tokens. `json` for attrs as JSON values.
+omgbase-format = { version = "0.2.1", path = "../omgbase-format", features = ["json"] }
+# The lowering (§7.1) consumes the matcher's assignment and dispositions; the
+# `Minter` seam is shared. `json` for the disposition `detail` an opset carries.
+omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile", features = ["json"] }
+# Ops, errors and opsets are JSON at the wire (the MCP surface, the fixtures);
+# block attrs are arbitrary JSON objects.
+serde_json = { version = "1", features = ["preserve_order"] }
+# The renderer's marker and table-delimiter patterns (§3).
+regex = "1"
+
+[dev-dependencies]
+# The conformance runner (`tests/spec.rs`) drives the store, which calls this
+# crate to apply changesets. Path-only: a dev-dependency cycle Cargo permits
+# and drops when publishing.
+omgbase-store = { path = "../omgbase-store" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[lints]
+workspace = true

@@ -6,8 +6,8 @@ import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { makeKnownIdResolver } from "./known-ids.js";
 import { loadMutDoc } from "./load.js";
-import { renderDoc, MutationError, type MutDoc, type MutBlock } from "./tree.js";
-import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, type To, type Expect } from "./ops.js";
+import { renderDoc, markContainerDirty, MutationError, type MutDoc, type MutBlock } from "./tree.js";
+import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 
@@ -49,6 +49,13 @@ export interface ApplyRequest {
    * so a frontmatter-only change still commits.
    */
   setFrontmatter?: { doc: string; raw: string | null }[];
+  /**
+   * Commit timestamp (RFC 3339 UTC, spec/store §2.4) stamped on every commit this
+   * request records — the `api` commits and any `observed` commit a file-CAS
+   * conflict ingests. Defaults to now; the spec/mutate fixture runner pins it so
+   * the projected `commits.ts` / pool `expires_ts` compare across engines.
+   */
+  ts?: string;
 }
 
 export interface OpResult {
@@ -214,7 +221,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
   // supplied (11 §3.2); otherwise the Store's in-process serialization suffices.
   const docStore = resolveDocStore(req);
   const commitPhase = (): void => {
-    const ts = new Date().toISOString();
+    const ts = req.ts ?? new Date().toISOString();
     for (const [docId, d] of loaded) {
       const rendered = renderDoc(d);
 
@@ -301,14 +308,23 @@ function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIn
     if (!found) throw new MutationError("block_missing", `block ${id} not found in source doc`, { op_index: opIndex });
     moving.push(found.block);
   }
-  // remove from their source lists
+  // remove from their source lists (marking each emptied owner dirty)
   for (const id of blockIds) {
     const f = locateMut(src, id);
-    if (f) f.siblings.splice(f.index, 1);
+    if (f) {
+      f.siblings.splice(f.index, 1);
+      markContainerDirty(src, f.siblings);
+    }
   }
-  // Insert into dst at the resolved target.
+  // Insert into dst at the resolved target; the destination owner re-renders.
   const target = resolveDstTarget(dst, to);
   target.siblings.splice(target.index, 0, ...moving);
+  markContainerDirty(dst, target.siblings);
+  // Heal both documents' top-level seams (spec/mutate §2.3): a block that was
+  // last in its source carries a lone "\n" that would soft-join it to its new
+  // neighbour, and the source's new last block may now be followed by nothing.
+  healTopLevelSeams(src.children, src.format);
+  healTopLevelSeams(dst.children, dst.format);
   return { ids: blockIds };
 }
 

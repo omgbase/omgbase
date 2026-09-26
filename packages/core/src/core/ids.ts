@@ -62,7 +62,12 @@ export function mintId(prefix: IdPrefix): string {
   return `${prefix}_${randomSuffix()}`;
 }
 
-const ID_RE = new RegExp(`^([a-z]+)_([${ALPHABET}]{${ID_LEN}})$`);
+// Production ids carry exactly ID_LEN suffix characters; the fixture minter
+// (spec/store §2.2) mints `d_0`, `b_12`, … — one to seven alphabet characters.
+// The id-or-path dispatch (`findDocByRef`, `insert.doc`, history) must treat
+// both as ids: nothing else in the system is spelled `<prefix>_<alnum>` (paths
+// carry an extension), so accepting the shorter suffix loses no path.
+const ID_RE = new RegExp(`^([a-z]+)_([${ALPHABET}]{1,${ID_LEN}})$`);
 
 export function isValidId(id: string, prefix?: IdPrefix): boolean {
   const m = ID_RE.exec(id);

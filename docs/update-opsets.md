@@ -1,7 +1,9 @@
 # omgbase — Whole-Document Update Opsets
 
-**Status:** normative (as-built, 2026-09-11).
+**Status:** normative (as-built, 2026-09-26).
 **Depends on:** `reconciliation-spec.md` (matcher), `mutation-and-concurrency.md` (kernel, CAS, write protocol), `architecture.md` §2 (convergence, identity).
+
+> **The language-neutral specification is [`spec/mutate/README.md`](../spec/mutate/README.md) §7** (the opset shape, the top-level lowering as an exact rule — removes, updates with `child_ids`, LCS placement, retile — verification, the replace fallback, `apply_opset` preconditions), with executable fixtures in `spec/mutate/cases/plan.json` (`packages/core/corpus/mutate/spec.test.ts`, `MUTATE_SPEC_UPDATE=1`). When this document and the spec disagree, the spec's fixtures win.
 
 ---
 

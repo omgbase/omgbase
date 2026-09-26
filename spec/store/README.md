@@ -803,6 +803,10 @@ brought to it).
 
 ## Decisions
 
+- 2026-09-26, store 13.4: the store applies `spec/mutate` changesets —
+  loading the working tree, the commit protocol with the known-id `api`
+  ingest, macros, document operations, the update planner. `api` commits
+  are `spec/mutate` §4's; this spec's observe procedure is unchanged.
 - 2026-09-26, store 13.3: the store runs `spec/search` — `text_search`, the
   embedding drain over the `embeddings`/`doc_embeddings` caches, vector and
   hybrid search. Nothing new is written in the commit; the caches are filled

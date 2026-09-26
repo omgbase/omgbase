@@ -513,6 +513,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "omgbase-mutate"
+version = "1.0.0"
+dependencies = [
+ "omgbase-format",
+ "omgbase-reconcile",
+ "omgbase-store",
+ "regex",
+ "rusqlite",
+ "serde_json",
+]
+
+[[package]]
 name = "omgbase-properties"
 version = "1.0.0"
 dependencies = [
@@ -547,14 +559,16 @@ dependencies = [
 
 [[package]]
 name = "omgbase-store"
-version = "13.3.0"
+version = "13.4.0"
 dependencies = [
  "getrandom 0.3.4",
  "omgbase-format",
  "omgbase-graph",
+ "omgbase-mutate",
  "omgbase-properties",
  "omgbase-reconcile",
  "omgbase-search",
+ "regex",
  "rusqlite",
  "serde_json",
 ]

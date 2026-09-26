@@ -20,6 +20,8 @@ pub enum Error {
     Json(serde_json::Error),
     /// The embedding provider failed (`spec/search` §5).
     Search(omgbase_search::Error),
+    /// A mutation was refused (`spec/mutate` §8): the code and its data.
+    Mutation(omgbase_mutate::MutationError),
     /// Anything else, with a message.
     Other(String),
 }
@@ -35,6 +37,7 @@ impl fmt::Display for Error {
             Error::InvalidTimestamp(ts) => write!(f, "invalid RFC 3339 UTC timestamp {ts:?}"),
             Error::Json(e) => write!(f, "json: {e}"),
             Error::Search(e) => write!(f, "search: {e}"),
+            Error::Mutation(e) => write!(f, "mutation: {e}"),
             Error::Other(msg) => f.write_str(msg),
         }
     }
@@ -46,6 +49,7 @@ impl std::error::Error for Error {
             Error::Sqlite(e) => Some(e),
             Error::Json(e) => Some(e),
             Error::Search(e) => Some(e),
+            Error::Mutation(e) => Some(e),
             _ => None,
         }
     }
@@ -66,6 +70,23 @@ impl From<serde_json::Error> for Error {
 impl From<omgbase_search::Error> for Error {
     fn from(e: omgbase_search::Error) -> Self {
         Error::Search(e)
+    }
+}
+
+impl From<omgbase_mutate::MutationError> for Error {
+    fn from(e: omgbase_mutate::MutationError) -> Self {
+        Error::Mutation(e)
+    }
+}
+
+impl Error {
+    /// The mutation error inside, if this is one.
+    #[must_use]
+    pub fn as_mutation(&self) -> Option<&omgbase_mutate::MutationError> {
+        match self {
+            Error::Mutation(e) => Some(e),
+            _ => None,
+        }
     }
 }
 

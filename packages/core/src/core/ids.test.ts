@@ -61,3 +61,16 @@ describe("ids — minter seam (spec/store §2.2)", () => {
     expect(mintId("r")).toMatch(/^r_[0-9a-hjkmnp-tv-z]{7}$/);
   });
 });
+
+// The id-or-path dispatch must recognize the fixture minter's ids (spec/store
+// §2.2: `d_0`, `b_12`), or `insert.doc: "d_0"` would be looked up as a path.
+describe("isValidId — fixture-minted ids", () => {
+  it("accepts a sequential-minter id and still rejects non-ids", () => {
+    const mint = sequentialMinter();
+    expect(isValidId(mint("d"), "d")).toBe(true); // d_0
+    expect(isValidId("b_12", "b")).toBe(true);
+    expect(isValidId("d_0", "b")).toBe(false);
+    expect(isValidId("a.md", "d")).toBe(false);
+    expect(isValidId("d_", "d")).toBe(false);
+  });
+});

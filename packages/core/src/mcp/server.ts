@@ -726,7 +726,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_split",
     {
-      description: "Split a block at character offset(s) into consecutive blocks. `block` is a ref; `at` is a list of integer offsets. CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
+      description: "Split a block at UTF-8 byte offset(s) into consecutive blocks. `block` is a ref; `at` is a list of integer byte offsets into the block's raw bytes (spec/mutate §2.5; an offset inside a multi-byte character rounds down to its start). CAS is pinned to the block's current bytes server-side. One split op through the kernel writer.",
       inputSchema: { block: z.string(), at: z.array(z.number().int()), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {

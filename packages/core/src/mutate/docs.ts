@@ -29,6 +29,12 @@ export interface DocOpContext {
   /** workspace .omgbase/ dir; when set, the write runs under the writer flock. */
   omgbaseDir?: string;
   actor?: string;
+  /** Commit timestamp (RFC 3339 UTC) for every commit the operation records; defaults to now (see `ApplyRequest.ts`). */
+  ts?: string;
+}
+
+function nowOr(ctx: DocOpContext): string {
+  return ctx.ts ?? new Date().toISOString();
 }
 
 export interface DocOpResult {
@@ -90,7 +96,7 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   return underLock(ctx, () => {
     if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
     docStore.write(rel, content);
-    const ts = new Date().toISOString();
+    const ts = nowOr(ctx);
     const res = ingestFile(store, ctx.repoId, rel, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `create ${rel}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: rel }) });
     if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, rel, content);
     return { docId: res.docId, path: rel, committed: true };
@@ -121,7 +127,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     if (docStore.exists(info.path)) docStore.rename(info.path, toRel);
     else docStore.write(toRel, content);
 
-    const ts = new Date().toISOString();
+    const ts = nowOr(ctx);
     store.write((db) => {
       // Update the document row's path + its open revisions' path pointer, and
       // record an api commit noting the move.
@@ -203,6 +209,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
       ...(ctx.rootPath ? { rootPath: ctx.rootPath } : {}),
       ...(ctx.docStore ? { docStore: ctx.docStore } : {}),
       ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}),
+      ...(ctx.ts ? { ts: ctx.ts } : {}),
       ops,
       origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
     });
@@ -220,7 +227,7 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
 
   const docStore = resolveDocStore(ctx);
   return underLock(ctx, () => {
-    const ts = new Date().toISOString();
+    const ts = nowOr(ctx);
     store.write((db) => {
       const commit = newCommit(db, { repoId: ctx.repoId, ts, origin: "api", actor: ctx.actor ?? null, reason: `delete ${info.path}` });
       // Tombstone the document and its live blocks; FTS rows drop with the blocks.
@@ -253,7 +260,7 @@ export function docsSetMeta(
     const content = composeFile(body, merged);
 
     docStore.write(info.path, content);
-    const ts = new Date().toISOString();
+    const ts = nowOr(ctx);
     const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `set_meta ${info.path}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });
     if (ctx.omgbaseDir) docStore.recordStat(store, ctx.repoId, info.path, content);
     return { docId: res.docId, path: info.path, committed: true };

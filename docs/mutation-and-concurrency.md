@@ -1,8 +1,10 @@
 # omgbase — Mutation Algebra, Concurrency, and the Write Protocol
 
 **Status:** normative.
-**As-built (verified 2026-09-14).**
+**As-built (verified 2026-09-26).**
 **Depends on:** `architecture.md` §2, §10; `data-model.md`; `reconciliation-spec.md` §2.
+
+> **The language-neutral specification is [`spec/mutate/README.md`](../spec/mutate/README.md)** (the working tree, the six ops as exact rules, the splice renderer's dirty rules, changesets and the commit protocol, macros, document operations, the whole-document planner) with its executable fixtures under `spec/mutate/cases/` — run by `packages/core/corpus/mutate/spec.test.ts` (`MUTATE_SPEC_UPDATE=1` regenerates) and by the Rust `omgbase-mutate` crate. When this document and the spec disagree, the spec's fixtures win. This document keeps the rationale and the operational picture.
 
 ---
 
@@ -16,7 +18,7 @@ All mutation flows through `apply(changeset)`. The kernel ops:
 | `update` | `{ block, markdown? , attrs?, expect }` | Content and/or typed attrs of one block. Placement untouched. Supplying `markdown` on a container replaces its subtree (children re-minted unless supplied markdown is a pure text edit of a leaf). | `expect.content_hash` **required** |
 | `move` | `{ blocks[], to }` | Placement only; content untouched. `blocks` MUST be a contiguous sibling run (length ≥ 1). May cross documents. | all blocks exist · target parent exists · target not inside the moved subtree (`cycle_move`) |
 | `remove` | `{ blocks[], expect? }` | Deletes subtree(s); deleted blocks enter the resurrection pool. A set naming both a container and its descendants (or duplicates) collapses to its top-most blocks — every id is validated and CAS-checked first, while still in place — and `removed` lists every block that left. | blocks exist · optional `expect.content_hash` per block |
-| `split` | `{ block, at: [byte_offsets…], expect }` | One block becomes N (same type where syntactically valid, else paragraphs). Fragments after the first carry a `split_from` lineage disposition. First fragment carries the ID (authored intent — unlike inferred splits, no dominance test). | `expect.content_hash` required |
+| `split` | `{ block, at: [byte_offsets…], expect }` | One block becomes N (same type where syntactically valid, else paragraphs). `at` are **UTF-8 byte offsets** into the block's raw bytes — the same unit as every persisted span (`spec/mutate` §2.5; the reference converts them to string indices before slicing, and an offset inside a multi-byte character rounds down to that character's start). Whitespace-only pieces are dropped. First fragment carries the ID (authored intent — unlike inferred splits, no dominance test); the new fragments get `\n\n` trailing trivia. | `expect.content_hash` required |
 | `merge` | `{ blocks[], separator? , expect? }` | Contiguous same-type siblings become one. First block carries the ID; others recorded `merged_into`. | contiguous · same type |
 
 ### 1.1 Placement addressing
@@ -137,8 +139,13 @@ apply(changeset):
     resolver: the mutated tree already carries deterministic ids (ops keep/mint
     them), so identity threads onto the re-parsed tree and intent dispositions
     are recorded at confidence 1.0 — never re-derived from the bytes by the
-    probabilistic matcher. This ingest persists blobs, tree_nodes, the
-    revision + commit, edge extraction, and index maintenance.
+    probabilistic matcher. Prior live ids no longer present are pooled; ids
+    new to the document (a cross-document move's arrivals) evict the source
+    document's row and any pool row, whichever document commits first. This
+    ingest persists blobs, tree_nodes, the revision + commit, edge extraction,
+    and index maintenance. The commit timestamp defaults to now; callers may
+    pin it (`ApplyRequest.ts`, `DocOpContext.ts`, `ApplyOpsetRequest.ts`) —
+    the spec fixtures do, so `commits.ts` compares across engines.
  7. refresh the freshness stat cache (recordFileStat) so a later sweep won't
     re-hash the engine's own write; the watcher's content-hash echo gate
     suppresses re-ingesting it

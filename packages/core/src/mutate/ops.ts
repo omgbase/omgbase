@@ -1,6 +1,7 @@
 import { mintId } from "../core/ids.js";
 import { parseTree } from "../core/parse/tree.js";
 import { adapterForFormat } from "../format/index.js";
+import { codeUnitIndexOf } from "../core/utf8.js";
 import { MutationError, locate, rawHashHex, parentChildrenHash, markContainerDirty, ownerOf, type MutBlock, type MutDoc } from "./tree.js";
 
 // Kernel ops (04 §1). Six operations over a MutDoc. Ops mutate the tree in
@@ -355,7 +356,7 @@ export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number)
 // document is already well-formed) and never touches the last block's trailing
 // trivia (that is the document's trailing bytes). Exact target trivia is the
 // planner's job via `update { trivia }`; this only guarantees well-formedness.
-function healTopLevelSeams(children: MutBlock[], format: string): void {
+export function healTopLevelSeams(children: MutBlock[], format: string): void {
   const sep = defaultTrivia(format);
   for (let i = 0; i < children.length - 1; i++) {
     const b = children[i]!;
@@ -437,7 +438,12 @@ export function opSplit(doc: MutDoc, blockId: string, at: number[], opIndex: num
   if (!found) throw new MutationError("block_missing", `block ${blockId} not found`, { op_index: opIndex, block: blockId });
   checkContentHash(found.block, expect, opIndex);
   const raw = found.block.raw;
-  const cuts = [0, ...at, raw.length].sort((a, b) => a - b);
+  // `at` are UTF-8 byte offsets into the raw (spec/mutate §2.5) — the same
+  // language-neutral unit every persisted span uses. A JavaScript string slices
+  // at UTF-16 code units, so convert each cut first; an offset inside a
+  // multi-byte sequence rounds down to that character's start, one past the end
+  // clamps (core/utf8.ts).
+  const cuts = [0, ...at.map((b) => codeUnitIndexOf(raw, b)), raw.length].sort((a, b) => a - b);
   const pieces: string[] = [];
   for (let i = 1; i < cuts.length; i++) pieces.push(raw.slice(cuts[i - 1]!, cuts[i]!));
   const nonEmpty = pieces.filter((p) => p.trim().length > 0);
@@ -449,7 +455,20 @@ export function opSplit(doc: MutDoc, blockId: string, at: number[], opIndex: num
   const newBlocks: MutBlock[] = nonEmpty.slice(1).map((p) => ({
     id: mintId("b"), type: found.block.type, raw: p, trivia: "\n\n", attrs: { ...found.block.attrs }, children: [], dirty: true,
   }));
+  // Seams exactly as opUpdate's extra-sibling path (spec/mutate §2.5): the
+  // target's trailing trivia is the document's tiling AFTER the whole run, so it
+  // moves to the last piece; at the top level every earlier piece (the first
+  // included) must separate blocks — a last block's lone "\n" would otherwise
+  // soft-join the pieces into one paragraph and lose the minted ids.
+  const tail = found.block.trivia;
+  if (found.siblings === doc.children) {
+    const sep = defaultTrivia(doc.format);
+    if (!separatesBlocks(found.block.trivia, doc.format)) found.block.trivia = sep;
+    for (const b of newBlocks.slice(0, -1)) if (!separatesBlocks(b.trivia, doc.format)) b.trivia = sep;
+  }
+  newBlocks[newBlocks.length - 1]!.trivia = tail;
   found.siblings.splice(found.index + 1, 0, ...newBlocks);
+  markContainerDirty(doc, found.siblings);
   return { ids: [blockId, ...newBlocks.map((b) => b.id)] };
 }
 

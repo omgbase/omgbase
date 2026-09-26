@@ -239,3 +239,22 @@ describe("apply — changesets", () => {
     expect(edge?.src_block).toBe(bId);
   });
 });
+
+// spec/mutate §2.3: a cross-document move heals BOTH documents' top-level seams
+// — the block that was last in its source (lone "\n") must not soft-join the
+// destination's last paragraph, and the destination's former last block is
+// re-tiled so the arrival renders as its own block with its id intact.
+describe("apply — cross-document move seams", () => {
+  it("heals the destination's former last block and keeps the moved id", () => {
+    const aDoc = seed("a.md", "# A\n\nAlpha one.\n\nAlpha two.\n");
+    seed("b.md", "# B\n\nBeta one.\n");
+    const moved = blockByText(aDoc, "Alpha two");
+    const bLast = (store.db.prepare("SELECT block_id FROM blocks WHERE text = 'Beta one.'").get() as { block_id: string }).block_id;
+    apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [moved], to: { parent: { doc: true }, at: { after: bLast } } }], origin: { actor: "agent:test" } });
+    expect(readFileSync(join(dir, "b.md"), "utf8")).toBe("# B\n\nBeta one.\n\nAlpha two.\n");
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nAlpha one.\n\n");
+    const home = store.db.prepare("SELECT d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ? AND b.deleted_commit IS NULL").get(moved) as { path: string } | undefined;
+    expect(home?.path).toBe("b.md");
+    expect(store.db.prepare("SELECT count(*) n FROM resurrection_pool").get()).toEqual({ n: 0 });
+  });
+});

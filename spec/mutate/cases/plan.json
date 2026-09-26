@@ -1,0 +1,3341 @@
+{
+  "suite": "plan",
+  "cases": [
+    {
+      "name": "unchanged-plans-nothing",
+      "notes": "§7: identical content → no ops, converges, preserved = 4.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [],
+              "summary": {
+                "preserved": 4,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "edit-one-paragraph",
+      "notes": "§7.1 step 2: the carried block whose raw changed → `update { markdown, expect }`, disposition `edited` with the matcher's confidence/reason; no retile (trivia unchanged).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which now talks about something new.\n\nCharlie closes the note with a third paragraph.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_2",
+                    "markdown": "Bravo is the second paragraph, which now talks about something new.",
+                    "expect": {
+                      "content_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6"
+                    }
+                  },
+                  "disposition": "edited",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": 0.8676470588235294,
+                  "reason": "context_unique",
+                  "detail": {}
+                }
+              ],
+              "summary": {
+                "preserved": 3,
+                "updated": 1,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "reorder-moves-outside-lcs",
+      "notes": "§7.1 step 3: swapping Bravo and Charlie keeps the LCS in place and moves one block after its new predecessor; step 4 retiles the moved block and its anchor.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nCharlie closes the note with a third paragraph.\n\nBravo is the second paragraph, which talks about something else.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "move",
+                    "blocks": [
+                      "b_2"
+                    ],
+                    "to": {
+                      "parent": {
+                        "doc": true
+                      },
+                      "at": {
+                        "after": "b_3"
+                      }
+                    }
+                  },
+                  "disposition": "moved",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": 1,
+                  "reason": "exact_hash",
+                  "detail": {}
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_3",
+                    "trivia": "\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [
+                    "b_3"
+                  ],
+                  "confidence": null,
+                  "reason": null
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_2",
+                    "trivia": "\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": null,
+                  "reason": null
+                }
+              ],
+              "summary": {
+                "preserved": 3,
+                "updated": 0,
+                "moved": 1,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "insert-new-paragraph",
+      "notes": "§7.1 step 3: a block with no carried id → `insert` anchored after the previous block; the next block anchors on the `$n.ids[0]` placeholder; step 4 retiles the anchor and the new block.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nDelta is a brand new paragraph inserted in the middle.\n\nCharlie closes the note with a third paragraph.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "insert",
+                    "doc": "d_0",
+                    "to": {
+                      "parent": {
+                        "doc": true
+                      },
+                      "at": {
+                        "after": "b_2"
+                      }
+                    },
+                    "markdown": "Delta is a brand new paragraph inserted in the middle."
+                  },
+                  "disposition": "inserted",
+                  "blocks": [],
+                  "confidence": null,
+                  "reason": null
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_2",
+                    "trivia": "\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": null,
+                  "reason": null
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "$0.ids[0]",
+                    "trivia": "\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [],
+                  "confidence": null,
+                  "reason": null
+                }
+              ],
+              "summary": {
+                "preserved": 4,
+                "updated": 0,
+                "moved": 0,
+                "created": 1,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "remove-paragraph",
+      "notes": "§7.1 step 1: an old top-level block absent from the proposal → `remove` with its CAS, disposition `deleted`, reason `tombstone`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nCharlie closes the note with a third paragraph.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "remove",
+                    "blocks": [
+                      "b_2"
+                    ],
+                    "expect": {
+                      "b_2": {
+                        "content_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6"
+                      }
+                    }
+                  },
+                  "disposition": "deleted",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": null,
+                  "reason": "tombstone"
+                }
+              ],
+              "summary": {
+                "preserved": 3,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 1,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "container-edit-threads-child-ids",
+      "notes": "§7.1 step 2: an edited list is updated as a whole with `child_ids` mapping the carried items' positional keys; only the edited item's identity is the matcher's call.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# List\n\n- alpha item with several words in it\n- bravo item with several words in it\n- charlie item with several words in it\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# List\n\n- alpha item with several words in it\n- bravo item with several words in it, edited\n- charlie item with several words in it\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_1",
+                    "markdown": "- alpha item with several words in it\n- bravo item with several words in it, edited\n- charlie item with several words in it",
+                    "expect": {
+                      "content_hash": "df73e5a5c8cd7597badfaae622408325fb2f37da9b3c893e2c2502920bf4a685"
+                    },
+                    "child_ids": {
+                      "/0": "b_2",
+                      "/1": "b_3",
+                      "/2": "b_4"
+                    }
+                  },
+                  "disposition": "edited",
+                  "blocks": [
+                    "b_1"
+                  ],
+                  "confidence": 0.9,
+                  "reason": "context_unique",
+                  "detail": {}
+                }
+              ],
+              "summary": {
+                "preserved": 1,
+                "updated": 1,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# List\n\n- alpha item with several words in it\n- bravo item with several words in it\n- charlie item with several words in it\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "List",
+            "raw_hash": "890bc7d586b352871bbc1f2efbb49795dd08fabfab12e37c3659dc4ac12e8e3f",
+            "norm_hash": "6f202f54a7b2d8fe42aa804eabe48ef900cdf73a74c570a47fd1b1a4920a051d",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "list",
+            "attrs": {
+              "ordered": false
+            },
+            "text": "alpha item with several words in it bravo item with several words in it charlie item with several words in it",
+            "raw_hash": "df73e5a5c8cd7597badfaae622408325fb2f37da9b3c893e2c2502920bf4a685",
+            "norm_hash": "99ead4e03165781d3fdc8529a3b8327d09f23c5d3f6e7f06615d9da106f108ec",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "alpha item with several words in it",
+            "raw_hash": "1e0ec98fecf082524d09b50371298097c56c4a8fb6649083f4a69f2bce66cd7f",
+            "norm_hash": "cfb39b22f6096299556719d3b3395aacbbce8c9d8e8e7f50b36a73a96e1ec9ed",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "bravo item with several words in it",
+            "raw_hash": "4d3cf9180e31aae4ad27ab6cb1b32c5181da7a9afd593c12a58a9e6e2a25c2a7",
+            "norm_hash": "a72f6c0e0304c466bf7cb389a04f5a62171c4c15bae66d4d40fad271effd25e9",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_0",
+            "parent_block": "b_1",
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 1,
+            "ancestor_path": "/b_1/",
+            "type": "list_item",
+            "attrs": {},
+            "text": "charlie item with several words in it",
+            "raw_hash": "388c3e68e01e6d61d1e562fc9d29cc3848c08a684c13869d53a25561d720e531",
+            "norm_hash": "2aea4cabe685efd4e479f085b35b3fd45858a5c318b6c7ed81d9fb627c03570d",
+            "trivia_hash": null,
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "0f7ba89278b85c32c720eb7f7dc7ef71d4e9b5b8432b7825a8c0fe32a26c1730",
+            "frontmatter_blob": null,
+            "rendered_hash": "f1f1c840491309240a1a2a3a5f674cf2fa96387b5ff1425c72c2d8d1d078cc7e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "retile-trivia-change",
+      "notes": "§7.1 step 4: only the trivia between two blocks changes → a single `update { trivia }`, disposition `retiled`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_1",
+                    "trivia": "\n\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [
+                    "b_1"
+                  ],
+                  "confidence": null,
+                  "reason": null
+                }
+              ],
+              "summary": {
+                "preserved": 4,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "frontmatter-change",
+      "notes": "§7 step 3: the proposed frontmatter differs → `frontmatter: { raw }` (fences + trailing separator), no body ops; applied via set_frontmatter.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: Hello\ntags:\n  - x\n---\n\n# Body\n\nText.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "---\ntitle: Changed\ntags:\n  - x\n---\n\n# Body\n\nText.\n",
+            "apply": true
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+              },
+              "matcher_v": "m2.3",
+              "ops": [],
+              "frontmatter": {
+                "raw": "---\ntitle: Changed\ntags:\n  - x\n---\n\n"
+              },
+              "summary": {
+                "preserved": 2,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            },
+            "apply": {
+              "results": [],
+              "revisions": [
+                {
+                  "doc": "d_0",
+                  "path": "a.md"
+                }
+              ],
+              "committed": true
+            }
+          }
+        ],
+        "files": {
+          "a.md": "---\ntitle: Changed\ntags:\n  - x\n---\n\n# Body\n\nText.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": "\n\n",
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Body",
+            "raw_hash": "cd6eb7d1fa7bffee0d6c0881301abd0ba728a45edcfcf616ecc2a7030c83a4fa",
+            "norm_hash": "6ccaa6415b5ee449e3c5c716f57b4608ebe3b780f5aa6b077bc5d8eee5d961f9",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Text.",
+            "raw_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "norm_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:update",
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "dbc846ca25dc228e12e6cb7e957e3df99b56cd9a5c67fe012cdcb52fe7a29896",
+            "frontmatter_blob": "5114f39af512dd4f92894aee5039b42733c03bf4059d18cae011a72ee94b37d3",
+            "rendered_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "dbc846ca25dc228e12e6cb7e957e3df99b56cd9a5c67fe012cdcb52fe7a29896",
+            "frontmatter_blob": "045dc81c5d0e550872fa72d495b2fd32c80e5e8ab9018e2c93316f550a3d1e63",
+            "rendered_hash": "7fd120e4067184523f93f1f758a07a3c866216962f3726b863f3a1fad67e2071",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "frontmatter-removed",
+      "notes": "§7 step 3: dropping the frontmatter → `frontmatter: { raw: null }`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: Hello\ntags:\n  - x\n---\n\n# Body\n\nText.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Body\n\nText.\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f"
+              },
+              "matcher_v": "m2.3",
+              "ops": [],
+              "frontmatter": {
+                "raw": null
+              },
+              "summary": {
+                "preserved": 2,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            }
+          }
+        ],
+        "files": {
+          "a.md": "---\ntitle: Hello\ntags:\n  - x\n---\n\n# Body\n\nText.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": "\n\n",
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Body",
+            "raw_hash": "cd6eb7d1fa7bffee0d6c0881301abd0ba728a45edcfcf616ecc2a7030c83a4fa",
+            "norm_hash": "6ccaa6415b5ee449e3c5c716f57b4608ebe3b780f5aa6b077bc5d8eee5d961f9",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Text.",
+            "raw_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "norm_hash": "f06dce27b84e18ccb3c7e94a0679c279cd42027da23bcf1e1ca1f94e365ea420",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "dbc846ca25dc228e12e6cb7e957e3df99b56cd9a5c67fe012cdcb52fe7a29896",
+            "frontmatter_blob": "5114f39af512dd4f92894aee5039b42733c03bf4059d18cae011a72ee94b37d3",
+            "rendered_hash": "01b4fc6d1bc25b35ceca8b7b479cddafdf422b1232bdbd6ba3b6b0fd90a3619f",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "non-convergent-plan-refused",
+      "notes": "§7 step 4 / §7.2: a leading-trivia change is not expressible by the ops — neither lowering converges; the top-level plan is returned with `converges: false` and apply_opset refuses it (plan_not_convergent).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "\n\n# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n",
+            "apply": true
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [],
+              "summary": {
+                "preserved": 4,
+                "updated": 0,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": false,
+              "diagnostics": [
+                "top-level lowering did not reproduce the proposed content byte-for-byte (first divergence at byte 0 in leading trivia: expected \"\\n\\n# Title\\n\\nAlpha is the \", rendered \"# Title\\n\\nAlpha is the fi\"); falling back to full replace",
+                "no lowering reproduced the proposed content exactly (full replace: first divergence at byte 0 in leading trivia: expected \"\\n\\n# Title\\n\\nAlpha is the \", rendered \"# Title\\n\\nAlpha is the fi\"); plan will not apply — inspect and re-plan"
+              ]
+            },
+            "apply": {
+              "error": {
+                "code": "plan_not_convergent"
+              }
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "stale-plan",
+      "notes": "§7.2: the document is observed again between planning and applying → `base_revision` differs → stale_plan (retriable) with the current revision and hash.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie really closes the note with a third paragraph.\n",
+            "apply": true,
+            "before_apply": [
+              {
+                "observe": {
+                  "ts": "2026-09-26T10:02:00.000Z",
+                  "items": [
+                    {
+                      "path": "a.md",
+                      "source": "# Title\n\nAlpha was the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_3",
+                    "markdown": "Charlie really closes the note with a third paragraph.",
+                    "expect": {
+                      "content_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa"
+                    }
+                  },
+                  "disposition": "edited",
+                  "blocks": [
+                    "b_3"
+                  ],
+                  "confidence": 0.9038461538461539,
+                  "reason": "context_unique",
+                  "detail": {}
+                }
+              ],
+              "summary": {
+                "preserved": 3,
+                "updated": 1,
+                "moved": 0,
+                "created": 0,
+                "removed": 0,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            },
+            "before_apply": [
+              [
+                {
+                  "path": "a.md",
+                  "echo": false,
+                  "doc": "d_0",
+                  "commit": "c_1",
+                  "rev": "r_1",
+                  "converged": true,
+                  "conflicted": false,
+                  "dispositions": {
+                    "edited": 1,
+                    "same": 3
+                  }
+                }
+              ]
+            ],
+            "apply": {
+              "error": {
+                "code": "stale_plan",
+                "current": {
+                  "revision": "r_1",
+                  "content_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc"
+                },
+                "retriable": true
+              }
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha was the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha was the first paragraph of this note about planning.",
+            "raw_hash": "beeda74c1f071a8ded3470978e6158bdd6ab861497253accc5b7667c2cddaec0",
+            "norm_hash": "beeda74c1f071a8ded3470978e6158bdd6ab861497253accc5b7667c2cddaec0",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:02:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "77e62747d4ea219b3dbffcfef47dedab5caad9e56aaa5b414cef5ef07c3fb86f",
+            "frontmatter_blob": null,
+            "rendered_hash": "c5ddd63fd27275985f72c78197f0812beb92ff3d66f7d759a0cebc018a8e4acc",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 0.9,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "apply-end-to-end",
+      "notes": "§7.2: a converging plan (edit + insert + remove) applied through the kernel; the file equals the proposed content byte for byte and the carried ids survive.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "a.md",
+            "content": "# Title\n\nAlpha is the first paragraph of this note about planning, revised.\n\nDelta arrives as a new paragraph at the end of the note.\n\nCharlie closes the note with a third paragraph.\n",
+            "apply": true,
+            "origin": {
+              "actor": "agent:test",
+              "reason": "whole-document update"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "opset": {
+              "version": 1,
+              "kind": "doc_update",
+              "target": {
+                "doc": "d_0",
+                "path": "a.md"
+              },
+              "precondition": {
+                "doc": "d_0",
+                "path": "a.md",
+                "base_revision": "r_0",
+                "base_content_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0"
+              },
+              "matcher_v": "m2.3",
+              "ops": [
+                {
+                  "op": {
+                    "op": "remove",
+                    "blocks": [
+                      "b_2"
+                    ],
+                    "expect": {
+                      "b_2": {
+                        "content_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6"
+                      }
+                    }
+                  },
+                  "disposition": "deleted",
+                  "blocks": [
+                    "b_2"
+                  ],
+                  "confidence": null,
+                  "reason": "tombstone"
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_1",
+                    "markdown": "Alpha is the first paragraph of this note about planning, revised.",
+                    "expect": {
+                      "content_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5"
+                    }
+                  },
+                  "disposition": "edited",
+                  "blocks": [
+                    "b_1"
+                  ],
+                  "confidence": 0.7279411764705882,
+                  "reason": "scored",
+                  "detail": {}
+                },
+                {
+                  "op": {
+                    "op": "insert",
+                    "doc": "d_0",
+                    "to": {
+                      "parent": {
+                        "doc": true
+                      },
+                      "at": {
+                        "after": "b_1"
+                      }
+                    },
+                    "markdown": "Delta arrives as a new paragraph at the end of the note."
+                  },
+                  "disposition": "inserted",
+                  "blocks": [],
+                  "confidence": null,
+                  "reason": null
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "b_1",
+                    "trivia": "\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [
+                    "b_1"
+                  ],
+                  "confidence": null,
+                  "reason": null
+                },
+                {
+                  "op": {
+                    "op": "update",
+                    "block": "$2.ids[0]",
+                    "trivia": "\n\n"
+                  },
+                  "disposition": "retiled",
+                  "blocks": [],
+                  "confidence": null,
+                  "reason": null
+                }
+              ],
+              "summary": {
+                "preserved": 2,
+                "updated": 1,
+                "moved": 0,
+                "created": 1,
+                "removed": 1,
+                "split": 0,
+                "merged": 0,
+                "ambiguous": 0
+              },
+              "converges": true,
+              "diagnostics": []
+            },
+            "apply": {
+              "results": [
+                {
+                  "ids": [
+                    "b_2"
+                  ],
+                  "removed": [
+                    "b_2"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_8"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_1"
+                  ]
+                },
+                {
+                  "ids": [
+                    "b_8"
+                  ]
+                }
+              ],
+              "revisions": [
+                {
+                  "doc": "d_0",
+                  "path": "a.md"
+                }
+              ],
+              "committed": true
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning, revised.\n\nDelta arrives as a new paragraph at the end of the note.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning, revised.",
+            "raw_hash": "d7e7e1b7066685112bf7449ab2730c956da9888e76c8e23384de86b07cb00887",
+            "norm_hash": "d7e7e1b7066685112bf7449ab2730c956da9888e76c8e23384de86b07cb00887",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_8",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Delta arrives as a new paragraph at the end of the note.",
+            "raw_hash": "98435757b8ad9dbf2baae871cb84a9b6d2428c5163ef17f674faa09a58ad90b2",
+            "norm_hash": "98435757b8ad9dbf2baae871cb84a9b6d2428c5163ef17f674faa09a58ad90b2",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "agent:test",
+            "reason": "whole-document update",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "1c6518eaa5e31966899ef1b4a945147ba970bd27b8deaa51892f042b2ee2ff23",
+            "frontmatter_blob": null,
+            "rendered_hash": "a5a608bda93e46c7c82e1d03ed391144f9d3a739bdf5fff09a691cfdc6953c8f",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_8",
+            "kind": "inserted",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "type": "paragraph",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "doc-missing",
+      "notes": "§7 step 1: unknown document → doc_missing.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+              }
+            ]
+          }
+        },
+        {
+          "plan": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "doc": "nope.md",
+            "content": "# X\n"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "error": {
+              "code": "doc_missing"
+            }
+          }
+        ],
+        "files": {
+          "a.md": "# Title\n\nAlpha is the first paragraph of this note about planning.\n\nBravo is the second paragraph, which talks about something else.\n\nCharlie closes the note with a third paragraph.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Title",
+            "raw_hash": "79aeaf7ba450cdab4b13e948c49101b1de4d13e9b45e10e51ee99442c982a7e8",
+            "norm_hash": "7e8cd2056da73a7fefb6cd91f4e5d199d08d9058c517b9a2476b1b520324d674",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha is the first paragraph of this note about planning.",
+            "raw_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "norm_hash": "7c9b4c91c0f67dc878a3b261d0964304a6df65088272e4406fa475c7fff72eb5",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Bravo is the second paragraph, which talks about something else.",
+            "raw_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "norm_hash": "21b9200c6fc3929332f4fb85db12a1e2aadc90b439999546152d09838ff6bbd6",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Charlie closes the note with a third paragraph.",
+            "raw_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "norm_hash": "2517a46be762b2252a619dc9922d1b9e21682671faf4f88c9a8a2c88a94933fa",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2c09d0bad3924609b6b87b4609aa48edd1d07f791e992ce38f8d255299b73b56",
+            "frontmatter_blob": null,
+            "rendered_hash": "a37e66099c3c42dd00a503d56411cfdf9bb213f73c2301a23ce9bd21ba438fb0",
+            "path": "a.md",
+            "commit_id": "c_0"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    }
+  ]
+}
