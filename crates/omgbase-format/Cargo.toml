@@ -1,0 +1,34 @@
+[package]
+name = "omgbase-format"
+version = "0.1.0"
+description = "omgbase format layer: source files to block trees (spans, trivia, normalized text, hashes) — Rust implementation"
+keywords = ["markdown", "parser", "blocks", "round-trip", "omgbase"]
+categories = ["parser-implementations", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-format#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# wooorm's micromark port: the same tokenizer family as the reference
+# (mdast-util-from-markdown), so block boundaries agree up to the known
+# divergences normalized in `markdown.rs`.
+markdown = "1.0"
+sha2 = "0.10"
+unicode-normalization = "0.1"
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
+
+[features]
+default = []
+# `json`: the fixture shape of spec/format (`BlockTree::to_json`, attrs as
+# `serde_json::Value`), for tooling that diffs a tree against a fixture.
+json = ["dep:serde_json"]
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true
