@@ -3,7 +3,7 @@ import { parseTree } from "./parse/tree.js";
 import { render } from "./parse/render.js";
 import { reconstructContent } from "./read/document.js";
 import { assignIds, writeBlockTree, putBlob, newCommit, writeRevision, type TreeInputBlock } from "./store/writers.js";
-import { sha256, normalizeVisibleText } from "./hash.js";
+import { sha256, childQuoteDepth, visibleText } from "./hash.js";
 import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
@@ -108,18 +108,21 @@ interface BlockRow {
   triviaHash: Buffer | null;
 }
 
+// `quoteDepth` is the number of blockquote ancestors — the §4.1 text rule needs
+// it (spec/format), and containers derive text from their children.
 function flatten(
   blocks: TreeInputBlock[],
   parent: string | null,
   depth: number,
   ancestorPath: string,
   out: BlockRow[],
+  quoteDepth = 0,
 ): void {
   let prevKey: string | null = null;
   blocks.forEach((b, ordinal) => {
     const orderKey = keyBetween(prevKey, null);
     prevKey = orderKey;
-    const visible = normalizeVisibleText(b.raw, b.type);
+    const visible = visibleText(b, quoteDepth);
     out.push({
       blockId: b.blockId,
       parentBlock: parent,
@@ -135,7 +138,7 @@ function flatten(
       triviaHash: b.trivia.length > 0 ? sha256(b.trivia) : null,
     });
     if (b.children.length > 0) {
-      flatten(b.children, b.blockId, depth + 1, `${ancestorPath}${b.blockId}/`, out);
+      flatten(b.children, b.blockId, depth + 1, `${ancestorPath}${b.blockId}/`, out, childQuoteDepth(b.type, quoteDepth));
     }
   });
 }

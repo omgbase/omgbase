@@ -182,7 +182,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     if (asBlock) return asBlock.block_id;
 
     const wantDoc = scope.doc || scope.path ? resolveDocId(repoId, scope) : undefined;
-    const needle = normalizeVisibleText(heading, "heading");
+    // An ATX-looking value ("## Title") loses its hashes; anything else is taken
+    // as the heading's text verbatim (the setext branch of the heading rule
+    // would drop the last line, which for a one-line lookup is everything).
+    const needle = /^[ \t]*#/.test(heading) ? normalizeVisibleText(heading, "heading") : normalizeText(heading);
     const rows = (wantDoc
       ? store.db.prepare("SELECT block_id, doc_id, text FROM blocks WHERE repo_id = ? AND type = 'heading' AND doc_id = ? AND deleted_commit IS NULL")
         .all(repoId, wantDoc)

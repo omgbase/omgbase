@@ -60,6 +60,35 @@ const edgeDivergence = {
 };
 for (const [name, body] of Object.entries(edgeDivergence)) write(`edge/${name}`, body);
 
+// Visible text (spec/format §4.1, block model 0.2): every kind's syntax that
+// must leave `text`, and the blockquote-depth rule that decides how many `>`
+// come off a nested block's continuation lines.
+const edgeText = {
+  "setext-multiline.md": "Title spans\ntwo lines\n===\n\nSub also\nwraps\n---\n\nBody.\n",
+  "tilde-fence.md": "~~~py\nprint(1)\n~~~\n\n~~~\nno lang, tilde\n~~~\n",
+  "fence-closer-longer.md": "```\ncode\n`````\n\nafter\n",
+  "blockquote-fence-gt-lines.md": "> ```\n> > not a quote\n> >> still code\n> ```\n\nafter\n",
+  "blockquote-two-deep-lazy.md": "> > deep\nlazy line\n> back to one\n\nafter\n",
+  "table-escaped-pipe.md": "| a | b |\n| - | - |\n| x \\| y | z |\n| p||q | r |\n",
+  "list-lazy-marker-lookalike.md": "- a\n  2. not a marker\n\npara\n3. also not a marker\n",
+  "thematic-break-variants.md": "a\n\n***\n\nb\n\n___\n\nc\n\n- - -\n\nd\n",
+  "frontmatter-blank-lines.md": "---\ntitle: x\n\ntags: [a]\n\n---\n\nBody.\n",
+  "list-item-first-child-fence.md": "- ```sh\n  echo hi\n  ```\n- ```\n  only code\n  ```\n  trailing\n",
+};
+for (const [name, body] of Object.entries(edgeText)) write(`edge/${name}`, body);
+
+// §4.1 corner cases the first prose left ambiguous: empty ATX headings and
+// closing sequences, a setext heading whose content starts with `#`, closing
+// fences that must match the opener, and backslash-escaped pipes.
+const edgeTextCorners = {
+  "atx-empty-and-closers.md": "#\n\n### ###\n\n# a #\n\n# a#\n\n#\ttabbed\t#\n",
+  "setext-hash-content.md": "#hashtag\n====\n\nBody.\n",
+  "fence-unclosed-tilde-last-line.md": "```\ncode\n~~~\n",
+  "fence-shorter-closer-content.md": "````\ncode\n```\n",
+  "table-backslash-pipes.md": "| a | b |\n| - | - |\n| x | y \\|\n| p \\\\| q |\n",
+};
+for (const [name, body] of Object.entries(edgeTextCorners)) write(`edge/${name}`, body);
+
 // ---- spec/ : CommonMark & GFM construct coverage ---------------------------
 const spec = {
   "atx-headings.md": "# H1\n\n## H2\n\n### H3\n\n#### H4\n\n##### H5\n\n###### H6\n",

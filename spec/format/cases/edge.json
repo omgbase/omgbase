@@ -3,11 +3,136 @@
   "format": "markdown",
   "cases": [
     {
+      "name": "atx-empty-and-closers",
+      "source": "#\n\n### ###\n\n# a #\n\n# a#\n\n#\ttabbed\t#\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              1
+            ],
+            "text": "",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "334359b90efed75da5f0ada1d5e6b256f4a6bd0aee7eb39c0f90182a021ffc8b",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              3,
+              10
+            ],
+            "text": "",
+            "attrs": {
+              "level": 3
+            },
+            "trivia": "\n\n",
+            "raw_hash": "ac97422119406f323f7a2f58915075635abd232135fcfad81bf349e18320c8d0",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              12,
+              17
+            ],
+            "text": "a",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "9f65389eda68ebff415b7677413d4a066da29700f6dee0800edad9c56c917a21",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              19,
+              23
+            ],
+            "text": "a#",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "c124b7b8c119ef1290bf213a093a53dbfad8deccd883688c6c725452b8bf0073",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              25,
+              35
+            ],
+            "text": "tabbed",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n",
+            "raw_hash": "9b7b6a8138bf195d608c31387e9de918c825e4d5f678187656bd71111e16c260",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
       "name": "blanks-only",
       "source": "\n\n\n",
       "expect": {
         "leading_trivia": "\n\n\n",
         "blocks": []
+      }
+    },
+    {
+      "name": "blockquote-fence-gt-lines",
+      "source": "> ```\n> > not a quote\n> >> still code\n> ```\n\nafter\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "blockquote",
+            "span": [
+              0,
+              43
+            ],
+            "text": "> not a quote >> still code",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "dcb7acdba5e8598aa424ad38aa6164ac64fa3482069d0f3bb775c37946f9d4b5",
+            "children": [
+              {
+                "type": "code_fence",
+                "span": [
+                  2,
+                  43
+                ],
+                "text": "> not a quote >> still code",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "c523a37141967886becfff60c43a0f25188493730adfd0e2461fafa811b8f08c",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              45,
+              50
+            ],
+            "text": "after",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+            "children": []
+          }
+        ]
       }
     },
     {
@@ -22,7 +147,7 @@
               0,
               65
             ],
-            "text": "> Quoted tasks: > > - [ ] open > - [x] done > - [ ] nested open",
+            "text": "Quoted tasks: open done nested open",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "cb26600941c5d6ccdb52a17958bb3e143e8758cf33dc6811548672ac1d260c81",
@@ -45,7 +170,7 @@
                   20,
                   65
                 ],
-                "text": "- [ ] open > - [x] done > - [ ] nested open",
+                "text": "open done nested open",
                 "attrs": {
                   "ordered": false
                 },
@@ -72,7 +197,7 @@
                       33,
                       65
                     ],
-                    "text": "done > - [ ] nested open",
+                    "text": "done nested open",
                     "attrs": {
                       "checked": true
                     },
@@ -97,7 +222,7 @@
                           48,
                           65
                         ],
-                        "text": "- [ ] nested open",
+                        "text": "nested open",
                         "attrs": {
                           "ordered": false
                         },
@@ -131,6 +256,65 @@
             "span": [
               67,
               72
+            ],
+            "text": "after",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "blockquote-two-deep-lazy",
+      "source": "> > deep\nlazy line\n> back to one\n\nafter\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "blockquote",
+            "span": [
+              0,
+              32
+            ],
+            "text": "deep lazy line back to one",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "b94c13c90460c391fe0ee3b171113dc5a832deb7b709838e9cdc810b90dfe84f",
+            "children": [
+              {
+                "type": "blockquote",
+                "span": [
+                  2,
+                  32
+                ],
+                "text": "deep lazy line back to one",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "b29a943dff8c4e693671686d03f5ef75401e3f665741a9e9665358ea74efc387",
+                "children": [
+                  {
+                    "type": "paragraph",
+                    "span": [
+                      4,
+                      32
+                    ],
+                    "text": "deep lazy line back to one",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "d3c964b2a48b4f7e2018f3f8a506d4642f6eebe3ddd6f21de8b03c4a8d8f5dd2",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              34,
+              39
             ],
             "text": "after",
             "attrs": {},
@@ -214,7 +398,7 @@
               22,
               54
             ],
-            "text": "<<<<<<< HEAD our version =======",
+            "text": "<<<<<<< HEAD our version",
             "attrs": {
               "level": 1
             },
@@ -240,7 +424,7 @@
               69,
               91
             ],
-            "text": ">>>>>>> feature-branch",
+            "text": "feature-branch",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "d5128c61d39fb84a9b24219c7b95d61c31cec12706074e78aac3694d0e7d4d64",
@@ -251,7 +435,7 @@
                   70,
                   91
                 ],
-                "text": ">>>>>> feature-branch",
+                "text": "feature-branch",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "bf3391d459a685377fff5c2b501681c31692c19cf44e26ae08c1979c6c31e718",
@@ -262,7 +446,7 @@
                       71,
                       91
                     ],
-                    "text": ">>>>> feature-branch",
+                    "text": "feature-branch",
                     "attrs": {},
                     "trivia": "",
                     "raw_hash": "07d37e97cd3b718b84a8eba55c91dfc07e7c852b454480c0976f980fe358ea81",
@@ -273,7 +457,7 @@
                           72,
                           91
                         ],
-                        "text": ">>>> feature-branch",
+                        "text": "feature-branch",
                         "attrs": {},
                         "trivia": "",
                         "raw_hash": "49a568ee20fb41528fa10cb632a07de93b5b06ede7c40858ee248e887e798c62",
@@ -284,7 +468,7 @@
                               73,
                               91
                             ],
-                            "text": ">>> feature-branch",
+                            "text": "feature-branch",
                             "attrs": {},
                             "trivia": "",
                             "raw_hash": "2a231c91c84cdc98229fd357ebf8bcb100a85dfd00c9dcd408424c50858545ca",
@@ -295,7 +479,7 @@
                                   74,
                                   91
                                 ],
-                                "text": ">> feature-branch",
+                                "text": "feature-branch",
                                 "attrs": {},
                                 "trivia": "",
                                 "raw_hash": "7b0c2f9dc38e6c9714536ef4dd2b997ed1340708fe0861298544634393bf8a1b",
@@ -306,7 +490,7 @@
                                       75,
                                       91
                                     ],
-                                    "text": "> feature-branch",
+                                    "text": "feature-branch",
                                     "attrs": {},
                                     "trivia": "",
                                     "raw_hash": "9f767ab4a3435d7f3234da70fa2dbf9e65614c6b19f090bb1be108b96a4a6b71",
@@ -390,7 +574,7 @@
               34,
               41
             ],
-            "text": "- a - b",
+            "text": "a b",
             "attrs": {
               "ordered": false
             },
@@ -464,7 +648,7 @@
               49,
               57
             ],
-            "text": "- a - b",
+            "text": "a b",
             "attrs": {
               "ordered": false
             },
@@ -544,6 +728,39 @@
       }
     },
     {
+      "name": "fence-closer-longer",
+      "source": "```\ncode\n`````\n\nafter\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "code_fence",
+            "span": [
+              0,
+              14
+            ],
+            "text": "code",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a482278914a8d987f4dfdf190bfa98d016376b46f97b27ff3e7b8b6d0ba87a50",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              16,
+              21
+            ],
+            "text": "after",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
       "name": "fence-no-trailing-newline",
       "source": "```\ncode\n```",
       "expect": {
@@ -555,10 +772,52 @@
               0,
               12
             ],
-            "text": "``` code ```",
+            "text": "code",
             "attrs": {},
             "trivia": "",
             "raw_hash": "4128f8620e69ca1104192c88e4220bea548ea7688755bc7f45c92f391559342c",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "fence-shorter-closer-content",
+      "source": "````\ncode\n```\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "code_fence",
+            "span": [
+              0,
+              13
+            ],
+            "text": "code ```",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "ad616f3bc2ae8a69313ee1c71aff75d5e3a38e3bb4be4e07181f5583eb079d7d",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "fence-unclosed-tilde-last-line",
+      "source": "```\ncode\n~~~\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "code_fence",
+            "span": [
+              0,
+              12
+            ],
+            "text": "code ~~~",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "f41ca77475b380f1b32fea8c436ab967175314a629412c44921902f3da98457f",
             "children": []
           }
         ]
@@ -592,6 +851,39 @@
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "a1771e3144c82b86fe2f08a1510aaccf6fd7fcaef69dcda3e85484394e656f46",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontmatter-blank-lines",
+      "source": "---\ntitle: x\n\ntags: [a]\n\n---\n\nBody.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "frontmatter",
+            "span": [
+              0,
+              28
+            ],
+            "text": "title: x tags: [a]",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "a1976b5923d920d4ab54c4ad58bb0ed0fa71f86c945e86cf75bc40ac3181820b",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              30,
+              35
+            ],
+            "text": "Body.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "521b25cc458684eb504a7c885adccd748cf2f97429ff80a14886d0804d62c862",
             "children": []
           }
         ]
@@ -820,7 +1112,7 @@
               0,
               8
             ],
-            "text": "- a - b",
+            "text": "a b",
             "attrs": {
               "ordered": false
             },
@@ -857,6 +1149,94 @@
       }
     },
     {
+      "name": "list-item-first-child-fence",
+      "source": "- ```sh\n  echo hi\n  ```\n- ```\n  only code\n  ```\n  trailing\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "list",
+            "span": [
+              0,
+              58
+            ],
+            "text": "echo hi only code trailing",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n",
+            "raw_hash": "f586ccf00ed3229352fa35bb1feaf77f7a517ee1a40cf02f249897eb3e6e771e",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  0,
+                  23
+                ],
+                "text": "echo hi",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "844473d57f198c901743771bdd1ee1b0f09cc0ded39676971a56975120f70a4f",
+                "children": [
+                  {
+                    "type": "code_fence",
+                    "span": [
+                      2,
+                      23
+                    ],
+                    "text": "echo hi",
+                    "attrs": {
+                      "lang": "sh"
+                    },
+                    "trivia": "",
+                    "raw_hash": "1f3b0694ba4f2e12e46c65b6bba9dfec6f50caa2cbd5da89361f6fc8696c8bdc",
+                    "children": []
+                  }
+                ]
+              },
+              {
+                "type": "list_item",
+                "span": [
+                  24,
+                  58
+                ],
+                "text": "only code trailing",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "7270737255964a47b10c85d6af9dd9eac5cbdd9bd70a7f46df7816d67918c86b",
+                "children": [
+                  {
+                    "type": "code_fence",
+                    "span": [
+                      26,
+                      47
+                    ],
+                    "text": "only code",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "6966f81a02ee9dfe7f9ea37bc22b3610b47654b7a90ab05dee8fb276d2f8e368",
+                    "children": []
+                  },
+                  {
+                    "type": "paragraph",
+                    "span": [
+                      50,
+                      58
+                    ],
+                    "text": "trailing",
+                    "attrs": {},
+                    "trivia": "",
+                    "raw_hash": "6d388d29cd7aee3b77fb86462745dc8c57a5a417f4620a4d753defba64e33442",
+                    "children": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "list-item-with-fence",
       "source": "- item with code:\n\n  ```sh\n  echo hi\n  ```\n\n- plain\n",
       "expect": {
@@ -868,7 +1248,7 @@
               0,
               51
             ],
-            "text": "- item with code: ```sh echo hi ``` - plain",
+            "text": "item with code: echo hi plain",
             "attrs": {
               "ordered": false
             },
@@ -881,7 +1261,7 @@
                   0,
                   42
                 ],
-                "text": "item with code: ```sh echo hi ```",
+                "text": "item with code: echo hi",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "b625fb27667a09e35660316280f7536c699baec6af7eed7067aab10880487d8f",
@@ -904,7 +1284,7 @@
                       21,
                       42
                     ],
-                    "text": "```sh echo hi ```",
+                    "text": "echo hi",
                     "attrs": {
                       "lang": "sh"
                     },
@@ -932,6 +1312,54 @@
       }
     },
     {
+      "name": "list-lazy-marker-lookalike",
+      "source": "- a\n  2. not a marker\n\npara\n3. also not a marker\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "list",
+            "span": [
+              0,
+              21
+            ],
+            "text": "a 2. not a marker",
+            "attrs": {
+              "ordered": false
+            },
+            "trivia": "\n\n",
+            "raw_hash": "d9fc9378eb7c412ab169fa07f5102fe8894f010119ab996d1701cc391251e951",
+            "children": [
+              {
+                "type": "list_item",
+                "span": [
+                  0,
+                  21
+                ],
+                "text": "a 2. not a marker",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "d9fc9378eb7c412ab169fa07f5102fe8894f010119ab996d1701cc391251e951",
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              23,
+              48
+            ],
+            "text": "para 3. also not a marker",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "773a683120310b53d24b77988233bb285c519d787571387be769b8d3e09e1266",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
       "name": "list-tight-loose-mix",
       "source": "- a\n- b\n\n- c\n- d\n",
       "expect": {
@@ -943,7 +1371,7 @@
               0,
               16
             ],
-            "text": "- a - b - c - d",
+            "text": "a b c d",
             "attrs": {
               "ordered": false
             },
@@ -1163,7 +1591,7 @@
               0,
               44
             ],
-            "text": "--- title: only frontmatter tags: [a, b] ---",
+            "text": "title: only frontmatter tags: [a, b]",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "915713b9d5a665011c77685318532b025bd3bf4c70c4d9be8118cc5178f6a91a",
@@ -1184,7 +1612,7 @@
               0,
               3
             ],
-            "text": "---",
+            "text": "",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b",
@@ -1205,7 +1633,7 @@
               0,
               22
             ],
-            "text": "1) one 2) two 3) three",
+            "text": "one two three",
             "attrs": {
               "ordered": true,
               "start": 1
@@ -1266,7 +1694,7 @@
               0,
               29
             ],
-            "text": "100. hundred 101. hundred one",
+            "text": "hundred hundred one",
             "attrs": {
               "ordered": true,
               "start": 100
@@ -1304,6 +1732,90 @@
       }
     },
     {
+      "name": "setext-hash-content",
+      "source": "#hashtag\n====\n\nBody.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              13
+            ],
+            "text": "#hashtag",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "0e177a69747bb8a0b2861f2e98da0ca790b3952ce96eef8402acc4446c2af2f3",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              15,
+              20
+            ],
+            "text": "Body.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "521b25cc458684eb504a7c885adccd748cf2f97429ff80a14886d0804d62c862",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "setext-multiline",
+      "source": "Title spans\ntwo lines\n===\n\nSub also\nwraps\n---\n\nBody.\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "heading",
+            "span": [
+              0,
+              25
+            ],
+            "text": "Title spans two lines",
+            "attrs": {
+              "level": 1
+            },
+            "trivia": "\n\n",
+            "raw_hash": "4fffd8e5da93404ebb49f083fafd85769c6c01c0f4253370ca7fc95b68470ed4",
+            "children": []
+          },
+          {
+            "type": "heading",
+            "span": [
+              27,
+              45
+            ],
+            "text": "Sub also wraps",
+            "attrs": {
+              "level": 2
+            },
+            "trivia": "\n\n",
+            "raw_hash": "fa22b6030641ef9891a183194299f48f21a1251878ce80ac09a2047f07d001d6",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              47,
+              52
+            ],
+            "text": "Body.",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "521b25cc458684eb504a7c885adccd748cf2f97429ff80a14886d0804d62c862",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
       "name": "setext-underline-trailing-spaces",
       "source": "Title\n=====   \n\nSub\n---  \n\nBody.\n",
       "expect": {
@@ -1315,7 +1827,7 @@
               0,
               14
             ],
-            "text": "Title =====",
+            "text": "Title",
             "attrs": {
               "level": 1
             },
@@ -1329,7 +1841,7 @@
               16,
               25
             ],
-            "text": "Sub ---",
+            "text": "Sub",
             "attrs": {
               "level": 2
             },
@@ -1374,6 +1886,122 @@
       }
     },
     {
+      "name": "table-backslash-pipes",
+      "source": "| a | b |\n| - | - |\n| x | y \\|\n| p \\\\| q |\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "table",
+            "span": [
+              0,
+              42
+            ],
+            "text": "a b x y \\| p \\\\ q",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "e6d464fc52c7863f42d3866eecd4962d55a67c7a9ee36fe7d2f58838f206bf11",
+            "children": [
+              {
+                "type": "table_row",
+                "span": [
+                  0,
+                  9
+                ],
+                "text": "a b",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
+                "children": []
+              },
+              {
+                "type": "table_row",
+                "span": [
+                  20,
+                  30
+                ],
+                "text": "x y \\|",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "3d397902609c44865fc49141630baa78ab12718f48e360e2f64e74cfbb907df9",
+                "children": []
+              },
+              {
+                "type": "table_row",
+                "span": [
+                  31,
+                  42
+                ],
+                "text": "p \\\\ q",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "c9cf57eedff161a903b82cdafec0e5a0edbd6ac04decb43cda7c805869b3a2f9",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "table-escaped-pipe",
+      "source": "| a | b |\n| - | - |\n| x \\| y | z |\n| p||q | r |\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "table",
+            "span": [
+              0,
+              47
+            ],
+            "text": "a b x \\| y z p q r",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "20ee2e354280060d4825219bae48e538e9f484a78f27a4db3acb5ed12761aa1c",
+            "children": [
+              {
+                "type": "table_row",
+                "span": [
+                  0,
+                  9
+                ],
+                "text": "a b",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
+                "children": []
+              },
+              {
+                "type": "table_row",
+                "span": [
+                  20,
+                  34
+                ],
+                "text": "x \\| y z",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "1289d7d0f06178d87203b13de47c74da402950a9678bfaf0d563d0e3a3da0a93",
+                "children": []
+              },
+              {
+                "type": "table_row",
+                "span": [
+                  35,
+                  47
+                ],
+                "text": "p q r",
+                "attrs": {},
+                "trivia": "",
+                "raw_hash": "e7b893912fd7716a2d05f7049e6d33c54de29a7cb08ec530f6701007fa13e461",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "name": "table-then-paragraph",
       "source": "| a | b |\n| - | - |\n| 1 | 2 |\nparagraph right after the table\n",
       "expect": {
@@ -1385,7 +2013,7 @@
               0,
               61
             ],
-            "text": "| a | b | | - | - | | 1 | 2 | paragraph right after the table",
+            "text": "a b 1 2 paragraph right after the table",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "e164bfb9ecb2a6bfbf843755f3be725d6acadf89f50844dc79e0289bf48fedb5",
@@ -1396,7 +2024,7 @@
                   0,
                   9
                 ],
-                "text": "| a | b |",
+                "text": "a b",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "881857d70492776215abc1f2a92bbca4fe9554d2612bb91d72aac4c8f85ed650",
@@ -1408,7 +2036,7 @@
                   20,
                   29
                 ],
-                "text": "| 1 | 2 |",
+                "text": "1 2",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "db18e4fde9daa6d8d355f9721b2d0a04e0981ec74ded0285efbdf5be5d8f22f2",
@@ -1478,7 +2106,7 @@
               0,
               27
             ],
-            "text": "- a - a1 - a2 - a2a - b",
+            "text": "a a1 a2 a2a b",
             "attrs": {
               "ordered": false
             },
@@ -1491,7 +2119,7 @@
                   0,
                   23
                 ],
-                "text": "a - a1 - a2 - a2a",
+                "text": "a a1 a2 a2a",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "9b44b149df0b96e02329e00c523ea96485b2de477bd1bb89586a9ddda8255402",
@@ -1514,7 +2142,7 @@
                       5,
                       23
                     ],
-                    "text": "- a1 - a2 - a2a",
+                    "text": "a1 a2 a2a",
                     "attrs": {
                       "ordered": false
                     },
@@ -1539,7 +2167,7 @@
                           11,
                           23
                         ],
-                        "text": "a2 - a2a",
+                        "text": "a2 a2a",
                         "attrs": {},
                         "trivia": "",
                         "raw_hash": "8fb14f8af972c535a8685178d193506cb71fedbd728e2615c514d8fab3542de8",
@@ -1562,7 +2190,7 @@
                               18,
                               23
                             ],
-                            "text": "- a2a",
+                            "text": "a2a",
                             "attrs": {
                               "ordered": false
                             },
@@ -1602,6 +2230,134 @@
                 "children": []
               }
             ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "thematic-break-variants",
+      "source": "a\n\n***\n\nb\n\n___\n\nc\n\n- - -\n\nd\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "span": [
+              0,
+              1
+            ],
+            "text": "a",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+            "children": []
+          },
+          {
+            "type": "thematic_break",
+            "span": [
+              3,
+              6
+            ],
+            "text": "",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "596f4162a52f315b2ad0fa53fd30a2769d02a41ed7439123790966eee4ceb5cd",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              8,
+              9
+            ],
+            "text": "b",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "3e23e8160039594a33894f6564e1b1348bbd7a0088d42c4acb73eeaed59c009d",
+            "children": []
+          },
+          {
+            "type": "thematic_break",
+            "span": [
+              11,
+              14
+            ],
+            "text": "",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "bda251550bf0478f4172a8aeb291d6543fea090150b82c3e2881a53721eaf990",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              16,
+              17
+            ],
+            "text": "c",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "2e7d2c03a9507ae265ecf5b5356885a53393a2029d241394997265a1a25aefc6",
+            "children": []
+          },
+          {
+            "type": "thematic_break",
+            "span": [
+              19,
+              24
+            ],
+            "text": "",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "85d4805c76fd362f5a27d878e07edd0714bb61666ba1d21eeb3617ddbd601757",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              26,
+              27
+            ],
+            "text": "d",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "tilde-fence",
+      "source": "~~~py\nprint(1)\n~~~\n\n~~~\nno lang, tilde\n~~~\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "code_fence",
+            "span": [
+              0,
+              18
+            ],
+            "text": "print(1)",
+            "attrs": {
+              "lang": "py"
+            },
+            "trivia": "\n\n",
+            "raw_hash": "1ca2a27336af7820742b9a9f59207dbaf9a25fd8a8ece4f3761abeeb01a6312d",
+            "children": []
+          },
+          {
+            "type": "code_fence",
+            "span": [
+              20,
+              42
+            ],
+            "text": "no lang, tilde",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "328060c267488b186d692b8fe3f68945c36e451007543e36b42defc0e02b7cf4",
+            "children": []
           }
         ]
       }
@@ -1665,7 +2421,7 @@
               12,
               43
             ],
-            "text": "```js const x = 1; never closed",
+            "text": "const x = 1; never closed",
             "attrs": {
               "lang": "js"
             },

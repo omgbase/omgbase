@@ -128,7 +128,7 @@
               0,
               40
             ],
-            "text": "> level one > still one > > > nested two",
+            "text": "level one still one nested two",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "5c0ac633115f4250d6807c771395e8f12cbbffd9903cef07454a81e62ecd297e",
@@ -139,7 +139,7 @@
                   2,
                   23
                 ],
-                "text": "level one > still one",
+                "text": "level one still one",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "bc57c45cbb417a03f03eab5a1b01e59036c860f0108e9491a0a2ba6e01128bdc",
@@ -151,7 +151,7 @@
                   28,
                   40
                 ],
-                "text": "> nested two",
+                "text": "nested two",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "45c444692eea5d2b4012617be99daeadc13d3d38ab3632b3b84aeccfbaf9fb41",
@@ -220,7 +220,7 @@
               0,
               38
             ],
-            "text": "```js const x = 1; console.log(x); ```",
+            "text": "const x = 1; console.log(x);",
             "attrs": {
               "lang": "js"
             },
@@ -234,7 +234,7 @@
               40,
               55
             ],
-            "text": "``` no lang ```",
+            "text": "no lang",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "ba115dc1c6628a05cbeccc19e64e3e6412144bc01dd3ac6d2eca415fd38a1403",
@@ -255,7 +255,7 @@
               0,
               54
             ],
-            "text": "```ts title=example.ts {1,3} let a = 1; let b = 2; ```",
+            "text": "let a = 1; let b = 2;",
             "attrs": {
               "info": "title=example.ts {1,3}",
               "lang": "ts"
@@ -477,7 +477,7 @@
               0,
               36
             ],
-            "text": "- item one - item two - item three",
+            "text": "item one item two item three",
             "attrs": {
               "ordered": false
             },
@@ -577,7 +577,7 @@
               39,
               62
             ],
-            "text": "- point one - point two",
+            "text": "point one point two",
             "attrs": {
               "ordered": false
             },
@@ -616,7 +616,7 @@
               64,
               73
             ],
-            "text": "> a quote",
+            "text": "a quote",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "28ce7d998564d1d732f6d46f98060292250205893a9c6dabfa6339aeefed8b65",
@@ -641,7 +641,7 @@
               75,
               96
             ],
-            "text": "```py print('hi') ```",
+            "text": "print('hi')",
             "attrs": {
               "lang": "py"
             },
@@ -676,7 +676,7 @@
               0,
               47
             ],
-            "text": "- a - a1 - a2 - a2a - b 1. b1 2. b2",
+            "text": "a a1 a2 a2a b b1 b2",
             "attrs": {
               "ordered": false
             },
@@ -689,7 +689,7 @@
                   0,
                   27
                 ],
-                "text": "a - a1 - a2 - a2a",
+                "text": "a a1 a2 a2a",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "a69a2efd2576aebedaa23082ae5d74af0b6a7b9c19604cd952f6c44446d8b03b",
@@ -712,7 +712,7 @@
                       6,
                       27
                     ],
-                    "text": "- a1 - a2 - a2a",
+                    "text": "a1 a2 a2a",
                     "attrs": {
                       "ordered": false
                     },
@@ -737,7 +737,7 @@
                           13,
                           27
                         ],
-                        "text": "a2 - a2a",
+                        "text": "a2 a2a",
                         "attrs": {},
                         "trivia": "",
                         "raw_hash": "2f4670a80cfbbb5d5dad1b7a274902965c17bc7621ca0df50cab5e0e3a660d9e",
@@ -760,7 +760,7 @@
                               22,
                               27
                             ],
-                            "text": "- a2a",
+                            "text": "a2a",
                             "attrs": {
                               "ordered": false
                             },
@@ -793,7 +793,7 @@
                   28,
                   47
                 ],
-                "text": "b 1. b1 2. b2",
+                "text": "b b1 b2",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "c6d34f5b28c4004dc62f931f6774b4e9a308302b9ba7003b420372f4e29f7cf8",
@@ -816,7 +816,7 @@
                       34,
                       47
                     ],
-                    "text": "1. b1 2. b2",
+                    "text": "b1 b2",
                     "attrs": {
                       "ordered": true,
                       "start": 1
@@ -869,7 +869,7 @@
               0,
               53
             ],
-            "text": "1. first 2. second 3. third 5. starts at five 6. six",
+            "text": "first second third starts at five six",
             "attrs": {
               "ordered": true,
               "start": 1
@@ -1032,7 +1032,7 @@
               0,
               19
             ],
-            "text": "Title One =========",
+            "text": "Title One",
             "attrs": {
               "level": 1
             },
@@ -1058,7 +1058,7 @@
               28,
               47
             ],
-            "text": "Title Two ---------",
+            "text": "Title Two",
             "attrs": {
               "level": 2
             },
@@ -1093,7 +1093,7 @@
               0,
               53
             ],
-            "text": "| Name | Value | | ---- | ----- | | a | 1 | | b | 2 |",
+            "text": "Name Value a 1 b 2",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "ac32f3fc5e4d1b2f91190a955c42782a819ddcad680f9e68f4c35a0422ee22b9",
@@ -1104,7 +1104,7 @@
                   0,
                   16
                 ],
-                "text": "| Name | Value |",
+                "text": "Name Value",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "2401219977c96c4fa92c6cff86f9c07a79ed7b81f292a931a38513d25843e876",
@@ -1116,7 +1116,7 @@
                   34,
                   43
                 ],
-                "text": "| a | 1 |",
+                "text": "a 1",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "1c004bad460a49101f2384aa8760d5f752354cdd0788e57c33a984985aee8a5a",
@@ -1128,7 +1128,7 @@
                   44,
                   53
                 ],
-                "text": "| b | 2 |",
+                "text": "b 2",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "f0d99ec4376f6654aa13357c6b826df103a096c816a1542967a6f2c8ff6de17d",
@@ -1151,7 +1151,7 @@
               0,
               47
             ],
-            "text": "| L | C | R | | :-- | :-: | --: | | x | y | z |",
+            "text": "L C R x y z",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "a4a498968ab33378d224d9060963f41fcae389ef9eb6444e363e2bf0115dd18e",
@@ -1162,7 +1162,7 @@
                   0,
                   13
                 ],
-                "text": "| L | C | R |",
+                "text": "L C R",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "e3e22874ce8b98c5543576a0ad33f4c1d281da84f840cfe186c6b99aed84d3af",
@@ -1174,7 +1174,7 @@
                   34,
                   47
                 ],
-                "text": "| x | y | z |",
+                "text": "x y z",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "160295dbd078a29fe700573659fd9a31d2b774f717c7eaa3f1f38cd1ef1514df",
@@ -1197,7 +1197,7 @@
               0,
               58
             ],
-            "text": "- [ ] open task - [x] done task - [ ] another - plain item",
+            "text": "open task done task another plain item",
             "attrs": {
               "ordered": false
             },
@@ -1287,7 +1287,7 @@
               7,
               10
             ],
-            "text": "---",
+            "text": "",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "cb3f91d54eee30e53e35b2b99905f70f169ed549fd78909d3dac2defc9ed8d3b",
@@ -1311,7 +1311,7 @@
               20,
               23
             ],
-            "text": "***",
+            "text": "",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "596f4162a52f315b2ad0fa53fd30a2769d02a41ed7439123790966eee4ceb5cd",
@@ -1344,7 +1344,7 @@
               0,
               19
             ],
-            "text": "- one - two - three",
+            "text": "one two three",
             "attrs": {
               "ordered": false
             },
@@ -1395,7 +1395,7 @@
               21,
               42
             ],
-            "text": "* star one * star two",
+            "text": "star one star two",
             "attrs": {
               "ordered": false
             },

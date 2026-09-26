@@ -6,7 +6,7 @@ import type { IdResolver, DispositionRow, ResolvedEdgeRow } from "../core/ingest
 import { mintId } from "../core/ids.js";
 import { extractFromBlock, extractFromFrontmatter, resolveRelativePath } from "../graph/extract.js";
 import { resolveExternal, resolveDocPath } from "../core/store/edges.js";
-import { sha256, normalizeVisibleText } from "../core/hash.js";
+import { sha256, childQuoteDepth, visibleText, type VisibleTextBlock } from "../core/hash.js";
 import { reconcileDocument, type ResurrectionCandidate } from "../reconcile/reconcile.js";
 import { flatten, type FlatSource } from "../reconcile/flatten.js";
 import { DEFAULT_CONFIG, type MatchBlock, type ReconcileConfig } from "../reconcile/types.js";
@@ -57,11 +57,40 @@ export function loadOldMatchBlocks(db: Database, docId: string): MatchBlock[] {
     return key;
   };
 
+  // `text` follows spec/format §4.1, which needs the tree: containers compose
+  // from their children and nested raws lose up to <blockquote-depth> `> `
+  // prefixes. Rebuild the shape (children by parent, in ordinal order) and
+  // compute text top-down with the same helper ingest used to store it.
   const blobBytes = db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
+  const rawOf = new Map<string, string>();
+  for (const r of rows) {
+    rawOf.set(r.block_id, (blobBytes.get(r.raw_hash) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "");
+  }
+  const childrenOf = new Map<string | null, StoredBlock[]>();
+  for (const r of rows) {
+    const parent = r.parent_block && byId.has(r.parent_block) ? r.parent_block : null;
+    let list = childrenOf.get(parent);
+    if (!list) childrenOf.set(parent, (list = []));
+    list.push(r);
+  }
+  for (const list of childrenOf.values()) list.sort((a, b) => a.ordinal - b.ordinal);
+  const toTree = (r: StoredBlock): VisibleTextBlock => ({
+    type: r.type,
+    raw: rawOf.get(r.block_id) ?? "",
+    children: (childrenOf.get(r.block_id) ?? []).map(toTree),
+  });
+  const textOf = new Map<string, string>();
+  const walk = (list: StoredBlock[], quoteDepth: number): void => {
+    for (const r of list) {
+      textOf.set(r.block_id, visibleText(toTree(r), quoteDepth));
+      walk(childrenOf.get(r.block_id) ?? [], childQuoteDepth(r.type, quoteDepth));
+    }
+  };
+  walk(childrenOf.get(null) ?? [], 0);
+
   return rows.map((r) => {
     const key = resolveKey(r);
-    const raw = (blobBytes.get(r.raw_hash) as { bytes: Buffer } | undefined)?.bytes.toString("utf8") ?? "";
-    const text = normalizeVisibleText(raw, r.type);
+    const text = textOf.get(r.block_id) ?? "";
     return {
       blockId: r.block_id,
       type: r.type,

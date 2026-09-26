@@ -16,7 +16,7 @@ These rules apply to every tool and are non-negotiable:
 4. **One resolution ladder** wherever a block is hydrated:
    - `skeleton` — ids + types + one-line labels (~6 tokens/block)
    - `outline` — skeleton + heading text + first ~10 words per block
-   - `text` — normalized text
+   - `text` — visible text (block-level syntax stripped: no fences, pipes, `>` prefixes or list markers; inline syntax kept)
    - `raw` — exact Markdown source
    - `full` — raw + attrs + placement + open edges + last-change info
 

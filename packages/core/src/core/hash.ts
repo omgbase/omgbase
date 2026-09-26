@@ -36,17 +36,147 @@ export function normalizeText(raw: string): string {
     .normalize("NFC");
 }
 
-// Type-aware visible text (02 §5.2). Strips block-level syntax markers that are
-// not content: ATX heading hashes and list/task markers. Inline markers stay.
-export function normalizeVisibleText(raw: string, type: string): string {
-  let s = raw;
-  if (type === "heading") {
-    s = s.replace(/^[ \t]*#{1,6}[ \t]+/, "").replace(/[ \t]+#*[ \t]*$/, "");
-  } else if (type === "list_item" || type === "task") {
-    // Strip the list marker and an optional GFM checkbox on the first line.
-    s = s.replace(/^[ \t]*([-*+]|\d+[.)])[ \t]+/, "").replace(/^\[[ xX]\][ \t]+/, "");
+// Visible text (spec/format §4.1, block model 0.2). `text` is what a reader
+// sees: block-level Markdown syntax removed, inline syntax kept, whitespace
+// normalized. Two shapes of block:
+//
+//   leaf       paragraph, heading, code_fence, html_block, thematic_break,
+//              frontmatter, opaque, table_row, and a childless list_item/task —
+//              text is computed from `raw` by normalizeVisibleText().
+//   container  list, blockquote, table, and a list_item/task WITH children —
+//              text is the children's texts joined by one space, empties skipped
+//              (their own markers never appear because no child's raw has them).
+//
+// Both need tree context: how many blockquote ancestors a block has (its `raw`
+// keeps the `> ` prefixes of continuation lines — §3 "nested raw is a source
+// slice") and whether an item folded its lone paragraph. visibleText() is the
+// one entry point for anything that has a tree; normalizeVisibleText() is the
+// leaf rule for callers that only have (raw, type) at a known depth.
+
+/** The minimal tree shape visibleText() needs; RawBlock, TreeInputBlock and FlatSource all satisfy it. */
+export interface VisibleTextBlock {
+  type: string;
+  raw: string;
+  children: readonly VisibleTextBlock[];
+}
+
+/** Container blocks compose their text from children (spec/format §4.1). */
+export function isTextContainer(type: string, hasChildren: boolean): boolean {
+  return type === "list" || type === "blockquote" || type === "table" || ((type === "list_item" || type === "task") && hasChildren);
+}
+
+/** Blockquote depth of a block's children given the block's own depth. */
+export function childQuoteDepth(type: string, quoteDepth: number): number {
+  return type === "blockquote" ? quoteDepth + 1 : quoteDepth;
+}
+
+/** Container rule: children's texts in order, joined by one space, empties skipped. */
+export function joinVisibleTexts(texts: readonly string[]): string {
+  return texts.filter((t) => t.length > 0).join(" ");
+}
+
+/**
+ * `text` for a block in its tree. `quoteDepth` is the number of blockquote
+ * ancestors of `block` itself (0 at the top level).
+ */
+export function visibleText(block: VisibleTextBlock, quoteDepth = 0): string {
+  if (isTextContainer(block.type, block.children.length > 0)) {
+    const inner = childQuoteDepth(block.type, quoteDepth);
+    return joinVisibleTexts(block.children.map((c) => visibleText(c, inner)));
   }
-  return normalizeText(s);
+  return normalizeVisibleText(block.raw, block.type, quoteDepth);
+}
+
+const LINE_ENDING = /\r\n|\r|\n/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+const QUOTE_MARKER = /^[ \t]*> ?/;
+
+// A `|` is escaped iff preceded by an odd number of backslashes (GFM: `\|` is
+// content, `\\|` is an escaped backslash followed by a delimiter).
+function isEscapedAt(line: string, i: number): boolean {
+  let n = 0;
+  for (let j = i - 1; j >= 0 && line[j] === "\\"; j--) n++;
+  return n % 2 === 1;
+}
+
+// table_row: one leading `|`, one trailing unescaped `|` (each with surrounding
+// spaces/tabs), then every remaining unescaped `|` becomes a space.
+function stripTableRow(line: string): string {
+  let s = line.replace(/^[ \t]*\|/, "");
+  const trimmedEnd = s.replace(/[ \t]+$/, "");
+  if (trimmedEnd.endsWith("|") && !isEscapedAt(trimmedEnd, trimmedEnd.length - 1)) s = trimmedEnd.slice(0, -1);
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    out += s[i] === "|" && !isEscapedAt(s, i) ? " " : s[i];
+  }
+  return out;
+}
+
+/**
+ * Leaf rule (spec/format §4.1 steps 1–7): strip up to `quoteDepth` blockquote
+ * markers from every line after the first, then the kind's own syntax, then
+ * normalize whitespace (trim each line with the JS trim set, collapse `[ \t]+`,
+ * drop empty lines, join with one space, NFC). Inline syntax is content.
+ * Call this only for leaves — containers go through visibleText().
+ */
+export function normalizeVisibleText(raw: string, type: string, quoteDepth = 0): string {
+  let lines = raw.split(LINE_ENDING);
+
+  // 1. Blockquote markers on continuation lines (the first line starts at content).
+  if (quoteDepth > 0) {
+    for (let i = 1; i < lines.length; i++) {
+      let line = lines[i]!;
+      for (let q = 0; q < quoteDepth; q++) {
+        const m = QUOTE_MARKER.exec(line);
+        if (!m) break;
+        line = line.slice(m[0].length);
+      }
+      lines[i] = line;
+    }
+  }
+
+  // 2. Kind syntax.
+  switch (type) {
+    case "heading": {
+      if (lines.length > 1) {
+        lines.pop(); // setext: content lines + the underline
+      } else {
+        // ATX: the opening run (which may be the whole line), then a closing
+        // run of `#` that is the entire remainder or follows a space/tab.
+        lines[0] = (lines[0] ?? "").replace(/^ {0,3}#{1,6}[ \t]*/, "").replace(/(?:^|[ \t]+)#+[ \t]*$/, "");
+      }
+      break;
+    }
+    case "frontmatter":
+      lines = lines.slice(1, -1);
+      break;
+    case "code_fence": {
+      const open = FENCE_OPEN.exec(lines[0] ?? "");
+      if (open) {
+        lines = lines.slice(1);
+        const fence = open[1]!;
+        const closer = new RegExp(`^ {0,3}\\${fence[0]}{${fence.length},}[ \\t]*$`);
+        if (lines.length > 0 && closer.test(lines[lines.length - 1]!)) lines.pop();
+      }
+      break;
+    }
+    case "list_item":
+    case "task": {
+      lines[0] = (lines[0] ?? "").replace(/^[ \t]*([-*+]|[0-9]+[.)])[ \t]+/, "").replace(/^\[[ xX]\][ \t]+/, "");
+      break;
+    }
+    case "table_row":
+      lines = lines.map(stripTableRow);
+      break;
+    case "thematic_break":
+      lines = [];
+      break;
+    default:
+      break; // paragraph, html_block, opaque: nothing
+  }
+
+  // 3–7.
+  return normalizeText(lines.join("\n"));
 }
 
 /** norm_hash — sha256 of the normalized text (02 §1, §5.2). */

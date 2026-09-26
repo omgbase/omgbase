@@ -5,7 +5,7 @@ import { frontmatter } from "micromark-extension-frontmatter";
 import { frontmatterFromMarkdown } from "mdast-util-frontmatter";
 import type { Root, RootContent } from "mdast";
 import type { BlockType, RawBlock } from "./types.js";
-import { normalizeVisibleText } from "../hash.js";
+import { childQuoteDepth, visibleText } from "../hash.js";
 
 // Nodes whose children nest as blocks (03 §1: parser nesting only).
 // Everything else at block level maps to a leaf block; unknown → opaque.
@@ -73,7 +73,9 @@ function isLineEnding(code: number): boolean {
   return code === 0x0a /* \n */ || code === 0x0d /* \r */;
 }
 
-function buildBlock(node: RootContent, source: string, shift: number): RawBlock {
+// `quoteDepth` = number of blockquote ancestors, which the §4.1 text rule needs
+// because a nested block's raw keeps the `> ` prefixes of its continuation lines.
+function buildBlock(node: RootContent, source: string, shift: number, quoteDepth: number): RawBlock {
   const rawStart = node.position?.start.offset;
   const rawEnd = node.position?.end.offset;
   if (rawStart === undefined || rawEnd === undefined) {
@@ -90,7 +92,8 @@ function buildBlock(node: RootContent, source: string, shift: number): RawBlock 
   const raw = source.slice(start, end);
   const mapped = mapType(node);
   const type: BlockType = mapped ?? "opaque";
-  let children = mapped === null ? [] : childrenOf(node).map((c) => buildBlock(c, source, shift));
+  let children =
+    mapped === null ? [] : childrenOf(node).map((c) => buildBlock(c, source, shift, childQuoteDepth(type, quoteDepth)));
 
   // Fold a tight list item's lone paragraph: the item block carries the text
   // directly (frozen outline format, 06 §6). Loose/multi-block items keep them.
@@ -102,7 +105,7 @@ function buildBlock(node: RootContent, source: string, shift: number): RawBlock 
     type,
     span: { start, end },
     raw,
-    text: normalizeVisibleText(raw, type),
+    text: visibleText({ type, raw, children }, quoteDepth),
     attrs: mapped === null ? {} : attrsFor(node),
     children,
     trivia: "",
@@ -126,5 +129,5 @@ export function parseBlocks(source: string): RawBlock[] {
     mdastExtensions: [gfmFromMarkdown(), frontmatterFromMarkdown(["yaml"])],
   });
   const shift = source.charCodeAt(0) === BOM ? 1 : 0;
-  return tree.children.map((c) => buildBlock(c, source, shift));
+  return tree.children.map((c) => buildBlock(c, source, shift, 0));
 }

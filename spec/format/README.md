@@ -155,38 +155,85 @@ JSON with key order ignored.
 
 **Nested `raw` is a source slice**, never a re-serialization: a paragraph
 inside a blockquote keeps the `> ` prefixes of its continuation lines
-(`"level one\n> still one"`), a nested list item keeps its indentation, and
-their `text` follows from that (`"level one > still one"`). A port that
-builds nested content from its syntax tree instead of slicing will differ.
+(`"level one\n> still one"`) and a nested list item keeps its indentation.
+`text` removes them again (§4.1), but `raw`/`raw_hash` see the bytes as
+written; a port that builds nested content from its syntax tree instead of
+slicing will differ there.
 
 ## 4. Text and hashes
 
 ### 4.1 Normalized text (`text`)
 
-Type-aware, from the block's `raw`:
+`text` is **what a reader sees**: the block's content with every piece of
+block-level Markdown syntax removed and whitespace normalized. Inline syntax
+(emphasis markers, backticks, link brackets, escapes such as `\|`) is content
+and stays. `text` is the `norm_hash` input, so two blocks that read the same
+hash the same regardless of how they were authored (ATX vs setext heading,
+fenced vs indented code, quoted or not).
 
-1. For `heading`: remove one leading run of `[ \t]*#{1,6}[ \t]+` and one
-   trailing run of `[ \t]+#*[ \t]*` at the very end of the string.
-   For `list_item`/`task`: at the very start of the string remove
-   `[ \t]*([-*+]|[0-9]+[.)])[ \t]+`, then an optional `\[[ xX]\][ \t]+`.
-   Other kinds: nothing. (These anchor at the start/end of the whole raw
-   string, not per line.)
-2. Split into lines on `\r\n`, `\r` or `\n`.
-3. Trim each line at both ends using the **JavaScript trim set**: Unicode
+**Leaf blocks** — `paragraph`, `heading`, `code_fence`, `html_block`,
+`thematic_break`, `frontmatter`, `opaque`, `table_row`, and a
+`list_item`/`task` with no children — compute `text` from their `raw`:
+
+1. **Blockquote markers.** Let *q* be the number of `blockquote` ancestors of
+   the block. On every line after the first, remove up to *q* leading
+   markers, each `[ \t]*>` followed by at most one space (a tab after `>`
+   is left in place and disappears in step 4 or 5). (The first line
+   starts at content — §1 inv. 7 — and a lazy continuation line may carry
+   fewer than *q*.) Lines in a code block that themselves begin with `>`
+   survive because only *q* markers are removed.
+2. **Kind syntax.**
+   - `heading`: **setext** iff `raw` contains a line ending (an ATX heading
+     is always one line; a setext heading is its content lines plus the
+     underline): drop the last line, the `=`/`-` underline. **ATX**
+     otherwise: remove the opening run — up to three spaces, one to six
+     `#`, then the spaces/tabs after them (the run may be the whole line:
+     `#` alone is an empty heading) — and then the closing sequence, if
+     any: a run of `#` that is the entire remainder or is preceded by at
+     least one space/tab, together with any surrounding spaces/tabs
+     (`### ###` → `""`, `# a #` → `"a"`, `# a#` → `"a#"`).
+   - `frontmatter`: drop the first and the last line (the `---` fences).
+   - `code_fence`: if the first line (after up to three spaces) begins with
+     three or more backticks or tildes, it is the opening fence: drop it (it
+     carries the info string, already in `attrs`), and drop the last line
+     when it is the matching closing fence — after up to three spaces, the
+     opener's fence character repeated at least as many times as the
+     opener, then only spaces/tabs (CommonMark's closer rule; a ` ``` ` line
+     inside an unclosed `~~~` block, or a shorter run, is content).
+     Indented code: nothing to drop.
+   - `list_item`/`task` (childless): at the very start remove
+     `[ \t]*([-*+]|[0-9]+[.)])[ \t]+`, then an optional `\[[ xX]\][ \t]+`.
+   - `table_row`: remove one leading `|` and one trailing unescaped `|`
+     (with surrounding spaces/tabs), then replace every remaining unescaped
+     `|` with a space. A `|` is escaped iff preceded by an odd number of
+     backslashes (`\|` stays, as inline content; `\\|` is a delimiter,
+     GFM's rule).
+   - `thematic_break`: `text` is `""` — a rule has no visible text.
+   - `paragraph`, `html_block`, `opaque`: nothing.
+3. Split into lines on `\r\n`, `\r` or `\n`.
+4. Trim each line at both ends using the **JavaScript trim set**: Unicode
    `White_Space` plus U+FEFF. (Rust's `str::trim` omits U+FEFF; a port adds
    it.)
-4. Within each line collapse every run of spaces and tabs (`[ \t]+`) to one
+5. Within each line collapse every run of spaces and tabs (`[ \t]+`) to one
    space.
-5. Drop empty lines; join the rest with a single space.
-6. Apply Unicode NFC normalization.
+6. Drop empty lines; join the rest with a single space.
+7. Apply Unicode NFC normalization.
 
-Inline Markdown characters (emphasis markers, backticks, link syntax) are
-content and stay. The kind-specific stripping in step 1 is the only syntax
-removal: a `code_fence`'s text keeps its fence lines and info string, a
-setext heading keeps its underline, frontmatter keeps its `---` fences
-(see the open questions). U+00A0 and U+FEFF *inside* a line survive — only
-line ends are trimmed and only `[ \t]` runs collapse. `raw_hash` is over the
-source bytes as written (NFD stays NFD there); `text` is NFC.
+**Container blocks** — `list`, `blockquote`, `table`, and a `list_item`/`task`
+with children — have `text` = their children's `text` values, in order,
+joined by a single space, with empty ones skipped. Their own markers (list
+bullets, `>` prefixes, the table delimiter row, pipes) never appear because
+no child's `raw` contains them; a `list_item` with children loses its bullet
+the same way. A container whose children all have empty `text` has `""`.
+
+Consequences worth knowing: a `blockquote`'s `text` reads as prose; a
+`table`'s `text` is its header cells followed by its body cells; a
+`list`'s `text` is its items' text with nested lists inlined; `raw_hash` is
+still over the source bytes as written (NFD stays NFD there) while `text` is
+NFC; U+00A0 and U+FEFF *inside* a line survive (only line ends are trimmed,
+only `[ \t]` runs collapse). Every implementation must compute `text` from
+the tree it built, and every consumer that recomputes `text` from stored
+blocks needs the same tree context (children and blockquote depth).
 
 ### 4.2 Hashes
 
@@ -283,6 +330,14 @@ host, with the rule this spec picks:
   trailing line endings on every block and trailing blank (or blank-`>`)
   lines on lists, items and footnote definitions, never below the last
   child's end.
+- **A `markdown-rs` interrupt bug.** It lets an ordered list that does not
+  start at 1 interrupt a one-line paragraph that directly follows a list
+  (`- a\n\npara\n3. x` parses `3. x` as a list); CommonMark forbids that
+  interrupt, so the shape "paragraph, then with no blank line an ordered
+  list starting ≠ 1" cannot occur in a correct parse. The port detects the
+  shape, masks the marker delimiter in a copy of the source and re-parses;
+  spans and `raw` always come from the original bytes. `edge::list-lazy-marker-lookalike`
+  pins it.
 - **Block starts in `markdown-rs`.** It includes leading indentation in every
   block's position where micromark excludes it (see §1 inv. 7). The port
   computes the container's content column and skips the indentation.
@@ -293,13 +348,10 @@ host, with the rule this spec picks:
   block's `raw` never ends in one (§1 inv. 4); CRLF sources round-trip
   unchanged because bytes are spliced, never re-serialized.
 
-## Open questions
+## Decisions
 
-- [ ] Setext headings: `text` currently keeps the `===`/`---` underline
-      ("Title One =========") because §4.1 only strips ATX markers. Least
-      surprise says strip it; decide, then fixture → reference → port.
-- [ ] `frontmatter` `text` includes the `---` fences. Same question.
-- [ ] `code_fence` `text` includes the fence lines and info string. Same
-      question (indented code, by contrast, yields just the trimmed lines).
-- [ ] Nested `text` keeps blockquote `> ` continuation prefixes. Same
-      question, with an identity cost: it is the `norm_hash` input.
+- 2026-09-25, block model 0.2: `text` is visible text everywhere. Before, only
+  ATX hashes and first-line list markers were stripped, so setext underlines,
+  frontmatter and code fences, blockquote `> ` prefixes and table pipes all
+  leaked into `text` and therefore into `norm_hash`. Brendan chose the single
+  rule over four case-by-case fixes.

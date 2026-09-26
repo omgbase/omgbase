@@ -56,7 +56,7 @@
               49,
               72
             ],
-            "text": "- Feature A - Feature B",
+            "text": "Feature A Feature B",
             "attrs": {
               "ordered": false
             },
@@ -109,7 +109,7 @@
               85,
               92
             ],
-            "text": "- Bug X",
+            "text": "Bug X",
             "attrs": {
               "ordered": false
             },
@@ -164,7 +164,7 @@
               132,
               144
             ],
-            "text": "- Behavior Y",
+            "text": "Behavior Y",
             "attrs": {
               "ordered": false
             },
@@ -214,7 +214,7 @@
               7,
               64
             ],
-            "text": "```ts interface Foo { bar: string; baz: number; } ```",
+            "text": "interface Foo { bar: string; baz: number; }",
             "attrs": {
               "lang": "ts"
             },
@@ -240,7 +240,7 @@
               75,
               121
             ],
-            "text": "```ts const f: Foo = { bar: 'x', baz: 1 }; ```",
+            "text": "const f: Foo = { bar: 'x', baz: 1 };",
             "attrs": {
               "lang": "ts"
             },
@@ -254,7 +254,7 @@
               123,
               155
             ],
-            "text": "```json { \"key\": \"value\" } ```",
+            "text": "{ \"key\": \"value\" }",
             "attrs": {
               "lang": "json"
             },
@@ -291,7 +291,7 @@
               11,
               68
             ],
-            "text": "- L1 - L2 - L3 - L4 - L5 - back to L1",
+            "text": "L1 L2 L3 L4 L5 back to L1",
             "attrs": {
               "ordered": false
             },
@@ -304,7 +304,7 @@
                   11,
                   55
                 ],
-                "text": "L1 - L2 - L3 - L4 - L5",
+                "text": "L1 L2 L3 L4 L5",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "a2135d5c3c710f36328abcc6d307508558a1b0ac0699002e39f46daa00d09eb7",
@@ -327,7 +327,7 @@
                       18,
                       55
                     ],
-                    "text": "- L2 - L3 - L4 - L5",
+                    "text": "L2 L3 L4 L5",
                     "attrs": {
                       "ordered": false
                     },
@@ -340,7 +340,7 @@
                           18,
                           55
                         ],
-                        "text": "L2 - L3 - L4 - L5",
+                        "text": "L2 L3 L4 L5",
                         "attrs": {},
                         "trivia": "",
                         "raw_hash": "0a0aa4d88ad65c98410abe39ff1f660f53e1462f34921e24342685383277230c",
@@ -363,7 +363,7 @@
                               27,
                               55
                             ],
-                            "text": "- L3 - L4 - L5",
+                            "text": "L3 L4 L5",
                             "attrs": {
                               "ordered": false
                             },
@@ -376,7 +376,7 @@
                                   27,
                                   55
                                 ],
-                                "text": "L3 - L4 - L5",
+                                "text": "L3 L4 L5",
                                 "attrs": {},
                                 "trivia": "",
                                 "raw_hash": "ab242563bafe9c5d2437e80afc73bf2d5c0201bfbac4f37d6c8f5cac56ee9b46",
@@ -399,7 +399,7 @@
                                       38,
                                       55
                                     ],
-                                    "text": "- L4 - L5",
+                                    "text": "L4 L5",
                                     "attrs": {
                                       "ordered": false
                                     },
@@ -412,7 +412,7 @@
                                           38,
                                           55
                                         ],
-                                        "text": "L4 - L5",
+                                        "text": "L4 L5",
                                         "attrs": {},
                                         "trivia": "",
                                         "raw_hash": "467796930ca3ff999e6822208355c634c7aacad998f94ede090e43ecc3604a52",
@@ -435,7 +435,7 @@
                                               51,
                                               55
                                             ],
-                                            "text": "- L5",
+                                            "text": "L5",
                                             "attrs": {
                                               "ordered": false
                                             },
@@ -490,7 +490,7 @@
               70,
               99
             ],
-            "text": "> quote > > nested > > > deep",
+            "text": "quote nested deep",
             "attrs": {},
             "trivia": "\n",
             "raw_hash": "28c16b8929585a36e857ad195f48ffeaebd3be631b795630714f6ba987705857",
@@ -513,7 +513,7 @@
                   80,
                   99
                 ],
-                "text": "> nested > > > deep",
+                "text": "nested deep",
                 "attrs": {},
                 "trivia": "",
                 "raw_hash": "42e8b86ad9ddbd08af61753cd062375dd30d7bcb0240755e55cdc31b775e5956",
@@ -536,7 +536,7 @@
                       93,
                       99
                     ],
-                    "text": "> deep",
+                    "text": "deep",
                     "attrs": {},
                     "trivia": "",
                     "raw_hash": "4afff78e390ef12e6539cf6afb9b0ac0c813f6aa3c59aabe8a9e005f076d8365",
@@ -669,7 +669,7 @@
               0,
               62
             ],
-            "text": "--- type: meeting date: 2026-09-03 attendees: [alice, bob] ---",
+            "text": "type: meeting date: 2026-09-03 attendees: [alice, bob]",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "a97675e80614f6520cf7c61bf947f401bfc480e85df9202821f6693a023c5a53",
@@ -709,7 +709,7 @@
               91,
               126
             ],
-            "text": "1. Status 2. Blockers 3. Next steps",
+            "text": "Status Blockers Next steps",
             "attrs": {
               "ordered": true,
               "start": 1
@@ -775,7 +775,7 @@
               142,
               190
             ],
-            "text": "- [x] Ship on Friday - [ ] Follow up with design",
+            "text": "Ship on Friday Follow up with design",
             "attrs": {
               "ordered": false
             },
@@ -853,7 +853,7 @@
               0,
               66
             ],
-            "text": "--- title: Note 1 layer: proposed topics: - impl - omgbase ---",
+            "text": "title: Note 1 layer: proposed topics: - impl - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "16c267f11a986fac4657f7d2c7665469db46d87614b60f870890dfa5f095db17",
@@ -917,7 +917,7 @@
               216,
               260
             ],
-            "text": "- [ ] resolve question 1 - [x] closed item 1",
+            "text": "resolve question 1 closed item 1",
             "attrs": {
               "ordered": false
             },
@@ -995,7 +995,7 @@
               0,
               67
             ],
-            "text": "--- title: Note 2 layer: working topics: - review - omgbase ---",
+            "text": "title: Note 2 layer: working topics: - review - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "7998ffdd770240bd339b01bfa5b3290a180020716f8a7c17df5b36363445382c",
@@ -1059,7 +1059,7 @@
               216,
               260
             ],
-            "text": "- [ ] resolve question 2 - [x] closed item 2",
+            "text": "resolve question 2 closed item 2",
             "attrs": {
               "ordered": false
             },
@@ -1137,7 +1137,7 @@
               0,
               62
             ],
-            "text": "--- title: Note 3 layer: canon topics: - ops - omgbase ---",
+            "text": "title: Note 3 layer: canon topics: - ops - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "229e1cf2afa6659a0cc0dba58d4849ee2d69aaaebb6669476dfcd0d15e13b811",
@@ -1201,7 +1201,7 @@
               209,
               253
             ],
-            "text": "- [ ] resolve question 3 - [x] closed item 3",
+            "text": "resolve question 3 closed item 3",
             "attrs": {
               "ordered": false
             },
@@ -1279,7 +1279,7 @@
               0,
               65
             ],
-            "text": "--- title: Note 4 layer: draft topics: - design - omgbase ---",
+            "text": "title: Note 4 layer: draft topics: - design - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "399ed28b99bc80f019575f26ec33186bf21ad84287ee004487b47ef9b281677e",
@@ -1343,7 +1343,7 @@
               212,
               256
             ],
-            "text": "- [ ] resolve question 4 - [x] closed item 4",
+            "text": "resolve question 4 closed item 4",
             "attrs": {
               "ordered": false
             },
@@ -1421,7 +1421,7 @@
               0,
               66
             ],
-            "text": "--- title: Note 5 layer: proposed topics: - arch - omgbase ---",
+            "text": "title: Note 5 layer: proposed topics: - arch - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "daca397a5ce983d51036fd28b40c252f75db2554281e733bb9b472a800e4462a",
@@ -1485,7 +1485,7 @@
               216,
               260
             ],
-            "text": "- [ ] resolve question 5 - [x] closed item 5",
+            "text": "resolve question 5 closed item 5",
             "attrs": {
               "ordered": false
             },
@@ -1563,7 +1563,7 @@
               0,
               65
             ],
-            "text": "--- title: Note 6 layer: working topics: - impl - omgbase ---",
+            "text": "title: Note 6 layer: working topics: - impl - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "87418c4d7aba308f230ab384caabc545805fb371c13ba71dd656487e815e1e86",
@@ -1627,7 +1627,7 @@
               214,
               258
             ],
-            "text": "- [ ] resolve question 6 - [x] closed item 6",
+            "text": "resolve question 6 closed item 6",
             "attrs": {
               "ordered": false
             },
@@ -1705,7 +1705,7 @@
               0,
               65
             ],
-            "text": "--- title: Note 7 layer: canon topics: - review - omgbase ---",
+            "text": "title: Note 7 layer: canon topics: - review - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "ebbb85fad44f52566de65a519818ebc84fe95b09dbb08159468a045e9dcec846",
@@ -1769,7 +1769,7 @@
               212,
               256
             ],
-            "text": "- [ ] resolve question 7 - [x] closed item 7",
+            "text": "resolve question 7 closed item 7",
             "attrs": {
               "ordered": false
             },
@@ -1847,7 +1847,7 @@
               0,
               62
             ],
-            "text": "--- title: Note 8 layer: draft topics: - ops - omgbase ---",
+            "text": "title: Note 8 layer: draft topics: - ops - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "9cff22be062643540e4b6f2a698f5322358c35dba0bdf7bb2628d2d68f1f99e7",
@@ -1911,7 +1911,7 @@
               209,
               253
             ],
-            "text": "- [ ] resolve question 8 - [x] closed item 8",
+            "text": "resolve question 8 closed item 8",
             "attrs": {
               "ordered": false
             },
@@ -1989,7 +1989,7 @@
               0,
               68
             ],
-            "text": "--- title: Note 9 layer: proposed topics: - design - omgbase ---",
+            "text": "title: Note 9 layer: proposed topics: - design - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "81d51f3833141eaa3cac61f6741e7c8bd6cb62469fa6ddd894818801cbf09d49",
@@ -2053,7 +2053,7 @@
               219,
               263
             ],
-            "text": "- [ ] resolve question 9 - [x] closed item 9",
+            "text": "resolve question 9 closed item 9",
             "attrs": {
               "ordered": false
             },
@@ -2131,7 +2131,7 @@
               0,
               66
             ],
-            "text": "--- title: Note 10 layer: working topics: - arch - omgbase ---",
+            "text": "title: Note 10 layer: working topics: - arch - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "39916e5dbf538e70d720059f5fe9df9802ec8ad3648499e01cd6e8be268cf37f",
@@ -2195,7 +2195,7 @@
               218,
               264
             ],
-            "text": "- [ ] resolve question 10 - [x] closed item 10",
+            "text": "resolve question 10 closed item 10",
             "attrs": {
               "ordered": false
             },
@@ -2273,7 +2273,7 @@
               0,
               64
             ],
-            "text": "--- title: Note 11 layer: canon topics: - impl - omgbase ---",
+            "text": "title: Note 11 layer: canon topics: - impl - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "2081d1ea0f8bad615d8b50f4a4cd2de4f073edeeea619025d8c72ddadda1e5d4",
@@ -2337,7 +2337,7 @@
               214,
               260
             ],
-            "text": "- [ ] resolve question 11 - [x] closed item 11",
+            "text": "resolve question 11 closed item 11",
             "attrs": {
               "ordered": false
             },
@@ -2415,7 +2415,7 @@
               0,
               66
             ],
-            "text": "--- title: Note 12 layer: draft topics: - review - omgbase ---",
+            "text": "title: Note 12 layer: draft topics: - review - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "397c0a3ff0652adfd54be846331d3b815a645c10c715322d7b72759042bbbf38",
@@ -2479,7 +2479,7 @@
               216,
               262
             ],
-            "text": "- [ ] resolve question 12 - [x] closed item 12",
+            "text": "resolve question 12 closed item 12",
             "attrs": {
               "ordered": false
             },
@@ -2557,7 +2557,7 @@
               0,
               66
             ],
-            "text": "--- title: Note 13 layer: proposed topics: - ops - omgbase ---",
+            "text": "title: Note 13 layer: proposed topics: - ops - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "736a5102d36fea0fb534c2557a3238183e2ff384ca105c4abd61426d99f6aefc",
@@ -2621,7 +2621,7 @@
               219,
               265
             ],
-            "text": "- [ ] resolve question 13 - [x] closed item 13",
+            "text": "resolve question 13 closed item 13",
             "attrs": {
               "ordered": false
             },
@@ -2699,7 +2699,7 @@
               0,
               68
             ],
-            "text": "--- title: Note 14 layer: working topics: - design - omgbase ---",
+            "text": "title: Note 14 layer: working topics: - design - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "5d685db7d18868e1a4d7101d6bf79ffc953f5ef252e37d7683b1a9e56a3eb8b1",
@@ -2763,7 +2763,7 @@
               220,
               266
             ],
-            "text": "- [ ] resolve question 14 - [x] closed item 14",
+            "text": "resolve question 14 closed item 14",
             "attrs": {
               "ordered": false
             },
@@ -2841,7 +2841,7 @@
               0,
               64
             ],
-            "text": "--- title: Note 15 layer: canon topics: - arch - omgbase ---",
+            "text": "title: Note 15 layer: canon topics: - arch - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "46532dbe3ae8ffcc41cda39bc6e00d41bc42076c5b75c388fa0bbba41dbd47b3",
@@ -2905,7 +2905,7 @@
               214,
               260
             ],
-            "text": "- [ ] resolve question 15 - [x] closed item 15",
+            "text": "resolve question 15 closed item 15",
             "attrs": {
               "ordered": false
             },
@@ -2983,7 +2983,7 @@
               0,
               64
             ],
-            "text": "--- title: Note 16 layer: draft topics: - impl - omgbase ---",
+            "text": "title: Note 16 layer: draft topics: - impl - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "a1365ceccdf2196440e5fbce947d959805083ae6445b8e2423a8ca6e7ae533bb",
@@ -3047,7 +3047,7 @@
               214,
               260
             ],
-            "text": "- [ ] resolve question 16 - [x] closed item 16",
+            "text": "resolve question 16 closed item 16",
             "attrs": {
               "ordered": false
             },
@@ -3125,7 +3125,7 @@
               0,
               69
             ],
-            "text": "--- title: Note 17 layer: proposed topics: - review - omgbase ---",
+            "text": "title: Note 17 layer: proposed topics: - review - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "4987768451b5c1df2fd934801e25c1ee1d23409dcad32b685fd106213e836825",
@@ -3189,7 +3189,7 @@
               222,
               268
             ],
-            "text": "- [ ] resolve question 17 - [x] closed item 17",
+            "text": "resolve question 17 closed item 17",
             "attrs": {
               "ordered": false
             },
@@ -3267,7 +3267,7 @@
               0,
               65
             ],
-            "text": "--- title: Note 18 layer: working topics: - ops - omgbase ---",
+            "text": "title: Note 18 layer: working topics: - ops - omgbase",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "b345280ff11084cf0d0831ce937535182467d152e898b2dac1142a61a81be5af",
@@ -3331,7 +3331,7 @@
               217,
               263
             ],
-            "text": "- [ ] resolve question 18 - [x] closed item 18",
+            "text": "resolve question 18 closed item 18",
             "attrs": {
               "ordered": false
             },
@@ -3423,7 +3423,7 @@
               14,
               39
             ],
-            "text": "> A one-line description.",
+            "text": "A one-line description.",
             "attrs": {},
             "trivia": "\n\n",
             "raw_hash": "84c64ca5e0e121ecf374ab5cf7ffe1da9ce4c91020d16ab56d21dafff119c286",
@@ -3462,7 +3462,7 @@
               53,
               87
             ],
-            "text": "```bash npm install my-project ```",
+            "text": "npm install my-project",
             "attrs": {
               "lang": "bash"
             },
@@ -3490,7 +3490,7 @@
               99,
               153
             ],
-            "text": "```js import { thing } from 'my-project'; thing(); ```",
+            "text": "import { thing } from 'my-project'; thing();",
             "attrs": {
               "lang": "js"
             },

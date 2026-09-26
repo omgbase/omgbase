@@ -28,7 +28,9 @@ function seed(path: string, content: string): string {
   return (store.db.prepare("SELECT doc_id FROM docs WHERE path = ?").get(path) as { doc_id: string }).doc_id;
 }
 function blockByText(docId: string, prefix: string): string {
-  const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ?").all(docId) as { block_id: string; text: string }[];
+  // Deepest first: a container's text is its children's joined (spec/format
+  // §4.1), so "one" would otherwise also match the list "one two".
+  const rows = store.db.prepare("SELECT block_id, text FROM blocks WHERE doc_id = ? ORDER BY depth DESC, ordinal").all(docId) as { block_id: string; text: string }[];
   return rows.find((r) => r.text.startsWith(prefix))!.block_id;
 }
 function hashOf(bId: string): string {

@@ -86,8 +86,9 @@ Key properties:
   one, first), and `opaque` (unrecognized syntax — preserved byte-perfectly,
   addressable, but refusing typed edits).
 - **Two content hashes.** `raw_hash` = the exact source bytes (the compare-and-swap
-  key for safe edits); `norm_hash` = normalized text (used only by
-  reconciliation). Inline constructs — links, emphasis, images — are *not* blocks;
+  key for safe edits); `norm_hash` = the visible text with block-level syntax
+  stripped (`text`, the source of full-text search and the `text` read mode as
+  well as reconciliation's normalized lock). Inline constructs — links, emphasis, images — are *not* blocks;
   they are content of blocks (and surface as nodes and edges, below).
 
 Blocks are the **mutation anchors**: every write targets a block (or the document

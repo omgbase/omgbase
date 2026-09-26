@@ -25,7 +25,7 @@
 - Mint with retry on unique-constraint violation. IDs are repo-scoped, never reused, never re-assigned.
 - Content hashes are **sha256** stored as 32-byte BLOBs; displayed truncated to 16 hex chars. Two hash flavors per block:
   - `raw_hash` — sha256 of exact raw source bytes (blob key, splice identity).
-  - `norm_hash` — sha256 of normalized text (whitespace collapsed, trivia stripped) used by reconciliation phase 2. Stored on `blocks`, not on blobs.
+  - `norm_hash` — sha256 of the block's visible text (`text`: block-level syntax stripped, whitespace collapsed — §5.2, `spec/format` §4.1) used by reconciliation phase 2. Stored on `blocks`, not on blobs.
 - Tree-node hashes: sha256 over the canonical serialization of entries (see §3.4).
 
 ## 2. Database placement
@@ -137,7 +137,7 @@ CREATE TABLE dispositions (
              ('same','edited','moved','edited_moved','inserted','deleted',
               'split_from','merged_into','copied_from','resurrected','bulk_rewrite')),
   confidence REAL,                         -- NULL for api-origin certainty
-  reason     TEXT,                         -- 'exact_hash'|'normalized_hash'|'context_unique'|'scored'|'anchor'|'tombstone'|'api'
+  reason     TEXT,                         -- 'exact_hash'|'normalized_hash'|'context_unique'|'context_children'|'scored'|'anchor'|'tombstone'|'api'
   matcher_v  TEXT,                         -- e.g. 'm1.3'; NULL for api
   detail     TEXT NOT NULL DEFAULT '{}',   -- JSON: counterpart ids (split/merge/copy), scores, near-misses
   PRIMARY KEY (commit_id, block_id, kind)
@@ -392,11 +392,14 @@ Canonical JSON: array of arrays, UTF-8, no whitespace, keys in the fixed positio
 
 ### 5.2 Normalized text (`norm_hash` input)
 
-- Strip leading/trailing whitespace per line; collapse internal runs of spaces/tabs to one space.
-- Drop blank lines.
-- For list items/tasks: strip the marker (`- `, `1. `, `- [ ] `) but record `attrs.checked` separately.
-- Preserve inline Markdown characters as-is (emphasis markers count as content).
-- NFC Unicode normalization.
+`text` is the block's **visible text**: every piece of block-level Markdown syntax removed, inline syntax kept, whitespace normalized. The authoritative rule is `spec/format/README.md` §4.1 (block model 0.2); in outline:
+
+- Leaf blocks strip their kind's syntax from `raw`: ATX hashes or the setext underline; frontmatter and code fences; list marker + checkbox (`attrs.checked` records the state); table pipes; a thematic break has no text. Up to *q* blockquote `>` markers come off continuation lines, *q* = blockquote ancestors.
+- Container blocks (list, blockquote, table, list item with children) have `text` = their children's `text` joined by one space.
+- Then per line: trim (JS trim set), collapse `[ \t]+` to one space; drop blank lines; join with one space; NFC.
+- Inline Markdown characters stay (emphasis markers count as content).
+
+Every code path that recomputes `text` from stored blocks (ingest, reconcile flatten, reconciling ingest) uses the shared helper in `core/hash.ts` with the same tree context.
 
 ### 5.3 Fractional order keys
 

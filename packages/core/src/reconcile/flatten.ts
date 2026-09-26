@@ -1,4 +1,4 @@
-import { sha256, normalizeVisibleText } from "../core/hash.js";
+import { sha256, childQuoteDepth, visibleText } from "../core/hash.js";
 import type { MatchBlock } from "./types.js";
 import type { TreeInputBlock } from "../core/store/writers.js";
 
@@ -27,10 +27,12 @@ export function fromInput(blocks: TreeInputBlock[]): FlatSource[] {
 
 export function flatten(blocks: FlatSource[]): MatchBlock[] {
   const out: MatchBlock[] = [];
-  const walk = (list: FlatSource[], parentKey: string | null): void => {
+  // quoteDepth = blockquote ancestors; text follows spec/format §4.1 (containers
+  // compose from children, nested raws lose their `> ` prefixes).
+  const walk = (list: FlatSource[], parentKey: string | null, quoteDepth: number): void => {
     list.forEach((b, index) => {
       const key = `${parentKey ?? ""}/${index}`;
-      const text = normalizeVisibleText(b.raw, b.type);
+      const text = visibleText(b, quoteDepth);
       const mb: MatchBlock = {
         type: b.type,
         rawHashHex: sha256(b.raw).toString("hex"),
@@ -43,9 +45,9 @@ export function flatten(blocks: FlatSource[]): MatchBlock[] {
       };
       if (b.blockId) mb.blockId = b.blockId;
       out.push(mb);
-      if (b.children.length > 0) walk(b.children, key);
+      if (b.children.length > 0) walk(b.children, key, childQuoteDepth(b.type, quoteDepth));
     });
   };
-  walk(blocks, null);
+  walk(blocks, null, 0);
   return out;
 }
