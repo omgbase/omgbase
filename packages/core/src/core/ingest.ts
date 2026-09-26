@@ -93,8 +93,11 @@ function extractFrontmatter(blocks: RawBlock[]): { fmBlock: RawBlock | null; res
   return { fmBlock: null, rest: blocks };
 }
 
-// Parse a frontmatter block's raw (incl. --- fences) into a JSON-safe object.
-// Malformed YAML yields {} — frontmatter is queryable metadata, not load-bearing.
+// Parse a frontmatter block's raw (incl. --- fences) into a JSON-safe object:
+// the YAML text is the raw minus its first line (the opening `---`) and its last
+// line (the closing `---`, with any trailing whitespace); `\n` or `\r\n` endings
+// (spec/properties §3.1). Malformed YAML, or a document that is not a mapping,
+// yields {} — frontmatter is queryable metadata, not load-bearing.
 function parseFrontmatter(fmBlock: RawBlock | null): Record<string, unknown> {
   if (!fmBlock) return {};
   const body = fmBlock.raw.replace(/^---\r?\n/, "").replace(/\r?\n?---\s*$/, "");
@@ -195,11 +198,15 @@ export function ingestFile(
     // NULL when there is no frontmatter.
     const fmTrivia = fmBlock ? fmBlock.trivia : null;
 
-    // Document property bag: adapter-provided for non-markdown formats,
-    // frontmatter-parsed for markdown. Flattened into the properties table
-    // below (source=frontmatter); also drives frontmatter edge extraction.
-    const metadata = (adapter?.extractMetadata)
-      ? (adapter.extractMetadata(content) ?? parseFrontmatter(fmBlock))
+    // Document property bag: whole-document metadata for the formats whose
+    // adapter extracts one (YAML, JSON); for Markdown — whose adapter has no
+    // `extractMetadata` — the YAML of the `frontmatter` block and nothing else
+    // (spec/properties §3.1: a document whose first block is not `frontmatter`
+    // has no frontmatter rows, whatever else its bytes resemble). Flattened into
+    // the properties table below (source=frontmatter); also drives frontmatter
+    // edge extraction.
+    const metadata = adapter?.extractMetadata
+      ? (adapter.extractMetadata(content) ?? {})
       : parseFrontmatter(fmBlock);
 
     // Upsert the document row.

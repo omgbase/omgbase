@@ -1,0 +1,2899 @@
+{
+  "suite": "yaml",
+  "cases": [
+    {
+      "name": "null-forms",
+      "notes": "§4: every null spelling and the empty value → type null, all value columns null.",
+      "source": "---\na: null\nb: Null\nc: NULL\nd: ~\ne:\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": null,
+            "b": null,
+            "c": null,
+            "d": null,
+            "e": null
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": null,
+          "b": null,
+          "c": null,
+          "d": null,
+          "e": null,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "empty-quoted-is-empty-string",
+      "notes": "§4: quoted empties are strings, not null.",
+      "source": "---\na: ''\nb: \"\"\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "",
+            "b": ""
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "",
+          "b": "",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "core-booleans",
+      "notes": "§4: the six core-schema spellings → bool.",
+      "source": "---\na: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": true,
+            "b": true,
+            "c": true,
+            "d": false,
+            "e": false,
+            "f": false
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": true,
+          "b": true,
+          "c": true,
+          "d": false,
+          "e": false,
+          "f": false,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "yaml-1-1-booleans-are-strings",
+      "notes": "§4: 1.1 booleans are not core schema → type string.",
+      "source": "---\na: yes\nb: no\nc: on\nd: off\ne: y\nf: n\ng: Yes\nh: OFF\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "yes",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "no",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "on",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "off",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "y",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "n",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Yes",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37818dad6e0a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "OFF",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "yes",
+            "b": "no",
+            "c": "on",
+            "d": "off",
+            "e": "y",
+            "f": "n",
+            "g": "Yes",
+            "h": "OFF"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "yes",
+          "b": "no",
+          "c": "on",
+          "d": "off",
+          "e": "y",
+          "f": "n",
+          "g": "Yes",
+          "h": "OFF",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "int-forms",
+      "notes": "§4: decimal with leading zeros is decimal (012 = 12), `0o` octal, `0x` hex, signs.",
+      "source": "---\na: 012\nb: 0o17\nc: 0x1f\nd: 0x1F\ne: +5\nf: -7\ng: 0\nh: 00\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 12,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 15,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 31,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 31,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -7,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37818dad6e0a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 12,
+            "b": 15,
+            "c": 31,
+            "d": 31,
+            "e": 5,
+            "f": -7,
+            "g": 0,
+            "h": 0
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 12,
+          "b": 15,
+          "c": 31,
+          "d": 31,
+          "e": 5,
+          "f": -7,
+          "g": 0,
+          "h": 0,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "non-core-int-spellings-are-strings",
+      "notes": "§4: underscores (1.1), binary, a signed hex, an out-of-range octal digit → strings.",
+      "source": "---\na: 1_000\nb: 0b101\nc: -0x1f\nd: 0o8\ne: 1__0\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1_000",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "0b101",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-0x1f",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "0o8",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1__0",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "1_000",
+            "b": "0b101",
+            "c": "-0x1f",
+            "d": "0o8",
+            "e": "1__0"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "1_000",
+          "b": "0b101",
+          "c": "-0x1f",
+          "d": "0o8",
+          "e": "1__0",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "float-forms",
+      "notes": "§4: the core float regex; `1.0` is the number 1; `1e21` stores as 1e21.",
+      "source": "---\na: 1.0\nb: .5\nc: 1.\nd: -.5\ne: 1e3\nf: 1E3\ng: 1.5e-3\nh: 6.02e23\ni: 1e21\nj: 1.5E+2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -0.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1000,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1000,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0.0015,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37818dad6e0a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 6.02e+23,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9ed5760c7e72",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "i",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1e+21,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f011ea0e76ca",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "j",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 150,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": 0.5,
+            "c": 1,
+            "d": -0.5,
+            "e": 1000,
+            "f": 1000,
+            "g": 0.0015,
+            "h": 6.02e+23,
+            "i": 1e+21,
+            "j": 150
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "b": 0.5,
+          "c": 1,
+          "d": -0.5,
+          "e": 1000,
+          "f": 1000,
+          "g": 0.0015,
+          "h": 6.02e+23,
+          "i": 1e+21,
+          "j": 150,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "non-finite-floats",
+      "notes": "§4 / §8: ±Infinity store as REAL infinities (fixture strings \"Infinity\"/\"-Infinity\"); NaN binds as NULL, so a number row with null val_num is NaN (fixture \"NaN\"). The read shapes see ±Infinity and, for NaN, null.",
+      "source": "---\na: .inf\nb: -.inf\nc: .nan\nd: +.inf\ne: .Inf\nf: .NaN\ng: .INF\nh: -.Inf\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "-Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "NaN",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "NaN",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37818dad6e0a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "-Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "Infinity",
+            "b": "-Infinity",
+            "c": null,
+            "d": "Infinity",
+            "e": "Infinity",
+            "f": null,
+            "g": "Infinity",
+            "h": "-Infinity"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "Infinity",
+          "b": "-Infinity",
+          "c": null,
+          "d": "Infinity",
+          "e": "Infinity",
+          "f": null,
+          "g": "Infinity",
+          "h": "-Infinity",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "infinity-and-nan-words-are-strings",
+      "notes": "§4: only the dotted spellings are non-finite floats; these words are plain strings.",
+      "source": "---\na: Infinity\nb: NaN\nc: inf\nd: nan\ne: -Infinity\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Infinity",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "NaN",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "inf",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "nan",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-Infinity",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "Infinity",
+            "b": "NaN",
+            "c": "inf",
+            "d": "nan",
+            "e": "-Infinity"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "Infinity",
+          "b": "NaN",
+          "c": "inf",
+          "d": "nan",
+          "e": "-Infinity",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "large-int-precision",
+      "notes": "§4: integers are IEEE doubles — 2^53+1 reads as 2^53; 2^64-1 rounds to 18446744073709552000.",
+      "source": "---\na: 9007199254740993\nb: 9007199254740992\nc: 18446744073709551615\nd: -9007199254740993\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 9007199254740992,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 9007199254740992,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 18446744073709552000,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -9007199254740992,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 9007199254740992,
+            "b": 9007199254740992,
+            "c": 18446744073709552000,
+            "d": -9007199254740992
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 9007199254740992,
+          "b": 9007199254740992,
+          "c": 18446744073709552000,
+          "d": -9007199254740992,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "timestamps-are-strings",
+      "notes": "§4: no timestamp type in the core schema — every ISO form is type string (and none of these is range-shaped).",
+      "source": "---\na: 2026-01-01\nb: 2026-01-01T10:00:00Z\nc: 2026-01-01 10:00:00\nd: 2026-01-01T10:00:00.123+02:00\ne: 2026-01-01T10:00\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01T10:00:00Z",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01 10:00:00",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01T10:00:00.123+02:00",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01T10:00",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "2026-01-01",
+            "b": "2026-01-01T10:00:00Z",
+            "c": "2026-01-01 10:00:00",
+            "d": "2026-01-01T10:00:00.123+02:00",
+            "e": "2026-01-01T10:00"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "2026-01-01",
+          "b": "2026-01-01T10:00:00Z",
+          "c": "2026-01-01 10:00:00",
+          "d": "2026-01-01T10:00:00.123+02:00",
+          "e": "2026-01-01T10:00",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "quoted-scalars-are-strings",
+      "notes": "§4 / §2.2: quoting makes a string — but range detection is on the string, so the quoted `\"1..5\"` still gets a range side channel.",
+      "source": "---\na: \"1\"\nb: '2'\nc: \"true\"\nd: 'null'\ne: \"2026-01-01\"\nf: \"1..5\"\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "true",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "null",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "1",
+            "b": "2",
+            "c": "true",
+            "d": "null",
+            "e": "2026-01-01",
+            "f": "1..5"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "1",
+          "b": "2",
+          "c": "true",
+          "d": "null",
+          "e": "2026-01-01",
+          "f": "1..5",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "str-tag",
+      "notes": "§4: `!!str` pins a string.",
+      "source": "---\na: !!str 1\nb: !!str true\nc: !!str 2026-01-01\nd: !!str null\ne: !!str 1.5\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "true",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "null",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1.5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "1",
+            "b": "true",
+            "c": "2026-01-01",
+            "d": "null",
+            "e": "1.5"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "1",
+          "b": "true",
+          "c": "2026-01-01",
+          "d": "null",
+          "e": "1.5",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "explicit-core-tags-that-resolve",
+      "notes": "§4: a core tag whose value matches that tag's own format resolves as tagged.",
+      "source": "---\na: !!int \"1\"\nb: !!float \"1.5\"\nc: !!bool \"true\"\nd: !!null \"\"\ne: !!float 1.0\nf: !!int 12\ng: !!null null\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 12,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": 1.5,
+            "c": true,
+            "d": null,
+            "e": 1,
+            "f": 12,
+            "g": null
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "b": 1.5,
+          "c": true,
+          "d": null,
+          "e": 1,
+          "f": 12,
+          "g": null,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "explicit-core-tag-mismatch-is-a-string",
+      "notes": "§4 (as built): when the value does not match the tag's format the `yaml` package warns (unresolved tag) and yields the plain STRING — `!!float 1` is \"1\", `!!int 1.5` is \"1.5\", `!!null x` is \"x\". The README's 'resolve as tagged' holds only for matching values.",
+      "source": "---\na: !!int 1.5\nb: !!bool yes\nc: !!float 1\nd: !!null x\ne: !!int \"abc\"\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1.5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "yes",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "abc",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "1.5",
+            "b": "yes",
+            "c": "1",
+            "d": "x",
+            "e": "abc"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "1.5",
+          "b": "yes",
+          "c": "1",
+          "d": "x",
+          "e": "abc",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "unknown-tag-yields-the-string",
+      "notes": "§4 (as built): an unknown tag is a warning and the node resolves as a STRING of its source — `!custom 1` is \"1\", not the number 1; `!bar` with no value is \"\".",
+      "source": "---\na: !custom 1\nb: !custom text\nc: !foo true\nd: !bar\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "text",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "true",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "1",
+            "b": "text",
+            "c": "true",
+            "d": ""
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "1",
+          "b": "text",
+          "c": "true",
+          "d": "",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "anchors-and-aliases",
+      "notes": "§4: aliases resolve to the anchored value (scalars, sequences, mappings).",
+      "source": "---\na: &x 1\nb: *x\nl: &l [a, b]\nm: *l\nn: &n {k: v}\no: *n\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_897a9f3931c6",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "l",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_49301850e277",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "l",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_87887f97992c",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "m",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_97fa2e6f4cfe",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "m",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ee342e28981f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "n.k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_dfd7835d5efb",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "o.k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": 1,
+            "l": [
+              "a",
+              "b"
+            ],
+            "m": [
+              "a",
+              "b"
+            ],
+            "n.k": "v",
+            "o.k": "v"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "b": 1,
+          "l": [
+            "a",
+            "b"
+          ],
+          "m": [
+            "a",
+            "b"
+          ],
+          "n.k": "v",
+          "o.k": "v",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "merge-key-is-ordinary",
+      "notes": "§4: `<<` is not merged in 1.2 — it flattens as the key `m.<<.k`.",
+      "source": "---\nbase: &b\n  k: 1\nm:\n  <<: *b\n  j: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_acc21c17896c",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "base.k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_e5394fc1be57",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "m.<<.k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ab7aff09456b",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "m.j",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "base.k": 1,
+            "m.<<.k": 1,
+            "m.j": 2
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "base.k": 1,
+          "m.<<.k": 1,
+          "m.j": 2,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "block-scalars",
+      "notes": "§4: literal keeps line breaks and the final one; folded joins lines; `-` strips, `+` keeps trailing blank lines.",
+      "source": "---\na: |\n  line1\n  line2\nb: >\n  folded\n  text\nc: |-\n  strip\nd: |+\n  keep\n\ne: >-\n  f\n  g\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "line1\nline2\n",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "folded text\n",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "strip",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "keep\n\n",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "f g",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "line1\nline2\n",
+            "b": "folded text\n",
+            "c": "strip",
+            "d": "keep\n\n",
+            "e": "f g"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "line1\nline2\n",
+          "b": "folded text\n",
+          "c": "strip",
+          "d": "keep\n\n",
+          "e": "f g",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "plain-multiline-and-quoted-escapes",
+      "notes": "§4: plain scalars fold across lines; single quotes double; double quotes escape.",
+      "source": "---\na: first\n  second\nb: 'it''s'\nc: \"esc\\n\"\nd: \"\\u00e9\"\ne: \"tab\\t\"\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "first second",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "it's",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "esc\n",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "é",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "tab\t",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "first second",
+            "b": "it's",
+            "c": "esc\n",
+            "d": "é",
+            "e": "tab\t"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "first second",
+          "b": "it's",
+          "c": "esc\n",
+          "d": "é",
+          "e": "tab\t",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "flow-collections",
+      "notes": "§2.3 over flow syntax: same flattening as block syntax; `c: {}` vanishes.",
+      "source": "---\na: {x: 1, y: [1, 2]}\nb: [1, 2, 3]\nc: {}\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7c3c6e6f42f2",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a.x",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09bd51fde98a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a.y",
+            "card": "list",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_b5282dc778b2",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a.y",
+            "card": "list",
+            "ord": 1,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_86dba3ea0d9e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 1,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a7d46edbb292",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 2,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a.x": 1,
+            "a.y": [
+              1,
+              2
+            ],
+            "b": [
+              1,
+              2,
+              3
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a.x": 1,
+          "a.y": [
+            1,
+            2
+          ],
+          "b": [
+            1,
+            2,
+            3
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "quoted-and-spaced-keys",
+      "notes": "§2.3: keys are not trimmed or case-folded; a quoted `a.b` is indistinguishable from a nested one.",
+      "source": "---\n\"quoted key\": 1\n'single': 2\nkey with spaces: 3\n\"a.b\": 4\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_00db7d762617",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a.b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 4,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_8fad433f1b53",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "key with spaces",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5b7e5e542452",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "quoted key",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_d403e9cf10cb",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "single",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "quoted key": 1,
+            "single": 2,
+            "key with spaces": 3,
+            "a.b": 4
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "quoted key": 1,
+          "single": 2,
+          "key with spaces": 3,
+          "a.b": 4,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "comments-ignored",
+      "notes": "§4: comments are not content.",
+      "source": "---\n# leading comment\na: 1 # trailing\n# between\nb: two\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "two",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": "two"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "b": "two",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "duplicate-keys-no-rows",
+      "notes": "§4 failures: duplicate keys in one mapping → parse error → no frontmatter rows; the body still computes.",
+      "source": "---\na: 1\na: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "tab-indentation-no-rows",
+      "notes": "§4 failures: tabs as indentation → no frontmatter rows.",
+      "source": "---\na:\n\tb: 1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "document-end-marker-no-rows",
+      "notes": "§4 failures: `...` ends the first document and `b: 2` starts another → 'multiple documents' → no rows. (A `---` line cannot occur inside the fence: it closes it — see frontmatter::yaml-line-starting-with-dashes-is-inside-the-fence for the `---x` non-marker.)",
+      "source": "---\na: 1\n...\nb: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "directive-then-marker-no-rows",
+      "notes": "§4 failures: a directive line and a `--- x` marker inside the fence — the `yaml` package rejects the document, so no rows.",
+      "source": "---\n%YAML 1.2\n--- x\na: 1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "sequence-document-no-rows",
+      "notes": "§3.1: the result is not a mapping → no frontmatter rows.",
+      "source": "---\n- a\n- b\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "scalar-document-no-rows",
+      "notes": "§3.1: a scalar document → no frontmatter rows.",
+      "source": "---\nhello\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "syntax-error-no-rows",
+      "notes": "§4 failures: unclosed flow collections → no rows.",
+      "source": "---\na: [1, 2\nb: {\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    }
+  ]
+}

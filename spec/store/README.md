@@ -55,9 +55,9 @@ Three things, in decreasing order of how much they pin:
    tables.
 
 What this spec does **not** cover, because those are other components with
-their own inputs: the **properties** table (YAML frontmatter flattening — a
-YAML-parser contract), **nodes**, **edges** and **doc_edges** (the graph
-extractors), **FTS** and **embeddings** (search), the **sync registry**
+their own inputs: the rows of the **properties** table (`spec/properties`
+owns them; §5.4 step 9b says when the store writes them), **nodes**,
+**edges** and **doc_edges** (the graph extractors), **FTS** and **embeddings** (search), the **sync registry**
 (`adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`,
 `file_stats`, `checkpoints`) and the mutation kernel's **`api`-origin
 commits**. Their tables are part of `schema.sql` (an engine must create them
@@ -455,15 +455,21 @@ prepared result):
 The member's outcome is `{ echo: false, doc, commit, rev, converged,
 conflicted, dispositions: kind → count over this commit }`.
 
+9b. **Properties (store 13.1).** After the blocks and sections: delete the
+    doc's `properties` rows and insert the document's property rows as
+    `spec/properties` defines them (`INSERT OR REPLACE` on `prop_id`, with
+    `repo_id`, `doc_id`, `created_commit = this commit`, `deleted_commit =
+    NULL`). The rows are `spec/properties`' output, pinned by its fixtures;
+    this spec's fixtures do not project them.
+
 Also written in this transaction by the reference, **not pinned here**:
-`properties` (frontmatter, inline and computed rows), `nodes` (adapter
-projections and `md:section` nodes), `edges` + `doc_edges` (link
-extraction — this **mints `e` per edge and `x` per new external URI**, after
-the blocks and before the dispositions; the fixture minter does not notice
-because counters are per prefix, and no fixture source contains a link). A
-port that has not yet implemented those components leaves those tables
-empty; the fixtures do not look. The mint order pinned above is complete for
-the prefixes `d`, `b`, `c`, `r`.
+`nodes` (adapter projections and `md:section` nodes), `edges` + `doc_edges`
+(link extraction — this **mints `e` per edge and `x` per new external URI**,
+after the blocks and before the dispositions; the fixture minter does not
+notice because counters are per prefix, and no fixture source contains a
+link). A port that has not yet implemented those components leaves those
+tables empty; the fixtures do not look. The mint order pinned above is
+complete for the prefixes `d`, `b`, `c`, `r`.
 
 ### 5.5 Sweep
 
@@ -794,6 +800,8 @@ brought to it).
 
 ## Decisions
 
+- 2026-09-26, store 13.1: the store writes `spec/properties` rows in the
+  commit (§5.4 step 9b). No DDL change; a semantic minor.
 - 2026-09-26, store 13.0 specified as built: the schema version is the spec
   major (a database says which spec it conforms to); the crate starts on the
   13.x line for the same reason `omgbase-reconcile` started on 2.x.

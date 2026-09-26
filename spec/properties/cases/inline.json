@@ -1,0 +1,2180 @@
+{
+  "suite": "inline",
+  "cases": [
+    {
+      "name": "lone-field-is-scalar",
+      "notes": "The README §7 example: one line-form occurrence → card scalar, block_id of the paragraph (b_1: the heading is b_0).",
+      "source": "---\nlayer: canon\n---\n\n# Title\n\nelement:: fire\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_24791d1022f9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "layer",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "canon",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1efd531bb270",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "element",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "fire",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Title",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "layer": "canon"
+          },
+          "inline": {
+            "element": "fire"
+          },
+          "computed": {
+            "$title": "Title"
+          }
+        },
+        "merged": {
+          "element": "fire",
+          "layer": "canon",
+          "$title": "Title"
+        }
+      }
+    },
+    {
+      "name": "bracketed-square-and-paren",
+      "notes": "§3.2 form 1: value runs to the closer, trimmed.",
+      "source": "# T\n\nSee [element:: quick silver] in the text (state:: liquid metal).\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_1efd531bb270",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "element",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "quick silver",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_bce6e15b0ecf",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "state",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "liquid metal",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "element": "quick silver",
+            "state": "liquid metal"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "element": "quick silver",
+          "state": "liquid metal",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bracketed-mixed-openers",
+      "notes": "§3.2: the opener and closer need not match.",
+      "source": "# T\n\nA [k:: v) and (k2:: w] here.\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_b7ad5c708fcd",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k2",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "w",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v",
+            "k2": "w"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "k2": "w",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "multi-word-value-and-trimming",
+      "notes": "§3.2: values are trimmed of spaces and tabs on both sides.",
+      "source": "# T\n\nknown_for::    tria prima   \n\ncomp::\tsalt\t\n\n[sp::   spaced  ] and (tab::\tt\t)\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_720ccf68d234",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "comp",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "salt",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_2454571a05a6",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "known_for",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "tria prima",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_7623252dee71",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "sp",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "spaced",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_bcb1d108655a",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "tab",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "t",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "known_for": "tria prima",
+            "comp": "salt",
+            "sp": "spaced",
+            "tab": "t"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "known_for": "tria prima",
+          "comp": "salt",
+          "sp": "spaced",
+          "tab": "t",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "key-case-preserved",
+      "notes": "§3.2: the `i` flag widens the match; the key is stored as written, so these are four distinct scalar keys.",
+      "source": "# T\n\nPriority:: 3\n\nPRIORITY:: 4\n\npriority:: 5\n\n[Element:: Fire]\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_35b3e1ecb824",
+            "block_id": "b_4",
+            "source": "inline",
+            "key": "Element",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Fire",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_e5c02d6843f2",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "PRIORITY",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 4,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_25e1222bb829",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "Priority",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_27c4b1d4b12b",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "priority",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "Priority": 3,
+            "PRIORITY": 4,
+            "priority": 5,
+            "Element": "Fire"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "Priority": 3,
+          "PRIORITY": 4,
+          "priority": 5,
+          "Element": "Fire",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "repeats-are-list-in-order",
+      "notes": "§3.2: three occurrences → card list, ord in document order, duplicate values kept.",
+      "source": "job:: janitor\n\njob:: salesman\n\njob:: janitor\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "janitor",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5a8a690886c3",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "salesman",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ed3629de98f2",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "janitor",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": [
+              "janitor",
+              "salesman",
+              "janitor"
+            ]
+          },
+          "computed": {}
+        },
+        "merged": {
+          "job": [
+            "janitor",
+            "salesman",
+            "janitor"
+          ]
+        }
+      }
+    },
+    {
+      "name": "bracketed-before-line-form-within-a-block",
+      "notes": "§3.2 scan order inside one block: all bracketed matches first, then line-form — so `bracket` is ord 0 and `line` ord 1 although it comes first in the bytes.",
+      "source": "# T\n\nk:: line\nsee [k:: bracket] too\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "bracket",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6bf63eebc62f",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "line",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": [
+              "bracket",
+              "line"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": [
+            "bracket",
+            "line"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "booleans-exact-lowercase-only",
+      "notes": "§3.2 coercion: only exact `true`/`false` → bool; other casings are strings.",
+      "source": "# T\n\ndone:: true\n\nopen:: false\n\nt:: True\n\nf:: FALSE\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9769e10353fb",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "done",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_852763c2fc58",
+            "block_id": "b_4",
+            "source": "inline",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "FALSE",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ea0e3e5b9488",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "open",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_8e984012ea7b",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "t",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "True",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "done": true,
+            "open": false,
+            "t": "True",
+            "f": "FALSE"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "done": true,
+          "open": false,
+          "t": "True",
+          "f": "FALSE",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "numeric-coercion-table",
+      "notes": "§3.2 / §8: JavaScript `Number()` — decimal, leading/trailing dot, exponent, sign, and unsigned hex/octal/binary.",
+      "source": "# T\n\na:: 12\nb:: 1.5\nc:: .5\nd:: 5.\ne:: 1e3\nf:: 1E-2\ng:: +5\nh:: -3\ni:: 0x10\nj:: 0o17\nk:: 0b101\nl:: 0X1F\nm:: 0\nn:: -0.5\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_28119eb39636",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 12,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_d66e6a167d98",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4cd3d94c14db",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ec13b378fefa",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9584df8de620",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1000,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_852763c2fc58",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0.01,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_db348debdf6e",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4089cb46c3ed",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_869f50e90332",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "i",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 16,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_0274f92f3a0a",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "j",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 15,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5727b62b33be",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "l",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 31,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_45557a72e5ac",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "m",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 0,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_16fe2c357cbe",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "n",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": -0.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "a": 12,
+            "b": 1.5,
+            "c": 0.5,
+            "d": 5,
+            "e": 1000,
+            "f": 0.01,
+            "g": 5,
+            "h": -3,
+            "i": 16,
+            "j": 15,
+            "k": 5,
+            "l": 31,
+            "m": 0,
+            "n": -0.5
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 12,
+          "b": 1.5,
+          "c": 0.5,
+          "d": 5,
+          "e": 1000,
+          "f": 0.01,
+          "g": 5,
+          "h": -3,
+          "i": 16,
+          "j": 15,
+          "k": 5,
+          "l": 31,
+          "m": 0,
+          "n": -0.5,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "non-numeric-strings",
+      "notes": "§3.2: `Infinity` is not finite; underscores, units, a bare prefix, a signed hex, separators and inner spaces are strings.",
+      "source": "# T\n\na:: Infinity\nb:: NaN\nc:: 1_000\nd:: 12px\ne:: 0x\nf:: -0x10\ng:: 1,000\nh:: 1 000\ni:: -Infinity\nj:: 0b\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_28119eb39636",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Infinity",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_d66e6a167d98",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "NaN",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4cd3d94c14db",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1_000",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ec13b378fefa",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "12px",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9584df8de620",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "0x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_852763c2fc58",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-0x10",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_db348debdf6e",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1,000",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4089cb46c3ed",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1 000",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_869f50e90332",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "i",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-Infinity",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_0274f92f3a0a",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "j",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "0b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "a": "Infinity",
+            "b": "NaN",
+            "c": "1_000",
+            "d": "12px",
+            "e": "0x",
+            "f": "-0x10",
+            "g": "1,000",
+            "h": "1 000",
+            "i": "-Infinity",
+            "j": "0b"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "Infinity",
+          "b": "NaN",
+          "c": "1_000",
+          "d": "12px",
+          "e": "0x",
+          "f": "-0x10",
+          "g": "1,000",
+          "h": "1 000",
+          "i": "-Infinity",
+          "j": "0b",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "empty-value-is-empty-string",
+      "notes": "§3.2: an empty captured value is the empty string (type string, val_text \"\").",
+      "source": "# T\n\nk::\n\n[j::]\n\n(i::   )\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_869f50e90332",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "i",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_0274f92f3a0a",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "j",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "",
+            "j": "",
+            "i": ""
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "",
+          "j": "",
+          "i": "",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-not-detected-inline",
+      "notes": "§3.2 / §8: inline values are never range-detected — plain strings, no val_json.",
+      "source": "# T\n\nwindow:: 1..5\n\ndates:: 2026-01-01..2026-01-31\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_5c8d971a3ea8",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "dates",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01..2026-01-31",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a7048a47677f",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "window",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "window": "1..5",
+            "dates": "2026-01-01..2026-01-31"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "window": "1..5",
+          "dates": "2026-01-01..2026-01-31",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "field-in-code-fence-ignored",
+      "notes": "§3.2: code_fence blocks are skipped entirely.",
+      "source": "# T\n\n```\nkey:: value\n[k:: v]\n```\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "field-in-inline-code-ignored",
+      "notes": "§3.2: code spans are masked before scanning; the bracketed field outside code survives.",
+      "source": "# T\n\nUse `key:: value` or `[k:: v]` here, but (real:: yes).\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_bea37356ecc2",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "real",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "yes",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "real": "yes"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "real": "yes",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "fence-inside-list-item-masked",
+      "notes": "§3.2 masking inside a container's raw: the list's and the items' raws contain the fences (indented ≤ 3), so mask_code blanks them (backtick and tilde alike) and nothing matches; the code_fence children are skipped.",
+      "source": "# T\n\n- item\n  ```\n  key:: v\n  [k:: v]\n  ```\n- other\n  ~~~\n  key:: w\n  ~~~\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "backtick-fence-with-backtick-in-info-is-not-a-fence",
+      "notes": "§3.2: a backtick fence whose info string contains a backtick is not a fence (CommonMark) — for the parser too, so these lines are paragraph text and the continuation-line field counts per container level.",
+      "source": "# T\n\n- item\n  ```js`x\n  key:: v\n  ```\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6bb79ec500a9",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5840309da2ec",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ef259d784fea",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "key": [
+              "v",
+              "v",
+              "v"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "key": [
+            "v",
+            "v",
+            "v"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "fenced-code-inside-blockquote-masked-as-a-code-span",
+      "notes": "§3.2 (as built): the blockquote's raw has `> ` before the fence markers, so mask_code's FENCE rule does not fire — but its code-SPAN rule does: the three backticks on line 1 are closed by exactly three on line 3, blanking everything between, so nothing matches at the quote level either; the nested code_fence child is skipped.",
+      "source": "# T\n\n> ```\n> [k:: v]\n> ```\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "continuation-line-field-in-list-item-counted-twice",
+      "notes": "§3.2 / §8 Containers: the list's raw and the item's raw both match → card list, ord 0 with the list's block_id, ord 1 with the item's.",
+      "source": "# T\n\n- a\n  job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5a8a690886c3",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": [
+              "x",
+              "x"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": [
+            "x",
+            "x"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bracketed-field-in-blockquote-counted-twice",
+      "notes": "§3.2 / §8: once for the blockquote (its raw includes the child), once for the nested paragraph.",
+      "source": "# T\n\n> See [k:: v] here\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6bf63eebc62f",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": [
+              "v",
+              "v"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": [
+            "v",
+            "v"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "marker-line-field-yields-nothing",
+      "notes": "§3.2 / §8: a list_item's raw INCLUDES its marker (`- job:: x`), so the `- ` / `1. ` defeats `^[ \\t]*[a-z]` at both the list and the item level — no rows.",
+      "source": "# T\n\n- job:: x\n\n1. num:: y\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "blockquote-line-field-matches-once-via-nested-paragraph",
+      "notes": "§3.2: `> job:: x` fails at the blockquote level (the `> ` is in the way) but the nested paragraph's raw starts at content and matches on its first line — one row, the paragraph's id.",
+      "source": "# T\n\n> job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": "x"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": "x",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "blockquote-continuation-line-field-yields-nothing",
+      "notes": "§3.2: the nested paragraph's raw keeps the `> ` prefix on its continuation line, so the line form matches at neither level.",
+      "source": "# T\n\n> a\n> job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "nested-list-field-counted-per-level",
+      "notes": "§3.2 Containers: outer list, outer item, inner list, inner item — four occurrences, outermost first.",
+      "source": "# T\n\n- a\n  - b\n    job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5a8a690886c3",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ed3629de98f2",
+            "block_id": "b_4",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_deb6c887c811",
+            "block_id": "b_5",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 3,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": [
+              "x",
+              "x",
+              "x",
+              "x"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": [
+            "x",
+            "x",
+            "x",
+            "x"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "task-item-continuation-field",
+      "notes": "§3.2: a task item is a container too — list then task.",
+      "source": "# T\n\n- [ ] a\n  due:: 2026-01-01\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_d5b7c43f3594",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "due",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_21353fed43ca",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "due",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "due": [
+              "2026-01-01",
+              "2026-01-01"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "due": [
+            "2026-01-01",
+            "2026-01-01"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bracketed-field-in-table-cell-counted-twice",
+      "notes": "§3.2: the table's raw and the table_row's raw both match the bracketed form; a bare `k:: v` cell never line-matches because `|` leads the line.",
+      "source": "# T\n\n| a | b |\n|---|---|\n| [k:: v] | x |\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6bf63eebc62f",
+            "block_id": "b_3",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": [
+              "v",
+              "v"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": [
+            "v",
+            "v"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "heading-bracketed-counts-line-form-does-not",
+      "notes": "§3.2: the bracketed form matches inside a heading's raw; `## job:: x` is defeated by the `#` marker. $title is the heading's visible text.",
+      "source": "# Title [k:: v]\n\n## job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Title [k:: v]",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v"
+          },
+          "computed": {
+            "$title": "Title [k:: v]"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "$title": "Title [k:: v]"
+        }
+      }
+    },
+    {
+      "name": "key-shape",
+      "notes": "§3.2: `[a-z][a-z0-9_]*` (case-insensitive): a leading underscore or digit, or a hyphen, disqualifies; CamelCase is fine.",
+      "source": "# T\n\nknown_for2:: a\n\n_bad:: b\n\n2bad:: c\n\nbad-key:: d\n\nCamelCase:: e\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_15dad0d98c98",
+            "block_id": "b_5",
+            "source": "inline",
+            "key": "CamelCase",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "e",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6819c9bc31e8",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "known_for2",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "known_for2": "a",
+            "CamelCase": "e"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "known_for2": "a",
+          "CamelCase": "e",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "double-colon-in-value",
+      "notes": "§3.2 line form: the key is the first name, the value everything after — `b:: c`.",
+      "source": "# T\n\na:: b:: c\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_28119eb39636",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "b:: c",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "a": "b:: c"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "b:: c",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bracketed-value-stops-at-first-closer",
+      "notes": "§3.2: `[^\\]\\n)]*?` — the value ends at the first `]` or `)`: \"a (b\".",
+      "source": "# T\n\nx [k:: a (b) c] y\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a (b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "a (b"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "a (b",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "wikilink-shaped-field-matches",
+      "notes": "§3.2: the inner `[k:: v]` is a bracketed match (the outer `[` is skipped because `[` is not `[a-z]`).",
+      "source": "# T\n\nsee [[k:: v]] now\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "html-block-field-counts",
+      "notes": "§3.2: only code_fence blocks are skipped; an html_block's raw is scanned.",
+      "source": "# T\n\n<div>\nk:: v\n</div>\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "$title": "T"
+        }
+      }
+    }
+  ]
+}

@@ -60,7 +60,7 @@ fn applies_pragmas_and_user_version() {
     assert_eq!(fk, 1);
     assert_eq!(sync, 1, "NORMAL");
     assert_eq!(store.user_version().unwrap(), SCHEMA_VERSION);
-    assert_eq!(SPEC_VERSION, format!("{SCHEMA_VERSION}.0"));
+    assert!(SPEC_VERSION.starts_with(&format!("{SCHEMA_VERSION}.")));
     assert!(env!("CARGO_PKG_VERSION").starts_with(&format!("{SPEC_VERSION}.")));
 }
 
@@ -1275,4 +1275,181 @@ fn invalid_timestamps_are_rejected_up_front() {
         .unwrap_err();
     assert!(matches!(err, Error::InvalidTimestamp(_)), "{err}");
     assert_eq!(count(&store, "commits"), 0);
+}
+
+// ---- properties (spec/properties §6) -------------------------------------------------
+
+#[test]
+fn properties_rows_are_written_in_the_commit_and_replaced_on_reingest() {
+    use omgbase_properties::{Card, Source, ValueType, prop_id};
+    let (mut store, repo) = fixture_store();
+    let o = observe(
+        &mut store,
+        &repo,
+        "a.md",
+        "---\nlayer: canon\ntags: [x, y]\nqty: 1..5\nweird: .nan\n---\n\n# Title\n\nelement:: fire #hot\n",
+        T0,
+    );
+    let doc = o.doc_id.clone();
+    let commit = o.commit_id.clone().unwrap();
+    let rows = store.properties(&doc).unwrap();
+    // Write order: inline, frontmatter, computed.
+    let order: Vec<(Source, &str, u32)> = rows
+        .iter()
+        .map(|r| (r.source, r.key.as_str(), r.ord))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            (Source::Inline, "element", 0),
+            (Source::Frontmatter, "layer", 0),
+            (Source::Frontmatter, "tags", 0),
+            (Source::Frontmatter, "tags", 1),
+            (Source::Frontmatter, "qty", 0),
+            (Source::Frontmatter, "weird", 0),
+            (Source::Computed, "$title", 0),
+            (Source::Computed, "$tags", 0),
+        ]
+    );
+    let find = |s: Source, k: &str, o: u32| {
+        rows.iter()
+            .find(|r| r.source == s && r.key == k && r.ord == o)
+            .unwrap()
+            .clone()
+    };
+    let element = find(Source::Inline, "element", 0);
+    assert_eq!(
+        element.block_id.as_deref(),
+        Some("b_1"),
+        "the paragraph after the heading"
+    );
+    assert_eq!(
+        (element.card, element.ty, element.val_text.as_deref()),
+        (Card::Scalar, ValueType::String, Some("fire #hot"))
+    );
+    assert_eq!(element.prop_id, prop_id(&doc, Source::Inline, "element", 0));
+    let layer = find(Source::Frontmatter, "layer", 0);
+    assert_eq!(
+        (layer.block_id, layer.card, layer.val_text.as_deref()),
+        (None, Card::Scalar, Some("canon"))
+    );
+    assert_eq!(
+        find(Source::Frontmatter, "tags", 1).val_text.as_deref(),
+        Some("y")
+    );
+    assert_eq!(find(Source::Frontmatter, "tags", 1).card, Card::List);
+    let qty = find(Source::Frontmatter, "qty", 0);
+    assert_eq!(qty.val_text.as_deref(), Some("1..5"));
+    assert!(
+        qty.val_json
+            .as_deref()
+            .unwrap()
+            .contains("\"__range\":true")
+    );
+    assert_eq!(
+        find(Source::Computed, "$title", 0).val_text.as_deref(),
+        Some("Title")
+    );
+    assert_eq!(
+        find(Source::Computed, "$tags", 0).val_text.as_deref(),
+        Some("hot")
+    );
+    // NaN: type = number, val_num NULL in the table, NaN on read.
+    let weird = find(Source::Frontmatter, "weird", 0);
+    assert_eq!(weird.ty, ValueType::Number);
+    assert!(weird.val_num.unwrap().is_nan());
+    let stored: (String, Option<f64>) = store
+        .conn()
+        .query_row(
+            "SELECT type, val_num FROM properties WHERE doc_id = ?1 AND key = 'weird'",
+            params![doc],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored, ("number".to_owned(), None));
+    // Every row carries the repo, the commit, and no deleted_commit.
+    let meta: (i64, i64) = store
+        .conn()
+        .query_row(
+            "SELECT count(*), sum(repo_id = ?1 AND created_commit = ?2 AND deleted_commit IS NULL) FROM properties WHERE doc_id = ?3",
+            params![repo, commit, doc],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(meta, (8, 8));
+    assert_eq!(
+        store.properties_merged(&doc).unwrap(),
+        serde_json::json!({
+            "element": "fire #hot", "layer": "canon", "tags": ["x", "y"], "qty": "1..5", "weird": null,
+            "$title": "Title", "$tags": ["hot"],
+        })
+    );
+    assert_eq!(
+        store.properties_grouped(&doc).unwrap()["inline"],
+        serde_json::json!({"element": "fire #hot"})
+    );
+
+    // Re-ingest replaces the rows: new keys appear, old ones are gone, the
+    // surviving key carries the new commit and its new value.
+    let o2 = observe(
+        &mut store,
+        &repo,
+        "a.md",
+        "---\nlayer: draft\n---\n\n# Title\n\nplain\n",
+        T1,
+    );
+    assert_eq!(o2.doc_id, doc);
+    let rows = store.properties(&doc).unwrap();
+    let keys: Vec<(Source, &str)> = rows.iter().map(|r| (r.source, r.key.as_str())).collect();
+    assert_eq!(
+        keys,
+        [(Source::Frontmatter, "layer"), (Source::Computed, "$title")]
+    );
+    assert_eq!(rows[0].val_text.as_deref(), Some("draft"));
+    let commits: Vec<String> = store
+        .conn()
+        .prepare("SELECT DISTINCT created_commit FROM properties WHERE doc_id = ?1")
+        .unwrap()
+        .query_map(params![doc], |r| r.get(0))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(commits, [o2.commit_id.clone().unwrap()]);
+    assert_eq!(count(&store, "properties"), 2);
+
+    // An echo writes nothing.
+    let o3 = observe(
+        &mut store,
+        &repo,
+        "a.md",
+        "---\nlayer: draft\n---\n\n# Title\n\nplain\n",
+        T2,
+    );
+    assert!(o3.echo);
+    assert_eq!(count(&store, "properties"), 2);
+}
+
+#[test]
+fn a_document_without_properties_has_no_rows_and_a_collision_keeps_the_later_row() {
+    use omgbase_properties::Source;
+    let (mut store, repo) = fixture_store();
+    let o = observe(&mut store, &repo, "plain.md", "just a paragraph\n", T0);
+    assert!(store.properties(&o.doc_id).unwrap().is_empty());
+    let o = observe(
+        &mut store,
+        &repo,
+        "c.md",
+        "---\nmeta.owner: a\nmeta:\n  owner: b\n---\n",
+        T1,
+    );
+    let rows = store.properties(&o.doc_id).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(
+        (
+            rows[0].source,
+            rows[0].key.as_str(),
+            rows[0].val_text.as_deref()
+        ),
+        (Source::Frontmatter, "meta.owner", Some("b"))
+    );
 }

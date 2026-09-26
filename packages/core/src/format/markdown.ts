@@ -5,7 +5,6 @@ import type { BlockTree, RawBlock } from "../core/parse/types.js";
 import { parseTree, assertFullCoverage } from "../core/parse/tree.js";
 import { render } from "../core/parse/render.js";
 import { extractFromBlock, extractFromFrontmatter, maskCode, type ExtractedEdge } from "../graph/extract.js";
-import { parse as parseYaml } from "yaml";
 
 export const MARKDOWN_FORMAT = "markdown";
 
@@ -28,7 +27,6 @@ export const markdownAdapter: FormatAdapter = {
     AdapterCapability.Parse,
     AdapterCapability.Render,
     AdapterCapability.ExtractEdges,
-    AdapterCapability.ExtractMetadata,
     AdapterCapability.ComputeProperties,
     AdapterCapability.StructuralMutation,
     AdapterCapability.ProjectNodes,
@@ -65,18 +63,12 @@ export const markdownAdapter: FormatAdapter = {
     return edges;
   },
 
-  extractMetadata(source: string): Record<string, unknown> | null {
-    const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
-    if (!match) return null;
-    try {
-      const parsed = parseYaml(match[1]!) as unknown;
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed as Record<string, unknown>)
-        : null;
-    } catch {
-      return null;
-    }
-  },
+  // No `extractMetadata`: Markdown frontmatter is the `frontmatter` block of the
+  // parsed tree and nothing else (spec/properties §3.1), so ingest parses that
+  // block's YAML itself. The regex-over-the-source form this adapter used to
+  // carry disagreed with the block model — `---\nfoo: 1\n---bar\n` has no
+  // frontmatter block yet matched, and a fence containing a line that starts
+  // with `---` was cut short (spec/properties §8 "Fixed").
 
   projectNodes(blocks: RawBlock[]): ProjectedNode[] {
     const nodes: ProjectedNode[] = [];

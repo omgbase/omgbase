@@ -1,0 +1,32 @@
+[package]
+name = "omgbase-properties"
+version = "1.0.0"
+description = "omgbase document properties: YAML frontmatter, inline `key:: value` fields and computed intrinsics as typed property rows — Rust implementation"
+keywords = ["markdown", "frontmatter", "yaml", "properties", "omgbase"]
+categories = ["parser-implementations", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-properties#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The block model: `Block`, `BlockKind`, `Attrs`, `parse_markdown` and the
+# JavaScript whitespace set (`text::is_js_whitespace`) the trim rules share.
+omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
+# The inline-field, tag and range patterns of spec/properties §2.2, §3.2, §3.3.
+regex = "1"
+# YAML 1.2 *structure* only (block/flow collections, anchors/aliases, block
+# scalars, tags, comments). Plain scalars are resolved by this crate per the
+# core schema (§4), not by the parser.
+saphyr-parser = "0.1"
+# `val_json` text and the read shapes of §5; `preserve_order` keeps the
+# parser's key order.
+serde_json = { version = "1", features = ["preserve_order"] }
+# `prop_id` (§1).
+sha2 = "0.10"
+
+[lints]
+workspace = true

@@ -10,6 +10,8 @@ retired — property reads now go through the OQX `DataContext`
 and the pushdown translator (`oqx-js/sql/translate.ts`, the single-valued `properties`
 seek).
 
+> **The language-neutral contract is `spec/properties/README.md`** (row shape, value typing, the three sources, the YAML contract, the read shapes) with executable fixtures under `spec/properties/cases` that both the reference (`packages/core/corpus/properties/spec.test.ts`) and the Rust `omgbase-properties` crate run. This document is the design rationale; when the two disagree, the spec's fixtures win.
+
 > **As-built / normative — verified against code (2026-09-23).** This design is fully implemented: schema migration 8 added the `properties` table (current `SCHEMA_VERSION = 13` — the "Schema v8" in §7 is the migration that introduced it, not the current version); `docs.metadata` was dropped; and `docs_read` returns properties grouped by source (`{ frontmatter, inline, computed }`) exactly as §4 describes — confirmed in `packages/core/src/core/read/document.ts` and `store/properties.ts`. (Caveat: the MCP `docs_read` **tool description string** still mentions `metadata`, but the returned shape is the grouped one.) See `AGENTS.md` for the docs trust index.
 
 ---
@@ -305,7 +307,15 @@ in its place:
 1. **Flatten frontmatter → property rows** (`source='frontmatter'`): walk the
    parsed object, emit typed rows, arrays as `ord`-indexed rows, deep objects to
    `val_json`. (Within one fence, YAML duplicate-key resolution has already
-   happened in the parser — we store the parsed result.)
+   happened in the parser — we store the parsed result.) For Markdown the
+   parsed object comes from the **`frontmatter` block of the block tree and
+   nothing else** (spec/properties §3.1): a document whose first block is not
+   `frontmatter` has no frontmatter rows, whatever its bytes resemble. (The
+   Markdown adapter's former regex `extractMetadata` over the raw source was
+   removed for this — it matched `---\nfoo: 1\n---bar\n`, which has no
+   frontmatter block, and cut a fence short at any line starting with `---`.)
+   The YAML and JSON adapters still supply whole-document metadata via
+   `extractMetadata`.
 2. **Route inline fields → property rows** (`source='inline'`): the adapter
    emits `md:inline_field` ProjectedNodes with name/value + block_id; these
    become `properties` rows. `card` reflects the authored shape within the inline
@@ -451,5 +461,7 @@ grammar leaves room (the `*` suffix/prefix on relops is currently unused).
 - [ ] Which computed `$`-intrinsics ship first — `$title` (first H1) and
   `$tags` (body #hashtags) are the named two; `$word_count`/`$task_count`
   candidates.
-- [ ] Array-of-objects in frontmatter: element-per-row with what `key` shape, or
-  straight to `val_json`?
+- [x] Array-of-objects in frontmatter: straight to `val_json` — one
+  `card='list'` row (`ord` 0, `type='json'`) carrying the whole array
+  (spec/properties §2.3; note the read shape then wraps it in another array,
+  `shapes::json-escape-hatch-reads-as-nested-array`).

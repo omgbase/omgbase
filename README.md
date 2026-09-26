@@ -86,7 +86,8 @@ crates/          the Rust side (cargo workspace at the root; independent of pnpm
   omgbase-format/ omgbase-format — Rust format layer: source → block tree, splice render, conformant to spec/format
   omgbase-reconcile/ omgbase-reconcile — Rust block-identity matcher (phases, dispositions, cross-doc moves), conformant to spec/reconcile
   omgbase-store/ omgbase-store — Rust store: the SQLite schema, observe/commit, Merkle trees, reconstruct; opens the same database as core, conformant to spec/store
-spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus) · reconcile/ (the matcher: rules, thresholds, fixtures with reference-generated expectations) · store/ (the database: schema.sql verbatim, the observe procedure, invariants, observation-script fixtures)
+  omgbase-properties/ omgbase-properties — Rust properties layer: block tree → typed property rows (frontmatter, inline fields, computed), conformant to spec/properties
+spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus) · reconcile/ (the matcher: rules, thresholds, fixtures with reference-generated expectations) · store/ (the database: schema.sql verbatim, the observe procedure, invariants, observation-script fixtures) · properties/ (document → typed property rows: YAML contract, inline fields, computed intrinsics)
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.

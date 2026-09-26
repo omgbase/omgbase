@@ -1,0 +1,644 @@
+{
+  "suite": "shapes",
+  "cases": [
+    {
+      "name": "one-element-yaml-list-reads-as-array",
+      "notes": "§5: a single card=list row is not a lone scalar row → array of one.",
+      "source": "---\ntags: [a]\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "tags": [
+              "a"
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "tags": [
+            "a"
+          ]
+        }
+      }
+    },
+    {
+      "name": "frontmatter-and-inline-same-key-merged-array-grouped-separate",
+      "notes": "§5 / §8: two card=scalar rows from different sources; grouped shows each as a scalar, merged as [frontmatter, inline].",
+      "source": "---\nowner: alice\n---\n\nowner:: bob\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_d643c0a58bce",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alice",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_3a9a401e663c",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "bob",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "owner": "alice"
+          },
+          "inline": {
+            "owner": "bob"
+          },
+          "computed": {}
+        },
+        "merged": {
+          "owner": [
+            "alice",
+            "bob"
+          ]
+        }
+      }
+    },
+    {
+      "name": "computed-title-beside-authored-title",
+      "notes": "§5: the sigil keeps `$title` and `title` apart in merged.",
+      "source": "---\ntitle: Authored\n---\n\n# Heading\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_faf3f2e3d8c9",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Authored",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Heading",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "title": "Authored"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "Heading"
+          }
+        },
+        "merged": {
+          "title": "Authored",
+          "$title": "Heading"
+        }
+      }
+    },
+    {
+      "name": "range-decodes-as-text",
+      "notes": "§5: a range-shaped string reads as its val_text in both shapes; the side channel is only in the row.",
+      "source": "---\nwindow: 1..5\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_34872515e4a8",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "window",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": false
+            }
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "window": "1..5"
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "window": "1..5"
+        }
+      }
+    },
+    {
+      "name": "inline-repeat-list-shape",
+      "notes": "§5: list rows → array in ord order.",
+      "source": "job:: a\n\njob:: b\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5a8a690886c3",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "job",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": [
+              "a",
+              "b"
+            ]
+          },
+          "computed": {}
+        },
+        "merged": {
+          "job": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "name": "frontmatter-list-then-inline-repeats",
+      "notes": "§5: merged orders by source rank then ord — frontmatter elements first.",
+      "source": "---\nk: [a, b]\n---\n\nk:: c\n\nk:: d\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fce67cfa6a98",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_24fdd61f3645",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "c",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6bf63eebc62f",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "d",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "k": [
+              "a",
+              "b"
+            ]
+          },
+          "inline": {
+            "k": [
+              "c",
+              "d"
+            ]
+          },
+          "computed": {}
+        },
+        "merged": {
+          "k": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ]
+        }
+      }
+    },
+    {
+      "name": "three-sources-one-key-order",
+      "notes": "§5: bracketed then line-form occurrences follow the frontmatter row.",
+      "source": "---\nk: fm\n---\n\n[k:: in1] text\n\nk:: in2\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fce67cfa6a98",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "fm",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_0",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "in1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6bf63eebc62f",
+            "block_id": "b_1",
+            "source": "inline",
+            "key": "k",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "in2",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "k": "fm"
+          },
+          "inline": {
+            "k": [
+              "in1",
+              "in2"
+            ]
+          },
+          "computed": {}
+        },
+        "merged": {
+          "k": [
+            "fm",
+            "in1",
+            "in2"
+          ]
+        }
+      }
+    },
+    {
+      "name": "null-bool-number-decode",
+      "notes": "§5: decoded scalars — null, true/false, the number.",
+      "source": "---\nz: null\nb: true\nf: false\nn: 1.5\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_c18f1cb644f7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "n",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_e62994e9d4d2",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "z",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "z": null,
+            "b": true,
+            "f": false,
+            "n": 1.5
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "z": null,
+          "b": true,
+          "f": false,
+          "n": 1.5
+        }
+      }
+    },
+    {
+      "name": "json-escape-hatch-reads-as-nested-array",
+      "notes": "§5 (as built): the json row is card=list, so shape() wraps the decoded array in another array — `items` reads as [[{a:1},{b:2}]], not [{a:1},{b:2}].",
+      "source": "---\nitems: [{a: 1}, {b: 2}]\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_918ed12fee37",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "items",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              {
+                "a": 1
+              },
+              {
+                "b": 2
+              }
+            ]
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "items": [
+              [
+                {
+                  "a": 1
+                },
+                {
+                  "b": 2
+                }
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "items": [
+            [
+              {
+                "a": 1
+              },
+              {
+                "b": 2
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "name": "non-finite-shapes",
+      "notes": "§5 / §8: ±Infinity read back as ±Infinity (fixture strings); NaN reads as null because SQLite holds it as NULL.",
+      "source": "---\na: .inf\nb: -.inf\nc: .nan\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "-Infinity",
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": "NaN",
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "Infinity",
+            "b": "-Infinity",
+            "c": null
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": "Infinity",
+          "b": "-Infinity",
+          "c": null
+        }
+      }
+    },
+    {
+      "name": "authored-tags-and-computed-tags-are-distinct-keys",
+      "notes": "§5: `tags` (authored) and `$tags` (computed) never merge.",
+      "source": "---\ntags: [x]\n---\n\n#y\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "y",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "tags": [
+              "x"
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "y"
+            ]
+          }
+        },
+        "merged": {
+          "tags": [
+            "x"
+          ],
+          "$tags": [
+            "y"
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty-document-has-no-rows",
+      "notes": "§7: an empty source — no rows; grouped has the three empty sources; merged is {}.",
+      "source": "",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    }
+  ]
+}

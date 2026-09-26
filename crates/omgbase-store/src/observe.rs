@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{Block, BlockKind, BlockTree, parse_markdown, render};
+use omgbase_properties::doc_properties;
 use omgbase_reconcile::json::detail_to_json;
 use omgbase_reconcile::{
     Config, DispositionKind, FlatSource, Inserted, MatchBlock, Options, PerDocUnmatched, PoolEntry,
@@ -18,6 +19,7 @@ use crate::derived::{fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool
 use crate::error::{Error, Result};
 use crate::ids::IdMinter;
 use crate::order_key::key_between;
+use crate::properties::{doc_blocks, write_doc_properties};
 use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
 use crate::tree::canonical_attrs;
@@ -683,6 +685,12 @@ impl Store {
         }
         fts_index_doc(&tx, &doc_id)?;
         rebuild_sections(&tx, &doc_id)?;
+
+        // 9b. Properties (spec/properties §6): the document's rows from the
+        //     frontmatter block and the assigned body, deleted then written.
+        let body = doc_blocks(&assigned);
+        let property_rows = doc_properties(&doc_id, fm_block, &body);
+        write_doc_properties(&tx, repo_id, &doc_id, &commit_id, &property_rows)?;
 
         // 10. Dispositions and block_changes.
         {

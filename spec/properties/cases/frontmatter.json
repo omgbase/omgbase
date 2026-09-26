@@ -1,0 +1,2169 @@
+{
+  "suite": "frontmatter",
+  "cases": [
+    {
+      "name": "scalars-of-each-type",
+      "notes": "§2.1: one scalar row per key, typed by the YAML value.",
+      "source": "---\ns: canon\nn: 3\nf: 1.5\nb: true\nb2: false\nz: null\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_2086a6a585ba",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b2",
+            "card": "scalar",
+            "ord": 0,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 0,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1.5,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_c18f1cb644f7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "n",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 3,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_350da9303113",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "s",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "canon",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_e62994e9d4d2",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "z",
+            "card": "scalar",
+            "ord": 0,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "s": "canon",
+            "n": 3,
+            "f": 1.5,
+            "b": true,
+            "b2": false,
+            "z": null
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "s": "canon",
+          "n": 3,
+          "f": 1.5,
+          "b": true,
+          "b2": false,
+          "z": null,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "nested-map-dotted-keys",
+      "notes": "§2.3: a mapping recurses with a dotted prefix; the mapping's own key emits nothing.",
+      "source": "---\nmeta:\n  owner: alice\n  team:\n    name: x\n    size: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2580d6ef6d3f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alice",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ebd749729f9b",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.team.name",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_97f9e4234569",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.team.size",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "meta.owner": "alice",
+            "meta.team.name": "x",
+            "meta.team.size": 2
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "meta.owner": "alice",
+          "meta.team.name": "x",
+          "meta.team.size": 2,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "scalar-array-list-rows",
+      "notes": "§2.3: an all-scalar array is one card=list row per element, ord = index.",
+      "source": "---\ntags: [a, b, c]\nnums:\n  - 1\n  - 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_59185a71c456",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nums",
+            "card": "list",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_378bba58fe05",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "nums",
+            "card": "list",
+            "ord": 1,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_09255ac07329",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4a8975f36d80",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_16f24f01bf06",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "tags",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "c",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "tags": [
+              "a",
+              "b",
+              "c"
+            ],
+            "nums": [
+              1,
+              2
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "tags": [
+            "a",
+            "b",
+            "c"
+          ],
+          "nums": [
+            1,
+            2
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "mixed-scalar-array-typed-per-element",
+      "notes": "§2.3: elements are typed individually per §2.1.",
+      "source": "---\nmixed: [a, 1, true, null]\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_1d85e15c5829",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "mixed",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9b96923a835e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "mixed",
+            "card": "list",
+            "ord": 1,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f71a6aa45c3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "mixed",
+            "card": "list",
+            "ord": 2,
+            "type": "bool",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": 1,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_87d1c0b96ce0",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "mixed",
+            "card": "list",
+            "ord": 3,
+            "type": "null",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "mixed": [
+              "a",
+              1,
+              true,
+              null
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "mixed": [
+            "a",
+            1,
+            true,
+            null
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "array-of-objects-json-escape-hatch",
+      "notes": "§2.3: an array containing a mapping is ONE card=list row, ord 0, type json, val_json = the whole array.",
+      "source": "---\nitems:\n  - a: 1\n  - b: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_918ed12fee37",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "items",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              {
+                "a": 1
+              },
+              {
+                "b": 2
+              }
+            ]
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "items": [
+              [
+                {
+                  "a": 1
+                },
+                {
+                  "b": 2
+                }
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "items": [
+            [
+              {
+                "a": 1
+              },
+              {
+                "b": 2
+              }
+            ]
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "nested-arrays-json-escape-hatch",
+      "notes": "§2.3: an array containing an array (or a scalar beside a mapping) is a single json row.",
+      "source": "---\ngrid: [[1, 2], [3]]\nmixed: [1, {a: 1}]\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_02ede5bba9b5",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "grid",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              [
+                1,
+                2
+              ],
+              [
+                3
+              ]
+            ]
+          },
+          {
+            "prop_id": "p_1d85e15c5829",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "mixed",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              1,
+              {
+                "a": 1
+              }
+            ]
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "grid": [
+              [
+                [
+                  1,
+                  2
+                ],
+                [
+                  3
+                ]
+              ]
+            ],
+            "mixed": [
+              [
+                1,
+                {
+                  "a": 1
+                }
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "grid": [
+            [
+              [
+                1,
+                2
+              ],
+              [
+                3
+              ]
+            ]
+          ],
+          "mixed": [
+            [
+              1,
+              {
+                "a": 1
+              }
+            ]
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "empty-map-and-array-vanish",
+      "notes": "§2.3 / §8: `a: {}`, `b: []` and the nested `c.d: {}` produce no rows; `c.e` and `f` do.",
+      "source": "---\na: {}\nb: []\nc:\n  d: {}\n  e: 1\nf: 1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_5917ac8147e5",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c.e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "c.e": 1,
+            "f": 1
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "c.e": 1,
+          "f": 1,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "arrays-of-empty-containers-are-json",
+      "notes": "§2.3: `[[]]` and `[{}]` are not all-scalar, so each is one json row carrying the array verbatim.",
+      "source": "---\na: [[]]\nb: [{}]\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              []
+            ]
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 0,
+            "type": "json",
+            "val_text": null,
+            "val_num": null,
+            "val_bool": null,
+            "val_json": [
+              {}
+            ]
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": [
+              [
+                []
+              ]
+            ],
+            "b": [
+              [
+                {}
+              ]
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": [
+            [
+              []
+            ]
+          ],
+          "b": [
+            [
+              {}
+            ]
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-numeric-inclusive-and-exclusive",
+      "notes": "§2.2: type stays string, val_text verbatim, val_json carries {__range, lo, hi, exclusiveEnd}.",
+      "source": "---\nqty: 1..5\nexcl: 1...5\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_1eeecf9d762c",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "excl",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1...5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": true
+            }
+          },
+          {
+            "prop_id": "p_e439a40cb5ff",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "qty",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 5,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "qty": "1..5",
+            "excl": "1...5"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "qty": "1..5",
+          "excl": "1...5",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-open-ended",
+      "notes": "§2.2: one bound may be empty (null in the side channel); `1.5...` is an open-ended EXCLUSIVE range (the left bound `1.5` does not end in `.`; the operator is the maximal 3-dot run). `..` alone is not a range (see non-ranges).",
+      "source": "---\nlo: 1..\nhi: ..5\nex: 1.5...\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_e9b6eaabe95e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "ex",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1.5...",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1.5,
+              "hi": null,
+              "exclusiveEnd": true
+            }
+          },
+          {
+            "prop_id": "p_ca780761acce",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "hi",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "..5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": null,
+              "hi": 5,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_79a07b5d44b0",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "lo",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": null,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "lo": "1..",
+            "hi": "..5",
+            "ex": "1.5..."
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "lo": "1..",
+          "hi": "..5",
+          "ex": "1.5...",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-decimal-negative-exponent",
+      "notes": "§2.2 numeric domain: `^-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$`; bounds become numbers.",
+      "source": "---\na: -1.5..2.5\nb: 1e3..2e3\nc: -5..-1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-1.5..2.5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": -1.5,
+              "hi": 2.5,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1e3..2e3",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1000,
+              "hi": 2000,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "-5..-1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": -5,
+              "hi": -1,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "-1.5..2.5",
+            "b": "1e3..2e3",
+            "c": "-5..-1"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "-1.5..2.5",
+          "b": "1e3..2e3",
+          "c": "-5..-1",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-date-and-datetime",
+      "notes": "§2.2 ISO domain: bounds stay strings; `T` or space separator; optional seconds/fraction/zone.",
+      "source": "---\nd: 2026-01-01..2026-01-31\ndt: 2026-01-01T10:00:00Z..2026-01-02T10:00:00+02:00\nsp: 2026-01-01 10:00..2026-01-01 11:00\nopen: ..2026-01-31\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01..2026-01-31",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": "2026-01-01",
+              "hi": "2026-01-31",
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_c234feb2ff2a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "dt",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01T10:00:00Z..2026-01-02T10:00:00+02:00",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": "2026-01-01T10:00:00Z",
+              "hi": "2026-01-02T10:00:00+02:00",
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_408e8873fb20",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "open",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "..2026-01-31",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": null,
+              "hi": "2026-01-31",
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_5a116c995153",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "sp",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "2026-01-01 10:00..2026-01-01 11:00",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": "2026-01-01 10:00",
+              "hi": "2026-01-01 11:00",
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "d": "2026-01-01..2026-01-31",
+            "dt": "2026-01-01T10:00:00Z..2026-01-02T10:00:00+02:00",
+            "sp": "2026-01-01 10:00..2026-01-01 11:00",
+            "open": "..2026-01-31"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "d": "2026-01-01..2026-01-31",
+          "dt": "2026-01-01T10:00:00Z..2026-01-02T10:00:00+02:00",
+          "sp": "2026-01-01 10:00..2026-01-01 11:00",
+          "open": "..2026-01-31",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "non-ranges-stay-plain-strings",
+      "notes": "§2.2: mixed domains, non-scalar bounds, no bounds, a 4-dot run, a plain decimal (quoted, so it is a string), and `1..2..3` (right part `2..3` is not numeric) are ordinary strings with no val_json.",
+      "source": "---\na: a..z\nb: 1..2026-01-01\nc: ../foo\nd: ..\ne: 1....5\nf: \"3.14\"\ng: alpha..omega\nh: 1.2.3..4.5.6\ni: 1..2..3\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a..z",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..2026-01-01",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_402051a948bd",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "c",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "../foo",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_02fd7ab527a4",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "d",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "..",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_a51dbd0a97b7",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "e",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1....5",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_1f755afe715f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "f",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "3.14",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f7bd774b2035",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "g",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "alpha..omega",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37818dad6e0a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "h",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1.2.3..4.5.6",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9ed5760c7e72",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "i",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..2..3",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": "a..z",
+            "b": "1..2026-01-01",
+            "c": "../foo",
+            "d": "..",
+            "e": "1....5",
+            "f": "3.14",
+            "g": "alpha..omega",
+            "h": "1.2.3..4.5.6",
+            "i": "1..2..3"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": "a..z",
+          "b": "1..2026-01-01",
+          "c": "../foo",
+          "d": "..",
+          "e": "1....5",
+          "f": "3.14",
+          "g": "alpha..omega",
+          "h": "1.2.3..4.5.6",
+          "i": "1..2..3",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "range-in-list-elements",
+      "notes": "§2.2 applies per element: the range-shaped elements get a side channel, `a..b` does not.",
+      "source": "---\nspans: [1..2, 3..4, a..b]\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_bdddefb7fa1f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "spans",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "1..2",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 1,
+              "hi": 2,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_bc900544220e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "spans",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "3..4",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": {
+              "__range": true,
+              "lo": 3,
+              "hi": 4,
+              "exclusiveEnd": false
+            }
+          },
+          {
+            "prop_id": "p_f4d29b345b7a",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "spans",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "a..b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "spans": [
+              "1..2",
+              "3..4",
+              "a..b"
+            ]
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "spans": [
+            "1..2",
+            "3..4",
+            "a..b"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "dotted-key-collision-nested-wins",
+      "notes": "§1 / §8: an authored `meta.owner` and a nested `meta: {owner}` flatten to the same key; the later row in parser order wins on prop_id.",
+      "source": "---\nmeta.owner: a\nmeta:\n  owner: b\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2580d6ef6d3f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "meta.owner": "b"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "meta.owner": "b",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "dotted-key-collision-authored-wins",
+      "notes": "§8: same collision, reversed authoring order — the later (authored dotted) row wins.",
+      "source": "---\nmeta:\n  owner: b\nmeta.owner: a\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2580d6ef6d3f",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "meta.owner",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "meta.owner": "a"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "meta.owner": "a",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "non-string-keys-stringify",
+      "notes": "§2.3 / §4: non-string YAML keys are their string spellings. Rows are sorted by key so JavaScript's integer-key-first object order does not show.",
+      "source": "---\n1: one\n2.5: two\ntrue: three\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_0f7a1354783e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "1",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "one",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_c382593401b2",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "2.5",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "two",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_e2611c69f941",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "true",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "three",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "1": "one",
+            "2.5": "two",
+            "true": "three"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "1": "one",
+          "2.5": "two",
+          "true": "three",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "null-key-is-empty-string",
+      "notes": "§4: a `null` key becomes key \"\".",
+      "source": "---\nnull: x\nb: 1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9d507715ba68",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "": "x",
+            "b": 1
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "": "x",
+          "b": 1,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "tilde-key-is-empty-string",
+      "notes": "§4: `~` is null, so the key is \"\".",
+      "source": "---\n~: x\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9d507715ba68",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "": "x"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "": "x",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "unicode-keys-and-values-sort-bytewise",
+      "notes": "§7: keys sort bytewise (UTF-8): `emoji`, `t\\xc3\\xadtulo`, `zeta`.",
+      "source": "---\ntítulo: café\nzeta: 1\nemoji: \"🙂\"\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_c32a1e962034",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "emoji",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "🙂",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_37b590d7e0f6",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "título",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "café",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_bd3302322937",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "zeta",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "título": "café",
+            "zeta": 1,
+            "emoji": "🙂"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "título": "café",
+          "zeta": 1,
+          "emoji": "🙂",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "crlf-fence",
+      "notes": "§3.1: CRLF line endings inside and around the fence.",
+      "source": "---\r\na: 1\r\nb: two\r\n---\r\n\r\n# T\r\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "two",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": "two"
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "b": "two",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "closing-fence-trailing-whitespace",
+      "notes": "§3.1: the closing `---` may carry trailing whitespace (the block's raw ends `---   `; the YAML text drops that whole line).",
+      "source": "---\na: 1\n---   \n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "empty-frontmatter-has-no-rows",
+      "notes": "§3.1: `---\\n---` parses to null, not a mapping — no frontmatter rows (and no body).",
+      "source": "---\n---\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "blank-line-frontmatter-has-no-rows",
+      "notes": "§3.1: a fence around a blank line is null YAML — no frontmatter rows; the body still computes $title.",
+      "source": "---\n\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "frontmatter-only-document",
+      "notes": "§7: a document that is only a fence — no body blocks, no computed rows.",
+      "source": "---\na: 1\nb: [x, y]\n---\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_4955a0765ce3",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_86dba3ea0d9e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "b",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "y",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "b": [
+              "x",
+              "y"
+            ]
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": 1,
+          "b": [
+            "x",
+            "y"
+          ]
+        }
+      }
+    },
+    {
+      "name": "frontmatter-only-no-trailing-newline",
+      "notes": "§3.1: the closing fence without a final newline is still the frontmatter block.",
+      "source": "---\na: 1\n---",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1
+          },
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "invalid-closing-fence-has-no-rows",
+      "notes": "§3.1 / §8 Fixed: `---bar` does not close the fence, so the tree is a thematic break + a paragraph and there is no frontmatter block — no `foo` row. The old regex over the raw source produced one.",
+      "source": "---\nfoo: 1\n---bar\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "yaml-line-starting-with-dashes-is-inside-the-fence",
+      "notes": "§3.1 / §8 Fixed: the fence closes at the bare `---` line; `---x: 2` is an ordinary key. The old regex cut the YAML short at `\\n---x`, dropping it.",
+      "source": "---\na: 1\n---x: 2\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_15bf58bbec3e",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "---x",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 2,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1,
+            "---x": 2
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "---x": 2,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "four-dash-line-is-not-a-fence",
+      "notes": "§3.1: `----` closes nothing, so the tree is thematic break + setext heading + heading: no frontmatter block, no frontmatter rows.",
+      "source": "---\na: 1\n----\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bom-prefixed-document",
+      "notes": "§3.1: the BOM is leading trivia; the frontmatter block still parses. (The old regex missed it and fell back to the block — same rows either way.)",
+      "source": "﻿---\na: 1\n---\n\n# T\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_9a9a973c83ae",
+            "block_id": null,
+            "source": "frontmatter",
+            "key": "a",
+            "card": "scalar",
+            "ord": 0,
+            "type": "number",
+            "val_text": null,
+            "val_num": 1,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {
+            "a": 1
+          },
+          "inline": {},
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "a": 1,
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "leading-blank-line-means-no-frontmatter",
+      "notes": "§3.1: the fence must open the document; after a blank line `---` is a thematic break and `a: 1\\n---` a setext heading — no frontmatter rows, no H1.",
+      "source": "\n---\na: 1\n---\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    }
+  ]
+}

@@ -1,0 +1,891 @@
+{
+  "suite": "computed",
+  "cases": [
+    {
+      "name": "title-first-h1",
+      "notes": "§3.3: the first level-1 heading in pre-order.",
+      "source": "# First\n\n# Second\n\n## Third\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "First",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "First"
+          }
+        },
+        "merged": {
+          "$title": "First"
+        }
+      }
+    },
+    {
+      "name": "title-absent-without-h1",
+      "notes": "§3.3: no level-1 heading → no $title row (and no tags → no computed rows at all).",
+      "source": "## Only H2\n\npara\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "title-nested-in-blockquote-precedes-later-h1",
+      "notes": "§3.3: pre-order — a heading nested in a blockquote counts in document order.",
+      "source": "> # Quoted\n\n# Later\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Quoted",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Quoted"
+          }
+        },
+        "merged": {
+          "$title": "Quoted"
+        }
+      }
+    },
+    {
+      "name": "title-nested-in-list-item",
+      "notes": "§3.3: a heading inside a list item counts.",
+      "source": "- # In item\n\n# Later\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "In item",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "In item"
+          }
+        },
+        "merged": {
+          "$title": "In item"
+        }
+      }
+    },
+    {
+      "name": "title-empty-h1-skipped",
+      "notes": "§3.3: an H1 with empty text is skipped.",
+      "source": "#\n\n# Real\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Real",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Real"
+          }
+        },
+        "merged": {
+          "$title": "Real"
+        }
+      }
+    },
+    {
+      "name": "title-is-visible-text",
+      "notes": "§3.3: $title is the heading's `text` per spec/format §4.1, not its raw.",
+      "source": "# Hello *world* [link](x) `code` ##\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Hello *world* [link](x) `code`",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Hello *world* [link](x) `code`"
+          }
+        },
+        "merged": {
+          "$title": "Hello *world* [link](x) `code`"
+        }
+      }
+    },
+    {
+      "name": "title-setext-h1",
+      "notes": "§3.3: a setext H1 is level 1.",
+      "source": "Title\n=====\n\npara\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Title",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Title"
+          }
+        },
+        "merged": {
+          "$title": "Title"
+        }
+      }
+    },
+    {
+      "name": "no-computed-rows-for-plain-paragraph",
+      "notes": "§3.3: `# tags` is not a tag (`#` followed by space); no $title, no $tags → zero rows.",
+      "source": "just a paragraph, no # tags here.\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "tags-dedup-in-encounter-order",
+      "notes": "§3.3: first occurrence of each distinct tag, encounter order.",
+      "source": "#a #b #a\n\n#c #b #a\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f0c5f121385b",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "c",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "a",
+              "b",
+              "c"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-skip-heading",
+      "notes": "§3.3: heading blocks are skipped.",
+      "source": "# Heading #h1tag\n\npara #body\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "body",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Heading #h1tag",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Heading #h1tag",
+            "$tags": [
+              "body"
+            ]
+          }
+        },
+        "merged": {
+          "$title": "Heading #h1tag",
+          "$tags": [
+            "body"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-skip-code-fence",
+      "notes": "§3.3: code_fence blocks are skipped.",
+      "source": "```\n#code\n```\n\n#real\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "real",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "real"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "real"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-inline-code-after-whitespace-counts",
+      "notes": "§3.3 / §8: $tags scans raw, not code-masked — a tag inside a code span counts when preceded by whitespace.",
+      "source": "text `see #inl` after\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "inl",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "inl"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "inl"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-after-backtick-does-not-count",
+      "notes": "§3.3: `(?:^|\\s)#` — the backtick before `#` is not whitespace, so `#not` does not count (the README §8 example `\\`#not\\`` needs a space to count).",
+      "source": "text `#not` after\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "tags-after-punctuation-do-not-count",
+      "notes": "§3.3: a tag must follow whitespace or start the raw; a lone `#` is nothing.",
+      "source": "(#no) x#no2 [#no3] #\n",
+      "expect": {
+        "rows": [],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {}
+        },
+        "merged": {}
+      }
+    },
+    {
+      "name": "tags-at-start-of-raw",
+      "notes": "§3.3: `^` is the start of each block's raw.",
+      "source": "#start of para\n\n#second para\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "start",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "second",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "start",
+              "second"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "start",
+            "second"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-character-class",
+      "notes": "§3.3: `[a-zA-Z][\\w/-]*` with ASCII `\\w` — `#café` yields `caf`; `#日本` nothing; a leading `-` or digit disqualifies.",
+      "source": "#a/b-c_d9 #x/ #-bad #9bad #café #日本 #A1\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a/b-c_d9",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "x/",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f0c5f121385b",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "caf",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6770b4e1b829",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 3,
+            "type": "string",
+            "val_text": "A1",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "a/b-c_d9",
+              "x/",
+              "caf",
+              "A1"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "a/b-c_d9",
+            "x/",
+            "caf",
+            "A1"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-container-raw-deduped",
+      "notes": "§3.3: containers' raws include their children, so tags are seen repeatedly; dedup keeps one each.",
+      "source": "- #a\n  - #b\n\n> #c #a\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "a",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "b",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f0c5f121385b",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "c",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "a",
+              "b",
+              "c"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-in-html-block-count",
+      "notes": "§3.3 / §8: html_block is not skipped.",
+      "source": "<div>\n#html\n</div>\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "html",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "html"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "html"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-whitespace-set",
+      "notes": "§3.3: `\\s` is the JavaScript set — tab, newline, NBSP and em-space all separate a tag.",
+      "source": "a\t#tab\n#newline b #nbsp #emsp\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "tab",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "newline",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_f0c5f121385b",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "nbsp",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_6770b4e1b829",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 3,
+            "type": "string",
+            "val_text": "emsp",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "tab",
+              "newline",
+              "nbsp",
+              "emsp"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "tab",
+            "newline",
+            "nbsp",
+            "emsp"
+          ]
+        }
+      }
+    },
+    {
+      "name": "tags-in-table",
+      "notes": "§3.3: table and table_row raws are scanned; deduped.",
+      "source": "| #t | x |\n|---|---|\n| #u | #t |\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "t",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_12f9a7517743",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "u",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$tags": [
+              "t",
+              "u"
+            ]
+          }
+        },
+        "merged": {
+          "$tags": [
+            "t",
+            "u"
+          ]
+        }
+      }
+    },
+    {
+      "name": "title-and-tags-together",
+      "notes": "§3.3: a `#` word in the heading is title text, not a tag; the paragraph's tag counts.",
+      "source": "# T #notatag\n\n#tag one\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_7dc0d8c52309",
+            "block_id": null,
+            "source": "computed",
+            "key": "$tags",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "tag",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T #notatag",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "T #notatag",
+            "$tags": [
+              "tag"
+            ]
+          }
+        },
+        "merged": {
+          "$title": "T #notatag",
+          "$tags": [
+            "tag"
+          ]
+        }
+      }
+    },
+    {
+      "name": "title-deep-nested",
+      "notes": "§3.3: blockquote → list → item → heading, pre-order.",
+      "source": "> - # Deep\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "Deep",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {},
+          "computed": {
+            "$title": "Deep"
+          }
+        },
+        "merged": {
+          "$title": "Deep"
+        }
+      }
+    }
+  ]
+}

@@ -93,6 +93,33 @@ describe("range-valued frontmatter → properties rows", () => {
   });
 });
 
+describe("frontmatter rows come from the `frontmatter` block only (spec/properties §3.1, §8 Fixed)", () => {
+  it("an invalid closing fence means no frontmatter block, so no frontmatter rows", () => {
+    // `---bar` does not close the fence: the parse is a thematic break + a
+    // paragraph. The old regex over the raw source still matched `\n---` and
+    // produced a `foo` row.
+    const rows = props("---\nfoo: 1\n---bar\n");
+    expect(rows.filter((r) => r.source === "frontmatter")).toEqual([]);
+  });
+
+  it("a YAML line that starts with `---` is part of the fence, not its end", () => {
+    // The fence closes at the bare `---` line; `---x: 2` is an ordinary key.
+    // The old regex cut the YAML short at `\n---x`, dropping the second key.
+    const rows = props("---\na: 1\n---x: 2\n---\n\n# T\n");
+    expect(rows.filter((r) => r.source === "frontmatter").map((r) => [r.key, r.val_num])).toEqual([["---x", 2], ["a", 1]]);
+  });
+
+  it("a BOM-prefixed document still yields its frontmatter rows (the block parses; the source does not start with `---`)", () => {
+    const rows = props("\uFEFF---\na: 1\n---\n\n# T\n");
+    expect(rows.filter((r) => r.source === "frontmatter").map((r) => [r.key, r.val_num])).toEqual([["a", 1]]);
+  });
+
+  it("CRLF fences and a closing fence with trailing whitespace parse", () => {
+    expect(props("---\r\na: 1\r\n---\r\n\r\n# T\r\n").filter((r) => r.source === "frontmatter").map((r) => [r.key, r.val_num])).toEqual([["a", 1]]);
+    expect(props("---\na: 1\n---   \n\n# T\n").filter((r) => r.source === "frontmatter").map((r) => [r.key, r.val_num])).toEqual([["a", 1]]);
+  });
+});
+
 describe("ingest → properties rows", () => {
   it("captures frontmatter scalar + list with card", () => {
     const rows = props("---\nlayer: canon\ntags: [a, b]\n---\n\n# H\n");
