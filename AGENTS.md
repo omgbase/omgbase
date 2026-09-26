@@ -42,7 +42,7 @@ When you hit a stopping point — work is done, or you're blocked and need input
   - `crates/omgbase-sync` — the Rust sync layer: workspace discovery and repo selection, the source registry and settings, checkpoints, the freshness sweep (as a pure plan over a cache + snapshot), disk drift and recovery, the adapter stdio protocol client, the coordinator over an engine client, the writer lock and watch lease. Runner runs `spec/sync/cases`.
   - `spec/sync` — **the sync specification**: `README.md` (workspace, registry, settings, checkpoints and the filesystem fast path, the adapter protocol, driver and coordinator, locks, fixture contract, oddities) + `VERSION` + `cases/*.json` (`SYNC_SPEC_UPDATE=1` on `packages/core/corpus/sync/spec.test.ts`). With it every table of `schema.sql` has an owner spec.
   - `crates/omgbase-surface` + `crates/omgbase` — the Rust surface: the OQX data binding over the store (roots, fields, intrinsics, relations, row functions, the runner with keyset paging), the read and history operations, and the MCP tool catalog served over stdio by the `omgbase` binary. Runner runs `spec/surface/cases`.
-  - `spec/surface` — **the surface specification**: `README.md` (the query binding, reads, history, the MCP tool catalog with its error envelope, repo scoping and server-side ref resolution, fixture contract, oddities) + `VERSION` + `cases/*.json` (corpus-backed query suites over the alchemy repository, `reads.json` scripts, cursor cases; `SURFACE_SPEC_UPDATE=1` on `packages/core/corpus/surface/spec.test.ts`). The last spec of the series.
+  - `spec/surface` — **the surface specification**: `README.md` (the query binding, reads, history, the MCP tool catalog with its error envelope, repo scoping and server-side ref resolution, fixture contract, oddities) + `VERSION` + `cases/*.json` (corpus-backed query suites over the alchemy repository, `reads.json` scripts, cursor cases; `SURFACE_SPEC_UPDATE=1` on `packages/core/corpus/surface/spec.test.ts`), plus §7 **cross-engine interop** (`interop.json`, run by `packages/core/corpus/surface/interop.test.ts` and `crates/omgbase/tests/interop.rs`: every (writer, reader) pair of the two engines over MCP stdio on one workspace, under the `OMGBASE_SPEC_MINTER` / `OMGBASE_SPEC_CLOCK` seams both binaries honor). The last spec of the series.
 - **Data model** is three layers: **Docs → Blocks** (stable `b_` ids; the mutation anchors) **→ Nodes** (semantic projections: links, tasks, sections, anchors…).
 
 ## Build / verify
@@ -54,6 +54,8 @@ pnpm lint      # pnpm -r lint
 ```
 
 Always run `pnpm build && pnpm test` before considering a change done.
+
+`pnpm test` includes the **cross-engine interop suite** (`spec/surface` §7, `packages/core/corpus/surface/interop.test.ts`): it spawns both `omg mcp` and the Rust `omgbase mcp` as MCP stdio servers over one workspace, so it needs `cargo build -p omgbase` first (a missing binary fails the cross pairs; `OMGBASE_INTEROP=skip` skips them on a host without cargo — CI does this). Symmetrically, `cargo test` runs `crates/omgbase/tests/interop.rs`, which needs `pnpm build` first. `pnpm interop` at the root builds both and runs both harnesses.
 
 Rust (when touching `crates/` or `spec/`):
 

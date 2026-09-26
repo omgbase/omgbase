@@ -112,6 +112,8 @@ export { FilterInvalid } from "./search/cel/parser.js";
 export { EngineError, type ErrorCode } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
 export { isValidId, prefixOf, mintId, setIdMinter, withIdMinter, sequentialMinter, type IdMinter, type IdPrefix } from "./core/ids.js";
+// The clock seam (spec/surface §7.1): `omg mcp` pins the process clock under OMGBASE_SPEC_CLOCK.
+export { pinClock, withClock } from "./core/clock.js";
 export { sha256 } from "./core/hash.js";
 export { ingestFile, type IngestResult } from "./core/ingest.js";
 

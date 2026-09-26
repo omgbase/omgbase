@@ -11,6 +11,8 @@
 //   runCursorCase()         §1.4 / §6: `encodeCursor` / `decodeCursor`
 //   readCorpusFromDisk()    the alchemy repository as the spec embeds it (path → source)
 //   validateFixtureFile()   the shape check a runner applies before trusting a file
+//                           (also `interop.json`, §7 — run by interop.test.ts, not spec.test.ts)
+//   describeChange()        the `+`/`~`/`-` regeneration report both runners print
 //
 // Nothing here decides anything about the surface; it drives the same code paths
 // production uses (`oqxRun`, `buildServer`'s tool handlers, `observeBatch`,
@@ -26,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
 import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
+import { withClock } from "../../src/core/clock.js";
 import { CursorInvalid, decodeCursor, encodeCursor } from "../../src/core/cursor.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
 import { observeBatch } from "../../src/sync/observe.js";
@@ -112,21 +115,56 @@ export interface CursorSuite {
   suite: string;
   cases: CursorCase[];
 }
-export type FixtureFile = QuerySuite | ReadsSuite | CursorSuite;
 
-export type CaseKind = "query" | "reads" | "cursor";
+/** One MCP tool call of the interop suite (README §7): no `ts` — the whole process runs under the case's clock. */
+export interface InteropCall {
+  tool: string;
+  args: Record<string, unknown>;
+}
 
-/** The three suite kinds, told apart by the file stem (README §6). */
+/**
+ * README §7: a cross-engine case. The writer observes the corpus, then runs
+ * `writes`; the reader runs `reads`; both sequences are recorded as `reads.json`
+ * records outcomes (§7.3). `ts` is the writer's (and reader's) pinned clock,
+ * default `CORPUS_TS`.
+ */
+export interface InteropCase {
+  name: string;
+  notes?: string;
+  ts?: string;
+  writes?: InteropCall[];
+  reads: InteropCall[];
+  expect: { writes: ReadOutcome[]; reads: ReadOutcome[] };
+}
+
+export interface InteropSuite {
+  suite: string;
+  /** path → exact source, the 18 alchemy documents (regenerated from disk) */
+  corpus: Record<string, string>;
+  cases: InteropCase[];
+}
+export type FixtureFile = QuerySuite | ReadsSuite | CursorSuite | InteropSuite;
+
+export type CaseKind = "query" | "reads" | "cursor" | "interop";
+
+/** The four suite kinds, told apart by the file stem (README §6). */
 export function suiteKind(suite: string): CaseKind {
   if (suite === "reads") return "reads";
   if (suite === "cursor") return "cursor";
+  if (suite === "interop") return "interop";
   return "query";
+}
+
+/** The suites that embed the alchemy corpus (README §6). */
+export function carriesCorpus(kind: CaseKind): boolean {
+  return kind === "query" || kind === "interop";
 }
 
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   query: ["name", "notes", "query", "limit", "cursor", "expect"],
   reads: ["name", "notes", "workspace", "steps", "expect"],
   cursor: ["name", "notes", "parts", "cursor", "arity", "expect"],
+  interop: ["name", "notes", "ts", "writes", "reads", "expect"],
 };
 
 // ---- helpers ------------------------------------------------------------------
@@ -145,6 +183,18 @@ function canonical<T>(v: T): T {
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
+/** Recursively rebuild objects with sorted keys so vitest's diff ignores key order. */
+export function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (typeof v === "object" && v !== null) {
+    const rec = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(rec).sort()) out[k] = sortKeys(rec[k]);
+    return out;
+  }
+  return v;
+}
+
 /** Install a fresh fixture minter (spec/store §2.2) for an async body, restoring the previous one afterwards. */
 async function withFixtureMinterAsync<T>(body: () => Promise<T>): Promise<T> {
   setIdMinter(sequentialMinter());
@@ -155,30 +205,24 @@ async function withFixtureMinterAsync<T>(body: () => Promise<T>): Promise<T> {
   }
 }
 
-/**
- * Pin the wall clock to `ts` for `body`: `new Date()` and `Date.now()` return
- * that instant. Mutating tools stamp their commits with "now" (there is no `ts`
- * argument on the wire), so a `read` step that writes carries the clock it
- * runs under; a second implementation pins its clock the same way.
- */
-async function withClock<T>(ts: string | undefined, body: () => Promise<T>): Promise<T> {
-  if (ts === undefined) return body();
-  const RealDate = Date;
-  const fixed = RealDate.parse(ts);
-  class PinnedDate extends RealDate {
-    constructor(value?: number | string | Date) {
-      super(value === undefined ? fixed : (value as number));
-    }
-    static override now(): number {
-      return fixed;
-    }
+// The clock for a `read` step that writes is `withClock` (core/clock.ts): mutating
+// tools stamp their commits with "now" (there is no `ts` argument on the wire),
+// so the step carries the clock it runs under; `omg mcp` pins the same clock
+// process-wide under OMGBASE_SPEC_CLOCK (README §7.1).
+
+/** The regeneration report both runners print: `+` new, `~` changed, `-` gone (by case name). */
+export function describeChange(suite: string, before: { name: string; expect?: unknown }[], after: { name: string; expect?: unknown }[]): string[] {
+  const lines: string[] = [];
+  const old = new Map(before.map((c) => [c.name, c] as const));
+  const seen = new Set<string>();
+  for (const c of after) {
+    seen.add(c.name);
+    const prev = old.get(c.name);
+    if (!prev || prev.expect === undefined) lines.push(`  + ${suite}::${c.name}`);
+    else if (JSON.stringify(prev.expect) !== JSON.stringify(c.expect)) lines.push(`  ~ ${suite}::${c.name}`);
   }
-  globalThis.Date = PinnedDate as DateConstructor;
-  try {
-    return await body();
-  } finally {
-    globalThis.Date = RealDate;
-  }
+  for (const name of old.keys()) if (!seen.has(name)) lines.push(`  - ${suite}::${name}`);
+  return lines;
 }
 
 // ---- the corpus ---------------------------------------------------------------------
@@ -297,7 +341,7 @@ export interface ReadsEvaluation {
   problems: string[];
 }
 
-interface ToolResult {
+export interface ToolResult {
   content: { type: string; text: string }[];
   isError?: boolean;
 }
@@ -428,6 +472,27 @@ const validateRead: ExtraStepValidator = (body, here, problems) => {
   if (body.ts !== undefined && (typeof body.ts !== "string" || !TS_RE.test(body.ts))) problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
 };
 
+/** README §7: an interop call is exactly `{ tool, args }`. Returns the number of calls (or -1 when not an array). */
+function validateCalls(at: string, calls: unknown, problems: string[]): number {
+  if (!Array.isArray(calls)) {
+    problems.push(`${at}: must be an array of { tool, args }`);
+    return -1;
+  }
+  calls.forEach((c: unknown, i: number) => {
+    const here = `${at}[${i}]`;
+    if (!isRecord(c)) {
+      problems.push(`${here}: not an object`);
+      return;
+    }
+    const extra = Object.keys(c).filter((k) => !["tool", "args"].includes(k));
+    if (extra.length > 0) problems.push(`${here}: a call takes \`tool\`, \`args\` (got ${extra.join(", ")})`);
+    if (typeof c.tool !== "string" || c.tool === "") problems.push(`${here}: \`tool\` must be a tool name`);
+    else if (c.tool === "query_syntax") problems.push(`${here}: query_syntax is not compared (README §7.3)`);
+    if (!isRecord(c.args)) problems.push(`${here}: \`args\` must be an object`);
+  });
+  return calls.length;
+}
+
 const OQX_RESULT_KEYS = ["hits", "truncated", "cursor", "consumer", "count", "exists", "none", "values"];
 
 function validateQueryExpect(at: string, e: unknown, problems: string[]): void {
@@ -461,10 +526,10 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
   const stem = file.replace(/\.json$/, "");
   const kind = suiteKind(stem);
   if (doc.suite !== stem) problems.push(`${file}: \`suite\` must equal the file stem '${stem}' (got ${JSON.stringify(doc.suite)})`);
-  const topKeys = kind === "query" ? ["suite", "corpus", "cases"] : ["suite", "cases"];
+  const topKeys = carriesCorpus(kind) ? ["suite", "corpus", "cases"] : ["suite", "cases"];
   const extra = Object.keys(doc).filter((k) => !topKeys.includes(k));
   if (extra.length > 0) problems.push(`${file}: unknown top-level keys ${extra.join(", ")}`);
-  if (kind === "query") {
+  if (carriesCorpus(kind)) {
     if (!isRecord(doc.corpus)) problems.push(`${file}: \`corpus\` must be an object (path → source)`);
     else if (requireExpect && Object.keys(doc.corpus).length === 0) problems.push(`${file}: \`corpus\` is empty (run SURFACE_SPEC_UPDATE=1)`);
     else {
@@ -491,7 +556,14 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
     if (c.notes !== undefined && typeof c.notes !== "string") problems.push(`${at}: \`notes\` must be a string`);
 
     let stepCount = -1;
-    if (kind === "query") {
+    let writeCount = 0;
+    let readCount = -1;
+    if (kind === "interop") {
+      if (c.ts !== undefined && (typeof c.ts !== "string" || !TS_RE.test(c.ts))) problems.push(`${at}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (spec/store §2.4)`);
+      if (c.writes !== undefined) writeCount = validateCalls(`${at}.writes`, c.writes, problems);
+      readCount = validateCalls(`${at}.reads`, c.reads, problems);
+      if (readCount === 0) problems.push(`${at}.reads: must not be empty (README §7.2)`);
+    } else if (kind === "query") {
       if (typeof c.query !== "string") problems.push(`${at}: \`query\` must be an OQX source`);
       if (c.limit !== undefined && (typeof c.limit !== "number" || !Number.isInteger(c.limit) || c.limit < 0)) problems.push(`${at}: \`limit\` must be a non-negative integer`);
       if (c.cursor !== undefined && typeof c.cursor !== "string") problems.push(`${at}: \`cursor\` must be a string`);
@@ -510,7 +582,15 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (requireExpect) problems.push(`${at}: missing \`expect\` (run SURFACE_SPEC_UPDATE=1)`);
       return;
     }
-    if (kind === "query") validateQueryExpect(`${at}.expect`, c.expect, problems);
+    if (kind === "interop") {
+      const e = c.expect;
+      if (!isRecord(e) || Object.keys(e).sort().join(",") !== "reads,writes" || !Array.isArray(e.writes) || !Array.isArray(e.reads)) {
+        problems.push(`${at}.expect: must be exactly { writes: [...], reads: [...] }`);
+      } else {
+        if (writeCount >= 0 && e.writes.length !== writeCount) problems.push(`${at}.expect.writes: ${e.writes.length} outcomes for ${writeCount} writes`);
+        if (readCount >= 0 && e.reads.length !== readCount) problems.push(`${at}.expect.reads: ${e.reads.length} outcomes for ${readCount} reads`);
+      }
+    } else if (kind === "query") validateQueryExpect(`${at}.expect`, c.expect, problems);
     else if (kind === "reads") {
       if (!isRecord(c.expect) || Object.keys(c.expect).join(",") !== "steps" || !Array.isArray(c.expect.steps)) problems.push(`${at}.expect: must be exactly { steps: [...] }`);
       else if (stepCount >= 0 && c.expect.steps.length !== stepCount) problems.push(`${at}.expect.steps: ${c.expect.steps.length} outcomes for ${stepCount} steps`);

@@ -1,11 +1,13 @@
 //! The runner (`spec/surface/README.md` §1.4): parse the source, rewrite the
-//! row functions to `$self` methods, run it through the in-memory engine over
-//! the store context, and shape the engine's result into the surface's
+//! row functions to `$self` methods, run it through the engine over the
+//! store context, and shape the engine's result into the surface's
 //! `OqxResult` (lean `{ id, path, … }` hits, keyset paging, the consumer
 //! scalars). Port of `packages/core/src/oqx-js/run.ts`.
 //!
-//! The tier-3 pushdown planner is not ported yet: every query runs in memory,
-//! which is the semantics this spec pins (a planner must be invisible).
+//! By default the tier-3 planner ([`crate::planner`]) pre-filters the scan in
+//! SQL and the in-memory engine finishes the residual over the produced rows;
+//! [`QueryOptions::in_memory`] forces the pure in-memory engine (the
+//! differential gate runs every case both ways — a planner must be invisible).
 
 use std::collections::HashMap;
 
@@ -18,6 +20,7 @@ use serde_json::{Map, Value as Json};
 use crate::context::{SemanticVec, StoreContext, strip_tags};
 use crate::cursor::{decode_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
+use crate::planner::SqlitePlanner;
 
 /// The default page size.
 pub const DEFAULT_LIMIT: usize = 50;
@@ -56,6 +59,9 @@ pub struct QueryOptions<'a> {
     /// The provider behind `semantic(...)`; `None` → `semantic_unavailable`
     /// when the query names a phrase.
     pub provider: Option<&'a dyn EmbeddingProvider>,
+    /// Force the pure in-memory engine (skip the tier-3 pushdown planner).
+    /// The default plans; the differential gate runs both and compares.
+    pub in_memory: bool,
 }
 
 /// §1.4 `OqxResult`.
@@ -528,34 +534,71 @@ pub fn query(
             );
         }
     }
-    let engine = InMemoryEngine::new(StoreContext::new(store.conn(), repo_id, semantic));
-    let out = run_inner(&engine, source, opts);
-    // A failure a property read could not raise through the engine's seam
-    // (the reserved-basename guard, a SQL error) wins over whatever the run
-    // made of the `Undefined` it returned instead.
-    if let Some(pending) = engine.context().take_pending() {
-        return Err(pending);
-    }
-    out
+    let runner = Runner {
+        store,
+        repo_id,
+        semantic,
+        planned: !opts.in_memory,
+    };
+    run_inner(&runner, source, opts)
 }
 
-fn run_inner(
-    engine: &InMemoryEngine<StoreContext<'_>>,
-    source: &str,
-    opts: QueryOptions<'_>,
-) -> Result<OqxResult> {
+/// One query's engine: a fresh store context per run (the planned path gives
+/// the residual a context serving the produced rows as its root), with the
+/// pending-error channel read after each run.
+struct Runner<'a> {
+    store: &'a Store,
+    repo_id: &'a str,
+    semantic: HashMap<String, SemanticVec>,
+    planned: bool,
+}
+
+impl Runner<'_> {
+    /// Tier-3 pushdown reduces the scan in SQL and the in-memory engine
+    /// finishes the residual over the produced rows (a declined plan, or
+    /// `in_memory`, runs the whole query in memory over a full scan), so
+    /// results match a pure scan. This is `oqx::PlannedEngine::run` inlined:
+    /// the store context borrows the connection, so it cannot be the
+    /// `'static` context a `Plan` carries.
+    fn run(&self, q: &Query) -> Result<oqx::OqxResult> {
+        let conn = self.store.conn();
+        let ctx = StoreContext::new(conn, self.repo_id, self.semantic.clone());
+        let plan = if self.planned {
+            SqlitePlanner::new(conn, self.repo_id)
+                .try_plan(q, &[])
+                .map_err(|e| SurfaceError::other(format!("sqlite: {e}")))?
+        } else {
+            None
+        };
+        let (ctx, residual) = match plan {
+            Some(plan) => (ctx.with_rows_root(plan.rows), Some(plan.residual)),
+            None => (ctx, None),
+        };
+        let engine = InMemoryEngine::new(ctx);
+        let out = engine.run(residual.as_ref().unwrap_or(q), &[]);
+        // A failure a property read could not raise through the engine's seam
+        // (the reserved-basename guard, a SQL error) wins over whatever the
+        // run made of the `Undefined` it returned instead.
+        if let Some(pending) = engine.context().take_pending() {
+            return Err(pending);
+        }
+        Ok(out?)
+    }
+}
+
+fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Result<OqxResult> {
     let parsed = rewrite_query(&oqx::parse_string(source)?);
     let consumer = parsed.consumer;
 
     match consumer {
         Consumer::Exists => {
-            let res = engine.run(&parsed, &[])?;
+            let res = engine.run(&parsed)?;
             let mut r = OqxResult::scalar(consumer);
             r.exists = Some(matches!(res, oqx::OqxResult::Exists(true)));
             return Ok(r);
         }
         Consumer::Count => {
-            let res = engine.run(&parsed, &[])?;
+            let res = engine.run(&parsed)?;
             let mut r = OqxResult::scalar(consumer);
             r.count = Some(match res {
                 oqx::OqxResult::Count(n) => n,
@@ -564,7 +607,7 @@ fn run_inner(
             return Ok(r);
         }
         Consumer::None => {
-            let res = engine.run(&parsed, &[])?;
+            let res = engine.run(&parsed)?;
             let mut r = OqxResult::scalar(consumer);
             r.none = Some(match res {
                 oqx::OqxResult::None(b) => b,
@@ -638,7 +681,7 @@ fn run_inner(
         },
         ..parsed.clone()
     };
-    let res = engine.run(&q, &[])?;
+    let res = engine.run(&q)?;
 
     if matches!(consumer, Consumer::First | Consumer::Single) {
         let row = match res {

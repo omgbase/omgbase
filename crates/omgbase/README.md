@@ -23,6 +23,25 @@ JSON; an error result carries `isError: true` and the envelope
 Thin by design: there is no business logic here beyond argument parsing and
 the transport loop.
 
+## Conformance seams and the interop harness
+
+Two environment variables are the test seams of `spec/surface` §7.1, for
+cross-engine conformance runs only (never set them in production):
+
+- `OMGBASE_SPEC_MINTER=sequential` installs the fixture id minter
+  (`d_0, d_1, …`, each prefix counting from 0, fresh at process start) for
+  the workspace and the store; any other value is a startup error.
+- `OMGBASE_SPEC_CLOCK=<RFC 3339>` makes that instant "now" for every commit
+  a tool stamps (stored as UTC milliseconds, `…Z`; a `±HH:MM` offset is
+  converted).
+
+Both are announced on stderr. `tests/interop.rs` is the §7 harness: every
+case of `spec/surface/cases/interop.json` for every `(writer, reader)` in
+`{typescript, rust}²`, both engines as child processes over MCP stdio. The
+TypeScript peer is `$OMGBASE_TS_MCP` or `node
+<repo>/packages/cli/dist/src/main.js` (`pnpm build`); `OMGBASE_INTEROP=skip`
+skips the pairs that need it.
+
 ## License
 
 MIT.

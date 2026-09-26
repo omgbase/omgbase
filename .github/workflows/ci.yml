@@ -18,7 +18,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
+      # No cargo on this job: the cross-engine interop pairs (spec/surface §7.4) skip
+      # instead of failing over the missing `omgbase` binary.
       - run: pnpm test
+        env:
+          OMGBASE_INTEROP: skip
 
   rust:
     runs-on: ubuntu-latest

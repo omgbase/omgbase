@@ -1,7 +1,8 @@
 //! # omgbase-surface
 //!
 //! The omgbase surface, Rust implementation of `spec/surface`: the OQX
-//! **query binding** over [`omgbase_store::Store`] ([`context`], [`query`]),
+//! **query binding** over [`omgbase_store::Store`] ([`context`], [`mod@query`],
+//! the tier-3 pushdown [`planner`] and its [`translate`] seam),
 //! the document and block **reads** ([`read`]), the **history** reads
 //! ([`history`]), link health ([`links`]), the `graph` macro ([`graph`]), and
 //! the **MCP tool catalog** as a library ([`catalog`]): a table of tools with
@@ -37,15 +38,18 @@ pub mod error;
 pub mod graph;
 pub mod history;
 pub mod links;
+pub mod planner;
 pub mod query;
 pub mod read;
 pub mod reference;
+pub mod translate;
 
 pub use catalog::{Surface, ToolOutcome, ToolSpec};
-pub use context::{StoreContext, glob_to_like};
+pub use context::{StoreContext, Target, glob_to_like};
 pub use cursor::{decode_cursor, encode_cursor};
 pub use error::{Result, SurfaceError};
-pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query};
+pub use planner::SqlitePlanner;
+pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query, rewrite_query};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.0";
+pub const SPEC_VERSION: &str = "1.1";

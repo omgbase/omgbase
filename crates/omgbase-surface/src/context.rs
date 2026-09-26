@@ -10,6 +10,12 @@
 //! Row functions (`text`, `under`, …) arrive as methods on the `$self`
 //! receiver (see the runner's AST rewrite), since a free function sees no row.
 //!
+//! The tier-3 planner ([`crate::planner`]) hands the rows its SQL produced
+//! back through [`StoreContext::with_rows_root`]: the context then serves them
+//! as the residual query's [`oqx::ROWS_ROOT`] scan, while every other root,
+//! relation, intrinsic and row function still reaches the store — the
+//! reference's `rowsRoot` context option.
+//!
 //! Two seams differ from the reference and are bridged here:
 //!
 //! * `DataContext::get` has no error channel, so a failure inside a property
@@ -49,7 +55,9 @@ pub enum Target {
 }
 
 impl Target {
-    fn as_str(self) -> &'static str {
+    /// The root name: `docs` | `blocks` | `nodes` | `edges`.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
         match self {
             Target::Docs => "docs",
             Target::Blocks => "blocks",
@@ -58,7 +66,9 @@ impl Target {
         }
     }
 
-    fn parse(s: &str) -> Option<Self> {
+    /// The target a root name denotes, if any.
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
         Some(match s {
             "docs" => Target::Docs,
             "blocks" => Target::Blocks,
@@ -87,6 +97,8 @@ pub struct StoreContext<'a> {
     repo_id: String,
     semantic: HashMap<String, SemanticVec>,
     pending: RefCell<Option<SurfaceError>>,
+    /// The rows a tier-3 plan produced, served as [`oqx::ROWS_ROOT`].
+    rows_root: Option<Vec<Value>>,
 }
 
 fn sql_value(v: ValueRef<'_>) -> Value {
@@ -99,8 +111,11 @@ fn sql_value(v: ValueRef<'_>) -> Value {
     }
 }
 
-/// A [`Value`] as a SQL parameter (`has_edge`'s destination).
-fn to_sql(v: &Value) -> SqlValue {
+/// A [`Value`] as a SQL parameter (`has_edge`'s destination, the planner's
+/// bound operands): booleans as 1/0 — how `json_extract` surfaces JSON
+/// booleans, so `attrs.b == true` compares against `1` — numbers as REAL
+/// (a JavaScript number binds as a double), absent as NULL.
+pub(crate) fn to_sql(v: &Value) -> SqlValue {
     match v {
         Value::Undefined | Value::Null | Value::Range(_) => SqlValue::Null,
         Value::Bool(b) => SqlValue::Integer(i64::from(*b)),
@@ -197,7 +212,18 @@ impl<'a> StoreContext<'a> {
             repo_id: repo_id.to_owned(),
             semantic,
             pending: RefCell::new(None),
+            rows_root: None,
         }
+    }
+
+    /// Serve `rows` — target-tagged store rows a plan produced — as the
+    /// [`oqx::ROWS_ROOT`] scan (the residual query's source). Every other
+    /// root and every relation, intrinsic and row function still hits the
+    /// store, so the residual sees exactly what a full scan would.
+    #[must_use]
+    pub fn with_rows_root(mut self, rows: Vec<Value>) -> Self {
+        self.rows_root = Some(rows);
+        self
     }
 
     /// The first failure stashed during a run (a property read cannot fail
@@ -230,20 +256,7 @@ impl<'a> StoreContext<'a> {
     }
 
     fn try_all(&self, sql: &str, params: &[SqlValue]) -> rusqlite::Result<Vec<Object>> {
-        let mut stmt = self.conn.prepare_cached(sql)?;
-        let names: Vec<String> = stmt
-            .column_names()
-            .iter()
-            .map(|s| (*s).to_owned())
-            .collect();
-        let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
-            let mut o = Object::with_capacity(names.len());
-            for (i, name) in names.iter().enumerate() {
-                o.insert(name.as_str(), sql_value(r.get_ref(i)?));
-            }
-            Ok(o)
-        })?;
-        rows.collect()
+        fetch_rows(self.conn, sql, params)
     }
 
     fn one(&self, sql: &str, params: &[SqlValue]) -> Option<Object> {
@@ -262,12 +275,11 @@ impl<'a> StoreContext<'a> {
     }
 
     fn tag_all(rows: Vec<Object>, t: Target) -> Value {
-        Value::Array(rows.into_iter().map(|r| Self::tag(r, t)).collect())
+        Value::Array(tag_rows(rows, t))
     }
 
-    fn tag(mut row: Object, t: Target) -> Value {
-        row.insert(TAG_KEY, Value::Str(t.as_str().to_owned()));
-        Value::Object(row)
+    fn tag(row: Object, t: Target) -> Value {
+        tag_row(row, t)
     }
 
     fn repo_root(&self) -> Value {
@@ -985,6 +997,41 @@ impl<'a> StoreContext<'a> {
     }
 }
 
+/// Run `sql` and read every row as a column object (blobs as hex, integers
+/// and reals as numbers) — the one shape a store row ever has in a query.
+pub(crate) fn fetch_rows(
+    conn: &Connection,
+    sql: &str,
+    params: &[SqlValue],
+) -> rusqlite::Result<Vec<Object>> {
+    let mut stmt = conn.prepare_cached(sql)?;
+    let names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
+        let mut o = Object::with_capacity(names.len());
+        for (i, name) in names.iter().enumerate() {
+            o.insert(name.as_str(), sql_value(r.get_ref(i)?));
+        }
+        Ok(o)
+    })?;
+    rows.collect()
+}
+
+/// Tag a store row with its target so the context resolves it (the
+/// reference's `tagRows`; the planner hands produced rows back this way).
+pub(crate) fn tag_row(mut row: Object, t: Target) -> Value {
+    row.insert(TAG_KEY, Value::Str(t.as_str().to_owned()));
+    Value::Object(row)
+}
+
+/// [`tag_row`] over a result set.
+pub(crate) fn tag_rows(rows: Vec<Object>, t: Target) -> Vec<Value> {
+    rows.into_iter().map(|r| tag_row(r, t)).collect()
+}
+
 /// `cur[seg] = {}` down the path, then the leaf (a scalar in the way is
 /// replaced by an object; an existing key keeps its position).
 fn set_nested(out: &mut Object, path: &[&str], leaf: Value) {
@@ -1024,6 +1071,9 @@ pub fn glob_to_like(glob: &str, escape_backslash: bool) -> String {
 
 impl DataContext for StoreContext<'_> {
     fn root(&self, name: &str) -> Value {
+        if let Some(rows) = self.rows_root.as_ref().filter(|_| name == oqx::ROWS_ROOT) {
+            return Value::Array(rows.clone());
+        }
         if name == "$repo" {
             return self.repo_root();
         }

@@ -1,6 +1,6 @@
 [package]
 name = "omgbase"
-version = "0.1.0"
+version = "0.2.0"
 description = "omgbase: a versioned, addressable graph layer over authored Markdown — the `omgbase` binary (`omgbase mcp` serves the tool catalog over MCP stdio)"
 keywords = ["markdown", "mcp", "knowledge-base", "sqlite", "omgbase"]
 categories = ["command-line-utilities", "text-processing"]

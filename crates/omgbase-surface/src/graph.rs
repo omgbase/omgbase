@@ -144,6 +144,7 @@ pub fn graph_neighborhood(
                 limit: Some(max_documents + 1),
                 cursor: None,
                 provider,
+                in_memory: false,
             },
         )?;
         if res.truncated {

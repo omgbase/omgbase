@@ -15,6 +15,7 @@
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
+    "interop": "cargo build -p omgbase && pnpm build && pnpm --filter @omgbase/core exec vitest run corpus/surface/interop.test.ts && cargo test -p omgbase --test interop",
     "rlink": "pnpm -r build && for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm add -g .); done"
   },
   "devDependencies": {

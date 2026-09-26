@@ -43,6 +43,7 @@ These documents are maintained as **as-built** references to the implementation 
 6. **CAS honesty:** no update applies against a stale expected hash; every conflict response carries current truth.
 7. **History honesty:** observed transitions are labeled inferred with confidence; only API commits carry intent.
 8. **Rebuildability:** every derived store can be dropped and rebuilt from durable tables with zero information loss.
+9. **Engine interchangeability:** a workspace written through either engine (`omg mcp`, the Rust `omgbase mcp`) reads identically from both, for every read tool (`spec/surface` §7, `packages/core/corpus/surface/interop.test.ts` + `crates/omgbase/tests/interop.rs`).
 
 ## Glossary
 

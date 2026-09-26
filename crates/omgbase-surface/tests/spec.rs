@@ -1,12 +1,15 @@
 //! The surface spec conformance runner: executes every fixture under
 //! `spec/surface/cases` against this crate — the corpus-backed query suites
 //! through [`omgbase_surface::query`] over one store per suite (the corpus
-//! observed with the fixture minter, `spec/store` §9.4), `reads.json` as
-//! observation scripts whose `read` steps call the catalog in-process
-//! ([`Surface::call`]), and `cursor.json` through the cursor codec — and
-//! compares each outcome to the case's `expect`. The fixture contract is
-//! `spec/surface/README.md` §6; the reference runner this mirrors is
-//! `packages/core/corpus/surface/spec.test.ts`.
+//! observed with the fixture minter, `spec/store` §9.4), each query run
+//! BOTH planned (the tier-3 pushdown) and purely in memory, which must agree
+//! (§1: a planner is invisible), `reads.json` as observation scripts whose
+//! `read` steps call the catalog in-process ([`Surface::call`]), and
+//! `cursor.json` through the cursor codec — and compares each outcome to the
+//! case's `expect`. `interop.json` (§7) is run by the `omgbase` binary's
+//! `tests/interop.rs`; here its top-level shape is validated and its cases
+//! are skipped. The fixture contract is `spec/surface/README.md` §6; the
+//! reference runner this mirrors is `packages/core/corpus/surface/spec.test.ts`.
 //!
 //! Allowlist (`tests/spec-passing.txt`, one `<file-stem>::<name>` per line):
 //! while the port is incomplete it names the cases that must pass. A listed
@@ -24,10 +27,13 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use omgbase_reconcile::Config;
 use omgbase_store::{BatchItem, BatchOutcome, SequentialMinter, Store};
-use omgbase_surface::{QueryOptions, Surface, decode_cursor, encode_cursor, query};
+use omgbase_surface::{
+    OqxResult, QueryOptions, Surface, SurfaceError, decode_cursor, encode_cursor, query,
+};
 use serde_json::{Map as JsonMap, Value as Json, json};
 
 const SPEC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/surface");
@@ -60,14 +66,18 @@ enum Kind {
     Query,
     Reads,
     Cursor,
+    /// §7 cross-engine interop: shape-checked here, run by `crates/omgbase`.
+    Interop,
 }
 
+#[derive(Debug)]
 struct SpecCase {
     id: String,
     kind: Kind,
     case: Json,
 }
 
+#[derive(Debug)]
 struct SpecFile {
     stem: String,
     kind: Kind,
@@ -97,12 +107,18 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
     let kind = match stem {
         "cursor" => Kind::Cursor,
         "reads" => Kind::Reads,
+        "interop" => Kind::Interop,
         s if s.starts_with("query-") => Kind::Query,
         _ => {
             problems.push(format!("{file}: unknown suite"));
             return Err(problems);
         }
     };
+    if kind == Kind::Interop && !obj.get("corpus").is_some_and(Json::is_object) {
+        problems.push(format!(
+            "{file}: the interop suite carries a `corpus` object"
+        ));
+    }
     let mut corpus = Vec::new();
     if kind == Kind::Query {
         match obj.get("corpus").and_then(Json::as_object) {
@@ -167,6 +183,8 @@ fn validate(file: &str, doc: &Json) -> Result<SpecFile, Vec<String>> {
                     problems.push(format!("{at}: a cursor case has `parts` or `cursor`"));
                 }
             }
+            // Only the top-level shape is this runner's business (§7).
+            Kind::Interop => continue,
         }
         if !cobj.contains_key("expect") {
             problems.push(format!(
@@ -324,15 +342,78 @@ fn corpus_store(corpus: &[(String, String)]) -> Result<(Store, String), String> 
     Ok((store, repo))
 }
 
-fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
+thread_local! {
+    /// Wall time spent in the query suites' cases: (planned, in-memory).
+    static QUERY_TIME: RefCell<(Duration, Duration)> = const { RefCell::new((Duration::ZERO, Duration::ZERO)) };
+}
+
+/// One `query` through the runner, planned or purely in memory, timed.
+fn run_once(
+    store: &Store,
+    repo: &str,
+    c: &Json,
+    in_memory: bool,
+) -> Result<Result<OqxResult, SurfaceError>, String> {
     let source = c["query"].as_str().ok_or("query")?;
     let opts = QueryOptions {
         limit: c.get("limit").and_then(Json::as_u64).map(|n| n as usize),
         cursor: c.get("cursor").and_then(Json::as_str),
         provider: None,
+        in_memory,
     };
+    let started = Instant::now();
+    let out = query(store, repo, source, opts);
+    let took = started.elapsed();
+    QUERY_TIME.with(|t| {
+        let mut t = t.borrow_mut();
+        if in_memory {
+            t.1 += took;
+        } else {
+            t.0 += took;
+        }
+    });
+    Ok(out)
+}
+
+/// The reference's `runQueryCase`: the case runs planned AND purely in
+/// memory; the two must agree (result or error, `spec/surface` §1 — the
+/// planner is invisible), and the planned outcome is what `expect` pins.
+fn run_query_case(store: &Store, repo: &str, c: &Json) -> Result<(), String> {
+    let planned = run_once(store, repo, c, false)?;
+    let memory = run_once(store, repo, c, true)?;
+    match (&planned, &memory) {
+        (Ok(p), Ok(m)) => {
+            if let Some(diff) = deep_eq_tol(&p.to_json(), &m.to_json(), "planned", EPS) {
+                return Err(clip(format!("planned != in-memory: {diff}")));
+            }
+        }
+        (Err(p), Err(m)) => {
+            if p.code != m.code || p.message != m.message {
+                return Err(clip(format!(
+                    "planned error {} {:?} != in-memory error {} {:?}",
+                    p.code, p.message, m.code, m.message
+                )));
+            }
+        }
+        (Ok(p), Err(m)) => {
+            return Err(clip(format!(
+                "planned returned a result but in-memory failed ({} {}): {}",
+                m.code,
+                m.message,
+                p.to_json()
+            )));
+        }
+        (Err(p), Ok(m)) => {
+            return Err(clip(format!(
+                "planned failed ({} {}) but in-memory returned a result: {}",
+                p.code,
+                p.message,
+                m.to_json()
+            )));
+        }
+    }
     let expect = &c["expect"];
-    match query(store, repo, source, opts) {
+    match planned {
         Ok(res) => {
             if let Some(code) = expect.get("error") {
                 return Err(clip(format!(
@@ -539,6 +620,7 @@ fn check(c: &SpecCase, suite: &SuiteState) -> Result<(), String> {
             let actual = run_reads_case(&c.case)?;
             deep_eq_tol(&actual, &c.case["expect"], "expect", EPS).map_or(Ok(()), |d| Err(clip(d)))
         }
+        Kind::Interop => Err("interop cases are run by crates/omgbase/tests/interop.rs".to_owned()),
     }
 }
 
@@ -676,6 +758,12 @@ fn spec() {
         }
     }
     let _ = panic::take_hook();
+    QUERY_TIME.with(|t| {
+        let (planned, memory) = *t.borrow();
+        eprintln!(
+            "spec: query cases took {planned:?} planned vs {memory:?} in memory (every case ran both ways)"
+        );
+    });
 
     let passing_path = PathBuf::from(PASSING_FILE);
     let listed = read_allowlist(&passing_path);
@@ -797,7 +885,11 @@ fn fixture_files_are_well_formed_and_every_case_file_was_loaded() {
         .collect();
     assert_eq!(loaded_names, loaded.file_names, "every case file must load");
     for f in &loaded.files {
-        assert!(!f.cases.is_empty(), "{}.json has no cases", f.stem);
+        assert!(
+            f.kind == Kind::Interop || !f.cases.is_empty(),
+            "{}.json has no cases",
+            f.stem
+        );
     }
 }
 
@@ -813,6 +905,50 @@ fn case_names_are_unique_per_file() {
             assert!(seen.insert(&c.id), "duplicate case id {}", c.id);
         }
     }
+}
+
+/// The §7 interop suite has its own runner (`crates/omgbase/tests/interop.rs`);
+/// this one checks its top-level shape — suite name, `corpus` object, `cases`
+/// with unique names — and loads it with no cases to run.
+#[test]
+fn interop_suite_is_shape_checked_and_skipped() {
+    let doc = json!({
+        "suite": "interop",
+        "corpus": { "a.md": "# A\n" },
+        "cases": [
+            { "name": "read-tools", "reads": [{ "tool": "docs_list", "args": {} }], "expect": { "writes": [], "reads": [] } },
+            { "name": "with-writes", "ts": "2026-09-27T00:00:00.000Z", "writes": [], "reads": [], "expect": { "writes": [], "reads": [] } }
+        ]
+    });
+    let file = validate("interop.json", &doc).expect("well-formed");
+    assert_eq!(file.kind, Kind::Interop);
+    assert_eq!(file.stem, "interop");
+    assert!(file.cases.is_empty(), "interop cases are not run here");
+    assert!(file.corpus.is_empty());
+
+    let mut dup = doc.clone();
+    dup["cases"][1]["name"] = json!("read-tools");
+    let problems = validate("interop.json", &dup).expect_err("duplicate names");
+    assert!(
+        problems.iter().any(|p| p.contains("duplicate name")),
+        "{problems:?}"
+    );
+
+    let mut no_corpus = doc.clone();
+    no_corpus.as_object_mut().unwrap().remove("corpus");
+    let problems = validate("interop.json", &no_corpus).expect_err("corpus required");
+    assert!(
+        problems.iter().any(|p| p.contains("`corpus` object")),
+        "{problems:?}"
+    );
+
+    let mut wrong_suite = doc.clone();
+    wrong_suite["suite"] = json!("interop-x");
+    assert!(validate("interop.json", &wrong_suite).is_err());
+
+    let mut no_cases = doc;
+    no_cases["cases"] = json!([]);
+    assert!(validate("interop.json", &no_cases).is_err());
 }
 
 /// `spec/surface/VERSION` is the version this crate implements.

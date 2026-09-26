@@ -1215,6 +1215,7 @@ impl Surface {
                     limit: arg_usize(args, "limit")?,
                     cursor: arg_str(args, "cursor"),
                     provider: self.provider.as_deref(),
+                    in_memory: false,
                 };
                 Ok(query(&self.store, &repo, &source, opts)?.to_json())
             }
@@ -1981,7 +1982,17 @@ pub fn opset_json(opset: &Opset) -> Json {
                 .iter()
                 .map(|p| {
                     let mut o = Map::new();
-                    o.insert("op".to_owned(), p.op.to_json());
+                    // The kernel's JSON spells the carried ids `child_ids`
+                    // (the `spec/mutate` fixture form); the wire is camelCase
+                    // like every other key here (`spec/surface` §9;
+                    // `Op::from_json` accepts both on the way back in).
+                    let mut op = p.op.to_json();
+                    if let Some(m) = op.as_object_mut()
+                        && let Some(c) = m.remove("child_ids")
+                    {
+                        m.insert("childIds".to_owned(), c);
+                    }
+                    o.insert("op".to_owned(), op);
                     o.insert("disposition".to_owned(), json!(p.disposition.as_str()));
                     o.insert("blocks".to_owned(), json!(p.blocks));
                     o.insert("confidence".to_owned(), json!(p.confidence));
