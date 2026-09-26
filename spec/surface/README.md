@@ -200,6 +200,13 @@ cursor, consumer, count?, exists?, none?, values? }`:
   the cursor (the top `cap` is returned, `truncated` still honest).
 - `values`: the single projected item is returned as `values: [...]` with
   `hits` empty.
+- **Rows as values (1.2).** Wherever a row surfaces as a *value* rather
+  than as a hit — a nested `collect { }` / `first { }` / `single { }` with an
+  empty projection (`spec/oqx` §12: "the row itself"), or a `values`
+  projection of a row — it is rendered as `{ id, path }` (the row's id
+  column and its document's path), never the store row (§9: before 1.2 the
+  raw row leaked, `attrs` as a JSON string and the join column `__path`
+  included). Hits are unaffected: `{ id, path, ...projection }` as above.
 - Errors: an OQX error is `filter_invalid` with the engine's message; a
   malformed cursor is `filter_invalid` naming the surface.
 
@@ -217,7 +224,10 @@ Cursors are `base64url(JSON [parts...])`: `[path, id]` for `query`,
   id or null). `docs_read_many(refs, include_ids?, budget_tokens?)`:
   first-seen dedup, cap 100 (`truncated`), a miss → `errors: [{ ref, error:
   "doc_not_found" }]`, the budget (`ceil(JSON length / 4)` per item) stops
-  early with `truncated`. `docs_read_at(doc, rev)`: `spec/store` §6.2 plus
+  early with `truncated` — but **at least one item is always returned**
+  (1.2, the uniform list contract of `docs_list`/`docs_tree`: the budget
+  is checked before the second item onward; a first item that alone exceeds
+  it is still emitted and the batch is `truncated` if more remained). `docs_read_at(doc, rev)`: `spec/store` §6.2 plus
   `properties` (current) and `properties_are_current: true`.
 - **`nodes_get(doc?, id, resolution = full)`**: the block subtree projected
   at a resolution — `skeleton` `{ id, type, label = heading text or type }`,
@@ -227,7 +237,8 @@ Cursors are `base64url(JSON [parts...])`: `[path, id]` for `query`,
   `children` recursively. `nodes_get_many(doc?, ids, resolution = text,
   budget_tokens?)`: cap 100, request order, no children, `unresolved` for
   ids naming no live block (or one outside the scoping doc), `truncated`
-  on the cap or the budget.
+  on the cap or the budget; at least one resolved node is always returned
+  (1.2, as `docs_read_many`).
 - **`docs_outline(doc, resolution = outline, depth?, budget_tokens?)`**:
   one line per block, `"  " × depth + id + " " + type label padded to 4 +
   " " + label`, `"  §"` appended for headings, trailing spaces trimmed; type
@@ -325,9 +336,9 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `text_search` | `q`, `limit?` | `spec/search` §1.3 |
 | `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists) |
 | `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"` |
-| `blocks_insert` | `to`, `markdown`, `at? = end`, `dry_run?` | the apply result |
+| `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
 | `blocks_update` | `block`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id, ids, ...apply result }` (`checked` folds into attrs) |
-| `blocks_move` | `blocks[]`, `to`, `at?`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing` |
+| `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
 | `blocks_remove` | `blocks[]`, `dry_run?` | |
 | `blocks_split` | `block`, `at[]` (bytes), `dry_run?` | |
 | `blocks_merge` | `blocks[]`, `separator?`, `dry_run?` | |
@@ -520,13 +531,23 @@ both and runs both harnesses.
   `query-docs::relation-blocks-in-document-order`,
   `query-nodes::section-blocks-includes-nested`); inside a `follow` the
   walk's metadata still wins.
-- **Pinned — an empty-projection nested `collect { }` yields the raw store
-  row** (store columns, `attrs` as a JSON string, the join column `__path`).
-  A port reproduces the same keys. Recorded for a decision (a `{ id, path }`
-  projection would be a minor here).
-- **Pinned — budgets are asymmetric.** `docs_get_many`/`nodes_get_many`
-  return zero items when the first exceeds `budget_tokens`; `docs_list`/
-  `docs_tree` always return one row.
+- **Fixed (1.2) — an empty-projection nested `collect { }` yielded the raw
+  store row** (store columns, `attrs` as a JSON string, the join column
+  `__path`); a port had to reproduce the same keys, blobs came out as a Node
+  `Buffer` in one engine and hex in the other. §1.4 now renders a row
+  surfacing as a value as `{ id, path }` (least surprising: a hit's
+  identity, the same two keys every hit carries;
+  `query-functions::nested-collect-empty-projection`).
+- **Fixed (1.2) — budgets were asymmetric.** `docs_get_many`/`nodes_get_many`
+  returned zero items when the first exceeded `budget_tokens`, while
+  `docs_list`/`docs_tree` always returned one row. One contract now (§2):
+  at least one item, always (`reads::budgets`).
+- **Fixed (1.2) — `blocks_insert`/`blocks_move` had no `expect`.** Mutate 1.1
+  made `parent_children_hash` a live destination-parent CAS on `insert` and
+  `move`, but the two macros gave a caller no way to send it. Both take
+  `expect { parent_children_hash? }` now (§4; `reads::workspace-writes` sends a
+  matching and a stale one — the stale one is `stale_expectation` with the
+  current hash).
 - **Pinned — `semantic()` without a provider is `filter_invalid` at the
   runner** ("needs an embedding provider"); only the `query` tool pre-checks
   and reports `semantic_unavailable`.
@@ -619,3 +640,8 @@ both and runs both harnesses.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key
   changed, so `VERSION` stays 1.1 and the crates take a patch.
+- 2026-09-26, surface 1.2: rows surfacing as values render `{ id, path }`;
+  `docs_get_many`/`nodes_get_many` always return at least one item;
+  `blocks_insert`/`blocks_move` take `expect { parent_children_hash }`. Two
+  tools gained an argument and one result shape changed from an unpinned
+  leak to a defined record: a minor.
