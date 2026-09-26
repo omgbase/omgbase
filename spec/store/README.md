@@ -57,7 +57,8 @@ Three things, in decreasing order of how much they pin:
 What this spec does **not** cover, because those are other components with
 their own inputs: the rows of the **properties** table (`spec/properties`
 owns them; §5.4 step 9b says when the store writes them), **nodes**,
-**edges** and **doc_edges** (the graph extractors), **FTS** and **embeddings** (search), the **sync registry**
+**external_nodes**, **edges** and **doc_edges** (`spec/graph` owns them;
+step 9c), **FTS** and **embeddings** (search), the **sync registry**
 (`adapters`, `sources`, `attachments`, `sync_state`, `workspace_settings`,
 `file_stats`, `checkpoints`) and the mutation kernel's **`api`-origin
 commits**. Their tables are part of `schema.sql` (an engine must create them
@@ -462,14 +463,16 @@ conflicted, dispositions: kind → count over this commit }`.
     NULL`). The rows are `spec/properties`' output, pinned by its fixtures;
     this spec's fixtures do not project them.
 
-Also written in this transaction by the reference, **not pinned here**:
-`nodes` (adapter projections and `md:section` nodes), `edges` + `doc_edges`
-(link extraction — this **mints `e` per edge and `x` per new external URI**,
-after the blocks and before the dispositions; the fixture minter does not
-notice because counters are per prefix, and no fixture source contains a
-link). A port that has not yet implemented those components leaves those
-tables empty; the fixtures do not look. The mint order pinned above is
-complete for the prefixes `d`, `b`, `c`, `r`.
+9c. **Graph (store 13.2).** After the properties: the doc's `nodes` (and
+    their FTS rows) are replaced by the projection `spec/graph` §2 defines;
+    its edges are extracted, resolved and interval-maintained per
+    `spec/graph` §3 — this **mints `x` per new external URI during
+    resolution and `e` per newly opened edge during insertion**, before the
+    dispositions — and `doc_edges` is rebuilt. Phantom adoption
+    (`spec/graph` §3.5) happens in step 2 when a doc row is created. Those
+    tables are `spec/graph`'s output, pinned by its fixtures; this spec's
+    fixtures do not project them. The mint order pinned above is complete
+    for the prefixes `d`, `b`, `c`, `r`; `x` and `e` are `spec/graph`'s.
 
 ### 5.5 Sweep
 
@@ -800,6 +803,8 @@ brought to it).
 
 ## Decisions
 
+- 2026-09-26, store 13.2: the store writes the `spec/graph` tables in the
+  commit (§5.4 step 9c) and adopts phantoms on doc creation. No DDL change.
 - 2026-09-26, store 13.1: the store writes `spec/properties` rows in the
   commit (§5.4 step 9b). No DDL change; a semantic minor.
 - 2026-09-26, store 13.0 specified as built: the schema version is the spec

@@ -72,8 +72,9 @@ export const markdownAdapter: FormatAdapter = {
 
   projectNodes(blocks: RawBlock[]): ProjectedNode[] {
     const nodes: ProjectedNode[] = [];
-    // Byte span of a regex match within the block's raw bytes (node-locates the
-    // feature inside its block; disambiguates multiple same-kind nodes — 13/nodes).
+    // Span of a regex match within the block's raw, as string indices (ingest
+    // converts to bytes at the store boundary — spec/graph §2.3). It locates the
+    // feature inside its block and disambiguates same-kind nodes (13/nodes).
     const span = (m: RegExpMatchArray): { spanStart: number; spanEnd: number } => ({
       spanStart: m.index ?? 0,
       spanEnd: (m.index ?? 0) + m[0].length,

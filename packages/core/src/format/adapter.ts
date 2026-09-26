@@ -19,6 +19,12 @@ export interface ProjectedNode {
   name?: string | undefined;
   value?: string | undefined;
   blockId: string;
+  /**
+   * `[spanStart, spanEnd)` of the feature within the block's raw, as JavaScript
+   * string indices (UTF-16 code units). Ingest converts to UTF-8 byte offsets
+   * before the `nodes` row is written (spec/graph §2.3), and `node_set`
+   * converts back before an editor slices the raw.
+   */
   spanStart?: number | undefined;
   spanEnd?: number | undefined;
   attrs?: Record<string, unknown> | undefined;
@@ -34,7 +40,7 @@ export interface EmbeddingChunk {
 export interface NodeEditContext {
   /** The block's current raw bytes (what the edit rewrites). */
   blockRaw: string;
-  /** The node's byte span within blockRaw (null when unrecorded — see spans). */
+  /** The node's span within blockRaw as string indices — the stored byte span converted back (null when unrecorded). */
   span: { start: number; end: number } | null;
   /** The node's current name/value/attrs, for editors that need them. */
   node: { kind: string; name?: string | undefined; value?: string | undefined; attrs: Record<string, unknown> };

@@ -9,6 +9,7 @@
 // parseTree produced so the fixture can be compared across implementations.
 import type { BlockTree, RawBlock } from "../../src/core/parse/types.js";
 import { hashHex } from "../../src/core/hash.js";
+import { byteOffsetTable } from "../../src/core/utf8.js";
 
 // ---- fixture shape -----------------------------------------------------------
 
@@ -52,45 +53,11 @@ export interface FixtureFile {
 }
 
 // ---- UTF-16 index → UTF-8 byte offset ----------------------------------------
-
-/**
- * Byte offset of every code-unit index of `s` (length + 1 entries, so the
- * end-of-string index resolves too). One pass over the string; a surrogate
- * pair contributes 4 bytes at the index after the pair, and the index between
- * its two halves maps to the pair's start (no span ever lands there). A lone
- * surrogate counts 3 bytes, matching what Buffer.from(s, "utf8") emits (U+FFFD).
- */
-export function byteOffsetTable(s: string): Uint32Array {
-  const table = new Uint32Array(s.length + 1);
-  let bytes = 0;
-  let i = 0;
-  while (i < s.length) {
-    table[i] = bytes;
-    const c = s.charCodeAt(i);
-    if (c < 0x80) {
-      bytes += 1;
-      i += 1;
-    } else if (c < 0x800) {
-      bytes += 2;
-      i += 1;
-    } else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
-      const d = s.charCodeAt(i + 1);
-      if (d >= 0xdc00 && d <= 0xdfff) {
-        table[i + 1] = bytes;
-        bytes += 4;
-        i += 2;
-      } else {
-        bytes += 3; // lone high surrogate → U+FFFD
-        i += 1;
-      }
-    } else {
-      bytes += 3; // BMP ≥ U+0800, or a lone surrogate → U+FFFD
-      i += 1;
-    }
-  }
-  table[s.length] = bytes;
-  return table;
-}
+//
+// The table lives in core (`src/core/utf8.ts`) because the store converts node
+// spans the same way (spec/graph §2.3); re-exported so existing importers keep
+// working.
+export { byteOffsetTable };
 
 // ---- BlockTree → expect --------------------------------------------------------
 

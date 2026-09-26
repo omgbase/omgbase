@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-store"
-version = "13.1.0"
+version = "13.2.0"
 description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
 keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -22,6 +22,10 @@ omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile", features
 # The properties rows (`spec/properties`): frontmatter, inline fields and
 # computed intrinsics, written inside the commit transaction (§5.4).
 omgbase-properties = { version = "1.0.0", path = "../omgbase-properties" }
+# The graph projection and extraction (`spec/graph`): nodes with byte spans,
+# edge descriptors, URI normalization and relative-path resolution; the store
+# resolves, mints `x`/`e`, keeps the intervals and the rollup (store 13.2).
+omgbase-graph = { version = "1.0.0", path = "../omgbase-graph" }
 # `bundled`: compile SQLite from source (FTS5 + JSON1 included) so the crate
 # needs no system library; the same version the `oqx` crate uses, so the
 # workspace builds one SQLite. `functions`: the `cosine` scalar.

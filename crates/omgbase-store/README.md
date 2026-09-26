@@ -22,3 +22,14 @@ assert!(outcomes[0].as_observed().unwrap().converged);
 
 The crate version tracks the spec: the major is the schema `user_version`
 (`13`), the minor counts semantic changes without DDL.
+
+## Derived layers written in the commit
+
+Besides the durable tables, the commit transaction writes the `properties`
+rows (`omgbase-properties`, store 13.1; `spec/properties`) and, since store
+13.2, the graph tables of `spec/graph`: `nodes` (+ `nodes_fts`) from
+`omgbase-graph`'s projection plus the `md:section` nodes, `external_nodes`
+(minting `x` per new URI), the `edges` validity intervals (minting `e` per
+new edge), the `doc_edges` rollup, and phantom adoption when a document row
+is created. The graph conformance runner lives in
+`crates/omgbase-graph/tests/spec.rs` and drives this crate.

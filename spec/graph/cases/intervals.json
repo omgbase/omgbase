@@ -1,0 +1,1820 @@
+{
+  "suite": "intervals",
+  "cases": [
+    {
+      "name": "edge-kept-through-unrelated-edit",
+      "notes": "§3.3: an edit elsewhere leaves the edge untouched (from_commit stays c_0, still open).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n\nOther.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n\nOther, edited.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-text-change-keeps-edge",
+      "notes": "The key has no link text: retyping `[a]` to `[b]` keeps the edge.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [b](/x.md) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/x.md",
+            "span_start": 16,
+            "span_end": 26,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "edge-closed-when-link-removed",
+      "notes": "Removing the link closes the edge (`to_commit = c_1`) and empties the rollup.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          }
+        ],
+        "doc_edges": []
+      }
+    },
+    {
+      "name": "edge-reopened-with-new-id",
+      "notes": "Re-adding the link to the same block mints a new edge from c_2; the old row stays closed at c_1.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 16,
+            "span_end": 26,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_2",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "anchor-change-closes-and-opens",
+      "notes": "The anchor is part of the key: `#A` → `#B` in the same block closes one edge and opens another.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md#A) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "See the note at [a](/x.md#B) for the full discussion of this topic.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md#B",
+            "span_start": 16,
+            "span_end": 28,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": "A",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": "B",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-moves-to-another-block",
+      "notes": "src_block is part of the key: the link moving to another paragraph closes and opens.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n\nTwo.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "One.\n\nTwo [a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12a4b9827b22",
+            "doc_id": "d_0",
+            "block_id": "b_3",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 4,
+            "span_end": 14,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_3",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_3"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "echo-changes-nothing",
+      "notes": "An identical re-observation is an echo: no commit, edges untouched.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontmatter-edge-kept-across-body-edit",
+      "notes": "A frontmatter relation survives a body edit with its from_commit.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\nparent: /p.md\n---\n\nbody\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\nparent: /p.md\n---\n\nbody edited\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": null,
+            "src_field": "parent",
+            "predicate": "parent",
+            "dst_kind": "document",
+            "dst_node": "phantom:p.md",
+            "anchor": null,
+            "provenance": "frontmatter",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "parent",
+            "dst_node": "phantom:p.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "phantom-adopted-on-creation",
+      "notes": "§3.5: creating `b.md` rewrites `phantom:b.md` to `d_1` in place (same edge_id and from_commit) and rebuilds a.md's rollup.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_1",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_1",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "adoption-rebuilds-every-source",
+      "notes": "Two documents pointing at the phantom are both re-pointed and both rollups rebuilt.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              },
+              {
+                "path": "c.md",
+                "source": "[[b.md]]\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_a2e87cec95b0",
+            "doc_id": "d_1",
+            "block_id": "b_1",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "b.md",
+            "span_start": 0,
+            "span_end": 8,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_2",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_2",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_2",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          },
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "d_2",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "adoption-ignores-closed-edges",
+      "notes": "A closed phantom edge is not adopted.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "no link\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:b.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          }
+        ],
+        "doc_edges": []
+      }
+    },
+    {
+      "name": "deletion-leaves-edges-nodes-doc-edges",
+      "notes": "§3.6: tombstoning the source leaves its nodes, open edges and rollup in place.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# T\n\n[a](/x.md) ^ref\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_02a726d87530",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:section",
+            "name": "T",
+            "value": null,
+            "span_start": null,
+            "span_end": null,
+            "attrs": {
+              "level": 1,
+              "first_ordinal": 0,
+              "last_ordinal": 1
+            }
+          },
+          {
+            "node_id": "n_6a9010e70feb",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:anchor",
+            "name": "ref",
+            "value": null,
+            "span_start": 11,
+            "span_end": 15,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "deleted-target-keeps-doc-id",
+      "notes": "§8: edges at a tombstoned target keep its doc_id (no re-phantoming).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": null
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_06bd1f61d527",
+            "doc_id": "d_1",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "recreated-at-tombstoned-path-adopts",
+      "notes": "§3.5: adoption happens whenever a row becomes live. The phantom edge minted while b.md was tombstoned is rewritten to d_0 in place (same edge_id and from_commit) when b.md is re-created, and a.md's rollup is rebuilt.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:03:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target again.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_06bd1f61d527",
+            "doc_id": "d_1",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_2",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "deleted-source-recreated-keeps-open-edge",
+      "notes": "Re-observing identical bytes at a tombstoned path revives the row and commits; the still-wanted edge keeps its id and from_commit.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rollup-counts-with-container",
+      "notes": "§3.4/§8: two items linking one target → list (deduped to 1) + 2 items = count 3.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- [a](/x.md)\n- [b](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 2,
+            "span_end": 12,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_160ab430ab6c",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/x.md",
+            "span_start": 15,
+            "span_end": 25,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_1da33ca9bb62",
+            "doc_id": "d_0",
+            "block_id": "b_2",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/x.md",
+            "span_start": 2,
+            "span_end": 12,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 2,
+            "span_end": 12,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_2",
+            "src_doc": "d_0",
+            "src_block": "b_2",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 3,
+            "samples": [
+              "b_0",
+              "b_1",
+              "b_2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rollup-samples-capped-at-three",
+      "notes": "Four blocks → count 4, samples = the first three src_blocks in rowid order.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.md)\n\n[b](/x.md)\n\n[c](/x.md)\n\n[d](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12a4b9827b22",
+            "doc_id": "d_0",
+            "block_id": "b_3",
+            "kind": "md:link",
+            "name": "d",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_1da33ca9bb62",
+            "doc_id": "d_0",
+            "block_id": "b_2",
+            "kind": "md:link",
+            "name": "c",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_2",
+            "src_doc": "d_0",
+            "src_block": "b_2",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_3",
+            "src_doc": "d_0",
+            "src_block": "b_3",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 4,
+            "samples": [
+              "b_0",
+              "b_1",
+              "b_2"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rollup-frontmatter-null-sample-skipped",
+      "notes": "A frontmatter edge and an inline relation with the same predicate and target group together; the null src_block is skipped in samples.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\nparent: /x.md\n---\n\nparent:: /x.md\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_08a722ac9747",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:inline_field",
+            "name": "parent",
+            "value": "/x.md",
+            "span_start": 0,
+            "span_end": 14,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": "parent",
+            "predicate": "parent",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "inline_field",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": null,
+            "src_field": "parent",
+            "predicate": "parent",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "frontmatter",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "parent",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 2,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rollup-groups-by-predicate-and-kind",
+      "notes": "`references` and `embeds` to one target are two groups.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](/x.png) ![a](/x.png)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.png",
+            "span_start": 0,
+            "span_end": 11,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_160ab430ab6c",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.png",
+            "span_start": 13,
+            "span_end": 24,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.png",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "embeds",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.png",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "embeds",
+            "dst_node": "phantom:x.png",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          },
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.png",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rollup-samples-rowid-order-after-reopen",
+      "notes": "Samples follow edge rowid, not document order: after p1's edge is closed and reopened it sorts after p2's.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "First paragraph, see [a](/x.md) for the full discussion.\n\nSecond paragraph, see [b](/x.md) for the full discussion.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "First paragraph, see the note for the full discussion.\n\nSecond paragraph, see [b](/x.md) for the full discussion.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "First paragraph, see [a](/x.md) for the full discussion.\n\nSecond paragraph, see [b](/x.md) for the full discussion.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 21,
+            "span_end": 31,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/x.md",
+            "span_start": 22,
+            "span_end": 32,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": "c_1"
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_2",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_2",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 2,
+            "samples": [
+              "b_1",
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-edge-across-commits",
+      "notes": "An external edge's node row and edge both persist across an unrelated edit.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com\n\nx\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com\n\ny\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_0",
+            "uri": "https://a.com",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

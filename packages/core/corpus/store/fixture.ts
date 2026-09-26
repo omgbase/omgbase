@@ -747,7 +747,12 @@ function validateConfig(at: string, config: unknown, problems: string[]): void {
   }
 }
 
-function validateSteps(at: string, steps: unknown, problems: string[]): number {
+/**
+ * Validate a §9.4 `steps` list, appending problems; returns the step count (or
+ * -1 when the list itself is malformed). Exported because every observation-
+ * script spec (graph, search, …) reuses this input shape verbatim.
+ */
+export function validateSteps(at: string, steps: unknown, problems: string[]): number {
   if (!Array.isArray(steps) || steps.length === 0) {
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;

@@ -1,0 +1,1553 @@
+{
+  "suite": "resolve",
+  "cases": [
+    {
+      "name": "relative-dot-against-doc-dir",
+      "notes": "§3.2: `./d.md` from `a/b/c.md` → `a/b/d.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a/b/c.md",
+                "source": "[d](./d.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "d",
+            "value": "./d.md",
+            "span_start": 0,
+            "span_end": 11,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a/b/d.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a/b/d.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "relative-dotdot",
+      "notes": "`../d.md` from `a/b/c.md` → `a/d.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a/b/c.md",
+                "source": "[d](../d.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "d",
+            "value": "../d.md",
+            "span_start": 0,
+            "span_end": 12,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a/d.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a/d.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "relative-dotdot-past-root",
+      "notes": "Popping past the root is not an error: `../../x.md` from `a.md` → `x.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[x](../../x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "x",
+            "value": "../../x.md",
+            "span_start": 0,
+            "span_end": 15,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "relative-inner-dot-segments",
+      "notes": "`.` and empty segments are dropped, `..` pops: `./x/../y/./z.md` → `a/b/y/z.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a/b/c.md",
+                "source": "[z](./x/../y/./z.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "z",
+            "value": "./x/../y/./z.md",
+            "span_start": 0,
+            "span_end": 20,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a/b/y/z.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a/b/y/z.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "relative-with-anchor",
+      "notes": "The fragment is split off before the path is resolved.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a/b/c.md",
+                "source": "[d](../d.md#Sec)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "d",
+            "value": "../d.md#Sec",
+            "span_start": 0,
+            "span_end": 16,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a/d.md",
+            "anchor": "Sec",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a/d.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "root-slash-stripped",
+      "notes": "One leading `/` is stripped; the doc's directory is irrelevant.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "dir/c.md",
+                "source": "[a](/a.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/a.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "no-slash-taken-as-is",
+      "notes": "A target without `./`, `../` or `/` is taken as is — `a.md` from `dir/c.md` is `a.md`, not `dir/a.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "dir/c.md",
+                "source": "[a](a.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "a.md",
+            "span_start": 0,
+            "span_end": 9,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:a.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:a.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "wikilink-taken-as-is",
+      "notes": "A wikilink's inner text is a path as is: no extension, no directory.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "dir/c.md",
+                "source": "[[note]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "note",
+            "span_start": 0,
+            "span_end": 8,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:note",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:note",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "wikilink-with-slash-prefix",
+      "notes": "`[[/note]]` strips the one leading slash like any target.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[[/note]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "/note",
+            "span_start": 0,
+            "span_end": 9,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:note",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:note",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "double-leading-slash-strips-one",
+      "notes": "Only one leading `/` is stripped: `//a.md` → `phantom:/a.md`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](//a.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "//a.md",
+            "span_start": 0,
+            "span_end": 11,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:/a.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:/a.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "phantom-for-missing-target",
+      "notes": "No live doc at the path → `dst_node = \"phantom:\" + canonical`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[[missing]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "missing",
+            "span_start": 0,
+            "span_end": 11,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:missing",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:missing",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "phantom-keeps-unicode-path",
+      "notes": "The phantom id is the canonical path verbatim.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[[Café/ünï]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "Café/ünï",
+            "span_start": 0,
+            "span_end": 15,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:Café/ünï",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:Café/ünï",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "live-target-observed-earlier",
+      "notes": "The target already lives → dst_node is its doc id, at extraction time.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_06bd1f61d527",
+            "doc_id": "d_1",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "live-target-same-batch-later-member",
+      "notes": "Within one batch the source commits first (phantom), then the target's creation adopts the edge: same end state.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              },
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_1",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_1",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pure-fragment-heading-is-self",
+      "notes": "`#H` with an empty path → the source document itself, anchor kept.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[a](#Heading)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_12c83f7ce6d4",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:link",
+            "name": "a",
+            "value": "#Heading",
+            "span_start": 0,
+            "span_end": 13,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": "Heading",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pure-fragment-ref-is-self",
+      "notes": "`[[^ref]]` → self, dst_kind document, anchor `ref`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[[^ref]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "^ref",
+            "span_start": 0,
+            "span_end": 8,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_a3d21e10a48f",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:anchor",
+            "name": "ref",
+            "value": null,
+            "span_start": 2,
+            "span_end": 6,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": "ref",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "block-ref-forced-to-document",
+      "notes": "§8: `[[note^ref]]` resolves to `phantom:note` with dst_kind `document` and the anchor kept.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[[note^ref]]\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_64d07bd51f66",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:wikilink",
+            "name": null,
+            "value": "note^ref",
+            "span_start": 0,
+            "span_end": 12,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_a3d21e10a48f",
+            "doc_id": "d_0",
+            "block_id": "b_0",
+            "kind": "md:anchor",
+            "name": "ref",
+            "value": null,
+            "span_start": 6,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:note",
+            "anchor": "ref",
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:note",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-mint-and-reuse-within-doc",
+      "notes": "Two blocks with one URL → one `x_0`, two edges.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com/x\n\nAgain https://a.com/x\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_0",
+            "uri": "https://a.com/x",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 2,
+            "samples": [
+              "b_0",
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-reuse-across-spellings",
+      "notes": "`https://a.com/` and `https://a.com` normalize alike → one external node.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com/\n\nhttps://a.com\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_0",
+            "uri": "https://a.com",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 2,
+            "samples": [
+              "b_0",
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-reuse-across-docs",
+      "notes": "The `(repo_id, uri)` row is shared by every document.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com/x\n"
+              },
+              {
+                "path": "b.md",
+                "source": "https://a.com/x\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_0",
+            "uri": "https://a.com/x",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          },
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-reuse-across-commits",
+      "notes": "A later commit reuses the row instead of minting.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com/x\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://a.com/x\n\nMore.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_0",
+            "uri": "https://a.com/x",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "external-distinct-uris-mint-in-order",
+      "notes": "Distinct URIs mint `x_0`, `x_1` in descriptor order (`x` before every `e`, §3.3).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "https://b.com then https://a.com\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [],
+        "external_nodes": [
+          {
+            "node_id": "x_1",
+            "uri": "https://a.com",
+            "title": null
+          },
+          {
+            "node_id": "x_0",
+            "uri": "https://b.com",
+            "title": null
+          }
+        ],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_0",
+            "src_block": "b_0",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "external",
+            "dst_node": "x_1",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_0",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          },
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "x_1",
+            "dst_kind": "external",
+            "count": 1,
+            "samples": [
+              "b_0"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "deleted-target-re-extraction-phantoms",
+      "notes": "After the target is tombstoned a re-extraction of the source finds no live doc: the old edge closes and a phantom edge opens.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": "Target.\n"
+              },
+              {
+                "path": "a.md",
+                "source": "[b](/b.md)\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "b.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "[b](/b.md) edited\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_d1d798a5852d",
+            "doc_id": "d_1",
+            "block_id": "b_2",
+            "kind": "md:link",
+            "name": "b",
+            "value": "/b.md",
+            "span_start": 0,
+            "span_end": 10,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_1",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_1",
+            "to_commit": "c_3"
+          },
+          {
+            "edge_id": "e_1",
+            "src_doc": "d_1",
+            "src_block": "b_2",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:b.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_3",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_1",
+            "predicate": "references",
+            "dst_node": "phantom:b.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_2"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

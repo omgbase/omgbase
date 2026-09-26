@@ -1,6 +1,7 @@
 import type { Database } from "better-sqlite3";
 import { hashHex } from "../hash.js";
 import type { ProjectedNode } from "../../format/adapter.js";
+import { codeUnitSpanToBytes } from "../utf8.js";
 
 function mintNodeId(docId: string, blockId: string, kind: string, ordinal: number): string {
   return "n_" + hashHex(`${docId}|${blockId}|${kind}|${ordinal}`).slice(0, 12);
@@ -34,6 +35,23 @@ export function projectSectionNodes(db: Database, docId: string): ProjectedNode[
   }));
 }
 
+/**
+ * Convert adapter-projected spans (JavaScript string indices — UTF-16 code
+ * units, spec/graph §2.3) to byte offsets into the block's UTF-8 `raw`, which is
+ * what the `nodes` table stores (spec/graph §8 "Fixed"). `rawOf` returns the raw
+ * of a block by id; a node whose block raw is unknown keeps no span rather than a
+ * wrong one. Nodes without a span (sections) pass through untouched.
+ */
+export function toByteSpans(projected: ProjectedNode[], rawOf: (blockId: string) => string | undefined): ProjectedNode[] {
+  return projected.map((p) => {
+    if (p.spanStart === undefined || p.spanEnd === undefined) return p;
+    const raw = rawOf(p.blockId);
+    if (raw === undefined) return { ...p, spanStart: undefined, spanEnd: undefined };
+    const { start, end } = codeUnitSpanToBytes(raw, p.spanStart, p.spanEnd);
+    return { ...p, spanStart: start, spanEnd: end };
+  });
+}
+
 export function deleteDocNodes(db: Database, docId: string): void {
   const rows = db.prepare("SELECT rowid, name, value FROM nodes WHERE doc_id = ?").all(docId) as { rowid: number; name: string | null; value: string | null }[];
   for (const r of rows) {
@@ -44,6 +62,11 @@ export function deleteDocNodes(db: Database, docId: string): void {
   db.prepare("DELETE FROM nodes WHERE doc_id = ?").run(docId);
 }
 
+/**
+ * Replace a document's `nodes` rows (and their FTS rows) with `projected`, in
+ * order; `node_id` is the spec/graph §2.3 hash over (doc, block, kind, ordinal).
+ * Spans are stored as given — callers convert to bytes first (`toByteSpans`).
+ */
 export function writeDocNodes(
   db: Database,
   repoId: string,

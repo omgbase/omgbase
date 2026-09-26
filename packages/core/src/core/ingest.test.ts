@@ -4,6 +4,7 @@ import { Store } from "./store/store.js";
 import { ingestFile } from "./ingest.js";
 import { ensureRepo } from "./attach.js";
 import { ingestDirectory } from "../sync/attach.js";
+import { observeBatch } from "../sync/observe.js";
 
 const CORPUS_ROOT = fileURLToPath(new URL("../../corpus/roundtrip", import.meta.url));
 
@@ -48,6 +49,44 @@ describe("ingestFile", () => {
     const items = rows.filter((r) => r.type === "list_item");
     expect(list.depth).toBe(0);
     expect(items.every((i) => i.parent_block === null || i.depth === 1)).toBe(true);
+  });
+
+  it("stores node spans as UTF-8 byte offsets into the block raw (spec/graph §2.3)", () => {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "test", "/tmp");
+    const raw = "Café 🚀 [a](/x.md) ^ref";
+    const res = ingestFile(store, repoId, "a.md", raw + "\n");
+    const rows = store.db
+      .prepare("SELECT kind, span_start, span_end FROM nodes WHERE doc_id = ? AND span_start IS NOT NULL ORDER BY span_start")
+      .all(res.docId) as { kind: string; span_start: number; span_end: number }[];
+    const bytes = Buffer.from(raw, "utf8");
+    expect(rows.map((r) => [r.kind, bytes.subarray(r.span_start, r.span_end).toString("utf8")])).toEqual([
+      ["md:link", "[a](/x.md)"],
+      ["md:anchor", "^ref"],
+    ]);
+    // Code units would say 8; bytes say 11 (é is 2 bytes, 🚀 is 4).
+    expect(rows[0]!.span_start).toBe(11);
+    expect(raw.indexOf("[a]")).toBe(8);
+  });
+
+  it("a revived document adopts the phantom edges minted at its path while it was tombstoned (spec/graph §3.5)", () => {
+    store = new Store({ path: ":memory:" });
+    const repoId = ensureRepo(store, "test", "/tmp");
+    const b = ingestFile(store, repoId, "b.md", "Target.\n");
+    observeBatch(store, repoId, [{ path: "b.md", content: null }], "2026-09-26T10:01:00.000Z");
+    const a = observeBatch(store, repoId, [{ path: "a.md", content: "See [b](/b.md) for the full discussion.\n" }], "2026-09-26T10:02:00.000Z")[0]!;
+    const aDoc = a.kind === "deleted" ? null : a.docId;
+    const edge = (): { dst_node: string; edge_id: string; from_commit: string } =>
+      store!.db.prepare("SELECT dst_node, edge_id, from_commit FROM edges WHERE src_doc = ? AND to_commit IS NULL").get(aDoc) as { dst_node: string; edge_id: string; from_commit: string };
+    const rollup = (): { dst_node: string; count: number }[] => store!.db.prepare("SELECT dst_node, count FROM doc_edges WHERE src_doc = ?").all(aDoc) as { dst_node: string; count: number }[];
+    const before = edge();
+    expect(before.dst_node).toBe("phantom:b.md");
+    expect(rollup()).toEqual([{ dst_node: "phantom:b.md", count: 1 }]);
+
+    observeBatch(store, repoId, [{ path: "b.md", content: "Target again.\n" }], "2026-09-26T10:03:00.000Z");
+    const after = edge();
+    expect(after).toEqual({ ...before, dst_node: b.docId });
+    expect(rollup()).toEqual([{ dst_node: b.docId, count: 1 }]);
   });
 
   it("re-ingesting updates the same doc with a new revision", () => {

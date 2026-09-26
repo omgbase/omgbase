@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, HashSet};
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{Block, BlockKind, BlockTree, parse_markdown, render};
-use omgbase_properties::doc_properties;
+use omgbase_graph::{extract_doc_edges, project_nodes};
+use omgbase_properties::{doc_properties, frontmatter_yaml, parse_frontmatter};
 use omgbase_reconcile::json::detail_to_json;
 use omgbase_reconcile::{
     Config, DispositionKind, FlatSource, Inserted, MatchBlock, Options, PerDocUnmatched, PoolEntry,
@@ -17,6 +18,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::derived::{fts_delete_doc, fts_index_doc, rebuild_sections, sweep_pool};
 use crate::error::{Error, Result};
+use crate::graph::{
+    adopt_phantoms, maintain_edges, project_section_nodes, resolve_edges, write_doc_nodes,
+};
 use crate::ids::IdMinter;
 use crate::order_key::key_between;
 use crate::properties::{doc_blocks, write_doc_properties};
@@ -584,19 +588,25 @@ impl Store {
 
         // 1. Doc row (the path's row regardless of tombstone; a re-created
         //    path is revived — §5.6 "Re-creation").
-        let existing: Option<String> = tx
+        let existing: Option<(String, Option<String>)> = tx
             .query_row(
-                "SELECT doc_id FROM docs WHERE repo_id = ?1 AND path = ?2",
+                "SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
                 params![repo_id, prepared.path],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
         let doc_id = match existing {
-            Some(id) => {
+            Some((id, deleted_commit)) => {
                 tx.execute(
                     "UPDATE docs SET format = ?1, leading_trivia = ?2, frontmatter_trivia = ?3, deleted_commit = NULL WHERE doc_id = ?4",
                     params![FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia, id],
                 )?;
+                // spec/graph §3.5: a revived row becomes live again, so the
+                // phantom edges that accrued at its path while it was
+                // tombstoned re-point to it.
+                if deleted_commit.is_some() {
+                    adopt_phantoms(&tx, &prepared.path, &id)?;
+                }
                 id
             }
             None => {
@@ -605,6 +615,10 @@ impl Store {
                     "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![id, repo_id, prepared.path, FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia],
                 )?;
+                // spec/graph §3.5: a new row at this path adopts the open
+                // phantom edges that pointed at it (the reference runs this
+                // right after the INSERT; nothing is minted).
+                adopt_phantoms(&tx, &prepared.path, &id)?;
                 id
             }
         };
@@ -686,11 +700,28 @@ impl Store {
         fts_index_doc(&tx, &doc_id)?;
         rebuild_sections(&tx, &doc_id)?;
 
+        // 9a. Nodes (spec/graph §2): the adapter's projections over the
+        //     assigned body, then the `md:section` nodes from the sections just
+        //     rebuilt; deleted (FTS first) and reinserted.
+        let body = doc_blocks(&assigned);
+        let mut nodes = project_nodes(&body);
+        nodes.extend(project_section_nodes(&tx, &doc_id)?);
+        write_doc_nodes(&tx, repo_id, &doc_id, &nodes)?;
+
         // 9b. Properties (spec/properties §6): the document's rows from the
         //     frontmatter block and the assigned body, deleted then written.
-        let body = doc_blocks(&assigned);
         let property_rows = doc_properties(&doc_id, fm_block, &body);
         write_doc_properties(&tx, repo_id, &doc_id, &commit_id, &property_rows)?;
+
+        // 9c. Edges (spec/graph §3): descriptors from the blocks in pre-order
+        //     then the frontmatter mapping (the same parse the properties step
+        //     uses; none when it fails), resolved in order (**mints `x`** per
+        //     new external URI), then the intervals (**mints `e`** per new
+        //     edge) and the rollup.
+        let mapping = fm_block.and_then(|b| parse_frontmatter(frontmatter_yaml(&b.raw)));
+        let descriptors = extract_doc_edges(&body, mapping.as_ref());
+        let resolved = resolve_edges(&tx, minter, repo_id, &doc_id, &prepared.path, &descriptors)?;
+        maintain_edges(&tx, minter, repo_id, &doc_id, &commit_id, &resolved)?;
 
         // 10. Dispositions and block_changes.
         {

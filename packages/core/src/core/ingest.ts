@@ -8,7 +8,7 @@ import { mintId } from "./ids.js";
 import { keyBetween } from "./order-key.js";
 import { ftsDeleteDoc, ftsIndexDoc } from "./store/fts.js";
 import { rebuildSections } from "./store/sections.js";
-import { writeDocNodes, projectSectionNodes } from "./store/nodes.js";
+import { writeDocNodes, projectSectionNodes, toByteSpans } from "./store/nodes.js";
 import { flattenFrontmatter, flattenComputed, writeDocProperties, type PropertyRow } from "./store/properties.js";
 import { maintainEdges, adoptPhantoms } from "./store/edges.js";
 import { parse as parseYaml } from "yaml";
@@ -210,8 +210,8 @@ export function ingestFile(
       : parseFrontmatter(fmBlock);
 
     // Upsert the document row.
-    let doc = db.prepare("SELECT doc_id FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
-      | { doc_id: string }
+    let doc = db.prepare("SELECT doc_id, deleted_commit FROM docs WHERE repo_id = ? AND path = ?").get(repoId, path) as
+      | { doc_id: string; deleted_commit: string | null }
       | undefined;
     const docId = doc?.doc_id ?? mintId("d");
     const isNew = !doc;
@@ -219,7 +219,7 @@ export function ingestFile(
       db.prepare(
         "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?, ?, ?, ?, ?, ?)",
       ).run(docId, repoId, path, format, tree.leadingTrivia, fmTrivia);
-      doc = { doc_id: docId };
+      doc = { doc_id: docId, deleted_commit: null };
       // Adopt phantom edges that pointed at this path so backlinks re-point.
       adoptPhantoms(db, path, docId);
     } else {
@@ -227,7 +227,12 @@ export function ingestFile(
       // "Re-creation"): bytes observed again at the path revive it — the row is
       // live again, so reads that filter `deleted_commit IS NULL` see it and the
       // next identical observation echo-gates instead of re-ingesting.
+      const revived = doc.deleted_commit !== null;
       db.prepare("UPDATE docs SET format = ?, leading_trivia = ?, frontmatter_trivia = ?, deleted_commit = NULL WHERE doc_id = ?").run(format, tree.leadingTrivia, fmTrivia, docId);
+      // spec/graph §3.5: adoption happens whenever a row BECOMES live, so a
+      // revived tombstone also collects the phantom edges minted at its path
+      // while it was gone (§8 "Fixed — a revived document adopted no phantoms").
+      if (revived) adoptPhantoms(db, path, docId);
     }
 
     // Assign block ids via the resolver when supplied (it reconciles against
@@ -305,7 +310,12 @@ export function ingestFile(
         ...n,
         blockId: n.blockId && idSet.has(n.blockId) ? n.blockId : "",
       }));
-      writeDocNodes(db, repoId, docId, [...withIds, ...sectionNodes]);
+      // Adapters record spans as string indices; the store keeps byte offsets
+      // into the block's UTF-8 raw (spec/graph §2.3), so convert here — the one
+      // place that has both the nodes and the raws they index.
+      const rawById = collectRaws(assigned);
+      const byteSpanned = toByteSpans(withIds, (id) => rawById.get(id));
+      writeDocNodes(db, repoId, docId, [...byteSpanned, ...sectionNodes]);
 
       // Inline properties (key:: value) → property rows (source=inline). The
       // authored shape within the inline source drives `card`: a key that occurs
@@ -459,6 +469,18 @@ function typedInlineValue(raw: string | undefined): Pick<PropertyRow, "valText" 
   if (v === "true" || v === "false") return { valText: null, valNum: null, valBool: v === "true" ? 1 : 0, valJson: null, type: "bool" };
   if (v !== "" && Number.isFinite(Number(v))) return { valText: null, valNum: Number(v), valBool: null, valJson: null, type: "number" };
   return { valText: v, valNum: null, valBool: null, valJson: null, type: "string" };
+}
+
+function collectRaws(blocks: TreeInputBlock[]): Map<string, string> {
+  const raws = new Map<string, string>();
+  const walk = (list: TreeInputBlock[]): void => {
+    for (const b of list) {
+      raws.set(b.blockId, b.raw);
+      if (b.children.length > 0) walk(b.children);
+    }
+  };
+  walk(blocks);
+  return raws;
 }
 
 function collectBlockIds(blocks: TreeInputBlock[]): Set<string> {

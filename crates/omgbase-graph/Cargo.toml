@@ -1,0 +1,39 @@
+[package]
+name = "omgbase-graph"
+version = "1.0.0"
+description = "omgbase graph: semantic node projection and authored-edge extraction over Markdown blocks (links, wikilinks, tasks, anchors, inline fields, sections; URI normalization; path resolution) — Rust implementation"
+keywords = ["markdown", "graph", "links", "wikilinks", "omgbase"]
+categories = ["parser-implementations", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-graph#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The block model: `BlockKind`, `Attrs`/`AttrValue` (the task's `checked`),
+# and `hash::sha256` for `node_id`.
+omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
+# `DocBlock` (the input view), `mask_code` (spec/properties §3.2 — code is
+# not prose) and the parsed frontmatter `Mapping`/`Value` the frontmatter
+# scanner walks.
+omgbase-properties = { version = "1.0.0", path = "../omgbase-properties" }
+# The scanners of spec/graph §2.1 and §3.1.
+regex = "1"
+# Node `attrs` as a JSON object.
+serde_json = { version = "1", features = ["preserve_order"] }
+# `normalize_uri` (spec/graph §4): a WHATWG URL parser.
+url = "2"
+
+[dev-dependencies]
+# The conformance runner (`tests/spec.rs`) drives the store, which calls this
+# crate inside its commit transaction (spec/graph §7). Path-only: a
+# dev-dependency cycle Cargo permits and drops when publishing.
+omgbase-store = { path = "../omgbase-store" }
+omgbase-reconcile = { path = "../omgbase-reconcile" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[lints]
+workspace = true

@@ -87,7 +87,8 @@ crates/          the Rust side (cargo workspace at the root; independent of pnpm
   omgbase-reconcile/ omgbase-reconcile — Rust block-identity matcher (phases, dispositions, cross-doc moves), conformant to spec/reconcile
   omgbase-store/ omgbase-store — Rust store: the SQLite schema, observe/commit, Merkle trees, reconstruct; opens the same database as core, conformant to spec/store
   omgbase-properties/ omgbase-properties — Rust properties layer: block tree → typed property rows (frontmatter, inline fields, computed), conformant to spec/properties
-spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus) · reconcile/ (the matcher: rules, thresholds, fixtures with reference-generated expectations) · store/ (the database: schema.sql verbatim, the observe procedure, invariants, observation-script fixtures) · properties/ (document → typed property rows: YAML contract, inline fields, computed intrinsics)
+  omgbase-graph/ omgbase-graph — Rust graph layer: node projection + edge extraction (links, relations, URIs), conformant to spec/graph
+spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus) · reconcile/ (the matcher: rules, thresholds, fixtures with reference-generated expectations) · store/ (the database: schema.sql verbatim, the observe procedure, invariants, observation-script fixtures) · properties/ (document → typed property rows: YAML contract, inline fields, computed intrinsics) · graph/ (nodes, edges, intervals, rollup, phantoms)
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.

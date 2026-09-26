@@ -36,8 +36,9 @@
 //! [`time`] (§2.4), [`tree`] (§4.1 encodings), [`order_key`] (§4.3),
 //! [`writers`] (blobs, tree nodes, commits, revisions), [`observe`] (§5),
 //! [`properties`] (the `properties` rows of `spec/properties`, written in
-//! §5.4), [`read`] (§5.2, §6), [`derived`] (§4.5 sections, FTS, §7 rebuild
-//! and GC).
+//! §5.4), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
+//! rows of `spec/graph`, written in §5.4), [`read`] (§5.2, §6), [`derived`]
+//! (§4.5 sections, FTS, §7 rebuild and GC).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
@@ -47,6 +48,7 @@
 
 pub mod derived;
 pub mod error;
+pub mod graph;
 pub mod ids;
 pub mod observe;
 pub mod order_key;
@@ -65,8 +67,10 @@ use rusqlite::{Connection, Transaction, params};
 
 pub use derived::{GcResult, RebuildTarget};
 pub use error::{Error, Result};
+pub use graph::ResolvedEdge;
 pub use ids::{IdMinter, RandomMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use observe::{BatchItem, BatchOutcome, DeleteOutcome, ObserveOutcome, has_conflict_markers};
+pub use omgbase_graph::{EdgeDescriptor, ProjectedNode};
 pub use omgbase_properties::PropertyRow;
 pub use omgbase_reconcile::{Config, MatchBlock, PoolEntry};
 pub use read::RevisionRead;
@@ -76,7 +80,7 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.1";
+pub const SPEC_VERSION: &str = "13.2";
 
 /// The one format this crate ingests (`docs.format`).
 pub const FORMAT_MARKDOWN: &str = "markdown";
@@ -293,6 +297,14 @@ impl Store {
     /// `spec/properties` §5 **merged**: `{key: shape}` over every row.
     pub fn properties_merged(&self, doc_id: &str) -> Result<serde_json::Value> {
         Ok(omgbase_properties::merged(&self.properties(doc_id)?))
+    }
+
+    // ---- graph (spec/graph) -----------------------------------------------------------
+
+    /// `spec/graph` §3.4: recompute one document's `doc_edges` from its open
+    /// edges.
+    pub fn rebuild_doc_edges(&self, doc_id: &str) -> Result<()> {
+        graph::rebuild_doc_edges(&self.conn, doc_id)
     }
 
     // ---- derived ------------------------------------------------------------------

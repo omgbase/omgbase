@@ -351,7 +351,7 @@ CREATE TABLE nodes (
   kind       TEXT NOT NULL,                -- format-qualified: 'md:link', 'yaml:ref', 'json:schema'
   name       TEXT,                         -- identifier/key name
   value      TEXT,                         -- scalar value or target
-  span_start INTEGER,                      -- offset within block source
+  span_start INTEGER,                      -- UTF-8 byte offset within the block raw (spec/graph §2.3)
   span_end   INTEGER,
   attrs      TEXT NOT NULL DEFAULT '{}'    -- JSON format-specific properties
 );

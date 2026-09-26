@@ -3,6 +3,7 @@ import type { Op } from "./apply.js";
 import type { To } from "./ops.js";
 import { adapterForFormat } from "../format/registry.js";
 import { MutationError } from "./tree.js";
+import { byteSpanToCodeUnits } from "../core/utf8.js";
 import { globClause } from "../graph/link-health.js";
 import { rewriteLinkDestinations, splitDestination } from "../graph/link-destinations.js";
 
@@ -127,7 +128,9 @@ export function nodeSet(store: Store, nodeId: string, prop: string, value: strin
   const result = editor(
     {
       blockRaw,
-      span: node.span_start !== null && node.span_end !== null ? { start: node.span_start, end: node.span_end } : null,
+      // Stored spans are byte offsets into the block's UTF-8 raw (spec/graph
+      // §2.3); editors slice a JavaScript string, so convert back to code units.
+      span: node.span_start !== null && node.span_end !== null ? byteSpanToCodeUnits(blockRaw, node.span_start, node.span_end) : null,
       node: {
         kind: node.kind,
         ...(node.name !== null ? { name: node.name } : {}),

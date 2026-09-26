@@ -49,6 +49,28 @@ describe("nodeSet — surgical node-property edits via block update", () => {
     expect(readFileSync(join(root, "a.md"), "utf8")).toBe("# Doc\n\nSee [a](/z.md) and [a](/y.md).\n");
   });
 
+  it("edits a link that follows non-ASCII text (stored spans are bytes, sliced as code units)", () => {
+    // `Café` (é = 2 bytes) and `🚀` (4 bytes, 2 code units) precede the links,
+    // so byte offsets and string indices disagree; the edit must still land on
+    // the exact occurrence, byte for byte.
+    const { store, repoId, root } = setup("a.md", "# Doc\n\nCafé 🚀 [a](/x.md) et [b](/y.md) — fin.\n");
+    const nodeId = nodeIdByKindValue(store, "md:link", "/y.md");
+    const span = store.db.prepare("SELECT span_start, span_end FROM nodes WHERE node_id = ?").get(nodeId) as { span_start: number; span_end: number };
+    const raw = "Café 🚀 [a](/x.md) et [b](/y.md) — fin.";
+    const bytes = Buffer.from(raw, "utf8");
+    expect(bytes.subarray(span.span_start, span.span_end).toString("utf8")).toBe("[b](/y.md)");
+    expect(span.span_start).toBe(Buffer.byteLength("Café 🚀 [a](/x.md) et ", "utf8"));
+
+    const ops = nodeSet(store, nodeId, "name", "Bee");
+    apply(store, { repoId, rootPath: root, ops, origin: { actor: "test", reason: "node_set" } });
+    expect(readFileSync(join(root, "a.md"), "utf8")).toBe("# Doc\n\nCafé 🚀 [a](/x.md) et [Bee](/y.md) — fin.\n");
+
+    // And the retarget editor, on the first link (before it: 2-byte + 4-byte characters).
+    const first = nodeIdByKindValue(store, "md:link", "/x.md");
+    apply(store, { repoId, rootPath: root, ops: nodeSet(store, first, "value", "/z.md"), origin: { actor: "test" } });
+    expect(readFileSync(join(root, "a.md"), "utf8")).toBe("# Doc\n\nCafé 🚀 [a](/z.md) et [Bee](/y.md) — fin.\n");
+  });
+
   it("sets a task's checked attribute", () => {
     const { store, repoId, root } = setup("t.md", "- [ ] ship it\n");
     const nodeId = nodeIdByKindValue(store, "md:task", "ship it");
