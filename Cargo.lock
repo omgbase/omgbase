@@ -559,7 +559,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-store"
-version = "13.4.0"
+version = "13.4.1"
 dependencies = [
  "getrandom 0.3.4",
  "omgbase-format",
@@ -569,6 +569,18 @@ dependencies = [
  "omgbase-reconcile",
  "omgbase-search",
  "regex",
+ "rusqlite",
+ "serde_json",
+]
+
+[[package]]
+name = "omgbase-sync"
+version = "1.0.0"
+dependencies = [
+ "libc",
+ "omgbase-format",
+ "omgbase-reconcile",
+ "omgbase-store",
  "rusqlite",
  "serde_json",
 ]

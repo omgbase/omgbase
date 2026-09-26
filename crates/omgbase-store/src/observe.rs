@@ -28,8 +28,8 @@ use crate::read::{load_old_match_blocks, load_pool, reconstruct};
 use crate::time::pool_expiry;
 use crate::tree::canonical_attrs;
 use crate::writers::{
-    NewCommit, NewRevision, Origin, TreeInputBlock, assign_from_map, new_commit, put_blob,
-    write_block_tree, write_revision,
+    NewCommit, NewRevision, Origin, TreeInputBlock, assign_fresh_ids, assign_from_map, new_commit,
+    put_blob, write_block_tree, write_revision,
 };
 use crate::{FORMAT_MARKDOWN, Store};
 
@@ -420,9 +420,10 @@ fn evict_foreign_block_rows(conn: &Connection, doc_id: &str, ids: &[String]) -> 
     Ok(())
 }
 
-/// What §5.4 steps 1–13 produce.
+/// What §5.4 steps 1–13 produce: the committed document, commit and
+/// revision, and whether the bytes converged (step 13).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Committed {
+pub struct Committed {
     pub doc_id: String,
     pub commit_id: String,
     pub rev_id: String,
@@ -646,9 +647,11 @@ impl Store {
     /// the given provenance — the reference's `ingestFile` with
     /// `makeReconcilingResolver`: `docs_create`/`docs_set_meta` (`api`) and
     /// the file-CAS conflict ingest of `spec/mutate` §4 (`observed`). No echo
-    /// gate, no `conflicted` update, no sweep.
+    /// gate, no `conflicted` update, no sweep. The sync layer's recovery and
+    /// `attach_source` (`spec/sync` §4.3, §6) ingest through this too, with
+    /// `Origin::Observed`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn reconciling_ingest(
+    pub fn reconciling_ingest(
         &mut self,
         repo_id: &str,
         path: &str,
@@ -686,6 +689,38 @@ impl Store {
             origin,
             actor,
             reason,
+        };
+        self.commit_ingest(repo_id, &plan, ts, &expires)
+    }
+
+    /// Parse `source` at `path` and commit it with a **fresh `b` id for every
+    /// block** — the reference's `ingestFile` without a resolver (no
+    /// dispositions, nothing pooled): the re-mint path `spec/sync` §6 pins for
+    /// a `borne` source's `attach_source` (§9). No echo gate, no sweep.
+    pub fn fresh_ingest(
+        &mut self,
+        repo_id: &str,
+        path: &str,
+        source: &str,
+        ts: &str,
+        origin: Origin,
+    ) -> Result<Committed> {
+        let expires = pool_expiry(ts)?;
+        let tree = parse_markdown(source);
+        let (_, rest) = split_frontmatter(&tree);
+        let assigned = assign_fresh_ids(rest, &mut *self.minter);
+        let plan = IngestPlan {
+            path,
+            source,
+            tree: &tree,
+            assigned,
+            dispositions: Vec::new(),
+            deleted: Vec::new(),
+            consumed_pool: Vec::new(),
+            cross_doc_ids: Vec::new(),
+            origin,
+            actor: None,
+            reason: None,
         };
         self.commit_ingest(repo_id, &plan, ts, &expires)
     }

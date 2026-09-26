@@ -14,7 +14,7 @@ import "./format/index.js";
 
 // Workspace + sync surface used by the CLI (second client, 11 §1).
 export { Store, type StoreOptions } from "./core/store/store.js";
-export { Workspace, RepoSelectionError, type RepoRow } from "./sync/workspace.js";
+export { Workspace, RepoSelectionError, selectRepo, type RepoRow } from "./sync/workspace.js";
 export {
   resolveSettings,
   workspaceSettings,
@@ -24,12 +24,16 @@ export {
   deepMerge,
   type Settings,
 } from "./sync/settings.js";
-export { freshnessSweep, rebuildFileStats, recordFileStat, detectDiskDrift, type SweepResult, type DiskDrift } from "./sync/freshness.js";
+export {
+  freshnessSweep, rebuildFileStats, recordFileStat, recordStat, detectDiskDrift, sweepPlan, sweepCandidates, loadStatCache, snapshotOf,
+  type SweepResult, type DiskDrift, type SweepPlan, type StatCacheRow, type SnapshotEntry,
+} from "./sync/freshness.js";
+export { recoverRepo, type RecoveryResult } from "./sync/recovery.js";
 export { withWriterLock, writerLockFree, WriterLockTimeout } from "./sync/writer-lock.js";
 export { WatchLease, watchLeaseLive } from "./sync/watch-lease.js";
 export { ingestDirectory, type IngestDirResult } from "./sync/attach.js";
 export { ensureRepo } from "./core/attach.js";
-export { walkMarkdown, walkMarkdownAsync } from "./sync/fs-util.js";
+export { walkMarkdown, walkMarkdownAsync, nodeFs, type SyncFs, type FileStat } from "./sync/fs-util.js";
 export { Watcher, type WatcherOptions } from "./sync/watcher.js";
 // External sync-adapter seam (sync-plugins): a SyncSource is the in-engine
 // handle to an external adapter process; createExternalSource spawns one and
@@ -59,7 +63,7 @@ export {
   type SourceRow,
 } from "./sync/sources.js";
 export { reconcileChanges, attachSource } from "./sync/driver.js";
-export { observeFile, observeMany, observeOne, observeDelete, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult } from "./sync/observe.js";
+export { observeFile, observeMany, observeOne, observeDelete, observeBatch, type ObserveResult, type ObserveOneResult, type ObserveDeleteResult, type BatchItem, type BatchOutcome } from "./sync/observe.js";
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
@@ -107,7 +111,9 @@ export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./
 export { FilterInvalid } from "./search/cel/parser.js";
 export { EngineError, type ErrorCode } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
-export { isValidId, prefixOf } from "./core/ids.js";
+export { isValidId, prefixOf, mintId, setIdMinter, withIdMinter, sequentialMinter, type IdMinter, type IdPrefix } from "./core/ids.js";
+export { sha256 } from "./core/hash.js";
+export { ingestFile, type IngestResult } from "./core/ingest.js";
 
 // Mutation surface consumed by CLI write commands (11 §5.6).
 export { apply, type ApplyRequest, type ApplyResult, type Op } from "./mutate/apply.js";

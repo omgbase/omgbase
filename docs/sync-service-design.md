@@ -20,6 +20,18 @@
 >
 > Not yet done: the optional `subscribe` (D1) and durable export-cursor
 > persistence (`sync_state` is still unused).
+>
+> **Specification.** The as-built sync layer is specified language-neutrally in
+> [`spec/sync/README.md`](../spec/sync/README.md) (§6 covers the driver and this
+> package's `Coordinator`: `sync_in`, `reconcile`, `changes_since`, `sync_out`,
+> `watch_in`) with executable fixtures under `spec/sync/cases/`; the
+> `coordinator` cases of `protocol.json` run the production `Coordinator` over a
+> scripted source and a recording engine client from
+> `packages/sync/corpus/sync/spec.test.ts` (`SYNC_SPEC_UPDATE=1` regenerates).
+> The pinned export rule (§9): `sync_out` skips `observed` commits, exports `api`
+> and `import` alike, and re-reads each revision's document by path at export
+> time — a doc created then deleted before an export goes out as a `remove`
+> under the create's digest.
 
 ## 1. Motivation
 

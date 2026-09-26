@@ -54,17 +54,20 @@ export interface AttachResult {
 /**
  * Attach a source scope as a repo: create/reuse the repo row, then ingest every
  * member the source enumerates (identity-inferred sources thread the reconciling
- * resolver so edges + identity are established on the initial walk).
+ * resolver so edges + identity are established on the initial walk; a `borne`
+ * source takes the plain re-minting ingest — spec/sync §9). `opts.ts` pins the
+ * commit timestamp (default now).
  */
 export async function attachSource(
   store: Store,
   slug: string,
   rootPath: string | null,
   source: SyncSource,
+  opts: { ts?: string } = {},
 ): Promise<AttachResult> {
   const repoId = ensureRepo(store, slug, rootPath);
   const inferred = source.capabilities().identity === "inferred";
-  const ts = new Date().toISOString();
+  const ts = opts.ts ?? new Date().toISOString();
   let fileCount = 0;
   let allConverged = true;
   for (const entry of await source.enumerate()) {

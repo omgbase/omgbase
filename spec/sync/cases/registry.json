@@ -1,0 +1,1289 @@
+{
+  "suite": "registry",
+  "cases": [
+    {
+      "name": "ensure-repo-sourceless",
+      "notes": "README §2 ensure_repo without a root: a repo row with default settings, no adapter, no source, no attachment.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "ensure-repo-with-root",
+      "notes": "With a root: the fs adapter is seeded (command omgbase-fs-adapter, args []), a source <slug>-fs with config {root} and env {} is minted and attached.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes",
+            "root": "/w/notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "notes-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/w/notes"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_0"
+          }
+        ],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "ensure-repo-idempotent",
+      "notes": "An existing slug returns its id; nothing else is minted or written — even when the second call carries a root.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes",
+            "root": "/w/notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          },
+          {
+            "repo": "rp_0"
+          },
+          {
+            "repo": "rp_0"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "ensure-repo-fs-source-reuse",
+      "notes": "A source already named <slug>-fs is reused as-is (its config is NOT rewritten to the new root) and attached.",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "notes-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/old/notes"
+            }
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes",
+            "root": "/new/notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "source": "src_0"
+          },
+          {
+            "repo": "rp_0"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "notes-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/old/notes"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_0"
+          }
+        ],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "ensure-repo-does-not-clobber-adapter",
+      "notes": "The fs adapter row is INSERT OR IGNORE: a custom command survives ensure_repo.",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "/opt/bin/my-fs-adapter",
+            "args": [
+              "--verbose"
+            ]
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes",
+            "root": "/w/notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "repo": "rp_0"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "/opt/bin/my-fs-adapter",
+            "args": [
+              "--verbose"
+            ]
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "notes-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/w/notes"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_0"
+          }
+        ],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "adapter-upsert",
+      "notes": "ensure_adapter inserts or updates by name.",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "git",
+            "command": "omgbase-git-adapter"
+          }
+        },
+        {
+          "ensure_adapter": {
+            "name": "git",
+            "command": "/usr/local/bin/omgbase-git-adapter",
+            "args": [
+              "--bare"
+            ]
+          }
+        },
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {},
+          {}
+        ],
+        "repos": [],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          },
+          {
+            "name": "git",
+            "command": "/usr/local/bin/omgbase-git-adapter",
+            "args": [
+              "--bare"
+            ]
+          }
+        ],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    },
+    {
+      "name": "source-name-taken",
+      "notes": "A taken name fails on UNIQUE. The reference mints the src id before the insert, so the failed create consumes src_1 and the next source is src_2.",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "vault",
+            "adapter": "fs",
+            "config": {
+              "root": "/a"
+            }
+          }
+        },
+        {
+          "create_source": {
+            "name": "vault",
+            "adapter": "fs",
+            "config": {
+              "root": "/b"
+            }
+          }
+        },
+        {
+          "create_source": {
+            "name": "other",
+            "adapter": "fs",
+            "config": {
+              "root": "/c"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "source": "src_0"
+          },
+          {
+            "error": "unique"
+          },
+          {
+            "source": "src_2"
+          }
+        ],
+        "repos": [],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_2",
+            "name": "other",
+            "adapter": "fs",
+            "config": {
+              "root": "/c"
+            },
+            "env": {}
+          },
+          {
+            "source_id": "src_0",
+            "name": "vault",
+            "adapter": "fs",
+            "config": {
+              "root": "/a"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    },
+    {
+      "name": "source-unknown-adapter",
+      "notes": "The adapter FK is enforced.",
+      "steps": [
+        {
+          "create_source": {
+            "name": "vault",
+            "adapter": "nope"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "error": "foreign_key"
+          }
+        ],
+        "repos": [],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    },
+    {
+      "name": "source-defaults",
+      "notes": "config and env default to {}.",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "bare",
+            "adapter": "fs"
+          }
+        },
+        {
+          "create_source": {
+            "name": "secret",
+            "adapter": "fs",
+            "config": {
+              "root": "/s",
+              "debounce": 100,
+              "watch": true
+            },
+            "env": {
+              "TOKEN": "literal-value"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "source": "src_0"
+          },
+          {
+            "source": "src_1"
+          }
+        ],
+        "repos": [],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "bare",
+            "adapter": "fs",
+            "config": {},
+            "env": {}
+          },
+          {
+            "source_id": "src_1",
+            "name": "secret",
+            "adapter": "fs",
+            "config": {
+              "root": "/s",
+              "debounce": 100,
+              "watch": true
+            },
+            "env": {
+              "TOKEN": "literal-value"
+            }
+          }
+        ],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    },
+    {
+      "name": "delete-source-cascades",
+      "notes": "delete_source removes its attachments and the source; the other source keeps its attachment.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "a",
+            "adapter": "fs",
+            "config": {
+              "root": "/a"
+            }
+          }
+        },
+        {
+          "create_source": {
+            "name": "b",
+            "adapter": "fs",
+            "config": {
+              "root": "/b"
+            }
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_0"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_1"
+          }
+        },
+        {
+          "delete_source": {
+            "source": "src_0"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          },
+          {},
+          {
+            "source": "src_0"
+          },
+          {
+            "source": "src_1"
+          },
+          {},
+          {},
+          {}
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_1",
+            "name": "b",
+            "adapter": "fs",
+            "config": {
+              "root": "/b"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_1"
+          }
+        ],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "delete-source-unknown-is-noop",
+      "steps": [
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "a",
+            "adapter": "fs"
+          }
+        },
+        {
+          "delete_source": {
+            "source": "src_9"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "source": "src_0"
+          },
+          {}
+        ],
+        "repos": [],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "a",
+            "adapter": "fs",
+            "config": {},
+            "env": {}
+          }
+        ],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    },
+    {
+      "name": "attach-detach-idempotent",
+      "notes": "attach is INSERT OR IGNORE, detach a DELETE; repeating either is a no-op.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "a",
+            "adapter": "fs"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_0"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_0"
+          }
+        },
+        {
+          "detach": {
+            "repo": "rp_0",
+            "source": "src_0"
+          }
+        },
+        {
+          "detach": {
+            "repo": "rp_0",
+            "source": "src_0"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          },
+          {},
+          {
+            "source": "src_0"
+          },
+          {},
+          {},
+          {},
+          {}
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "a",
+            "adapter": "fs",
+            "config": {},
+            "env": {}
+          }
+        ],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "attach-unknown-repo-or-source",
+      "notes": "Both attachment FKs are enforced.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_adapter": {
+            "name": "fs",
+            "command": "omgbase-fs-adapter"
+          }
+        },
+        {
+          "create_source": {
+            "name": "a",
+            "adapter": "fs"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_9",
+            "source": "src_0"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_9"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          },
+          {},
+          {
+            "source": "src_0"
+          },
+          {
+            "error": "foreign_key"
+          },
+          {
+            "error": "foreign_key"
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "a",
+            "adapter": "fs",
+            "config": {},
+            "env": {}
+          }
+        ],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "two-repos-share-a-source",
+      "notes": "Attachments are m:n: one source can feed two repos; a repo can have several sources.",
+      "steps": [
+        {
+          "ensure_repo": {
+            "slug": "alpha",
+            "root": "/w/alpha"
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "beta",
+            "root": "/w/beta"
+          }
+        },
+        {
+          "attach": {
+            "repo": "rp_0",
+            "source": "src_1"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "repo": "rp_0"
+          },
+          {
+            "repo": "rp_1"
+          },
+          {}
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "alpha",
+            "settings": {}
+          },
+          {
+            "repo_id": "rp_1",
+            "slug": "beta",
+            "settings": {}
+          }
+        ],
+        "adapters": [
+          {
+            "name": "fs",
+            "command": "omgbase-fs-adapter",
+            "args": []
+          }
+        ],
+        "sources": [
+          {
+            "source_id": "src_0",
+            "name": "alpha-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/w/alpha"
+            },
+            "env": {}
+          },
+          {
+            "source_id": "src_1",
+            "name": "beta-fs",
+            "adapter": "fs",
+            "config": {
+              "root": "/w/beta"
+            },
+            "env": {}
+          }
+        ],
+        "attachments": [
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_0"
+          },
+          {
+            "repo_id": "rp_0",
+            "source_id": "src_1"
+          },
+          {
+            "repo_id": "rp_1",
+            "source_id": "src_1"
+          }
+        ],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": [
+          {
+            "slug": "alpha",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          },
+          {
+            "slug": "beta",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings-layers",
+      "notes": "README §3: resolve(repo) = deep_merge(workspace, repo_own); resolve() is the workspace layer alone.",
+      "steps": [
+        {
+          "settings": {
+            "scope": "workspace",
+            "set": {
+              "embedding": {
+                "provider": "stdio",
+                "dim": 768
+              },
+              "gc": {
+                "days": 30
+              }
+            }
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "plain"
+          }
+        },
+        {
+          "settings": {
+            "scope": "notes",
+            "set": {
+              "embedding": {
+                "provider": "http"
+              }
+            }
+          }
+        },
+        {
+          "resolve_settings": {
+            "repo": "notes"
+          }
+        },
+        {
+          "resolve_settings": {
+            "repo": "plain"
+          }
+        },
+        {
+          "resolve_settings": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "repo": "rp_0"
+          },
+          {
+            "repo": "rp_1"
+          },
+          {},
+          {
+            "settings": {
+              "embedding": {
+                "provider": "http",
+                "dim": 768
+              },
+              "gc": {
+                "days": 30
+              }
+            }
+          },
+          {
+            "settings": {
+              "embedding": {
+                "provider": "stdio",
+                "dim": 768
+              },
+              "gc": {
+                "days": 30
+              }
+            }
+          },
+          {
+            "settings": {
+              "embedding": {
+                "provider": "stdio",
+                "dim": 768
+              },
+              "gc": {
+                "days": 30
+              }
+            }
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {
+              "embedding": {
+                "provider": "http"
+              }
+            }
+          },
+          {
+            "repo_id": "rp_1",
+            "slug": "plain",
+            "settings": {}
+          }
+        ],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {
+          "embedding": {
+            "provider": "stdio",
+            "dim": 768
+          },
+          "gc": {
+            "days": 30
+          }
+        },
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          },
+          {
+            "slug": "plain",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings-replace-whole-blob",
+      "notes": "Writers replace the blob at their layer; there is no merge on write.",
+      "steps": [
+        {
+          "settings": {
+            "scope": "workspace",
+            "set": {
+              "a": 1,
+              "nested": {
+                "x": 1
+              }
+            }
+          }
+        },
+        {
+          "settings": {
+            "scope": "workspace",
+            "set": {
+              "b": 2
+            }
+          }
+        },
+        {
+          "ensure_repo": {
+            "slug": "notes"
+          }
+        },
+        {
+          "settings": {
+            "scope": "notes",
+            "set": {
+              "a": 1
+            }
+          }
+        },
+        {
+          "settings": {
+            "scope": "notes",
+            "set": {}
+          }
+        },
+        {
+          "resolve_settings": {
+            "repo": "notes"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {},
+          {
+            "repo": "rp_0"
+          },
+          {},
+          {},
+          {
+            "settings": {
+              "b": 2
+            }
+          }
+        ],
+        "repos": [
+          {
+            "repo_id": "rp_0",
+            "slug": "notes",
+            "settings": {}
+          }
+        ],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {
+          "b": 2
+        },
+        "repos_status": [
+          {
+            "slug": "notes",
+            "docs": 0,
+            "blocks": 0,
+            "commits": 0,
+            "open_edges": 0,
+            "unconverged": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "settings-unknown-repo",
+      "steps": [
+        {
+          "settings": {
+            "scope": "nope",
+            "set": {
+              "a": 1
+            }
+          }
+        },
+        {
+          "resolve_settings": {
+            "repo": "nope"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "error": "repo_not_found"
+          },
+          {
+            "error": "repo_not_found"
+          }
+        ],
+        "repos": [],
+        "adapters": [],
+        "sources": [],
+        "attachments": [],
+        "sync_state": [],
+        "workspace_settings": {},
+        "repos_status": []
+      }
+    }
+  ]
+}

@@ -90,44 +90,54 @@ export class Workspace {
   }
 
   /**
-   * Select the active repo. With an explicit slug, that repo (or throws
-   * repo_not_found). Otherwise the repo whose root_path contains `cwd`; if none
-   * or several match, throws AmbiguousRepo with the candidate slugs.
+   * Select the active repo (spec/sync §1 "Repo selection"): {@link selectRepo}
+   * over this workspace's repos.
    */
   selectRepo(cwd: string, slug?: string): RepoRow {
-    const repos = this.repos();
-    if (slug) {
-      const found = repos.find((r) => r.slug === slug);
-      if (!found) {
-        throw new RepoSelectionError("repo_not_found", `no repo with slug '${slug}'`, repos.map((r) => r.slug));
-      }
-      return found;
-    }
-    if (repos.length === 1) return repos[0]!;
-    const here = resolve(cwd);
-    // Only filesystem-backed repos (a derived rootPath) can contain the cwd; a
-    // sourceless/headless repo has no location, so it never matches by cwd.
-    const containing = repos.filter((r) => {
-      if (r.rootPath == null) return false;
-      const rel = relative(resolve(r.rootPath), here);
-      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-    });
-    if (containing.length === 1) return containing[0]!;
-    if (containing.length === 0) {
-      throw new RepoSelectionError(
-        "repo_not_found",
-        `no repo contains ${here}; select one with --repo`,
-        repos.map((r) => r.slug),
-      );
-    }
-    // Several contain cwd (nested roots): pick the deepest (longest root path).
-    containing.sort((a, b) => resolve(b.rootPath!).length - resolve(a.rootPath!).length);
-    return containing[0]!;
+    return selectRepo(this.repos(), cwd, slug);
   }
 
   close(): void {
     this.store.close();
   }
+}
+
+/**
+ * Repo selection (spec/sync §1) over a plain `repos` list. With an explicit
+ * slug, that repo (or `repo_not_found` with the candidate slugs). Else with
+ * exactly one repo, that repo. Else the repos whose root path contains `cwd`
+ * (path-prefix containment after resolving both; a sourceless repo never
+ * matches): exactly one → it; none → `repo_not_found`; several (nested roots)
+ * → the one with the longest resolved root path.
+ */
+export function selectRepo(repos: RepoRow[], cwd: string, slug?: string): RepoRow {
+  if (slug) {
+    const found = repos.find((r) => r.slug === slug);
+    if (!found) {
+      throw new RepoSelectionError("repo_not_found", `no repo with slug '${slug}'`, repos.map((r) => r.slug));
+    }
+    return found;
+  }
+  if (repos.length === 1) return repos[0]!;
+  const here = resolve(cwd);
+  // Only filesystem-backed repos (a derived rootPath) can contain the cwd; a
+  // sourceless/headless repo has no location, so it never matches by cwd.
+  const containing = repos.filter((r) => {
+    if (r.rootPath == null) return false;
+    const rel = relative(resolve(r.rootPath), here);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  });
+  if (containing.length === 1) return containing[0]!;
+  if (containing.length === 0) {
+    throw new RepoSelectionError(
+      "repo_not_found",
+      `no repo contains ${here}; select one with --repo`,
+      repos.map((r) => r.slug),
+    );
+  }
+  // Several contain cwd (nested roots): pick the deepest (longest root path).
+  containing.sort((a, b) => resolve(b.rootPath!).length - resolve(a.rootPath!).length);
+  return containing[0]!;
 }
 
 export class RepoSelectionError extends Error {

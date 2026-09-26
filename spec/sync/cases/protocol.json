@@ -1,0 +1,1439 @@
+{
+  "suite": "protocol",
+  "cases": [
+    {
+      "name": "handshake-and-enumerate",
+      "kind": "adapter",
+      "notes": "README §5: the first line is the handshake; requests carry increasing ids from 1 with a params object (empty for enumerate).",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":true}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"enumerate\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"entries\":[{\"path\":\"a.md\",\"revision\":\"1000:4\"},{\"path\":\"sub/b.md\",\"revision\":\"1000:4\",\"sourceId\":\"b\"}]}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": true,
+          "watch": true
+        },
+        "results": [
+          {
+            "entries": [
+              {
+                "path": "a.md",
+                "revision": "1000:4"
+              },
+              {
+                "path": "sub/b.md",
+                "revision": "1000:4",
+                "sourceId": "b"
+              }
+            ]
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "fetch-present-and-absent",
+      "kind": "adapter",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":false,\"watch\":false}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"fetch\",\"params\":{\"path\":\"a.md\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"item\":{\"path\":\"a.md\",\"revision\":\"1000:4\",\"content\":\"# A\\n\"}}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":2,\"method\":\"fetch\",\"params\":{\"path\":\"gone.md\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":2,\"result\":{\"item\":null}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":3,\"method\":\"fetch\",\"params\":{\"path\":\"a.md\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":3,\"result\":{}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": false,
+          "watch": false
+        },
+        "results": [
+          {
+            "item": {
+              "path": "a.md",
+              "revision": "1000:4",
+              "content": "# A\n"
+            }
+          },
+          {
+            "item": null
+          },
+          {
+            "item": null
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "write-and-remove",
+      "kind": "adapter",
+      "notes": "writeThrough sources take write { path, content } and remove { path }; the engine passes the bytes verbatim.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":false}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"write\",\"params\":{\"path\":\"new/x.md\",\"content\":\"# X\\n\\nBody with \\\"quotes\\\" and unicode — é\\n\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"ok\":true}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":2,\"method\":\"remove\",\"params\":{\"path\":\"old.md\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":2,\"result\":{\"ok\":true}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": true,
+          "watch": false
+        },
+        "results": [
+          {
+            "ok": true
+          },
+          {
+            "ok": true
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "watch-events-unwatch",
+      "kind": "adapter",
+      "notes": "After watch, unsolicited {\"event\":\"batch\"} lines reach the listener in order; unwatch stops the feed.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":true}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"watch\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"ok\":true}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"event\":\"batch\",\"paths\":[\"a.md\"]}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"event\":\"batch\",\"paths\":[\"b.md\",\"sub/c.md\"]}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":2,\"method\":\"unwatch\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":2,\"result\":{\"ok\":true}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": true,
+          "watch": true
+        },
+        "results": [
+          {
+            "ok": true
+          },
+          {
+            "ok": true
+          }
+        ],
+        "events": [
+          [
+            "a.md"
+          ],
+          [
+            "b.md",
+            "sub/c.md"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "event-before-watch-is-dropped",
+      "kind": "adapter",
+      "notes": "Pinned: a batch event with no live watch listener is discarded, never buffered as a response.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":false,\"watch\":true}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"event\":\"batch\",\"paths\":[\"early.md\"]}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"enumerate\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"entries\":[]}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": false,
+          "watch": true
+        },
+        "results": [
+          {
+            "entries": []
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "error-response",
+      "kind": "adapter",
+      "notes": "{\"id\":n,\"error\":\"…\"} fails that call with the adapter's message; the next call keeps counting ids.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":false,\"watch\":false}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"fetch\",\"params\":{\"path\":\"a.md\"}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"error\":\"permission denied\"}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":2,\"method\":\"enumerate\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":2,\"result\":{\"entries\":[{\"path\":\"a.md\",\"revision\":\"r\"}]}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": false,
+          "watch": false
+        },
+        "results": [
+          {
+            "error": "permission denied"
+          },
+          {
+            "entries": [
+              {
+                "path": "a.md",
+                "revision": "r"
+              }
+            ]
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "capability-defaults",
+      "kind": "adapter",
+      "notes": "Missing capabilities read as inferred / false / false.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"enumerate\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"entries\":[]}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "inferred",
+          "write_through": false,
+          "watch": false
+        },
+        "results": [
+          {
+            "entries": []
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "capability-borne",
+      "kind": "adapter",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":1,\"capabilities\":{\"identity\":\"borne\",\"writeThrough\":true,\"watch\":false}}"
+        },
+        {
+          "dir": "out",
+          "line": "{\"id\":1,\"method\":\"enumerate\",\"params\":{}}"
+        },
+        {
+          "dir": "in",
+          "line": "{\"id\":1,\"result\":{\"entries\":[{\"path\":\"a.md\",\"revision\":\"r\",\"sourceId\":\"upstream-42\"}]}}"
+        }
+      ],
+      "expect": {
+        "capabilities": {
+          "identity": "borne",
+          "write_through": true,
+          "watch": false
+        },
+        "results": [
+          {
+            "entries": [
+              {
+                "path": "a.md",
+                "revision": "r",
+                "sourceId": "upstream-42"
+              }
+            ]
+          }
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "handshake-wrong-protocol",
+      "kind": "adapter",
+      "notes": "README §5: a non-1 protocol is an error.",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"protocol\":2,\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":true}}"
+        }
+      ],
+      "expect": {
+        "error": "invalid_handshake"
+      }
+    },
+    {
+      "name": "handshake-missing-protocol",
+      "kind": "adapter",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "{\"capabilities\":{\"identity\":\"inferred\",\"writeThrough\":true,\"watch\":true}}"
+        }
+      ],
+      "expect": {
+        "error": "invalid_handshake"
+      }
+    },
+    {
+      "name": "handshake-not-json",
+      "kind": "adapter",
+      "transcript": [
+        {
+          "dir": "in",
+          "line": "hello from a confused adapter"
+        }
+      ],
+      "expect": {
+        "error": "invalid_handshake"
+      }
+    },
+    {
+      "name": "sync-in-ingests",
+      "kind": "coordinator",
+      "notes": "README §6 sync_in = reconcile(enumerate().paths): every entry is fetched, present items go to observe_many in one call.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "a.md": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+              "sub/b.md": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n"
+            }
+          }
+        },
+        {
+          "sync_in": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "ingested": [
+              "a.md",
+              "sub/b.md"
+            ],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [],
+            "calls": [
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "fetch",
+                "path": "a.md"
+              },
+              {
+                "source": "fetch",
+                "path": "sub/b.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "a.md",
+                    "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n"
+                  },
+                  {
+                    "path": "sub/b.md",
+                    "content": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "files": {
+          "a.md": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+          "sub/b.md": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_1",
+            "path": "sub/b.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "observed",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "reconcile-echo-edit-and-gone",
+      "kind": "coordinator",
+      "notes": "An unchanged path is suppressed (echo), an edited one ingested, a path the source no longer has goes to observe_delete (deleted only when a live doc existed).",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "a.md": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+              "b.md": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n"
+            }
+          }
+        },
+        {
+          "sync_in": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "source": {
+            "set": {
+              "b.md": "# B\n\nBeta paragraph about bees and the hives at the far edge of the meadow.\n"
+            },
+            "rm": [
+              "a.md"
+            ]
+          }
+        },
+        {
+          "reconcile": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "paths": [
+              "a.md",
+              "b.md",
+              "never.md"
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "ingested": [
+              "a.md",
+              "b.md"
+            ],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [],
+            "calls": [
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "fetch",
+                "path": "a.md"
+              },
+              {
+                "source": "fetch",
+                "path": "b.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "a.md",
+                    "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n"
+                  },
+                  {
+                    "path": "b.md",
+                    "content": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n"
+                  }
+                ]
+              }
+            ]
+          },
+          {},
+          {
+            "ingested": [
+              "b.md"
+            ],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [
+              "a.md"
+            ],
+            "calls": [
+              {
+                "source": "fetch",
+                "path": "a.md"
+              },
+              {
+                "source": "fetch",
+                "path": "b.md"
+              },
+              {
+                "source": "fetch",
+                "path": "never.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "b.md",
+                    "content": "# B\n\nBeta paragraph about bees and the hives at the far edge of the meadow.\n"
+                  }
+                ]
+              },
+              {
+                "engine": "observe_delete",
+                "path": "a.md"
+              },
+              {
+                "engine": "observe_delete",
+                "path": "never.md"
+              }
+            ]
+          }
+        ],
+        "files": {
+          "b.md": "# B\n\nBeta paragraph about bees and the hives at the far edge of the meadow.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "deleted": true
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_3",
+            "seq": 4,
+            "origin": "observed",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "reconcile-gone-only",
+      "kind": "coordinator",
+      "notes": "With no present items observe_many is not called at all.",
+      "source": {
+        "write_through": false
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "a.md": "# A\n"
+            }
+          }
+        },
+        {
+          "sync_in": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "source": {
+            "rm": [
+              "a.md"
+            ]
+          }
+        },
+        {
+          "reconcile": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "paths": [
+              "a.md"
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [],
+            "calls": [
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "fetch",
+                "path": "a.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "a.md",
+                    "content": "# A\n"
+                  }
+                ]
+              }
+            ]
+          },
+          {},
+          {
+            "ingested": [],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [
+              "a.md"
+            ],
+            "calls": [
+              {
+                "source": "fetch",
+                "path": "a.md"
+              },
+              {
+                "engine": "observe_delete",
+                "path": "a.md"
+              }
+            ]
+          }
+        ],
+        "files": {},
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "deleted": true
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "observed",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sync-out-skips-observed-writes-api-and-import",
+      "kind": "coordinator",
+      "notes": "README §6 sync_out: observed commits are never exported; api and import commits alike are (§9); each revision's doc is re-read by path and written.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "source": {
+            "set": {
+              "from-source.md": "# From the source\n"
+            }
+          }
+        },
+        {
+          "sync_in": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "create": {
+              "path": "authored.md",
+              "markdown": "# Authored\n\nWritten through the API.\n",
+              "actor": "agent:test"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "import": {
+              "path": "imported.md",
+              "content": "# Imported\n"
+            }
+          }
+        },
+        {
+          "sync_out": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "ingested": [
+              "from-source.md"
+            ],
+            "suppressed": [],
+            "conflicted": [],
+            "deleted": [],
+            "calls": [
+              {
+                "source": "enumerate"
+              },
+              {
+                "source": "fetch",
+                "path": "from-source.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "from-source.md",
+                    "content": "# From the source\n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "doc": "d_2",
+            "commit": "c_2"
+          },
+          {
+            "cursor": 3,
+            "written": [
+              "authored.md",
+              "imported.md"
+            ],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 0
+              },
+              {
+                "engine": "read_doc",
+                "path": "authored.md"
+              },
+              {
+                "source": "write",
+                "path": "authored.md",
+                "content": "# Authored\n\nWritten through the API.\n"
+              },
+              {
+                "engine": "read_doc",
+                "path": "imported.md"
+              },
+              {
+                "source": "write",
+                "path": "imported.md",
+                "content": "# Imported\n"
+              }
+            ]
+          }
+        ],
+        "files": {
+          "authored.md": "# Authored\n\nWritten through the API.\n",
+          "from-source.md": "# From the source\n",
+          "imported.md": "# Imported\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_1",
+            "path": "authored.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_0",
+            "path": "from-source.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_2",
+            "path": "imported.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "observed",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "api",
+            "actor": "agent:test"
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "origin": "import",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sync-out-removes-tombstoned",
+      "kind": "coordinator",
+      "notes": "Pinned (§9): the doc is re-read at export time, so a create followed by a delete exports as `remove` under the create's digest; the delete commit has no revision to walk.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "delete": {
+              "path": "x.md"
+            }
+          }
+        },
+        {
+          "sync_out": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "cursor": 2,
+            "written": [],
+            "removed": [
+              "x.md"
+            ],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 0
+              },
+              {
+                "engine": "read_doc",
+                "path": "x.md"
+              },
+              {
+                "source": "remove",
+                "path": "x.md"
+              }
+            ]
+          }
+        ],
+        "files": {},
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": true
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sync-out-paging",
+      "kind": "coordinator",
+      "notes": "With a page limit of 2 and three commits, changes_since is followed through `truncated`; the final cursor is the last seq.",
+      "source": {
+        "write_through": true
+      },
+      "page_limit": 2,
+      "steps": [
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "create": {
+              "path": "y.md",
+              "markdown": "# Y\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "create": {
+              "path": "z.md",
+              "markdown": "# Z\n"
+            }
+          }
+        },
+        {
+          "sync_out": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "doc": "d_2",
+            "committed": true
+          },
+          {
+            "cursor": 3,
+            "written": [
+              "x.md",
+              "y.md",
+              "z.md"
+            ],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 0,
+                "limit": 2
+              },
+              {
+                "engine": "read_doc",
+                "path": "x.md"
+              },
+              {
+                "source": "write",
+                "path": "x.md",
+                "content": "# X\n"
+              },
+              {
+                "engine": "read_doc",
+                "path": "y.md"
+              },
+              {
+                "source": "write",
+                "path": "y.md",
+                "content": "# Y\n"
+              },
+              {
+                "engine": "changes_since",
+                "cursor": 2,
+                "limit": 2
+              },
+              {
+                "engine": "read_doc",
+                "path": "z.md"
+              },
+              {
+                "source": "write",
+                "path": "z.md",
+                "content": "# Z\n"
+              }
+            ]
+          }
+        ],
+        "files": {
+          "x.md": "# X\n",
+          "y.md": "# Y\n",
+          "z.md": "# Z\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_1",
+            "path": "y.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_2",
+            "path": "z.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "api",
+            "actor": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "sync-out-from-cursor",
+      "kind": "coordinator",
+      "notes": "A cursor resumes after that seq; an empty page returns the input cursor.",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n"
+            }
+          }
+        },
+        {
+          "engine": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "create": {
+              "path": "y.md",
+              "markdown": "# Y\n"
+            }
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 1
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 2
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "doc": "d_1",
+            "committed": true
+          },
+          {
+            "cursor": 2,
+            "written": [
+              "y.md"
+            ],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 1
+              },
+              {
+                "engine": "read_doc",
+                "path": "y.md"
+              },
+              {
+                "source": "write",
+                "path": "y.md",
+                "content": "# Y\n"
+              }
+            ]
+          },
+          {
+            "cursor": 2,
+            "written": [],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 2
+              }
+            ]
+          }
+        ],
+        "files": {
+          "y.md": "# Y\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          },
+          {
+            "doc_id": "d_1",
+            "path": "y.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "read-only-source-exports-nothing",
+      "kind": "coordinator",
+      "notes": "A source without write returns the cursor unchanged and touches neither the engine nor the source.",
+      "source": {
+        "write_through": false
+      },
+      "steps": [
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n"
+            }
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 0
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "cursor": 0,
+            "written": [],
+            "removed": [],
+            "calls": []
+          }
+        ],
+        "files": {},
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "round-trip-is-an-echo",
+      "kind": "coordinator",
+      "notes": "Loop safety: an api commit exported to the source comes back through reconcile as an echo (suppressed, no commit).",
+      "source": {
+        "write_through": true
+      },
+      "steps": [
+        {
+          "engine": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "create": {
+              "path": "x.md",
+              "markdown": "# X\n\nExported then observed.\n"
+            }
+          }
+        },
+        {
+          "sync_out": {}
+        },
+        {
+          "reconcile": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "paths": [
+              "x.md"
+            ]
+          }
+        },
+        {
+          "sync_out": {
+            "cursor": 1
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {
+            "doc": "d_0",
+            "committed": true
+          },
+          {
+            "cursor": 1,
+            "written": [
+              "x.md"
+            ],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 0
+              },
+              {
+                "engine": "read_doc",
+                "path": "x.md"
+              },
+              {
+                "source": "write",
+                "path": "x.md",
+                "content": "# X\n\nExported then observed.\n"
+              }
+            ]
+          },
+          {
+            "ingested": [],
+            "suppressed": [
+              "x.md"
+            ],
+            "conflicted": [],
+            "deleted": [],
+            "calls": [
+              {
+                "source": "fetch",
+                "path": "x.md"
+              },
+              {
+                "engine": "observe_many",
+                "files": [
+                  {
+                    "path": "x.md",
+                    "content": "# X\n\nExported then observed.\n"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "cursor": 1,
+            "written": [],
+            "removed": [],
+            "calls": [
+              {
+                "engine": "changes_since",
+                "cursor": 1
+              }
+            ]
+          }
+        ],
+        "files": {
+          "x.md": "# X\n\nExported then observed.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "x.md",
+            "deleted": false
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "origin": "api",
+            "actor": null
+          }
+        ]
+      }
+    }
+  ]
+}

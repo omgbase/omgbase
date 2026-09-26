@@ -67,11 +67,13 @@ export async function createExternalSource(spec: ExternalSourceSpec): Promise<Sy
     child.once("exit", (code) => reject(new Error(`sync adapter '${spec.command}' exited early (code ${code ?? "?"})`)));
   });
 
-  // Handshake: the first line declares protocol + capabilities.
+  // Handshake: the first line declares protocol + capabilities. A missing or
+  // non-1 `protocol` is as invalid as a line that does not parse (spec/sync §5).
   const handshakeRaw = await Promise.race([router.nextResponse(), died]);
   let caps: SourceCapabilities;
   try {
     const hs = JSON.parse(handshakeRaw) as HandshakeMsg;
+    if (hs.protocol !== 1) throw new Error("protocol");
     const c = hs.capabilities ?? {};
     caps = {
       identity: c.identity === "borne" ? "borne" : "inferred",
@@ -79,6 +81,9 @@ export async function createExternalSource(spec: ExternalSourceSpec): Promise<Sy
       watch: Boolean(c.watch),
     };
   } catch {
+    rl.close();
+    child.stdin.end();
+    child.kill("SIGTERM");
     throw new Error(`sync adapter '${spec.command}' sent an invalid handshake: ${handshakeRaw.slice(0, 120)}`);
   }
 

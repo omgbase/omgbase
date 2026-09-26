@@ -1,9 +1,8 @@
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { mintId } from "../core/ids.js";
 import { observeBatch, type BatchOutcome } from "./observe.js";
 import { sweepResurrectionPool } from "../core/store/gc.js";
+import { nodeFs, type SyncFs } from "./fs-util.js";
 
 // In-process filesystem checkpoint (01 §6, 03 §8). A checkpoint is one batch of
 // filesystem changes. This is the synchronous one-shot/reconcile fast-path
@@ -12,7 +11,9 @@ import { sweepResurrectionPool } from "../core/store/gc.js";
 // external @omgbase/fs-adapter, driven through the async SyncSource seam
 // (driver.ts / watcher.ts). Both paths hand their bytes to `observeBatch`, so
 // echo-suppression + the two-pass reconcile (per-doc, then cross-document moves,
-// then commits) + convergence are one implementation.
+// then commits) + convergence are one implementation. The reads go through the
+// `SyncFs` seam (`opts.fs`, default `nodeFs`) so spec/sync's runner can supply an
+// in-memory filesystem.
 
 export interface FileChange {
   /** repo-relative canonical path */
@@ -34,20 +35,19 @@ export interface CheckpointResult {
  * disk tombstones its live doc (drop FTS, tombstone blocks + doc, pool blocks
  * for resurrection) so it stops being served as a ghost. Every member is
  * reconciled before any commits, so a block cut from one file and pasted into
- * another in the same checkpoint keeps its id (`observeBatch`).
+ * another in the same checkpoint keeps its id (`observeBatch`). spec/sync §4.1
+ * `process_checkpoint(repo, root, paths, ts)`.
  */
 export function processCheckpoint(
   store: Store,
   repoId: string,
   rootPath: string,
   changes: FileChange[],
-  opts: { ts?: string; gitHead?: string | null } = {},
+  opts: { ts?: string; gitHead?: string | null; fs?: SyncFs } = {},
 ): CheckpointResult {
   const ts = opts.ts ?? new Date().toISOString();
-  const items = changes.map((change) => {
-    const abs = join(rootPath, change.path);
-    return { path: change.path, content: existsSync(abs) ? readFileSync(abs, "utf8") : null };
-  });
+  const fs = opts.fs ?? nodeFs;
+  const items = changes.map((change) => ({ path: change.path, content: fs.read(rootPath, change.path) }));
   return finishCheckpoint(store, repoId, observeBatch(store, repoId, items, ts), { ts, gitHead: opts.gitHead ?? null });
 }
 

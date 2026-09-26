@@ -9,13 +9,13 @@ import { join } from "node:path";
 // Node core exposes no flock(2), and the design forbids new runtime deps (11
 // §8). We implement the same advisory contract with an O_EXCL lockfile: exclusive
 // creation is atomic on local filesystems, the holder writes its pid for
-// liveness, and a lock whose pid is dead is stolen (no daemon, no lease sweeper —
-// the same "probe by trying" spirit as the watch lease in §3.4). This is an
-// as-built substitution for flock; the file-CAS + ingest-and-replay behavior in
-// the write protocol is unchanged.
+// liveness, and a lock whose pid is dead (or whose body does not parse) is
+// stolen — never one whose holder is alive, however old the record (spec/sync
+// §7; no daemon, no lease sweeper — the same "probe by trying" spirit as the
+// watch lease in §3.4). This is an as-built substitution for flock; the
+// file-CAS + ingest-and-replay behavior in the write protocol is unchanged.
 
 const LOCK_NAME = "writer.lock";
-const STALE_MS = 30_000;
 
 function pidAlive(pid: number): boolean {
   try {
@@ -49,19 +49,9 @@ function tryAcquire(lockPath: string): boolean {
     return true;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    // Lock exists: steal it if the holder is dead or the record is stale.
-    let holderPid: number | null = null;
-    let ts = 0;
-    try {
-      const rec = JSON.parse(readFileSync(lockPath, "utf8")) as { pid?: number; ts?: number };
-      holderPid = rec.pid ?? null;
-      ts = rec.ts ?? 0;
-    } catch {
-      // Unreadable/partial lock record — treat as stale.
-    }
-    const dead = holderPid != null && !pidAlive(holderPid);
-    const stale = Date.now() - ts > STALE_MS;
-    if (dead || stale) {
+    // Lock exists: steal it only if the holder is dead or the record is unreadable.
+    const holderPid = readHolderPid(lockPath);
+    if (holderPid == null || !pidAlive(holderPid)) {
       try {
         unlinkSync(lockPath);
       } catch {

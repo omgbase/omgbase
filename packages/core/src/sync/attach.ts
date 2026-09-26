@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { makeReconcilingResolver } from "./reconciling-ingest.js";
-import { walkMarkdown } from "./fs-util.js";
+import { nodeFs, type SyncFs } from "./fs-util.js";
 
 // ingestDirectory: the reconciling one-shot walk that ingests a directory's
 // Markdown into a repo, threading block identity AND extracting edges on the
@@ -24,15 +22,18 @@ export interface IngestDirResult {
  * Ingest a directory as a repo: create/reuse the repo (registering its fs
  * source) + ingest all Markdown, reconciling identity and extracting edges.
  * `files` (repo-relative paths) may be supplied by a caller that already walked
- * the tree, to avoid walking twice; omit it to walk here.
+ * the tree, to avoid walking twice; omit it to walk here. `opts.ts` pins the
+ * commit timestamp (default now); `opts.fs` the filesystem seam (default node).
  */
-export function ingestDirectory(store: Store, slug: string, rootPath: string, files?: string[]): IngestDirResult {
+export function ingestDirectory(store: Store, slug: string, rootPath: string, files?: string[], opts: { ts?: string; fs?: SyncFs } = {}): IngestDirResult {
   const repoId = ensureRepo(store, slug, rootPath);
-  const walked = files ?? walkMarkdown(rootPath);
-  const ts = new Date().toISOString();
+  const fs = opts.fs ?? nodeFs;
+  const walked = files ?? fs.walk(rootPath);
+  const ts = opts.ts ?? new Date().toISOString();
   let allConverged = true;
   for (const rel of walked) {
-    const content = readFileSync(join(rootPath, rel), "utf8");
+    const content = fs.read(rootPath, rel);
+    if (content === null) continue;
     const res = ingestFile(store, repoId, rel, content, {
       ts,
       resolveIds: makeReconcilingResolver(store, repoId, { ts, path: rel }),

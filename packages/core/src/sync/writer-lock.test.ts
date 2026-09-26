@@ -40,11 +40,26 @@ describe("withWriterLock", () => {
 
   it("times out if a live foreign holder never releases", () => {
     const d = omgbaseDir();
-    // Simulate a live holder: our own pid, fresh timestamp — pidAlive() is true,
-    // so the lock is neither dead nor stale and cannot be stolen.
+    // Simulate a live holder: our own pid — pidAlive() is true, so the lock
+    // cannot be stolen.
     mkdirSync(d, { recursive: true });
     writeFileSync(join(d, "writer.lock"), JSON.stringify({ pid: process.pid, ts: Date.now() }));
     expect(() => withWriterLock(d, () => 1, { timeoutMs: 100, pollMs: 10 })).toThrow(WriterLockTimeout);
+  });
+
+  it("never steals a live holder's lock, however old its record (spec/sync §7)", () => {
+    const d = omgbaseDir();
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "writer.lock"), JSON.stringify({ pid: process.pid, ts: Date.now() - 3_600_000 }));
+    expect(() => withWriterLock(d, () => 1, { timeoutMs: 100, pollMs: 10 })).toThrow(WriterLockTimeout);
+    expect(writerLockFree(d)).toBe(false);
+  });
+
+  it("steals a lock whose body does not parse (spec/sync §9)", () => {
+    const d = omgbaseDir();
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "writer.lock"), "not json");
+    expect(withWriterLock(d, () => "stolen", { timeoutMs: 500 })).toBe("stolen");
   });
 
   it("steals a stale lock held by a dead pid", () => {

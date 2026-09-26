@@ -1,0 +1,709 @@
+{
+  "suite": "pure",
+  "cases": [
+    {
+      "name": "flags-root",
+      "notes": "README §2 render_config_flags: the fs source's { root } becomes --root <root>.",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {
+          "root": "/vault"
+        }
+      },
+      "expect": [
+        "--root",
+        "/vault"
+      ]
+    },
+    {
+      "name": "flags-booleans",
+      "notes": "true → a bare --key; false → nothing.",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {
+          "watch": true,
+          "quiet": false,
+          "root": "/v"
+        }
+      },
+      "expect": [
+        "--watch",
+        "--root",
+        "/v"
+      ]
+    },
+    {
+      "name": "flags-null-skipped",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {
+          "token": null,
+          "root": "/v"
+        }
+      },
+      "expect": [
+        "--root",
+        "/v"
+      ]
+    },
+    {
+      "name": "flags-numbers",
+      "notes": "JavaScript stringification: integers and decimals as JS prints them.",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {
+          "debounce": 750,
+          "ratio": 0.5,
+          "zero": 0,
+          "neg": -3
+        }
+      },
+      "expect": [
+        "--debounce",
+        "750",
+        "--ratio",
+        "0.5",
+        "--zero",
+        "0",
+        "--neg",
+        "-3"
+      ]
+    },
+    {
+      "name": "flags-empty",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {}
+      },
+      "expect": []
+    },
+    {
+      "name": "flags-own-order",
+      "notes": "Entries render in the object's own key order, not sorted.",
+      "fn": "render_config_flags",
+      "args": {
+        "config": {
+          "z": "1",
+          "a": "2",
+          "m": true
+        }
+      },
+      "expect": [
+        "--z",
+        "1",
+        "--a",
+        "2",
+        "--m"
+      ]
+    },
+    {
+      "name": "merge-nested",
+      "notes": "README §3: plain objects merge recursively, the repo layer winning at the leaf.",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "embedding": {
+            "provider": "a",
+            "dim": 768
+          },
+          "gc": 30
+        },
+        "over": {
+          "embedding": {
+            "provider": "b"
+          }
+        }
+      },
+      "expect": {
+        "embedding": {
+          "provider": "b",
+          "dim": 768
+        },
+        "gc": 30
+      }
+    },
+    {
+      "name": "merge-array-replaces",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "tags": [
+            1,
+            2
+          ],
+          "keep": true
+        },
+        "over": {
+          "tags": [
+            3
+          ]
+        }
+      },
+      "expect": {
+        "tags": [
+          3
+        ],
+        "keep": true
+      }
+    },
+    {
+      "name": "merge-null-replaces",
+      "notes": "null is not a plain object: it replaces the whole subtree.",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "embedding": {
+            "provider": "a"
+          }
+        },
+        "over": {
+          "embedding": null
+        }
+      },
+      "expect": {
+        "embedding": null
+      }
+    },
+    {
+      "name": "merge-scalar-over-object",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "x": {
+            "a": 1
+          }
+        },
+        "over": {
+          "x": 5
+        }
+      },
+      "expect": {
+        "x": 5
+      }
+    },
+    {
+      "name": "merge-object-over-scalar",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "x": 5
+        },
+        "over": {
+          "x": {
+            "a": 1
+          }
+        }
+      },
+      "expect": {
+        "x": {
+          "a": 1
+        }
+      }
+    },
+    {
+      "name": "merge-empty-over",
+      "fn": "deep_merge",
+      "args": {
+        "base": {
+          "a": 1,
+          "b": {
+            "c": 2
+          }
+        },
+        "over": {}
+      },
+      "expect": {
+        "a": 1,
+        "b": {
+          "c": 2
+        }
+      }
+    },
+    {
+      "name": "select-single",
+      "notes": "README §1: with exactly one repo, that repo — wherever cwd is.",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "notes",
+            "root_path": "/w/notes"
+          }
+        ],
+        "cwd": "/elsewhere"
+      },
+      "expect": "notes"
+    },
+    {
+      "name": "select-single-sourceless",
+      "notes": "The one-repo rule precedes containment, so a lone sourceless repo is selected.",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "notes",
+            "root_path": null
+          }
+        ],
+        "cwd": "/elsewhere"
+      },
+      "expect": "notes"
+    },
+    {
+      "name": "select-explicit",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/a",
+        "slug": "b"
+      },
+      "expect": "b"
+    },
+    {
+      "name": "select-explicit-missing",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/a",
+        "slug": "zz"
+      },
+      "expect": {
+        "error": "repo_not_found",
+        "candidates": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "select-containment",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/b/sub/deeper"
+      },
+      "expect": "b"
+    },
+    {
+      "name": "select-root-is-cwd",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/b"
+      },
+      "expect": "b"
+    },
+    {
+      "name": "select-none-contains",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/other"
+      },
+      "expect": {
+        "error": "repo_not_found",
+        "candidates": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "select-sibling-prefix-is-not-containment",
+      "notes": "Path-segment containment, not string prefix: /w/ab does not contain /w/abc.",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "ab",
+            "root_path": "/w/ab"
+          },
+          {
+            "slug": "c",
+            "root_path": "/w/c"
+          }
+        ],
+        "cwd": "/w/abc"
+      },
+      "expect": {
+        "error": "repo_not_found",
+        "candidates": [
+          "ab",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "select-nested-longest",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "outer",
+            "root_path": "/w"
+          },
+          {
+            "slug": "inner",
+            "root_path": "/w/inner"
+          }
+        ],
+        "cwd": "/w/inner/x"
+      },
+      "expect": "inner"
+    },
+    {
+      "name": "select-nested-outer",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "outer",
+            "root_path": "/w"
+          },
+          {
+            "slug": "inner",
+            "root_path": "/w/inner"
+          }
+        ],
+        "cwd": "/w/other"
+      },
+      "expect": "outer"
+    },
+    {
+      "name": "select-sourceless-never-matches",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "headless",
+            "root_path": null
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/b/x"
+      },
+      "expect": "b"
+    },
+    {
+      "name": "select-sourceless-not-a-fallback",
+      "notes": "Two repos, cwd outside the fs one: the sourceless repo does not catch it — repo_not_found lists both.",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "headless",
+            "root_path": null
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/other"
+      },
+      "expect": {
+        "error": "repo_not_found",
+        "candidates": [
+          "headless",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "select-unnormalized-root",
+      "notes": "Both sides are resolved before comparing.",
+      "fn": "select_repo",
+      "args": {
+        "repos": [
+          {
+            "slug": "a",
+            "root_path": "/w/a/../a/"
+          },
+          {
+            "slug": "b",
+            "root_path": "/w/b"
+          }
+        ],
+        "cwd": "/w/a/./sub"
+      },
+      "expect": "a"
+    },
+    {
+      "name": "plan-new-file",
+      "notes": "README §4.3: a path with no cache row is a candidate and changed without consulting its hash.",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [],
+        "disk": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "content": "# A\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [
+          "a.md"
+        ],
+        "changed": [
+          "a.md"
+        ],
+        "deletions": [],
+        "refreshed": []
+      }
+    },
+    {
+      "name": "plan-unchanged-stat",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          }
+        ],
+        "disk": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "content": "# A\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [],
+        "changed": [],
+        "deletions": [],
+        "refreshed": []
+      }
+    },
+    {
+      "name": "plan-touched-unchanged",
+      "notes": "mtime moved, bytes did not: a candidate whose hash equals the cache — refreshed, not changed.",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          }
+        ],
+        "disk": [
+          {
+            "path": "a.md",
+            "mtime_ns": 2000,
+            "content": "# A\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [
+          "a.md"
+        ],
+        "changed": [],
+        "deletions": [],
+        "refreshed": [
+          "a.md"
+        ]
+      }
+    },
+    {
+      "name": "plan-edited",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          }
+        ],
+        "disk": [
+          {
+            "path": "a.md",
+            "mtime_ns": 2000,
+            "content": "# A edited\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [
+          "a.md"
+        ],
+        "changed": [
+          "a.md"
+        ],
+        "deletions": [],
+        "refreshed": []
+      }
+    },
+    {
+      "name": "plan-size-change-same-mtime",
+      "notes": "Either stat field differing makes a candidate.",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          }
+        ],
+        "disk": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "content": "# AB\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [
+          "a.md"
+        ],
+        "changed": [
+          "a.md"
+        ],
+        "deletions": [],
+        "refreshed": []
+      }
+    },
+    {
+      "name": "plan-deleted",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          }
+        ],
+        "disk": []
+      },
+      "expect": {
+        "candidates": [],
+        "changed": [],
+        "deletions": [
+          "a.md"
+        ],
+        "refreshed": []
+      }
+    },
+    {
+      "name": "plan-mixed",
+      "notes": "a unchanged, b touched, c gone, d new; candidates in disk order, deletions in cache order.",
+      "fn": "sweep_plan",
+      "args": {
+        "cache": [
+          {
+            "path": "c.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "75893e6adce701bd6c7f089a8f29c6692506f182e8b6c8129e5708576261fa8a"
+          },
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+          },
+          {
+            "path": "b.md",
+            "mtime_ns": 1000,
+            "size": 4,
+            "hash": "a81d3fbddd441e2d690b9c03c18251323a295c8eb8ebbfb81ca45b63bf8d5a06"
+          }
+        ],
+        "disk": [
+          {
+            "path": "d.md",
+            "mtime_ns": 3000,
+            "content": "# D\n"
+          },
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "content": "# A\n"
+          },
+          {
+            "path": "b.md",
+            "mtime_ns": 2000,
+            "content": "# B\n"
+          }
+        ]
+      },
+      "expect": {
+        "candidates": [
+          "d.md",
+          "b.md"
+        ],
+        "changed": [
+          "d.md"
+        ],
+        "deletions": [
+          "c.md"
+        ],
+        "refreshed": [
+          "b.md"
+        ]
+      }
+    }
+  ]
+}

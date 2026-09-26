@@ -1,7 +1,9 @@
 # omgbase — Sync Adapters (External Source Reconciliation)
 
-**Status:** as-built (verified 2026-09-23). The **external-adapter** model is what ships — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`); the earlier interim *in-process* `SyncSource` seam (commit `2850b28`) was superseded by it. The `@omgbase/fs-adapter` package is the first adapter; the source registry (§2) is wired and `omg source` is its UI (ADR-014, all stages done).
+**Status:** as-built (verified 2026-09-26). The **external-adapter** model is what ships — adapters are separate processes speaking a stdio protocol, exactly as embedders are (`05 §6`); the earlier interim *in-process* `SyncSource` seam (commit `2850b28`) was superseded by it. The `@omgbase/fs-adapter` package is the first adapter; the source registry (§2) is wired and `omg source` is its UI (ADR-014, all stages done).
 **Depends on:** `architecture.md` §6 (checkpoints), `reconciliation-spec.md` §8 (sync pipeline placement), `data-model.md` §3 (repos), `cli.md` §3.3 (freshness sweep, watch lease). **Parallels:** `graph-and-query.md` §6 + `packages/core/src/search/external.ts` (the embedder external-process pattern this mirrors).
+
+> **The language-neutral specification is [`spec/sync/README.md`](../spec/sync/README.md)** (workspace discovery and repo selection, the source registry and settings, checkpoints and the freshness sweep as a pure plan over a cache + snapshot, disk drift and recovery, the adapter stdio protocol, the driver and the coordinator, the locks, the reference oddities) with its executable fixtures under `spec/sync/cases/` — `pure.json`, `registry.json`, `checkpoint.json` and the `adapter` cases of `protocol.json` run by `packages/core/corpus/sync/spec.test.ts`, the `coordinator` cases of `protocol.json` by `packages/sync/corpus/sync/spec.test.ts` (`SYNC_SPEC_UPDATE=1` regenerates either), and all of them by the Rust `omgbase-sync` crate. When this document and the spec disagree, the spec's fixtures win. This document keeps the rationale and the operational picture.
 
 ---
 
@@ -33,7 +35,7 @@ The engine spawns an adapter as a child process and speaks the stdio protocol (�
 
 ## 4. The stdio protocol
 
-Newline-delimited JSON over the adapter's stdin/stdout, mirroring the embedder (`packages/core/src/search/external.ts`). **stdout is the protocol channel; stderr is logs/progress only, never protocol.** Requests carry a monotonic `id`; responses echo it (interleaving tolerated). The one extension beyond the embedder's strict request/response is a **server-initiated stream** for `watch`.
+Newline-delimited JSON over the adapter's stdin/stdout, mirroring the embedder (`packages/core/src/search/external.ts`). **stdout is the protocol channel; stderr is logs/progress only, never protocol.** Requests carry a monotonic `id` (from 1, one counter per adapter process); responses echo it. As built the engine issues one request at a time (the driver and the coordinator `await` each call) and its response matcher *discards* a line whose `id` is not the one it is waiting for rather than re-queuing it — so out-of-order responses to concurrent requests are not actually tolerated; an adapter must answer in request order (`spec/sync` §5, §9). The one extension beyond the embedder's strict request/response is a **server-initiated stream** for `watch`.
 
 ### 4.1 Handshake
 
@@ -42,6 +44,8 @@ On spawn the adapter writes exactly one line describing itself:
 ```json
 {"protocol":1,"capabilities":{"identity":"inferred","writeThrough":true,"watch":true}}
 ```
+
+A handshake that does not parse, or whose `protocol` is missing or not `1`, fails the source (`createExternalSource` throws and terminates the child); a missing `capabilities` object reads as `inferred` / `false` / `false`.
 
 - `identity: "inferred" | "borne"` — does the source carry stable per-member identity (§5)?
 - `writeThrough: boolean` — can the engine push its own mutations back?
@@ -92,7 +96,7 @@ Echo suppression is engine-side. The **authoritative** layer is always the same:
 
 Adapters are spawned fresh and stateless across runs, so durable change-tracking is the **engine's** job. Today that state is the filesystem **`file_stats`** cache — `(repo_id, path) → (mtime_ns, size, hash)` (`core/store/schema.ts`, written by `sync/freshness.ts`). It is derived and rebuildable (a full re-stat regenerates it via `rebuildFileStats`) and lets the freshness sweep skip unchanged files cheaply; the durable convergence signal remains `docs.file_hash`.
 
-The reserved (inert) `sync_state` table generalizes this per **attachment** — a last-observed `revision` per `(attachment, path)`, an attachment-level poll/webhook `cursor`, and an optional `sourceId ↔ path` map for `borne` sources — so one source feeding two repos could track each independently. Nothing reads or writes `sync_state` yet; the filesystem fast-path owns `file_stats` directly, exactly as the interim in-process design did.
+The reserved (inert) `sync_state` table generalizes this per **attachment** — a last-observed `revision` per `(attachment, path)`, an attachment-level poll/webhook `cursor`, and an optional `sourceId ↔ path` map for `borne` sources — so one source feeding two repos could track each independently. Nothing reads or writes `sync_state` yet except `deleteSource`, which clears a deleted source's rows; the filesystem fast-path owns `file_stats` directly, exactly as the interim in-process design did. `file_stats` is read with 64-bit-safe integers (`mtime_ns` does not fit a JavaScript number; a rounded value would never equal a fresh stat and every file would be re-hashed on every sweep). The sweep's decisions are the pure `sweepPlan(cache, snapshot)` (`sync/freshness.ts`) that `freshnessSweep` and `detectDiskDrift` share, over the `SyncFs` seam (`sync/fs-util.ts`, default `node:fs`) that also serves `processCheckpoint` and `recoverRepo` — `spec/sync` §4.3, §8 `sweep_plan`. Two pinned consequences (`spec/sync/cases/checkpoint.json`): recovery re-ingests but never refreshes `file_stats`, so the next sweep re-hashes the healed file and echo-suppresses it; and `rebuildFileStats` over a not-yet-ingested edit makes the cache agree with the disk, hiding that edit from both the sweep and the drift scan until the file changes again (`omg source add` rebuilds right after its initial sweep, so the window is the gap between the two).
 
 ## 7. Repo & source lifecycle
 

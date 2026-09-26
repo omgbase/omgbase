@@ -36,7 +36,7 @@
 //! [`time`] (§2.4), [`tree`] (§4.1 encodings), [`order_key`] (§4.3),
 //! [`writers`] (blobs, tree nodes, commits, revisions), [`observe`] (§5),
 //! [`properties`] (the `properties` rows of `spec/properties`, written in
-//! §5.4), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
+//! §5.4), [`history`] (the `changes_since` feed of `spec/sync` §6), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
 //! rows of `spec/graph`, written in §5.4), [`search`] (`spec/search`:
 //! `text_search`, the embedding drain over the `embeddings`/`doc_embeddings`
 //! caches, vector, hybrid and `resolve`), [`read`] (§5.2, §6), [`derived`]
@@ -58,6 +58,7 @@ pub mod doc_store;
 pub mod docs_ops;
 pub mod error;
 pub mod graph;
+pub mod history;
 pub mod ids;
 pub mod links;
 pub mod macros;
@@ -85,6 +86,7 @@ pub use doc_store::{DocStore, FsDocStore, MemDocStore, NullDocStore};
 pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use error::{Error, Result};
 pub use graph::ResolvedEdge;
+pub use history::{ChangesPage, CommitDigest, DigestRevision};
 pub use ids::{IdMinter, RandomMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
@@ -92,7 +94,9 @@ pub use mutate::{
     ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, SetFrontmatter,
     find_doc_by_ref, is_id_ref, load_mut_doc,
 };
-pub use observe::{BatchItem, BatchOutcome, DeleteOutcome, ObserveOutcome, has_conflict_markers};
+pub use observe::{
+    BatchItem, BatchOutcome, Committed, DeleteOutcome, ObserveOutcome, has_conflict_markers,
+};
 pub use omgbase_graph::{EdgeDescriptor, ProjectedNode};
 pub use omgbase_mutate::{
     self as mutate_kernel, At, Expect, MutBlock, MutDoc, MutationError, Op, OpResult, Opset,
@@ -289,6 +293,19 @@ impl Store {
     /// §6.2: the bytes at a revision, from its Merkle root.
     pub fn read_at_revision(&self, doc_id: &str, rev_id: &str) -> Result<Option<RevisionRead>> {
         read::read_at_revision(&self.conn, doc_id, rev_id)
+    }
+
+    /// The change feed (`spec/sync` §6): the repo's commits with `seq >
+    /// cursor`, optionally of one `origin`, `limit + 1` fetched to set
+    /// `truncated`.
+    pub fn changes_since(
+        &self,
+        repo_id: &str,
+        cursor: i64,
+        limit: usize,
+        origin: Option<&str>,
+    ) -> Result<ChangesPage> {
+        history::changes_since(&self.conn, repo_id, cursor, limit, origin)
     }
 
     /// §5.2: the matcher's old side for a doc, from the live `blocks` rows.
