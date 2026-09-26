@@ -40,6 +40,40 @@ pushdown planner may pre-filter in SQL; it must be invisible (planned ==
 in-memory, the reference proves it by a differential suite), so this spec
 describes the in-memory semantics only.
 
+Both implementations run the same tier-3 planner (the pushable top-level
+`&&`-conjuncts of a bare root scan become one SQL statement; the residual
+finishes in memory over the produced rows). Invisibility is kept by
+**declining** rather than by cleverness; since the 1.1 patch of 2026-09-26
+(§9) the planner declines, in both translators:
+
+- a comparison (`==`, `!=`, `<`, `<=`, `>`, `>=`) whose one operand is a
+  **boolean or number** literal or binding and whose other operand is a
+  JSON or property read (an `attrs` path, a bare attribute name on blocks
+  or nodes, a document property, `doc.<k>`) — SQLite sees JSON `true` and
+  `1`, `val_bool` and `val_num` alike; a boolean literal against an
+  integer intrinsic (`$ordinal`, `$depth`) is declined for the same reason.
+  Number against an integer intrinsic, and any comparison with a string
+  literal, a text column or `null` stays pushable — except `null` against a
+  **property** read, which is declined too (a list-valued or nested key has
+  no scalar row, so SQL reads `NULL` where the in-memory value is an array
+  or an object);
+- a bare identifier or member head that names a **relation, reach-through
+  handle or source handle** of the target (§1.2: `blocks`, `nodes`, `out`,
+  `in`, `out_edges`, `in_edges`, `frontmatter`, `inline`, `doc`, `children`,
+  `section`, `block`, `subsections`, …) — it is not a property read;
+- the **whole query**, when any residual conjunct could raise an OQX eval
+  error the pushed conjuncts might hide by emptying the scan: a residual
+  that contains any function or method call, a nested block with the
+  `single` consumer, a `^`-escaped name, or (on `docs`) a bare reserved
+  basename (`id`, `path`, `updated_at`, `content_hash`, `body`) sends the
+  query to the in-memory engine unplanned. Only a residual made of
+  comparisons, logical operators, `in`, `!`, literals, bindings and plain
+  reads keeps the pushed conjuncts.
+
+The differential (every corpus-backed query case run planned and in-memory)
+proves each decline: `query-errors::planned-*` and the `planned-*` cases of
+`query-blocks.json` / `query-docs.json` pin the shapes above.
+
 ### 1.1 Roots and rows
 
 `from docs | blocks | nodes | edges` and `$repo.docs | .blocks | .nodes |
@@ -537,15 +571,21 @@ both and runs both harnesses.
   `filter_invalid` with the sqlite message, where the reference's raw
   exception reaches the catch-all). Only `root` still has no channel: a
   failed root scan is served empty and reported after the run.
-- **Pinned — the planned path is not quite invisible** in three shapes no
-  fixture exercises, and both implementations mirror them: a pushed
-  comparison conflates booleans and numbers (`checked == 1` finds checked
-  tasks in SQL, none in memory); a relation or bag name in a pushed
-  comparison reads as a property key (`nodes == null` is `NULL IS NULL`,
-  every row); and a residual conjunct's error is suppressed when a later
-  pushed conjunct empties the scan (`path == "x" && $path == "nope.md"` is
-  `[]` planned, `filter_invalid` in memory). Recorded for a decision
-  (declining those shapes would be a patch in both).
+- **Fixed (1.1 patch, 2026-09-26) — the planned path was not quite
+  invisible** in three shapes no fixture exercised, and both implementations
+  mirrored them: a pushed comparison conflated booleans and numbers
+  (`checked == 1` found checked tasks in SQL, none in memory); a relation or
+  bag name in a pushed comparison read as a property key (`nodes == null`
+  was `NULL IS NULL`, every row); and a residual conjunct's error was
+  suppressed when a later pushed conjunct emptied the scan (`path == "x" &&
+  $path == "nope.md"` was `[]` planned, `filter_invalid` in memory). A
+  fourth surfaced while fixing: `null` against a property read (`tags !=
+  null` on a list-valued key was `NULL IS NOT NULL`, no row, where in memory
+  the array is not null). §1 now lists the declines; each is a query-suite
+  fixture proven by the differential. Declining costs the push on
+  `checked == false`-style queries (residual, correct); a typed translation
+  (`json_type`, `properties.type`) could restore it later without a spec
+  change, since the spec describes in-memory semantics only.
 - **Fixed (1.1) — `diff_unified` was positional.** It compared the two
   revisions' raws line by line at equal indices, so one inserted line made
   every following line a `-`/`+` pair, and the text was not a unified diff
@@ -576,3 +616,6 @@ both and runs both harnesses.
 - 2026-09-26, surface 1.1 also: block `$ordinal`/`$depth` reachable (oqx
   0.13), `semantic()` reads the current-context row (search 1.1), and
   `diff_unified` is a Myers unified diff.
+- 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
+  planned differed from in-memory (§1, §9); no field, tool or result key
+  changed, so `VERSION` stays 1.1 and the crates take a patch.

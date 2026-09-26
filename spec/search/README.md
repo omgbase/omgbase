@@ -39,13 +39,28 @@ reference oddities surfaced and the decisions taken.
 `blocks_fts` is an FTS5 **external-content** table over `blocks(text)`
 (`content='blocks'`, `content_rowid='rowid'`, tokenizer `porter unicode61`);
 `nodes_fts` the same over `nodes(name, value)` (`spec/store` `schema.sql`).
-Only **live** blocks are indexed: before a document's rows change the engine
-issues `INSERT INTO blocks_fts(blocks_fts, rowid, text) VALUES('delete',
-rowid, text)` for each live row (with the text as stored), and after the new
-rows are inserted it inserts `(rowid, text)` for each. A tombstoned block has
-no index row; a rebuild is `INSERT INTO blocks_fts(blocks_fts)
-VALUES('rebuild')`. Both engines link a SQLite with FTS5 and the same
-tokenizer, so identical `blocks` content gives identical indexes.
+Only **live leaf** blocks are indexed (1.2): a block with no live child
+row (`spec/format` §3: `paragraph`, `heading`, `code_fence`, `table_row`, a
+childless `list_item`/`task`, …). A container (`list`, `blockquote`,
+`table`, an item with children) has no row of its own: its `text` is its
+children's text joined (`spec/format` §4.1), so indexing it would count
+every word once per enclosing level — a paragraph in a nested list was
+four hits, and bm25's document statistics were skewed by the duplicates
+(§8). The **own text** of a container — its raw with the children's spans
+blanked — is syntax only (markers, `>` prefixes, the delimiter row), so
+"index the block's own text" and "index leaf blocks" are the same rule and
+the leaf test needs no re-parse: a row is a leaf iff no live row in the
+document names it as `parent_block`. Before a document's rows change the
+engine issues `INSERT INTO blocks_fts(blocks_fts, rowid, text)
+VALUES('delete', rowid, text)` for each live leaf row (with the text as
+stored), and after the new rows are inserted it inserts `(rowid, text)` for
+each live leaf. A tombstoned block has no index row. A **rebuild** is
+`INSERT INTO blocks_fts(blocks_fts) VALUES('delete-all')` followed by the
+insert of every live leaf of every live document (the FTS5 `'rebuild'`
+command would index the content table wholesale, containers included, and
+is no longer used). Both engines link a SQLite with FTS5 and the same
+tokenizer, so identical `blocks` content gives identical indexes. A
+`text_search` hit still carries the block's stored `text`.
 
 ### 1.2 The query sanitizer
 
@@ -80,15 +95,17 @@ bm25 is SQLite's; a runner compares scores within 1e-6.
 
 ### 2.1 Which blocks embed
 
-A live block embeds on its own when its `text` has at least **24 tokens**,
-tokens being the non-empty pieces of the text split on `\s+`
-(`should_embed`). Frontmatter is not a block and never embeds. A container's
-text is its children's text, so a long single-item list yields two tasks
-(the `list` and the `list_item`, same `content_hash`, different ctx) and both
-pool into the document vector (§8). Shorter blocks are never embedded, and since pooling
-(§2.5) reads only *cached* block vectors they contribute nothing to the
-document vector either (§8). `estimate_tokens(text) = ceil(words × 1.3)` is
-the budget estimate used for documents (§2.4) and the pooling weights.
+A live **leaf** block (§1.1: no live child row) embeds on its own when its
+`text` has at least **24 tokens**, tokens being the non-empty pieces of the
+text split on `\s+` (`should_embed`). Frontmatter is not a block and never
+embeds. Containers never embed (1.2): a container's text is its children's
+text, so before 1.2 a long single-item list yielded two tasks (the `list`
+and the `list_item`, same `content_hash`, different ctx) and both pooled
+into the document vector — the same words twice (§8). Shorter blocks are
+never embedded, and since pooling (§2.5) reads only *cached* block vectors
+they contribute nothing to the document vector either (§8).
+`estimate_tokens(text) = ceil(words × 1.3)` is the budget estimate used for
+documents (§2.4) and the pooling weights.
 
 ### 2.2 Context and input
 
@@ -179,7 +196,7 @@ same over blobs, `NULL` when either operand is `NULL`; a blob's length is
 floored to a multiple of 4.
 
 `vector_search(repo, model, q, limit = 50)`: over every live embeddable
-block of the repo, the block's vector is the `embeddings` row for `model`
+block of the repo (leaves, §2.1), the block's vector is the `embeddings` row for `model`
 whose key is the block's **current** `(content_hash = raw_hash, ctx_hash =
 sha256(ctx))` (§2.2); a block without that row is stale (§2.3) and has no
 vector — it is not a hit until the next drain — so there is exactly one
@@ -277,7 +294,7 @@ ordering, fusion) and is exactly reproducible.
     locator, preview, evidence }] }`.
   - `embed_tasks`: every embeddable block's `{ block_id, content_hash, ctx }`
     in `(path, ordinal, block_id bytewise)` order (nested blocks share
-    ordinals with top-level ones); `doc_tasks`: every document's `{ doc_id,
+    ordinals with top-level ones; leaves only since 1.2); `doc_tasks`: every document's `{ doc_id,
     header, input_hash, method_if_embedded: "whole" | "pooled", blocks: [{
     content_hash, tokens }] }`.
   - `embeddings`: rows sorted by (`content_hash`, `ctx_hash`) as `{
@@ -319,6 +336,21 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
   `rank::hybrid-stale-ctx-row-ignored` — the latter is the case where the
   stale row scored higher). The same rule serves `semantic()` in
   `spec/surface` §1.3.
+- **Fixed (1.2) — containers were indexed and embedded with their children's
+  words.** `blocks.text` of a `list`, `blockquote`, `table` or an item with
+  children is its children's text joined (`spec/format` §4.1), and both the
+  FTS index and the embed tasks took every live block: a paragraph nested
+  two lists deep was four FTS hits for one occurrence (skewing bm25's
+  averages for every query), and a long single-item list was two embed
+  tasks and two pooled vectors of the same words. Properties and graph
+  moved to a block's own text in 1.1; search follows: only leaf blocks are
+  indexed and embedded (§1.1, §2.1). Own text and leaf text coincide because
+  a container's own bytes are syntax (least surprising: one hit per
+  occurrence, at the innermost block — the block a `text_search` result
+  should name anyway). The FTS rebuild is `'delete-all'` + leaf inserts,
+  since FTS5's `'rebuild'` reads the whole content table
+  (`fts::containers-have-no-row`, `fts::rebuild-indexes-leaves-only`,
+  `embed::single-item-list-is-one-task`).
 - **Open — the host's drain policy is unpinned** (§2.6 pins what a drain
   does, not when): both hosts trigger it after every successful non-dry-run
   write and after a watcher checkpoint that ingested or deleted something,
@@ -364,3 +396,5 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
   device, like the fixture id minter: it never ships in a product path.
 - 2026-09-26, search 1.1: a block's vector is the row for its current
   `(content_hash, ctx_hash)` only; stale rows are cache, never candidates.
+- 2026-09-26, search 1.2: only leaf blocks are indexed and embedded; the
+  FTS rebuild is `'delete-all'` plus leaf inserts. No stored shape changed.

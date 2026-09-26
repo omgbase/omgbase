@@ -201,7 +201,7 @@ stdout is the protocol, stderr is logs.
 | `fetch` | `{ "path" }` | `{ "item": { "path", "revision", "content" } \| null }` |
 | `write` | `{ "path", "content" }` | `{ "ok": true }` (writeThrough only) |
 | `remove` | `{ "path" }` | `{ "ok": true }` (writeThrough only) |
-| `watch` | — | `{ "ok": true }`; thereafter unsolicited `{"event": "batch", "paths": [...]}` lines |
+| `watch` | — | `{ "ok": true }` (subscribed); then one unsolicited `{"event": "ready"}` once the feed is primed; thereafter unsolicited `{"event": "batch", "paths": [...]}` lines |
 | `unwatch` | — | `{ "ok": true }`; the adapter stops emitting and exits on stdin EOF / SIGTERM |
 
 `path` is the repo-relative storage key; `revision` the source's cheap
@@ -209,11 +209,41 @@ change token (the fs adapter emits `"<mtime_ns>:<size>"`); the engine
 hashes `content` itself and never trusts `revision` for echo suppression.
 Debouncing of the watch feed is adapter-side.
 
+**Readiness (1.2).** The `watch` response only acknowledges the
+subscription; a change made before the adapter's feed is primed (the fs
+adapter: chokidar's initial scan) may never be reported. An adapter that
+advertises `watch` therefore emits **one** `{"event": "ready"}` line after
+its `watch` response, as soon as every change from then on will be reported;
+a `ready` outside a live watch is dropped like a stray `batch` (§9). The
+engine surfaces `ready` to its caller as an event of the watch (§8: the
+runner records it), and a **host** that starts a watcher (`omg mcp`,
+`omg sync --watch`, `omgbase mcp`) orders its startup by it: take the lease,
+spawn the adapter, `watch`, **wait for `ready`**, then run the priming
+freshness sweep (§4.3), then report the watcher live — so an edit landing in
+the window before readiness is caught by the sweep, and one landing after
+it by the feed (an edit caught by both is an echo). The wait is bounded by
+host patience (unpinned; both hosts use 30 s) and a timeout is a warning,
+never a failure: the host proceeds as if ready, so an adapter built before
+1.2 still works, with the old window.
+
 The `fs` adapter (`omgbase-fs-adapter --root <dir>`): `enumerate` = the walk
 of §4.2 with stat revisions; `fetch` reads the file (`null` when absent);
 `write` = atomic temp-file + rename with parent directories created;
 `remove` unlinks if present; `watch` streams debounced batches of changed
-paths.
+paths, `ready` following the `watch` response once the watcher's initial
+scan has completed.
+
+**Launching the built-in `fs` adapter (1.2).** The registry row for `fs`
+(§2: `command 'omgbase-fs-adapter'`, `args '[]'`) exists to satisfy the
+`sources.adapter` reference and to be read back; **it is not what a host
+runs.** A host launches the `fs` adapter as `$OMGBASE_FS_ADAPTER`
+(whitespace-split into a command and leading arguments) when that variable
+is set and non-empty, else as its own launcher — the reference runs its
+bundled `@omgbase/fs-adapter` bin under the running `node`, the port runs
+`omgbase-fs-adapter` from `PATH` — followed in either case by the row's
+fixed `args` and then `render_config_flags(config)`. Every other adapter
+runs its stored `command`. (§9: before 1.2 the reference ignored the
+variable and the port read the row's command.)
 
 ## 6. The driver and the coordinator
 
@@ -310,9 +340,22 @@ The adapter protocol (§5) and the coordinator (§6) are pinned by
   `out` line is both the instruction (the runner parses its `method`/`params`
   and calls the source) and the assertion (the log must equal the `out`
   lines byte for byte). `expect` = `{ capabilities: { identity,
-  write_through, watch }, results: [per out], events: [[paths]] }` or
+  write_through, watch }, results: [per out], events: [<event>] }` or
   `{ error: "invalid_handshake" | "exited" | "spawn" }`; an adapter error
-  response is recorded as `{ error: <message> }`.
+  response is recorded as `{ error: <message> }`. `events` are the
+  unsolicited event lines the watch listener received, in order, as parsed
+  JSON — `{"event": "ready"}` or `{"event": "batch", "paths": [...]}` (1.2;
+  before it, `[[paths]]`). **Ordering (1.2).** The runner issues an `out`
+  request only after every `in` line before it in the transcript has been
+  delivered: the response is awaited by the call itself, and before the
+  next request the runner waits (bounded, a shortfall is a failure) until
+  the listener has received as many events as there are `in` event lines
+  between the `watch` request and that `out` entry — so an event the
+  adapter emits between a response and the next request is never lost to
+  the runner sending `unwatch` first (§9: `watch-events-unwatch` was
+  timing-dependent in both runners). Event lines before a `watch` request
+  are dropped by the engine (`event-before-watch-is-dropped`) and are not
+  waited for.
 - `kind: "coordinator"` — `{ name, source: { write_through }, page_limit?,
   steps, expect }` with steps `source { set | rm }`, `engine { ts, create |
   import | delete | observe }`, `sync_in { ts }`, `reconcile { ts, paths }`,
@@ -391,15 +434,30 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 - **Pinned — the coordinator's `sync_out` exports `api` and `import`
   commits alike** and re-reads each revision's document by path at export
   time (a later commit's bytes may be exported under an earlier digest).
-- **Open — what a second host needs from §5/§7.** The reference launches
-  its bundled `fs` adapter and ignores `adapters.command` for it, while the
-  port runs the stored command (`omgbase-fs-adapter` on `PATH`, or
-  `$OMGBASE_FS_ADAPTER`); `watch` acknowledges before the adapter is ready,
-  so a change right after `{ ok: true }` may be lost (no readiness signal);
-  the writer lock's scope around a priming sweep or an embed drain, the
-  error a lock timeout produces at the MCP boundary (the catch-all in both),
-  `git_head` null on watcher/sweep checkpoints, and multi-connection SQLite
-  busy handling (both engines: WAL + a 5 s busy timeout) are unpinned.
+- **Fixed (1.2) — `watch` acknowledged before the adapter was ready.** The
+  fs adapter answered `watch` at once while chokidar was still scanning, so
+  an edit right after startup could be lost by either host (both swept, then
+  watched). §5 puts `{"event": "ready"}` on the wire
+  (`protocol::watch-ready-then-events`), and both hosts now `watch`, wait
+  for `ready`, then run the priming sweep, then report live; an adapter that
+  never reports is tolerated after host patience (30 s) with a warning.
+- **Fixed (1.2) — two rules for `adapters.command` on the `fs` adapter.**
+  The reference launched its bundled bin and ignored the row, the port ran
+  the row's command (`omgbase-fs-adapter`) or `$OMGBASE_FS_ADAPTER`. One rule
+  now (§5): the row is registry data, the launcher is the host's, and
+  `$OMGBASE_FS_ADAPTER` overrides it in both.
+- **Fixed (1.2) — `protocol::watch-events-unwatch` was timing-dependent** in
+  both runners: the engine's `unwatch` could go out before the reader thread
+  had routed the batch lines that followed the `watch` response, so the
+  events were dropped as post-watch strays about one run in five. §8 pins
+  the runner's ordering (wait for the events a transcript promises before
+  the next request); `events` records parsed event objects, `ready` among
+  them.
+- **Open — what a second host still needs from §6/§7.** The writer lock's
+  scope around a priming sweep or an embed drain, the error a lock timeout
+  produces at the MCP boundary (the catch-all in both), `git_head` null on
+  watcher/sweep checkpoints, and multi-connection SQLite busy handling (both
+  engines: WAL + a 5 s busy timeout) are unpinned.
 - **Pinned — lock stealing.** A lock file with an unparsable body has no
   pid and is treated as stale.
 
@@ -410,3 +468,10 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 - 2026-09-26, sync 1.1: a `file_stats` rebuild records only files whose bytes
   match their live doc (least surprising: a cache rebuild must not change
   what the next sweep does).
+- 2026-09-26, sync 1.2: a readiness event on the adapter wire, hosts wait
+  for it before the priming sweep and the "live" report; the built-in `fs`
+  adapter is launched by the host (`$OMGBASE_FS_ADAPTER` override in both),
+  never from the registry row; the protocol runner waits for promised
+  events before its next request. The protocol number stays 1: an adapter
+  without `ready` still works (least surprising: an additive event, a
+  bounded wait).
