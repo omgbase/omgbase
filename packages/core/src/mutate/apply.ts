@@ -7,7 +7,7 @@ import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { makeKnownIdResolver } from "./known-ids.js";
 import { loadMutDoc } from "./load.js";
 import { renderDoc, markContainerDirty, MutationError, type MutDoc, type MutBlock } from "./tree.js";
-import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, type To, type Expect } from "./ops.js";
+import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, checkParentChildrenHash, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
 
@@ -17,9 +17,9 @@ import { resolveDocStore, type DocStore } from "./doc-store.js";
 // file write). dry_run returns rendered diffs without committing.
 
 export type Op =
-  | { op: "insert"; doc?: string; to: To; markdown: string }
+  | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
   | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect; trivia?: string; childIds?: Record<string, string> }
-  | { op: "move"; blocks: string[]; to: To }
+  | { op: "move"; blocks: string[]; to: To; expect?: Expect }
   | { op: "remove"; blocks: string[]; expect?: Record<string, Expect> }
   | { op: "split"; block: string; at: number[]; expect?: Expect }
   | { op: "merge"; blocks: string[]; separator?: string; expect?: Record<string, Expect> };
@@ -152,7 +152,7 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
           ? resolveDocRef(store, req.repoId, rawOp.doc)
           : parentDoc(store, req.repoId, to, loaded);
         const d = ensureDoc(docId);
-        results.push(opInsert(d, to, rawOp.markdown));
+        results.push(opInsert(d, to, rawOp.markdown, rawOp.expect, i));
         break;
       }
       case "update": {
@@ -172,10 +172,10 @@ export function apply(store: Store, req: ApplyRequest): ApplyResult {
         const topLevelSameDoc = typeof to.parent === "object" && "doc" in to.parent && typeof to.at === "string";
         const dstDocId = topLevelSameDoc ? srcDocId : parentDoc(store, req.repoId, to, loaded);
         if (dstDocId === srcDocId) {
-          results.push(opMove(ensureDoc(srcDocId), blocks, to, i));
+          results.push(opMove(ensureDoc(srcDocId), blocks, to, i, rawOp.expect));
         } else {
           // Cross-document move (04 §1): extract from source, insert into target.
-          results.push(crossDocMove(ensureDoc(srcDocId), ensureDoc(dstDocId), blocks, to, i));
+          results.push(crossDocMove(ensureDoc(srcDocId), ensureDoc(dstDocId), blocks, to, i, rawOp.expect));
         }
         break;
       }
@@ -300,7 +300,7 @@ function throwMissing(id: string): never {
 }
 
 // Cross-document move: extract the contiguous run from src, insert into dst.
-function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIndex: number): OpResult {
+function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIndex: number, expect?: Expect): OpResult {
   // Extract from src (must be a contiguous top-level or same-parent run).
   const moving: MutBlock[] = [];
   for (const id of blockIds) {
@@ -308,6 +308,8 @@ function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIn
     if (!found) throw new MutationError("block_missing", `block ${id} not found in source doc`, { op_index: opIndex });
     moving.push(found.block);
   }
+  // §1.2: the destination parent's order CAS (in `dst`), before either tree moves.
+  if (expect?.parent_children_hash !== undefined) checkParentChildrenHash(resolveDstTarget(dst, to).siblings, expect, opIndex);
   // remove from their source lists (marking each emptied owner dirty)
   for (const id of blockIds) {
     const f = locateMut(src, id);

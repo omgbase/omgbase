@@ -14,9 +14,9 @@ All mutation flows through `apply(changeset)`. The kernel ops:
 
 | Op | Input | Changes | Default preconditions |
 |---|---|---|---|
-| `insert` | `{ doc?, to, markdown }` | Adds blocks. `markdown` may parse to several sibling blocks; minted IDs returned in order. Subtrees allowed (a list inserts whole). | target parent exists · anchor block exists |
+| `insert` | `{ doc?, to, markdown, expect? }` | Adds blocks. `markdown` may parse to several sibling blocks; minted IDs returned in order. Subtrees allowed (a list inserts whole). | target parent exists · anchor block exists · optional `expect.parent_children_hash` of the **destination** parent |
 | `update` | `{ block, markdown? , attrs?, expect }` | Content and/or typed attrs of one block. Placement untouched. Supplying `markdown` on a container replaces its subtree (children re-minted unless supplied markdown is a pure text edit of a leaf). | `expect.content_hash` **required** |
-| `move` | `{ blocks[], to }` | Placement only; content untouched. `blocks` MUST be a contiguous sibling run (length ≥ 1). May cross documents. | all blocks exist · target parent exists · target not inside the moved subtree (`cycle_move`) |
+| `move` | `{ blocks[], to, expect? }` | Placement only; content untouched. `blocks` MUST be a contiguous sibling run (length ≥ 1). May cross documents. | all blocks exist · target parent exists · target not inside the moved subtree (`cycle_move`) · optional `expect.parent_children_hash` of the **destination** parent (checked once for the run) |
 | `remove` | `{ blocks[], expect? }` | Deletes subtree(s); deleted blocks enter the resurrection pool. A set naming both a container and its descendants (or duplicates) collapses to its top-most blocks — every id is validated and CAS-checked first, while still in place — and `removed` lists every block that left. | blocks exist · optional `expect.content_hash` per block |
 | `split` | `{ block, at: [byte_offsets…], expect }` | One block becomes N (same type where syntactically valid, else paragraphs). `at` are **UTF-8 byte offsets** into the block's raw bytes — the same unit as every persisted span (`spec/mutate` §2.5; the reference converts them to string indices before slicing, and an offset inside a multi-byte character rounds down to that character's start). Whitespace-only pieces are dropped. First fragment carries the ID (authored intent — unlike inferred splits, no dominance test); the new fragments get `\n\n` trailing trivia. | `expect.content_hash` required |
 | `merge` | `{ blocks[], separator? , expect? }` | Contiguous same-type siblings become one. First block carries the ID; others recorded `merged_into`. | contiguous · same type |
@@ -38,10 +38,12 @@ type To = {
 ```ts
 type Expect = {
   content_hash?: Hex,          // block's current raw_hash (update/remove/split/merge)
-  parent_children_hash?: Hex,  // hash over ordered child ids of a parent — opt-in order CAS
+  parent_children_hash?: Hex,  // sha256 of a parent's ordered child ids joined by "," — opt-in order CAS
 }
 ```
 Defaults are deliberately permissive where semantics allow (appends need no order CAS) and strict where they don't (update always needs content CAS). An op MAY tighten, never loosen, its table-default preconditions.
+
+`parent_children_hash` is checked on every op that carries it (spec/mutate §1.2, since 1.1 — before that the reference defined the hash and checked it nowhere). Which parent: `update`, `split`, and each block of `remove`/`merge` (via their per-block `expect[id]`) check the block's **current** parent; `insert` and `move` carry an op-level `expect` and check the **destination** parent — `to.parent` resolved exactly as the op resolves it, so `{ doc: true }`, a section scope, or a sibling anchor all name the top level of the anchored document, and a block id names that block's children. The order CAS runs **after** the content CAS and **before** the op mutates anything; a `move` of several blocks checks the destination once; a cross-document move checks the destination document's parent. A mismatch is `stale_expectation { op_index, current: { parent_children_hash }, retriable: true }` carrying the live hash (no `block`). Read the live hash as sha256 of the ordered live child ids (`docs_read` with `include_ids`); the top level is the document's top-level block ids.
 
 ## 2. Changesets
 

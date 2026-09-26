@@ -1,6 +1,6 @@
 import { readFileSync, readSync } from "node:fs";
 import { userInfo } from "node:os";
-import { apply, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
+import { apply, unifiedDiff, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
@@ -168,7 +168,7 @@ function renderDryRun(cli: Cli, result: ApplyResult): number {
   io.err(style.dim(`  dry run — ${Object.keys(result.diffs ?? {}).length} file(s) would change, nothing committed`));
   for (const [path, { before, after }] of Object.entries(result.diffs ?? {})) {
     io.out(`${style.bold(path)}`);
-    for (const line of unifiedDiff(before, after)) {
+    for (const line of unifiedDiff(before, after).split("\n")) {
       if (line.startsWith("+")) io.out(style.ok(line));
       else if (line.startsWith("-")) io.out(style.err(line));
       else io.out(style.dim(line));
@@ -188,21 +188,6 @@ function renderCommitted(cli: Cli, result: ApplyResult): number {
   const ids = result.results.flatMap((r) => r.ids);
   for (const id of ids) io.out(id);
   return EXIT_OK;
-}
-
-// Minimal line-based unified diff (matches the engine's diffUnified style; a
-// full Myers isn't needed for a human preview).
-function unifiedDiff(before: string, after: string): string[] {
-  const a = before.split("\n");
-  const b = after.split("\n");
-  const out: string[] = [];
-  const max = Math.max(a.length, b.length);
-  for (let i = 0; i < max; i++) {
-    if (a[i] === b[i]) continue;
-    if (a[i] !== undefined) out.push(`- ${a[i]}`);
-    if (b[i] !== undefined) out.push(`+ ${b[i]}`);
-  }
-  return out;
 }
 
 export { EXIT_OK, EXIT_ERROR };

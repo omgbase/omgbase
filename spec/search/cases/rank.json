@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "vector-ordering-by-cosine",
-      "notes": "§3: every cached row joined to a live block, scored by cosine to the bare query embedding, descending.",
+      "notes": "§3: every live embeddable block's current-context row, scored by cosine to the bare query embedding, descending.",
       "steps": [
         {
           "observe": {
@@ -648,8 +648,8 @@
       }
     },
     {
-      "name": "vector-stale-ctx-row-dedupes",
-      "notes": "§3: the join is on `raw_hash = content_hash`, so after a heading rename the block has two cache rows (old and new ctx); it is ONE hit with the higher cosine.",
+      "name": "vector-renamed-heading-absent-until-drain",
+      "notes": "§3 (1.1): a block's vector is the row for its CURRENT (content_hash, ctx_hash) only. After the heading rename the block's ctx changed, so it has no vector — it is absent from vector search (FTS still finds it) — until the drain re-embeds it; then it is back with the current-context cosine, and the old row is cache, never a candidate.",
       "steps": [
         {
           "observe": {
@@ -658,12 +658,21 @@
               {
                 "path": "a.md",
                 "source": "# Old\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
               }
             ]
           }
         },
         {
           "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
         },
         {
           "observe": {
@@ -674,6 +683,16 @@
                 "source": "# New\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
               }
             ]
+          }
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        },
+        {
+          "search": {
+            "text": "alpha"
           }
         },
         {
@@ -699,22 +718,44 @@
               "dispositions": {
                 "inserted": 2
               }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
             }
           ],
           {
             "embedded": 1,
             "cached": 0,
-            "doc_embedded": 1,
+            "doc_embedded": 2,
             "doc_cached": 0,
             "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": -0.4325910586304672
+              }
+            ]
           },
           [
             {
               "path": "a.md",
               "echo": false,
               "doc": "d_0",
-              "commit": "c_1",
-              "rev": "r_1",
+              "commit": "c_2",
+              "rev": "r_2",
               "converged": true,
               "conflicted": false,
               "dispositions": {
@@ -725,10 +766,26 @@
             }
           ],
           {
+            "hits": []
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray",
+                "score": 0.6407617559789477
+              }
+            ],
+            "truncated": false
+          },
+          {
             "embedded": 1,
             "cached": 0,
             "doc_embedded": 1,
-            "doc_cached": 0,
+            "doc_cached": 1,
             "doc_pooled": 0
           },
           {
@@ -761,6 +818,13 @@
                 "tokens": 32
               }
             ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
           }
         ],
         "embeddings": [
@@ -814,13 +878,30 @@
               -0.27492019534111023,
               0.4023398160934448
             ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
           }
         ]
       }
     },
     {
-      "name": "hybrid-stale-ctx-row-first-wins",
-      "notes": "§4: with a stale ctx row still cached, the block's `vector_rank`/`cosine` are those of its first (best) occurrence — the same first-occurrence rule as FTS.",
+      "name": "hybrid-stale-ctx-row-ignored",
+      "notes": "§3/§4 (1.1): the stale (old-context) row of this block scores 0.455 against the query while the current-context row scores −0.143; the stale row is ignored. Before the drain the renamed block is an FTS-only candidate (no vector_rank/cosine); after it, vector search and hybrid's vector ranker carry the current-context cosine.",
       "steps": [
         {
           "observe": {
@@ -841,6 +922,11 @@
           "drain": true
         },
         {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        },
+        {
           "observe": {
             "ts": "2026-09-26T10:01:00.000Z",
             "items": [
@@ -849,6 +935,12 @@
                 "source": "# New\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
               }
             ]
+          }
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "alpha bravo"
           }
         },
         {
@@ -901,6 +993,16 @@
             "doc_cached": 0,
             "doc_pooled": 0
           },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": 0.4549293333195883
+              }
+            ]
+          },
           [
             {
               "path": "a.md",
@@ -918,6 +1020,21 @@
             }
           ],
           {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.01639344262295082,
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {},
+                  "fts_rank": 1
+                }
+              }
+            ]
+          },
+          {
             "embedded": 1,
             "cached": 0,
             "doc_embedded": 1,
@@ -930,7 +1047,7 @@
                 "block_id": "b_1",
                 "doc_id": "d_0",
                 "path": "a.md",
-                "cosine": 0.4549293333195883
+                "cosine": -0.14304118194980903
               }
             ]
           },
@@ -946,7 +1063,7 @@
                   "boosts": {},
                   "fts_rank": 1,
                   "vector_rank": 1,
-                  "cosine": 0.4549293333195883
+                  "cosine": -0.14304118194980903
                 }
               }
             ]

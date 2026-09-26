@@ -110,8 +110,9 @@ pub use omgbase_search::{
 pub use read::RevisionRead;
 pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
 pub use search::{
-    DocEmbedStats, DocVectorHit, DocVectorRow, DrainStats, EmbedStats, ForeignVectors, HybridHit,
-    HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult, VectorHit,
+    BlockContexts, ContextScope, DocEmbedStats, DocVectorHit, DocVectorRow, DrainStats, EmbedStats,
+    ForeignVectors, HybridHit, HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult,
+    VectorHit, block_vector,
 };
 pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
 pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};

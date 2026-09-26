@@ -238,15 +238,33 @@ export function detectDiskDrift(store: Store, repoId: string, rootPath: string, 
   return { changed, deleted, untracked };
 }
 
-/** Rebuild file_stats from scratch by re-statting + re-hashing every file. */
+/**
+ * Rebuild `file_stats` from scratch (spec/sync §4.3, since 1.1): delete the repo's rows, then
+ * walk the tree and record a row only for a file whose bytes' hash equals its live doc's
+ * `file_hash` — the cache is allowed to say "known" only about bytes the store already holds.
+ * A file with no live doc, or whose bytes differ from what was ingested, gets no row, so the
+ * next sweep still treats it as a candidate and drift still reports it (a cache rebuild must
+ * never change what the next sweep does). Returns the number of files walked, recorded or not.
+ */
 export function rebuildFileStats(store: Store, repoId: string, rootPath: string, opts: { fs?: SyncFs } = {}): number {
   const fs = opts.fs ?? nodeFs;
   store.db.prepare("DELETE FROM file_stats WHERE repo_id = ?").run(repoId);
+  // The live docs' durable convergence signal, keyed by path (one query).
+  const live = new Map<string, Buffer>();
+  for (const row of store.db
+    .prepare("SELECT path, file_hash FROM docs WHERE repo_id = ? AND deleted_commit IS NULL AND file_hash IS NOT NULL")
+    .all(repoId) as { path: string; file_hash: Buffer }[]) {
+    live.set(row.path, row.file_hash);
+  }
   const paths = fs.walk(rootPath);
   for (const path of paths) {
+    const want = live.get(path);
+    if (!want) continue; // no live doc: nothing the cache may vouch for
     const bytes = fs.read(rootPath, path);
-    if (bytes === null) continue;
-    recordStat(store, repoId, path, fs.stat(rootPath, path), sha256(bytes));
+    if (bytes === null) continue; // vanished between the walk and the read
+    const hash = sha256(bytes);
+    if (!hash.equals(want)) continue; // a pending edit: leave it visible
+    recordStat(store, repoId, path, fs.stat(rootPath, path), hash);
   }
   return paths.length;
 }

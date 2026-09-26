@@ -1752,14 +1752,14 @@
             "path": "guide.md",
             "from": "r_0",
             "to": "r_2",
-            "diff": "- Intro paragraph with a [link](/notes/one.md) and [[two]].\n+ Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n- > a quote\n+ ```sh\n- a quote\n+ echo hi\n- ```sh\n+ ```\n- echo hi\n+ | a | b |\n- ```\n+ |---|---|\n- | a | b |\n+ | 1 | 2 |\n- |---|---|\n+ | a | b |\n- | a | b |\n+ A closing paragraph.\n- | 1 | 2 |"
+            "diff": "@@ -1,5 +1,5 @@\n # Guide\n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n owner:: bb\n ## Setup\n - first item\n@@ -11,8 +11,6 @@\n - [x] done task\n - [ ] open task\n - [x] done task\n-> a quote\n-a quote\n ```sh\n echo hi\n ```\n@@ -21,3 +19,4 @@\n | 1 | 2 |\n | a | b |\n | 1 | 2 |\n+A closing paragraph."
           },
           {
             "doc": "d_0",
             "path": "guide.md",
             "from": "r_0",
             "to": "r_2",
-            "diff": "- Intro paragraph with a [link](/notes/one.md) and [[two]].\n+ Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n- > a quote\n+ ```sh\n- a quote\n+ echo hi\n- ```sh\n+ ```\n- echo hi\n+ | a | b |\n- ```\n+ |---|---|\n- | a | b |\n+ | 1 | 2 |\n- |---|---|\n+ | a | b |\n- | a | b |\n+ A closing paragraph.\n- | 1 | 2 |"
+            "diff": "@@ -1,5 +1,5 @@\n # Guide\n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n owner:: bb\n ## Setup\n - first item\n@@ -11,8 +11,6 @@\n - [x] done task\n - [ ] open task\n - [x] done task\n-> a quote\n-a quote\n ```sh\n echo hi\n ```\n@@ -21,3 +19,4 @@\n | 1 | 2 |\n | a | b |\n | 1 | 2 |\n+A closing paragraph."
           },
           {
             "doc": "d_0",
@@ -5004,102 +5004,6 @@
               {
                 "id": "e_10",
                 "src": "d_0",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_11",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_12",
-                "src": "d_0",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_13",
-                "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_14",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_15",
-                "src": "d_0",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_16",
-                "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_17",
-                "src": "d_0",
-                "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_18",
-                "src": "d_0",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
@@ -5110,10 +5014,46 @@
                 "src_field": null
               },
               {
-                "id": "e_19",
+                "id": "e_11",
                 "src": "d_0",
                 "dst": "d_6",
                 "dst_path": "practitioners/paracelsus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_12",
+                "src": "d_0",
+                "dst": "d_5",
+                "dst_path": "practitioners/newton.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_13",
+                "src": "d_0",
+                "dst": "d_16",
+                "dst_path": "texts/emerald-tablet.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_14",
+                "src": "d_0",
+                "dst": "d_17",
+                "dst_path": "texts/mutus-liber.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5134,10 +5074,10 @@
                 "src_field": null
               },
               {
-                "id": "e_20",
+                "id": "e_3",
                 "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5146,7 +5086,67 @@
                 "src_field": null
               },
               {
-                "id": "e_21",
+                "id": "e_4",
+                "src": "d_0",
+                "dst": "d_12",
+                "dst_path": "substances/philosophers-stone.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_5",
+                "src": "d_0",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_6",
+                "src": "d_0",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_7",
+                "src": "d_0",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_8",
+                "src": "d_0",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_9",
                 "src": "d_0",
                 "dst": "d_4",
                 "dst_path": "practitioners/maria-prophetissa.md",
@@ -5158,454 +5158,10 @@
                 "src_field": null
               },
               {
-                "id": "e_22",
-                "src": "d_0",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_23",
-                "src": "d_0",
-                "dst": "d_6",
-                "dst_path": "practitioners/paracelsus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_24",
-                "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_25",
-                "src": "d_0",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_26",
-                "src": "d_0",
-                "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_27",
-                "src": "d_0",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_28",
-                "src": "d_0",
-                "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_3",
-                "src": "d_0",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_4",
-                "src": "d_0",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_5",
-                "src": "d_0",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_6",
-                "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_7",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_8",
-                "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_9",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_49",
+                "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_50",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_52",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_53",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_54",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_55",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_56",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_57",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
-                "src": "d_12",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_66",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_67",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_68",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_69",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_70",
-                "src": "d_12",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_71",
-                "src": "d_13",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
-                "src": "d_13",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_73",
-                "src": "d_13",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_74",
-                "src": "d_13",
-                "dst": "phantom:nigredo",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_84",
-                "src": "d_16",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_85",
-                "src": "d_16",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_86",
-                "src": "d_16",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_87",
-                "src": "d_16",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_88",
-                "src": "d_17",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5615,9 +5171,9 @@
               },
               {
                 "id": "e_34",
-                "src": "d_3",
-                "dst": "phantom:mercury",
-                "dst_path": null,
+                "src": "d_10",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5627,9 +5183,9 @@
               },
               {
                 "id": "e_35",
-                "src": "d_3",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
+                "src": "d_10",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5639,7 +5195,7 @@
               },
               {
                 "id": "e_36",
-                "src": "d_3",
+                "src": "d_10",
                 "dst": "d_9",
                 "dst_path": "processes/dissolution.md",
                 "dst_uri": null,
@@ -5651,6 +5207,210 @@
               },
               {
                 "id": "e_37",
+                "src": "d_10",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_43",
+                "src": "d_12",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_44",
+                "src": "d_12",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_45",
+                "src": "d_12",
+                "dst": "phantom:magnum-opus",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_46",
+                "src": "d_12",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_47",
+                "src": "d_13",
+                "dst": "d_16",
+                "dst_path": "texts/emerald-tablet.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_48",
+                "src": "d_13",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_49",
+                "src": "d_13",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_50",
+                "src": "d_13",
+                "dst": "phantom:nigredo",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_59",
+                "src": "d_16",
+                "dst": "d_3",
+                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_60",
+                "src": "d_16",
+                "dst": "d_5",
+                "dst_path": "practitioners/newton.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_61",
+                "src": "d_16",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_62",
+                "src": "d_16",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_63",
+                "src": "d_17",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_20",
+                "src": "d_3",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_21",
+                "src": "d_3",
+                "dst": "phantom:sulphur",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_22",
+                "src": "d_3",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_23",
                 "src": "d_4",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -5662,7 +5422,7 @@
                 "src_field": null
               },
               {
-                "id": "e_38",
+                "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -5674,7 +5434,7 @@
                 "src_field": null
               },
               {
-                "id": "e_39",
+                "id": "e_25",
                 "src": "d_5",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -5686,19 +5446,7 @@
                 "src_field": null
               },
               {
-                "id": "e_40",
-                "src": "d_5",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_41",
+                "id": "e_26",
                 "src": "d_6",
                 "dst": "d_0",
                 "dst_path": "index.md",
@@ -5710,7 +5458,7 @@
                 "src_field": null
               },
               {
-                "id": "e_42",
+                "id": "e_27",
                 "src": "d_6",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -5722,7 +5470,7 @@
                 "src_field": null
               },
               {
-                "id": "e_43",
+                "id": "e_28",
                 "src": "d_6",
                 "dst": "phantom:sulphur",
                 "dst_path": null,
@@ -5734,7 +5482,7 @@
                 "src_field": null
               },
               {
-                "id": "e_44",
+                "id": "e_29",
                 "src": "d_6",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -5746,7 +5494,7 @@
                 "src_field": null
               },
               {
-                "id": "e_45",
+                "id": "e_30",
                 "src": "d_7",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -5758,19 +5506,7 @@
                 "src_field": null
               },
               {
-                "id": "e_46",
-                "src": "d_7",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_47",
+                "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -5895,31 +5631,7 @@
             ],
             "edges": [
               {
-                "id": "e_10",
-                "src": "d_0",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_17",
-                "src": "d_0",
-                "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_20",
+                "id": "e_12",
                 "src": "d_0",
                 "dst": "d_5",
                 "dst_path": "practitioners/newton.md",
@@ -5931,31 +5643,7 @@
                 "src_field": null
               },
               {
-                "id": "e_21",
-                "src": "d_0",
-                "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_24",
-                "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_6",
+                "id": "e_3",
                 "src": "d_0",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -5967,7 +5655,7 @@
                 "src_field": null
               },
               {
-                "id": "e_7",
+                "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -5979,10 +5667,10 @@
                 "src_field": null
               },
               {
-                "id": "e_8",
+                "id": "e_5",
                 "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5993,8 +5681,8 @@
               {
                 "id": "e_9",
                 "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst": "d_4",
+                "dst_path": "practitioners/maria-prophetissa.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6003,7 +5691,7 @@
                 "src_field": null
               },
               {
-                "id": "e_49",
+                "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -6015,7 +5703,7 @@
                 "src_field": null
               },
               {
-                "id": "e_50",
+                "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -6027,19 +5715,7 @@
                 "src_field": null
               },
               {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
+                "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6051,7 +5727,7 @@
                 "src_field": null
               },
               {
-                "id": "e_66",
+                "id": "e_44",
                 "src": "d_12",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -6063,19 +5739,7 @@
                 "src_field": null
               },
               {
-                "id": "e_68",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
+                "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6087,7 +5751,7 @@
                 "src_field": null
               },
               {
-                "id": "e_37",
+                "id": "e_23",
                 "src": "d_4",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6099,7 +5763,7 @@
                 "src_field": null
               },
               {
-                "id": "e_38",
+                "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6193,42 +5857,6 @@
                 "provenance": "link",
                 "anchor": null,
                 "src_field": null
-              },
-              {
-                "id": "e_3",
-                "src": "d_0",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_4",
-                "src": "d_0",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_5",
-                "src": "d_0",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
               }
             ],
             "frontier": [
@@ -6284,7 +5912,19 @@
             ],
             "edges": [
               {
-                "id": "e_10",
+                "id": "e_4",
+                "src": "d_0",
+                "dst": "d_12",
+                "dst_path": "substances/philosophers-stone.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_5",
                 "src": "d_0",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6296,140 +5936,8 @@
                 "src_field": null
               },
               {
-                "id": "e_13",
+                "id": "e_8",
                 "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_16",
-                "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_7",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_9",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_49",
-                "src": "d_10",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_54",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_57",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
-                "src": "d_12",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_67",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_69",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_70",
-                "src": "d_12",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_32",
-                "src": "d_2",
                 "dst": "d_8",
                 "dst_path": "processes/coagulation.md",
                 "dst_uri": null,
@@ -6441,6 +5949,78 @@
               },
               {
                 "id": "e_33",
+                "src": "d_10",
+                "dst": "d_12",
+                "dst_path": "substances/philosophers-stone.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_37",
+                "src": "d_10",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_43",
+                "src": "d_12",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_45",
+                "src": "d_12",
+                "dst": "phantom:magnum-opus",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_46",
+                "src": "d_12",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_18",
+                "src": "d_2",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_19",
                 "src": "d_2",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -6452,7 +6032,7 @@
                 "src_field": null
               },
               {
-                "id": "e_47",
+                "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -6464,7 +6044,7 @@
                 "src_field": null
               },
               {
-                "id": "e_48",
+                "id": "e_32",
                 "src": "d_8",
                 "dst": "d_2",
                 "dst_path": "lab/2026-02-notes.md",
@@ -6533,7 +6113,7 @@
             ],
             "edges": [
               {
-                "id": "e_84",
+                "id": "e_59",
                 "src": "d_16",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
@@ -6545,7 +6125,7 @@
                 "src_field": null
               },
               {
-                "id": "e_85",
+                "id": "e_60",
                 "src": "d_16",
                 "dst": "d_5",
                 "dst_path": "practitioners/newton.md",
@@ -6557,7 +6137,7 @@
                 "src_field": null
               },
               {
-                "id": "e_86",
+                "id": "e_61",
                 "src": "d_16",
                 "dst": "d_9",
                 "dst_path": "processes/dissolution.md",
@@ -6569,7 +6149,7 @@
                 "src_field": null
               },
               {
-                "id": "e_87",
+                "id": "e_62",
                 "src": "d_16",
                 "dst": "d_8",
                 "dst_path": "processes/coagulation.md",
@@ -6581,7 +6161,7 @@
                 "src_field": null
               },
               {
-                "id": "e_34",
+                "id": "e_20",
                 "src": "d_3",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -6593,7 +6173,7 @@
                 "src_field": null
               },
               {
-                "id": "e_35",
+                "id": "e_21",
                 "src": "d_3",
                 "dst": "phantom:sulphur",
                 "dst_path": null,
@@ -6605,7 +6185,7 @@
                 "src_field": null
               },
               {
-                "id": "e_36",
+                "id": "e_22",
                 "src": "d_3",
                 "dst": "d_9",
                 "dst_path": "processes/dissolution.md",
@@ -6617,19 +6197,7 @@
                 "src_field": null
               },
               {
-                "id": "e_39",
-                "src": "d_5",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_40",
+                "id": "e_25",
                 "src": "d_5",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -6779,7 +6347,7 @@
             ],
             "edges": [
               {
-                "id": "e_29",
+                "id": "e_15",
                 "src": "d_1",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -6791,7 +6359,7 @@
                 "src_field": null
               },
               {
-                "id": "e_30",
+                "id": "e_16",
                 "src": "d_1",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -6803,406 +6371,10 @@
                 "src_field": null
               },
               {
-                "id": "e_31",
+                "id": "e_17",
                 "src": "d_1",
                 "dst": "phantom:mercury",
                 "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_49",
-                "src": "d_10",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_50",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_52",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_53",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_54",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_55",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_56",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_57",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
-                "src": "d_12",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_66",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_67",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_68",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_69",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_70",
-                "src": "d_12",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_71",
-                "src": "d_13",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
-                "src": "d_13",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_73",
-                "src": "d_13",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_74",
-                "src": "d_13",
-                "dst": "phantom:nigredo",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_75",
-                "src": "d_14",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_76",
-                "src": "d_14",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_77",
-                "src": "d_14",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_78",
-                "src": "d_14",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_79",
-                "src": "d_14",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_80",
-                "src": "d_15",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_81",
-                "src": "d_15",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_82",
-                "src": "d_15",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_83",
-                "src": "d_15",
-                "dst": "d_1",
-                "dst_path": "lab/2026-01-notes.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_84",
-                "src": "d_16",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_85",
-                "src": "d_16",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_86",
-                "src": "d_16",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_87",
-                "src": "d_16",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_32",
-                "src": "d_2",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7212,7 +6384,7 @@
               },
               {
                 "id": "e_33",
-                "src": "d_2",
+                "src": "d_10",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
                 "dst_uri": null,
@@ -7224,6 +6396,318 @@
               },
               {
                 "id": "e_34",
+                "src": "d_10",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_35",
+                "src": "d_10",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_36",
+                "src": "d_10",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_37",
+                "src": "d_10",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_43",
+                "src": "d_12",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_44",
+                "src": "d_12",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_45",
+                "src": "d_12",
+                "dst": "phantom:magnum-opus",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_46",
+                "src": "d_12",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_47",
+                "src": "d_13",
+                "dst": "d_16",
+                "dst_path": "texts/emerald-tablet.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_48",
+                "src": "d_13",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_49",
+                "src": "d_13",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_50",
+                "src": "d_13",
+                "dst": "phantom:nigredo",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_51",
+                "src": "d_14",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_52",
+                "src": "d_14",
+                "dst": "phantom:sulphur",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_53",
+                "src": "d_14",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_54",
+                "src": "d_14",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_55",
+                "src": "d_15",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_56",
+                "src": "d_15",
+                "dst": "phantom:salt",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_57",
+                "src": "d_15",
+                "dst": "d_3",
+                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_58",
+                "src": "d_15",
+                "dst": "d_1",
+                "dst_path": "lab/2026-01-notes.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_59",
+                "src": "d_16",
+                "dst": "d_3",
+                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_60",
+                "src": "d_16",
+                "dst": "d_5",
+                "dst_path": "practitioners/newton.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_61",
+                "src": "d_16",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_62",
+                "src": "d_16",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_18",
+                "src": "d_2",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_19",
+                "src": "d_2",
+                "dst": "d_12",
+                "dst_path": "substances/philosophers-stone.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_20",
                 "src": "d_3",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -7235,7 +6719,7 @@
                 "src_field": null
               },
               {
-                "id": "e_35",
+                "id": "e_21",
                 "src": "d_3",
                 "dst": "phantom:sulphur",
                 "dst_path": null,
@@ -7247,7 +6731,7 @@
                 "src_field": null
               },
               {
-                "id": "e_36",
+                "id": "e_22",
                 "src": "d_3",
                 "dst": "d_9",
                 "dst_path": "processes/dissolution.md",
@@ -7259,7 +6743,7 @@
                 "src_field": null
               },
               {
-                "id": "e_38",
+                "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -7271,7 +6755,7 @@
                 "src_field": null
               },
               {
-                "id": "e_39",
+                "id": "e_25",
                 "src": "d_5",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -7283,19 +6767,7 @@
                 "src_field": null
               },
               {
-                "id": "e_40",
-                "src": "d_5",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_45",
+                "id": "e_30",
                 "src": "d_7",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -7307,19 +6779,7 @@
                 "src_field": null
               },
               {
-                "id": "e_46",
-                "src": "d_7",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_47",
+                "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -7331,7 +6791,7 @@
                 "src_field": null
               },
               {
-                "id": "e_48",
+                "id": "e_32",
                 "src": "d_8",
                 "dst": "d_2",
                 "dst_path": "lab/2026-02-notes.md",
@@ -7383,7 +6843,7 @@
             ],
             "edges": [
               {
-                "id": "e_50",
+                "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -7395,19 +6855,7 @@
                 "src_field": null
               },
               {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_52",
+                "id": "e_35",
                 "src": "d_10",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -7419,19 +6867,7 @@
                 "src_field": null
               },
               {
-                "id": "e_55",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_71",
+                "id": "e_47",
                 "src": "d_13",
                 "dst": "d_16",
                 "dst_path": "texts/emerald-tablet.md",
@@ -7443,7 +6879,7 @@
                 "src_field": null
               },
               {
-                "id": "e_72",
+                "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -7455,7 +6891,7 @@
                 "src_field": null
               },
               {
-                "id": "e_73",
+                "id": "e_49",
                 "src": "d_13",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -7467,7 +6903,7 @@
                 "src_field": null
               },
               {
-                "id": "e_74",
+                "id": "e_50",
                 "src": "d_13",
                 "dst": "phantom:nigredo",
                 "dst_path": null,
@@ -7479,19 +6915,7 @@
                 "src_field": null
               },
               {
-                "id": "e_45",
-                "src": "d_7",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_46",
+                "id": "e_30",
                 "src": "d_7",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -7816,23 +7240,23 @@
             "truncated": false
           },
           {
-            "staleCount": 27,
+            "staleCount": 21,
             "byTarget": [
               {
                 "target": "mercury",
-                "count": 10
-              },
-              {
-                "target": "salt",
                 "count": 8
               },
               {
-                "target": "sulphur",
+                "target": "salt",
                 "count": 6
               },
               {
+                "target": "sulphur",
+                "count": 5
+              },
+              {
                 "target": "magnum-opus",
-                "count": 2
+                "count": 1
               },
               {
                 "target": "nigredo",
@@ -7842,14 +7266,10 @@
             "bySource": [
               {
                 "srcPath": "index.md",
-                "count": 6
-              },
-              {
-                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
-                "srcPath": "substances/philosophers-stone.md",
+                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
@@ -7861,15 +7281,11 @@
                 "count": 2
               },
               {
-                "srcPath": "practitioners/newton.md",
-                "count": 2
-              },
-              {
-                "srcPath": "processes/calcination.md",
-                "count": 2
-              },
-              {
                 "srcPath": "substances/mercury.md",
+                "count": 2
+              },
+              {
+                "srcPath": "substances/philosophers-stone.md",
                 "count": 2
               },
               {
@@ -7881,12 +7297,20 @@
                 "count": 2
               },
               {
+                "srcPath": "practitioners/newton.md",
+                "count": 1
+              },
+              {
+                "srcPath": "processes/calcination.md",
+                "count": 1
+              },
+              {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 89
+            "totalOpenEdges": 64
           },
           {
             "stale": [
@@ -7916,7 +7340,7 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 26,
+            "totalOpenEdges": 21,
             "truncated": true
           },
           {
@@ -7926,7 +7350,7 @@
             "docs": 18,
             "blocks": 314,
             "commits": 18,
-            "openEdges": 89,
+            "openEdges": 64,
             "unconverged": 0,
             "disk": {
               "changed": 0,

@@ -7,7 +7,7 @@ use std::fmt;
 use std::sync::LazyLock;
 
 use omgbase_format::BlockKind;
-use omgbase_properties::{DocBlock, Mapping, Value};
+use omgbase_properties::{DocBlock, Mapping, Value, own_text};
 use regex::Regex;
 
 use crate::mask::mask_code_bytes;
@@ -207,7 +207,9 @@ fn bare_urls(scan: &str) -> Vec<(usize, usize)> {
 /// §3.1 per block: over `mask_code(raw)` (nothing for a `code_fence`), the
 /// inline relation fields, Markdown links and images, wikilinks, autolinks
 /// and bare URLs, in that order, deduplicated within the block on
-/// `(predicate, target, anchor, src_field)` (first wins).
+/// `(predicate, target, anchor, src_field)` (first wins). `raw` is the
+/// block's **own** text (`omgbase_properties::own_text`, §1) — what
+/// [`extract_doc_edges`] passes; a childless block's own text is its `raw`.
 #[must_use]
 pub fn extract_block_edges(block_id: &str, kind: BlockKind, raw: &str) -> Vec<EdgeDescriptor> {
     let mut edges: Vec<EdgeDescriptor> = Vec::new();
@@ -346,7 +348,8 @@ pub fn extract_frontmatter_edges(fm: &Mapping) -> Vec<EdgeDescriptor> {
 }
 
 /// §3.1 extraction order for a document: every block in pre-order (each
-/// block's steps 1–4), then the frontmatter entries.
+/// block's steps 1–4 over its own text, so a link in a list item is the
+/// item's edge only — 1.1), then the frontmatter entries.
 #[must_use]
 pub fn extract_doc_edges(
     blocks: &[DocBlock<'_>],
@@ -354,7 +357,7 @@ pub fn extract_doc_edges(
 ) -> Vec<EdgeDescriptor> {
     fn walk(blocks: &[DocBlock<'_>], out: &mut Vec<EdgeDescriptor>) {
         for b in blocks {
-            out.extend(extract_block_edges(b.block_id, b.kind, b.raw));
+            out.extend(extract_block_edges(b.block_id, b.kind, &own_text(b)));
             walk(&b.children, out);
         }
     }
@@ -749,14 +752,7 @@ mod tests {
             .iter()
             .map(|e| (e.src_block.as_deref(), e.target.as_str()))
             .collect();
-        assert_eq!(
-            v,
-            [
-                (Some("b_0"), "x"),
-                (Some("b_1"), "x"),
-                (Some("b_2"), "y"),
-                (None, "/r.md")
-            ]
-        );
+        // 1.1: the list (b_0) scans its own text, so the link is the item's.
+        assert_eq!(v, [(Some("b_1"), "x"), (Some("b_2"), "y"), (None, "/r.md")]);
     }
 }

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
-import { historyNode, diffBlocks, changesSince, docHistory } from "./history.js";
+import { historyNode, diffBlocks, diffUnified, unifiedDiff, myersScript, diffLines, changesSince, docHistory } from "./history.js";
 import { oqxRun } from "../oqx/run.js";
 import { docsDelete } from "../mutate/docs.js";
 
@@ -60,6 +60,100 @@ describe("diff (block grain)", () => {
     const diff = diffBlocks(store, docId("a.md"), rev1, rev2);
     expect(diff.some((d) => d.kind === "removed" && d.before?.includes("remove me"))).toBe(true);
     expect(diff.some((d) => d.kind === "added" && d.after?.includes("brand new"))).toBe(true);
+  });
+});
+
+// spec/surface §3 `diff_unified`. The expected strings below are copied
+// verbatim into crates/omgbase-surface/src/history.rs's tests so the two
+// engines pin each other byte for byte.
+describe("unifiedDiff (spec/surface §3: Myers script + unified hunks)", () => {
+  const eight = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8";
+  const twelve = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12";
+
+  it("splits on \\n exactly (no trimming); the empty text alone has no lines", () => {
+    expect(diffLines("a\nb")).toEqual(["a", "b"]);
+    expect(diffLines("a\nb\n")).toEqual(["a", "b", ""]);
+    expect(diffLines(" a \n\n b ")).toEqual([" a ", "", " b "]);
+    expect(diffLines("")).toEqual([]);
+  });
+
+  it("identical texts → \"\"", () => {
+    expect(unifiedDiff("a\nb\nc", "a\nb\nc")).toBe("");
+    expect(unifiedDiff("", "")).toBe("");
+  });
+
+  it("an insertion in the middle: only that line is +, the rest is context", () => {
+    expect(unifiedDiff(eight, "l1\nl2\nl3\nl4\nNEW\nl5\nl6\nl7\nl8")).toBe("@@ -2,6 +2,7 @@\n l2\n l3\n l4\n+NEW\n l5\n l6\n l7");
+  });
+
+  it("a deletion", () => {
+    expect(unifiedDiff(eight, "l1\nl2\nl3\nl4\nl6\nl7\nl8")).toBe("@@ -2,7 +2,6 @@\n l2\n l3\n l4\n-l5\n l6\n l7\n l8");
+  });
+
+  it("a replacement", () => {
+    expect(unifiedDiff(eight, "l1\nl2\nl3\nl4\nX5\nl6\nl7\nl8")).toBe("@@ -2,7 +2,7 @@\n l2\n l3\n l4\n-l5\n+X5\n l6\n l7\n l8");
+  });
+
+  it("a change at the very top and at the very bottom (truncated context)", () => {
+    expect(unifiedDiff("l1\nl2\nl3\nl4\nl5", "L1\nl2\nl3\nl4\nl5")).toBe("@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4");
+    expect(unifiedDiff("l1\nl2\nl3\nl4\nl5", "l1\nl2\nl3\nl4\nL5")).toBe("@@ -2,4 +2,4 @@\n l2\n l3\n l4\n-l5\n+L5");
+  });
+
+  it("two far-apart changes are two hunks; two near ones share a hunk", () => {
+    expect(unifiedDiff(twelve, "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nL12")).toBe(
+      "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -9,4 +9,4 @@\n l9\n l10\n l11\n-l12\n+L12",
+    );
+    expect(unifiedDiff(twelve, "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nL9\nl10\nl11\nl12")).toBe(
+      "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -6,7 +6,7 @@\n l6\n l7\n l8\n-l9\n+L9\n l10\n l11\n l12",
+    );
+  });
+
+  it("hunk merge boundary: 6 unchanged lines between (contexts touch) merge, 7 split", () => {
+    expect(unifiedDiff("l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10", "L1\nl2\nl3\nl4\nl5\nl6\nl7\nL8\nl9\nl10")).toBe(
+      "@@ -1,10 +1,10 @@\n-l1\n+L1\n l2\n l3\n l4\n l5\n l6\n l7\n-l8\n+L8\n l9\n l10",
+    );
+    expect(unifiedDiff("l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11", "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nL9\nl10\nl11")).toBe(
+      "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -6,6 +6,6 @@\n l6\n l7\n l8\n-l9\n+L9\n l10\n l11",
+    );
+  });
+
+  it("an empty old text / an empty new text (0-length ranges)", () => {
+    expect(unifiedDiff("", "a\nb\nc")).toBe("@@ -0,0 +1,3 @@\n+a\n+b\n+c");
+    expect(unifiedDiff("a\nb\nc", "")).toBe("@@ -1,3 +0,0 @@\n-a\n-b\n-c");
+  });
+
+  it("an insertion at the very top", () => {
+    expect(unifiedDiff("a\nb", "z\na\nb")).toBe("@@ -1,2 +1,3 @@\n+z\n a\n b");
+  });
+
+  it("trailing newline and empty lines are lines like any other", () => {
+    // A raw ending in "\n" contributes a trailing empty line; removing it is a `-` of "".
+    expect(unifiedDiff("a\nb\n", "a\nb")).toBe("@@ -1,3 +1,2 @@\n a\n b\n-");
+    // A kept empty line is " " (a single space); an inserted one is "+".
+    expect(unifiedDiff("a\n\nb", "a\n\n\nb")).toBe("@@ -1,3 +1,4 @@\n a\n \n+\n b");
+  });
+
+  it("the textbook tie case (Myers 1986): a b c a b b a → c b a b a c", () => {
+    const script = myersScript(diffLines("a\nb\nc\na\nb\nb\na"), diffLines("c\nb\na\nb\na\nc"))
+      .map((o) => (o.kind === "keep" ? " " : o.kind === "delete" ? "-" : "+") + o.line)
+      .join("|");
+    expect(script).toBe("-a|-b| c|+b| a| b|-b| a|+c");
+    expect(unifiedDiff("a\nb\nc\na\nb\nb\na", "c\nb\na\nb\na\nc")).toBe("@@ -1,7 +1,6 @@\n-a\n-b\n c\n+b\n a\n b\n-b\n a\n+c");
+  });
+});
+
+describe("diffUnified (store-backed)", () => {
+  function currentRev(path: string): string {
+    return (store.db.prepare("SELECT current_rev FROM docs WHERE path=?").get(path) as { current_rev: string }).current_rev;
+  }
+
+  it("one inserted block is one + line; identical revisions are \"\"", () => {
+    save("a.md", "# H\n\none\n\ntwo\n\nthree\n\nfour\n\nfive\n");
+    const rev1 = currentRev("a.md");
+    save("a.md", "# H\n\none\n\ntwo\n\ninserted\n\nthree\n\nfour\n\nfive\n");
+    const rev2 = currentRev("a.md");
+    expect(diffUnified(store, docId("a.md"), rev1, rev2)).toBe("@@ -1,6 +1,7 @@\n # H\n one\n two\n+inserted\n three\n four\n five");
+    expect(diffUnified(store, docId("a.md"), rev1, rev1)).toBe("");
   });
 });
 

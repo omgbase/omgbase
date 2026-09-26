@@ -16,12 +16,18 @@
 //! relation, intrinsic and row function still reaches the store — the
 //! reference's `rowsRoot` context option.
 //!
-//! Two seams differ from the reference and are bridged here:
+//! Errors travel the engine's channel: a failure inside a property read or a
+//! row function — the reserved-basename guard, a store failure — is the
+//! `Err` of `get` / `call_method` (an eval-stage [`OqxError`], since `oqx`
+//! 0.13), which aborts the run exactly like a throw from the reference's
+//! `get`; the runner maps it to `filter_invalid` with the same message. The
+//! one seam still without a channel is `root` (the engine reads a named root
+//! for the top-level source and for a caret that reaches the root scope), so
+//! a store failure during a root scan is kept in [`StoreContext::take_root_failure`]
+//! and the runner reports it after the run.
 //!
-//! * `DataContext::get` has no error channel, so a failure inside a property
-//!   read (the reserved-basename guard, a SQL error) is **stashed** in the
-//!   context and surfaced by the runner after the run; the read itself yields
-//!   `Undefined`.
+//! One seam differs from the reference and is bridged here:
+//!
 //! * the Rust engine expands `entries(x)` in row position itself (never via
 //!   `call_function`), so the `frontmatter` / `inline` source handles are
 //!   materialized eagerly as plain objects — one key per top-level property
@@ -38,8 +44,6 @@ use oqx::semantics::{builtin_function, builtin_method_with, make_range};
 use oqx::{DataContext, Object, OqxError, RegexDialect, Value};
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
-
-use crate::error::SurfaceError;
 
 /// The hidden column tagging a store row with its target.
 pub const TAG_KEY: &str = "__oqx_target";
@@ -96,7 +100,9 @@ pub struct StoreContext<'a> {
     conn: &'a Connection,
     repo_id: String,
     semantic: HashMap<String, SemanticVec>,
-    pending: RefCell<Option<SurfaceError>>,
+    /// A store failure inside [`DataContext::root`], the one read the
+    /// engine's seam cannot fail through (see the module doc).
+    root_failure: RefCell<Option<OqxError>>,
     /// The rows a tier-3 plan produced, served as [`oqx::ROWS_ROOT`].
     rows_root: Option<Vec<Value>>,
 }
@@ -149,10 +155,10 @@ fn parse_json(v: &Value) -> Value {
     }
 }
 
-fn from_hex(s: &str) -> Vec<u8> {
-    (0..s.len() / 2)
-        .filter_map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok())
-        .collect()
+/// A store failure as the engine's eval error (the message the reference's
+/// raw exception would carry).
+fn sql_err(e: rusqlite::Error) -> OqxError {
+    OqxError::eval(format!("sqlite: {e}"))
 }
 
 /// The tag of a store row, if it is one.
@@ -211,7 +217,7 @@ impl<'a> StoreContext<'a> {
             conn,
             repo_id: repo_id.to_owned(),
             semantic,
-            pending: RefCell::new(None),
+            root_failure: RefCell::new(None),
             rows_root: None,
         }
     }
@@ -226,52 +232,35 @@ impl<'a> StoreContext<'a> {
         self
     }
 
-    /// The first failure stashed during a run (a property read cannot fail
-    /// through the engine's seam), if any.
-    pub fn take_pending(&self) -> Option<SurfaceError> {
-        self.pending.borrow_mut().take()
-    }
-
-    fn stash(&self, e: SurfaceError) {
-        let mut p = self.pending.borrow_mut();
-        if p.is_none() {
-            *p = Some(e);
-        }
-    }
-
-    fn stash_sql(&self, e: rusqlite::Error) {
-        self.stash(SurfaceError::other(format!("sqlite: {e}")));
+    /// The store failure a root scan hit during the run, if any. Every other
+    /// read fails through the engine's channel (`get` / `call_method` return
+    /// `Err`); `root` has none, so it serves an empty scan and leaves the
+    /// failure here for the runner to report.
+    pub fn take_root_failure(&self) -> Option<OqxError> {
+        self.root_failure.borrow_mut().take()
     }
 
     // ---- SQL helpers ------------------------------------------------------------------
 
-    fn all(&self, sql: &str, params: &[SqlValue]) -> Vec<Object> {
-        match self.try_all(sql, params) {
-            Ok(rows) => rows,
-            Err(e) => {
-                self.stash_sql(e);
-                Vec::new()
-            }
-        }
+    fn all(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<Vec<Object>> {
+        fetch_rows(self.conn, sql, params).map_err(sql_err)
     }
 
-    fn try_all(&self, sql: &str, params: &[SqlValue]) -> rusqlite::Result<Vec<Object>> {
-        fetch_rows(self.conn, sql, params)
+    fn one(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<Option<Object>> {
+        Ok(self.all(sql, params)?.into_iter().next())
     }
 
-    fn one(&self, sql: &str, params: &[SqlValue]) -> Option<Object> {
-        self.all(sql, params).into_iter().next()
-    }
-
-    fn scalar(&self, sql: &str, params: &[SqlValue]) -> Value {
-        self.one(sql, params)
+    fn scalar(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<Value> {
+        Ok(self
+            .one(sql, params)?
             .and_then(|o| o.values().next().cloned())
-            .unwrap_or(Value::Undefined)
+            .unwrap_or(Value::Undefined))
     }
 
-    fn exists(&self, sql: &str, params: &[SqlValue]) -> rusqlite::Result<bool> {
-        let mut stmt = self.conn.prepare_cached(sql)?;
+    fn exists(&self, sql: &str, params: &[SqlValue]) -> oqx::Result<bool> {
+        let mut stmt = self.conn.prepare_cached(sql).map_err(sql_err)?;
         stmt.exists(params_from_iter(params.iter()))
+            .map_err(sql_err)
     }
 
     fn tag_all(rows: Vec<Object>, t: Target) -> Value {
@@ -290,43 +279,28 @@ impl<'a> StoreContext<'a> {
 
     // ---- roots (ordered for a stable (path, id) default) ------------------------------
 
-    fn root_scan(&self, t: Target) -> Value {
+    fn root_scan(&self, t: Target) -> oqx::Result<Value> {
         let repo = [SqlValue::Text(self.repo_id.clone())];
-        match t {
-            Target::Docs => Self::tag_all(
-                self.all(
-                    "SELECT * FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path, doc_id",
-                    &repo,
-                ),
-                t,
-            ),
-            Target::Blocks => Self::tag_all(
-                self.all(
-                    "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-                     WHERE b.repo_id = ?1 AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
-                     ORDER BY d.path, b.block_id",
-                    &repo,
-                ),
-                t,
-            ),
-            Target::Nodes => Self::tag_all(
-                self.all(
-                    "SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
-                     WHERE n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id",
-                    &repo,
-                ),
-                t,
-            ),
-            Target::Edges => Self::tag_all(
-                self.all(
-                    "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-                     WHERE e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
-                     ORDER BY d.path, e.edge_id",
-                    &repo,
-                ),
-                t,
-            ),
-        }
+        let sql = match t {
+            Target::Docs => {
+                "SELECT * FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path, doc_id"
+            }
+            Target::Blocks => {
+                "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
+                 WHERE b.repo_id = ?1 AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
+                 ORDER BY d.path, b.block_id"
+            }
+            Target::Nodes => {
+                "SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
+                 WHERE n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id"
+            }
+            Target::Edges => {
+                "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
+                 WHERE e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
+                 ORDER BY d.path, e.edge_id"
+            }
+        };
+        Ok(Self::tag_all(self.all(sql, &repo)?, t))
     }
 
     // ---- properties ---------------------------------------------------------------------
@@ -346,42 +320,47 @@ impl<'a> StoreContext<'a> {
 
     /// The scalar-vs-list rule: exactly one `card = scalar` row → the scalar;
     /// otherwise the array; no row → the nested object under `key.`.
-    fn doc_prop(&self, doc_id: &str, key: &str, source: Option<&str>) -> Value {
+    fn doc_prop(&self, doc_id: &str, key: &str, source: Option<&str>) -> oqx::Result<Value> {
         let rows = match source {
             Some(s) => self.all(
                 "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 AND source = ?3 AND deleted_commit IS NULL ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(key.to_owned()), SqlValue::Text(s.to_owned())],
-            ),
+            )?,
             None => self.all(
                 "SELECT * FROM properties WHERE doc_id = ?1 AND key = ?2 AND deleted_commit IS NULL ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(key.to_owned())],
-            ),
+            )?,
         };
         if rows.is_empty() {
             return self.doc_prop_object(doc_id, key, source);
         }
         if rows.len() == 1 && rows[0].get("card").and_then(Value::as_str) == Some("scalar") {
-            return Self::decode_prop(&rows[0]);
+            return Ok(Self::decode_prop(&rows[0]));
         }
-        Value::Array(rows.iter().map(Self::decode_prop).collect())
+        Ok(Value::Array(rows.iter().map(Self::decode_prop).collect()))
     }
 
     /// The nested object rebuilt from flattened dotted keys under `prefix.`
     /// (`Undefined` when none); leaves decoded.
-    fn doc_prop_object(&self, doc_id: &str, prefix: &str, source: Option<&str>) -> Value {
+    fn doc_prop_object(
+        &self,
+        doc_id: &str,
+        prefix: &str,
+        source: Option<&str>,
+    ) -> oqx::Result<Value> {
         let like = SqlValue::Text(format!("{prefix}.%"));
         let rows = match source {
             Some(s) => self.all(
                 "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 AND source = ?3 AND deleted_commit IS NULL ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), like, SqlValue::Text(s.to_owned())],
-            ),
+            )?,
             None => self.all(
                 "SELECT * FROM properties WHERE doc_id = ?1 AND key LIKE ?2 AND deleted_commit IS NULL ORDER BY ord",
                 &[SqlValue::Text(doc_id.to_owned()), like],
-            ),
+            )?,
         };
         if rows.is_empty() {
-            return Value::Undefined;
+            return Ok(Value::Undefined);
         }
         let mut out = Object::new();
         for r in &rows {
@@ -391,40 +370,40 @@ impl<'a> StoreContext<'a> {
                 .collect();
             set_nested(&mut out, &rest, Self::decode_prop(r));
         }
-        Value::Object(out)
+        Ok(Value::Object(out))
     }
 
     /// The `frontmatter` / `inline` bag as a plain object: one entry per
     /// top-level key in key order, each valued by [`Self::doc_prop`].
-    fn doc_prop_bag(&self, doc_id: &str, source: &str) -> Value {
+    fn doc_prop_bag(&self, doc_id: &str, source: &str) -> oqx::Result<Value> {
         let keys = self.all(
             "SELECT DISTINCT key FROM properties WHERE doc_id = ?1 AND source = ?2 AND deleted_commit IS NULL ORDER BY key",
             &[SqlValue::Text(doc_id.to_owned()), SqlValue::Text(source.to_owned())],
-        );
+        )?;
         let mut out = Object::new();
         for k in keys {
             let key = k.get("key").and_then(Value::as_str).unwrap_or("");
             let top = key.split('.').next().unwrap_or("");
             if !out.contains_key(top) {
-                let v = self.doc_prop(doc_id, top, Some(source));
+                let v = self.doc_prop(doc_id, top, Some(source))?;
                 out.insert(top, v);
             }
         }
-        Value::Object(out)
+        Ok(Value::Object(out))
     }
 
     // ---- structure ----------------------------------------------------------------------
 
     /// The ordinal of a block's top-level ancestor (section ranges are in
     /// top-level ordinals).
-    fn top_ordinal(&self, block: &Value) -> Value {
+    fn top_ordinal(&self, block: &Value) -> oqx::Result<Value> {
         let ordinal = col(block, "ordinal").clone();
         if col(block, "parent_block").is_absent() {
-            return ordinal;
+            return Ok(ordinal);
         }
         let ap = col_str(block, "ancestor_path");
         let Some(first) = ap.split('/').find(|s| !s.is_empty()) else {
-            return ordinal;
+            return Ok(ordinal);
         };
         let r = self.scalar(
             "SELECT ordinal FROM blocks WHERE doc_id = ?1 AND block_id = ?2",
@@ -432,18 +411,18 @@ impl<'a> StoreContext<'a> {
                 SqlValue::Text(col_str(block, "doc_id")),
                 SqlValue::Text(first.to_owned()),
             ],
-        );
-        if r.is_absent() { ordinal } else { r }
+        )?;
+        Ok(if r.is_absent() { ordinal } else { r })
     }
 
     /// A document's live blocks in document order — pre-order over the
     /// containment tree (children by `ordinal` under their parent; a row whose
     /// parent is not live is a root) — tagged, with `__path` = `path`.
-    fn doc_blocks_preorder(&self, doc_id: &str, path: &str) -> Vec<Value> {
+    fn doc_blocks_preorder(&self, doc_id: &str, path: &str) -> oqx::Result<Vec<Value>> {
         let rows = self.all(
             "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.doc_id = ?2 AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id",
             &[SqlValue::Text(path.to_owned()), SqlValue::Text(doc_id.to_owned())],
-        );
+        )?;
         let ids: Vec<String> = rows
             .iter()
             .map(|r| {
@@ -480,10 +459,10 @@ impl<'a> StoreContext<'a> {
             walk(r, &children, &mut order);
         }
         let mut slots: Vec<Option<Object>> = rows.into_iter().map(Some).collect();
-        order
+        Ok(order
             .into_iter()
             .map(|i| Self::tag(slots[i].take().expect("visited once"), Target::Blocks))
-            .collect()
+            .collect())
     }
 
     fn jattr(row: &Value, k: &str) -> Value {
@@ -493,21 +472,22 @@ impl<'a> StoreContext<'a> {
         }
     }
 
-    fn relation(&self, row: &Value, t: Target, key: &str) -> Option<Value> {
+    /// `Ok(None)` when `key` is not a relation of `t`.
+    fn relation(&self, row: &Value, t: Target, key: &str) -> oqx::Result<Option<Value>> {
         let path = || SqlValue::Text(col_str(row, "__path"));
         let doc_id = || SqlValue::Text(col_str(row, "doc_id"));
         let doc_path = || SqlValue::Text(col_str(row, "path"));
         let block_id = || SqlValue::Text(col_str(row, "block_id"));
         let repo = || SqlValue::Text(self.repo_id.clone());
-        Some(match (t, key) {
+        Ok(Some(match (t, key) {
             (Target::Docs, "nodes") => {
                 // Document order: block-less nodes first, then by the owning
                 // block's pre-order rank, `span_start`, `node_id`.
                 let rows = self.all(
                     "SELECT n.*, ?1 AS __path FROM nodes n WHERE n.doc_id = ?2 ORDER BY n.node_id",
                     &[doc_path(), doc_id()],
-                );
-                let blocks = self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"));
+                )?;
+                let blocks = self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"))?;
                 let rank: HashMap<String, usize> = blocks
                     .iter()
                     .enumerate()
@@ -536,14 +516,14 @@ impl<'a> StoreContext<'a> {
                 Value::Array(keyed.into_iter().map(|(_, r)| Self::tag(r, Target::Nodes)).collect())
             }
             (Target::Docs, "blocks") => {
-                Value::Array(self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path")))
+                Value::Array(self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "path"))?)
             }
             (Target::Docs, "out") => Self::tag_all(
                 self.all(
                     "SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.dst_node = d2.doc_id
                      WHERE e.src_doc = ?1 AND e.to_commit IS NULL AND d2.repo_id = ?2 AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id",
                     &[doc_id(), repo()],
-                ),
+                )?,
                 Target::Docs,
             ),
             (Target::Docs, "in") => Self::tag_all(
@@ -551,14 +531,14 @@ impl<'a> StoreContext<'a> {
                     "SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.src_doc = d2.doc_id
                      WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d2.repo_id = ?2 AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id",
                     &[doc_id(), repo()],
-                ),
+                )?,
                 Target::Docs,
             ),
             (Target::Docs, "out_edges") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_doc = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_path(), doc_id()],
-                ),
+                )?,
                 Target::Edges,
             ),
             (Target::Docs, "in_edges") => Self::tag_all(
@@ -566,59 +546,59 @@ impl<'a> StoreContext<'a> {
                     "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
                      WHERE e.dst_node = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[doc_id()],
-                ),
+                )?,
                 Target::Edges,
             ),
             (Target::Blocks, "children") => Self::tag_all(
                 self.all(
                     "SELECT b.*, ?1 AS __path FROM blocks b WHERE b.parent_block = ?2 AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id",
                     &[path(), block_id()],
-                ),
+                )?,
                 Target::Blocks,
             ),
             (Target::Blocks, "nodes") => Self::tag_all(
                 self.all(
                     "SELECT n.*, ?1 AS __path FROM nodes n WHERE n.block_id = ?2 ORDER BY n.span_start, n.node_id",
                     &[path(), block_id()],
-                ),
+                )?,
                 Target::Nodes,
             ),
             (Target::Blocks, "out_edges") => Self::tag_all(
                 self.all(
                     "SELECT e.*, ?1 AS __path FROM edges e WHERE e.src_block = ?2 AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id",
                     &[path(), block_id()],
-                ),
+                )?,
                 Target::Edges,
             ),
             (Target::Blocks, "section") => {
-                let top = to_sql(&self.top_ordinal(row));
+                let top = to_sql(&self.top_ordinal(row)?);
                 Self::tag_all(
                     self.all(
                         "SELECT n.*, ?1 AS __path FROM nodes n WHERE n.doc_id = ?2 AND n.kind = 'md:section'
                            AND json_extract(n.attrs,'$.first_ordinal') <= ?3 AND json_extract(n.attrs,'$.last_ordinal') >= ?4
                          ORDER BY json_extract(n.attrs,'$.first_ordinal'), n.node_id",
                         &[path(), doc_id(), top.clone(), top],
-                    ),
+                    )?,
                     Target::Nodes,
                 )
             }
             (Target::Nodes, "blocks") => {
                 let (f, l) = (Self::jattr(row, "first_ordinal"), Self::jattr(row, "last_ordinal"));
                 if f.is_absent() || l.is_absent() {
-                    return Some(Value::Array(Vec::new()));
+                    return Ok(Some(Value::Array(Vec::new())));
                 }
                 let (f, l) = (
                     f.as_f64().unwrap_or(f64::NAN),
                     l.as_f64().unwrap_or(f64::NAN),
                 );
-                let rows = self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "__path"));
-                let kept: Vec<Value> = rows
-                    .into_iter()
-                    .filter(|b| {
-                        let t = self.top_ordinal(b).as_f64().unwrap_or(f64::NAN);
-                        t >= f && t <= l
-                    })
-                    .collect();
+                let rows = self.doc_blocks_preorder(&col_str(row, "doc_id"), &col_str(row, "__path"))?;
+                let mut kept: Vec<Value> = Vec::new();
+                for b in rows {
+                    let t = self.top_ordinal(&b)?.as_f64().unwrap_or(f64::NAN);
+                    if t >= f && t <= l {
+                        kept.push(b);
+                    }
+                }
                 Value::Array(kept)
             }
             (Target::Nodes, "subsections") => {
@@ -628,7 +608,7 @@ impl<'a> StoreContext<'a> {
                     Self::jattr(row, "level"),
                 );
                 if f.is_absent() {
-                    return Some(Value::Array(Vec::new()));
+                    return Ok(Some(Value::Array(Vec::new())));
                 }
                 Self::tag_all(
                     self.all(
@@ -636,7 +616,7 @@ impl<'a> StoreContext<'a> {
                            AND json_extract(n.attrs,'$.first_ordinal') >= ?3 AND json_extract(n.attrs,'$.last_ordinal') <= ?4
                            AND json_extract(n.attrs,'$.level') > ?5 ORDER BY json_extract(n.attrs,'$.first_ordinal'), n.node_id",
                         &[path(), doc_id(), to_sql(&f), to_sql(&l), to_sql(&lvl)],
-                    ),
+                    )?,
                     Target::Nodes,
                 )
             }
@@ -647,7 +627,7 @@ impl<'a> StoreContext<'a> {
                     Self::jattr(row, "level"),
                 );
                 if f.is_absent() {
-                    return Some(Value::Array(Vec::new()));
+                    return Ok(Some(Value::Array(Vec::new())));
                 }
                 Self::tag_all(
                     self.all(
@@ -660,33 +640,35 @@ impl<'a> StoreContext<'a> {
                              AND json_extract(m.attrs,'$.last_ordinal') >= json_extract(i.attrs,'$.last_ordinal'))
                          ORDER BY json_extract(i.attrs,'$.first_ordinal'), i.node_id",
                         &[path(), doc_id(), to_sql(&lvl), to_sql(&f), to_sql(&l), to_sql(&lvl)],
-                    ),
+                    )?,
                     Target::Nodes,
                 )
             }
-            _ => return None,
-        })
+            _ => return Ok(None),
+        }))
     }
 
-    fn owning_doc(&self, row: &Value) -> Value {
+    fn owning_doc(&self, row: &Value) -> oqx::Result<Value> {
         let id = match col(row, "doc_id") {
             Value::Undefined | Value::Null => col(row, "src_doc").clone(),
             v => v.clone(),
         };
-        self.one("SELECT * FROM docs WHERE doc_id = ?1", &[to_sql(&id)])
-            .map_or(Value::Undefined, |o| Self::tag(o, Target::Docs))
+        Ok(self
+            .one("SELECT * FROM docs WHERE doc_id = ?1", &[to_sql(&id)])?
+            .map_or(Value::Undefined, |o| Self::tag(o, Target::Docs)))
     }
 
-    fn owning_block(&self, row: &Value) -> Value {
+    fn owning_block(&self, row: &Value) -> oqx::Result<Value> {
         let id = col(row, "block_id");
         if !id.truthy() {
-            return Value::Undefined;
+            return Ok(Value::Undefined);
         }
-        self.one(
-            "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
-            &[to_sql(id)],
-        )
-        .map_or(Value::Undefined, |o| Self::tag(o, Target::Blocks))
+        Ok(self
+            .one(
+                "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
+                &[to_sql(id)],
+            )?
+            .map_or(Value::Undefined, |o| Self::tag(o, Target::Blocks)))
     }
 
     // ---- intrinsics ---------------------------------------------------------------------
@@ -695,34 +677,31 @@ impl<'a> StoreContext<'a> {
         if v.is_absent() { Value::Null } else { v }
     }
 
-    fn intrinsic(&self, row: &Value, t: Target, name: &str) -> Value {
+    fn intrinsic(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
         if name == "$self" {
-            return row.clone();
+            return Ok(row.clone());
         }
         let c = |k: &str| col(row, k).clone();
-        match (t, name) {
+        Ok(match (t, name) {
             (Target::Docs, "$id") => c("doc_id"),
             (Target::Docs, "$path") => c("path"),
             (Target::Docs, "$content_hash") => Self::null_if_absent(c("file_hash")),
             (Target::Docs, "$updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
                 &[to_sql(&c("current_rev"))],
-            )),
+            )?),
             (Target::Docs, "$body") => {
                 match omgbase_store::read::reconstruct(self.conn, &col_str(row, "doc_id")) {
                     Ok(Some(s)) => Value::Str(s),
                     Ok(None) => Value::Null,
-                    Err(e) => {
-                        self.stash(SurfaceError::from(e));
-                        Value::Null
-                    }
+                    Err(e) => return Err(OqxError::eval(e.to_string())),
                 }
             }
             (Target::Docs, "$title") => {
-                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$title", Some("computed")))
+                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$title", Some("computed"))?)
             }
             (Target::Docs, "$tags") => {
-                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$tags", Some("computed")))
+                Self::null_if_absent(self.doc_prop(&col_str(row, "doc_id"), "$tags", Some("computed"))?)
             }
             (Target::Blocks, "$id") => c("block_id"),
             (Target::Blocks, "$doc") => c("doc_id"),
@@ -734,7 +713,7 @@ impl<'a> StoreContext<'a> {
             (Target::Blocks, "$updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT MAX(c.ts) FROM block_changes bc JOIN commits c ON c.commit_id = bc.commit_id WHERE bc.block_id = ?1",
                 &[to_sql(&c("block_id"))],
-            )),
+            )?),
             (Target::Nodes, "$id" | "$node_id") => c("node_id"),
             (Target::Nodes, "$doc_id") => c("doc_id"),
             (Target::Nodes, "$block_id") => c("block_id"),
@@ -749,13 +728,13 @@ impl<'a> StoreContext<'a> {
             (Target::Edges, "$dst_path") => Self::null_if_absent(self.scalar(
                 "SELECT path FROM docs WHERE doc_id = ?1",
                 &[to_sql(&c("dst_node"))],
-            )),
+            )?),
             (Target::Edges, "$dst_uri") => Self::null_if_absent(self.scalar(
                 "SELECT uri FROM external_nodes WHERE node_id = ?1",
                 &[to_sql(&c("dst_node"))],
-            )),
+            )?),
             _ => Value::Undefined,
-        }
+        })
     }
 
     // ---- row functions (methods on `$self`) ----------------------------------------------
@@ -773,14 +752,8 @@ impl<'a> StoreContext<'a> {
         })
     }
 
-    fn sql_result(&self, r: rusqlite::Result<bool>) -> oqx::Result<Value> {
-        match r {
-            Ok(b) => Ok(Value::Bool(b)),
-            Err(e) => {
-                self.stash_sql(e);
-                Err(OqxError::eval("query failed"))
-            }
-        }
+    fn sql_result(r: oqx::Result<bool>) -> oqx::Result<Value> {
+        r.map(Value::Bool)
     }
 
     fn row_method(
@@ -795,22 +768,25 @@ impl<'a> StoreContext<'a> {
             "text" => Some(self.text_match(t, row, &arg_or_empty(args, 0))),
             "semantic" => Some(self.semantic_score(t, row, &arg_or_empty(args, 0))),
             "has_anchor" => Self::require_target(t, Target::Blocks, name).or_else(|| {
-                Some(self.sql_result(self.exists(
+                Some(Self::sql_result(self.exists(
                     "SELECT 1 FROM edges WHERE src_block = ?1 AND anchor IS NOT NULL LIMIT 1",
                     &[to_sql(&c("block_id"))],
                 )))
             }),
             "child_count" => Self::require_target(t, Target::Blocks, name).or_else(|| {
-                Some(Ok(self.scalar(
+                Some(self.scalar(
                     "SELECT COUNT(*) FROM blocks WHERE parent_block = ?1 AND deleted_commit IS NULL",
                     &[to_sql(&c("block_id"))],
-                )))
+                ))
             }),
             "parent_type" => Self::require_target(t, Target::Blocks, name).or_else(|| {
-                Some(Ok(Self::null_if_absent(self.scalar(
-                    "SELECT type FROM blocks WHERE block_id = ?1",
-                    &[to_sql(&c("parent_block"))],
-                ))))
+                Some(
+                    self.scalar(
+                        "SELECT type FROM blocks WHERE block_id = ?1",
+                        &[to_sql(&c("parent_block"))],
+                    )
+                    .map(Self::null_if_absent),
+                )
             }),
             "has_edge" => {
                 let pred = js_string(args.first().unwrap_or(&Value::Undefined));
@@ -830,7 +806,7 @@ impl<'a> StoreContext<'a> {
                         &[to_sql(&src_val), SqlValue::Text(pred)],
                     )
                 };
-                Some(self.sql_result(r))
+                Some(Self::sql_result(r))
             }
             "under" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 let target = js_string(args.first().unwrap_or(&Value::Undefined));
@@ -841,8 +817,11 @@ impl<'a> StoreContext<'a> {
             }),
             "under_heading" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 let text = js_string(args.first().unwrap_or(&Value::Undefined));
-                let top = to_sql(&self.top_ordinal(row));
-                Some(self.sql_result(self.exists(
+                let top = match self.top_ordinal(row) {
+                    Ok(v) => to_sql(&v),
+                    Err(e) => return Some(Err(e)),
+                };
+                Some(Self::sql_result(self.exists(
                     "SELECT 1 FROM sections s JOIN blocks hb ON hb.block_id = s.heading_block
                      WHERE s.doc_id = ?1 AND lower(hb.text) LIKE '%' || lower(?2) || '%' AND s.first_ordinal <= ?3 AND s.last_ordinal >= ?4 LIMIT 1",
                     &[to_sql(&c("doc_id")), SqlValue::Text(text), top.clone(), top],
@@ -855,7 +834,7 @@ impl<'a> StoreContext<'a> {
                 }
                 if target.contains('*') {
                     let like = glob_to_like(&target, false);
-                    return Some(self.sql_result(self.exists(
+                    return Some(Self::sql_result(self.exists(
                         "SELECT 1 WHERE ?1 LIKE ?2 ESCAPE '\\'",
                         &[SqlValue::Text(col_str(row, "__path")), SqlValue::Text(like)],
                     )));
@@ -900,7 +879,7 @@ impl<'a> StoreContext<'a> {
                         &params,
                     ),
                 };
-                Some(self.sql_result(r))
+                Some(Self::sql_result(r))
             }),
             "yaml_path" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 Some(Ok(Self::key_path(row, &js_string(args.first().unwrap_or(&Value::Undefined)), "yaml")))
@@ -953,7 +932,7 @@ impl<'a> StoreContext<'a> {
                 &[to_sql(col(row, "block_id")), SqlValue::Text(m)],
             ),
         };
-        self.sql_result(r)
+        Self::sql_result(r)
     }
 
     fn semantic_score(&self, t: Target, row: &Value, phrase: &str) -> oqx::Result<Value> {
@@ -968,7 +947,7 @@ impl<'a> StoreContext<'a> {
                 serde_json::Value::String(phrase.to_owned())
             )));
         };
-        let vec: rusqlite::Result<Option<Vec<u8>>> = match t {
+        let vec: oqx::Result<Option<Vec<u8>>> = match t {
             Target::Docs => self
                 .conn
                 .query_row(
@@ -976,23 +955,16 @@ impl<'a> StoreContext<'a> {
                     rusqlite::params![col_str(row, "doc_id"), resolved.model],
                     |r| r.get(0),
                 )
-                .optional(),
-            _ => self
-                .conn
-                .query_row(
-                    "SELECT vec FROM embeddings WHERE content_hash = ?1 AND model = ?2 LIMIT 1",
-                    rusqlite::params![from_hex(&col_str(row, "raw_hash")), resolved.model],
-                    |r| r.get(0),
-                )
-                .optional(),
+                .optional()
+                .map_err(sql_err),
+            // The row for the block's current `(raw_hash, ctx_hash)` only
+            // (`spec/search` §3, 1.1): a stale context row is never read.
+            _ => omgbase_store::block_vector(self.conn, &col_str(row, "block_id"), &resolved.model)
+                .map_err(|e| OqxError::eval(e.to_string())),
         };
-        match vec {
-            Ok(Some(v)) => Ok(Value::Number(cosine_bytes(&v, &resolved.vec))),
-            Ok(None) => Ok(Value::Null),
-            Err(e) => {
-                self.stash_sql(e);
-                Err(OqxError::eval("query failed"))
-            }
+        match vec? {
+            Some(v) => Ok(Value::Number(cosine_bytes(&v, &resolved.vec))),
+            None => Ok(Value::Null),
         }
     }
 }
@@ -1077,40 +1049,44 @@ impl DataContext for StoreContext<'_> {
         if name == "$repo" {
             return self.repo_root();
         }
-        match Target::parse(name) {
-            Some(t) => self.root_scan(t),
-            None => Value::Undefined,
+        let Some(t) = Target::parse(name) else {
+            return Value::Undefined;
+        };
+        // No error channel here: a failed scan is served empty and reported
+        // by the runner (see `take_root_failure`).
+        match self.root_scan(t) {
+            Ok(rows) => rows,
+            Err(e) => {
+                let mut slot = self.root_failure.borrow_mut();
+                if slot.is_none() {
+                    *slot = Some(e);
+                }
+                Value::Array(Vec::new())
+            }
         }
     }
 
-    fn get(&self, row: &Value, key: &str) -> Value {
+    fn get(&self, row: &Value, key: &str) -> oqx::Result<Value> {
         if row.is_absent() {
-            return Value::Undefined;
+            return Ok(Value::Undefined);
         }
         // `$repo` is an intrinsic of EVERY scope, so a correlated subquery at any
         // depth reaches the repository root without scope climbing.
         if key == "$repo" {
-            return self.repo_root();
+            return Ok(self.repo_root());
         }
         if is_repo_root(row) {
             if key == "$id" {
-                return Value::Str(self.repo_id.clone());
+                return Ok(Value::Str(self.repo_id.clone()));
             }
             return match Target::parse(key) {
                 Some(t) => self.root_scan(t),
-                None => Value::Undefined,
+                None => Ok(Value::Undefined),
             };
         }
         let Some(t) = target_of(row) else {
             // A plain value (parsed attrs, a property bag, a lifted element).
-            return match row {
-                Value::Object(o) => o.get(key).cloned().unwrap_or(Value::Undefined),
-                Value::Array(a) => match key.parse::<usize>() {
-                    Ok(i) if key == i.to_string() => a.get(i).cloned().unwrap_or(Value::Undefined),
-                    _ => Value::Undefined,
-                },
-                _ => Value::Undefined,
-            };
+            return Ok(oqx::DefaultContext::read(row, key));
         };
         if key.starts_with('$') {
             return self.intrinsic(row, t, key);
@@ -1118,35 +1094,34 @@ impl DataContext for StoreContext<'_> {
         // self-alias namespaces
         match (t, key) {
             (Target::Docs, "doc") | (Target::Blocks, "block") | (Target::Nodes, "section") => {
-                return row.clone();
+                return Ok(row.clone());
             }
             (_, "doc") => return self.owning_doc(row),
             (Target::Nodes, "block") => return self.owning_block(row),
             _ => {}
         }
-        if let Some(v) = self.relation(row, t, key) {
-            return v;
+        if let Some(v) = self.relation(row, t, key)? {
+            return Ok(v);
         }
         let c = |k: &str| col(row, k).clone();
-        match t {
+        Ok(match t {
             Target::Docs => {
                 if key == "format" {
-                    return c("format");
+                    return Ok(c("format"));
                 }
                 let doc_id = col_str(row, "doc_id");
                 if key == "frontmatter" || key == "inline" {
                     return self.doc_prop_bag(&doc_id, key);
                 }
                 if RESERVED_DOC_BASENAMES.contains(&key) {
-                    self.stash(SurfaceError::filter_invalid(
-                        format!(
-                            "bare '{key}' reads a frontmatter key; did you mean the intrinsic ${key}? (use frontmatter.{key} to force the property)"
-                        ),
-                        "10 §2",
-                    ));
-                    return Value::Undefined;
+                    // The reference's `FilterInvalid` thrown from `get`; the
+                    // runner maps this eval error to `filter_invalid` with
+                    // the same message.
+                    return Err(OqxError::eval(format!(
+                        "bare '{key}' reads a frontmatter key; did you mean the intrinsic ${key}? (use frontmatter.{key} to force the property)"
+                    )));
                 }
-                self.doc_prop(&doc_id, key, None)
+                return self.doc_prop(&doc_id, key, None);
             }
             Target::Blocks => match key {
                 "type" => c("type"),
@@ -1165,7 +1140,7 @@ impl DataContext for StoreContext<'_> {
                 "predicate" | "provenance" | "dst_kind" | "anchor" | "src_field" => c(key),
                 _ => Value::Undefined,
             },
-        }
+        })
     }
 
     fn to_rows(&self, value: &Value) -> Vec<Value> {
@@ -1274,7 +1249,6 @@ mod tests {
             Value::Str("nope".into())
         );
         assert_eq!(parse_json(&Value::Null), Value::Undefined);
-        assert_eq!(from_hex("00ff"), vec![0, 255]);
         assert_eq!(arg_or_empty(&[], 0), "");
         assert_eq!(arg_or_empty(&[Value::Number(2.0)], 0), "2");
     }

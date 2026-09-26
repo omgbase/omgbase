@@ -160,12 +160,17 @@ Otherwise flatten per §2.3.
 
 ### 3.2 Inline fields (`source = inline`, `block_id` = the authoring block)
 
-Walk every body block in pre-order (a block, then its children — so a list's
-raw, which contains its items, is scanned **and** each item's raw is scanned
-again; see below for why that does not double count). Skip `code_fence`
-blocks entirely. For any other block, scan `mask_code(raw)` — the block's
-`raw` with fenced code blocks and inline code spans replaced by spaces of the
-same length (`graph/extract.ts` `maskCode`: a fence is ` ``` `/`~~~` of ≥ 3
+Walk every body block in pre-order. Skip `code_fence` blocks entirely. For
+any other block, scan `mask_code(own(raw))`, where **`own(raw)`** is the
+block's `raw` with the span of every **direct child** (`child.span.start −
+block.span.start` … `child.span.end − block.span.start`, `spec/format` §1)
+replaced by spaces of the same length (line endings kept, as `mask_code`
+keeps them; `graph/extract.ts` `ownText`) — a container's own text is its
+raw minus its children, so every byte of the document belongs to exactly
+one block's own text and a field is found by the **innermost** block that
+contains it (since 1.1; §8). Block spans are not persisted; an engine
+carries them from the parse to the commit. `mask_code` replaces fenced code blocks and
+inline code spans by spaces of the same length (`graph/extract.ts` `maskCode`: a fence is ` ``` `/`~~~` of ≥ 3
 after any run of spaces and tabs, closed by the same character at ≥ the same
 length; a backtick fence whose info string contains a backtick is not a
 fence; then code spans of *n* backticks closed by exactly *n*) — with two
@@ -177,10 +182,14 @@ case folding admit `ſ` or `K`), all matches:
    — `[key:: value]` or `(key:: value)` anywhere in prose; the value runs to
    the closer, trimmed of spaces and tabs; the opener and closer need not
    match.
-2. **Line form**: `^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$` with
-   multiline anchors — a key at the start of a line (after spaces/tabs), the
-   value to the end of the line, trimmed. A bracketed field on its own line
-   is not also a line-form match because `[`/`(` is not `[a-z]`.
+2. **Line form**:
+   `^[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$`
+   with multiline anchors — a key at the start of a line (after spaces/tabs,
+   and optionally after a list marker `-`/`*`/`+`/`1.`/`1)` and a task
+   checkbox, so `- job:: x` and `- [ ] due:: friday` are fields of the item;
+   since 1.1), the value to the end of the line, trimmed. A bracketed field
+   on its own line is not also a line-form match because `[`/`(` is not
+   `[a-z]`.
 
 Each match is one **occurrence** `(key, value, block_id)`, where `key` is
 the captured name **as written** (case preserved; the `i` flag only widens
@@ -190,24 +199,19 @@ bracketed matches in position order, then all line-form matches in position
 order.
 
 **Containers.** A `list`'s or `blockquote`'s `raw` contains its children's
-raws (`spec/format` §3), so a field inside a nested block can match once per
-enclosing container **and** once for the block itself. The reference keeps
-**every** occurrence, so such a field counts several times (`card = list`,
-the outermost container's `block_id` first). Which fields this affects
-follows from the patterns: a bracketed field anywhere inside a container; a
-line-form field on a *continuation* line of a list item (`- a\n  job:: x`).
-A line-form field on a list item's **marker line** (`- job:: x`) never
-matches at all: the item's `raw` includes its marker (`spec/format` §3), so
-`- ` is in the way of `^[ \t]*[a-z]` in the item and in the list alike
-(`inline::marker-line-field-yields-nothing`). A blockquote's `> `-prefixed
-line fails the same way at the quote level, but the nested paragraph's own
-`raw` starts at content (`spec/format` §1 inv. 7), so `> job:: x` yields
-**one** row, anchored to the paragraph
-(`inline::blockquote-line-field-matches-once-via-nested-paragraph`). A code
-fence inside a blockquote is masked not by the fence rule (the `> ` prefix
-defeats it) but by the code-span rule — three backticks closed by three
-(`inline::fenced-code-inside-blockquote-masked-as-a-code-span`). This is as
-built and pinned (§8); a runner reproduces it.
+raws (`spec/format` §3), but `own(raw)` blanks them, so a field inside a
+nested block is found once, by the innermost block: `- a\n  job:: x` yields
+one `inline` row anchored to the item (or to the item's paragraph child when
+the item has children — whichever block's own text holds the line); `- job::
+x` yields one row anchored to the item (the marker is allowed by the line
+form); `> job:: x` yields one row anchored to the nested paragraph, whose
+own `raw` starts at content (`spec/format` §1 inv. 7); `See [k:: v]` inside a
+blockquote yields one. A code fence inside a blockquote is masked not by the
+fence rule (the `> ` prefix defeats it) but by the code-span rule — three
+backticks closed by three
+(`inline::fenced-code-inside-blockquote-masked-as-a-code-span`). Before 1.1
+containers re-counted their children's fields and a marker-line field never
+matched (§8).
 
 **Card and ord.** Count occurrences per `key` across the document. A key
 with exactly one occurrence yields a `card = scalar` row, `ord = 0`; a key
@@ -413,14 +417,14 @@ omgbase-properties --test spec`).
   order. A fixture must not depend on JavaScript's integer-like-keys-first
   object order (`spec/oqx` records the same host fact); the mapping order the
   YAML parser yields is otherwise the authored order.
-- **Pinned — fields inside containers count once per nesting level, and
-  marker-line fields not at all.** `- a\n  job:: x` yields two `inline` rows
-  for `job` (`ord` 0 with the list's `block_id`, `ord` 1 with the item's);
-  `See [k:: v]` inside a blockquote yields two; `- job:: x` yields none (the
-  `- ` defeats the line anchor); `> job:: x` yields one, via the nested
-  paragraph. Recorded for a decision: the least surprising behavior is one
-  occurrence anchored to the innermost block and a marker-line field
-  recognized, which would be a minor bump here.
+- **Fixed (1.1) — fields inside containers counted once per nesting level,
+  and marker-line fields not at all.** `- a\n  job:: x` yielded two `inline`
+  rows for `job` (the list's and the item's) and `- job:: x` none (the `- `
+  defeated the line anchor). Now every scanner runs over the block's own
+  text (§3.2 `own(raw)`) and the line form admits a list marker and a task
+  checkbox, so a field belongs to exactly one block — the innermost — and a
+  list of `- key:: value` lines is a list of fields, as authors write it.
+  `spec/graph` 1.1 makes the same change for nodes and edges.
 - **Pinned — inline values are not range-detected.** `typed_inline_value`
   never calls `detect_range`, so `window:: 1..5` is a plain string with no
   side channel while the same frontmatter value gets one.
@@ -449,3 +453,6 @@ omgbase-properties --test spec`).
   the block, not a regex). The store spec excludes this table on purpose;
   this spec owns the rows and `spec/store` §5.4 owns when they are written.
   Next in the same series: graph (nodes, edges), then search.
+- 2026-09-26, properties 1.1: scanners run over a block's own text (children
+  blanked) and the line form admits a list marker/checkbox — one occurrence
+  per field, anchored to the innermost block (least surprising; with graph 1.1).

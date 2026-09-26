@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::json::attrs_to_json;
-use omgbase_format::{Attrs, Block};
+use omgbase_format::{Attrs, Block, Span};
 use rusqlite::{Connection, params};
 
 use crate::error::Result;
@@ -26,6 +26,10 @@ pub struct TreeInputBlock {
     /// Trailing trivia (top level only; `""` below).
     pub trivia: String,
     pub attrs: Attrs,
+    /// The block's source span (spec/format §1): what `own_text` uses to
+    /// blank a container's children when the properties and graph layers
+    /// scan (spec/properties §3.2, spec/graph §1). Not stored.
+    pub span: Span,
     pub children: Vec<TreeInputBlock>,
 }
 
@@ -59,6 +63,7 @@ pub fn assign_from_map(
                     text: b.text.clone(),
                     trivia: b.trivia.clone(),
                     attrs: b.attrs.clone(),
+                    span: b.span,
                     children: walk(&b.children, Some(&key), assignment, minter),
                 }
             })

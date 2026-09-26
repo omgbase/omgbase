@@ -227,6 +227,7 @@ mod tests {
                     parent: Parent::Doc,
                     at: At::Start,
                 },
+                expect: None,
             },
             disposition: d,
             blocks: vec!["b_1".into()],

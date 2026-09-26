@@ -10,6 +10,12 @@
 // (and links_stale no longer reports them as dangling). There is no persisted
 // extraction version — an existing repo re-extracts a document the next time
 // that document is ingested (checkpoint/observe/apply), not via rebuild-index.
+//
+// spec/properties 1.1 + spec/graph 1.1: every scanner runs over the block's
+// OWN text — `maskCode(ownText(block))`, the raw with each direct child's span
+// blanked — so a feature inside a list item belongs to the item (the innermost
+// block that contains it), never also to the list; and the inline-field line
+// form admits a list marker and a task checkbox (`- key:: v`, `- [ ] due:: x`).
 
 export const EXTRACTION_VERSION = "x2";
 
@@ -34,6 +40,66 @@ const WIKILINK = /(!?)\[\[([^\]]+)\]\]/g; // [[note]] / [[note#H]] / [[note^ref]
 const BARE_URL = /(?<![("[])\bhttps?:\/\/[^\s)>\]]+/g;
 const AUTOLINK = /<(https?:\/\/[^>]+)>/g;
 const INLINE_FIELD = /(?:^|\s)([a-z][a-z0-9_]*)::\s*(\[\[[^\]]+\]\]|\/[^\s]+|https?:\/\/[^\s]+)/gi;
+
+// --- inline-field forms (spec/properties §3.2; shared with md:inline_field) ---
+
+/** Bracketed form: `[key:: value]` / `(key:: value)` anywhere in prose; the value
+ *  runs to the first closer (either bracket), trimmed of spaces and tabs. */
+export const INLINE_FIELD_BRACKETED = /[[(]([a-z][a-z0-9_]*)::[ \t]*([^\]\n)]*?)[ \t]*[\])]/gi;
+
+/** Line form (1.1): a key at the start of a line — after blanks and optionally
+ *  a list marker (`-`/`*`/`+`/`1.`/`1)`) and a task checkbox — with the value
+ *  to the end of the line, trimmed. Group 1 is the prefix (so a span can start
+ *  at the key), 2 the key as written, 3 the trimmed value. A bracketed field on
+ *  its own line is not also a line-form match: `[`/`(` is not `[a-z]`. */
+export const INLINE_FIELD_LINE =
+  /^([ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?)([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$/gim;
+
+// --- own text (spec/properties §3.2 `own(raw)`) --------------------------------
+
+interface SpannedBlock {
+  raw: string;
+  span: { start: number; end: number };
+  children: SpannedBlock[];
+}
+
+/**
+ * A block's own text: its `raw` with the span of every DIRECT child blanked to
+ * spaces (newlines kept, like `maskCode`, so line structure survives). A child
+ * sits at `child.span.start - block.span.start` in the parent's raw (spans are
+ * source offsets; spec/format §1 inv. 3 puts a child inside its parent). That
+ * offset is trusted only when the parent's raw actually reads `child.raw`
+ * there; otherwise — callers that hand in blocks without real spans (a tree
+ * rebuilt from store rows carries `{0,0}`), which the invariant makes impossible
+ * for a parsed tree — the child is located as the first occurrence of its raw
+ * at or after the previous child's end, and skipped when not found. Length-
+ * preserving: offsets into the result are offsets into `raw`.
+ */
+export function ownText(block: SpannedBlock): string {
+  if (block.children.length === 0) return block.raw;
+  const raw = block.raw;
+  let out = raw;
+  let cursor = 0;
+  for (const child of block.children) {
+    const len = child.raw.length;
+    if (len === 0) continue;
+    let at = child.span.start - block.span.start;
+    if (!(at >= cursor && at + len <= raw.length && raw.startsWith(child.raw, at))) {
+      at = raw.indexOf(child.raw, cursor);
+      if (at < 0) continue;
+    }
+    out = out.slice(0, at) + blank(child.raw) + out.slice(at + len);
+    cursor = at + len;
+  }
+  return out;
+}
+
+/** What the scanners see for a block: nothing for a `code_fence`, else
+ *  `maskCode(ownText(block))` — own text first (a child's fence is blanked
+ *  either way), code second. Same length as `raw`. */
+export function scanText(block: SpannedBlock & { type: string }): string {
+  return block.type === "code_fence" ? "" : maskCode(ownText(block));
+}
 
 function splitAnchor(target: string): { path: string; anchor: string | null; anchorKind: "heading" | "ref" | null } {
   const hashIdx = target.indexOf("#");
@@ -165,7 +231,10 @@ export function maskCode(raw: string): string {
 }
 
 /** Extract edges from a single block's raw markdown. Code is skipped: a
- *  `code_fence` block yields nothing, and inline code spans are masked. */
+ *  `code_fence` block yields nothing, and inline code spans are masked. Pass the
+ *  block's own text (`ownText`) for a container so its children's features are
+ *  not counted again here — the adapter does; a caller with only a stored raw
+ *  (no children) passes it as is. */
 export function extractFromBlock(blockId: string, blockType: string, rawInput: string): ExtractedEdge[] {
   const edges: ExtractedEdge[] = [];
   if (blockType === "code_fence") return edges;

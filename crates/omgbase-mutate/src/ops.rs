@@ -67,6 +67,16 @@ impl Expect {
             parent_children_hash: None,
         }
     }
+
+    /// `{ parent_children_hash }` — the §1.2 order CAS alone (what an
+    /// `insert`/`move` sends for its destination parent).
+    #[must_use]
+    pub fn order(hash: impl Into<String>) -> Self {
+        Self {
+            content_hash: None,
+            parent_children_hash: Some(hash.into()),
+        }
+    }
 }
 
 /// What an op returns (§2): the ids, plus `removed` (remove) or
@@ -318,6 +328,18 @@ pub fn check_parent_children_hash(
         Some(path) => &doc.block(&path).children,
         None => &doc.children,
     };
+    check_children_hash(list, Some(&Expect::order(expected)), op_index)
+}
+
+/// §1.2 as the ops call it: when `expect` carries a `parent_children_hash`,
+/// the LIVE ids of `list` (the sibling list the op resolved — the block's
+/// current parent for update/split/remove/merge, the destination parent for
+/// insert/move) must hash to it. Runs after the content CAS and before the
+/// tree is touched, so a stale order never lands.
+fn check_children_hash(list: &[MutBlock], expect: Option<&Expect>, op_index: usize) -> Result<()> {
+    let Some(expected) = expect.and_then(|e| e.parent_children_hash.as_deref()) else {
+        return Ok(());
+    };
     let current = parent_children_hash(list);
     if current != expected {
         return Err(err_data(
@@ -372,9 +394,14 @@ pub fn op_insert(
     doc: &mut MutDoc,
     to: &To,
     markdown: &str,
+    op_index: usize,
+    expect: Option<&Expect>,
     minter: &mut dyn Minter,
 ) -> Result<OpResult> {
     let Target { parent, index } = resolve_target(doc, to)?;
+    // §1.2: the destination parent's order CAS — `parent` IS the resolved
+    // sibling list (a section scope or a `{ doc: true }` anchor name the top level).
+    check_children_hash(doc.siblings(&parent), expect, op_index)?;
     let mut blocks = parse_content(markdown, &doc.format, minter);
     let owner_is_list = doc.owner_of(&parent).is_some_and(|o| o.kind == "list");
     if owner_is_list && doc.format == "markdown" {
@@ -456,6 +483,8 @@ pub fn op_update(
     {
         check_content_hash(doc.block(&path), args.expect.as_ref(), op_index)?;
     }
+    // §1.2: the block's CURRENT parent, after the content CAS.
+    check_children_hash(doc.siblings(&parent), args.expect.as_ref(), op_index)?;
     let format = doc.format.clone();
     let mut extra: Vec<MutBlock> = Vec::new();
     if let Some(markdown) = &args.markdown {
@@ -650,6 +679,7 @@ pub fn op_move(
     block_ids: &[String],
     to: &To,
     op_index: usize,
+    expect: Option<&Expect>,
 ) -> Result<OpResult> {
     if block_ids.is_empty() {
         return Err(err(ErrorCode::NotContiguous, "move requires ≥1 block"));
@@ -679,6 +709,14 @@ pub fn op_move(
                 json!({ "op_index": op_index }),
             ));
         }
+    }
+    // §1.2: the DESTINATION parent's order CAS, resolved on the pre-removal
+    // tree (before the op mutates anything) and checked once for the whole
+    // run. When source and destination are one list this is the "same
+    // siblings reordered under me" guard: the hash covers the moved blocks too.
+    if expect.is_some_and(|e| e.parent_children_hash.is_some()) {
+        let Target { parent: dst, .. } = resolve_target(doc, to)?;
+        check_children_hash(doc.siblings(&dst), expect, op_index)?;
     }
     // Extract in argument order.
     let mut moving = Vec::with_capacity(block_ids.len());
@@ -752,10 +790,12 @@ pub fn op_remove(
                 }),
             )
         })?;
+        let (_, parent) = path.split_last().expect("non-empty");
         if let Some(e) = expect_per.and_then(|m| m.get(id)) {
             check_content_hash(doc.block(&path), Some(e), op_index)?;
+            // §1.2: its current parent, while the block is still in place.
+            check_children_hash(doc.siblings(parent), Some(e), op_index)?;
         }
-        let (_, parent) = path.split_last().expect("non-empty");
         if !has_ancestor_in(doc, parent, &set) {
             tops.push(id);
         }
@@ -801,6 +841,9 @@ pub fn op_split(
         )
     })?;
     check_content_hash(doc.block(&path), expect, op_index)?;
+    // §1.2: its current parent, after the content CAS.
+    let (_, split_parent) = path.split_last().expect("non-empty");
+    check_children_hash(doc.siblings(split_parent), expect, op_index)?;
     let raw = doc.block(&path).raw.clone();
     let mut cuts: Vec<usize> = vec![0];
     cuts.extend(at.iter().map(|&a| char_boundary(&raw, a)));
@@ -909,6 +952,8 @@ pub fn op_merge(
         }
         if let Some(e) = expect_per.and_then(|m| m.get(&block_ids[i])) {
             check_content_hash(doc.block(path), Some(e), op_index)?;
+            // §1.2: its current parent (the shared sibling list).
+            check_children_hash(doc.siblings(p), Some(e), op_index)?;
         }
         if i > 0 {
             indices.push(*index);
@@ -974,6 +1019,7 @@ pub fn cross_doc_move(
     block_ids: &[String],
     to: &To,
     op_index: usize,
+    expect: Option<&Expect>,
 ) -> Result<OpResult> {
     for id in block_ids {
         if !src.contains(id) {
@@ -983,6 +1029,11 @@ pub fn cross_doc_move(
                 json!({ "op_index": op_index }),
             ));
         }
+    }
+    // §1.2: the destination parent's order CAS (in `dst`), before either tree moves.
+    if expect.is_some_and(|e| e.parent_children_hash.is_some()) {
+        let Target { parent, .. } = resolve_dst_target(dst, to)?;
+        check_children_hash(dst.siblings(&parent), expect, op_index)?;
     }
     let mut moving = Vec::with_capacity(block_ids.len());
     for id in block_ids {
@@ -1011,9 +1062,9 @@ pub fn cross_doc_move(
 /// The six ops as methods (two-phase borrows let a caller compute ids from
 /// the document inside the argument list).
 impl MutDoc {
-    /// [`op_insert`].
+    /// [`op_insert`] without the §1.2 order CAS (`op_index` 0).
     pub fn insert(&mut self, to: &To, markdown: &str, minter: &mut dyn Minter) -> Result<OpResult> {
-        op_insert(self, to, markdown, minter)
+        op_insert(self, to, markdown, 0, None, minter)
     }
 
     /// [`op_update`].
@@ -1027,14 +1078,14 @@ impl MutDoc {
         op_update(self, block_id, op_index, args, minter)
     }
 
-    /// [`op_move`].
+    /// [`op_move`] without the §1.2 order CAS.
     pub fn move_blocks(
         &mut self,
         block_ids: &[String],
         to: &To,
         op_index: usize,
     ) -> Result<OpResult> {
-        op_move(self, block_ids, to, op_index)
+        op_move(self, block_ids, to, op_index, None)
     }
 
     /// [`op_remove`].
@@ -1711,13 +1762,14 @@ mod tests {
             std::slice::from_ref(&moving),
             &top(At::End),
             0,
+            None,
         )
         .unwrap();
         assert_eq!(r.ids, std::slice::from_ref(&moving));
         assert_eq!(render(&a), "# A\n\n");
         // Both documents' top-level seams heal (§2.3).
         assert_eq!(render(&b), "# B\n\nmoving\n");
-        let e = cross_doc_move(&mut a, &mut b, &[moving], &top(At::End), 1).unwrap_err();
+        let e = cross_doc_move(&mut a, &mut b, &[moving], &top(At::End), 1, None).unwrap_err();
         assert_eq!(e.code, ErrorCode::BlockMissing);
     }
 
@@ -1729,5 +1781,107 @@ mod tests {
         let e = check_parent_children_hash(&d, None, "nope", 0).unwrap_err();
         assert_eq!(e.code, ErrorCode::StaleExpectation);
         assert_eq!(e.data["current"]["parent_children_hash"], json!(ok));
+    }
+
+    /// §1.2 wiring: insert/move check the destination parent, the others the
+    /// block's current parent; content CAS first; a stale order never lands.
+    #[test]
+    fn parent_children_hash_guards_every_op() {
+        let (mut d, mut m) = doc("# T\n\na\n\n> q1\n>\n> q2\n");
+        let top_hash = parent_children_hash(&d.children);
+        let quote_hash = parent_children_hash(&d.children[2].children);
+        let a = id_at(&d, 1);
+        let quote = id_at(&d, 2);
+        let stale = Expect::order("stale");
+        // insert: destination parent = the blockquote, not the top level.
+        let into_quote = To {
+            parent: Parent::Block(quote.clone()),
+            at: At::End,
+        };
+        let e = op_insert(
+            &mut d,
+            &into_quote,
+            "x",
+            3,
+            Some(&Expect::order(&top_hash)),
+            &mut m,
+        )
+        .unwrap_err();
+        assert_eq!(e.code, ErrorCode::StaleExpectation);
+        assert_eq!(e.data["op_index"], json!(3));
+        assert_eq!(e.data["current"]["parent_children_hash"], json!(quote_hash));
+        assert_eq!(e.data.get("block"), None);
+        assert_eq!(d.children[2].children.len(), 2, "nothing inserted");
+        // move: destination checked on the pre-removal tree, once for the run.
+        let e = op_move(
+            &mut d,
+            std::slice::from_ref(&a),
+            &into_quote,
+            0,
+            Some(&stale),
+        )
+        .unwrap_err();
+        assert_eq!(e.data["current"]["parent_children_hash"], json!(quote_hash));
+        assert_eq!(d.children.len(), 3, "nothing moved");
+        op_move(
+            &mut d,
+            std::slice::from_ref(&a),
+            &into_quote,
+            0,
+            Some(&Expect::order(&quote_hash)),
+        )
+        .unwrap();
+        assert_eq!(d.children[1].children.len(), 3);
+        // update/split/remove/merge: the block's CURRENT parent (now the quote),
+        // and the content CAS comes first.
+        let mut args = UpdateArgs {
+            expect: Some(Expect {
+                content_hash: Some("bad".into()),
+                parent_children_hash: Some("stale".into()),
+            }),
+            ..UpdateArgs::default()
+        };
+        let e = op_update(&mut d, &a, 0, &args, &mut m).unwrap_err();
+        assert_eq!(e.data["block"], json!(a), "content CAS reported first");
+        args.expect = Some(Expect {
+            content_hash: Some(raw_hash_hex("a")),
+            parent_children_hash: Some(top_hash.clone()),
+        });
+        let e = op_update(&mut d, &a, 0, &args, &mut m).unwrap_err();
+        let live = parent_children_hash(&d.children[1].children);
+        assert_eq!(e.data["current"]["parent_children_hash"], json!(live));
+        let ok = Expect {
+            content_hash: Some(raw_hash_hex("a")),
+            parent_children_hash: Some(live.clone()),
+        };
+        let e = op_split(&mut d, &a, &[1], 0, Some(&stale_with(&ok)), &mut m).unwrap_err();
+        assert_eq!(e.code, ErrorCode::StaleExpectation);
+        let mut per = BTreeMap::new();
+        per.insert(a.clone(), stale_with(&ok));
+        let e = op_remove(&mut d, std::slice::from_ref(&a), 0, Some(&per)).unwrap_err();
+        assert_eq!(e.data["current"]["parent_children_hash"], json!(live));
+        let q2 = d.children[1].children[1].id.clone();
+        let mut per = BTreeMap::new();
+        per.insert(
+            q2.clone(),
+            Expect {
+                content_hash: Some(raw_hash_hex("q2")),
+                parent_children_hash: Some("stale".into()),
+            },
+        );
+        let e = op_merge(&mut d, &[q2, a.clone()], 0, None, Some(&per)).unwrap_err();
+        assert_eq!(e.data["current"]["parent_children_hash"], json!(live));
+        // A matching order CAS passes.
+        per.clear();
+        per.insert(a.clone(), ok);
+        op_remove(&mut d, &[a], 0, Some(&per)).unwrap();
+        assert_eq!(d.children[1].children.len(), 2);
+    }
+
+    fn stale_with(ok: &Expect) -> Expect {
+        Expect {
+            content_hash: ok.content_hash.clone(),
+            parent_children_hash: Some("stale".into()),
+        }
     }
 }

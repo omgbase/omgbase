@@ -1196,7 +1196,7 @@
     },
     {
       "name": "rollup-counts-with-container",
-      "notes": "§3.4/§8: two items linking one target → list (deduped to 1) + 2 items = count 3.",
+      "notes": "§3.4 (1.1): two items linking `/x.md` → count 2 (the list's own text is blank, so no third edge; before 1.1 the count was 3), samples the two items in rowid order.",
       "steps": [
         {
           "observe": {
@@ -1212,28 +1212,6 @@
       ],
       "expect": {
         "nodes": [
-          {
-            "node_id": "n_12c83f7ce6d4",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 2,
-            "span_end": 12,
-            "attrs": {}
-          },
-          {
-            "node_id": "n_160ab430ab6c",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "b",
-            "value": "/x.md",
-            "span_start": 15,
-            "span_end": 25,
-            "attrs": {}
-          },
           {
             "node_id": "n_1da33ca9bb62",
             "doc_id": "d_0",
@@ -1262,20 +1240,6 @@
           {
             "edge_id": "e_0",
             "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_1",
-            "src_doc": "d_0",
             "src_block": "b_1",
             "src_field": null,
             "predicate": "references",
@@ -1288,7 +1252,7 @@
             "to_commit": null
           },
           {
-            "edge_id": "e_2",
+            "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_2",
             "src_field": null,
@@ -1308,9 +1272,8 @@
             "predicate": "references",
             "dst_node": "phantom:x.md",
             "dst_kind": "document",
-            "count": 3,
+            "count": 2,
             "samples": [
-              "b_0",
               "b_1",
               "b_2"
             ]

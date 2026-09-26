@@ -5,10 +5,19 @@
 //! (the catalog is a plain `Surface::call`); every tool result is one text
 //! content item holding JSON, an error result carries `isError: true`
 //! (`spec/surface` §4).
+//!
+//! A tool that can commit ([`Surface::is_write_tool`]) runs under the
+//! workspace writer lock (`spec/sync` §7) when the server knows the
+//! `.omgbase/` directory, so it never interleaves with a watcher checkpoint
+//! (this process's or another's); a lock held past the timeout is the
+//! reference's `WriterLockTimeout`, which reaches the client as the
+//! catch-all envelope (`spec/surface` §9).
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 
-use omgbase_surface::Surface;
+use omgbase_surface::{Surface, SurfaceError};
+use omgbase_sync::{WriterLock, WriterLockOptions};
 use serde_json::{Value as Json, json};
 
 /// The MCP protocol revision this server speaks.
@@ -27,8 +36,32 @@ fn error(id: &Json, code: i64, message: &str) -> Json {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })
 }
 
+/// What the loop needs beyond the surface.
+#[derive(Clone, Debug, Default)]
+pub struct ServeOptions {
+    /// `<workspace>/.omgbase`: write tools take `writer.lock` here. `None`
+    /// (an in-memory surface) runs them unlocked.
+    pub omgbase_dir: Option<PathBuf>,
+}
+
+/// One tool result as MCP frames it.
+fn tool_result(body: &Json, is_error: bool) -> Json {
+    let mut result = json!({
+        "content": [{ "type": "text", "text": body.to_string() }],
+    });
+    if is_error {
+        result["isError"] = Json::Bool(true);
+    }
+    result
+}
+
 /// Handle one request; `None` for a notification (no reply).
-pub fn handle(surface: &mut Surface, version: &str, req: &Json) -> Option<Json> {
+pub fn handle(
+    surface: &mut Surface,
+    version: &str,
+    req: &Json,
+    opts: &ServeOptions,
+) -> Option<Json> {
     let Some(obj) = req.as_object() else {
         return Some(error(
             &Json::Null,
@@ -74,21 +107,28 @@ pub fn handle(surface: &mut Surface, version: &str, req: &Json) -> Option<Json> 
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
+            let lock = match &opts.omgbase_dir {
+                Some(dir) if Surface::is_write_tool(name) => {
+                    match WriterLock::acquire(dir, WriterLockOptions::default()) {
+                        Ok(l) => Some(l),
+                        Err(e) => {
+                            let env = SurfaceError::other(e.to_string()).to_json();
+                            return Some(response(&id, tool_result(&env, true)));
+                        }
+                    }
+                }
+                _ => None,
+            };
             let out = surface.call(name, args);
-            let mut result = json!({
-                "content": [{ "type": "text", "text": out.body.to_string() }],
-            });
-            if out.is_error {
-                result["isError"] = Json::Bool(true);
-            }
-            response(&id, result)
+            drop(lock);
+            response(&id, tool_result(&out.body, out.is_error))
         }
         other => error(&id, METHOD_NOT_FOUND, &format!("method not found: {other}")),
     })
 }
 
 /// Serve until stdin closes.
-pub fn serve(surface: &mut Surface, version: &str) -> std::io::Result<()> {
+pub fn serve(surface: &mut Surface, version: &str, opts: &ServeOptions) -> std::io::Result<()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -98,7 +138,7 @@ pub fn serve(surface: &mut Surface, version: &str) -> std::io::Result<()> {
             continue;
         }
         let reply = match serde_json::from_str::<Json>(&line) {
-            Ok(req) => handle(surface, version, &req),
+            Ok(req) => handle(surface, version, &req, opts),
             Err(e) => Some(error(
                 &Json::Null,
                 PARSE_ERROR,
@@ -122,6 +162,10 @@ mod tests {
         let mut store = Store::open_in_memory().unwrap();
         let repo = store.create_repo("r").unwrap();
         Surface::new(store, &repo, None)
+    }
+
+    fn handle(surface: &mut Surface, version: &str, req: &Json) -> Option<Json> {
+        super::handle(surface, version, req, &ServeOptions::default())
     }
 
     #[test]
@@ -174,5 +218,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(nf["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn write_tools_take_and_release_the_writer_lock() {
+        let tmp = omgbase_sync::fs::TempDir::new("mcp-lock");
+        let dir = tmp.path().join(".omgbase");
+        let opts = ServeOptions {
+            omgbase_dir: Some(dir.clone()),
+        };
+        let mut s = surface();
+        // A sourceless repo cannot create a document, but the lock is taken
+        // around the attempt and released afterwards either way.
+        let out = super::handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": "docs_create", "arguments": { "path": "a.md", "content": "# A\n" } } }), &opts).unwrap();
+        assert_eq!(out["result"]["isError"], true);
+        assert!(WriterLock::is_free(&dir));
+        assert!(!WriterLock::path_in(&dir).exists());
+        // A read never touches the lock directory.
+        let out = super::handle(&mut s, "0.1.0", &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": { "name": "docs_list", "arguments": {} } }), &opts).unwrap();
+        assert!(out["result"].get("isError").is_none());
+        assert!(Surface::is_write_tool("apply") && !Surface::is_write_tool("docs_read"));
     }
 }

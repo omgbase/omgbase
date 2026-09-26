@@ -93,7 +93,8 @@ export function hybridSearch(store: Store, input: HybridInput): HybridHit[] {
   const vecRanks = new Map<string, number>();
   const cosineByBlock = new Map<string, number>();
   if (input.vector) {
-    // First occurrence wins, exactly as for FTS (spec/search §4).
+    // First occurrence wins, exactly as for FTS (spec/search §4). Since search
+    // 1.1 vectorSearch yields one candidate per block, so this is a no-op guard.
     vectorSearch(store, input.repoId, input.vector.model, input.vector.vec, { limit: 200 }).forEach((h, i) => {
       if (vecRanks.has(h.blockId)) return;
       vecRanks.set(h.blockId, i + 1);

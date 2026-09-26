@@ -20,6 +20,8 @@ import { docsRead } from "../core/read/document.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { cosineBytes } from "../core/vec.js";
+import { ctxHashHex } from "../search/embeddings.js";
+import { makeBlockContextResolver, type BlockContextResolver } from "../search/tasks.js";
 import type { SemanticVec } from "../search/cel/compile.js";
 
 export type Target = "docs" | "blocks" | "nodes" | "edges";
@@ -467,13 +469,24 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return !!one(`SELECT 1 FROM blocks_fts WHERE rowid = (SELECT rowid FROM blocks WHERE block_id = ?) AND blocks_fts MATCH ?`, r.block_id, match);
   };
 
+  // A block's vector is the cache row for its CURRENT (raw_hash, ctx_hash)
+  // (spec/surface §1.3, spec/search §3 — since search 1.1; before, the first row
+  // for the raw_hash whatever its context). The context resolver is built once
+  // per query (one scan of titles and sections), then a per-block chain walk.
+  let blockContexts: BlockContextResolver | undefined;
+  const blockVector = (r: Row, model: string): Record<string, unknown> | undefined => {
+    blockContexts ??= makeBlockContextResolver(store, { repoId });
+    const path = typeof r.__path === "string" ? r.__path : String(scalar(`SELECT path FROM docs WHERE doc_id = ?`, r.doc_id) ?? "");
+    const ctx = blockContexts.ctx({ doc_id: String(r.doc_id), path, ordinal: Number(r.ordinal), type: String(r.type) });
+    return one(`SELECT vec FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?`, r.raw_hash, Buffer.from(ctxHashHex(ctx), "hex"), model);
+  };
   const semanticScore = (t: Target | undefined, r: Row, phrase: string): number | null => {
     if (t === "nodes" || t === "edges") throw new FilterInvalid("semantic(...) is available on the docs and blocks targets", "OQX semantic");
     const resolved = sv?.get(phrase);
     if (!resolved) throw new FilterInvalid(`semantic(${JSON.stringify(phrase)}) needs an embedding provider; none is configured for this query`, "OQX semantic");
     const row = t === "docs"
       ? one(`SELECT vec FROM doc_embeddings WHERE doc_id = ? AND model = ?`, r.doc_id, resolved.model)
-      : one(`SELECT vec FROM embeddings WHERE content_hash = ? AND model = ? LIMIT 1`, r.raw_hash, resolved.model);
+      : blockVector(r, resolved.model);
     if (!row) return null;
     return cosineBytes(row.vec as Buffer, resolved.vec);
   };

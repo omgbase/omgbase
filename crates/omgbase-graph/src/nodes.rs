@@ -1,5 +1,5 @@
 //! Node projection (§2): the Markdown adapter's nodes over each block's
-//! masked raw, the `md:section` shape the store appends, ordinals and
+//! own, masked text, the `md:section` shape the store appends, ordinals and
 //! `node_id`.
 
 use std::collections::HashMap;
@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use omgbase_format::hash::{hex, sha256};
 use omgbase_format::{AttrValue, BlockKind};
-use omgbase_properties::DocBlock;
+use omgbase_properties::{DocBlock, line_field, own_text};
 use regex::Regex;
 use serde_json::{Map as JsonMap, Value as Json};
 
@@ -140,45 +140,15 @@ impl ProjectedNode {
     }
 }
 
-/// The line form of an inline field over one line (already split at the
-/// JavaScript line terminators): `^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$`
-/// with `i`. Returns `(key, value, start, end)` with the offsets relative to
-/// the line: `start` after the leading blanks (where the key begins), `end`
-/// where the trimmed value ends (§2.1).
-pub(crate) fn line_field(line: &str) -> Option<(&str, &str, usize, usize)> {
-    let lead = line.len() - line.trim_start_matches([' ', '\t']).len();
-    let rest = &line[lead..];
-    let mut key_end = 0;
-    for (i, c) in rest.char_indices() {
-        let ok = if i == 0 {
-            c.is_ascii_alphabetic()
-        } else {
-            c.is_ascii_alphanumeric() || c == '_'
-        };
-        if !ok {
-            break;
-        }
-        key_end = i + c.len_utf8();
-    }
-    if key_end == 0 {
-        return None;
-    }
-    let key = &rest[..key_end];
-    let after = rest[key_end..].strip_prefix("::")?;
-    let value = after
-        .trim_start_matches([' ', '\t'])
-        .trim_end_matches([' ', '\t']);
-    let end = line.len() - line.trim_end_matches([' ', '\t']).len();
-    Some((key, value, lead, line.len() - end))
-}
-
 fn scan_block(b: &DocBlock<'_>, out: &mut Vec<ProjectedNode>) {
     let id = b.block_id;
-    // Code is not prose: a code_fence projects nothing; inline code is masked.
+    // §1: the block's own text (children blanked — a feature belongs to the
+    // innermost block), then code masked; a code_fence projects nothing. Both
+    // masks keep byte length, so spans index the original `raw`.
     let scan = if b.kind == BlockKind::CodeFence {
         String::new()
     } else {
-        mask_code_bytes(b.raw)
+        mask_code_bytes(&own_text(b))
     };
     for m in LINK.captures_iter(&scan) {
         let whole = m.get(0).expect("match");
@@ -218,6 +188,9 @@ fn scan_block(b: &DocBlock<'_>, out: &mut Vec<ProjectedNode>) {
         n.span = Some((whole.start(), whole.end()));
         out.push(n);
     }
+    // The line form (`spec/properties` §3.2, 1.1: a list marker and a task
+    // checkbox may precede the key); the span runs from the key to the end of
+    // the trimmed value.
     let mut line_start = 0;
     for line in scan.split(JS_LINE_TERMINATORS) {
         if let Some((key, value, start, end)) = line_field(line) {
@@ -241,10 +214,11 @@ fn scan_block(b: &DocBlock<'_>, out: &mut Vec<ProjectedNode>) {
 }
 
 /// §2.1: the Markdown adapter's nodes over the body blocks in pre-order —
-/// per block, all links, all wikilinks, the task, all anchors, then the
-/// inline fields (bracketed, then line form). Containers are scanned too, so
-/// a feature inside a list item is projected once for the list and once for
-/// the item (§8). Spans are bytes into the block's `raw`.
+/// per block, over its own text, all links, all wikilinks, the task, all
+/// anchors, then the inline fields (bracketed, then line form). A container's
+/// own text excludes its children, so a feature inside a list item is
+/// projected once, for the item (1.1; §8). Spans are bytes into the block's
+/// `raw`.
 #[must_use]
 pub fn project_nodes(blocks: &[DocBlock<'_>]) -> Vec<ProjectedNode> {
     let mut out = Vec::new();
@@ -464,15 +438,40 @@ mod tests {
         // Leading blanks on a continuation line: the span starts at the key.
         assert_eq!(line_field("  \tkey::  v \t"), Some(("key", "v", 3, 11)));
         assert_eq!(line_field("k::"), Some(("k", "", 0, 3)));
-        assert_eq!(line_field("- k:: v"), None);
         assert_eq!(line_field("k: v"), None);
         let n = nodes_of("first\n  key:: v\n");
         assert_eq!(n[0].span, Some((8, 15)));
-        // Line form: key at line start only; not after a list marker.
-        assert!(
-            nodes_of("- k:: v\n")
-                .iter()
-                .all(|n| n.kind != NodeKind::InlineField)
+        // Line form after a list marker (1.1): the item's node, span from the
+        // key; the list projects nothing.
+        assert_eq!(
+            view(&nodes_of("- k:: v  \n")),
+            vec![(
+                NodeKind::InlineField,
+                "b_1",
+                Some("k"),
+                Some("v"),
+                Some((2, 7))
+            )]
+        );
+        let n = nodes_of("- [ ] due:: fri\n");
+        assert_eq!(
+            view(&n),
+            vec![
+                (
+                    NodeKind::Task,
+                    "b_1",
+                    None,
+                    Some("due:: fri"),
+                    Some((0, 15))
+                ),
+                (
+                    NodeKind::InlineField,
+                    "b_1",
+                    Some("due"),
+                    Some("fri"),
+                    Some((6, 15))
+                ),
+            ]
         );
         // A bracketed field alone on a line is one node.
         assert_eq!(
@@ -507,20 +506,29 @@ mod tests {
     }
 
     #[test]
-    fn containers_project_once_per_level() {
+    fn containers_project_their_own_text_only() {
         let n = nodes_of("- see [t](x)\n");
         assert_eq!(
             view(&n),
-            vec![
-                (NodeKind::Link, "b_0", Some("t"), Some("x"), Some((6, 12))),
-                (NodeKind::Link, "b_1", Some("t"), Some("x"), Some((6, 12))),
-            ]
+            vec![(NodeKind::Link, "b_1", Some("t"), Some("x"), Some((6, 12)))]
         );
         let n = nodes_of("> [[w]]\n");
-        assert_eq!(n[0].block_id, "b_0");
-        assert_eq!(n[0].span, Some((2, 7)));
-        assert_eq!(n[1].block_id, "b_1");
-        assert_eq!(n[1].span, Some((0, 5)));
+        assert_eq!(
+            view(&n),
+            vec![(NodeKind::Wikilink, "b_1", None, Some("w"), Some((0, 5)))]
+        );
+        // Nested: the inner item only, span into its raw.
+        let n = nodes_of("- outer\n  - inner [a](/x.md)\n");
+        assert_eq!(
+            view(&n),
+            vec![(
+                NodeKind::Link,
+                "b_4",
+                Some("a"),
+                Some("/x.md"),
+                Some((8, 18))
+            )]
+        );
     }
 
     #[test]

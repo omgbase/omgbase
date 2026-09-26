@@ -2529,8 +2529,8 @@
       }
     },
     {
-      "name": "link-in-list-item-counts-twice",
-      "notes": "§8 containers: the list and the item each yield a `references` edge; the rollup count is 2.",
+      "name": "link-in-list-item-one-edge",
+      "notes": "§1 / §8 (1.1): scanners run over the block's own text, so the link yields one `references` edge (the item's) and a `doc_edges` count of 1.",
       "steps": [
         {
           "observe": {
@@ -2547,17 +2547,6 @@
       "expect": {
         "nodes": [
           {
-            "node_id": "n_12c83f7ce6d4",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 2,
-            "span_end": 12,
-            "attrs": {}
-          },
-          {
             "node_id": "n_7f86eccd7a7c",
             "doc_id": "d_0",
             "block_id": "b_1",
@@ -2573,20 +2562,6 @@
         "edges": [
           {
             "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_1",
             "src_field": null,
@@ -2606,9 +2581,265 @@
             "predicate": "references",
             "dst_node": "phantom:x.md",
             "dst_kind": "document",
-            "count": 2,
+            "count": 1,
             "samples": [
-              "b_0",
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-in-nested-list-one-edge",
+      "notes": "§1 (1.1): three containers around the link, one edge — from the inner item.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- outer\n  - inner [a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_6455412fedd3",
+            "doc_id": "d_0",
+            "block_id": "b_4",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 8,
+            "span_end": 18,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_4",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_4"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-in-task-item-one-edge",
+      "notes": "§1 (1.1): the task block is the source of the one edge.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- [ ] see [x](a.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_26ff1f5c34ac",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:task",
+            "name": null,
+            "value": "see [x](a.md)",
+            "span_start": 0,
+            "span_end": 19,
+            "attrs": {
+              "checked": false
+            }
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "x",
+            "value": "a.md",
+            "span_start": 10,
+            "span_end": 19,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-in-blockquote-one-edge-from-the-paragraph",
+      "notes": "§1 (1.1): the nested paragraph, not the blockquote, is `src_block`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "> see [a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 4,
+            "span_end": 14,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "inline-relation-on-marker-line",
+      "notes": "§3.1 step 1 (1.1): `(?:^|\\s)` already admitted a key after `- `; with own text the relation is one edge from the item, predicate `source`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- source:: /a.md\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_fee049cdf7d2",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:inline_field",
+            "name": "source",
+            "value": "/a.md",
+            "span_start": 2,
+            "span_end": 16,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": "source",
+            "predicate": "source",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "inline_field",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "source",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
               "b_1"
             ]
           }

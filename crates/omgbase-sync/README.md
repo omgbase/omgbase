@@ -51,6 +51,6 @@ Conformance: `tests/spec.rs` runs every case under `spec/sync/cases`
 (`pure`, `registry`, `checkpoint`, `protocol` — adapter transcripts over an
 in-process pipe, coordinator scripts against a recording engine client),
 gated by `tests/spec-passing.txt` while the port runs behind the fixtures.
-The crate version tracks `spec/sync/VERSION` (`1.0`).
+The crate version tracks `spec/sync/VERSION` (`1.1`).
 
 Unix only: lock-holder liveness uses `kill(pid, 0)`.

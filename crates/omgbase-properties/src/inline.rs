@@ -1,5 +1,6 @@
-//! Inline fields (§3.2): code masking, the two field forms, occurrence
-//! collection, card/ord, and the JavaScript `Number()` coercion.
+//! Inline fields (§3.2): a block's own text, code masking, the two field
+//! forms, occurrence collection, card/ord, and the JavaScript `Number()`
+//! coercion.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -133,11 +134,52 @@ pub struct Occurrence {
     pub block_id: String,
 }
 
-/// Line form on one line (already split on JavaScript's line terminators):
-/// `^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$`.
-fn line_field(line: &str) -> Option<(&str, &str)> {
-    let rest = line.trim_start_matches([' ', '\t']);
-    let mut end = 0;
+/// The length of the run of spaces and tabs `s` starts with.
+fn blanks(s: &str) -> usize {
+    s.len() - s.trim_start_matches([' ', '\t']).len()
+}
+
+/// §3.2 line form over one line (already split at JavaScript's line
+/// terminators):
+/// `^[ \t]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$`
+/// with `i` (ASCII letters of either case). A key at the start of the line,
+/// after blanks and — since 1.1 — optionally a list marker (`-`/`*`/`+`, or
+/// one to nine ASCII digits and `.`/`)`) with at least one blank, then
+/// optionally a task checkbox with at least one blank. Returns `(key, value,
+/// start, end)`: the key as written, the value trimmed of spaces and tabs,
+/// and the byte offsets in `line` where the key begins and where the trimmed
+/// value ends (the `md:inline_field` span of `spec/graph` §2.1). The greedy
+/// scan equals the regex: a marker or checkbox that is not followed by a key
+/// cannot be the start of one, so there is nothing to backtrack into.
+#[must_use]
+pub fn line_field(line: &str) -> Option<(&str, &str, usize, usize)> {
+    let mut at = blanks(line);
+    let rest = &line[at..];
+    let marker = if rest.starts_with(['-', '*', '+']) {
+        Some(1)
+    } else {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        ((1..=9).contains(&digits) && rest[digits..].starts_with(['.', ')'])).then_some(digits + 1)
+    };
+    if let Some(width) = marker {
+        let gap = blanks(&rest[width..]);
+        if gap > 0 {
+            at += width + gap;
+            let after = &line.as_bytes()[at..];
+            if after.len() > 3
+                && after[0] == b'['
+                && matches!(after[1], b' ' | b'x' | b'X')
+                && after[2] == b']'
+            {
+                let gap = blanks(&line[at + 3..]);
+                if gap > 0 {
+                    at += 3 + gap;
+                }
+            }
+        }
+    }
+    let rest = &line[at..];
+    let mut key_end = 0;
     for (i, c) in rest.char_indices() {
         let ok = if i == 0 {
             c.is_ascii_alphabetic()
@@ -147,22 +189,64 @@ fn line_field(line: &str) -> Option<(&str, &str)> {
         if !ok {
             break;
         }
-        end = i + c.len_utf8();
+        key_end = i + c.len_utf8();
     }
-    if end == 0 {
+    if key_end == 0 {
         return None;
     }
-    let key = &rest[..end];
-    let after = rest[end..].strip_prefix("::")?;
+    let key = &rest[..key_end];
+    let after = rest[key_end..].strip_prefix("::")?;
     let value = after
         .trim_start_matches([' ', '\t'])
         .trim_end_matches([' ', '\t']);
-    Some((key, value))
+    let trailing = line.len() - line.trim_end_matches([' ', '\t']).len();
+    Some((key, value, at, line.len() - trailing))
+}
+
+/// §3.2 `own(raw)`: the block's `raw` with the span of every **direct**
+/// child blanked — `child.span.start − block.span.start` up to
+/// `child.span.end − block.span.start`, each byte a space except `\n`,
+/// which stays (exactly as [`mask_code`]'s blanking; a `\r` becomes a space
+/// too) so the line form still sees lines. Byte-length preserving: an offset into the result is an
+/// offset into `raw`, so `spec/graph` spans stay in `raw` coordinates. A
+/// container's own text is its markers, prefixes and blank lines; a field
+/// inside a child is found by the child. A child span outside the parent's,
+/// reversed, or off a character boundary is impossible for a parsed tree
+/// (`spec/format` §1 inv. 3) and is skipped rather than clamped.
+#[must_use]
+pub fn own_text(block: &DocBlock<'_>) -> String {
+    if block.children.is_empty() {
+        return block.raw.to_owned();
+    }
+    let raw = block.raw;
+    let mut bytes = raw.as_bytes().to_vec();
+    let base = block.span.0;
+    for child in &block.children {
+        let (Some(start), Some(end)) = (
+            child.span.0.checked_sub(base),
+            child.span.1.checked_sub(base),
+        ) else {
+            continue;
+        };
+        if start > end
+            || end > raw.len()
+            || !raw.is_char_boundary(start)
+            || !raw.is_char_boundary(end)
+        {
+            continue;
+        }
+        for b in &mut bytes[start..end] {
+            if *b != b'\n' {
+                *b = b' ';
+            }
+        }
+    }
+    String::from_utf8(bytes).expect("blanking whole characters keeps UTF-8")
 }
 
 fn scan_block(block: &DocBlock<'_>, out: &mut Vec<Occurrence>) {
     if block.kind != BlockKind::CodeFence {
-        let scan = mask_code(block.raw);
+        let scan = mask_code(&own_text(block));
         for m in BRACKETED.captures_iter(&scan) {
             out.push(Occurrence {
                 key: m[1].to_owned(),
@@ -172,7 +256,7 @@ fn scan_block(block: &DocBlock<'_>, out: &mut Vec<Occurrence>) {
         }
         // JavaScript's multiline `^`/`$` sit at LF, CR, U+2028 and U+2029.
         for line in scan.split(['\n', '\r', '\u{2028}', '\u{2029}']) {
-            if let Some((key, value)) = line_field(line) {
+            if let Some((key, value, _, _)) = line_field(line) {
                 out.push(Occurrence {
                     key: key.to_owned(),
                     value: value.to_owned(),
@@ -186,8 +270,9 @@ fn scan_block(block: &DocBlock<'_>, out: &mut Vec<Occurrence>) {
     }
 }
 
-/// §3.2: every inline-field occurrence over the body blocks in pre-order
-/// (a container's `raw` is scanned **and** each child's — §8).
+/// §3.2: every inline-field occurrence over the body blocks in pre-order,
+/// each block scanned over `mask_code(own_text(block))` — so a field belongs
+/// to the innermost block that contains it (1.1; §8 for the old count).
 #[must_use]
 pub fn inline_occurrences(blocks: &[DocBlock<'_>]) -> Vec<Occurrence> {
     let mut out = Vec::new();
@@ -405,14 +490,13 @@ mod tests {
 
     #[test]
     fn line_form() {
-        assert_eq!(line_field("key:: value"), Some(("key", "value")));
+        assert_eq!(line_field("key:: value"), Some(("key", "value", 0, 11)));
         assert_eq!(
             line_field("  \tKey_1::\t two words \t"),
-            Some(("Key_1", "two words"))
+            Some(("Key_1", "two words", 3, 21))
         );
-        assert_eq!(line_field("key::"), Some(("key", "")));
-        assert_eq!(line_field("key:: "), Some(("key", "")));
-        assert_eq!(line_field("- key:: v"), None);
+        assert_eq!(line_field("key::"), Some(("key", "", 0, 5)));
+        assert_eq!(line_field("key:: "), Some(("key", "", 0, 5)));
         assert_eq!(line_field("> key:: v"), None);
         assert_eq!(line_field("1key:: v"), None);
         assert_eq!(line_field("key: v"), None);
@@ -420,7 +504,81 @@ mod tests {
         assert_eq!(line_field("[key:: v]"), None);
         assert_eq!(line_field("(key:: v)"), None);
         assert_eq!(line_field("ключ:: v"), None);
-        assert_eq!(line_field("key:: [a] (b)"), Some(("key", "[a] (b)")));
+        assert_eq!(line_field("key:: [a] (b)"), Some(("key", "[a] (b)", 0, 13)));
+    }
+
+    #[test]
+    fn line_form_admits_a_list_marker_and_a_task_checkbox() {
+        assert_eq!(line_field("- key:: v"), Some(("key", "v", 2, 9)));
+        assert_eq!(line_field("* key:: v"), Some(("key", "v", 2, 9)));
+        assert_eq!(line_field("+ key:: v"), Some(("key", "v", 2, 9)));
+        assert_eq!(line_field("1. key:: v"), Some(("key", "v", 3, 10)));
+        assert_eq!(line_field("1) key:: v"), Some(("key", "v", 3, 10)));
+        assert_eq!(line_field("123456789. key:: v"), Some(("key", "v", 11, 18)));
+        assert_eq!(line_field("  -\t key::  v  "), Some(("key", "v", 5, 13)));
+        assert_eq!(line_field("- [ ] due:: fri"), Some(("due", "fri", 6, 15)));
+        assert_eq!(line_field("- [x] due:: fri"), Some(("due", "fri", 6, 15)));
+        assert_eq!(line_field("- [X] due:: fri"), Some(("due", "fri", 6, 15)));
+        assert_eq!(line_field("1. [ ] due::"), Some(("due", "", 7, 12)));
+        // Not a marker: no blank after it, ten digits, `>` or `.` alone.
+        assert_eq!(line_field("-key:: v"), None);
+        assert_eq!(line_field("1.key:: v"), None);
+        assert_eq!(line_field("1234567890. key:: v"), None);
+        assert_eq!(line_field("> key:: v"), None);
+        assert_eq!(line_field(". key:: v"), None);
+        // A checkbox needs the marker, the exact shape, and a blank after it.
+        assert_eq!(line_field("[ ] key:: v"), None);
+        assert_eq!(line_field("- [ ]key:: v"), None);
+        assert_eq!(line_field("- [y] key:: v"), None);
+        assert_eq!(line_field("- [  ] key:: v"), None);
+        // A marker followed by no key is nothing.
+        assert_eq!(line_field("- - key:: v"), None);
+        assert_eq!(line_field("- [ ] [k:: v]"), None);
+    }
+
+    #[test]
+    fn own_text_blanks_direct_children_only() {
+        let tree = parse_markdown("- a\n  - b\n    job:: x\n- c\n");
+        let ids: Vec<String> = (0..DocBlock::count(&tree.children))
+            .map(|i| format!("b_{i}"))
+            .collect();
+        let blocks = DocBlock::from_blocks(&tree.children, &ids);
+        let list = &blocks[0];
+        assert_eq!(own_text(list), "   \n     \n           \n   ");
+        let item = &list.children[0];
+        assert_eq!(item.raw, "- a\n  - b\n    job:: x");
+        // The paragraph `a` and the inner list are blanked; the marker and
+        // the indentation stay.
+        assert_eq!(own_text(item), "-  \n     \n           ");
+        let inner = &item.children[1].children[0];
+        assert_eq!(inner.raw, "- b\n    job:: x");
+        assert_eq!(own_text(inner), inner.raw, "a leaf is its own text");
+        // Byte length is preserved around non-ASCII.
+        let tree = parse_markdown("> é [k:: v]\n");
+        let ids = ["b_0".to_owned(), "b_1".to_owned()];
+        let blocks = DocBlock::from_blocks(&tree.children, &ids);
+        let own = own_text(&blocks[0]);
+        assert_eq!(own.len(), blocks[0].raw.len());
+        assert_eq!(own, ">           ");
+        // A child span outside the parent is skipped, not clamped.
+        let bogus = DocBlock {
+            block_id: "b_9",
+            kind: BlockKind::ListItem,
+            span: (100, 105),
+            raw: "- k:: v",
+            text: "k:: v",
+            attrs: blocks[0].attrs,
+            children: vec![DocBlock {
+                block_id: "b_10",
+                kind: BlockKind::Paragraph,
+                span: (0, 3),
+                raw: "k::",
+                text: "k::",
+                attrs: blocks[0].attrs,
+                children: Vec::new(),
+            }],
+        };
+        assert_eq!(own_text(&bogus), "- k:: v");
     }
 
     fn occurrences(source: &str) -> Vec<(String, String, String)> {
@@ -481,23 +639,33 @@ mod tests {
     }
 
     #[test]
-    fn containers_count_once_per_nesting_level() {
-        // Continuation-line field: the list's raw and the item's raw both match.
+    fn containers_scan_their_own_text_only() {
+        // Continuation-line field: the item (the list's own text is blank).
         let occ = occurrences("- a\n  job:: x\n");
         assert_eq!(
             occ,
+            vec![("job".to_owned(), "x".to_owned(), "b_1".to_owned())]
+        );
+        // Marker-line field: the item, since 1.1.
+        let occ = occurrences("- job:: x\n\n1. num:: y\n");
+        assert_eq!(
+            occ,
             vec![
-                ("job".to_owned(), "x".to_owned(), "b_0".to_owned()),
                 ("job".to_owned(), "x".to_owned(), "b_1".to_owned()),
+                ("num".to_owned(), "y".to_owned(), "b_3".to_owned()),
             ]
         );
-        // Marker-line field: never.
-        assert!(occurrences("- job:: x\n").is_empty());
-        // Bracketed inside a blockquote: quote and paragraph.
+        // A task item's marker line.
+        let occ = occurrences("- [ ] due:: fri\n");
+        assert_eq!(
+            occ,
+            vec![("due".to_owned(), "fri".to_owned(), "b_1".to_owned())]
+        );
+        // Bracketed inside a blockquote: the paragraph only.
         let occ = occurrences("> See [k:: v]\n");
         assert_eq!(
             occ.iter().map(|o| o.2.as_str()).collect::<Vec<_>>(),
-            ["b_0", "b_1"]
+            ["b_1"]
         );
         // A `> `-prefixed line-form field never matches; the paragraph's own
         // first line starts at content and does.
@@ -505,6 +673,19 @@ mod tests {
         assert_eq!(
             occ,
             vec![("k".to_owned(), "v".to_owned(), "b_1".to_owned())]
+        );
+        // An item with children holds no text of its own: the continuation
+        // line is the paragraph child's.
+        let occ = occurrences("- a\n  job:: x\n  - b\n");
+        assert_eq!(
+            occ,
+            vec![("job".to_owned(), "x".to_owned(), "b_2".to_owned())]
+        );
+        // Nested: the innermost item.
+        let occ = occurrences("- a\n  - b\n    job:: x\n");
+        assert_eq!(
+            occ,
+            vec![("job".to_owned(), "x".to_owned(), "b_4".to_owned())]
         );
     }
 

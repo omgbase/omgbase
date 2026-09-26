@@ -544,8 +544,10 @@ pub fn query(
 }
 
 /// One query's engine: a fresh store context per run (the planned path gives
-/// the residual a context serving the produced rows as its root), with the
-/// pending-error channel read after each run.
+/// the residual a context serving the produced rows as its root). A failure
+/// inside a property read or row function is the engine's own error (the
+/// context's `get` / `call_method` return `Err`); only a failed root scan,
+/// which the `root` seam cannot raise, is read back after the run.
 struct Runner<'a> {
     store: &'a Store,
     repo_id: &'a str,
@@ -576,11 +578,10 @@ impl Runner<'_> {
         };
         let engine = InMemoryEngine::new(ctx);
         let out = engine.run(residual.as_ref().unwrap_or(q), &[]);
-        // A failure a property read could not raise through the engine's seam
-        // (the reserved-basename guard, a SQL error) wins over whatever the
-        // run made of the `Undefined` it returned instead.
-        if let Some(pending) = engine.context().take_pending() {
-            return Err(pending);
+        // `root` has no error channel: a store failure during a root scan was
+        // served as an empty scan and wins over whatever the run made of it.
+        if let Some(failed) = engine.context().take_root_failure() {
+            return Err(failed.into());
         }
         Ok(out?)
     }

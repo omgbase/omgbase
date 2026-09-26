@@ -80,7 +80,7 @@ $ omg repos
 ```
 
 `omg status` is the "where am I" command: the same counts plus sync/watch state.
-Here 89 edges were extracted from the links between documents, everything is
+Here 64 edges were extracted from the links between documents, everything is
 converged (the files match the database), and no watcher is running (reads still
 stay fresh — see below).
 
@@ -92,7 +92,7 @@ $ omg status
   [D] docs  18            watcher o none
   [B] blocks  314         synced  ok converged
   * commits  18           queue   empty
-  > edges  89             commit# 18
+  > edges  64             commit# 18
 ```
 
 ## Read a document

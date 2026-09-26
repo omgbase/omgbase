@@ -86,7 +86,7 @@ Without a watcher, the database lags human edits made since the last ingest. A C
 
 The sweep: walk the repo's `*.md` files, `stat` each, compare `(mtime_ns, size)` against the `file_stats` cache; hash only the changed candidates; ingest non-convergent files as one observed checkpoint (under the writer lock). At the envelope (≤10⁴ docs) the no-change case is a directory walk plus stats — tens of milliseconds.
 
-`file_stats` is a **derived** table (rebuildable by a full re-stat; part of the 02 §4 family), shipped in the schema (`core/store/schema.ts`):
+`file_stats` is a **derived** table (rebuildable by a full re-stat that records only files whose bytes match their live doc — spec/sync §4.3; part of the 02 §4 family), shipped in the schema (`core/store/schema.ts`):
 
 ```sql
 CREATE TABLE file_stats (

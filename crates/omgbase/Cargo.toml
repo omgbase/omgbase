@@ -1,7 +1,7 @@
 [package]
 name = "omgbase"
-version = "0.2.0"
-description = "omgbase: a versioned, addressable graph layer over authored Markdown — the `omgbase` binary (`omgbase mcp` serves the tool catalog over MCP stdio)"
+version = "0.3.0"
+description = "omgbase: a versioned, addressable graph layer over authored Markdown — the `omgbase` binary (`omgbase mcp` serves the tool catalog over MCP stdio, with the filesystem watcher and the background embed drain)"
 keywords = ["markdown", "mcp", "knowledge-base", "sqlite", "omgbase"]
 categories = ["command-line-utilities", "text-processing"]
 readme = "README.md"
@@ -18,16 +18,19 @@ path = "src/main.rs"
 
 [dependencies]
 # The catalog this binary serves.
-omgbase-surface = { version = "1.0.0", path = "../omgbase-surface" }
+omgbase-surface = { version = "1.1.0", path = "../omgbase-surface" }
 # Workspace discovery and repo selection (`spec/sync` §1), the settings the
 # embedding provider is read from.
-omgbase-sync = { version = "1.0.0", path = "../omgbase-sync" }
+omgbase-sync = { version = "1.1.0", path = "../omgbase-sync" }
 # The store the surface owns (opened from the workspace's database path).
-omgbase-store = { version = "13.4.1", path = "../omgbase-store" }
+omgbase-store = { version = "13.4.4", path = "../omgbase-store" }
 # The external embedding provider behind `semantic()` / `resolve`.
-omgbase-search = { version = "1.0.0", path = "../omgbase-search" }
+omgbase-search = { version = "1.1.0", path = "../omgbase-search" }
 # JSON-RPC framing.
 serde_json = { version = "1", features = ["preserve_order"] }
+# `signal(2)` for SIGINT/SIGTERM shutdown of the watcher and the drainer
+# (unix only, like omgbase-sync's lock liveness probe).
+libc = "0.2"
 
 [lints]
 workspace = true

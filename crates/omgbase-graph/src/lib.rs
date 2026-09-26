@@ -58,7 +58,7 @@ pub use path::{canonical_path, doc_dir, resolve_relative};
 pub use uri::normalize_uri;
 
 /// The `spec/graph/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.0";
+pub const SPEC_VERSION: &str = "1.1";
 
 #[cfg(test)]
 mod tests {

@@ -46,9 +46,14 @@ this crate implements and the crate version tracks it as
 
 ## Scanning
 
-Block-level scanning works on the block's `raw` with fenced code and inline
+Block-level scanning works on the block's **own** text — its `raw` with every
+direct child's span blanked (`omgbase_properties::own_text`, spec 1.1: a
+feature belongs to the innermost block that contains it, so a link in a list
+item is the item's node and edge only) — then with fenced code and inline
 code spans blanked (`omgbase_properties::mask_code`, widened here to preserve
 **byte** length so spans index the original), and skips `code_fence` blocks.
+The `md:inline_field` line form is `omgbase_properties::line_field`, so nodes
+and property rows agree on what a field is.
 The regular expressions are the reference's, with JavaScript's `\s` and
 ASCII `\b` spelled out; the bare-URL lookbehind is a preceding-character
 check. URIs go through the `url` crate, a WHATWG implementation like Node's

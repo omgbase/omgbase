@@ -47,6 +47,16 @@ and resolves every plain scalar itself (spec §4): `yes`/`no` are strings,
 are the non-finite floats. Duplicate keys, tab indentation, more than one
 document, a non-mapping document or any syntax error yield **no rows**.
 
+## Inline fields
+
+A block is scanned over its **own** text (`own_text`: the `raw` with every
+direct child's span blanked, spec §3.2 — so a field belongs to the innermost
+block that contains it) with code masked (`mask_code`). Two forms: bracketed
+`[key:: value]` / `(key:: value)` anywhere in prose, and the line form — a key
+at the start of a line, optionally after a list marker and a task checkbox
+(`- job:: x`, `- [ ] due:: friday`; `line_field`), the value to the end of the
+line. `DocBlock` carries the block's byte span for this.
+
 ## Conformance
 
 `tests/spec.rs` runs every case under `spec/properties/cases` (skipped when

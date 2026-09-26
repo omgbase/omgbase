@@ -89,8 +89,18 @@ Expect { content_hash?: hex(raw_hash), parent_children_hash?: hex(sha256(child i
 mismatched one both raise `stale_expectation` with `{ op_index, block,
 expected_content_hash?, current: { content_hash, markdown: raw }, retriable:
 true }` — the caller can retry from the error without a read.
-`parent_children_hash` mismatch raises `stale_expectation` with `current: {
-parent_children_hash }` — defined, but no op consults it (§10).
+`check_parent_children_hash(parent, expect)`: when `expect.parent_children_hash`
+is given, the parent's **live direct children** (ids in order, joined by
+`,`, sha256, hex; the document top level when `parent` is null) must hash to
+it, else `stale_expectation` with `{ op_index, current: {
+parent_children_hash }, retriable: true }`. Which parent: `update`, `split`
+and each block of `remove`/`merge` (their per-block `expect[id]`) check the
+block's **current** parent; `insert` and `move` carry an op-level `expect`
+and check the **destination** parent (`to.parent`, resolved as the op does,
+so a sibling anchor names its parent) — a way to say "insert here unless the
+siblings changed under me". Checked after `content_hash`, before the op
+mutates the tree; a `move` with several blocks checks the destination once.
+Since 1.1 (§10: the reference defined the hash and checked it nowhere).
 
 ## 2. The six operations
 
@@ -469,8 +479,17 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   resolver reported no `cross_doc_ids`, so the moved block stayed in the
   resurrection pool while live in its destination (the runner's I6 caught
   it) and the destination-first order collided on the block primary key.
-- **Pinned — `parent_children_hash` is dead.** The CAS is defined and checked
-  by a helper no op calls.
+- **Pinned — a per-block `expect[id]` on `remove`/`merge` still needs
+  `content_hash`.** Those ops CAS-check any `expect[id]` given, and §1.2
+  makes a missing `content_hash` a `stale_expectation`, so an order-only
+  expectation there fails on the content hash first; `update` honors an
+  order-only `expect` when no `markdown` is given. The sugar tools
+  `blocks_insert`/`blocks_move` do not expose `expect` (unpinned; `apply`
+  does).
+- **Fixed (1.1) — `parent_children_hash` was dead.** The CAS was defined and
+  checked by a helper no op called, so a client that sent it was silently
+  unprotected. §1.2 now says which parent each op checks; `insert` and
+  `move` gained an op-level `expect` for the destination parent.
 - **Pinned — error codes as thrown at the changeset level** differ from the
   op-level ones for the same fault (an unknown section heading is
   `parent_missing`, an empty `move` is `block_missing`, a changeset-level
@@ -522,3 +541,5 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
   `split`). The crate is pure (tree, ops, render, lowering, opset); the store
   owns loading, the commit protocol, macros and document operations because
   they read and write the database and the doc store.
+- 2026-09-26, mutate 1.1: `parent_children_hash` is a live CAS on every op
+  (least surprising: a documented expectation that is sent must be checked).

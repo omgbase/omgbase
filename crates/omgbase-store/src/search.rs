@@ -92,6 +92,117 @@ struct SectionRow {
     last_ordinal: i64,
 }
 
+/// The scope of a [`BlockContexts`] load: every doc of a repo, or one doc.
+#[derive(Clone, Copy, Debug)]
+pub enum ContextScope<'a> {
+    Repo(&'a str),
+    Doc(&'a str),
+}
+
+/// A block's *current* embedding context (§2.2) — the one rule every reader of
+/// the `embeddings` cache keys with: the drain (tasks), the pooled document
+/// vector, `vector_search` (§3) and `semantic()` (`spec/surface` §1.3). Loaded
+/// once per scope (one scan of the frontmatter titles and one of the
+/// sections), then a per-block walk of the doc's sections for the chain.
+pub struct BlockContexts {
+    title_by_doc: HashMap<String, String>,
+    sections_by_doc: HashMap<String, Vec<SectionRow>>,
+}
+
+impl BlockContexts {
+    /// Load the title and section facts of `scope`.
+    pub fn load(conn: &Connection, scope: ContextScope<'_>) -> Result<Self> {
+        let (by_repo, key) = match scope {
+            ContextScope::Repo(r) => (true, r),
+            ContextScope::Doc(d) => (false, d),
+        };
+        // The frontmatter `title` per doc: source frontmatter, card scalar, type
+        // string, non-empty.
+        let mut title_by_doc: HashMap<String, String> = HashMap::new();
+        {
+            let sql = format!(
+                "SELECT p.doc_id, p.val_text FROM properties p
+                 WHERE {} AND p.source = 'frontmatter' AND p.key = 'title'
+                   AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL
+                 ORDER BY p.rowid",
+                if by_repo {
+                    "p.repo_id = ?1"
+                } else {
+                    "p.doc_id = ?1"
+                }
+            );
+            let mut stmt = conn.prepare_cached(&sql)?;
+            let it = stmt.query_map(params![key], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })?;
+            for row in it {
+                let (doc_id, title) = row?;
+                if let Some(t) = title.filter(|t| !t.is_empty()) {
+                    title_by_doc.insert(doc_id, t);
+                }
+            }
+        }
+
+        // Every section in scope with its heading text, in first_ordinal order
+        // per doc (the first is the title fallback).
+        let mut sections_by_doc: HashMap<String, Vec<SectionRow>> = HashMap::new();
+        {
+            let sql = format!(
+                "SELECT s.doc_id, hb.text, s.level, s.first_ordinal, s.last_ordinal
+                 FROM sections s JOIN blocks hb ON hb.block_id = s.heading_block
+                 WHERE {}
+                 ORDER BY s.doc_id, s.first_ordinal, s.rowid",
+                if by_repo {
+                    "hb.repo_id = ?1"
+                } else {
+                    "s.doc_id = ?1"
+                }
+            );
+            let mut stmt = conn.prepare_cached(&sql)?;
+            let it = stmt.query_map(params![key], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    SectionRow {
+                        heading_text: r.get(1)?,
+                        level: r.get(2)?,
+                        first_ordinal: r.get(3)?,
+                        last_ordinal: r.get(4)?,
+                    },
+                ))
+            })?;
+            for row in it {
+                let (doc_id, s) = row?;
+                sections_by_doc.entry(doc_id).or_default().push(s);
+            }
+        }
+        Ok(Self {
+            title_by_doc,
+            sections_by_doc,
+        })
+    }
+
+    /// §2.2: the context prefix of a block of `doc_id` at `ordinal`.
+    pub fn ctx(&self, doc_id: &str, path: &str, ordinal: i64, block_type: &str) -> String {
+        let sections = self
+            .sections_by_doc
+            .get(doc_id)
+            .map_or(&[][..], Vec::as_slice);
+        let doc_title = match self.title_by_doc.get(doc_id) {
+            Some(t) if !t.trim_matches(omgbase_search::is_js_whitespace).is_empty() => t.clone(),
+            _ => sections
+                .first()
+                .map_or_else(|| path.to_owned(), |s| s.heading_text.clone()),
+        };
+        let mut containing: Vec<&SectionRow> = sections
+            .iter()
+            .filter(|s| ordinal >= s.first_ordinal && ordinal <= s.last_ordinal)
+            .collect();
+        containing.sort_by_key(|s| s.level);
+        let chain: Vec<String> = containing.iter().map(|s| s.heading_text.clone()).collect();
+        context_prefix(&doc_title, path, &chain, block_type)
+    }
+}
+
 /// §2.2: an [`EmbedTask`] for every embeddable live block of the repo, in
 /// `(path, ordinal, block_id)` order.
 pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTask>> {
@@ -124,79 +235,17 @@ pub fn build_embed_tasks(conn: &Connection, repo_id: &str) -> Result<Vec<EmbedTa
         })?;
         it.collect::<std::result::Result<Vec<_>, _>>()?
     };
-
-    // The frontmatter `title` per doc: source frontmatter, card scalar, type
-    // string, non-empty.
-    let mut title_by_doc: HashMap<String, String> = HashMap::new();
-    {
-        let mut stmt = conn.prepare_cached(
-            "SELECT p.doc_id, p.val_text FROM properties p
-             WHERE p.repo_id = ?1 AND p.source = 'frontmatter' AND p.key = 'title'
-               AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL
-             ORDER BY p.rowid",
-        )?;
-        let it = stmt.query_map(params![repo_id], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
-        })?;
-        for row in it {
-            let (doc_id, title) = row?;
-            if let Some(t) = title.filter(|t| !t.is_empty()) {
-                title_by_doc.insert(doc_id, t);
-            }
-        }
-    }
-
-    // Every section of the repo with its heading text, in first_ordinal order
-    // per doc (the first is the title fallback).
-    let mut sections_by_doc: HashMap<String, Vec<SectionRow>> = HashMap::new();
-    {
-        let mut stmt = conn.prepare_cached(
-            "SELECT s.doc_id, hb.text, s.level, s.first_ordinal, s.last_ordinal
-             FROM sections s JOIN blocks hb ON hb.block_id = s.heading_block
-             WHERE hb.repo_id = ?1
-             ORDER BY s.doc_id, s.first_ordinal, s.rowid",
-        )?;
-        let it = stmt.query_map(params![repo_id], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                SectionRow {
-                    heading_text: r.get(1)?,
-                    level: r.get(2)?,
-                    first_ordinal: r.get(3)?,
-                    last_ordinal: r.get(4)?,
-                },
-            ))
-        })?;
-        for row in it {
-            let (doc_id, s) = row?;
-            sections_by_doc.entry(doc_id).or_default().push(s);
-        }
-    }
+    let contexts = BlockContexts::load(conn, ContextScope::Repo(repo_id))?;
 
     let mut tasks = Vec::new();
     for b in &blocks {
         if !should_embed(&b.text) {
             continue;
         }
-        let sections = sections_by_doc
-            .get(&b.doc_id)
-            .map_or(&[][..], Vec::as_slice);
-        let doc_title = match title_by_doc.get(&b.doc_id) {
-            Some(t) if !t.trim_matches(omgbase_search::is_js_whitespace).is_empty() => t.clone(),
-            _ => sections
-                .first()
-                .map_or_else(|| b.path.clone(), |s| s.heading_text.clone()),
-        };
-        let mut containing: Vec<&SectionRow> = sections
-            .iter()
-            .filter(|s| b.ordinal >= s.first_ordinal && b.ordinal <= s.last_ordinal)
-            .collect();
-        containing.sort_by_key(|s| s.level);
-        let chain: Vec<String> = containing.iter().map(|s| s.heading_text.clone()).collect();
         tasks.push(EmbedTask {
             block_id: b.block_id.clone(),
             content_hash: hex(&b.raw_hash),
-            ctx: context_prefix(&doc_title, &b.path, &chain, &b.block_type),
+            ctx: contexts.ctx(&b.doc_id, &b.path, b.ordinal, &b.block_type),
             text: b.text.clone(),
         });
     }
@@ -568,31 +617,54 @@ pub struct DocVectorHit {
     pub cosine: f64,
 }
 
-/// One hit per key, keeping the highest cosine among the rows that joined to
-/// it (§3: a stale context row beside the current one); first-seen order.
-fn best_per_key<T>(rows: Vec<T>, key: impl Fn(&T) -> &str, cosine: impl Fn(&T) -> f64) -> Vec<T> {
-    let mut out: Vec<T> = Vec::with_capacity(rows.len());
-    let mut index: HashMap<String, usize> = HashMap::new();
-    for row in rows {
-        match index.get(key(&row)) {
-            Some(&i) => {
-                if cosine(&row) > cosine(&out[i]) {
-                    out[i] = row;
-                }
-            }
-            None => {
-                index.insert(key(&row).to_owned(), out.len());
-                out.push(row);
-            }
-        }
-    }
-    out
+/// §3 (1.1): the block's vector is the `embeddings` row for `model` keyed by
+/// its *current* `(content_hash, ctx_hash)`, `None` when it is stale (§2.3) —
+/// or not a live block at all.
+pub fn block_vector(conn: &Connection, block_id: &str, model: &str) -> Result<Option<Vec<u8>>> {
+    let row: Option<(String, String, i64, String, Vec<u8>)> = conn
+        .prepare_cached(
+            "SELECT b.doc_id, d.path, b.ordinal, b.type, b.raw_hash
+             FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
+             WHERE b.block_id = ?1 AND b.deleted_commit IS NULL",
+        )?
+        .query_row(params![block_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+        })
+        .optional()?;
+    let Some((doc_id, path, ordinal, block_type, raw_hash)) = row else {
+        return Ok(None);
+    };
+    let ctx = BlockContexts::load(conn, ContextScope::Doc(&doc_id))?.ctx(
+        &doc_id,
+        &path,
+        ordinal,
+        &block_type,
+    );
+    current_vector(conn, &raw_hash, &ctx, model)
 }
 
-/// §3: every `embeddings` row of `model` joined to a live block of the repo
-/// with `raw_hash = content_hash`, scored by cosine; one hit per block (the
-/// highest cosine when several rows join to it), by score descending then
-/// `block_id` bytewise, limited.
+/// The cache row for `(content_hash, sha256(ctx), model)`, raw blob.
+fn current_vector(
+    conn: &Connection,
+    content_hash: &[u8],
+    ctx: &str,
+    model: &str,
+) -> Result<Option<Vec<u8>>> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT vec FROM embeddings WHERE content_hash = ?1 AND ctx_hash = ?2 AND model = ?3",
+        )?
+        .query_row(params![content_hash, &ctx_hash(ctx)[..], model], |r| {
+            r.get(0)
+        })
+        .optional()?)
+}
+
+/// §3: over every live embeddable block of the repo, the block's vector is the
+/// row for its current `(content_hash, ctx_hash)` under `model` (a block with
+/// no such row is stale and not a hit — one candidate per block by
+/// construction, 1.1); scored by cosine, by score descending then `block_id`
+/// bytewise, limited.
 pub fn vector_search(
     conn: &Connection,
     repo_id: &str,
@@ -600,23 +672,31 @@ pub fn vector_search(
     query: &[f32],
     limit: usize,
 ) -> Result<Vec<VectorHit>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT b.block_id, b.doc_id, d.path, e.vec
-         FROM embeddings e
-         JOIN blocks b ON b.raw_hash = e.content_hash AND b.deleted_commit IS NULL
-         JOIN docs d ON d.doc_id = b.doc_id
-         WHERE b.repo_id = ?1 AND e.model = ?2",
+    // The candidates are exactly the drain's tasks (§2.2): one walk of the
+    // repo's blocks and sections per query, then an indexed point lookup per
+    // embeddable block.
+    let tasks = build_embed_tasks(conn, repo_id)?;
+    let mut meta = conn.prepare_cached(
+        "SELECT b.doc_id, d.path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id WHERE b.block_id = ?1",
     )?;
-    let rows = stmt.query_map(params![repo_id, model], |r| {
-        Ok(VectorHit {
-            block_id: r.get(0)?,
-            doc_id: r.get(1)?,
-            path: r.get(2)?,
-            cosine: cosine_f32(query, &blob_to_f32(&r.get::<_, Vec<u8>>(3)?)),
-        })
-    })?;
-    let rows = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-    let mut hits = best_per_key(rows, |h| &h.block_id, |h| h.cosine);
+    let mut hits = Vec::new();
+    for t in &tasks {
+        let Some(vec) = current_vector(conn, &from_hex(&t.content_hash)?, &t.ctx, model)? else {
+            continue;
+        };
+        let m: Option<(String, String)> = meta
+            .query_row(params![t.block_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        let Some((doc_id, path)) = m else {
+            continue;
+        };
+        hits.push(VectorHit {
+            block_id: t.block_id.clone(),
+            doc_id,
+            path,
+            cosine: cosine_f32(query, &blob_to_f32(&vec)),
+        });
+    }
     sort_by_score(&mut hits, |h| h.cosine, |h| &h.block_id);
     hits.truncate(limit);
     Ok(hits)
@@ -644,8 +724,8 @@ pub fn doc_vector_search(
             cosine: cosine_f32(query, &blob_to_f32(&r.get::<_, Vec<u8>>(2)?)),
         })
     })?;
-    let rows = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-    let mut hits = best_per_key(rows, |h| &h.doc_id, |h| h.cosine);
+    // `(doc_id, model)` is the primary key: one row per live doc already.
+    let mut hits = rows.collect::<std::result::Result<Vec<_>, _>>()?;
     sort_by_score(&mut hits, |h| h.cosine, |h| &h.doc_id);
     hits.truncate(limit);
     Ok(hits)
@@ -903,6 +983,13 @@ impl Store {
     /// `spec/search` §2.6: delete vectors under another model.
     pub fn prune_foreign_vectors(&self, model: &str) -> Result<ForeignVectors> {
         prune_foreign_vectors(&self.conn, model)
+    }
+
+    /// `spec/search` §3 (1.1): a live block's vector — the row for its current
+    /// `(content_hash, ctx_hash)` under `model` — as the stored blob, `None`
+    /// when stale or not live. Serves `semantic()` (`spec/surface` §1.3).
+    pub fn block_vector(&self, block_id: &str, model: &str) -> Result<Option<Vec<u8>>> {
+        block_vector(&self.conn, block_id, model)
     }
 
     /// `spec/search` §3 over blocks.

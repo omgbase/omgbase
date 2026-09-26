@@ -15,6 +15,9 @@ export interface TreeInputBlock {
   trivia: string;
   attrs: Record<string, unknown>;
   children: TreeInputBlock[];
+  /** The parsed block's source span, when the tree came from a parse — what
+   *  `ownText` (spec/properties §3.2) uses to blank a container's children. */
+  span?: { start: number; end: number };
 }
 
 /** Assign fresh minted ids to a parsed block tree (Stage-1 re-mint path). */
@@ -26,6 +29,7 @@ export function assignIds(blocks: RawBlock[]): TreeInputBlock[] {
     trivia: b.trivia,
     attrs: b.attrs,
     children: assignIds(b.children),
+    span: b.span,
   }));
 }
 

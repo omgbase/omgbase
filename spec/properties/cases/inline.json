@@ -1290,37 +1290,11 @@
         "rows": [
           {
             "prop_id": "p_6bb79ec500a9",
-            "block_id": "b_1",
-            "source": "inline",
-            "key": "key",
-            "card": "list",
-            "ord": 0,
-            "type": "string",
-            "val_text": "v",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_5840309da2ec",
-            "block_id": "b_2",
-            "source": "inline",
-            "key": "key",
-            "card": "list",
-            "ord": 1,
-            "type": "string",
-            "val_text": "v",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_ef259d784fea",
             "block_id": "b_3",
             "source": "inline",
             "key": "key",
-            "card": "list",
-            "ord": 2,
+            "card": "scalar",
+            "ord": 0,
             "type": "string",
             "val_text": "v",
             "val_num": null,
@@ -1344,22 +1318,14 @@
         "grouped": {
           "frontmatter": {},
           "inline": {
-            "key": [
-              "v",
-              "v",
-              "v"
-            ]
+            "key": "v"
           },
           "computed": {
             "$title": "T"
           }
         },
         "merged": {
-          "key": [
-            "v",
-            "v",
-            "v"
-          ],
+          "key": "v",
           "$title": "T"
         }
       }
@@ -1397,14 +1363,399 @@
       }
     },
     {
-      "name": "continuation-line-field-in-list-item-counted-twice",
-      "notes": "§3.2 / §8 Containers: the list's raw and the item's raw both match → card list, ord 0 with the list's block_id, ord 1 with the item's.",
+      "name": "continuation-line-field-in-list-item-anchored-to-the-item",
+      "notes": "§3.2 / §8 Containers (1.1): the list scans its own text (the item blanked), so only the item's `raw` matches → one scalar row anchored to the item.",
       "source": "# T\n\n- a\n  job:: x\n",
       "expect": {
         "rows": [
           {
             "prop_id": "p_2fc1cfbec525",
-            "block_id": "b_1",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": "x"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": "x",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "bracketed-field-in-blockquote-anchored-to-the-paragraph",
+      "notes": "§3.2 Containers (1.1): the blockquote's own text is its `> ` prefix; the nested paragraph holds the bracketed field → one scalar row anchored to the paragraph.",
+      "source": "# T\n\n> See [k:: v] here\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "marker-line-field-anchored-to-the-item",
+      "notes": "§3.2 line form (1.1): a list marker (`- `, `1. `) may precede the key, so `- job:: x` and `1. num:: y` are fields of their items; the lists' own text is blank.",
+      "source": "# T\n\n- job:: x\n\n1. num:: y\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "job",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_341c69b8c621",
+            "block_id": "b_4",
+            "source": "inline",
+            "key": "num",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "y",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": "x",
+            "num": "y"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": "x",
+          "num": "y",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "task-marker-line-field",
+      "notes": "§3.2 line form (1.1): a task checkbox after the marker is admitted, so `- [ ] due:: friday` is a field of the task block; `[ ]` is not a bracketed field (`[` must be followed by a key).",
+      "source": "# T\n\n- [ ] due:: friday\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_d5b7c43f3594",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "due",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "friday",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "due": "friday"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "due": "friday",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "ordered-and-bullet-marker-line-fields",
+      "notes": "§3.2 line form (1.1): `1.`, `1)` and `*` markers; three occurrences of one key across three lists → card list, ord in document order, each anchored to its item.",
+      "source": "# T\n\n1. key:: v\n\n1) key:: w\n\n* key:: z\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6bb79ec500a9",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_5840309da2ec",
+            "block_id": "b_4",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 1,
+            "type": "string",
+            "val_text": "w",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_ef259d784fea",
+            "block_id": "b_6",
+            "source": "inline",
+            "key": "key",
+            "card": "list",
+            "ord": 2,
+            "type": "string",
+            "val_text": "z",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "key": [
+              "v",
+              "w",
+              "z"
+            ]
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "key": [
+            "v",
+            "w",
+            "z"
+          ],
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "nested-list-item-marker-line-field",
+      "notes": "§3.2 (1.1): a field on a nested item's marker line belongs to that inner item (the outer item's own text is `- a` plus indentation).",
+      "source": "# T\n\n- a\n  - job:: x\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_5",
+            "source": "inline",
+            "key": "job",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "x",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "job": "x"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "job": "x",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "marker-line-bracketed-field",
+      "notes": "§3.2 (1.1): a bracketed field on a marker line is one occurrence for the item; the line form does not also match (`see` is not followed by `::`).",
+      "source": "# T\n\n- see [k:: v]\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_6e47c0846a41",
+            "block_id": "b_2",
+            "source": "inline",
+            "key": "k",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "v",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          },
+          {
+            "prop_id": "p_fbf6b2bef0dd",
+            "block_id": null,
+            "source": "computed",
+            "key": "$title",
+            "card": "scalar",
+            "ord": 0,
+            "type": "string",
+            "val_text": "T",
+            "val_num": null,
+            "val_bool": null,
+            "val_json": null
+          }
+        ],
+        "grouped": {
+          "frontmatter": {},
+          "inline": {
+            "k": "v"
+          },
+          "computed": {
+            "$title": "T"
+          }
+        },
+        "merged": {
+          "k": "v",
+          "$title": "T"
+        }
+      }
+    },
+    {
+      "name": "loose-list-own-text-is-whitespace-yields-no-list-row",
+      "notes": "§3.2 (1.1): a loose list's own text between its items is only line endings, so the list contributes nothing; the two items' marker-line fields are list rows ord 0 and 1.",
+      "source": "# T\n\n- job:: x\n\n- job:: y\n",
+      "expect": {
+        "rows": [
+          {
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_2",
             "source": "inline",
             "key": "job",
             "card": "list",
@@ -1417,13 +1768,13 @@
           },
           {
             "prop_id": "p_5a8a690886c3",
-            "block_id": "b_2",
+            "block_id": "b_3",
             "source": "inline",
             "key": "job",
             "card": "list",
             "ord": 1,
             "type": "string",
-            "val_text": "x",
+            "val_text": "y",
             "val_num": null,
             "val_bool": null,
             "val_json": null
@@ -1447,7 +1798,7 @@
           "inline": {
             "job": [
               "x",
-              "x"
+              "y"
             ]
           },
           "computed": {
@@ -1457,40 +1808,27 @@
         "merged": {
           "job": [
             "x",
-            "x"
+            "y"
           ],
           "$title": "T"
         }
       }
     },
     {
-      "name": "bracketed-field-in-blockquote-counted-twice",
-      "notes": "§3.2 / §8: once for the blockquote (its raw includes the child), once for the nested paragraph.",
-      "source": "# T\n\n> See [k:: v] here\n",
+      "name": "continuation-line-field-with-children-anchored-to-the-paragraph",
+      "notes": "§3.2 Containers (1.1): an item with children keeps no text of its own (`spec/format` §3 single-paragraph fold does not apply), so the continuation line lives in the item's paragraph child and the row is anchored there.",
+      "source": "# T\n\n- a\n  job:: x\n  - b\n",
       "expect": {
         "rows": [
           {
-            "prop_id": "p_6e47c0846a41",
-            "block_id": "b_1",
+            "prop_id": "p_2fc1cfbec525",
+            "block_id": "b_3",
             "source": "inline",
-            "key": "k",
-            "card": "list",
+            "key": "job",
+            "card": "scalar",
             "ord": 0,
             "type": "string",
-            "val_text": "v",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_6bf63eebc62f",
-            "block_id": "b_2",
-            "source": "inline",
-            "key": "k",
-            "card": "list",
-            "ord": 1,
-            "type": "string",
-            "val_text": "v",
+            "val_text": "x",
             "val_num": null,
             "val_bool": null,
             "val_json": null
@@ -1512,59 +1850,21 @@
         "grouped": {
           "frontmatter": {},
           "inline": {
-            "k": [
-              "v",
-              "v"
-            ]
+            "job": "x"
           },
           "computed": {
             "$title": "T"
           }
         },
         "merged": {
-          "k": [
-            "v",
-            "v"
-          ],
-          "$title": "T"
-        }
-      }
-    },
-    {
-      "name": "marker-line-field-yields-nothing",
-      "notes": "§3.2 / §8: a list_item's raw INCLUDES its marker (`- job:: x`), so the `- ` / `1. ` defeats `^[ \\t]*[a-z]` at both the list and the item level — no rows.",
-      "source": "# T\n\n- job:: x\n\n1. num:: y\n",
-      "expect": {
-        "rows": [
-          {
-            "prop_id": "p_fbf6b2bef0dd",
-            "block_id": null,
-            "source": "computed",
-            "key": "$title",
-            "card": "scalar",
-            "ord": 0,
-            "type": "string",
-            "val_text": "T",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          }
-        ],
-        "grouped": {
-          "frontmatter": {},
-          "inline": {},
-          "computed": {
-            "$title": "T"
-          }
-        },
-        "merged": {
+          "job": "x",
           "$title": "T"
         }
       }
     },
     {
       "name": "blockquote-line-field-matches-once-via-nested-paragraph",
-      "notes": "§3.2: `> job:: x` fails at the blockquote level (the `> ` is in the way) but the nested paragraph's raw starts at content and matches on its first line — one row, the paragraph's id.",
+      "notes": "§3.2 Containers: the quote's own text is `> `; the nested paragraph's `raw` starts at content (`spec/format` §1 inv. 7) and matches the line form → one row anchored to the paragraph. Unchanged by 1.1.",
       "source": "# T\n\n> job:: x\n",
       "expect": {
         "rows": [
@@ -1643,57 +1943,18 @@
       }
     },
     {
-      "name": "nested-list-field-counted-per-level",
-      "notes": "§3.2 Containers: outer list, outer item, inner list, inner item — four occurrences, outermost first.",
+      "name": "nested-list-field-anchored-to-the-innermost-item",
+      "notes": "§3.2 Containers (1.1): the outer list, the outer item and the inner list all blank their children; the inner item's continuation line matches once.",
       "source": "# T\n\n- a\n  - b\n    job:: x\n",
       "expect": {
         "rows": [
           {
             "prop_id": "p_2fc1cfbec525",
-            "block_id": "b_1",
-            "source": "inline",
-            "key": "job",
-            "card": "list",
-            "ord": 0,
-            "type": "string",
-            "val_text": "x",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_5a8a690886c3",
-            "block_id": "b_2",
-            "source": "inline",
-            "key": "job",
-            "card": "list",
-            "ord": 1,
-            "type": "string",
-            "val_text": "x",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_ed3629de98f2",
-            "block_id": "b_4",
-            "source": "inline",
-            "key": "job",
-            "card": "list",
-            "ord": 2,
-            "type": "string",
-            "val_text": "x",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_deb6c887c811",
             "block_id": "b_5",
             "source": "inline",
             "key": "job",
-            "card": "list",
-            "ord": 3,
+            "card": "scalar",
+            "ord": 0,
             "type": "string",
             "val_text": "x",
             "val_num": null,
@@ -1717,54 +1978,31 @@
         "grouped": {
           "frontmatter": {},
           "inline": {
-            "job": [
-              "x",
-              "x",
-              "x",
-              "x"
-            ]
+            "job": "x"
           },
           "computed": {
             "$title": "T"
           }
         },
         "merged": {
-          "job": [
-            "x",
-            "x",
-            "x",
-            "x"
-          ],
+          "job": "x",
           "$title": "T"
         }
       }
     },
     {
       "name": "task-item-continuation-field",
-      "notes": "§3.2: a task item is a container too — list then task.",
+      "notes": "§3.2 (1.1): a continuation-line field of a task item is one row anchored to the task block (the list's own text is blank).",
       "source": "# T\n\n- [ ] a\n  due:: 2026-01-01\n",
       "expect": {
         "rows": [
           {
             "prop_id": "p_d5b7c43f3594",
-            "block_id": "b_1",
-            "source": "inline",
-            "key": "due",
-            "card": "list",
-            "ord": 0,
-            "type": "string",
-            "val_text": "2026-01-01",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_21353fed43ca",
             "block_id": "b_2",
             "source": "inline",
             "key": "due",
-            "card": "list",
-            "ord": 1,
+            "card": "scalar",
+            "ord": 0,
             "type": "string",
             "val_text": "2026-01-01",
             "val_num": null,
@@ -1788,50 +2026,31 @@
         "grouped": {
           "frontmatter": {},
           "inline": {
-            "due": [
-              "2026-01-01",
-              "2026-01-01"
-            ]
+            "due": "2026-01-01"
           },
           "computed": {
             "$title": "T"
           }
         },
         "merged": {
-          "due": [
-            "2026-01-01",
-            "2026-01-01"
-          ],
+          "due": "2026-01-01",
           "$title": "T"
         }
       }
     },
     {
-      "name": "bracketed-field-in-table-cell-counted-twice",
-      "notes": "§3.2: the table's raw and the table_row's raw both match the bracketed form; a bare `k:: v` cell never line-matches because `|` leads the line.",
+      "name": "bracketed-field-in-table-cell-anchored-to-the-row",
+      "notes": "§3.2 Containers (1.1): the table's own text is its delimiter row; the bracketed field belongs to the `table_row` that holds it → one scalar row.",
       "source": "# T\n\n| a | b |\n|---|---|\n| [k:: v] | x |\n",
       "expect": {
         "rows": [
           {
             "prop_id": "p_6e47c0846a41",
-            "block_id": "b_1",
-            "source": "inline",
-            "key": "k",
-            "card": "list",
-            "ord": 0,
-            "type": "string",
-            "val_text": "v",
-            "val_num": null,
-            "val_bool": null,
-            "val_json": null
-          },
-          {
-            "prop_id": "p_6bf63eebc62f",
             "block_id": "b_3",
             "source": "inline",
             "key": "k",
-            "card": "list",
-            "ord": 1,
+            "card": "scalar",
+            "ord": 0,
             "type": "string",
             "val_text": "v",
             "val_num": null,
@@ -1855,20 +2074,14 @@
         "grouped": {
           "frontmatter": {},
           "inline": {
-            "k": [
-              "v",
-              "v"
-            ]
+            "k": "v"
           },
           "computed": {
             "$title": "T"
           }
         },
         "merged": {
-          "k": [
-            "v",
-            "v"
-          ],
+          "k": "v",
           "$title": "T"
         }
       }

@@ -98,8 +98,8 @@ For a block *b* in document *d*:
 doc_title      the doc's frontmatter `title` when it is a scalar string
                property (spec/properties: source frontmatter, card scalar,
                type string) and non-blank; else the text of the doc's first
-               section heading (sections ordered by first_ordinal — the
-               reference query has no ORDER BY, a port orders explicitly);
+               section heading (sections ordered by `(doc_id, first_ordinal,
+               rowid)`);
                else the path
 heading_chain  the texts of the sections whose [first_ordinal, last_ordinal]
                contains b.ordinal, ordered by level ascending (shallowest first)
@@ -178,12 +178,15 @@ sqrt(‖b‖²))`. The SQL function `cosine(blob, blob)` (`spec/store` §1) is t
 same over blobs, `NULL` when either operand is `NULL`; a blob's length is
 floored to a multiple of 4.
 
-`vector_search(repo, model, q, limit = 50)`: over every `embeddings` row of
-`model` joined to a live block with `raw_hash = content_hash`, score
-`cosine(q, vec)`; **one hit per block** — a block with several rows (a stale
-context row left by a heading rename beside its current one) keeps its
-highest cosine (§8: the reference listed it twice); sort by score
-descending then `block_id` bytewise ascending, take `limit`. Two identical
+`vector_search(repo, model, q, limit = 50)`: over every live embeddable
+block of the repo, the block's vector is the `embeddings` row for `model`
+whose key is the block's **current** `(content_hash = raw_hash, ctx_hash =
+sha256(ctx))` (§2.2); a block without that row is stale (§2.3) and has no
+vector — it is not a hit until the next drain — so there is exactly one
+candidate per block by construction (§8: before 1.1 the join was on
+`content_hash` alone and a stale context row could outscore the current
+one). Score `cosine(q, vec)`; sort by score descending then `block_id`
+bytewise ascending, take `limit`. Two identical
 blocks are two hits. Hit: `{ block_id, doc_id, path, cosine }`.
 `doc_vector_search` is the same over `doc_embeddings` joined to live docs,
 ties by `doc_id`.
@@ -304,13 +307,25 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
   heading rename the old `(content_hash, old ctx_hash)` row stays, and the
   reference's join on `content_hash` alone listed the block twice with two
   cosines; `hybrid` then recorded the *last* seen (worse) vector rank because
-  only the FTS pass kept first occurrences. §3 dedupes per block keeping the
-  best cosine and §4 takes first occurrences in both rankers
-  (`rank::vector-stale-ctx-row-dedupes`, `rank::hybrid-stale-ctx-row-first-wins`).
-  "Highest cosine" can keep the *stale* row's vector when it scores higher;
-  both rows embed the same text under slightly different context prefixes,
-  so with a real model they are near-identical. Recorded for a refinement:
-  scoring only the row matching the block's current context (a minor).
+  only the FTS pass kept first occurrences. (1.0) §3 deduped per block
+  keeping the best cosine and §4 took first occurrences in both rankers.
+  "Highest cosine" could keep the *stale* row's vector when it scored
+  higher. **Fixed (1.1) — current context only**: a block's vector is the
+  row for its current `(content_hash, ctx_hash)` and nothing else, so a
+  renamed heading makes its descendants invisible to vector search until
+  the drain re-embeds them (least surprising: search reflects the document
+  as it is now, and the auto-drain closes the window in seconds;
+  `rank::vector-renamed-heading-absent-until-drain`,
+  `rank::hybrid-stale-ctx-row-ignored` — the latter is the case where the
+  stale row scored higher). The same rule serves `semantic()` in
+  `spec/surface` §1.3.
+- **Open — the host's drain policy is unpinned** (§2.6 pins what a drain
+  does, not when): both hosts trigger it after every successful non-dry-run
+  write and after a watcher checkpoint that ingested or deleted something,
+  debounce 500 ms, run single-flight with one re-run if dirtied mid-drain,
+  flush at shutdown, log `embedded N block(s)`, and never fail a tool call
+  on a drain error; the port spawns a second provider instance for the
+  drain thread where the reference shares one worker.
 - **Pinned — bm25 needs non-matching rows.** When every indexed row matches
   a query, FTS5 clamps idf and all scores collapse to about 1e-6; fixtures
   include filler blocks so scores differ, and any added block anywhere in
@@ -347,3 +362,5 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
 
 - 2026-09-26, search 1.0 specified as built. The fixture embedder is a runner
   device, like the fixture id minter: it never ships in a product path.
+- 2026-09-26, search 1.1: a block's vector is the row for its current
+  `(content_hash, ctx_hash)` only; stale rows are cache, never candidates.

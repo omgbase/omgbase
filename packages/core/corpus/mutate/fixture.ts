@@ -46,9 +46,9 @@ export { deepEqualTol, FIXTURE_REPO_SLUG };
 
 /** The six ops as the fixture spells them (README §2/§4): the reference's `childIds` is `child_ids` here. */
 export type SpecOp =
-  | { op: "insert"; doc?: string; to: To; markdown: string }
+  | { op: "insert"; doc?: string; to: To; markdown: string; expect?: Expect }
   | { op: "update"; block: string; markdown?: string; attrs?: Record<string, unknown>; expect?: Expect; trivia?: string; child_ids?: Record<string, string> }
-  | { op: "move"; blocks: string[]; to: To }
+  | { op: "move"; blocks: string[]; to: To; expect?: Expect }
   | { op: "remove"; blocks: string[]; expect?: Record<string, Expect> }
   | { op: "split"; block: string; at: number[]; expect?: Expect }
   | { op: "merge"; blocks: string[]; separator?: string; expect?: Record<string, Expect> };

@@ -106,7 +106,7 @@ export { embeddingSettings, type EmbeddingSettings } from "./search/provider.js"
 export { createExternalProvider, type ExternalProvider } from "./search/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./search/vector.js";
-export { historyNode, diffUnified, changesSince, type NodeChange, type CommitDigest } from "./graph/history.js";
+export { historyNode, diffUnified, unifiedDiff, changesSince, type NodeChange, type CommitDigest } from "./graph/history.js";
 export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./graph/links.js";
 export { FilterInvalid } from "./search/cel/parser.js";
 export { EngineError, type ErrorCode } from "./mcp/errors.js";

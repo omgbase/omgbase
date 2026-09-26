@@ -46,17 +46,20 @@ transaction: the body blocks with their ids, the `frontmatter` mapping as
 the document's `doc_id` and `path`, and the repo's current live documents
 (for target resolution). Markdown only in this version.
 
-Block-level scanning always works on **`mask_code(raw)`** — the block's
-`raw` with fenced code and inline code spans blanked (`spec/properties` §3.2
-defines `mask_code`; it is length-preserving so spans still index the
-original) — and skips `code_fence` blocks entirely. Code is not prose.
+Block-level scanning always works on **`mask_code(own(raw))`** — the
+block's `raw` with every direct child's span blanked (`own`, so a container
+scans only its own text and a feature belongs to the innermost block that
+contains it — since 1.1, §8) and then fenced code and inline code spans
+blanked (`spec/properties` §3.2 defines both; both are length-preserving so
+spans still index the original `raw`) — and skips `code_fence` blocks
+entirely. Code is not prose.
 
 ## 2. Nodes
 
 ### 2.1 Projection (Markdown adapter)
 
 Walk the body blocks in pre-order; for each block *b* (id `B`), over `scan =
-mask_code(b.raw)` (empty for `code_fence`), in this order, all matches:
+mask_code(own(b.raw))` (empty for `code_fence`), in this order, all matches:
 
 | Kind | Pattern over `scan` | `name` | `value` | `attrs` | span |
 | --- | --- | --- | --- | --- | --- |
@@ -66,9 +69,9 @@ mask_code(b.raw)` (empty for `code_fence`), in this order, all matches:
 | `md:anchor` | `\^([a-zA-Z0-9_-]+)` | the ref | — | `{}` | the match |
 | `md:inline_field` | the bracketed form, then the line form, exactly as `spec/properties` §3.2 | key as written | value trimmed | `{}` | bracketed: the match; line form: from the key to the end of the trimmed value |
 
-`![alt](x)` matches `md:link` (the `!` is outside the pattern). Containers
-are scanned too, so a feature inside a list item is projected once for the
-list and once for the item (§8). `md:inline_field` nodes are projected
+`![alt](x)` matches `md:link` (the `!` is outside the pattern). A container's
+own text excludes its children, so a feature inside a list item is projected
+once, for the item (before 1.1 also for the list — §8). `md:inline_field` nodes are projected
 **and** the same occurrences become `properties` rows (`spec/properties`).
 
 ### 2.2 Section nodes
@@ -114,7 +117,7 @@ target, anchor, provenance }`. A **destination** `dest` is classified:
   path `a`, anchor `b^c`, `dst_kind = document`); no marker → `anchor =
   null`, `dst_kind = document`. `target` is the path part (possibly `""`).
 
-**Per block** *b* (skip `code_fence`), over `mask_code(raw)`, deduplicating
+**Per block** *b* (skip `code_fence`), over `mask_code(own(raw))`, deduplicating
 within the block on `(predicate, target, anchor, src_field)` (first wins):
 
 1. **Inline relation fields**: `(?:^|\s)([a-z][a-z0-9_]*)::\s*(\[\[[^\]]+\]\]|\/[^\s]+|https?:\/\/[^\s]+)`,
@@ -309,11 +312,13 @@ different when duplicate open rows exist, which maintenance prevents.
   read by a byte-native engine disagreed on any block with non-ASCII text
   before the feature. §2.3 picks bytes, like `spec/format`; the reference
   converts on write and the node editors convert back on read.
-- **Pinned — features inside containers count once per nesting level.** A
-  link in a list item yields an `md:link` node and a `references` edge for
-  the list **and** for the item (different `block_id`/`src_block`), and the
-  `doc_edges` count is 2. Same cause as `spec/properties` §8; recorded for a
-  decision (innermost block only would be a minor here).
+- **Fixed (1.1) — features inside containers counted once per nesting
+  level.** A link in a list item yielded an `md:link` node and a
+  `references` edge for the list **and** for the item, and the `doc_edges`
+  count was 2. Scanners now run over the block's own text (§1), so a node or
+  edge belongs to the innermost block only and the count is 1; `md:inline_field`
+  nodes follow `spec/properties` 1.1's line form (a list marker and a task
+  checkbox may precede the key). Same change as `spec/properties` 1.1.
 - **Pinned — `^ref` targets resolve to a document.** `dst_kind` is forced to
   `document` and the anchor kept; block-ref resolution needs the anchor
   index, deferred.
@@ -344,3 +349,5 @@ different when duplicate open rows exist, which maintenance prevents.
   the interval maintenance live in `omgbase-store` because they read and
   write the database. Next in the series: search (FTS + embeddings), then the
   mutation kernel.
+- 2026-09-26, graph 1.1: scanners run over a block's own text, so a node or
+  edge belongs to the innermost block only (least surprising; with properties 1.1).

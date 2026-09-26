@@ -232,12 +232,6 @@
             "bx": "[[sulphur]] — the combustible soul"
           },
           {
-            "id": "n_87663264e292",
-            "path": "index.md",
-            "bt": "list",
-            "bx": "[[mercury]] — the volatile spirit [[sulphur]] — the combustible soul [[salt]] — the fixed body"
-          },
-          {
             "id": "n_9e25b3a6f1e2",
             "path": "index.md",
             "bt": "list_item",
@@ -248,18 +242,6 @@
             "path": "index.md",
             "bt": "list_item",
             "bx": "[[salt]] — the fixed body"
-          },
-          {
-            "id": "n_b8c97f474126",
-            "path": "index.md",
-            "bt": "list",
-            "bx": "[[mercury]] — the volatile spirit [[sulphur]] — the combustible soul [[salt]] — the fixed body"
-          },
-          {
-            "id": "n_df4ff4416ba0",
-            "path": "index.md",
-            "bt": "list",
-            "bx": "[[mercury]] — the volatile spirit [[sulphur]] — the combustible soul [[salt]] — the fixed body"
           }
         ],
         "truncated": false,
@@ -311,11 +293,6 @@
             "id": "n_3747edffcbc9",
             "path": "substances/philosophers-stone.md",
             "value": "mercury"
-          },
-          {
-            "id": "n_481e9e74bd63",
-            "path": "substances/philosophers-stone.md",
-            "value": "magnum-opus"
           },
           {
             "id": "n_4e111a41e73c",
@@ -466,19 +443,24 @@
             "path": "substances/salt.md",
             "b": [
               {
-                "type": "heading"
+                "type": "heading",
+                "d": 0
               },
               {
-                "type": "paragraph"
+                "type": "paragraph",
+                "d": 0
               },
               {
-                "type": "list"
+                "type": "list",
+                "d": 0
               },
               {
-                "type": "task"
+                "type": "task",
+                "d": 1
               },
               {
-                "type": "task"
+                "type": "task",
+                "d": 1
               }
             ]
           }
@@ -487,7 +469,7 @@
         "cursor": null,
         "consumer": "collect"
       },
-      "notes": "§1.2: `section.blocks` keeps the blocks whose top-level ancestor is in range, in document order (nested items follow their list)."
+      "notes": "§1.2: `section.blocks` keeps the blocks whose top-level ancestor is in range, in document order (nested items follow their list; their $depth is 1 under the list's 0 — the block column, reachable since oqx 0.13)."
     },
     {
       "name": "section-subsections",
@@ -570,23 +552,11 @@
             "path": "index.md"
           },
           {
-            "id": "n_87663264e292",
-            "path": "index.md"
-          },
-          {
             "id": "n_9e25b3a6f1e2",
             "path": "index.md"
           },
           {
             "id": "n_a3da662b7b99",
-            "path": "index.md"
-          },
-          {
-            "id": "n_b8c97f474126",
-            "path": "index.md"
-          },
-          {
-            "id": "n_df4ff4416ba0",
             "path": "index.md"
           }
         ],

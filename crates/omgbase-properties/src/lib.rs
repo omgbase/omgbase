@@ -54,7 +54,8 @@ use omgbase_format::{Attrs, Block, BlockKind};
 pub use computed::{compute_markdown, flatten_computed};
 pub use frontmatter::{flatten_frontmatter, frontmatter_rows, frontmatter_yaml};
 pub use inline::{
-    Occurrence, inline_occurrences, inline_rows, js_number, mask_code, typed_inline_value,
+    Occurrence, inline_occurrences, inline_rows, js_number, line_field, mask_code, own_text,
+    typed_inline_value,
 };
 pub use row::{Card, FlatRow, PropertyRow, Source, Typed, ValueType};
 pub use shapes::{decode, grouped, merged, shape};
@@ -63,7 +64,7 @@ pub use value::{Mapping, Value, js_number_string, number_json};
 pub use yaml::{parse_document, parse_frontmatter, resolve_plain};
 
 /// The `spec/properties/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.0";
+pub const SPEC_VERSION: &str = "1.1";
 
 /// A body block with its id: the crate's input (§1). Borrowed from whatever
 /// the caller holds — a parsed `spec/format` tree with ids assigned, or a
@@ -72,6 +73,10 @@ pub const SPEC_VERSION: &str = "1.0";
 pub struct DocBlock<'a> {
     pub block_id: &'a str,
     pub kind: BlockKind,
+    /// `[start, end)` byte offsets of the block in the source (`spec/format`
+    /// §1) — what [`own_text`] uses to find a child inside its parent's `raw`
+    /// (§3.2, since 1.1). A block's own offsets, not its children's.
+    pub span: (usize, usize),
     /// The block's source bytes (`spec/format` §1).
     pub raw: &'a str,
     /// The block's visible text (`spec/format` §4.1).
@@ -111,6 +116,7 @@ impl<'a> DocBlock<'a> {
                     DocBlock {
                         block_id: id.as_str(),
                         kind: b.kind,
+                        span: (b.span.start, b.span.end),
                         raw: b.raw.as_str(),
                         text: b.text.as_str(),
                         attrs: &b.attrs,
@@ -426,6 +432,8 @@ mod tests {
         assert_eq!(out.len(), n);
         assert_eq!(out[0], ("b_0", BlockKind::List));
         assert_eq!(out[1], ("b_1", BlockKind::ListItem));
+        assert_eq!(blocks[0].span, (0, "- a\n  - b\n- c".len()));
+        assert_eq!(blocks[0].children[0].span, (0, "- a\n  - b".len()));
         assert_eq!(
             out.last().unwrap(),
             &(format!("b_{}", n - 1).leak() as &str, BlockKind::Paragraph)

@@ -19,6 +19,8 @@
 //! `rust → rust` pair always runs; a pair involving the reference needs the
 //! TypeScript peer (§7.4): `$OMGBASE_TS_MCP` (a command line the harness
 //! extends with `mcp -C W --no-watch`) or `node <repo>/packages/cli/dist/src/main.js`.
+//! Both engines run without a watcher (`--no-watch`): the seed must be the
+//! harness's `observe_many`, not a priming sweep.
 //! A missing peer fails those pairs with the build command unless
 //! `OMGBASE_INTEROP=skip`.
 //!
@@ -40,6 +42,9 @@ use std::time::{Duration, Instant};
 use omgbase_store::SequentialMinter;
 use omgbase_sync::Workspace;
 use serde_json::{Map as JsonMap, Value as Json, json};
+
+mod common;
+use common::TempDir;
 
 const REPO_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
 const SUITE_FILE: &str = concat!(
@@ -109,45 +114,17 @@ fn peer_command(engine: Engine) -> Result<Vec<String>, String> {
 /// The `mcp` arguments for `engine` on workspace `w` (§7.2 step 2).
 fn mcp_args(engine: Engine, w: &str) -> Vec<String> {
     match engine {
-        Engine::Rust => vec!["mcp".into(), "--workspace".into(), w.to_owned()],
+        Engine::Rust => vec![
+            "mcp".into(),
+            "--workspace".into(),
+            w.to_owned(),
+            "--no-watch".into(),
+        ],
         Engine::TypeScript => vec!["mcp".into(), "-C".into(), w.to_owned(), "--no-watch".into()],
     }
 }
 
 // ---- a scratch workspace -------------------------------------------------------------
-
-/// A scratch directory removed on drop (the surface runner's).
-struct TempDir(PathBuf);
-
-impl TempDir {
-    fn new(tag: &str) -> Self {
-        let unique = format!(
-            "omgbase-interop-{}-{}-{}",
-            std::process::id(),
-            tag,
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos())
-        );
-        // Canonical (macOS's temp dir is a symlink) so a peer that reports
-        // either spelling of `W` is still rewritten.
-        let base = std::env::temp_dir();
-        let base = fs::canonicalize(&base).unwrap_or(base);
-        let dir = base.join(unique);
-        fs::create_dir_all(&dir).expect("temp dir");
-        Self(dir)
-    }
-
-    fn path_str(&self) -> String {
-        self.0.to_string_lossy().into_owned()
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 /// §7.2 step 1: the corpus as files and the database bootstrapped by this
 /// engine under the fixture minter — repo `rp_0` (`fixture`) attached to the
@@ -621,7 +598,10 @@ fn run_pair(
     writer: Engine,
     reader: Engine,
 ) -> Result<Recorded, String> {
-    let w = TempDir::new(&case.name.replace(|c: char| !c.is_ascii_alphanumeric(), "-"));
+    let w = TempDir::new(
+        "interop",
+        &case.name.replace(|c: char| !c.is_ascii_alphanumeric(), "-"),
+    );
     let w_str = w.path_str();
     prepare_workspace(&w, &suite.corpus)?;
 

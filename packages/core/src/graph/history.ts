@@ -3,7 +3,7 @@ import { findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
 
 // History surface (06 §3, 07 task 4.4): history_node (block/doc biography),
-// diff (block-grain + unified), changes_since (commit digests / change feed).
+// diff (block-grain + Myers unified), changes_since (commit digests / change feed).
 
 export interface NodeChange {
   commitId: string;
@@ -89,23 +89,154 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
   return out;
 }
 
-/** Unified textual diff (line-based) between two revisions' rendered files. */
+/** `diff_unified` (spec/surface §3): a unified diff of two revisions' rendered
+ * texts — each revision's live raws joined by `\n` — via {@link unifiedDiff}. */
 export function diffUnified(store: Store, docId: string, fromRev: string, toRev: string): string {
-  const rendered = (rev: string): string => {
-    const map = blocksAtRevision(store, docId, rev);
-    return [...map.values()].join("\n");
-  };
-  const a = rendered(fromRev).split("\n");
-  const b = rendered(toRev).split("\n");
-  // Minimal line diff (not a full Myers; sufficient for digests/preview).
-  const out: string[] = [];
-  const max = Math.max(a.length, b.length);
-  for (let i = 0; i < max; i++) {
-    if (a[i] === b[i]) continue;
-    if (a[i] !== undefined) out.push(`- ${a[i]}`);
-    if (b[i] !== undefined) out.push(`+ ${b[i]}`);
+  const rendered = (rev: string): string => [...blocksAtRevision(store, docId, rev).values()].join("\n");
+  return unifiedDiff(rendered(fromRev), rendered(toRev));
+}
+
+// ---- unified diff (spec/surface §3) ------------------------------------------
+// A line-grain unified diff with a deterministic Myers script, so both engines
+// (this reference and crates/omgbase-surface/src/history.rs) produce the same
+// bytes for the same two texts. Kept pure so it can be pinned by unit tests.
+
+/** How each text becomes lines: `split("\n")` exactly — no trimming, no
+ * dropping of a trailing empty element (a raw ending in `\n` yields one) — with
+ * a single special case: the empty text has *no* lines (an empty file is zero
+ * lines, not one empty line), so a diff from/to nothing is `@@ -0,0 +1,n @@`. */
+export function diffLines(text: string): string[] {
+  return text === "" ? [] : text.split("\n");
+}
+
+const DIFF_CONTEXT = 3;
+
+/** One step of the edit script: `keep` consumes a line from both sides,
+ * `delete` one from the old text, `insert` one from the new text. */
+export interface EditOp {
+  kind: "keep" | "delete" | "insert";
+  line: string;
+}
+
+/**
+ * Myers' O(ND) shortest edit script (forward, with a per-`d` trace for the
+ * backtrack). `V[k]` is the furthest x on diagonal `k = x - y` reachable with
+ * `d` edits. The canonical tie rule, identical in both engines: at each step
+ * take the diagonal from `k+1` (moving down — an insertion of `b[y]`) when
+ * `k == -d || (k != d && V[k-1] < V[k+1])`, else from `k-1` (moving right —
+ * a deletion of `a[x]`). On a tie (`V[k-1] == V[k+1]`) that is the deletion.
+ */
+export function myersScript(a: string[], b: string[]): EditOp[] {
+  const n = a.length;
+  const m = b.length;
+  const max = n + m;
+  // V is indexed by k ∈ [-max-1, max+1]; `off` maps it onto a plain array.
+  const off = max + 1;
+  const v = new Array<number>(2 * max + 3).fill(0);
+  const trace: number[][] = [];
+  let found = false;
+  for (let d = 0; d <= max && !found; d++) {
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x: number;
+      if (k === -d || (k !== d && v[off + k - 1]! < v[off + k + 1]!)) x = v[off + k + 1]!;
+      else x = v[off + k - 1]! + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) {
+        x++;
+        y++;
+      }
+      v[off + k] = x;
+      if (x >= n && y >= m) {
+        found = true;
+        break;
+      }
+    }
   }
-  return out.join("\n");
+  // Backtrack from (n, m) through the trace, emitting ops newest-first.
+  const ops: EditOp[] = [];
+  let x = n;
+  let y = m;
+  for (let d = trace.length - 1; d >= 0; d--) {
+    const vd = trace[d]!;
+    const k = x - y;
+    const prevK = k === -d || (k !== d && vd[off + k - 1]! < vd[off + k + 1]!) ? k + 1 : k - 1;
+    const prevX = vd[off + prevK]!;
+    const prevY = prevX - prevK;
+    while (x > prevX && y > prevY) {
+      x--;
+      y--;
+      ops.push({ kind: "keep", line: a[x]! });
+    }
+    if (d > 0) {
+      if (x === prevX) ops.push({ kind: "insert", line: b[prevY]! });
+      else ops.push({ kind: "delete", line: a[prevX]! });
+    }
+    x = prevX;
+    y = prevY;
+  }
+  ops.reverse();
+  return ops;
+}
+
+/**
+ * The unified diff of two texts (spec/surface §3): hunks of `DIFF_CONTEXT` (3)
+ * lines of context; a change group extends to include the next change when
+ * fewer than `2 * DIFF_CONTEXT + 1` unchanged lines separate them (the two
+ * contexts touch or overlap). Each hunk is `@@ -a,b +c,d @@` (1-based start
+ * and length; a length of 1 is written as the start alone; a length of 0 as
+ * `a,0` with `a` the line before the insertion point, `0` at the very top)
+ * followed by its lines prefixed `-`, `+` or a space with nothing after the
+ * sign; hunks joined by `\n`; no file header; identical texts → `""`.
+ */
+export function unifiedDiff(oldText: string, newText: string): string {
+  const ops = myersScript(diffLines(oldText), diffLines(newText));
+  // Old/new line counts consumed before each op (0-based positions).
+  const oldPos: number[] = new Array(ops.length + 1);
+  const newPos: number[] = new Array(ops.length + 1);
+  let o = 0;
+  let nn = 0;
+  for (let i = 0; i < ops.length; i++) {
+    oldPos[i] = o;
+    newPos[i] = nn;
+    if (ops[i]!.kind !== "insert") o++;
+    if (ops[i]!.kind !== "delete") nn++;
+  }
+  oldPos[ops.length] = o;
+  newPos[ops.length] = nn;
+
+  const changes: number[] = [];
+  for (let i = 0; i < ops.length; i++) if (ops[i]!.kind !== "keep") changes.push(i);
+  if (changes.length === 0) return "";
+
+  const hunks: string[] = [];
+  let g = 0;
+  while (g < changes.length) {
+    const first = changes[g]!;
+    let last = first;
+    // Merge rule: the next change joins this hunk iff the unchanged lines
+    // between them number at most 2 * DIFF_CONTEXT.
+    while (g + 1 < changes.length && changes[g + 1]! - last - 1 <= 2 * DIFF_CONTEXT) {
+      g++;
+      last = changes[g]!;
+    }
+    g++;
+    const start = Math.max(0, first - DIFF_CONTEXT);
+    const end = Math.min(ops.length - 1, last + DIFF_CONTEXT);
+    const oldLen = oldPos[end + 1]! - oldPos[start]!;
+    const newLen = newPos[end + 1]! - newPos[start]!;
+    const range = (pos: number, len: number): string => {
+      const startLine = len === 0 ? pos : pos + 1;
+      return len === 1 ? `${startLine}` : `${startLine},${len}`;
+    };
+    const lines = [`@@ -${range(oldPos[start]!, oldLen)} +${range(newPos[start]!, newLen)} @@`];
+    for (let i = start; i <= end; i++) {
+      const op = ops[i]!;
+      lines.push((op.kind === "keep" ? " " : op.kind === "delete" ? "-" : "+") + op.line);
+    }
+    hunks.push(lines.join("\n"));
+  }
+  return hunks.join("\n");
 }
 
 export interface CommitDigest {

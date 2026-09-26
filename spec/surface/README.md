@@ -83,11 +83,14 @@ pre-order over the tree — §9), `out` / `in` (distinct docs linked to / linkin
 edge_id)` order).
 
 **blocks.** Intrinsics: `$id`, `$doc`, `$path` (owning doc's path),
-`$body` (= `text`), `$content_hash` (hex `raw_hash`), `$updated_at` (the
-latest commit `ts` among the block's `block_changes`, null when none). The
-binding also defines `$ordinal` and `$depth`, but outside a `follow` the
-engine's recursion intrinsics of the same names shadow them and they read
-undefined (§9). Fields: `type`, `text`, `attrs` (parsed); any other bare
+`$ordinal` (the block's 0-based ordinal among its siblings — the `ordinal`
+column), `$depth` (its nesting depth, 0 at the top level — the `depth`
+column), `$body` (= `text`), `$content_hash` (hex `raw_hash`), `$updated_at`
+(the latest commit `ts` among the block's `block_changes`, null when none).
+Inside a `follow` the walk's own `$ordinal`/`$depth` win over the block's
+(`spec/oqx` 0.13 §2: the recursion intrinsics are metadata only on a walk
+occurrence; anywhere else the names are ordinary reads of the row, §9).
+Fields: `type`, `text`, `attrs` (parsed); any other bare
 identifier reads `attrs.<k>` (undefined when absent). `block` is the row;
 `doc` the owning doc. Relations: `children` (live, `(ordinal, block_id)`),
 `nodes` (nodes anchored to the block, `(span_start, node_id)` order),
@@ -129,8 +132,10 @@ against the current row:
 - `semantic("phrase")`: docs/blocks only (else `filter_invalid`); the phrase
   must have been embedded for this query (`semantic_unavailable` when no
   provider); the score is `cosine` over the row's stored vector for the
-  provider's model (docs: `doc_embeddings`; blocks: the first `embeddings`
-  row for the block's `raw_hash`) or null when none.
+  provider's model (docs: `doc_embeddings`; blocks: the `embeddings` row for
+  the block's current `(raw_hash, ctx_hash)`, `spec/search` §3 — since 1.1;
+  before, the first row for the `raw_hash` whatever its context) or null
+  when none.
 - blocks only (`filter_invalid` elsewhere): `under(id)` — `ancestor_path`
   contains `/id/` or the block is `id`; `under_heading(s)` — some section
   containing the block's top ordinal has a heading whose text contains `s`
@@ -223,10 +228,21 @@ verbatim, and this prose uses snake_case only as a naming convention.
   only), `changed` (raw differs), `added` (in to only), in that order,
   `before`/`after` as applicable. **`diff_unified(doc, from_rev?, to_rev?)`**:
   defaults to the previous and current revisions (`target_missing` when
-  none); `{ doc, path, from, to, diff }` where `diff` is a line-by-line
-  positional diff of the two revisions' raws joined by `\n` — for each line
-  index where they differ, `- old` then `+ new` (§9: not a real diff
-  algorithm).
+  none); `{ doc, path, from, to, diff }` where `diff` is a **unified diff** of the
+  two revisions' rendered texts (each revision's live raws — all depths, so
+  a container's raw and its children's both appear — joined by `\n`, split
+  on `\n` exactly, no trimming; an empty text has **no** lines; since 1.1,
+  §9): the shortest edit script by Myers' O(ND) algorithm with the canonical
+  tie rule (at each step take the diagonal from `k+1` — an insertion from
+  the new side — when `k == -d` or `k != d` and `V[k-1] < V[k+1]`, else from
+  `k-1` — a deletion from the old side — so on a tie the script prefers the
+  deletion and both engines pick the same script), grouped into hunks with 3 lines of context (two changes
+  whose contexts touch or overlap share a hunk), each hunk `@@ -a,b +c,d @@`
+  (1-based start and length; a length of 1 is written as the start alone,
+  `0` lines as `a,0` with `a` the line before the insertion point) followed
+  by its lines prefixed `-`, `+` or a space (no space after the sign), hunks
+  joined by `\n`, no file header; identical texts yield `""`. Lines are
+  compared as exact strings.
 - **`changes_since`**: `spec/sync` §6 (the digest shape and paging;
   `summary` unpinned).
 - **`docs_history(path_glob | doc, include_deleted?, limit = 50)`**: docs by
@@ -398,7 +414,8 @@ A case runs in a fresh temporary directory `W`:
 2. The **writer** is spawned as an MCP server over stdio on `W` with the §7.1
    seams (`OMGBASE_SPEC_CLOCK` = the case's `ts`, default
    `2026-09-27T00:00:00.000Z`) and without a watcher (`omg mcp -C W
-   --no-watch`; `omgbase mcp --workspace W`). The harness calls
+   --no-watch`; `omgbase mcp --workspace W --no-watch` — both binaries watch
+   by default, and a priming sweep would ingest the corpus before the seed). The harness calls
    `observe_many` once with every corpus file in bytewise path order (so
    `d_0` is `index.md`, as in the query suites), then each of `writes` in
    order. The seed's outcome is **checked, not recorded**: one outcome per
@@ -460,10 +477,15 @@ both and runs both harnesses.
 - **Fixed — `diff` with an unknown revision reported every block removed.**
   Now `target_missing`.
 - **Fixed — `graph` ordered documents with `localeCompare`.** Bytewise now.
-- **Pinned — `$ordinal`/`$depth` on blocks are shadowed** by the engine's
-  recursion intrinsics outside a `follow` (they read undefined). The fix
-  belongs to `spec/oqx` (recursion intrinsics fall through to the context
-  when no walk is active) and is recorded there as a candidate minor.
+- **Fixed (1.1, with oqx 0.13) — `$ordinal`/`$depth` on blocks were
+  shadowed** by the engine's recursion intrinsics outside a `follow` (they
+  read undefined). `spec/oqx` 0.13 §2 makes the intrinsic names ordinary
+  property reads wherever the scope carries no such metadata, so the block
+  columns are reachable (`query-blocks::intrinsics`,
+  `query-blocks::root-order-is-path-then-block-id`,
+  `query-docs::relation-blocks-in-document-order`,
+  `query-nodes::section-blocks-includes-nested`); inside a `follow` the
+  walk's metadata still wins.
 - **Pinned — an empty-projection nested `collect { }` yields the raw store
   row** (store columns, `attrs` as a JSON string, the join column `__path`).
   A port reproduces the same keys. Recorded for a decision (a `{ id, path }`
@@ -499,10 +521,22 @@ both and runs both harnesses.
   invisible the same way — every corpus-backed query case and the
   conformance list run planned and in-memory and must agree; the spec still
   describes in-memory semantics only. Its binary serves a hand-rolled JSON-RPC 2.0 stdio transport, honors the
-  §7.1 seams, and does not yet wire the filesystem watcher or the background
-  embed drain. The `oqx`
-  `DataContext::get` has no error channel, so the port surfaces the
-  reserved-basename guard after the run; a future `oqx` minor may add one.
+  §7.1 seams, and — like `omg mcp` — runs an in-process filesystem watcher
+  by default (watch lease, priming freshness sweep, the repo's registered
+  `fs` adapter spawned as `omgbase-fs-adapter` from `PATH` or
+  `$OMGBASE_FS_ADAPTER`, `reconcile_changes` per batch under the writer
+  lock; `--no-watch` or a live lease elsewhere turns it off, a missing
+  adapter degrades to serving without one) and a background embed drain
+  (500 ms debounce, single-flight, flushed at shutdown) on its own store
+  connection and provider instance; every committing tool runs under the
+  writer lock. Since `oqx` 0.13 `DataContext::get` has an error channel
+  (`Result`), so the port raises the reserved-basename guard and any store
+  failure inside a read or row function where it happens, aborting the run
+  like the reference's throw; the runner maps that eval error to
+  `filter_invalid` with the same message (a store failure is thus
+  `filter_invalid` with the sqlite message, where the reference's raw
+  exception reaches the catch-all). Only `root` still has no channel: a
+  failed root scan is served empty and reported after the run.
 - **Pinned — the planned path is not quite invisible** in three shapes no
   fixture exercises, and both implementations mirror them: a pushed
   comparison conflates booleans and numbers (`checked == 1` finds checked
@@ -512,17 +546,20 @@ both and runs both harnesses.
   pushed conjunct empties the scan (`path == "x" && $path == "nope.md"` is
   `[]` planned, `filter_invalid` in memory). Recorded for a decision
   (declining those shapes would be a patch in both).
-- **Pinned — `diff_unified` is positional.** It compares the two revisions'
-  raws line by line at equal indices, so one inserted line makes every
-  following line a `-`/`+` pair. Recorded for a decision (a Myers diff is a
-  minor here).
+- **Fixed (1.1) — `diff_unified` was positional.** It compared the two
+  revisions' raws line by line at equal indices, so one inserted line made
+  every following line a `-`/`+` pair, and the text was not a unified diff
+  at all (`- old`/`+ new` with a space, no hunks). §3 now pins a real unified
+  diff with a deterministic Myers script (least surprising: the tool is
+  named after the format).
 - **Pinned — the catch-all error is `repo_not_found`.** An unexpected
   exception in a tool is reported under that code with its message.
 - **Pinned — `history_node` is not repo-scoped**; block ids are global.
 - **Pinned — `entries(frontmatter)` is in key order**, not authored order
   (`ord` positions only within a list-valued key).
-- **Pinned — `semantic()` on blocks reads the first cache row for the
-  block's content hash**, whatever its context (see `spec/search` §8).
+- **Fixed (1.1, with search 1.1) — `semantic()` on blocks read the first
+  cache row for the block's content hash**, whatever its context; now the
+  current-context row only (`spec/search` §8).
 - **Pinned — `blocks_split` sends an empty `content_hash`** when the block
   has no live row, so the kernel raises `stale_expectation` with the current
   hash rather than `block_missing`.
@@ -536,3 +573,6 @@ both and runs both harnesses.
   the two test seams (`OMGBASE_SPEC_MINTER`, `OMGBASE_SPEC_CLOCK`) that make
   a committed expectation possible across processes. No field, tool or
   result key changed.
+- 2026-09-26, surface 1.1 also: block `$ordinal`/`$depth` reachable (oqx
+  0.13), `semantic()` reads the current-context row (search 1.1), and
+  `diff_unified` is a Myers unified diff.

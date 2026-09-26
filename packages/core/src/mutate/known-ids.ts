@@ -41,7 +41,7 @@ function assignFromMut(blocks: RawBlock[], byKey: Map<string, string>): TreeInpu
     list.map((b, index) => {
       const key = `${parentKey ?? ""}/${index}`;
       const blockId = byKey.get(key) ?? mintId("b");
-      return { blockId, type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: walk(b.children, key) };
+      return { blockId, type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: walk(b.children, key), span: b.span };
     });
   return walk(blocks, null);
 }
@@ -51,7 +51,7 @@ function assignFromMut(blocks: RawBlock[], byKey: Map<string, string>): TreeInpu
 function collectRawBlocks(blocks: TreeInputBlock[]): RawBlock[] {
   return blocks.map((b) => ({
     type: b.type,
-    span: { start: 0, end: 0 },
+    span: b.span ?? { start: 0, end: 0 },
     raw: b.raw,
     text: "",
     attrs: b.attrs,

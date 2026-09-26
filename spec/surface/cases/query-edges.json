@@ -63,77 +63,7 @@
             "p": "references"
           },
           {
-            "id": "e_15",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_16",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_17",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_18",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_19",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
             "id": "e_2",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_20",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_21",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_22",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_23",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_24",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_25",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_26",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_27",
-            "path": "index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_28",
             "path": "index.md",
             "p": "references"
           },
@@ -184,7 +114,7 @@
       "expect": {
         "hits": [
           {
-            "id": "e_71",
+            "id": "e_47",
             "path": "substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
@@ -193,7 +123,7 @@
             "src_field": null
           },
           {
-            "id": "e_72",
+            "id": "e_48",
             "path": "substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
@@ -202,7 +132,7 @@
             "src_field": null
           },
           {
-            "id": "e_73",
+            "id": "e_49",
             "path": "substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
@@ -211,7 +141,7 @@
             "src_field": null
           },
           {
-            "id": "e_74",
+            "id": "e_50",
             "path": "substances/prima-materia.md",
             "predicate": "references",
             "provenance": "link",
@@ -232,7 +162,7 @@
       "expect": {
         "hits": [
           {
-            "id": "e_71",
+            "id": "e_47",
             "path": "substances/prima-materia.md",
             "s": "d_13",
             "d": "d_16",
@@ -243,7 +173,7 @@
             "du": null
           },
           {
-            "id": "e_72",
+            "id": "e_48",
             "path": "substances/prima-materia.md",
             "s": "d_13",
             "d": "d_10",
@@ -254,7 +184,7 @@
             "du": null
           },
           {
-            "id": "e_73",
+            "id": "e_49",
             "path": "substances/prima-materia.md",
             "s": "d_13",
             "d": "d_7",
@@ -265,7 +195,7 @@
             "du": null
           },
           {
-            "id": "e_74",
+            "id": "e_50",
             "path": "substances/prima-materia.md",
             "s": "d_13",
             "d": "phantom:nigredo",
@@ -287,27 +217,22 @@
       "expect": {
         "hits": [
           {
-            "id": "e_75",
+            "id": "e_51",
             "path": "substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_76",
+            "id": "e_52",
             "path": "substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_77",
+            "id": "e_53",
             "path": "substances/salt.md",
             "dt": "substance"
           },
           {
-            "id": "e_78",
-            "path": "substances/salt.md",
-            "dt": "substance"
-          },
-          {
-            "id": "e_79",
+            "id": "e_54",
             "path": "substances/salt.md",
             "dt": "substance"
           }
@@ -336,7 +261,7 @@
         "truncated": false,
         "cursor": null,
         "consumer": "count",
-        "count": 89
+        "count": 64
       }
     },
     {
@@ -347,7 +272,7 @@
         "truncated": false,
         "cursor": null,
         "consumer": "count",
-        "count": 89
+        "count": 64
       }
     },
     {
@@ -398,122 +323,92 @@
             "d": "phantom:salt"
           },
           {
-            "id": "e_3",
-            "path": "index.md",
+            "id": "e_16",
+            "path": "lab/2026-01-notes.md",
+            "d": "phantom:salt"
+          },
+          {
+            "id": "e_17",
+            "path": "lab/2026-01-notes.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_4",
-            "path": "index.md",
+            "id": "e_20",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "d": "phantom:mercury"
+          },
+          {
+            "id": "e_21",
+            "path": "practitioners/jabir-ibn-hayyan.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_5",
-            "path": "index.md",
+            "id": "e_25",
+            "path": "practitioners/newton.md",
+            "d": "phantom:mercury"
+          },
+          {
+            "id": "e_27",
+            "path": "practitioners/paracelsus.md",
+            "d": "phantom:mercury"
+          },
+          {
+            "id": "e_28",
+            "path": "practitioners/paracelsus.md",
+            "d": "phantom:sulphur"
+          },
+          {
+            "id": "e_29",
+            "path": "practitioners/paracelsus.md",
             "d": "phantom:salt"
           },
           {
             "id": "e_30",
-            "path": "lab/2026-01-notes.md",
+            "path": "processes/calcination.md",
             "d": "phantom:salt"
           },
           {
-            "id": "e_31",
-            "path": "lab/2026-01-notes.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_34",
-            "path": "practitioners/jabir-ibn-hayyan.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_35",
-            "path": "practitioners/jabir-ibn-hayyan.md",
-            "d": "phantom:sulphur"
+            "id": "e_38",
+            "path": "substances/mercury.md",
+            "d": "phantom:salt"
           },
           {
             "id": "e_39",
-            "path": "practitioners/newton.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_40",
-            "path": "practitioners/newton.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_42",
-            "path": "practitioners/paracelsus.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_43",
-            "path": "practitioners/paracelsus.md",
+            "path": "substances/mercury.md",
             "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_44",
-            "path": "practitioners/paracelsus.md",
-            "d": "phantom:salt"
           },
           {
             "id": "e_45",
-            "path": "processes/calcination.md",
-            "d": "phantom:salt"
+            "path": "substances/philosophers-stone.md",
+            "d": "phantom:magnum-opus"
           },
           {
             "id": "e_46",
-            "path": "processes/calcination.md",
-            "d": "phantom:salt"
-          },
-          {
-            "id": "e_58",
-            "path": "substances/mercury.md",
-            "d": "phantom:salt"
-          },
-          {
-            "id": "e_59",
-            "path": "substances/mercury.md",
-            "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_67",
-            "path": "substances/philosophers-stone.md",
-            "d": "phantom:magnum-opus"
-          },
-          {
-            "id": "e_69",
-            "path": "substances/philosophers-stone.md",
-            "d": "phantom:magnum-opus"
-          },
-          {
-            "id": "e_70",
             "path": "substances/philosophers-stone.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_74",
+            "id": "e_50",
             "path": "substances/prima-materia.md",
             "d": "phantom:nigredo"
           },
           {
-            "id": "e_75",
+            "id": "e_51",
             "path": "substances/salt.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_76",
+            "id": "e_52",
             "path": "substances/salt.md",
             "d": "phantom:sulphur"
           },
           {
-            "id": "e_80",
+            "id": "e_55",
             "path": "substances/sulphur.md",
             "d": "phantom:mercury"
           },
           {
-            "id": "e_81",
+            "id": "e_56",
             "path": "substances/sulphur.md",
             "d": "phantom:salt"
           }
@@ -540,31 +435,31 @@
       "expect": {
         "hits": [
           {
-            "id": "e_10",
+            "id": "e_5",
             "path": "index.md",
             "$path": "index.md",
             "provenance": "link"
           },
           {
-            "id": "e_37",
+            "id": "e_23",
             "path": "practitioners/maria-prophetissa.md",
             "$path": "practitioners/maria-prophetissa.md",
             "provenance": "link"
           },
           {
-            "id": "e_38",
+            "id": "e_24",
             "path": "practitioners/newton.md",
             "$path": "practitioners/newton.md",
             "provenance": "link"
           },
           {
-            "id": "e_65",
+            "id": "e_43",
             "path": "substances/philosophers-stone.md",
             "$path": "substances/philosophers-stone.md",
             "provenance": "link"
           },
           {
-            "id": "e_72",
+            "id": "e_48",
             "path": "substances/prima-materia.md",
             "$path": "substances/prima-materia.md",
             "provenance": "link"
@@ -598,32 +493,32 @@
       "expect": {
         "hits": [
           {
-            "id": "e_58",
+            "id": "e_38",
             "path": "substances/mercury.md"
           },
           {
-            "id": "e_59",
+            "id": "e_39",
             "path": "substances/mercury.md"
           },
           {
-            "id": "e_60",
+            "id": "e_40",
             "path": "substances/mercury.md"
           },
           {
-            "id": "e_61",
+            "id": "e_41",
             "path": "substances/mercury.md"
           },
           {
-            "id": "e_62",
+            "id": "e_42",
             "path": "substances/mercury.md"
           },
           {
-            "id": "e_63",
-            "path": "substances/mercury.md"
+            "id": "e_43",
+            "path": "substances/philosophers-stone.md"
           }
         ],
         "truncated": true,
-        "cursor": "WyJzdWJzdGFuY2VzL21lcmN1cnkubWQiLCJlXzYzIl0",
+        "cursor": "WyJzdWJzdGFuY2VzL3BoaWxvc29waGVycy1zdG9uZS5tZCIsImVfNDMiXQ",
         "consumer": "collect"
       }
     }

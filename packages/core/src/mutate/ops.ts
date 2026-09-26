@@ -119,6 +119,20 @@ function checkContentHash(block: MutBlock, expect: Expect | undefined, opIndex: 
   }
 }
 
+// §1.2 `check_parent_children_hash`: when the expectation carries a
+// `parent_children_hash`, the LIVE direct children of the sibling list it names
+// (the document top level for `doc.children`) must hash to it. Which list is the
+// op's business: update/split/remove/merge pass the block's current sibling list,
+// insert/move the destination's (resolved as the op resolves `to`). Always after
+// the content CAS and before the tree is touched, so a stale order never lands.
+export function checkParentChildrenHash(siblings: MutBlock[], expect: Expect | undefined, opIndex: number): void {
+  if (expect?.parent_children_hash === undefined) return;
+  const current = parentChildrenHash(siblings);
+  if (current !== expect.parent_children_hash) {
+    throw new MutationError("stale_expectation", "parent_children_hash mismatch", { op_index: opIndex, current: { parent_children_hash: current }, retriable: true });
+  }
+}
+
 // Assign known ids onto a freshly-parsed subtree by positional key (parentKey +
 // '/' + index), the same convention flatten()/known-ids use. Keys absent from
 // the map leave the block's minted id in place (a genuinely new child).
@@ -147,8 +161,11 @@ function markSubtreeClean(b: MutBlock): void {
 
 // ---- the six ops ------------------------------------------------------------
 
-export function opInsert(doc: MutDoc, to: To, markdown: string): { ids: string[] } {
+export function opInsert(doc: MutDoc, to: To, markdown: string, expect?: Expect, opIndex = 0): { ids: string[] } {
   const { siblings, index } = resolveTarget(doc, to);
+  // §1.2: the destination parent's order CAS — `siblings` IS the resolved parent
+  // list (a section scope or a `{ doc: true }` anchor both name the top level).
+  checkParentChildrenHash(siblings, expect, opIndex);
   let blocks = parseContentToBlocks(markdown, doc.format);
   // Inserting into a list: the content must land as list ITEMS, not a nested
   // list. Markdown `- x` parses to a `list` wrapping a `list_item`; unwrap it to
@@ -208,6 +225,8 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   // whole-doc planner set exact trailing trivia after structural ops without
   // juggling post-op content hashes across the changeset.
   if (markdown !== undefined || expect?.content_hash !== undefined) checkContentHash(found.block, expect, opIndex);
+  // §1.2: the block's CURRENT parent, after the content CAS.
+  checkParentChildrenHash(found.siblings, expect, opIndex);
   // Blocks minted from MULTI-block content: the target takes the first parsed
   // block (keeping its id); the rest become fresh siblings right after it.
   const extra: MutBlock[] = [];
@@ -304,7 +323,7 @@ export function opUpdate(doc: MutDoc, blockId: string, opIndex: number, markdown
   return { ids: [blockId, ...extra.map((b) => b.id)] };
 }
 
-export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number): { ids: string[] } {
+export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number, expect?: Expect): { ids: string[] } {
   if (blockIds.length === 0) throw new MutationError("not_contiguous", "move requires ≥1 block");
   // Locate all; assert contiguous siblings.
   const located = blockIds.map((id) => {
@@ -326,6 +345,11 @@ export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number)
   if (typeof to.parent === "string" && movedIds.has(to.parent)) {
     throw new MutationError("cycle_move", "target is inside the moved subtree", { op_index: opIndex });
   }
+  // §1.2: the DESTINATION parent's order CAS, resolved on the pre-removal tree
+  // (before the op mutates anything) and checked once for the whole run. When
+  // source and destination are one list this is the "same siblings reordered
+  // under me" guard: the hash covers the moved blocks' current positions too.
+  if (expect?.parent_children_hash !== undefined) checkParentChildrenHash(resolveTarget(doc, to).siblings, expect, opIndex);
 
   // Extract (preserve order) then re-insert at the target.
   const moving = located.map((l) => l.block);
@@ -386,7 +410,11 @@ export function opRemove(doc: MutDoc, blockIds: string[], opIndex: number, expec
         hint: "the id is not a live block of the targeted document — it may have been removed by an earlier op in this changeset (removing a block removes its whole subtree), or never existed",
       });
     }
-    if (expectPer?.[id]) checkContentHash(found.block, expectPer[id], opIndex);
+    const e = expectPer?.[id];
+    if (e) {
+      checkContentHash(found.block, e, opIndex);
+      checkParentChildrenHash(found.siblings, e, opIndex); // §1.2: its current parent
+    }
     if (!hasAncestorIn(doc, found.siblings, set)) tops.push(id);
   }
   // Pass 2 — remove the top-most blocks; `removed` reports every block that
@@ -437,6 +465,7 @@ export function opSplit(doc: MutDoc, blockId: string, at: number[], opIndex: num
   const found = locate(doc, blockId);
   if (!found) throw new MutationError("block_missing", `block ${blockId} not found`, { op_index: opIndex, block: blockId });
   checkContentHash(found.block, expect, opIndex);
+  checkParentChildrenHash(found.siblings, expect, opIndex); // §1.2: its current parent
   const raw = found.block.raw;
   // `at` are UTF-8 byte offsets into the raw (spec/mutate §2.5) — the same
   // language-neutral unit every persisted span uses. A JavaScript string slices
@@ -485,7 +514,11 @@ export function opMerge(doc: MutDoc, blockIds: string[], opIndex: number, separa
   for (let i = 0; i < located.length; i++) {
     if (located[i]!.siblings !== siblings) throw new MutationError("not_contiguous", "merge blocks must share a parent", { op_index: opIndex });
     if (located[i]!.block.type !== type) throw new MutationError("type_mismatch", "merge blocks must share a type", { op_index: opIndex });
-    if (expectPer?.[blockIds[i]!]) checkContentHash(located[i]!.block, expectPer[blockIds[i]!], opIndex);
+    const e = expectPer?.[blockIds[i]!];
+    if (e) {
+      checkContentHash(located[i]!.block, e, opIndex);
+      checkParentChildrenHash(located[i]!.siblings, e, opIndex); // §1.2: its current parent
+    }
   }
   for (let i = 1; i < indices.length; i++) if (indices[i]! !== indices[i - 1]! + 1) throw new MutationError("not_contiguous", "merge blocks must be contiguous", { op_index: opIndex });
 
@@ -497,12 +530,4 @@ export function opMerge(doc: MutDoc, blockIds: string[], opIndex: number, separa
   // remove the others (highest index first)
   for (let i = indices.length - 1; i >= 1; i--) siblings.splice(indices[i]!, 1);
   return { ids: [first.id], mergedInto };
-}
-
-export function checkParentChildrenHash(doc: MutDoc, parentId: string | null, expected: string, opIndex: number): void {
-  const list = parentId ? locate(doc, parentId)?.block.children ?? doc.children : doc.children;
-  const current = parentChildrenHash(list);
-  if (current !== expected) {
-    throw new MutationError("stale_expectation", "parent_children_hash mismatch", { op_index: opIndex, current: { parent_children_hash: current }, retriable: true });
-  }
 }

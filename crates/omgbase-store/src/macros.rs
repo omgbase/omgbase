@@ -180,6 +180,7 @@ impl Store {
                 at: At::End,
             },
             markdown: markdown.to_owned(),
+            expect: None,
         }]
     }
 
@@ -193,6 +194,7 @@ impl Store {
                 at: At::End,
             },
             markdown: markdown.to_owned(),
+            expect: None,
         }]
     }
 
@@ -260,6 +262,7 @@ impl Store {
         Ok(vec![Op::Move {
             blocks: run,
             to: to.clone(),
+            expect: None,
         }])
     }
 
@@ -278,6 +281,7 @@ impl Store {
                 at,
             },
             markdown: item,
+            expect: None,
         }]
     }
 
@@ -646,7 +650,7 @@ mod tests {
     fn pure_expansions() {
         let ops = Store::sections_append("b_1", "text");
         assert!(
-            matches!(&ops[0], Op::Insert { doc: None, to, markdown } if to.parent == Parent::Section { heading: "b_1".into() } && markdown == "text")
+            matches!(&ops[0], Op::Insert { doc: None, to, markdown, .. } if to.parent == Parent::Section { heading: "b_1".into() } && markdown == "text")
         );
         let ops = Store::docs_append("a.md", "text");
         assert!(matches!(&ops[0], Op::Insert { doc: Some(d), .. } if d == "a.md"));

@@ -114,8 +114,11 @@ guard — use `$path` or `frontmatter.path`).
   a bare `checked` reads `attrs.checked` (`attrs.<key>` still works). Structural
   `type`/`text` win on a name collision; an absent key is silently false in a
   predicate, exactly like a missing frontmatter key on a doc.
-- **Intrinsics:** `$id`, `$doc`, `$path`, `$ordinal`, `$depth`, `$content_hash`,
-  `$body` (the block text), `$updated_at`.
+- **Intrinsics:** `$id`, `$doc`, `$path`, `$ordinal` (0-based ordinal among
+  its siblings), `$depth` (nesting depth, 0 at the top level), `$content_hash`,
+  `$body` (the block text), `$updated_at`. Inside a `follow` the walk's own
+  `$ordinal`/`$depth` (§6) take precedence over the block's; everywhere else
+  the block's values read as plain properties (`@omgbase/oqx` 0.13).
 - **Doc reach-through:** `doc.<key>` / `doc.$path` / `doc.format` constrain by the
   owning document (scope, not selection).
 - **Relations:** `block.children`, `block.nodes`, `block.out_edges`, `section`

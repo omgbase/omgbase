@@ -93,7 +93,7 @@ const PEERS: Record<Engine, Peer> = {
     return {
       engine: "rust",
       command: bin ?? join(REPO_ROOT, "target", "debug", "omgbase"),
-      args: (W) => ["mcp", "--workspace", W],
+      args: (W) => ["mcp", "--workspace", W, "--no-watch"],
       available: bin !== null && existsSync(bin),
       build: "cargo build -p omgbase",
     };

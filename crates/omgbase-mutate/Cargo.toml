@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-mutate"
-version = "1.0.0"
+version = "1.1.0"
 description = "omgbase mutation kernel: the working block tree, the six ops (insert/update/move/remove/split/merge) with placement addressing and CAS, the splice renderer's dirty rules, changeset placeholders, the whole-document lowering and the opset — Rust implementation"
 keywords = ["markdown", "mutation", "blocks", "changeset", "omgbase"]
 categories = ["text-processing", "data-structures"]

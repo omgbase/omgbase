@@ -21,8 +21,7 @@
 //! and `Plan::context` must be `'static`, so the plan carries no context and
 //! the runner ([`mod@crate::query`]) builds the rows-root context itself
 //! ([`crate::StoreContext::with_rows_root`]) — the same six lines
-//! `oqx::PlannedEngine::run` would execute, plus the pending-error channel
-//! the runner reads after the run.
+//! `oqx::PlannedEngine::run` would execute.
 
 use oqx::ast::{Expr, Query};
 use oqx::{Plan, QueryPlanner, Value, partition_pushable, residual_query};

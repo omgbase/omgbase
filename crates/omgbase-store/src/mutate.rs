@@ -437,14 +437,26 @@ impl Store {
         for (i, raw_op) in req.ops.iter().enumerate() {
             let op = resolve_op(raw_op, &results)?;
             match &op {
-                Op::Insert { doc, to, markdown } => {
+                Op::Insert {
+                    doc,
+                    to,
+                    markdown,
+                    expect,
+                } => {
                     let doc_id = match doc {
                         Some(r) => self.resolve_doc_ref(&req.repo_id, r)?,
                         None => parent_doc!(to),
                     };
                     let d = ensure_doc!(&doc_id);
                     let mut minter = BlockMinter(&mut *self.minter);
-                    results.push(op_insert(&mut loaded[d].doc, to, markdown, &mut minter)?);
+                    results.push(op_insert(
+                        &mut loaded[d].doc,
+                        to,
+                        markdown,
+                        i,
+                        expect.as_ref(),
+                        &mut minter,
+                    )?);
                 }
                 Op::Update {
                     block,
@@ -473,7 +485,7 @@ impl Store {
                     let mut minter = BlockMinter(&mut *self.minter);
                     results.push(op_update(&mut loaded[d].doc, block, i, &args, &mut minter)?);
                 }
-                Op::Move { blocks, to } => {
+                Op::Move { blocks, to, expect } => {
                     let first = blocks.first().map(String::as_str).unwrap_or("");
                     let Some(src) = doc_for_block!(first) else {
                         return Err(merr_data(
@@ -492,12 +504,19 @@ impl Store {
                     };
                     if dst == src {
                         let d = ensure_doc!(&src);
-                        results.push(op_move(&mut loaded[d].doc, blocks, to, i)?);
+                        results.push(op_move(&mut loaded[d].doc, blocks, to, i, expect.as_ref())?);
                     } else {
                         let s = ensure_doc!(&src);
                         let t = ensure_doc!(&dst);
                         let (a, b) = two_mut(&mut loaded, s, t);
-                        results.push(cross_doc_move(&mut a.doc, &mut b.doc, blocks, to, i)?);
+                        results.push(cross_doc_move(
+                            &mut a.doc,
+                            &mut b.doc,
+                            blocks,
+                            to,
+                            i,
+                            expect.as_ref(),
+                        )?);
                     }
                 }
                 Op::Remove { blocks, expect } => {
@@ -773,6 +792,7 @@ fn assign_known(
                 text: b.text.clone(),
                 trivia: b.trivia.clone(),
                 attrs: b.attrs.clone(),
+                span: b.span,
                 children: assign_known(&b.children, by_key, Some(&key), minter),
             }
         })

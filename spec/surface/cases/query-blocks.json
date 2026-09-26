@@ -23,133 +23,195 @@
   "cases": [
     {
       "name": "root-order-is-path-then-block-id",
-      "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. ($ordinal/$depth project nothing — see `intrinsics`.)",
+      "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. $ordinal/$depth are the store's block columns (0-based sibling ordinal, nesting depth), reachable since oqx 0.13 — see `intrinsics`.",
       "query": "select o: $ordinal, d: $depth from blocks where $path == \"index.md\"",
       "expect": {
         "hits": [
           {
             "id": "b_0",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 0
           },
           {
             "id": "b_1",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 0
           },
           {
             "id": "b_10",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 1
           },
           {
             "id": "b_11",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 1
           },
           {
             "id": "b_12",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 7,
+            "d": 0
           },
           {
             "id": "b_13",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 8,
+            "d": 0
           },
           {
             "id": "b_14",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 9,
+            "d": 0
           },
           {
             "id": "b_15",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 1
           },
           {
             "id": "b_16",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 1
           },
           {
             "id": "b_17",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 2,
+            "d": 1
           },
           {
             "id": "b_18",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 10,
+            "d": 0
           },
           {
             "id": "b_19",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 11,
+            "d": 0
           },
           {
             "id": "b_2",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 2,
+            "d": 0
           },
           {
             "id": "b_20",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 1
           },
           {
             "id": "b_21",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 1
           },
           {
             "id": "b_22",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 2,
+            "d": 1
           },
           {
             "id": "b_23",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 3,
+            "d": 1
           },
           {
             "id": "b_24",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 4,
+            "d": 1
           },
           {
             "id": "b_25",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 12,
+            "d": 0
           },
           {
             "id": "b_26",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 13,
+            "d": 0
           },
           {
             "id": "b_27",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 1
           },
           {
             "id": "b_28",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 1
           },
           {
             "id": "b_29",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 14,
+            "d": 0
           },
           {
             "id": "b_3",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 3,
+            "d": 0
           },
           {
             "id": "b_30",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 15,
+            "d": 0
           },
           {
             "id": "b_4",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 4,
+            "d": 0
           },
           {
             "id": "b_5",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 0,
+            "d": 1
           },
           {
             "id": "b_6",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 1,
+            "d": 1
           },
           {
             "id": "b_7",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 2,
+            "d": 1
           },
           {
             "id": "b_8",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 5,
+            "d": 0
           },
           {
             "id": "b_9",
-            "path": "index.md"
+            "path": "index.md",
+            "o": 6,
+            "d": 0
           }
         ],
         "truncated": false,
@@ -351,7 +413,7 @@
     },
     {
       "name": "intrinsics",
-      "notes": "§1.2: $id/$doc/$path/$body(=text)/$content_hash/$updated_at. $ordinal and $depth are NOT reachable: the engine's recursion intrinsics of the same name shadow them and read undefined outside a follow (§9 candidate).",
+      "notes": "§1.2: $id/$doc/$path/$ordinal/$depth/$body(=text)/$content_hash/$updated_at. $ordinal is the block's 0-based ordinal among its siblings and $depth its nesting depth (0 at the top level; these tasks sit in a list, so 0/1 and 1/1). Outside a `follow` the names are ordinary reads of the row (spec/oqx 0.13 §2); inside one the walk's metadata wins (§9).",
       "query": "select i: $id, d: $doc, o: $ordinal, dp: $depth, b: $body, h: $content_hash, u: $updated_at from blocks where $path == \"substances/salt.md\" && type == \"task\"",
       "expect": {
         "hits": [
@@ -360,6 +422,8 @@
             "path": "substances/salt.md",
             "i": "b_279",
             "d": "d_14",
+            "o": 0,
+            "dp": 1,
             "b": "Buy more salt of tartar",
             "h": "e789186305831740b025de6778e2de6947752ad1cfbfc762a8d9fba59b562e63",
             "u": "2026-09-27T00:00:00.000Z"
@@ -369,6 +433,8 @@
             "path": "substances/salt.md",
             "i": "b_280",
             "d": "d_14",
+            "o": 1,
+            "dp": 1,
             "b": "Replace the leaching filter papers",
             "h": "d8c2230035697421671ab4f871e3132bccbb387b7b3af7bd7defe1504730513c",
             "u": "2026-09-27T00:00:00.000Z"
@@ -601,66 +667,22 @@
           {
             "id": "b_14",
             "path": "index.md",
-            "k": [
-              {
-                "kind": "md:link",
-                "value": "/processes/calcination.md"
-              },
-              {
-                "kind": "md:link",
-                "value": "/processes/dissolution.md"
-              },
-              {
-                "kind": "md:link",
-                "value": "/processes/coagulation.md"
-              }
-            ]
+            "k": []
           },
           {
             "id": "b_26",
             "path": "index.md",
-            "k": [
-              {
-                "kind": "md:link",
-                "value": "/texts/emerald-tablet.md"
-              },
-              {
-                "kind": "md:link",
-                "value": "/texts/mutus-liber.md"
-              }
-            ]
+            "k": []
           },
           {
             "id": "b_4",
             "path": "index.md",
-            "k": [
-              {
-                "kind": "md:wikilink",
-                "value": "mercury"
-              },
-              {
-                "kind": "md:wikilink",
-                "value": "sulphur"
-              },
-              {
-                "kind": "md:wikilink",
-                "value": "salt"
-              }
-            ]
+            "k": []
           },
           {
             "id": "b_9",
             "path": "index.md",
-            "k": [
-              {
-                "kind": "md:link",
-                "value": "/substances/prima-materia.md"
-              },
-              {
-                "kind": "md:link",
-                "value": "/substances/philosophers-stone.md"
-              }
-            ]
+            "k": []
           }
         ],
         "truncated": false,
@@ -676,7 +698,7 @@
         "truncated": false,
         "cursor": null,
         "consumer": "count",
-        "count": 19
+        "count": 15
       }
     },
     {
@@ -1148,18 +1170,7 @@
       "name": "has-edge",
       "query": "select $path from blocks where has_edge(\"references\") && type == \"table\"",
       "expect": {
-        "hits": [
-          {
-            "id": "b_19",
-            "path": "index.md",
-            "$path": "index.md"
-          },
-          {
-            "id": "b_190",
-            "path": "processes/magnum-opus.md",
-            "$path": "processes/magnum-opus.md"
-          }
-        ],
+        "hits": [],
         "truncated": false,
         "cursor": null,
         "consumer": "collect"

@@ -329,7 +329,13 @@ in its place:
    `nodes`. The adapter captures an inline value to end of line (dataview line
    form `key:: multi word value`) or to the closer for the bracketed in-prose
    form (`[key:: value]` / `(key:: value)`) — not just the first whitespace-
-   delimited token.
+   delimited token. Every scanner runs over the block's **own text** — its
+   `raw` with each direct child's span blanked (`graph/extract.ts` `ownText`;
+   spec/properties 1.1 §3.2) — so a field inside a list item is one row,
+   anchored to the innermost block that holds it, never also to the list; and
+   the line form admits a list marker and a task checkbox before the key, so
+   `- job:: x` and `- [ ] due:: friday` are fields of their items (before 1.1
+   a marker line matched nothing and a container re-counted its children).
 3. **Computed props hook** (`source='computed'`): an adapter capability
    (`computeProperties(blocks, frontmatter)`) returning derived rows — title
    from first H1, task counts, etc. New capability; markdown implements title.

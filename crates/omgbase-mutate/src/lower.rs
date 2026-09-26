@@ -274,6 +274,7 @@ pub fn lower_top_level(
                     doc: Some(doc_id.clone()),
                     to: anchor,
                     markdown: t.raw.clone(),
+                    expect: None,
                 },
                 disposition: disposition_for_new(d.map(|d| d.kind)),
                 blocks: Vec::new(),
@@ -289,6 +290,7 @@ pub fn lower_top_level(
                     op: Op::Move {
                         blocks: vec![t.id.clone()],
                         to: anchor,
+                        expect: None,
                     },
                     disposition: PlanDisposition::Moved,
                     blocks: vec![t.id.clone()],
@@ -429,6 +431,7 @@ pub fn lower_replace(old_doc: &MutDoc, content: &str) -> LowerResult {
                 at: At::End,
             },
             markdown: body_of(content),
+            expect: None,
         },
         disposition: PlanDisposition::BulkRewrite,
         blocks: Vec::new(),
@@ -550,7 +553,9 @@ mod tests {
         let names: Vec<&str> = r.ops.iter().map(|p| p.op.name()).collect();
         assert_eq!(names, ["insert", "update", "update"]);
         match &r.ops[0].op {
-            Op::Insert { doc, to, markdown } => {
+            Op::Insert {
+                doc, to, markdown, ..
+            } => {
                 assert_eq!(doc.as_deref(), Some("d_0"));
                 assert_eq!(to.at, At::After("b_1".into()));
                 assert_eq!(markdown, "Mid.");

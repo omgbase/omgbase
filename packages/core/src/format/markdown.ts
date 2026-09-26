@@ -4,7 +4,7 @@ import { AdapterCapability, type FormatAdapter, type AdapterEdge, type Projected
 import type { BlockTree, RawBlock } from "../core/parse/types.js";
 import { parseTree, assertFullCoverage } from "../core/parse/tree.js";
 import { render } from "../core/parse/render.js";
-import { extractFromBlock, extractFromFrontmatter, maskCode, type ExtractedEdge } from "../graph/extract.js";
+import { extractFromBlock, extractFromFrontmatter, ownText, scanText, INLINE_FIELD_BRACKETED, INLINE_FIELD_LINE, type ExtractedEdge } from "../graph/extract.js";
 
 export const MARKDOWN_FORMAT = "markdown";
 
@@ -43,14 +43,15 @@ export const markdownAdapter: FormatAdapter = {
   extractEdges(blocks: RawBlock[], metadata?: Record<string, unknown>): AdapterEdge[] {
     const edges: AdapterEdge[] = [];
     // Walk every block (recursing into list/blockquote/table nesting) and scan
-    // its raw for links. srcBlock is the block's OWN assigned id — the caller
-    // passes id-assigned blocks (blockId zipped on), mirroring projectNodes; a
-    // block-grain edge without it is useless, so fall back to "" only for the
-    // pre-identity callers. extractFromBlock returns [] for link-free blocks, so
-    // no per-block gate is needed (matches the non-adapter fallback path).
+    // its OWN text for links (spec/graph §1: the raw with the children blanked,
+    // so a link in an item is the item's edge only). srcBlock is the block's
+    // OWN assigned id — the caller passes id-assigned blocks (blockId zipped
+    // on), mirroring projectNodes; a block-grain edge without it is useless, so
+    // fall back to "" only for the pre-identity callers. extractFromBlock
+    // returns [] for link-free blocks, so no per-block gate is needed.
     const walk = (list: RawBlock[]): void => {
       for (const block of list) {
-        for (const e of extractFromBlock(block.blockId ?? "", block.type, block.raw)) {
+        for (const e of extractFromBlock(block.blockId ?? "", block.type, ownText(block))) {
           edges.push(toAdapterEdge(e));
         }
         if (block.children.length > 0) walk(block.children);
@@ -84,12 +85,13 @@ export const markdownAdapter: FormatAdapter = {
         // Anchor to the block's OWN assigned id (zipped on by ingest); fall back
         // to the parent's id, then "root", for pre-identity/parse-time callers.
         const id = b.blockId || parentId || "root";
-        // Code is not prose (extraction_version x2): a code_fence block projects
-        // no link/anchor/field nodes, and inline code spans are masked before the
-        // regex scans below. Same rule as graph/extract.ts so the md:link /
-        // md:wikilink nodes and the `references` edges agree. maskCode is
-        // length-preserving, so spans still index the ORIGINAL raw.
-        const scan = b.type === "code_fence" ? "" : maskCode(b.raw);
+        // The block's own text (spec/graph §1): children blanked, so a feature
+        // belongs to the innermost block only; then code masked — a code_fence
+        // block projects no link/anchor/field nodes, and inline code spans are
+        // blanked (extraction_version x2). Same rule as graph/extract.ts so the
+        // md:link / md:wikilink nodes and the `references` edges agree. Both
+        // masks are length-preserving, so spans still index the ORIGINAL raw.
+        const scan = scanText(b);
         // Links: [text](target)
         for (const m of scan.matchAll(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)) {
           nodes.push({ kind: "md:link", name: m[1], value: m[2], blockId: id, ...span(m) });
@@ -108,20 +110,22 @@ export const markdownAdapter: FormatAdapter = {
         for (const m of scan.matchAll(anchorRe)) {
           nodes.push({ kind: "md:anchor", name: m[1], blockId: id, ...span(m) });
         }
-        // Inline fields (dataview forms). Two shapes, so a multi-word value is
-        // captured whole instead of truncated at the first space:
-        //   line form  `key:: value`  — key at line start, value to end of line
+        // Inline fields (dataview forms; the patterns are spec/properties §3.2's,
+        // shared with the properties scanner). Two shapes, so a multi-word value
+        // is captured whole instead of truncated at the first space:
+        //   line form  `key:: value`  — key at line start (after blanks and, since
+        //              1.1, an optional list marker + task checkbox), value to
+        //              end of line; span from the key to the trimmed value's end
         //   bracketed  `[key:: value]` / `(key:: value)` — value ends at closer
-        // Bracketed matches first; the line form is anchored to a line start
-        // (leading whitespace only), so a `[key:: …]`/`(key:: …)` sitting on its
-        // own line is not double-counted (a bracket is not `[a-z]`).
-        for (const m of scan.matchAll(/[[(]([a-z][a-z0-9_]*)::[ \t]*([^\]\n)]*?)[ \t]*[\])]/gi)) {
+        // Bracketed matches first; a `[key:: …]`/`(key:: …)` sitting on its own
+        // line is not double-counted (a bracket is not `[a-z]`).
+        for (const m of scan.matchAll(INLINE_FIELD_BRACKETED)) {
           nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, ...span(m) });
         }
-        for (const m of scan.matchAll(/^[ \t]*([a-z][a-z0-9_]*)::[ \t]*([^\n]*?)[ \t]*$/gim)) {
-          const start = (m.index ?? 0) + (m[0].match(/^[ \t]*/)?.[0].length ?? 0);
+        for (const m of scan.matchAll(INLINE_FIELD_LINE)) {
+          const start = (m.index ?? 0) + m[1]!.length;
           const end = (m.index ?? 0) + m[0].replace(/[ \t]+$/, "").length;
-          nodes.push({ kind: "md:inline_field", name: m[1], value: m[2], blockId: id, spanStart: start, spanEnd: end });
+          nodes.push({ kind: "md:inline_field", name: m[2], value: m[3], blockId: id, spanStart: start, spanEnd: end });
         }
         if (b.children.length > 0) walk(b.children, id);
       }

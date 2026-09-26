@@ -25,8 +25,9 @@ what a client sees of an omgbase repository.
 - **Reads** (`read`): `resolve_ref`, `docs_read(_many)`, `docs_read_at`,
   `nodes_get(_many)` at the five resolutions, the `docs_outline` wire format,
   `docs_list` / `docs_tree` paging.
-- **History** (`history`): `history_node`, block-grain `diff`, the positional
-  `diff_unified`, `docs_history`; `changes_since` is the store's.
+- **History** (`history`): `history_node`, block-grain `diff`, the Myers
+  unified `diff_unified` (`unified_diff` is the pure text → text function),
+  `docs_history`; `changes_since` is the store's.
 - **The tool catalog** (`catalog`): `Surface` — every tool of the §4 table
   with its JSON-schema input, repo scoping by slug, server-side ref and
   heading resolution, CAS pinning, the `{ error, message, data?, retriable }`

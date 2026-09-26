@@ -146,9 +146,13 @@ filesystem snapshot (the walk with each file's `(mtime_ns, size)`).
 Result: the checkpoint result plus `{ scanned, candidates, changed:
 ingested or deleted or conflicted non-empty }`; a sweep with nothing to do
 still records a checkpoint row with `files: []`. `file_stats` is derived: a
-rebuild re-stats and re-hashes every walked file after deleting the repo's
-rows — and thereby hides any edit not yet ingested from the next sweep and
-from drift (§9).
+rebuild deletes the repo's rows, then re-stats and re-hashes every walked
+file **that has a live doc** (one whose `file_hash` is null matches nothing)
+and records a row **only when the bytes' hash equals that `file_hash`** — a
+file with no live doc, or whose bytes differ from what was ingested, gets no
+row, so the next sweep still sees it as a candidate and drift still reports
+it. Returns the number of files walked.
+Since 1.1 (§9: the reference recorded every file, hiding a pending edit).
 
 **Disk drift** (read-only): with the same cache and snapshot, count
 `untracked` = candidates with no live doc at that path, `changed` =
@@ -339,9 +343,19 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 - **Pinned — one request in flight.** The reference discards a response whose
   id is not the awaited one, so interleaved responses to concurrent requests
   would hang; every caller awaits each call.
-- **Pinned — a rebuild of `file_stats` hides a pending edit** from the next
-  sweep and from drift (`checkpoint::rebuild-stats-hides-a-pending-edit`);
-  `omg source add` rebuilds right after its sweep.
+- **Fixed (1.1) — a rebuild of `file_stats` hid a pending edit** from the
+  next sweep and from drift, because it recorded the disk hash of every
+  walked file as known; `omg source add` rebuilds right after its sweep, so
+  an edit landing between the two vanished until the file changed again.
+  A rebuild now records only files matching their live doc
+  (`checkpoint::rebuild-stats-keeps-a-pending-edit-visible`).
+- **Pinned — a rebuild cannot make the sweep notice a deletion.** The sweep
+  finds deletions as cached paths missing from the snapshot, and a rebuild
+  records only walked files, so a live doc whose file vanished before the
+  rebuild has no row and the next sweep does not tombstone it; only drift
+  (`deleted`) and recovery (`missing`) see it
+  (`checkpoint::rebuild-stats-after-a-deletion-leaves-no-row`). Unchanged
+  by 1.1.
 - **Pinned — `create_source` mints before it fails**, so a UNIQUE or FK
   failure consumes an id (`registry::source-name-taken`).
 - **Pinned — an array settings blob passes the object check** and is
@@ -377,6 +391,15 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 - **Pinned — the coordinator's `sync_out` exports `api` and `import`
   commits alike** and re-reads each revision's document by path at export
   time (a later commit's bytes may be exported under an earlier digest).
+- **Open — what a second host needs from §5/§7.** The reference launches
+  its bundled `fs` adapter and ignores `adapters.command` for it, while the
+  port runs the stored command (`omgbase-fs-adapter` on `PATH`, or
+  `$OMGBASE_FS_ADAPTER`); `watch` acknowledges before the adapter is ready,
+  so a change right after `{ ok: true }` may be lost (no readiness signal);
+  the writer lock's scope around a priming sweep or an embed drain, the
+  error a lock timeout produces at the MCP boundary (the catch-all in both),
+  `git_head` null on watcher/sweep checkpoints, and multi-connection SQLite
+  busy handling (both engines: WAL + a 5 s busy timeout) are unpinned.
 - **Pinned — lock stealing.** A lock file with an unparsable body has no
   pid and is treated as stale.
 
@@ -384,3 +407,6 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 
 - 2026-09-26, sync 1.0 specified as built. The last spec before the MCP/CLI
   binary: with it, every table of `schema.sql` has an owner spec.
+- 2026-09-26, sync 1.1: a `file_stats` rebuild records only files whose bytes
+  match their live doc (least surprising: a cache rebuild must not change
+  what the next sweep does).

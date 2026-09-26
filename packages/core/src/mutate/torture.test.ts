@@ -7,6 +7,7 @@ import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { apply } from "./apply.js";
 import { MutationError } from "./tree.js";
+import { sha256 } from "../core/hash.js";
 
 // Concurrency torture suite (04 §5). The engine is a single serialization point
 // (per-repo writer lock; ADR-008), so "two agents" = two sequential apply()
@@ -38,6 +39,11 @@ function block(docId: string, prefix: string): string {
 }
 function hashOf(bId: string): string {
   return (store.db.prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ?").get(bId) as { h: string }).h;
+}
+/** sha256 of the live top-level block ids joined by "," (spec/mutate §1.2). */
+function topLevelHash(docId: string): string {
+  const rows = store.db.prepare("SELECT block_id FROM blocks WHERE doc_id = ? AND parent_block IS NULL AND deleted_commit IS NULL ORDER BY ordinal").all(docId) as { block_id: string }[];
+  return sha256(rows.map((r) => r.block_id).join(",")).toString("hex");
 }
 function humanSave(path: string, content: string): void {
   writeFileSync(join(dir, path), content);
@@ -99,13 +105,28 @@ describe("torture §5 scenarios", () => {
   it("S5: two agents reorder same siblings — parent_children_hash guards", () => {
     const docId = seed("a.md", "# H\n\none\n\ntwo\n\nthree\n");
     const one = block(docId, "one");
-    // A reorders: move 'one' to end.
-    apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [one], to: { parent: { doc: true }, at: "end" } }], origin: { actor: "agent:A" } });
-    // B tries to move 'one' again with a stale content expectation → stale.
-    const staleHash = "deadbeefdeadbeef";
-    expect(() =>
-      apply(store, { repoId, rootPath: dir, ops: [{ op: "update", block: one, markdown: "x", expect: { content_hash: staleHash } }], origin: { actor: "agent:B" } }),
-    ).toThrow(MutationError);
+    const two = block(docId, "two");
+    // Both agents read the same top-level order and take its hash (spec/mutate §1.2).
+    const seen = topLevelHash(docId);
+    // A reorders: move 'one' to the end. Its CAS matches the order it read.
+    apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [one], to: { parent: { doc: true }, at: "end" }, expect: { parent_children_hash: seen } }], origin: { actor: "agent:A" } });
+    // B reorders the same siblings from the stale view → stale_expectation
+    // carrying the live hash of the destination parent (the top level).
+    const live = topLevelHash(docId);
+    expect(live).not.toBe(seen);
+    try {
+      apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [two], to: { parent: { doc: true }, at: "start" }, expect: { parent_children_hash: seen } }], origin: { actor: "agent:B" } });
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(MutationError);
+      expect((e as MutationError).code).toBe("stale_expectation");
+      expect((e as MutationError).data).toMatchObject({ op_index: 0, current: { parent_children_hash: live }, retriable: true });
+    }
+    // Without the order CAS, B's move is last-writer-wins and lands.
+    const res = apply(store, { repoId, rootPath: dir, ops: [{ op: "move", blocks: [two], to: { parent: { doc: true }, at: "start" }, expect: { parent_children_hash: live } }], origin: { actor: "agent:B" } });
+    expect(res.committed).toBe(true);
+    // 'one', moved to the end by A, keeps its `\n\n` as the LAST block's trivia (spec/mutate §2.3).
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("two\n\n# H\n\nthree\n\none\n\n");
   });
 
   it("S6: agent updates a block deleted by a human save — block_missing", () => {

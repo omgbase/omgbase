@@ -19,6 +19,8 @@ pub enum Op {
         doc: Option<String>,
         to: To,
         markdown: String,
+        /// §1.2: the DESTINATION parent's `parent_children_hash` (since 1.1).
+        expect: Option<Expect>,
     },
     Update {
         block: String,
@@ -31,6 +33,8 @@ pub enum Op {
     Move {
         blocks: Vec<String>,
         to: To,
+        /// §1.2: the DESTINATION parent's `parent_children_hash` (since 1.1).
+        expect: Option<Expect>,
     },
     Remove {
         blocks: Vec<String>,
@@ -195,12 +199,20 @@ impl Op {
         let mut m = Map::new();
         m.insert("op".to_owned(), json!(self.name()));
         match self {
-            Op::Insert { doc, to, markdown } => {
+            Op::Insert {
+                doc,
+                to,
+                markdown,
+                expect,
+            } => {
                 if let Some(d) = doc {
                     m.insert("doc".to_owned(), json!(d));
                 }
                 m.insert("to".to_owned(), to_to_json(to));
                 m.insert("markdown".to_owned(), json!(markdown));
+                if let Some(e) = expect {
+                    m.insert("expect".to_owned(), expect_to_json(e));
+                }
             }
             Op::Update {
                 block,
@@ -227,9 +239,12 @@ impl Op {
                     m.insert("child_ids".to_owned(), json!(c));
                 }
             }
-            Op::Move { blocks, to } => {
+            Op::Move { blocks, to, expect } => {
                 m.insert("blocks".to_owned(), json!(blocks));
                 m.insert("to".to_owned(), to_to_json(to));
+                if let Some(e) = expect {
+                    m.insert("expect".to_owned(), expect_to_json(e));
+                }
             }
             Op::Remove { blocks, expect } => {
                 m.insert("blocks".to_owned(), json!(blocks));
@@ -286,6 +301,7 @@ impl Op {
                 doc: opt_string(obj.get("doc"), "insert.doc")?,
                 to: to_from_json(obj.get("to").ok_or("insert.to missing")?)?,
                 markdown: string(obj.get("markdown"), "insert.markdown")?,
+                expect: expect_one("expect")?,
             },
             "update" => {
                 let attrs = match obj.get("attrs") {
@@ -318,6 +334,7 @@ impl Op {
             "move" => Op::Move {
                 blocks: strings(obj.get("blocks"), "move.blocks")?,
                 to: to_from_json(obj.get("to").ok_or("move.to missing")?)?,
+                expect: expect_one("expect")?,
             },
             "remove" => Op::Remove {
                 blocks: strings(obj.get("blocks"), "remove.blocks")?,
@@ -408,10 +425,16 @@ pub fn resolve_op(op: &Op, results: &[OpResult]) -> Result<Op> {
             .collect()
     };
     Ok(match op {
-        Op::Insert { doc, to, markdown } => Op::Insert {
+        Op::Insert {
+            doc,
+            to,
+            markdown,
+            expect,
+        } => Op::Insert {
             doc: doc.clone(),
             to: resolve_to(to, results)?,
             markdown: markdown.clone(),
+            expect: expect.clone(),
         },
         Op::Update {
             block,
@@ -428,9 +451,10 @@ pub fn resolve_op(op: &Op, results: &[OpResult]) -> Result<Op> {
             trivia: trivia.clone(),
             child_ids: child_ids.clone(),
         },
-        Op::Move { blocks, to } => Op::Move {
+        Op::Move { blocks, to, expect } => Op::Move {
             blocks: ids(blocks)?,
             to: resolve_to(to, results)?,
+            expect: expect.clone(),
         },
         Op::Remove { blocks, expect } => Op::Remove {
             blocks: ids(blocks)?,
@@ -488,6 +512,7 @@ mod tests {
                 parent: Parent::Doc,
                 at: At::Start,
             },
+            expect: None,
         };
         assert!(
             matches!(resolve_op(&op, &results).unwrap(), Op::Move { blocks, .. } if blocks == ["b_1"])
@@ -497,10 +522,10 @@ mod tests {
     #[test]
     fn ops_round_trip_through_json() {
         let ops = json!([
-            { "op": "insert", "doc": "a.md", "to": { "parent": { "doc": true }, "at": "end" }, "markdown": "x" },
+            { "op": "insert", "doc": "a.md", "to": { "parent": { "doc": true }, "at": "end" }, "markdown": "x", "expect": { "parent_children_hash": "cd" } },
             { "op": "insert", "to": { "parent": { "heading": "b_0", "scope": "section" }, "at": { "after": "b_1" } }, "markdown": "x" },
             { "op": "update", "block": "b_1", "markdown": "y", "attrs": { "checked": true }, "expect": { "content_hash": "ab" }, "trivia": "\n", "child_ids": { "/0": "b_2" } },
-            { "op": "move", "blocks": ["b_1"], "to": { "parent": "b_0", "at": { "before": "b_2" } } },
+            { "op": "move", "blocks": ["b_1"], "to": { "parent": "b_0", "at": { "before": "b_2" } }, "expect": { "parent_children_hash": "cd" } },
             { "op": "remove", "blocks": ["b_1"], "expect": { "b_1": { "content_hash": "ab" } } },
             { "op": "split", "block": "b_1", "at": [3, 7], "expect": { "content_hash": "ab" } },
             { "op": "merge", "blocks": ["b_1", "b_2"], "separator": "\n" },

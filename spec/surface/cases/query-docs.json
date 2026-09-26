@@ -863,7 +863,7 @@
     },
     {
       "name": "relation-blocks-in-document-order",
-      "notes": "§1.2: `blocks` is the live blocks in DOCUMENT order (pre-order over the tree). $ordinal/$depth read as undefined here: the engine's follow intrinsics shadow the store's block intrinsics (§9).",
+      "notes": "§1.2: `blocks` is the live blocks in DOCUMENT order (pre-order over the tree): each block's $ordinal restarts at 0 under its parent and $depth is its nesting depth (the list items and tasks are 0..N at depth 1 after their list at depth 0). Reachable since oqx 0.13; before, the engine's follow intrinsics shadowed them (§9).",
       "query": "select b: blocks collect { o: $ordinal, d: $depth, type } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
@@ -872,63 +872,103 @@
             "path": "substances/salt.md",
             "b": [
               {
+                "o": 0,
+                "d": 0,
                 "type": "heading"
               },
               {
+                "o": 1,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 2,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 3,
+                "d": 0,
                 "type": "heading"
               },
               {
+                "o": 4,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 5,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 6,
+                "d": 0,
                 "type": "heading"
               },
               {
+                "o": 7,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 8,
+                "d": 0,
                 "type": "list"
               },
               {
+                "o": 0,
+                "d": 1,
                 "type": "list_item"
               },
               {
+                "o": 1,
+                "d": 1,
                 "type": "list_item"
               },
               {
+                "o": 2,
+                "d": 1,
                 "type": "list_item"
               },
               {
+                "o": 9,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 10,
+                "d": 0,
                 "type": "heading"
               },
               {
+                "o": 11,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 12,
+                "d": 0,
                 "type": "heading"
               },
               {
+                "o": 13,
+                "d": 0,
                 "type": "paragraph"
               },
               {
+                "o": 14,
+                "d": 0,
                 "type": "list"
               },
               {
+                "o": 0,
+                "d": 1,
                 "type": "task"
               },
               {
+                "o": 1,
+                "d": 1,
                 "type": "task"
               }
             ]
@@ -1042,12 +1082,12 @@
           {
             "id": "d_12",
             "path": "substances/philosophers-stone.md",
-            "n": 5
+            "n": 4
           },
           {
             "id": "d_13",
             "path": "substances/prima-materia.md",
-            "n": 7
+            "n": 4
           },
           {
             "id": "d_14",

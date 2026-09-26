@@ -427,6 +427,7 @@ fn structural_sharing_editing_one_of_500_blocks_adds_one_node_and_one_blob() {
             text: format!("Paragraph number {i}."),
             trivia: "\n\n".to_owned(),
             attrs: Default::default(),
+            span: omgbase_format::Span { start: 0, end: 0 },
             children: Vec::new(),
         })
         .collect();

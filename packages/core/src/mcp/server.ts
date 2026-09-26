@@ -83,9 +83,9 @@ const expectSchema = z.object({
   parent_children_hash: z.string().optional(),
 });
 const opSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("insert"), doc: z.string().optional(), to: toSchema, markdown: z.string() }),
+  z.object({ op: z.literal("insert"), doc: z.string().optional(), to: toSchema, markdown: z.string(), expect: expectSchema.optional() }),
   z.object({ op: z.literal("update"), block: z.string(), markdown: z.string().optional(), attrs: z.record(z.string(), z.unknown()).optional(), expect: expectSchema.optional() }),
-  z.object({ op: z.literal("move"), blocks: z.array(z.string()), to: toSchema }),
+  z.object({ op: z.literal("move"), blocks: z.array(z.string()), to: toSchema, expect: expectSchema.optional() }),
   z.object({ op: z.literal("remove"), blocks: z.array(z.string()), expect: z.record(z.string(), expectSchema).optional() }),
   z.object({ op: z.literal("split"), block: z.string(), at: z.array(z.number().int()), expect: expectSchema.optional() }),
   z.object({ op: z.literal("merge"), blocks: z.array(z.string()), separator: z.string().optional(), expect: z.record(z.string(), expectSchema).optional() }),
@@ -1131,7 +1131,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "diff_unified",
     {
       description:
-        "Line-based unified diff between two revisions of a document (the `omg diff` rendering): returns `{ doc, path, from, to, diff }` where `diff` is the +/- unified text. `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
+        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ doc, path, from, to, diff }` where `diff` is a unified diff of the two rendered texts (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
       inputSchema: { doc: z.string(), from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {

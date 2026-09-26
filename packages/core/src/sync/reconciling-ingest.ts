@@ -128,7 +128,7 @@ function assignFromMap(blocks: RawBlock[], assignment: Map<string, string>): Tre
     list.map((b, index) => {
       const key = `${parentKey ?? ""}/${index}`;
       const blockId = assignment.get(key) ?? mintId("b");
-      return { blockId, type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: walk(b.children, key) };
+      return { blockId, type: b.type, raw: b.raw, trivia: b.trivia, attrs: b.attrs, children: walk(b.children, key), span: b.span };
     });
   return walk(blocks, null);
 }
@@ -313,11 +313,13 @@ function resolveAdapterEdge(db: Database, repoId: string, srcDoc: string, e: Ada
   };
 }
 
-// Collect RawBlock-shaped objects from the id-assigned tree for adapter edge extraction.
+// Collect RawBlock-shaped objects from the id-assigned tree for adapter edge
+// extraction. The parsed span rides along so the adapter can blank a
+// container's children (spec/graph §1 own text).
 function collectRawBlocks(blocks: TreeInputBlock[]): RawBlock[] {
   return blocks.map((b) => ({
     type: b.type,
-    span: { start: 0, end: 0 },
+    span: b.span ?? { start: 0, end: 0 },
     raw: b.raw,
     text: "",
     attrs: b.attrs,

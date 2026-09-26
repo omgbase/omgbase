@@ -1,10 +1,15 @@
 import type { Store } from "../core/store/store.js";
+import { ctxHashHex } from "./embeddings.js";
+import { buildEmbedTasks } from "./tasks.js";
 
-// Vector search (05 §5, 02 §4). v1 uses brute-force cosine over the embeddings
-// cache joined to current blocks — acceptable to ~10^5 vectors (documented
-// ceiling; sqlite-vec/pgvector are the pressure valve). The embeddings table is
-// keyed by content_hash, so we join blocks.raw_hash = embeddings.content_hash
-// and keep only rows for the requested model.
+// Vector search (spec/search §3). v1 uses brute-force cosine over the live
+// embeddable blocks' vectors — acceptable to ~10^5 vectors (documented ceiling;
+// sqlite-vec/pgvector are the pressure valve). A block's vector is the
+// `embeddings` row for the requested model keyed by the block's CURRENT
+// (content_hash = raw_hash, ctx_hash = sha256(ctx)) (§2.2) — the same key the
+// drain writes — so a block whose context changed (a heading rename) has no
+// vector until the next drain, and a stale row is cache, never a candidate
+// (1.1). One candidate per block by construction.
 
 export interface VectorHit {
   blockId: string;
@@ -33,27 +38,23 @@ function cosine(a: Float32Array, b: Float32Array): number {
 
 export function vectorSearch(store: Store, repoId: string, model: string, queryVec: Float32Array, opts: { limit?: number } = {}): VectorHit[] {
   const limit = opts.limit ?? 50;
-  const rows = store.db
-    .prepare(
-      `SELECT b.block_id AS blockId, b.doc_id AS docId, d.path AS path, e.vec AS vec
-       FROM embeddings e
-       JOIN blocks b ON b.raw_hash = e.content_hash AND b.deleted_commit IS NULL
-       JOIN docs d ON d.doc_id = b.doc_id
-       WHERE b.repo_id = ? AND e.model = ?`,
-    )
-    .all(repoId, model) as { blockId: string; docId: string; path: string; vec: Buffer }[];
+  // The candidates are exactly the drain's tasks: every live embeddable block
+  // with its current (content_hash, ctx). Reusing buildEmbedTasks keeps the
+  // context rule in one place; its cost is one walk of the repo's blocks and
+  // sections per query (fine at v1 scale, see the ceiling above).
+  const tasks = buildEmbedTasks(store, repoId);
+  const docPath = store.db.prepare("SELECT doc_id AS docId, path FROM blocks JOIN docs USING (doc_id) WHERE block_id = ?");
+  const vecFor = store.db.prepare("SELECT vec FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?");
 
-  // One hit per live block (spec/search §3). Several cache rows can join to the
-  // same block — a stale ctx row survives a heading rename next to the fresh one
-  // — and the block keeps its best cosine, not one hit per row.
-  const best = new Map<string, VectorHit>();
-  for (const r of rows) {
-    const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4);
-    const c = cosine(queryVec, v);
-    const prev = best.get(r.blockId);
-    if (!prev || c > prev.cosine) best.set(r.blockId, { blockId: r.blockId, docId: r.docId, path: r.path, cosine: c });
+  const scored: VectorHit[] = [];
+  for (const t of tasks) {
+    const row = vecFor.get(Buffer.from(t.contentHashHex, "hex"), Buffer.from(ctxHashHex(t.ctx), "hex"), model) as { vec: Buffer } | undefined;
+    if (!row) continue; // stale (§2.3): no vector until the next drain
+    const meta = docPath.get(t.blockId) as { docId: string; path: string } | undefined;
+    if (!meta) continue;
+    const v = new Float32Array(row.vec.buffer, row.vec.byteOffset, row.vec.byteLength / 4);
+    scored.push({ blockId: t.blockId, docId: meta.docId, path: meta.path, cosine: cosine(queryVec, v) });
   }
-  const scored = [...best.values()];
   scored.sort((a, b) => b.cosine - a.cosine || (a.blockId < b.blockId ? -1 : 1));
   return scored.slice(0, limit);
 }

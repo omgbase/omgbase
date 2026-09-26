@@ -4422,8 +4422,8 @@
       }
     },
     {
-      "name": "rebuild-stats-hides-a-pending-edit",
-      "notes": "README §4.3: file_stats is derived and a rebuild re-stats and re-hashes every walked file. Pinned consequence: rebuilding over an un-ingested edit makes the cache agree with the disk, so the following sweep AND drift see no candidate and the edit stays invisible until the file changes again (unconverged is 0 too — file_hash is the old bytes' hash, and only the stat cache changed).",
+      "name": "rebuild-stats-keeps-a-pending-edit-visible",
+      "notes": "README §4.3 (1.1): a rebuild deletes the repo's rows and records a row only for a walked file whose bytes' hash equals its live doc's file_hash. Over an un-ingested edit the file gets no row, so the following drift still reports it `changed` and the following sweep hashes and ingests it (candidates 1, changed true). The touch afterwards is an ordinary refresh. Before 1.1 the reference recorded the disk hash of every walked file and the edit vanished (§9 \"Fixed (1.1)\").",
       "steps": [
         {
           "disk": {
@@ -4488,19 +4488,21 @@
             "scanned": 1
           },
           {
-            "changed": 0,
+            "changed": 1,
             "deleted": 0,
             "untracked": 0
           },
           {
             "checkpoint_id": "cp_1",
-            "ingested": [],
+            "ingested": [
+              "a.md"
+            ],
             "suppressed": [],
             "deleted": [],
             "conflicted": [],
             "scanned": 1,
-            "candidates": 0,
-            "changed": false
+            "candidates": 1,
+            "changed": true
           },
           {},
           {
@@ -4519,8 +4521,1369 @@
             "doc_id": "d_0",
             "path": "a.md",
             "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "b6caa022757ec7e2a3ddb1364e84c5a2def532baec63892091a702a51f745786",
+            "frontmatter_blob": null,
+            "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "6bd2f7e96e89576fb8dbaa56e6dcfdc902067aab84c3de196035a27a1c90f6ca",
+            "frontmatter_blob": null,
+            "rendered_hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "9c96eb7b657a720cdd7c8273b2a1d9bd06d658e467f9cad36add5eaf5ae96602",
+            "size": 10,
+            "bytes": "# A edited"
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "6bd2f7e96e89576fb8dbaa56e6dcfdc902067aab84c3de196035a27a1c90f6ca",
+            "entries": "[[\"b_1\",\"9c96eb7b657a720cdd7c8273b2a1d9bd06d658e467f9cad36add5eaf5ae96602\",null,\"heading\",{\"level\":1},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "b6caa022757ec7e2a3ddb1364e84c5a2def532baec63892091a702a51f745786",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A edited",
+            "raw_hash": "9c96eb7b657a720cdd7c8273b2a1d9bd06d658e467f9cad36add5eaf5ae96602",
+            "norm_hash": "92541bdbd3d86613492f371210e62eaa0f1ef4f5d0bdda01be6229d53a2cfd9a",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_1",
+            "kind": "deleted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "type": "heading",
+            "deleted_commit": "c_1",
+            "expires_ts": "2026-10-26T10:01:00.000Z"
+          }
+        ],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_1",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 0
+          }
+        ],
+        "checkpoints": [
+          {
+            "id": "cp_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "files": [
+              [
+                "a.md",
+                null,
+                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+              ]
+            ],
+            "git_head": null
+          },
+          {
+            "id": "cp_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "files": [
+              [
+                "a.md",
+                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+                "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af"
+              ]
+            ],
+            "git_head": null
+          },
+          {
+            "id": "cp_2",
+            "ts": "2026-09-26T10:02:00.000Z",
+            "files": [],
+            "git_head": null
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 3000,
+            "size": 11,
+            "hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebuild-stats-records-a-clean-tree",
+      "notes": "README §4.3: over a tree whose bytes all match their live docs, a rebuild records every walked file with its fresh stat (unchanged behavior). a.md was touched without an edit, so the rebuild refreshes its stat and the following sweep has no candidate.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "disk": {
+            "path": "sub/b.md",
+            "content": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 2000
+          }
+        },
+        {
+          "rebuild_stats": {}
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {},
+          {
+            "checkpoint_id": "cp_0",
+            "ingested": [
+              "a.md",
+              "sub/b.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 2,
+            "changed": true
+          },
+          {},
+          {
+            "scanned": 2
+          },
+          {
+            "checkpoint_id": "cp_1",
+            "ingested": [],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 0,
+            "changed": false
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
             "current_rev": "r_0",
-            "file_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "sub/b.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "frontmatter_blob": null,
+            "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "path": "sub/b.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "size": 66,
+            "bytes": "Beta paragraph about bees and the hives at the edge of the meadow."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "checkpoints": [
+          {
+            "id": "cp_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "files": [
+              [
+                "a.md",
+                null,
+                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+              ],
+              [
+                "sub/b.md",
+                null,
+                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
+              ]
+            ],
+            "git_head": null
+          },
+          {
+            "id": "cp_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "files": [],
+            "git_head": null
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 2000,
+            "size": 78,
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+          },
+          {
+            "path": "sub/b.md",
+            "mtime_ns": 1000,
+            "size": 72,
+            "hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebuild-stats-skips-an-untracked-file",
+      "notes": "README §4.3 (1.1): a walked file with no live doc gets no row (before 1.1 it did, and the file was invisible until it changed). Drift reports it `untracked` and the following sweep ingests it.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "disk": {
+            "path": "new.md",
+            "content": "# New\n",
+            "mtime_ns": 2000
+          }
+        },
+        {
+          "rebuild_stats": {}
+        },
+        {
+          "drift": {}
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "checkpoint_id": "cp_0",
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 1,
+            "changed": true
+          },
+          {},
+          {
+            "scanned": 2
+          },
+          {
+            "changed": 0,
+            "deleted": 0,
+            "untracked": 1
+          },
+          {
+            "checkpoint_id": "cp_1",
+            "ingested": [
+              "new.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 1,
+            "changed": true
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "new.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "ebb49cf32b7587c27c642a8e9ff85a0b69792b64e8e9749a280af681c0b62077",
+            "frontmatter_blob": null,
+            "rendered_hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117",
+            "path": "new.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "705693b420771b793fd200546d0e15744b3eaa61f6e39ed9a4f14b0859948185",
+            "size": 5,
+            "bytes": "# New"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "ebb49cf32b7587c27c642a8e9ff85a0b69792b64e8e9749a280af681c0b62077",
+            "entries": "[[\"b_2\",\"705693b420771b793fd200546d0e15744b3eaa61f6e39ed9a4f14b0859948185\",null,\"heading\",{\"level\":1},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "New",
+            "raw_hash": "705693b420771b793fd200546d0e15744b3eaa61f6e39ed9a4f14b0859948185",
+            "norm_hash": "18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 0
+          }
+        ],
+        "checkpoints": [
+          {
+            "id": "cp_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "files": [
+              [
+                "a.md",
+                null,
+                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+              ]
+            ],
+            "git_head": null
+          },
+          {
+            "id": "cp_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "files": [
+              [
+                "new.md",
+                null,
+                "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117"
+              ]
+            ],
+            "git_head": null
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 78,
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+          },
+          {
+            "path": "new.md",
+            "mtime_ns": 2000,
+            "size": 6,
+            "hash": "f676b43bd55f91451babc1663739064abb7e11e2b5f4a7efe62c29e4eeb0d117"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebuild-stats-after-a-deletion-leaves-no-row",
+      "notes": "README §4.3: a live doc whose file is gone is not walked, so the rebuild leaves it no row and `scanned` counts only the file still on disk; drift reports it `deleted`. Pinned consequence (unchanged by 1.1): the sweep finds deletions from cache rows that are no longer on disk, so after the rebuild dropped b.md's row the following sweep has no candidate and does not tombstone it — only drift (and `recover`'s `missing`) see it.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "disk": {
+            "path": "b.md",
+            "content": "# B\n\nBeta paragraph about bees and the hives at the edge of the meadow.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "rm": {
+            "path": "b.md"
+          }
+        },
+        {
+          "rebuild_stats": {}
+        },
+        {
+          "drift": {}
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:01:00.000Z"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {},
+          {
+            "checkpoint_id": "cp_0",
+            "ingested": [
+              "a.md",
+              "b.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 2,
+            "candidates": 2,
+            "changed": true
+          },
+          {},
+          {
+            "scanned": 1
+          },
+          {
+            "changed": 0,
+            "deleted": 1,
+            "untracked": 0
+          },
+          {
+            "checkpoint_id": "cp_1",
+            "ingested": [],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 0,
+            "changed": false
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "frontmatter_blob": null,
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "frontmatter_blob": null,
+            "rendered_hash": "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80",
+            "path": "b.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "size": 3,
+            "bytes": "# B"
+          },
+          {
+            "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "size": 3,
+            "bytes": "# A"
+          },
+          {
+            "hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "size": 66,
+            "bytes": "Beta paragraph about bees and the hives at the edge of the meadow."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "152261c089b344c9a6891d3fc028251eacfee0b61185f5066bb49955ab2f0905",
+            "entries": "[[\"b_2\",\"216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Beta paragraph about bees and the hives at the edge of the meadow.",
+            "raw_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "norm_hash": "4e41dfdbf6f531a9faab3cc6e1867cb60f157dfa6f9af800a6243278f1347797",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          },
+          {
+            "doc_id": "d_1",
+            "heading_block": "b_2",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 1
+          }
+        ],
+        "checkpoints": [
+          {
+            "id": "cp_0",
+            "ts": "2026-09-26T10:00:00.000Z",
+            "files": [
+              [
+                "a.md",
+                null,
+                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+              ],
+              [
+                "b.md",
+                null,
+                "3b35512b67f014f5433f11a7bab011825cdc3e42e6b5589724288b0ad48c8d80"
+              ]
+            ],
+            "git_head": null
+          },
+          {
+            "id": "cp_1",
+            "ts": "2026-09-26T10:01:00.000Z",
+            "files": [],
+            "git_head": null
+          }
+        ],
+        "file_stats": [
+          {
+            "path": "a.md",
+            "mtime_ns": 1000,
+            "size": 78,
+            "hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebuild-stats-counts-every-walked-file",
+      "notes": "README §4.3 (1.1): the rebuild's return value is the number of files walked, not the number of rows recorded. Here both walked files fail the rule (an un-ingested edit and an untracked file), so `scanned` is 2 while file_stats is empty; drift reports both.",
+      "steps": [
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley road.\n",
+            "mtime_ns": 1000
+          }
+        },
+        {
+          "sweep": {
+            "ts": "2026-09-26T10:00:00.000Z"
+          }
+        },
+        {
+          "disk": {
+            "path": "a.md",
+            "content": "# A\n\nAlpha paragraph about apples and the orchard rows along the valley lane.\n",
+            "mtime_ns": 2000
+          }
+        },
+        {
+          "disk": {
+            "path": "c.md",
+            "content": "# C\n",
+            "mtime_ns": 3000
+          }
+        },
+        {
+          "rebuild_stats": {}
+        },
+        {
+          "drift": {}
+        }
+      ],
+      "expect": {
+        "steps": [
+          {},
+          {
+            "checkpoint_id": "cp_0",
+            "ingested": [
+              "a.md"
+            ],
+            "suppressed": [],
+            "deleted": [],
+            "conflicted": [],
+            "scanned": 1,
+            "candidates": 1,
+            "changed": true
+          },
+          {},
+          {},
+          {
+            "scanned": 2
+          },
+          {
+            "changed": 1,
+            "deleted": 0,
+            "untracked": 1
+          }
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "conflicted": 0,
             "leading_trivia": "",
             "frontmatter_trivia": null,
@@ -4544,9 +5907,9 @@
             "rev_id": "r_0",
             "doc_id": "d_0",
             "seq": 1,
-            "root_tree": "b6caa022757ec7e2a3ddb1364e84c5a2def532baec63892091a702a51f745786",
+            "root_tree": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
             "frontmatter_blob": null,
-            "rendered_hash": "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80",
+            "rendered_hash": "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e",
             "path": "a.md",
             "commit_id": "c_0"
           }
@@ -4561,12 +5924,22 @@
             "hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "size": 3,
             "bytes": "# A"
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "size": 72,
+            "bytes": "Alpha paragraph about apples and the orchard rows along the valley road."
           }
         ],
         "tree_nodes": [
           {
-            "hash": "b6caa022757ec7e2a3ddb1364e84c5a2def532baec63892091a702a51f745786",
-            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+            "hash": "d7f5633bf3cde48005782e32fd293f3b1a21f31350171962d2f58f2779306533",
+            "entries": "[[\"b_0\",\"327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
           }
         ],
         "blocks": [
@@ -4585,6 +5958,23 @@
             "text": "A",
             "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
             "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Alpha paragraph about apples and the orchard rows along the valley road.",
+            "raw_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
+            "norm_hash": "bb7bf14329665b0c058efadd40018769fadb067127a4aea5bc6c442f5383ffe5",
             "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
             "created_commit": "c_0",
             "deleted_commit": null
@@ -4599,11 +5989,25 @@
             "reason": null,
             "matcher_v": "m2.3",
             "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
           }
         ],
         "block_changes": [
           {
             "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
             "commit_id": "c_0",
             "kind": "inserted"
           }
@@ -4615,7 +6019,7 @@
             "heading_block": "b_0",
             "level": 1,
             "first_ordinal": 0,
-            "last_ordinal": 0
+            "last_ordinal": 1
           }
         ],
         "checkpoints": [
@@ -4626,32 +6030,13 @@
               [
                 "a.md",
                 null,
-                "aa1237b773c38dbddef583c4868aaea7a44c5237ea7923aecca5513764b42d80"
+                "8ef473c883eaf4ee80569bb6e966a406b9a6c6f75a01e59a631bf4545d0fd50e"
               ]
             ],
             "git_head": null
-          },
-          {
-            "id": "cp_1",
-            "ts": "2026-09-26T10:01:00.000Z",
-            "files": [],
-            "git_head": null
-          },
-          {
-            "id": "cp_2",
-            "ts": "2026-09-26T10:02:00.000Z",
-            "files": [],
-            "git_head": null
           }
         ],
-        "file_stats": [
-          {
-            "path": "a.md",
-            "mtime_ns": 3000,
-            "size": 11,
-            "hash": "bb6813975b252eb3f830c8839fcaad5e277541bfb26b2dd49bfd74698014a0af"
-          }
-        ]
+        "file_stats": []
       }
     }
   ]

@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-search"
-version = "1.0.0"
+version = "1.1.0"
 description = "omgbase search: FTS5 query sanitizer, embedding inputs and cache keys, block-vector pooling, cosine, RRF fusion with explainable boosts, and the external embedding-provider protocol — Rust implementation"
 keywords = ["markdown", "search", "embeddings", "fts5", "omgbase"]
 categories = ["text-processing", "database-implementations"]

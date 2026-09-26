@@ -695,7 +695,7 @@
     },
     {
       "name": "md-task-with-link",
-      "notes": "A link inside a task projects `md:link` on the task block and on the enclosing list, plus the `md:task`.",
+      "notes": "§2.1: the task block projects `md:task` (span = its raw) and the `md:link`; the list projects nothing (1.1: own text).",
       "steps": [
         {
           "observe": {
@@ -711,17 +711,6 @@
       ],
       "expect": {
         "nodes": [
-          {
-            "node_id": "n_12c83f7ce6d4",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 11,
-            "span_end": 21,
-            "attrs": {}
-          },
           {
             "node_id": "n_26ff1f5c34ac",
             "doc_id": "d_0",
@@ -752,20 +741,6 @@
           {
             "edge_id": "e_0",
             "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_1",
-            "src_doc": "d_0",
             "src_block": "b_1",
             "src_field": null,
             "predicate": "references",
@@ -784,9 +759,8 @@
             "predicate": "references",
             "dst_node": "phantom:x.md",
             "dst_kind": "document",
-            "count": 2,
+            "count": 1,
             "samples": [
-              "b_0",
               "b_1"
             ]
           }
@@ -1061,8 +1035,8 @@
       }
     },
     {
-      "name": "link-in-list-item-counts-twice",
-      "notes": "§8 containers: the list and the item both project the `md:link` node (different block_id).",
+      "name": "link-in-list-item-projected-once-for-the-item",
+      "notes": "§1 / §8 (1.1): the list scans its own text with the item blanked, so the `md:link` node is projected once, for the item; its span still indexes the item's raw.",
       "steps": [
         {
           "observe": {
@@ -1079,17 +1053,6 @@
       "expect": {
         "nodes": [
           {
-            "node_id": "n_12c83f7ce6d4",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 6,
-            "span_end": 16,
-            "attrs": {}
-          },
-          {
             "node_id": "n_7f86eccd7a7c",
             "doc_id": "d_0",
             "block_id": "b_1",
@@ -1105,20 +1068,6 @@
         "edges": [
           {
             "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_1",
             "src_doc": "d_0",
             "src_block": "b_1",
             "src_field": null,
@@ -1138,9 +1087,8 @@
             "predicate": "references",
             "dst_node": "phantom:x.md",
             "dst_kind": "document",
-            "count": 2,
+            "count": 1,
             "samples": [
-              "b_0",
               "b_1"
             ]
           }
@@ -1148,8 +1096,8 @@
       }
     },
     {
-      "name": "link-in-nested-list-counts-once-per-level",
-      "notes": "Outer list, outer item, inner list and inner item each project the node (four block_ids, four edges, count 4).",
+      "name": "link-in-nested-list-projected-once-for-the-inner-item",
+      "notes": "§1 (1.1): outer list, outer item and inner list blank their children; only the inner item projects the `md:link`.",
       "steps": [
         {
           "observe": {
@@ -1166,28 +1114,6 @@
       "expect": {
         "nodes": [
           {
-            "node_id": "n_12a4b9827b22",
-            "doc_id": "d_0",
-            "block_id": "b_3",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 8,
-            "span_end": 18,
-            "attrs": {}
-          },
-          {
-            "node_id": "n_12c83f7ce6d4",
-            "doc_id": "d_0",
-            "block_id": "b_0",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 18,
-            "span_end": 28,
-            "attrs": {}
-          },
-          {
             "node_id": "n_6455412fedd3",
             "doc_id": "d_0",
             "block_id": "b_4",
@@ -1197,65 +1123,12 @@
             "span_start": 8,
             "span_end": 18,
             "attrs": {}
-          },
-          {
-            "node_id": "n_7f86eccd7a7c",
-            "doc_id": "d_0",
-            "block_id": "b_1",
-            "kind": "md:link",
-            "name": "a",
-            "value": "/x.md",
-            "span_start": 18,
-            "span_end": 28,
-            "attrs": {}
           }
         ],
         "external_nodes": [],
         "edges": [
           {
             "edge_id": "e_0",
-            "src_doc": "d_0",
-            "src_block": "b_0",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_1",
-            "src_doc": "d_0",
-            "src_block": "b_1",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_2",
-            "src_doc": "d_0",
-            "src_block": "b_3",
-            "src_field": null,
-            "predicate": "references",
-            "dst_kind": "document",
-            "dst_node": "phantom:x.md",
-            "anchor": null,
-            "provenance": "link",
-            "via_node": null,
-            "from_commit": "c_0",
-            "to_commit": null
-          },
-          {
-            "edge_id": "e_3",
             "src_doc": "d_0",
             "src_block": "b_4",
             "src_field": null,
@@ -1275,14 +1148,276 @@
             "predicate": "references",
             "dst_node": "phantom:x.md",
             "dst_kind": "document",
-            "count": 4,
+            "count": 1,
             "samples": [
-              "b_0",
-              "b_1",
-              "b_3"
+              "b_4"
             ]
           }
         ]
+      }
+    },
+    {
+      "name": "link-in-task-item",
+      "notes": "§2.1 (1.1): a link inside a task item is one `md:link` on the task block, beside its `md:task`; the list projects nothing.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- [ ] see [x](a.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_26ff1f5c34ac",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:task",
+            "name": null,
+            "value": "see [x](a.md)",
+            "span_start": 0,
+            "span_end": 19,
+            "attrs": {
+              "checked": false
+            }
+          },
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "x",
+            "value": "a.md",
+            "span_start": 10,
+            "span_end": 19,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "d_0",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "d_0",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "link-in-blockquote-anchored-to-the-paragraph",
+      "notes": "§1 (1.1): the blockquote's own text is its `> ` prefix; the nested paragraph projects the `md:link`, with the span into the paragraph's raw.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "> see [a](/x.md)\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_7f86eccd7a7c",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:link",
+            "name": "a",
+            "value": "/x.md",
+            "span_start": 4,
+            "span_end": 14,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [
+          {
+            "edge_id": "e_0",
+            "src_doc": "d_0",
+            "src_block": "b_1",
+            "src_field": null,
+            "predicate": "references",
+            "dst_kind": "document",
+            "dst_node": "phantom:x.md",
+            "anchor": null,
+            "provenance": "link",
+            "via_node": null,
+            "from_commit": "c_0",
+            "to_commit": null
+          }
+        ],
+        "doc_edges": [
+          {
+            "src_doc": "d_0",
+            "predicate": "references",
+            "dst_node": "phantom:x.md",
+            "dst_kind": "document",
+            "count": 1,
+            "samples": [
+              "b_1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "inline-field-on-marker-line-span-from-key",
+      "notes": "§2.1 (1.1): the line form admits a list marker; the `md:inline_field` node belongs to the item and its span runs from the key to the end of the trimmed value (the marker is outside).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- key:: some value  \n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_fee049cdf7d2",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:inline_field",
+            "name": "key",
+            "value": "some value",
+            "span_start": 2,
+            "span_end": 18,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [],
+        "doc_edges": []
+      }
+    },
+    {
+      "name": "inline-field-on-task-marker-line",
+      "notes": "§2.1 (1.1): a task checkbox after the marker is admitted; `md:task` and `md:inline_field` both on the task block.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "- [ ] due:: friday\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_26ff1f5c34ac",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:task",
+            "name": null,
+            "value": "due:: friday",
+            "span_start": 0,
+            "span_end": 18,
+            "attrs": {
+              "checked": false
+            }
+          },
+          {
+            "node_id": "n_fee049cdf7d2",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:inline_field",
+            "name": "due",
+            "value": "friday",
+            "span_start": 6,
+            "span_end": 18,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [],
+        "doc_edges": []
+      }
+    },
+    {
+      "name": "inline-field-on-ordered-marker-line",
+      "notes": "§2.1 (1.1): `1.` and `1)` markers before the key.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "1. a:: 1\n\n1) b:: 2\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "nodes": [
+          {
+            "node_id": "n_4e2b956293c8",
+            "doc_id": "d_0",
+            "block_id": "b_3",
+            "kind": "md:inline_field",
+            "name": "b",
+            "value": "2",
+            "span_start": 3,
+            "span_end": 8,
+            "attrs": {}
+          },
+          {
+            "node_id": "n_fee049cdf7d2",
+            "doc_id": "d_0",
+            "block_id": "b_1",
+            "kind": "md:inline_field",
+            "name": "a",
+            "value": "1",
+            "span_start": 3,
+            "span_end": 8,
+            "attrs": {}
+          }
+        ],
+        "external_nodes": [],
+        "edges": [],
+        "doc_edges": []
       }
     },
     {

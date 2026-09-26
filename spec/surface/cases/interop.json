@@ -1628,28 +1628,28 @@
           {
             "hits": [
               {
-                "id": "e_71",
+                "id": "e_47",
                 "path": "substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "texts/emerald-tablet.md"
               },
               {
-                "id": "e_72",
+                "id": "e_48",
                 "path": "substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "processes/magnum-opus.md"
               },
               {
-                "id": "e_73",
+                "id": "e_49",
                 "path": "substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
                 "$dst_path": "processes/calcination.md"
               },
               {
-                "id": "e_74",
+                "id": "e_50",
                 "path": "substances/prima-materia.md",
                 "predicate": "references",
                 "dst_kind": "document",
@@ -1864,19 +1864,7 @@
             ],
             "edges": [
               {
-                "id": "e_10",
-                "src": "d_0",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_26",
+                "id": "e_14",
                 "src": "d_0",
                 "dst": "d_17",
                 "dst_path": "texts/mutus-liber.md",
@@ -1888,19 +1876,7 @@
                 "src_field": null
               },
               {
-                "id": "e_28",
-                "src": "d_0",
-                "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_6",
+                "id": "e_3",
                 "src": "d_0",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -1912,7 +1888,7 @@
                 "src_field": null
               },
               {
-                "id": "e_7",
+                "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -1924,10 +1900,10 @@
                 "src_field": null
               },
               {
-                "id": "e_8",
+                "id": "e_5",
                 "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -1936,19 +1912,7 @@
                 "src_field": null
               },
               {
-                "id": "e_9",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_49",
+                "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -1960,7 +1924,7 @@
                 "src_field": null
               },
               {
-                "id": "e_50",
+                "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -1972,19 +1936,7 @@
                 "src_field": null
               },
               {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
+                "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -1996,7 +1948,7 @@
                 "src_field": null
               },
               {
-                "id": "e_66",
+                "id": "e_44",
                 "src": "d_12",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -2008,19 +1960,7 @@
                 "src_field": null
               },
               {
-                "id": "e_68",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
+                "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -2032,7 +1972,7 @@
                 "src_field": null
               },
               {
-                "id": "e_88",
+                "id": "e_63",
                 "src": "d_17",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -2117,7 +2057,19 @@
             ],
             "edges": [
               {
-                "id": "e_10",
+                "id": "e_3",
+                "src": "d_0",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_5",
                 "src": "d_0",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -2129,34 +2081,10 @@
                 "src_field": null
               },
               {
-                "id": "e_11",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_14",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
                 "id": "e_6",
                 "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -2165,19 +2093,7 @@
                 "src_field": null
               },
               {
-                "id": "e_8",
-                "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_29",
+                "id": "e_15",
                 "src": "d_1",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -2189,7 +2105,7 @@
                 "src_field": null
               },
               {
-                "id": "e_50",
+                "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
                 "dst_path": "substances/prima-materia.md",
@@ -2201,19 +2117,7 @@
                 "src_field": null
               },
               {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_52",
+                "id": "e_35",
                 "src": "d_10",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -2225,19 +2129,7 @@
                 "src_field": null
               },
               {
-                "id": "e_55",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
+                "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -2249,7 +2141,7 @@
                 "src_field": null
               },
               {
-                "id": "e_73",
+                "id": "e_49",
                 "src": "d_13",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -2261,7 +2153,7 @@
                 "src_field": null
               },
               {
-                "id": "e_77",
+                "id": "e_53",
                 "src": "d_14",
                 "dst": "d_7",
                 "dst_path": "processes/calcination.md",
@@ -2273,31 +2165,7 @@
                 "src_field": null
               },
               {
-                "id": "e_78",
-                "src": "d_14",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_45",
-                "src": "d_7",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_46",
+                "id": "e_30",
                 "src": "d_7",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -2357,42 +2225,6 @@
               },
               {
                 "id": "e_2",
-                "src": "d_0",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_3",
-                "src": "d_0",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_4",
-                "src": "d_0",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_5",
                 "src": "d_0",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -2567,18 +2399,6 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_5",
                 "predicate": "references",
                 "provenance": "link",
@@ -2591,36 +2411,12 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_7",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
                 "target": "salt",
                 "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "sulphur",
-                "authored": "sulphur",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -2687,18 +2483,6 @@
               {
                 "srcDoc": "d_5",
                 "srcPath": "practitioners/newton.md",
-                "srcBlock": "b_119",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_5",
-                "srcPath": "practitioners/newton.md",
                 "srcBlock": "b_120",
                 "predicate": "references",
                 "provenance": "link",
@@ -2747,18 +2531,6 @@
               {
                 "srcDoc": "d_7",
                 "srcPath": "processes/calcination.md",
-                "srcBlock": "b_149",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_7",
-                "srcPath": "processes/calcination.md",
                 "srcBlock": "b_152",
                 "predicate": "references",
                 "provenance": "link",
@@ -2789,18 +2561,6 @@
                 "dstKind": "document",
                 "target": "sulphur",
                 "authored": "sulphur",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_12",
-                "srcPath": "substances/philosophers-stone.md",
-                "srcBlock": "b_238",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "magnum-opus",
-                "authored": "magnum-opus",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -2890,27 +2650,27 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 89,
+            "totalOpenEdges": 64,
             "truncated": false
           },
           {
-            "staleCount": 27,
+            "staleCount": 21,
             "byTarget": [
               {
                 "target": "mercury",
-                "count": 10
-              },
-              {
-                "target": "salt",
                 "count": 8
               },
               {
-                "target": "sulphur",
+                "target": "salt",
                 "count": 6
               },
               {
+                "target": "sulphur",
+                "count": 5
+              },
+              {
                 "target": "magnum-opus",
-                "count": 2
+                "count": 1
               },
               {
                 "target": "nigredo",
@@ -2920,14 +2680,10 @@
             "bySource": [
               {
                 "srcPath": "index.md",
-                "count": 6
-              },
-              {
-                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
-                "srcPath": "substances/philosophers-stone.md",
+                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
@@ -2939,15 +2695,11 @@
                 "count": 2
               },
               {
-                "srcPath": "practitioners/newton.md",
-                "count": 2
-              },
-              {
-                "srcPath": "processes/calcination.md",
-                "count": 2
-              },
-              {
                 "srcPath": "substances/mercury.md",
+                "count": 2
+              },
+              {
+                "srcPath": "substances/philosophers-stone.md",
                 "count": 2
               },
               {
@@ -2959,12 +2711,20 @@
                 "count": 2
               },
               {
+                "srcPath": "practitioners/newton.md",
+                "count": 1
+              },
+              {
+                "srcPath": "processes/calcination.md",
+                "count": 1
+              },
+              {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 89
+            "totalOpenEdges": 64
           },
           {
             "stale": [
@@ -2994,7 +2754,7 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 26,
+            "totalOpenEdges": 21,
             "truncated": true
           }
         ]
@@ -3608,7 +3368,7 @@
             "docs": 18,
             "blocks": 314,
             "commits": 18,
-            "openEdges": 89,
+            "openEdges": 64,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -3994,7 +3754,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_18",
-            "diff": "- Working notes live under `lab/`.\n+ Working notes live under `lab/`, one file per month.\n+ Appended by apply."
+            "diff": "@@ -42,4 +42,5 @@\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n ## Laboratory\n-Working notes live under `lab/`.\n+Working notes live under `lab/`, one file per month.\n+Appended by apply."
           },
           [
             {
@@ -4058,7 +3818,7 @@
             "docs": 18,
             "blocks": 315,
             "commits": 19,
-            "openEdges": 89,
+            "openEdges": 64,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -4684,7 +4444,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_18",
-            "diff": "- The art of transformation — part proto-chemistry, part philosophy, part\n+ The art of transformation, revised for interop.\n- contemplative practice. This repository collects notes on its substances,\n+ ## The tria prima\n- processes, practitioners, and primary texts.\n+ Paracelsus reduced the material world to three principles:\n- ## The tria prima\n+ - [[mercury]] — the volatile spirit\n- Paracelsus reduced the material world to three principles:\n+ - [[sulphur]] — the combustible soul\n- - [[mercury]] — the volatile spirit\n+ - [[salt]] — the fixed body\n- - [[sulphur]] — the combustible soul\n+ - [[mercury]] — the volatile spirit\n- - [[salt]] — the fixed body\n+ - [[sulphur]] — the combustible soul\n- - [[mercury]] — the volatile spirit\n+ - [[salt]] — the fixed body\n- - [[sulphur]] — the combustible soul\n+ ## Substances\n- - [[salt]] — the fixed body\n+ - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- ## Substances\n+ - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n- - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n+ ## Processes\n- - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n+ The [magnum opus](/processes/magnum-opus.md) organizes the operations into\n- ## Processes\n+ stages. Individual operations are documented separately:\n- The [magnum opus](/processes/magnum-opus.md) organizes the operations into\n+ - [calcination](/processes/calcination.md)\n- stages. Individual operations are documented separately:\n+ - [dissolution](/processes/dissolution.md)\n- - [calcination](/processes/calcination.md)\n+ - [coagulation](/processes/coagulation.md)\n- - [dissolution](/processes/dissolution.md)\n+ - [calcination](/processes/calcination.md)\n- - [coagulation](/processes/coagulation.md)\n+ - [dissolution](/processes/dissolution.md)\n- - [calcination](/processes/calcination.md)\n+ - [coagulation](/processes/coagulation.md)\n- - [dissolution](/processes/dissolution.md)\n+ ## Practitioners\n- - [coagulation](/processes/coagulation.md)\n+ | Practitioner | Tradition | Approximate era |\n- ## Practitioners\n+ |---|---|---|\n- | Practitioner | Tradition | Approximate era |\n+ | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n- |---|---|---|\n+ | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n- | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n+ | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n- | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n+ | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n- | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n+ | Practitioner | Tradition | Approximate era |\n- | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n+ | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n- | Practitioner | Tradition | Approximate era |\n+ | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n- | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n+ | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n- | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n+ | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n- | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n+ ## Texts\n- | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n+ - [The Emerald Tablet](/texts/emerald-tablet.md)\n- ## Texts\n+ - [Mutus Liber](/texts/mutus-liber.md)\n- - [The Emerald Tablet](/texts/emerald-tablet.md)\n+ ## Laboratory\n- - [Mutus Liber](/texts/mutus-liber.md)\n+ Working notes live under `lab/`.\n- ## Laboratory\n- Working notes live under `lab/`."
+            "diff": "@@ -1,7 +1,5 @@\n # Alchemy\n-The art of transformation — part proto-chemistry, part philosophy, part\n-contemplative practice. This repository collects notes on its substances,\n-processes, practitioners, and primary texts.\n+The art of transformation, revised for interop.\n ## The tria prima\n Paracelsus reduced the material world to three principles:\n - [[mercury]] — the volatile spirit"
           },
           [
             {
@@ -4913,7 +4673,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_19",
-            "diff": "- ## The tria prima\n+ ## Laboratory\n- Paracelsus reduced the material world to three principles:\n+ Working notes live under `lab/`.\n- - [[mercury]] — the volatile spirit\n+ ## The tria prima\n- - [[sulphur]] — the combustible soul\n+ Paracelsus reduced the material world to three principles:\n- ## Substances\n+ - [[mercury]] — the volatile spirit\n- - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n+ - [[sulphur]] — the combustible soul\n- - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n+ ## Substances\n- ## Processes\n+ - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- The [magnum opus](/processes/magnum-opus.md) organizes the operations into\n+ - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n- stages. Individual operations are documented separately:\n+ ## Processes\n- - [calcination](/processes/calcination.md)\n+ The [magnum opus](/processes/magnum-opus.md) organizes the operations into\n- - [dissolution](/processes/dissolution.md)\n+ stages. Individual operations are documented separately:\n- - [coagulation](/processes/coagulation.md)\n+ - [calcination](/processes/calcination.md)\n- - [calcination](/processes/calcination.md)\n+ - [dissolution](/processes/dissolution.md)\n- - [dissolution](/processes/dissolution.md)\n+ - [coagulation](/processes/coagulation.md)\n- - [coagulation](/processes/coagulation.md)\n+ - [calcination](/processes/calcination.md)\n- ## Practitioners\n+ - [dissolution](/processes/dissolution.md)\n- | Practitioner | Tradition | Approximate era |\n+ - [coagulation](/processes/coagulation.md)\n- |---|---|---|\n+ ## Practitioners\n- | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n+ | Practitioner | Tradition | Approximate era |\n- | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n+ |---|---|---|\n- | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n+ | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n- | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n+ | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n- | Practitioner | Tradition | Approximate era |\n+ | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n- | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n+ | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n- | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n+ | Practitioner | Tradition | Approximate era |\n- | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n+ | [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n- | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n+ | [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n- ## Texts\n+ | [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n- - [The Emerald Tablet](/texts/emerald-tablet.md)\n+ | [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n- - [Mutus Liber](/texts/mutus-liber.md)\n+ ## Texts\n- ## Laboratory\n+ - [The Emerald Tablet](/texts/emerald-tablet.md)\n- Working notes live under `lab/`.\n+ - [Mutus Liber](/texts/mutus-liber.md)"
+            "diff": "@@ -2,14 +2,16 @@\n The art of transformation — part proto-chemistry, part philosophy, part\n contemplative practice. This repository collects notes on its substances,\n processes, practitioners, and primary texts.\n+## Laboratory\n+Working notes live under `lab/`.\n ## The tria prima\n Paracelsus reduced the material world to three principles:\n+- [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n - [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n-- [[salt]] — the fixed body\n ## Substances\n - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n@@ -41,5 +43,3 @@\n - [Mutus Liber](/texts/mutus-liber.md)\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n-## Laboratory\n-Working notes live under `lab/`."
           },
           {
             "digests": [
@@ -5705,23 +5465,23 @@
             "content": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [Calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
           },
           {
-            "staleCount": 27,
+            "staleCount": 21,
             "byTarget": [
               {
                 "target": "mercury",
-                "count": 10
-              },
-              {
-                "target": "salt",
                 "count": 8
               },
               {
-                "target": "sulphur",
+                "target": "salt",
                 "count": 6
               },
               {
+                "target": "sulphur",
+                "count": 5
+              },
+              {
                 "target": "magnum-opus",
-                "count": 2
+                "count": 1
               },
               {
                 "target": "nigredo",
@@ -5731,14 +5491,10 @@
             "bySource": [
               {
                 "srcPath": "index.md",
-                "count": 6
-              },
-              {
-                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
-                "srcPath": "substances/philosophers-stone.md",
+                "srcPath": "practitioners/paracelsus.md",
                 "count": 3
               },
               {
@@ -5750,15 +5506,11 @@
                 "count": 2
               },
               {
-                "srcPath": "practitioners/newton.md",
-                "count": 2
-              },
-              {
-                "srcPath": "processes/calcination.md",
-                "count": 2
-              },
-              {
                 "srcPath": "substances/mercury.md",
+                "count": 2
+              },
+              {
+                "srcPath": "substances/philosophers-stone.md",
                 "count": 2
               },
               {
@@ -5770,12 +5522,20 @@
                 "count": 2
               },
               {
+                "srcPath": "practitioners/newton.md",
+                "count": 1
+              },
+              {
+                "srcPath": "processes/calcination.md",
+                "count": 1
+              },
+              {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 89
+            "totalOpenEdges": 64
           },
           {
             "roots": [
@@ -5891,102 +5651,6 @@
               {
                 "id": "e_10",
                 "src": "d_0",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_11",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_12",
-                "src": "d_0",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_13",
-                "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_14",
-                "src": "d_0",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_15",
-                "src": "d_0",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_16",
-                "src": "d_0",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_17",
-                "src": "d_0",
-                "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_18",
-                "src": "d_0",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
@@ -5997,10 +5661,46 @@
                 "src_field": null
               },
               {
-                "id": "e_19",
+                "id": "e_11",
                 "src": "d_0",
                 "dst": "d_6",
                 "dst_path": "practitioners/paracelsus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_12",
+                "src": "d_0",
+                "dst": "d_5",
+                "dst_path": "practitioners/newton.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_13",
+                "src": "d_0",
+                "dst": "d_16",
+                "dst_path": "texts/emerald-tablet.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_14",
+                "src": "d_0",
+                "dst": "d_17",
+                "dst_path": "texts/mutus-liber.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6021,10 +5721,10 @@
                 "src_field": null
               },
               {
-                "id": "e_20",
+                "id": "e_3",
                 "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6033,7 +5733,67 @@
                 "src_field": null
               },
               {
-                "id": "e_21",
+                "id": "e_4",
+                "src": "d_0",
+                "dst": "d_12",
+                "dst_path": "substances/philosophers-stone.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_5",
+                "src": "d_0",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_6",
+                "src": "d_0",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_7",
+                "src": "d_0",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_8",
+                "src": "d_0",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_9",
                 "src": "d_0",
                 "dst": "d_4",
                 "dst_path": "practitioners/maria-prophetissa.md",
@@ -6045,454 +5805,10 @@
                 "src_field": null
               },
               {
-                "id": "e_22",
-                "src": "d_0",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_23",
-                "src": "d_0",
-                "dst": "d_6",
-                "dst_path": "practitioners/paracelsus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_24",
-                "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_25",
-                "src": "d_0",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_26",
-                "src": "d_0",
-                "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_27",
-                "src": "d_0",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_28",
-                "src": "d_0",
-                "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_3",
-                "src": "d_0",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_4",
-                "src": "d_0",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_5",
-                "src": "d_0",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_6",
-                "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_7",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_8",
-                "src": "d_0",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_9",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_49",
+                "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_50",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_51",
-                "src": "d_10",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_52",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_53",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_54",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_55",
-                "src": "d_10",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_56",
-                "src": "d_10",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_57",
-                "src": "d_10",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_65",
-                "src": "d_12",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_66",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_67",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_68",
-                "src": "d_12",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_69",
-                "src": "d_12",
-                "dst": "phantom:magnum-opus",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_70",
-                "src": "d_12",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_71",
-                "src": "d_13",
-                "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_72",
-                "src": "d_13",
-                "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_73",
-                "src": "d_13",
-                "dst": "d_7",
-                "dst_path": "processes/calcination.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_74",
-                "src": "d_13",
-                "dst": "phantom:nigredo",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_84",
-                "src": "d_16",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_85",
-                "src": "d_16",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_86",
-                "src": "d_16",
-                "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_87",
-                "src": "d_16",
-                "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_88",
-                "src": "d_17",
-                "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6502,9 +5818,9 @@
               },
               {
                 "id": "e_34",
-                "src": "d_3",
-                "dst": "phantom:mercury",
-                "dst_path": null,
+                "src": "d_10",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6514,9 +5830,9 @@
               },
               {
                 "id": "e_35",
-                "src": "d_3",
-                "dst": "phantom:sulphur",
-                "dst_path": null,
+                "src": "d_10",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6526,7 +5842,7 @@
               },
               {
                 "id": "e_36",
-                "src": "d_3",
+                "src": "d_10",
                 "dst": "d_9",
                 "dst_path": "processes/dissolution.md",
                 "dst_uri": null,
@@ -6538,6 +5854,210 @@
               },
               {
                 "id": "e_37",
+                "src": "d_10",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_43",
+                "src": "d_12",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_44",
+                "src": "d_12",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_45",
+                "src": "d_12",
+                "dst": "phantom:magnum-opus",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_46",
+                "src": "d_12",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_47",
+                "src": "d_13",
+                "dst": "d_16",
+                "dst_path": "texts/emerald-tablet.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_48",
+                "src": "d_13",
+                "dst": "d_10",
+                "dst_path": "processes/magnum-opus.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_49",
+                "src": "d_13",
+                "dst": "d_7",
+                "dst_path": "processes/calcination.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_50",
+                "src": "d_13",
+                "dst": "phantom:nigredo",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_59",
+                "src": "d_16",
+                "dst": "d_3",
+                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_60",
+                "src": "d_16",
+                "dst": "d_5",
+                "dst_path": "practitioners/newton.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_61",
+                "src": "d_16",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_62",
+                "src": "d_16",
+                "dst": "d_8",
+                "dst_path": "processes/coagulation.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_63",
+                "src": "d_17",
+                "dst": "d_13",
+                "dst_path": "substances/prima-materia.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_20",
+                "src": "d_3",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_21",
+                "src": "d_3",
+                "dst": "phantom:sulphur",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_22",
+                "src": "d_3",
+                "dst": "d_9",
+                "dst_path": "processes/dissolution.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_23",
                 "src": "d_4",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6549,7 +6069,7 @@
                 "src_field": null
               },
               {
-                "id": "e_38",
+                "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
                 "dst_path": "processes/magnum-opus.md",
@@ -6561,7 +6081,7 @@
                 "src_field": null
               },
               {
-                "id": "e_39",
+                "id": "e_25",
                 "src": "d_5",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -6573,19 +6093,7 @@
                 "src_field": null
               },
               {
-                "id": "e_40",
-                "src": "d_5",
-                "dst": "phantom:mercury",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_41",
+                "id": "e_26",
                 "src": "d_6",
                 "dst": "d_0",
                 "dst_path": "index.md",
@@ -6597,7 +6105,7 @@
                 "src_field": null
               },
               {
-                "id": "e_42",
+                "id": "e_27",
                 "src": "d_6",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -6609,7 +6117,7 @@
                 "src_field": null
               },
               {
-                "id": "e_43",
+                "id": "e_28",
                 "src": "d_6",
                 "dst": "phantom:sulphur",
                 "dst_path": null,
@@ -6621,7 +6129,7 @@
                 "src_field": null
               },
               {
-                "id": "e_44",
+                "id": "e_29",
                 "src": "d_6",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -6633,7 +6141,7 @@
                 "src_field": null
               },
               {
-                "id": "e_45",
+                "id": "e_30",
                 "src": "d_7",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -6645,19 +6153,7 @@
                 "src_field": null
               },
               {
-                "id": "e_46",
-                "src": "d_7",
-                "dst": "phantom:salt",
-                "dst_path": null,
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_47",
+                "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -7677,31 +7173,7 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_321",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "sulphur",
-                "authored": "sulphur",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
-                "srcBlock": "b_4",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
@@ -7755,18 +7227,6 @@
                 "dstKind": "document",
                 "target": "sulphur",
                 "authored": "sulphur",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_7",
-                "srcPath": "processes/calcination.md",
-                "srcBlock": "b_149",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -7832,32 +7292,28 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 88,
+            "totalOpenEdges": 63,
             "truncated": false
           },
           {
-            "staleCount": 14,
+            "staleCount": 11,
             "byTarget": [
               {
                 "target": "salt",
-                "count": 8
+                "count": 6
               },
               {
                 "target": "sulphur",
-                "count": 6
+                "count": 5
               }
             ],
             "bySource": [
               {
                 "srcPath": "index.md",
-                "count": 4
-              },
-              {
-                "srcPath": "practitioners/paracelsus.md",
                 "count": 2
               },
               {
-                "srcPath": "processes/calcination.md",
+                "srcPath": "practitioners/paracelsus.md",
                 "count": 2
               },
               {
@@ -7873,6 +7329,10 @@
                 "count": 1
               },
               {
+                "srcPath": "processes/calcination.md",
+                "count": 1
+              },
+              {
                 "srcPath": "substances/salt.md",
                 "count": 1
               },
@@ -7882,7 +7342,7 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 88
+            "totalOpenEdges": 63
           },
           {
             "roots": [
@@ -7948,7 +7408,7 @@
             ],
             "edges": [
               {
-                "id": "e_18",
+                "id": "e_10",
                 "src": "d_0",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
@@ -7960,7 +7420,7 @@
                 "src_field": null
               },
               {
-                "id": "e_19",
+                "id": "e_11",
                 "src": "d_0",
                 "dst": "d_6",
                 "dst_path": "practitioners/paracelsus.md",
@@ -7972,7 +7432,7 @@
                 "src_field": null
               },
               {
-                "id": "e_20",
+                "id": "e_12",
                 "src": "d_0",
                 "dst": "d_5",
                 "dst_path": "practitioners/newton.md",
@@ -7984,43 +7444,7 @@
                 "src_field": null
               },
               {
-                "id": "e_22",
-                "src": "d_0",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_23",
-                "src": "d_0",
-                "dst": "d_6",
-                "dst_path": "practitioners/paracelsus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_24",
-                "src": "d_0",
-                "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_7",
+                "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
                 "dst_path": "substances/philosophers-stone.md",
@@ -8032,19 +7456,7 @@
                 "src_field": null
               },
               {
-                "id": "e_9",
-                "src": "d_0",
-                "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_93",
+                "id": "e_67",
                 "src": "d_0",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8056,19 +7468,7 @@
                 "src_field": null
               },
               {
-                "id": "e_94",
-                "src": "d_0",
-                "dst": "d_11",
-                "dst_path": "substances/mercury.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_97",
+                "id": "e_70",
                 "src": "d_1",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8080,7 +7480,7 @@
                 "src_field": null
               },
               {
-                "id": "e_60",
+                "id": "e_40",
                 "src": "d_11",
                 "dst": "d_1",
                 "dst_path": "lab/2026-01-notes.md",
@@ -8092,7 +7492,7 @@
                 "src_field": null
               },
               {
-                "id": "e_61",
+                "id": "e_41",
                 "src": "d_11",
                 "dst": "d_6",
                 "dst_path": "practitioners/paracelsus.md",
@@ -8104,7 +7504,7 @@
                 "src_field": null
               },
               {
-                "id": "e_62",
+                "id": "e_42",
                 "src": "d_11",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
@@ -8116,31 +7516,7 @@
                 "src_field": null
               },
               {
-                "id": "e_63",
-                "src": "d_11",
-                "dst": "d_6",
-                "dst_path": "practitioners/paracelsus.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_64",
-                "src": "d_11",
-                "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_92",
+                "id": "e_66",
                 "src": "d_12",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8152,7 +7528,7 @@
                 "src_field": null
               },
               {
-                "id": "e_102",
+                "id": "e_74",
                 "src": "d_14",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8164,19 +7540,7 @@
                 "src_field": null
               },
               {
-                "id": "e_103",
-                "src": "d_15",
-                "dst": "d_11",
-                "dst_path": "substances/mercury.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_82",
+                "id": "e_57",
                 "src": "d_15",
                 "dst": "d_3",
                 "dst_path": "practitioners/jabir-ibn-hayyan.md",
@@ -8188,7 +7552,7 @@
                 "src_field": null
               },
               {
-                "id": "e_83",
+                "id": "e_58",
                 "src": "d_15",
                 "dst": "d_1",
                 "dst_path": "lab/2026-01-notes.md",
@@ -8200,7 +7564,19 @@
                 "src_field": null
               },
               {
-                "id": "e_98",
+                "id": "e_75",
+                "src": "d_15",
+                "dst": "d_11",
+                "dst_path": "substances/mercury.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_71",
                 "src": "d_3",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8212,7 +7588,7 @@
                 "src_field": null
               },
               {
-                "id": "e_100",
+                "id": "e_72",
                 "src": "d_5",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -8224,34 +7600,22 @@
                 "src_field": null
               },
               {
-                "id": "e_99",
-                "src": "d_5",
-                "dst": "d_11",
-                "dst_path": "substances/mercury.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_101",
-                "src": "d_6",
-                "dst": "d_11",
-                "dst_path": "substances/mercury.md",
-                "dst_uri": null,
-                "dst_kind": "document",
-                "predicate": "references",
-                "provenance": "link",
-                "anchor": null,
-                "src_field": null
-              },
-              {
-                "id": "e_41",
+                "id": "e_26",
                 "src": "d_6",
                 "dst": "d_0",
                 "dst_path": "index.md",
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_73",
+                "src": "d_6",
+                "dst": "d_11",
+                "dst_path": "substances/mercury.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -8336,6 +7700,22 @@
           {
             "hits": [
               {
+                "id": "e_43",
+                "path": "substances/philosophers-stone.md",
+                "predicate": "references",
+                "dst_kind": "document",
+                "$dst_path": "processes/magnum-opus.md",
+                "$dst_uri": null
+              },
+              {
+                "id": "e_64",
+                "path": "substances/philosophers-stone.md",
+                "predicate": "references",
+                "dst_kind": "document",
+                "$dst_path": "substances/prima-materia.md",
+                "$dst_uri": null
+              },
+              {
                 "id": "e_65",
                 "path": "substances/philosophers-stone.md",
                 "predicate": "references",
@@ -8345,38 +7725,6 @@
               },
               {
                 "id": "e_66",
-                "path": "substances/philosophers-stone.md",
-                "predicate": "references",
-                "dst_kind": "document",
-                "$dst_path": "substances/prima-materia.md",
-                "$dst_uri": null
-              },
-              {
-                "id": "e_89",
-                "path": "substances/philosophers-stone.md",
-                "predicate": "references",
-                "dst_kind": "document",
-                "$dst_path": "processes/magnum-opus.md",
-                "$dst_uri": null
-              },
-              {
-                "id": "e_90",
-                "path": "substances/philosophers-stone.md",
-                "predicate": "references",
-                "dst_kind": "document",
-                "$dst_path": "substances/prima-materia.md",
-                "$dst_uri": null
-              },
-              {
-                "id": "e_91",
-                "path": "substances/philosophers-stone.md",
-                "predicate": "references",
-                "dst_kind": "document",
-                "$dst_path": "processes/magnum-opus.md",
-                "$dst_uri": null
-              },
-              {
-                "id": "e_92",
                 "path": "substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
@@ -8762,18 +8110,6 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_5",
                 "predicate": "references",
                 "provenance": "link",
@@ -8786,36 +8122,12 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_7",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
                 "target": "salt",
                 "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "sulphur",
-                "authored": "sulphur",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -8882,18 +8194,6 @@
               {
                 "srcDoc": "d_5",
                 "srcPath": "practitioners/newton.md",
-                "srcBlock": "b_119",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_5",
-                "srcPath": "practitioners/newton.md",
                 "srcBlock": "b_120",
                 "predicate": "references",
                 "provenance": "link",
@@ -8942,18 +8242,6 @@
               {
                 "srcDoc": "d_7",
                 "srcPath": "processes/calcination.md",
-                "srcBlock": "b_149",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_7",
-                "srcPath": "processes/calcination.md",
                 "srcBlock": "b_152",
                 "predicate": "references",
                 "provenance": "link",
@@ -8996,18 +8284,6 @@
                 "dstKind": "document",
                 "target": "sulphur",
                 "authored": "sulphur",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_12",
-                "srcPath": "substances/philosophers-stone.md",
-                "srcBlock": "b_238",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "magnum-opus",
-                "authored": "magnum-opus",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -9097,7 +8373,7 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 91,
+            "totalOpenEdges": 66,
             "truncated": false
           },
           {
@@ -9122,7 +8398,7 @@
             ],
             "edges": [
               {
-                "id": "e_58",
+                "id": "e_38",
                 "src": "d_11",
                 "dst": "phantom:salt",
                 "dst_path": null,
@@ -9134,7 +8410,7 @@
                 "src_field": null
               },
               {
-                "id": "e_59",
+                "id": "e_39",
                 "src": "d_11",
                 "dst": "phantom:sulphur",
                 "dst_path": null,
@@ -9146,7 +8422,7 @@
                 "src_field": null
               },
               {
-                "id": "e_89",
+                "id": "e_64",
                 "src": "d_18",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -9158,7 +8434,7 @@
                 "src_field": null
               },
               {
-                "id": "e_90",
+                "id": "e_65",
                 "src": "d_18",
                 "dst": "phantom:mercury",
                 "dst_path": null,
@@ -9323,7 +8599,7 @@
             "docs": 19,
             "blocks": 316,
             "commits": 21,
-            "openEdges": 91,
+            "openEdges": 66,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -9612,18 +8888,6 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_5",
                 "predicate": "references",
                 "provenance": "link",
@@ -9636,36 +8900,12 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
                 "srcBlock": "b_7",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
                 "target": "salt",
                 "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_0",
-                "srcPath": "index.md",
-                "srcBlock": "b_4",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "sulphur",
-                "authored": "sulphur",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -9732,18 +8972,6 @@
               {
                 "srcDoc": "d_5",
                 "srcPath": "practitioners/newton.md",
-                "srcBlock": "b_119",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "mercury",
-                "authored": "mercury",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_5",
-                "srcPath": "practitioners/newton.md",
                 "srcBlock": "b_120",
                 "predicate": "references",
                 "provenance": "link",
@@ -9792,18 +9020,6 @@
               {
                 "srcDoc": "d_7",
                 "srcPath": "processes/calcination.md",
-                "srcBlock": "b_149",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "salt",
-                "authored": "salt",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_7",
-                "srcPath": "processes/calcination.md",
                 "srcBlock": "b_152",
                 "predicate": "references",
                 "provenance": "link",
@@ -9834,18 +9050,6 @@
                 "dstKind": "document",
                 "target": "sulphur",
                 "authored": "sulphur",
-                "anchor": null,
-                "reason": "dangling_doc"
-              },
-              {
-                "srcDoc": "d_12",
-                "srcPath": "substances/philosophers-stone.md",
-                "srcBlock": "b_238",
-                "predicate": "references",
-                "provenance": "link",
-                "dstKind": "document",
-                "target": "magnum-opus",
-                "authored": "magnum-opus",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
@@ -9935,7 +9139,7 @@
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 85,
+            "totalOpenEdges": 60,
             "truncated": false
           },
           {
@@ -9993,7 +9197,7 @@
             "docs": 17,
             "blocks": 301,
             "commits": 20,
-            "openEdges": 89,
+            "openEdges": 64,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -10448,7 +9652,7 @@
             "path": "practitioners/newton.md",
             "from": "r_5",
             "to": "r_18",
-            "diff": "- 1643–1727. Wrote more on alchemy than on physics, and published none of it.\n+ 1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n- - [ ] Read the Index Chemicus entries on [[mercury]]\n+ - [x] Read the Index Chemicus entries on [[mercury]]\n- - [ ] Cross-check the furnace dates against the Principia years\n+ - [ ] Compare Keynes's catalogue with the Sotheby's lot list\n- - [ ] Read the Index Chemicus entries on [[mercury]]\n+ - [x] Read the Index Chemicus entries on [[mercury]]\n- - [ ] Cross-check the furnace dates against the Principia years\n+ - [ ] Compare Keynes's catalogue with the Sotheby's lot list"
+            "diff": "@@ -1,5 +1,5 @@\n # Isaac Newton\n-1643–1727. Wrote more on alchemy than on physics, and published none of it.\n+1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n known_for:: unpublished alchemical corpus\n century:: 17\n ## Scale of the work\n@@ -23,7 +23,7 @@\n capable investigator of the era worked the programme for thirty years with full\n rigour and got nothing, because there was nothing there. That is a result, and\n the [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list"
           },
           {
             "digests": [
@@ -10841,23 +10045,23 @@
             "head": 22
           },
           {
-            "staleCount": 24,
+            "staleCount": 18,
             "byTarget": [
               {
                 "target": "mercury",
-                "count": 9
-              },
-              {
-                "target": "salt",
                 "count": 7
               },
               {
-                "target": "sulphur",
+                "target": "salt",
                 "count": 5
               },
               {
+                "target": "sulphur",
+                "count": 4
+              },
+              {
                 "target": "magnum-opus",
-                "count": 2
+                "count": 1
               },
               {
                 "target": "nigredo",
@@ -10867,10 +10071,6 @@
             "bySource": [
               {
                 "srcPath": "index.md",
-                "count": 6
-              },
-              {
-                "srcPath": "substances/philosophers-stone.md",
                 "count": 3
               },
               {
@@ -10882,15 +10082,11 @@
                 "count": 2
               },
               {
-                "srcPath": "practitioners/newton.md",
-                "count": 2
-              },
-              {
-                "srcPath": "processes/calcination.md",
-                "count": 2
-              },
-              {
                 "srcPath": "substances/mercury.md",
+                "count": 2
+              },
+              {
+                "srcPath": "substances/philosophers-stone.md",
                 "count": 2
               },
               {
@@ -10902,12 +10098,20 @@
                 "count": 2
               },
               {
+                "srcPath": "practitioners/newton.md",
+                "count": 1
+              },
+              {
+                "srcPath": "processes/calcination.md",
+                "count": 1
+              },
+              {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 86
+            "totalOpenEdges": 61
           },
           {
             "repoId": "rp_0",
@@ -10916,7 +10120,7 @@
             "docs": 19,
             "blocks": 304,
             "commits": 22,
-            "openEdges": 90,
+            "openEdges": 65,
             "unconverged": 0,
             "disk": {
               "changed": 0,

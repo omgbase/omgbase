@@ -610,7 +610,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "diff_unified",
-            description: "Line-based +/- diff between two revisions (default: the previous and current).",
+            description: "Unified diff (Myers, 3 lines of context) between two revisions (default: the previous and current).",
             input_schema: schema(
                 &[("doc", s()), ("from_rev", s()), ("to_rev", s())],
                 &["doc"],
@@ -737,6 +737,37 @@ impl Surface {
     #[must_use]
     pub fn tools(&self) -> Vec<ToolSpec> {
         tools()
+    }
+
+    /// Whether `name` is a tool that can commit (a host serializes these
+    /// under the writer lock of `spec/sync` §7; `dry_run` calls still count
+    /// here — only the mutation hook knows a write actually happened).
+    #[must_use]
+    pub fn is_write_tool(name: &str) -> bool {
+        matches!(
+            name,
+            "apply"
+                | "blocks_insert"
+                | "blocks_update"
+                | "blocks_move"
+                | "blocks_remove"
+                | "blocks_split"
+                | "blocks_merge"
+                | "tasks_complete"
+                | "node_set"
+                | "sections_append"
+                | "docs_append"
+                | "links_retarget"
+                | "links_repair"
+                | "docs_create"
+                | "docs_move"
+                | "docs_delete"
+                | "docs_set_meta"
+                | "docs_update"
+                | "observe"
+                | "observe_many"
+                | "observe_delete"
+        )
     }
 
     /// Run a tool: its JSON result, or the error envelope.
@@ -1320,6 +1351,7 @@ impl Surface {
                     doc,
                     to: To { parent, at },
                     markdown: arg_string(args, "markdown")?,
+                    expect: None,
                 }];
                 Ok(apply_json(&self.apply_ops(
                     &repo,
@@ -1410,6 +1442,7 @@ impl Surface {
                 let ops = vec![Op::Move {
                     blocks,
                     to: To { parent, at },
+                    expect: None,
                 }];
                 Ok(apply_json(&self.apply_ops(
                     &repo,
@@ -2272,6 +2305,6 @@ mod tests {
         assert_eq!(entries[0]["origin"], "api", "newest first");
         let du = s.call("diff_unified", json!({ "doc": "a.md" }));
         assert!(!du.is_error, "{}", du.body);
-        assert!(du.body["diff"].as_str().unwrap().contains("+ Three."));
+        assert!(du.body["diff"].as_str().unwrap().contains("+Three."));
     }
 }

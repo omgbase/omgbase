@@ -12,7 +12,9 @@ use crate::error::{Error, Result};
 use crate::writers::TreeInputBlock;
 
 /// The crate's input view of an assigned body tree. A stored kind name the
-/// block model does not know is scanned as `opaque` (prose, no attrs).
+/// block model does not know is scanned as `opaque` (prose, no attrs). The
+/// span rides along so the scanners can blank a container's children
+/// (spec/properties §3.2 `own(raw)`, spec/graph §1).
 #[must_use]
 pub fn doc_blocks(blocks: &[TreeInputBlock]) -> Vec<DocBlock<'_>> {
     blocks
@@ -20,6 +22,7 @@ pub fn doc_blocks(blocks: &[TreeInputBlock]) -> Vec<DocBlock<'_>> {
         .map(|b| DocBlock {
             block_id: b.block_id.as_str(),
             kind: b.kind.parse().unwrap_or(BlockKind::Opaque),
+            span: (b.span.start, b.span.end),
             raw: b.raw.as_str(),
             text: b.text.as_str(),
             attrs: &b.attrs,

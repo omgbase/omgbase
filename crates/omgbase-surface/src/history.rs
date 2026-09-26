@@ -1,6 +1,7 @@
 //! History (`spec/surface/README.md` §3): `history_node`, the block-grain
-//! `diff`, the positional `diff_unified` (§9, pinned), `docs_history`. Port
-//! of `packages/core/src/graph/history.ts`; `changes_since` is the store's.
+//! `diff`, the Myers unified `diff_unified` (§3; positional before 1.1, §9),
+//! `docs_history`. Port of `packages/core/src/graph/history.ts`;
+//! `changes_since` is the store's.
 
 use std::collections::HashMap;
 
@@ -138,36 +139,198 @@ pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) ->
     Ok(Json::Array(entries))
 }
 
-/// §3 `diff_unified`'s text: the two revisions' raws joined by `\n`,
-/// compared line by line at equal indices (positional; §9).
+/// §3 `diff_unified`'s text: a unified diff of the two revisions' rendered
+/// texts — each revision's live raws joined by `\n` — via [`unified_diff`].
 pub fn diff_unified_text(
     store: &Store,
     doc_id: &str,
     from_rev: &str,
     to_rev: &str,
 ) -> Result<String> {
-    let rendered = |rev: &str| -> Result<Vec<String>> {
+    let rendered = |rev: &str| -> Result<String> {
         let raws: Vec<String> = blocks_at_revision(store.conn(), doc_id, rev)?
             .into_iter()
             .map(|(_, raw)| raw)
             .collect();
-        Ok(raws.join("\n").split('\n').map(str::to_owned).collect())
+        Ok(raws.join("\n"))
     };
-    let a = rendered(from_rev)?;
-    let b = rendered(to_rev)?;
-    let mut out = Vec::new();
-    for i in 0..a.len().max(b.len()) {
-        if a.get(i) == b.get(i) {
-            continue;
+    Ok(unified_diff(&rendered(from_rev)?, &rendered(to_rev)?))
+}
+
+// ---- unified diff (spec/surface §3) ------------------------------------------
+// A line-grain unified diff with a deterministic Myers script, so both engines
+// (this port and the reference `packages/core/src/graph/history.ts`) produce
+// the same bytes for the same two texts. Pure, so the unit tests pin it.
+
+/// How a text becomes lines: `split('\n')` exactly — no trimming, no dropping
+/// of a trailing empty element (a raw ending in `\n` yields one) — with a single
+/// special case: the empty text has *no* lines (an empty file is zero lines,
+/// not one empty line), so a diff from/to nothing is `@@ -0,0 +1,n @@`.
+pub fn diff_lines(text: &str) -> Vec<&str> {
+    if text.is_empty() {
+        Vec::new()
+    } else {
+        text.split('\n').collect()
+    }
+}
+
+const DIFF_CONTEXT: usize = 3;
+
+/// One step of the edit script: `Keep` consumes a line from both sides,
+/// `Delete` one from the old text, `Insert` one from the new text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditOp<'a> {
+    Keep(&'a str),
+    Delete(&'a str),
+    Insert(&'a str),
+}
+
+/// Myers' O(ND) shortest edit script (forward, with a per-`d` trace for the
+/// backtrack). `V[k]` is the furthest x on diagonal `k = x - y` reachable with
+/// `d` edits. The canonical tie rule, identical in both engines: at each step
+/// take the diagonal from `k+1` (moving down — an insertion of `b[y]`) when
+/// `k == -d || (k != d && V[k-1] < V[k+1])`, else from `k-1` (moving right —
+/// a deletion of `a[x]`). On a tie (`V[k-1] == V[k+1]`) that is the deletion.
+pub fn myers_script<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<EditOp<'a>> {
+    let n = a.len();
+    let m = b.len();
+    let max = n + m;
+    // V is indexed by k ∈ [-max-1, max+1]; `off` maps it onto a plain vector.
+    let off = max + 1;
+    let at = |k: isize| -> usize { (off as isize + k) as usize };
+    let mut v = vec![0usize; 2 * max + 3];
+    let mut trace: Vec<Vec<usize>> = Vec::new();
+    let mut found = false;
+    let mut d: isize = 0;
+    while d <= max as isize && !found {
+        trace.push(v.clone());
+        let mut k = -d;
+        while k <= d {
+            let mut x = if k == -d || (k != d && v[at(k - 1)] < v[at(k + 1)]) {
+                v[at(k + 1)]
+            } else {
+                v[at(k - 1)] + 1
+            };
+            let mut y = (x as isize - k) as usize;
+            while x < n && y < m && a[x] == b[y] {
+                x += 1;
+                y += 1;
+            }
+            v[at(k)] = x;
+            if x >= n && y >= m {
+                found = true;
+                break;
+            }
+            k += 2;
         }
-        if let Some(l) = a.get(i) {
-            out.push(format!("- {l}"));
+        d += 1;
+    }
+    // Backtrack from (n, m) through the trace, emitting ops newest-first.
+    let mut ops: Vec<EditOp<'a>> = Vec::new();
+    let mut x = n;
+    let mut y = m;
+    for (d, vd) in trace.iter().enumerate().rev() {
+        let d = d as isize;
+        let k = x as isize - y as isize;
+        let prev_k = if k == -d || (k != d && vd[at(k - 1)] < vd[at(k + 1)]) {
+            k + 1
+        } else {
+            k - 1
+        };
+        let prev_x = vd[at(prev_k)];
+        let prev_y = prev_x as isize - prev_k;
+        while x > prev_x && y as isize > prev_y {
+            x -= 1;
+            y -= 1;
+            ops.push(EditOp::Keep(a[x]));
         }
-        if let Some(l) = b.get(i) {
-            out.push(format!("+ {l}"));
+        if d > 0 {
+            if x == prev_x {
+                ops.push(EditOp::Insert(b[prev_y as usize]));
+            } else {
+                ops.push(EditOp::Delete(a[prev_x]));
+            }
+        }
+        x = prev_x;
+        y = prev_y as usize;
+    }
+    ops.reverse();
+    ops
+}
+
+/// The unified diff of two texts (spec/surface §3): hunks of `DIFF_CONTEXT`
+/// (3) lines of context; a change group extends to include the next change
+/// when fewer than `2 * DIFF_CONTEXT + 1` unchanged lines separate them (the
+/// two contexts touch or overlap). Each hunk is `@@ -a,b +c,d @@` (1-based
+/// start and length; a length of 1 is written as the start alone; a length of
+/// 0 as `a,0` with `a` the line before the insertion point, `0` at the very
+/// top) followed by its lines prefixed `-`, `+` or a space with nothing after
+/// the sign; hunks joined by `\n`; no file header; identical texts → `""`.
+pub fn unified_diff(old_text: &str, new_text: &str) -> String {
+    let ops = myers_script(&diff_lines(old_text), &diff_lines(new_text));
+    // Old/new line counts consumed before each op (0-based positions).
+    let mut old_pos = Vec::with_capacity(ops.len() + 1);
+    let mut new_pos = Vec::with_capacity(ops.len() + 1);
+    let (mut o, mut nn) = (0usize, 0usize);
+    for op in &ops {
+        old_pos.push(o);
+        new_pos.push(nn);
+        if !matches!(op, EditOp::Insert(_)) {
+            o += 1;
+        }
+        if !matches!(op, EditOp::Delete(_)) {
+            nn += 1;
         }
     }
-    Ok(out.join("\n"))
+    old_pos.push(o);
+    new_pos.push(nn);
+
+    let changes: Vec<usize> = (0..ops.len())
+        .filter(|&i| !matches!(ops[i], EditOp::Keep(_)))
+        .collect();
+    if changes.is_empty() {
+        return String::new();
+    }
+
+    let range = |pos: usize, len: usize| -> String {
+        let start = if len == 0 { pos } else { pos + 1 };
+        if len == 1 {
+            start.to_string()
+        } else {
+            format!("{start},{len}")
+        }
+    };
+    let mut hunks: Vec<String> = Vec::new();
+    let mut g = 0;
+    while g < changes.len() {
+        let first = changes[g];
+        let mut last = first;
+        // Merge rule: the next change joins this hunk iff the unchanged lines
+        // between them number at most 2 * DIFF_CONTEXT.
+        while g + 1 < changes.len() && changes[g + 1] - last - 1 <= 2 * DIFF_CONTEXT {
+            g += 1;
+            last = changes[g];
+        }
+        g += 1;
+        let start = first.saturating_sub(DIFF_CONTEXT);
+        let end = (last + DIFF_CONTEXT).min(ops.len() - 1);
+        let old_len = old_pos[end + 1] - old_pos[start];
+        let new_len = new_pos[end + 1] - new_pos[start];
+        let mut lines = vec![format!(
+            "@@ -{} +{} @@",
+            range(old_pos[start], old_len),
+            range(new_pos[start], new_len)
+        )];
+        for op in &ops[start..=end] {
+            lines.push(match op {
+                EditOp::Keep(l) => format!(" {l}"),
+                EditOp::Delete(l) => format!("-{l}"),
+                EditOp::Insert(l) => format!("+{l}"),
+            });
+        }
+        hunks.push(lines.join("\n"));
+    }
+    hunks.join("\n")
 }
 
 /// The two most recent revisions of a doc, newest first.
@@ -298,4 +461,138 @@ pub fn docs_history(
         docs.push(Json::Object(m));
     }
     Ok(json!({ "docs": docs, "truncated": truncated }))
+}
+
+// spec/surface §3 `diff_unified`. The expected strings below are copied
+// verbatim from packages/core/src/graph/history.test.ts so the two engines pin
+// each other byte for byte.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EIGHT: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8";
+    const TWELVE: &str = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12";
+
+    #[test]
+    fn splits_on_newline_exactly_and_the_empty_text_has_no_lines() {
+        assert_eq!(diff_lines("a\nb"), vec!["a", "b"]);
+        assert_eq!(diff_lines("a\nb\n"), vec!["a", "b", ""]);
+        assert_eq!(diff_lines(" a \n\n b "), vec![" a ", "", " b "]);
+        assert_eq!(diff_lines(""), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn identical_texts_are_empty() {
+        assert_eq!(unified_diff("a\nb\nc", "a\nb\nc"), "");
+        assert_eq!(unified_diff("", ""), "");
+    }
+
+    #[test]
+    fn insertion_in_the_middle_is_one_plus_line() {
+        assert_eq!(
+            unified_diff(EIGHT, "l1\nl2\nl3\nl4\nNEW\nl5\nl6\nl7\nl8"),
+            "@@ -2,6 +2,7 @@\n l2\n l3\n l4\n+NEW\n l5\n l6\n l7"
+        );
+    }
+
+    #[test]
+    fn deletion() {
+        assert_eq!(
+            unified_diff(EIGHT, "l1\nl2\nl3\nl4\nl6\nl7\nl8"),
+            "@@ -2,7 +2,6 @@\n l2\n l3\n l4\n-l5\n l6\n l7\n l8"
+        );
+    }
+
+    #[test]
+    fn replacement() {
+        assert_eq!(
+            unified_diff(EIGHT, "l1\nl2\nl3\nl4\nX5\nl6\nl7\nl8"),
+            "@@ -2,7 +2,7 @@\n l2\n l3\n l4\n-l5\n+X5\n l6\n l7\n l8"
+        );
+    }
+
+    #[test]
+    fn change_at_top_and_bottom_truncates_context() {
+        assert_eq!(
+            unified_diff("l1\nl2\nl3\nl4\nl5", "L1\nl2\nl3\nl4\nl5"),
+            "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4"
+        );
+        assert_eq!(
+            unified_diff("l1\nl2\nl3\nl4\nl5", "l1\nl2\nl3\nl4\nL5"),
+            "@@ -2,4 +2,4 @@\n l2\n l3\n l4\n-l5\n+L5"
+        );
+    }
+
+    #[test]
+    fn far_changes_are_two_hunks_near_changes_share_one() {
+        assert_eq!(
+            unified_diff(TWELVE, "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nL12"),
+            "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -9,4 +9,4 @@\n l9\n l10\n l11\n-l12\n+L12"
+        );
+        assert_eq!(
+            unified_diff(TWELVE, "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nL9\nl10\nl11\nl12"),
+            "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -6,7 +6,7 @@\n l6\n l7\n l8\n-l9\n+L9\n l10\n l11\n l12"
+        );
+    }
+
+    #[test]
+    fn hunk_merge_boundary_six_between_merges_seven_splits() {
+        assert_eq!(
+            unified_diff(
+                "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10",
+                "L1\nl2\nl3\nl4\nl5\nl6\nl7\nL8\nl9\nl10"
+            ),
+            "@@ -1,10 +1,10 @@\n-l1\n+L1\n l2\n l3\n l4\n l5\n l6\n l7\n-l8\n+L8\n l9\n l10"
+        );
+        assert_eq!(
+            unified_diff(
+                "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11",
+                "L1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nL9\nl10\nl11"
+            ),
+            "@@ -1,4 +1,4 @@\n-l1\n+L1\n l2\n l3\n l4\n@@ -6,6 +6,6 @@\n l6\n l7\n l8\n-l9\n+L9\n l10\n l11"
+        );
+    }
+
+    #[test]
+    fn empty_old_and_empty_new_texts() {
+        assert_eq!(unified_diff("", "a\nb\nc"), "@@ -0,0 +1,3 @@\n+a\n+b\n+c");
+        assert_eq!(unified_diff("a\nb\nc", ""), "@@ -1,3 +0,0 @@\n-a\n-b\n-c");
+    }
+
+    #[test]
+    fn insertion_at_the_very_top() {
+        assert_eq!(
+            unified_diff("a\nb", "z\na\nb"),
+            "@@ -1,2 +1,3 @@\n+z\n a\n b"
+        );
+    }
+
+    #[test]
+    fn trailing_newline_and_empty_lines_are_lines() {
+        assert_eq!(unified_diff("a\nb\n", "a\nb"), "@@ -1,3 +1,2 @@\n a\n b\n-");
+        assert_eq!(
+            unified_diff("a\n\nb", "a\n\n\nb"),
+            "@@ -1,3 +1,4 @@\n a\n \n+\n b"
+        );
+    }
+
+    #[test]
+    fn textbook_tie_case() {
+        let script: Vec<String> = myers_script(
+            &diff_lines("a\nb\nc\na\nb\nb\na"),
+            &diff_lines("c\nb\na\nb\na\nc"),
+        )
+        .into_iter()
+        .map(|op| match op {
+            EditOp::Keep(l) => format!(" {l}"),
+            EditOp::Delete(l) => format!("-{l}"),
+            EditOp::Insert(l) => format!("+{l}"),
+        })
+        .collect();
+        assert_eq!(script.join("|"), "-a|-b| c|+b| a| b|-b| a|+c");
+        assert_eq!(
+            unified_diff("a\nb\nc\na\nb\nb\na", "c\nb\na\nb\na\nc"),
+            "@@ -1,7 +1,6 @@\n-a\n-b\n c\n+b\n a\n b\n-b\n a\n+c"
+        );
+    }
 }

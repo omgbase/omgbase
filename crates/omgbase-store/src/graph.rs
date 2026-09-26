@@ -625,22 +625,22 @@ mod tests {
     }
 
     #[test]
-    fn containers_count_once_per_level_and_ref_targets_are_documents() {
+    fn containers_count_once_and_ref_targets_are_documents() {
         let (mut store, repo) = fixture();
         observe(&mut store, &repo, "a.md", "- see [[n^blk]]\n", T0);
         let edges = rows(
             &store,
             "SELECT src_block, dst_kind, dst_node, anchor FROM edges ORDER BY rowid",
         );
-        assert_eq!(edges.len(), 2);
-        assert_eq!(edges[0][0], Sql::Text("b_0".into()));
-        assert_eq!(edges[1][0], Sql::Text("b_1".into()));
+        // spec/graph 1.1: the item's edge only (the list's own text is blank).
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0][0], Sql::Text("b_1".into()));
         assert_eq!(edges[0][1], Sql::Text("document".into()));
         assert_eq!(edges[0][2], Sql::Text("phantom:n".into()));
         assert_eq!(edges[0][3], Sql::Text("blk".into()));
         let roll = rows(&store, "SELECT count, samples FROM doc_edges");
-        assert_eq!(roll[0][0], Sql::Integer(2));
-        assert_eq!(roll[0][1], Sql::Text(r#"["b_0","b_1"]"#.into()));
+        assert_eq!(roll[0][0], Sql::Integer(1));
+        assert_eq!(roll[0][1], Sql::Text(r#"["b_1"]"#.into()));
     }
 
     #[test]

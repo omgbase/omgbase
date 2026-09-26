@@ -36,38 +36,55 @@ function docTitle(titleByDoc: Map<string, string>, firstHeadingByDoc: Map<string
   return firstHeadingByDoc.get(docId) ?? path;
 }
 
-/** Build EmbedTask[] for every embeddable live block in the repo. */
-export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
-  const blocks = store.db
-    .prepare(
-      `SELECT b.block_id, b.doc_id, d.path AS path,
-              b.ordinal, b.type, b.text, b.raw_hash
-       FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-       WHERE b.repo_id = ? AND b.deleted_commit IS NULL
-       ORDER BY d.path, b.ordinal`,
-    )
-    .all(repoId) as BlockRow[];
+/** The columns a block's current context (spec/search §2.2) is a function of. */
+export interface BlockContextInput {
+  doc_id: string;
+  path: string;
+  ordinal: number;
+  type: string;
+}
 
-  // Frontmatter title per doc (scalar), for the embed context prefix. One scan
-  // of the properties table instead of a per-block metadata parse.
+/**
+ * Resolves a block's *current* embedding context (spec/search §2.2) — the one
+ * rule every reader of the `embeddings` cache keys with: the drain (tasks), the
+ * pooled document vector, `vector_search` (§3) and `semantic()` (spec/surface
+ * §1.3). Built once per repo (or per doc) and reused across blocks: one scan of
+ * the frontmatter titles and one of the sections, then a per-block walk of the
+ * doc's sections for the heading chain.
+ */
+export interface BlockContextResolver {
+  ctx(block: BlockContextInput): string;
+}
+
+/**
+ * Load the title/section facts the context prefix depends on. `scope` narrows
+ * the load to one repo (every doc — the drain and vector search) or one doc
+ * (a single block's lookup).
+ */
+export function makeBlockContextResolver(store: Store, scope: { repoId: string } | { docId: string }): BlockContextResolver {
+  const byRepo = "repoId" in scope;
+  // Frontmatter title per doc (scalar string), for the embed context prefix.
+  // One scan of the properties table instead of a per-block metadata parse.
   const titleByDoc = new Map<string, string>();
   for (const r of store.db.prepare(
     `SELECT p.doc_id AS doc_id, p.val_text AS title FROM properties p
-     WHERE p.repo_id = ? AND p.source = 'frontmatter' AND p.key = 'title'
+     WHERE ${byRepo ? "p.repo_id = ?" : "p.doc_id = ?"} AND p.source = 'frontmatter' AND p.key = 'title'
        AND p.card = 'scalar' AND p.type = 'string' AND p.deleted_commit IS NULL`,
-  ).all(repoId) as { doc_id: string; title: string | null }[]) {
+  ).all(byRepo ? scope.repoId : scope.docId) as { doc_id: string; title: string | null }[]) {
     if (r.title) titleByDoc.set(r.doc_id, r.title);
   }
 
-  // All sections in the repo, with their heading text, for chain lookup.
+  // The sections in scope with their heading text, for chain lookup. Ordered by
+  // first_ordinal so the first per doc is the title fallback (§2.2).
   const sections = store.db
     .prepare(
       `SELECT s.doc_id AS doc_id, hb.text AS heading_text, s.level AS level,
               s.first_ordinal AS first_ordinal, s.last_ordinal AS last_ordinal
        FROM sections s JOIN blocks hb ON hb.block_id = s.heading_block
-       WHERE hb.repo_id = ?`,
+       WHERE ${byRepo ? "hb.repo_id = ?" : "s.doc_id = ?"}
+       ORDER BY s.doc_id, s.first_ordinal, s.rowid`,
     )
-    .all(repoId) as SectionRow[];
+    .all(byRepo ? scope.repoId : scope.docId) as SectionRow[];
 
   const sectionsByDoc = new Map<string, SectionRow[]>();
   for (const s of sections) {
@@ -90,16 +107,33 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
       .map((s) => s.heading_text);
   };
 
-  const tasks: EmbedTask[] = [];
-  for (const b of blocks) {
-    if (!shouldEmbed(b.text)) continue;
-    const ctx = contextPrefix({
+  return {
+    ctx: (b) => contextPrefix({
       docTitle: docTitle(titleByDoc, firstHeadingByDoc, b.doc_id, b.path),
       path: b.path,
       headingChain: headingChain(b.doc_id, b.ordinal),
       blockType: b.type,
-    });
-    tasks.push({ blockId: b.block_id, contentHashHex: b.raw_hash.toString("hex"), ctx, text: b.text });
+    }),
+  };
+}
+
+/** Build EmbedTask[] for every embeddable live block in the repo. */
+export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
+  const blocks = store.db
+    .prepare(
+      `SELECT b.block_id, b.doc_id, d.path AS path,
+              b.ordinal, b.type, b.text, b.raw_hash
+       FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
+       WHERE b.repo_id = ? AND b.deleted_commit IS NULL
+       ORDER BY d.path, b.ordinal`,
+    )
+    .all(repoId) as BlockRow[];
+  const contexts = makeBlockContextResolver(store, { repoId });
+
+  const tasks: EmbedTask[] = [];
+  for (const b of blocks) {
+    if (!shouldEmbed(b.text)) continue;
+    tasks.push({ blockId: b.block_id, contentHashHex: b.raw_hash.toString("hex"), ctx: contexts.ctx(b), text: b.text });
   }
   return tasks;
 }

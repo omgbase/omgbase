@@ -314,8 +314,12 @@ pub fn detect_disk_drift(
     Ok(drift)
 }
 
-/// Delete the repo's rows, re-stat and re-hash every walked file; returns how
-/// many.
+/// §4.3 (since 1.1): delete the repo's rows, then walk the tree and record a
+/// row only for a file whose bytes' hash equals its live doc's `file_hash` —
+/// the cache may say "known" only about bytes the store already holds. A file
+/// with no live doc, or whose bytes differ from what was ingested, gets no row,
+/// so the next sweep still sees it as a candidate and drift still reports it.
+/// Returns the number of files walked, recorded or not.
 pub fn rebuild_file_stats(
     store: &Store,
     repo_id: &str,
@@ -326,10 +330,23 @@ pub fn rebuild_file_stats(
         "DELETE FROM file_stats WHERE repo_id = ?1",
         params![repo_id],
     )?;
+    let live: HashMap<String, Vec<u8>> = {
+        let mut stmt = store.conn().prepare(
+            "SELECT path, file_hash FROM docs
+             WHERE repo_id = ?1 AND deleted_commit IS NULL AND file_hash IS NOT NULL",
+        )?;
+        let rows = stmt.query_map(params![repo_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<std::result::Result<_, _>>()?
+    };
     let paths = fs.walk_markdown(root)?;
     for path in &paths {
+        let Some(want) = live.get(path) else {
+            continue; // no live doc: nothing the cache may vouch for
+        };
         if let Some(hash) = hash_file(fs, root, path)? {
-            record_file_stat(store, repo_id, fs, root, path, &hash)?;
+            if hash[..] == want[..] {
+                record_file_stat(store, repo_id, fs, root, path, &hash)?;
+            }
         }
     }
     Ok(paths.len())
@@ -492,18 +509,48 @@ mod tests {
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].3, hex(&sha256(b"# A2\n")));
 
-        // Rebuild from scratch.
+        // Rebuild from scratch (1.1): a.md's bytes match its live doc and get a
+        // row; d/b.md is back on disk but its doc is tombstoned, so it gets no
+        // row and stays visible as untracked. The count is the walk, not the rows.
         fs.set("d/b.md", "# B\n", 3);
         assert_eq!(rebuild_file_stats(&store, &repo, &fs, root).unwrap(), 2);
-        assert_eq!(file_stats_rows(&store, &repo).unwrap().len(), 2);
+        let stats = file_stats_rows(&store, &repo).unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].0, "a.md");
         assert_eq!(
             detect_disk_drift(&store, &repo, &fs, root).unwrap(),
             DiskDrift {
                 changed: 0,
                 deleted: 0,
+                untracked: 1
+            },
+            "a rebuild does not hide an untracked file"
+        );
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        assert_eq!(r.checkpoint.ingested, ["d/b.md"]);
+        assert_eq!(file_stats_rows(&store, &repo).unwrap().len(), 2);
+
+        // Rebuild over a pending edit: the edited file gets no row, drift and
+        // the sweep still see it; the rebuild's count still walks it.
+        fs.set("a.md", "# A3\n", 12);
+        assert_eq!(rebuild_file_stats(&store, &repo, &fs, root).unwrap(), 2);
+        let stats = file_stats_rows(&store, &repo).unwrap();
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].0, "d/b.md");
+        assert_eq!(
+            detect_disk_drift(&store, &repo, &fs, root).unwrap(),
+            DiskDrift {
+                changed: 1,
+                deleted: 0,
                 untracked: 0
             },
-            "cache says unchanged, so the untracked b.md is invisible to drift"
+            "a rebuild keeps a pending edit visible"
+        );
+        let r = freshness_sweep(&mut store, &repo, &fs, root, TS, None, &cfg).unwrap();
+        assert_eq!(r.checkpoint.ingested, ["a.md"]);
+        assert_eq!(
+            file_stats_rows(&store, &repo).unwrap()[0].3,
+            hex(&sha256(b"# A3\n"))
         );
 
         // record_file_stat deletes the row of a vanished file.
