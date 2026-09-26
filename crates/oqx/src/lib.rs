@@ -33,7 +33,7 @@ pub use ast::{
 };
 /// The OQX language version this crate conforms to (`spec/oqx/VERSION`). It is
 /// also this crate's `major.minor`: the patch digit is the crate's own.
-pub const LANGUAGE_VERSION: &str = "0.12";
+pub const LANGUAGE_VERSION: &str = "0.13";
 
 pub use context::{DataContext, DefaultContext};
 pub use engine::{Engine, InMemoryEngine, OqxResult, run_query};

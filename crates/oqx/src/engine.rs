@@ -952,7 +952,7 @@ impl<C: DataContext> Exec<'_, C> {
                     self.bindings.len()
                 ))
             }),
-            Expr::Ident { name } => Ok(self.resolve_in(name, scope)),
+            Expr::Ident { name } => self.resolve_in(name, scope),
             Expr::Outer { levels, name } => {
                 // `^name` reads from EXACTLY `levels` scopes out — the target
                 // scope is resolved locally, never climbed further. Past the
@@ -964,27 +964,27 @@ impl<C: DataContext> Exec<'_, C> {
                         None => None,
                     };
                 }
-                Ok(match s {
+                match s {
                     Some(sc) => self.resolve_in(name, sc),
-                    None => Value::Undefined,
-                })
+                    None => Ok(Value::Undefined),
+                }
             }
             Expr::Member { recv, name } => {
                 let r = self.eval_expr(recv, scope)?;
-                Ok(if r.is_absent() {
-                    Value::Undefined
+                if r.is_absent() {
+                    Ok(Value::Undefined)
                 } else {
                     self.ctx.get(&r, name)
-                })
+                }
             }
             Expr::Index { recv, index } => {
                 let r = self.eval_expr(recv, scope)?;
                 let i = self.eval_expr(index, scope)?;
-                Ok(if r.is_absent() {
-                    Value::Undefined
+                if r.is_absent() {
+                    Ok(Value::Undefined)
                 } else {
                     self.ctx.get(&r, &i.to_string())
-                })
+                }
             }
             Expr::Call { recv, name, args } => self.eval_call(recv.as_deref(), name, args, scope),
             Expr::Unary { op, expr } => {
@@ -1050,35 +1050,41 @@ impl<C: DataContext> Exec<'_, C> {
     // Resolve a name against ONE scope — never its ancestors. A scope provides,
     // in order: `$value` (the scope's row itself — the current item, whatever
     // its type, so scalar collections are queryable; absent at the root, which
-    // has no row); `$key` (the property key, for an entry scope only); the
+    // has no row); `$key` (the property key) when it is an entry scope; the
     // recursion intrinsics (`$depth`, …) when it is a follow occurrence; values
     // lifted into it by `^name:` items; then either the row's own property or,
     // for the root scope (no row), the context's named roots.
     //
+    // The two metadata steps apply only where the scope CARRIES that metadata
+    // (SEMANTICS §2, since 0.13). Anywhere else — `$key` on an ordinary row,
+    // `$depth` outside a follow or on the plain rows of a nested block inside
+    // one — the name is an ordinary property read, so a host whose rows own a
+    // `$depth`/`$ordinal` exposes it. Where the metadata exists it wins over a
+    // same-named row property.
+    //
     // A name the scope lacks is simply absent. It does NOT fall through to an
     // enclosing scope, so a query's meaning never depends on which properties an
     // inner row happens to have. Present-but-falsy values need no special case —
-    // there is no "absent, so look outward" rule.
-    fn resolve_in(&self, name: &str, scope: &Scope<'_>) -> Value {
+    // there is no "absent, so look outward" rule. The only failure is the
+    // context's own: `DataContext::get` may reject the read.
+    fn resolve_in(&self, name: &str, scope: &Scope<'_>) -> Result<Value> {
         if name == "$value" {
-            return if scope.is_root() {
+            return Ok(if scope.is_root() {
                 Value::Undefined
             } else {
                 scope.row.clone()
-            };
+            });
         }
         if name == KEY || RECUR.contains(&name) {
-            return scope
-                .meta
-                .as_ref()
-                .and_then(|m| m.get(name).cloned())
-                .unwrap_or(Value::Undefined);
+            if let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name)) {
+                return Ok(v.clone());
+            }
         }
         if let Some(v) = scope.lifts.borrow().get(name) {
-            return v.clone();
+            return Ok(v.clone());
         }
         if scope.is_root() {
-            return self.ctx.root(name);
+            return Ok(self.ctx.root(name));
         }
         self.ctx.get(&scope.row, name)
     }
@@ -1199,6 +1205,10 @@ fn describe_receiver(e: &Expr) -> String {
 
 /// Split a `follow` query's `where` into the conjuncts that select seeds (no
 /// recursion intrinsic mentioned) and those applied to the walked occurrences.
+/// The test is syntactic — a bare `$depth` in the body of a follow always names
+/// the occurrence's metadata, so no property read can be mistaken for it here;
+/// without a `follow` this split is never consulted and `$depth` is an ordinary
+/// predicate over the row.
 fn partition_recur(w: &Where) -> (Vec<&Where>, Vec<&Where>) {
     let parts: Vec<&Where> = match w {
         Where::And { parts } => parts.iter().collect(),

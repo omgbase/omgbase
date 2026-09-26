@@ -30,7 +30,9 @@ export interface DataContext {
   /** Read a property/relation off a row: a bare identifier (`field`), a
    * `.field` segment, or a `^field` outer reference all come through here, each
    * against exactly the row of the scope it names. An absent property is
-   * `undefined`; the engine never looks elsewhere for it. */
+   * `undefined`; the engine never looks elsewhere for it. A context may throw
+   * (an `OqxError` with stage `"eval"`, or any error) to reject a read — a
+   * reserved name, a failed store read — and the throw is the query's error. */
   get(row: unknown, key: string): unknown;
   /** Coerce a relation/source value into rows (may be lazy). */
   toRows(value: unknown): Iterable<unknown>;

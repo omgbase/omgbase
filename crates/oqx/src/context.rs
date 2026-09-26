@@ -23,8 +23,16 @@ pub trait DataContext {
     /// Read a property/relation off a row: a bare identifier (`field`), a
     /// `.field` segment, or a `^field` outer reference all come through here,
     /// each against exactly the row of the scope it names. An absent property
-    /// is `Value::Undefined`; the engine never looks elsewhere for it.
-    fn get(&self, row: &Value, key: &str) -> Value;
+    /// is `Ok(Value::Undefined)`; the engine never looks elsewhere for it.
+    ///
+    /// The error channel is the host's: an `Err` (an eval-stage
+    /// [`crate::OqxError`], see [`crate::OqxError::eval`]) aborts the query and
+    /// is returned from `run` exactly like a thrown error from the reference's
+    /// `get` — a context can reject a reserved name or surface a failed store
+    /// read at the point it happens instead of stashing it for after the run.
+    /// A context that never fails wraps its value in `Ok`;
+    /// [`DefaultContext::read`] is the plain-value read to delegate to.
+    fn get(&self, row: &Value, key: &str) -> Result<Value>;
 
     /// Coerce a relation/source value into rows.
     fn to_rows(&self, value: &Value) -> Vec<Value>;
@@ -88,14 +96,33 @@ impl DefaultContext {
     pub fn roots(&self) -> &Object {
         &self.roots
     }
-}
 
-impl DataContext for DefaultContext {
-    fn root(&self, name: &str) -> Value {
-        self.roots.get(name).cloned().unwrap_or(Value::Undefined)
-    }
-
-    fn get(&self, row: &Value, key: &str) -> Value {
+    /// The plain-value property read [`DataContext::get`] performs for
+    /// [`DefaultContext`]: an object's own key, an array's element for an
+    /// integer-spelled key (`"0"`, `"1"`, …), otherwise `Value::Undefined`
+    /// (primitives have no properties). It cannot fail, so a custom context
+    /// that only adds computed keys can fall back to it:
+    ///
+    /// ```
+    /// use oqx::{DataContext, DefaultContext, Result, Value};
+    ///
+    /// struct Computed;
+    /// impl DataContext for Computed {
+    ///     fn root(&self, _name: &str) -> Value { Value::Undefined }
+    ///     fn get(&self, row: &Value, key: &str) -> Result<Value> {
+    ///         if key == "shout" {
+    ///             return Ok(match DefaultContext::read(row, "name") {
+    ///                 Value::Str(s) => Value::Str(s.to_uppercase()),
+    ///                 _ => Value::Undefined,
+    ///             });
+    ///         }
+    ///         Ok(DefaultContext::read(row, key))
+    ///     }
+    ///     fn to_rows(&self, v: &Value) -> Vec<Value> { DefaultContext::default().to_rows(v) }
+    ///     fn identity(&self, row: &Value) -> Value { DefaultContext::default().identity(row) }
+    /// }
+    /// ```
+    pub fn read(row: &Value, key: &str) -> Value {
         match row {
             Value::Object(o) => o.get(key).cloned().unwrap_or(Value::Undefined),
             Value::Array(a) => match key.parse::<usize>() {
@@ -104,6 +131,16 @@ impl DataContext for DefaultContext {
             },
             _ => Value::Undefined,
         }
+    }
+}
+
+impl DataContext for DefaultContext {
+    fn root(&self, name: &str) -> Value {
+        self.roots.get(name).cloned().unwrap_or(Value::Undefined)
+    }
+
+    fn get(&self, row: &Value, key: &str) -> Result<Value> {
+        Ok(Self::read(row, key))
     }
 
     fn to_rows(&self, value: &Value) -> Vec<Value> {

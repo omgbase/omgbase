@@ -150,7 +150,7 @@ impl DataContext for Overlay<'_> {
         }
     }
 
-    fn get(&self, row: &Value, key: &str) -> Value {
+    fn get(&self, row: &Value, key: &str) -> Result<Value> {
         self.inner.get(row, key)
     }
 
@@ -219,14 +219,14 @@ mod tests {
                 Value::Undefined
             }
         }
-        fn get(&self, row: &Value, key: &str) -> Value {
+        fn get(&self, row: &Value, key: &str) -> Result<Value> {
             if key == "double" {
-                return match row.as_object().and_then(|o| o.get("n")) {
+                return Ok(match row.as_object().and_then(|o| o.get("n")) {
                     Some(Value::Number(n)) => num(n * 2.0),
                     _ => Value::Undefined,
-                };
+                });
             }
-            DefaultContext::default().get(row, key)
+            Ok(DefaultContext::read(row, key))
         }
         fn to_rows(&self, value: &Value) -> Vec<Value> {
             DefaultContext::default().to_rows(value)
@@ -245,7 +245,10 @@ mod tests {
         };
         assert_eq!(with_rows.root(ROWS_ROOT), rows);
         assert_eq!(with_rows.root("things"), Things.root("things"));
-        assert_eq!(with_rows.get(&obj(&[("n", num(3.0))]), "double"), num(6.0));
+        assert_eq!(
+            with_rows.get(&obj(&[("n", num(3.0))]), "double").unwrap(),
+            num(6.0)
+        );
         assert_eq!(
             with_rows.to_rows(&Value::Array(vec![num(1.0)])),
             vec![num(1.0)]

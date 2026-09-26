@@ -481,10 +481,17 @@ export class InMemoryEngine implements Engine {
   // Resolve a name against ONE scope — never its ancestors. A scope provides,
   // in order: `$value` (the scope's row itself — the current item, whatever its
   // type, so scalar collections are queryable; absent at the root, which has no
-  // row); `$key` (the property key, for an entry scope only — see `enter`); the
-  // recursion intrinsics (`$depth`, …) when it is a follow occurrence; values
-  // lifted into it by `^name:` items; then either the row's own property or,
-  // for the root scope (no row), the context's named roots.
+  // row); `$key` (the property key) when it is an entry scope — see `enter`;
+  // the recursion intrinsics (`$depth`, …) when it is a follow occurrence;
+  // values lifted into it by `^name:` items; then either the row's own property
+  // or, for the root scope (no row), the context's named roots.
+  //
+  // The two metadata steps apply only where the scope CARRIES that metadata
+  // (SEMANTICS §2, since 0.13). Anywhere else — `$key` on an ordinary row,
+  // `$depth` outside a follow or on the plain rows of a nested block inside
+  // one — the name is an ordinary property read, so a host whose rows own a
+  // `$depth`/`$ordinal` (omgbase's blocks do) exposes it. Where the metadata
+  // exists it wins over a same-named row property.
   //
   // A name the scope lacks is simply absent (undefined). It does NOT fall
   // through to an enclosing scope, so a query's meaning never depends on which
@@ -494,7 +501,7 @@ export class InMemoryEngine implements Engine {
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
     if (name === "$value") return scope.parent === null ? undefined : scope.row;
-    if (name === KEY || RECUR.has(name)) return scope.meta ? scope.meta[name] : undefined;
+    if ((name === KEY || RECUR.has(name)) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
     return this.ctx.get(scope.row, name);
@@ -579,6 +586,11 @@ function describeReceiver(e: Expr): string {
   return "receiver";
 }
 
+// Split a follow query's `where` into seed conjuncts (no recursion intrinsic
+// mentioned) and post-walk conjuncts. The test is syntactic — a bare `$depth`
+// in the body of a follow always names the occurrence's metadata, so no
+// property read can be mistaken for it here; without a `follow` this split is
+// never consulted and `$depth` is an ordinary predicate over the row.
 function partitionRecur(w: Where): { seed: Where | null; post: Where | null } {
   const parts = w.kind === "and" ? w.parts : [w];
   const seed: Where[] = [];

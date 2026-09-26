@@ -506,8 +506,9 @@ test("recursion intrinsics belong to the reached row's scope; a nested block rea
     order by $ordinal
   `;
   // Inside `children collect { … }` the rows are plain children, not follow
-  // occurrences: a bare `$depth` is absent there and does not climb to the
-  // occurrence's; `^$depth` names it explicitly.
+  // occurrences: a bare `$depth` is the child's own `$depth` property (these
+  // have none, so absent) and does not climb to the occurrence's; `^$depth`
+  // names it explicitly.
   assert.deepEqual(out, [
     { id: "root", kids: [{ id: "a", own: undefined, parentDepth: 1 }, { id: "b", own: undefined, parentDepth: 1 }] },
     { id: "a", kids: [{ id: "a1", own: undefined, parentDepth: 2 }] },

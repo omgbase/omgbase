@@ -4,6 +4,36 @@ All notable changes to `@omgbase/oqx` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.13.0] - 2026-09-26
+
+Language `0.13` (`spec/oqx/VERSION`; `LANGUAGE_VERSION` is `"0.13"`). One
+scoping rule changed; the spec now has 850 fixtures in 29 files (15 new, in
+`cases/intrinsics.json`; no existing expectation moved).
+
+### Changed (breaking) — semantics
+- **Intrinsic names fall through to the row where the scope carries no such
+  metadata** (SEMANTICS §2 steps 2–3, §20, §21). `$key` is metadata only in an
+  `entries()` scope; `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` only
+  on a `follow` occurrence. Anywhere else the six names are ordinary property
+  reads of the row (step 5): a plain row `{ "$depth": 3, "$ordinal": 7 }`
+  projects `3`/`7` at the top level and inside a nested `collect`; a `where`
+  on `$depth` without a `follow` is an ordinary predicate (no seed/post-walk
+  split); `order by $ordinal` over rows without the property is unchanged
+  (absent sorts last). Inside a nested block within a `follow`, a bare `$depth`
+  is now the nested row's own `$depth` property (absent unless the data carries
+  one) and `^$depth` is still the occurrence's. Where the metadata exists it
+  wins over a same-named row property, so nothing inside a `follow` changes.
+  Before, the six names read absent everywhere they were not metadata.
+  **Why:** omgbase's blocks carry a `$depth` and `$ordinal` of their own that
+  the recursion intrinsics shadowed outside a `follow`; `spec/surface` §9 had
+  pinned this as a candidate minor.
+
+### Added
+- `DataContext.get` is documented as the host's error channel: a throw (an
+  `OqxError` with stage `"eval"`, or any error) rejects the read and is the
+  query's error. The behavior is unchanged; the Rust crate's `DataContext::get`
+  now returns `Result<Value>` to match.
+
 ## [0.12.0] - 2026-09-25
 
 **OQX is now a language with a specification and two implementations.** The
