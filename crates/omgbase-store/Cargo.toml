@@ -1,0 +1,32 @@
+[package]
+name = "omgbase-store"
+version = "13.0.0"
+description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
+keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
+categories = ["database-implementations", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-store#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+# The block model: `parse_markdown`, `BlockTree`, the spec/format §4.1 text
+# rules, the §4.2 hashes and the splice renderer. `json` for attrs as JSON.
+omgbase-format = { version = "0.2.1", path = "../omgbase-format", features = ["json"] }
+# The matcher: `reconcile_document`, the pool, cross-document moves. `json`
+# for the disposition `detail` the store persists.
+omgbase-reconcile = { version = "2.2.0", path = "../omgbase-reconcile", features = ["json"] }
+# `bundled`: compile SQLite from source (FTS5 + JSON1 included) so the crate
+# needs no system library; the same version the `oqx` crate uses, so the
+# workspace builds one SQLite. `functions`: the `cosine` scalar.
+rusqlite = { version = "0.40", features = ["bundled", "functions"] }
+# The store writes JSON columns (`attrs`, `detail`) and reads tree entries.
+serde_json = { version = "1", features = ["preserve_order"] }
+# CSPRNG for production ids (spec/store §2.1).
+getrandom = "0.3"
+
+[lints]
+workspace = true
