@@ -11,6 +11,14 @@ language as-built; the **behavioral ground truth** is the corpus
 `query` tool description in `packages/core/src/mcp/server.ts`. Where this doc and
 those disagree, they win.
 
+> **Specs.** The language itself is `spec/oqx` (grammar, semantics, the fixture
+> corpus both engines run). The *binding* of that language to the store — roots,
+> fields, intrinsics, reach-through, relations, the row functions, the runner's
+> paging — is `spec/surface/README.md` §1, pinned by the corpus-backed suites
+> `spec/surface/cases/query-*.json` (the 18-document alchemy repository, every
+> case run planned and pure in-memory, which must agree). Regenerate with
+> `SURFACE_SPEC_UPDATE=1` on `packages/core/corpus/surface/spec.test.ts`.
+
 > **Scalar semantics changed with ADR-013** (there were no active users). This
 > replaces the former CEL sublanguage; the notable differences from the retired
 > CEL rules are called out inline as **[was CEL: …]**.

@@ -185,11 +185,50 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return (r?.ordinal as number) ?? (block.ordinal as number);
   };
 
+  // ---- a document's live blocks in DOCUMENT order (spec/surface §1.2) --------
+  // Pre-order over the containment forest (children by parent_block, siblings by
+  // (ordinal, block_id)); each row is paired with its top-level ancestor's
+  // ordinal, which is what section ranges are expressed in.
+  const docBlocksPreorder = (docId: unknown, path: unknown): { row: Row; top: number }[] => {
+    const rows = all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.doc_id = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, path, docId) as Row[];
+    const ids = new Set(rows.map((r) => r.block_id));
+    const byParent = new Map<string | null, Row[]>();
+    for (const r of rows) {
+      const parent = r.parent_block != null && ids.has(r.parent_block as string) ? (r.parent_block as string) : null;
+      let list = byParent.get(parent);
+      if (!list) byParent.set(parent, (list = []));
+      list.push(r);
+    }
+    const out: { row: Row; top: number }[] = [];
+    const walk = (parent: string | null, top: number | null): void => {
+      for (const r of byParent.get(parent) ?? []) {
+        const t = top ?? (r.ordinal as number);
+        out.push({ row: r, top: t });
+        walk(r.block_id as string, t);
+      }
+    };
+    walk(null, null);
+    return out;
+  };
+
+  // A document's nodes in DOCUMENT order: by the owning block's pre-order rank
+  // (block-less nodes first), then span_start, then node_id. Node ids are content
+  // hashes over random doc ids, so an id order would differ per ingest.
+  const docNodesInOrder = (docId: unknown, path: unknown): Row[] => {
+    const rank = new Map<string, number>();
+    docBlocksPreorder(docId, path).forEach((x, i) => rank.set(x.row.block_id as string, i));
+    const rows = all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.doc_id = ?`, path, docId) as Row[];
+    const pos = (n: Row): number => (n.block_id == null ? -1 : rank.get(n.block_id as string) ?? Number.MAX_SAFE_INTEGER);
+    const span = (n: Row): number => (typeof n.span_start === "number" ? n.span_start : -1);
+    rows.sort((a, b) => pos(a) - pos(b) || span(a) - span(b) || (a.node_id as string < (b.node_id as string) ? -1 : a.node_id === b.node_id ? 0 : 1));
+    return tagAll(rows, "nodes");
+  };
+
   // ---- relations (return row arrays) ----------------------------------------
   const rel: Record<Target, Record<string, (row: Row) => Row[] | Row | undefined>> = {
     docs: {
-      nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.doc_id = ?`, r.path, r.doc_id), "nodes"),
-      blocks: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.doc_id = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.path, r.doc_id), "blocks"),
+      nodes: (r) => docNodesInOrder(r.doc_id, r.path),
+      blocks: (r) => tagAll(docBlocksPreorder(r.doc_id, r.path).map((x) => x.row), "blocks"),
       out: (r) => tagAll(all(
         `SELECT DISTINCT d2.* FROM docs d2 JOIN edges e ON e.dst_node = d2.doc_id
          WHERE e.src_doc = ? AND e.to_commit IS NULL AND d2.repo_id = ? AND d2.deleted_commit IS NULL ORDER BY d2.path, d2.doc_id`, r.doc_id, repoId), "docs"),
@@ -203,7 +242,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     },
     blocks: {
       children: (r) => tagAll(all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.parent_block = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.block_id), "blocks"),
-      nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ?`, r.__path, r.block_id), "nodes"),
+      nodes: (r) => tagAll(all(`SELECT n.*, ? AS __path FROM nodes n WHERE n.block_id = ? ORDER BY n.span_start, n.node_id`, r.__path, r.block_id), "nodes"),
       out_edges: (r) => tagAll(all(`SELECT e.*, ? AS __path FROM edges e WHERE e.src_block = ? AND e.to_commit IS NULL ORDER BY e.predicate, e.edge_id`, r.__path, r.block_id), "edges"),
       // enclosing section node(s): md:section whose range contains this block's top ordinal.
       section: (r) => {
@@ -219,9 +258,8 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       blocks: (r) => {
         const f = jattr(r, "first_ordinal"), l = jattr(r, "last_ordinal");
         if (f == null || l == null) return [];
-        // blocks whose top-level ordinal falls in the section range.
-        const rows = all(`SELECT b.*, ? AS __path FROM blocks b WHERE b.doc_id = ? AND b.deleted_commit IS NULL ORDER BY b.ordinal, b.block_id`, r.__path, r.doc_id);
-        const kept = (rows as Row[]).filter((b) => { const t = topOrdinal(b); return t >= (f as number) && t <= (l as number); });
+        // blocks whose top-level ancestor's ordinal falls in the section range, in document order.
+        const kept = docBlocksPreorder(r.doc_id, r.__path).filter((x) => x.top >= (f as number) && x.top <= (l as number)).map((x) => x.row);
         return tagAll(kept, "blocks");
       },
       subsections: (r) => {

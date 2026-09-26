@@ -33,6 +33,11 @@ const DEFAULT_DEGREES = 1;
 const DEFAULT_MAX_DOCUMENTS = 200;
 const MAX_DEPTH = 8; // OQX follow depth cap (1..8)
 
+// Bytewise (UTF-8) order — the order every path-ordered surface uses (spec/surface §4).
+function cmpBytes(a: string, b: string): number {
+  return Buffer.compare(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+}
+
 export type GraphDirection = "in" | "out" | "both";
 
 export interface GraphArgs {
@@ -243,7 +248,7 @@ export async function graphNeighborhood(
   }
 
   // Cap the distinct document set (nearest-first), then bound edges to it.
-  const allDocs = [...docMap.values()].sort((a, b) => a.degree - b.degree || a.path.localeCompare(b.path));
+  const allDocs = [...docMap.values()].sort((a, b) => a.degree - b.degree || cmpBytes(a.path, b.path));
   const capped = allDocs.length > maxDocuments;
   const documents = allDocs.slice(0, maxDocuments);
   const reached = new Set(documents.map((d) => d.id));
@@ -271,7 +276,7 @@ export async function graphNeighborhood(
     const dstIn = reached.has(e.dst) || dstDangling;
     if (srcIn && dstIn) edges.push(e);
   }
-  edges.sort((a, b) => (a.src === b.src ? a.id.localeCompare(b.id) : a.src.localeCompare(b.src)));
+  edges.sort((a, b) => cmpBytes(a.src, b.src) || cmpBytes(a.id, b.id));
 
   return {
     roots: rootIds,

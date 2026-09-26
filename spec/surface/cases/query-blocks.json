@@ -1,0 +1,1378 @@
+{
+  "suite": "query-blocks",
+  "corpus": {
+    "index.md": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
+    "lab/2026-01-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
+    "lab/2026-02-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, coagulation]\nverified: true\nmonth: 2\nsubject: coagulation\nwindow: 2026-02-01..2026-02-28\n---\n\n# Laboratory notes — February\n\nRecrystallization series on alum, testing the \"purity gain per cycle\" claim from\n[coagulation](/processes/coagulation.md).\n\noperator:: bb\nbalance:: analytical\n\n## Method\n\nSaturate at 80 °C, filter hot through a warmed funnel, cool undisturbed to room\ntemperature overnight, harvest, then re-saturate the mother liquor.\n\n```text\nsaturate 80C → hot filter → cool overnight → harvest → repeat on liquor\n```\n\n## Results\n\n| Cycle | Crop (g) | Notes |\n|---|---|---|\n| 1 | 14.2 | large clean octahedra |\n| 2 | 5.8 | slightly smaller, still clear |\n| 3 | 1.9 | small, some inclusions |\n| 4 | 0.4 | poor, cloudy |\n\nYield falls off fast. Crystal quality is best in cycle 1 and degrades as\nimpurities concentrate in the liquor — the opposite of the alchemical expectation\nthat repeated cycling *improves* the product indefinitely.\n\nThe refinement is real but bounded, and it plateaus by cycle 3. That is exactly\nthe asymptote the tradition mistook for a trajectory.\n\n## Conclusion\n\n`solve et coagula` purifies. It does not transform. The claim in\n[the philosophers' stone](/substances/philosophers-stone.md) does not follow from\nthis bench behaviour, and would not have followed for anyone who weighed the\ncrops.\n\n## Tasks\n\n- [x] Four recrystallization cycles with weights\n- [x] Note crystal quality per cycle\n- [ ] Assay cycle 1 and cycle 4 crops for iron\n- [ ] Write the plateau result up for the coagulation note\n",
+    "practitioners/jabir-ibn-hayyan.md": "---\ntype: practitioner\nlayer: canon\ntradition: islamic\nera: 800\ntags: [practitioner, theory, method]\nverified: true\n---\n\n# Jabir ibn Hayyan\n\n8th–9th century, the towering figure of the Islamic alchemical tradition, and the\nsource — through the Latin *Geber* — of most of what medieval Europe knew.\n\nknown_for:: mercury-sulphur theory\ncentury:: 8\n\n## The mercury–sulphur theory\n\nEvery metal is a compound of [[mercury]] and [[sulphur]]; the proportion and the\npurity of the mixture determine which metal you have. Gold is the balanced,\nperfectly mixed case.\n\nThe consequence is the whole transmutation programme: if lead and gold differ\nonly in proportion, changing lead into gold requires no new substance, just\nrebalancing. This is a *coherent* research question given the premises, and it\nkept competent people busy for eight centuries.\n\n## Method\n\nMore important than the theory is the insistence on procedure. The Jabirian\ncorpus specifies quantities, apparatus, and sequence, and expects the reader to\nreproduce the result. It describes the preparation of what became the mineral\nacids — see [dissolution](/processes/dissolution.md) — and classifies substances\nby observable behaviour rather than by symbol.\n\nThat is recognisably experimental practice, several centuries before the\nvocabulary existed for it.\n\n## The corpus problem\n\nThousands of works bear the name; they cannot all be one author. The consensus is\na school writing under an authoritative name over generations. Attribution\nquestions remain open.\n\n- [ ] Separate the Jabirian corpus into strata by vocabulary\n",
+    "practitioners/maria-prophetissa.md": "---\ntype: practitioner\nlayer: canon\ntradition: alexandrian\nera: 250\ntags: [practitioner, apparatus]\nverified: true\n---\n\n# Maria Prophetissa\n\nAlexandrian alchemist, probably 1st–3rd century, known only through quotation.\nThe earliest named practitioner whose *apparatus* survives in continuous use.\n\nknown_for:: balneum mariae\ncentury:: 3\n\n## The water bath\n\nThe *balneum Mariae* — Mary's bath — is a vessel heated indirectly by sitting it\nin hot water. It holds a temperature that cannot exceed the boiling point of\nwater, which is exactly what you want for anything that scorches.\n\nIt is still standard equipment, still called a bain-marie, and it works for the\nsame reason it always did. Very little else in the alchemical inventory has that\nrecord.\n\nShe is also credited with the *tribikos*, a three-armed still, and the *kerotakis*,\na sealed vessel for exposing metals to vapours.\n\n## The axiom\n\n> One becomes two, two becomes three, and out of the third comes the one as the\n> fourth.\n\nQuoted endlessly and explained never. Readings range from a distillation\nschedule to a numerological gloss on the four stages of the\n[magnum opus](/processes/magnum-opus.md). The honest position is that we do not\nknow what she meant.\n\n## Assessment\n\nHer reputation rests on hardware, not theory — and the hardware was right. Among\nthe practitioners here she is the one whose contribution needed no correction.\n",
+    "practitioners/newton.md": "---\ntype: practitioner\nlayer: working\ntradition: western\nera: 1680\ntags: [practitioner, transmutation]\nverified: true\n---\n\n# Isaac Newton\n\n1643–1727. Wrote more on alchemy than on physics, and published none of it.\n\nknown_for:: unpublished alchemical corpus\ncentury:: 17\n\n## Scale of the work\n\nRoughly a million words of alchemical manuscript survive: transcriptions,\nindexes of authors, and his own laboratory records with quantities and dates. He\nkept furnaces at Trinity for decades and ran the work himself rather than\ndelegating it.\n\nKeynes, who bought a large part of the papers at auction in 1936, called him\n\"the last of the magicians.\" The phrase is memorable and slightly unfair — the\nnotebooks are methodical, quantitative, and unmystical in tone.\n\n## The index of authors\n\nHis *Index Chemicus* cross-references hundreds of alchemical texts by topic. It\nis a serious piece of scholarship on a corpus he expected to contain a real\nsecret, encoded.\n\nThat expectation was the error, and it was not a careless one: the tradition\n*claimed* to encode a secret, and Newton took the claim at face value and tested\nit with the most rigorous method available. The method was sound; the corpus was\nempty.\n\n## Why it matters here\n\nNewton is the clean case against reading alchemy as mere credulity. The most\ncapable investigator of the era worked the programme for thirty years with full\nrigour and got nothing, because there was nothing there. That is a result, and\nthe [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n\n- [ ] Read the Index Chemicus entries on [[mercury]]\n- [ ] Cross-check the furnace dates against the Principia years\n",
+    "practitioners/paracelsus.md": "---\ntype: practitioner\nlayer: canon\ntradition: western\nera: 1530\ntags: [practitioner, medicine, theory]\nverified: true\n---\n\n# Paracelsus\n\nTheophrastus von Hohenheim, 1493–1541. Redirected alchemy from metallurgy to\nmedicine, and was insufferable about it.\n\nknown_for:: tria prima\ncentury:: 16\n\n## The tria prima\n\nHe replaced the four elements with three principles — [[mercury]], [[sulphur]],\n[[salt]] — as the constituents of every body. See [index](/index.md) for the\nscheme.\n\nAs chemistry this is wrong. As a research programme it was an improvement: the\ntria prima are *operationally defined* by what happens when you heat a substance\nand see what flies off, what burns, and what remains. The four elements are not\ndefined by any operation at all.\n\n## Iatrochemistry\n\nHis real contribution: minerals as medicines, prepared by chemical operation and\ndosed by weight. Mercury for syphilis, antimony as an emetic, laudanum for pain.\nSome of these worked. Several were poisons.\n\n> All things are poison and nothing is without poison; only the dose makes a\n> thing not a poison.\n\nThat is the founding statement of dose–response, and it is correct.\n\n## Character\n\nHe burned Avicenna's books publicly, lectured in German rather than Latin,\ninsulted the faculty of every university that employed him, and was run out of\nBasel. His posthumous reputation was built by followers who systematized what he\nleft as invective.\n\n- [ ] Check which mineral remedies survived into the 18th-century pharmacopoeia\n- [x] Confirm the dose–response quotation's source\n",
+    "processes/calcination.md": "---\ntype: process\nslug: calcination\nlayer: canon\ntradition: western\ntags: [process, fire]\nverified: true\nstage: nigredo\n---\n\n# Calcination\n\nHeating a substance in air until it is reduced to a friable powder — a *calx*.\nThe first of the twelve gates and, in practice, the first thing anyone does.\n\nelement:: fire\nreversible:: no\n\n## Procedure\n\nGrind the material, spread it thinly in an open crucible, and heat steadily\nbelow the melting point. Stir to expose fresh surface. Continue until no further\nweight is lost and no fumes come off.\n\n```text\ncrucible → grind → thin layer → moderate heat → stir → constant weight\n```\n\nThe endpoint is the constant weight, not the colour. Colour tells you which\noxide you have; weight tells you that you are finished.\n\n## What is actually happening\n\nOrganic matter burns away; metals take up oxygen. The characteristic *gain* in\nweight when calcining a metal is the observation that eventually broke the\nphlogiston theory — the calx weighs more than the metal, which a theory of\nescaping substance cannot accommodate.\n\nAlchemical practice recorded this gain for centuries without drawing the\ninference. The data were sound; the framework could not use them.\n\n## Products\n\n- calcined lead → yellow massicot, then red minium\n- calcined copper → black tenorite\n- plant matter → ash, source of the [[salt]]\n\n## Tasks\n\n- [x] Verify the weight gain on lead with a balance\n- [ ] Repeat with copper and record the colour sequence\n- [ ] Chase down the earliest recorded weight-gain measurement\n",
+    "processes/coagulation.md": "---\ntype: process\nslug: coagulation\nlayer: working\ntradition: western\ntags: [process, earth]\nverified: true\nstage: rubedo\n---\n\n# Coagulation\n\nThe *coagula* half of *solve et coagula*: bringing a dissolved substance back to\na solid, ideally more ordered than before. Crystallization, precipitation, and\nslow evaporation all count.\n\nelement:: earth\nreversible:: yes\n\n## Why it closes the work\n\nDissolution destroys structure; coagulation rebuilds it. The pair is the engine\nof the whole programme — the claim being that matter repeatedly dissolved and\nrecoagulated is progressively refined, and that enough cycles yield the\n[philosophers' stone](/substances/philosophers-stone.md).\n\nThe claim is false, but the intuition is not absurd: recrystallization *does*\npurify, and each cycle *does* leave a cleaner product. The error is extrapolating\nan asymptote into a transformation.\n\n## Practical notes\n\nSlow is better. Rapid cooling gives small, impure crystals that trap solvent;\nslow evaporation at a stable temperature gives large clean ones.\n\n```text\nsaturate hot → filter while hot → cool undisturbed → harvest → repeat on liquor\n```\n\nRepeating on the mother liquor is where the yield is. See the\n[February notes](/lab/2026-02-notes.md) for a worked run.\n\n## Tasks\n\n- [x] Recrystallize alum three times and weigh each crop\n- [ ] Measure purity gain per cycle to find where it plateaus\n",
+    "processes/dissolution.md": "---\ntype: process\nslug: dissolution\nlayer: canon\ntradition: western\ntags: [process, water]\nverified: true\nstage: nigredo\n---\n\n# Dissolution\n\nTaking the calx into a liquid — *solve* of the maxim *solve et coagula*. The\nsecond gate, and the operation that produced most of alchemy's real chemical\ndiscoveries.\n\nelement:: water\nreversible:: yes\n\n## Solvents\n\nThe search for solvents is where the practical payoff was. Distilling vitriol\nand nitre gave the mineral acids, and those genuinely dissolve things nothing\nelse will:\n\n```text\nnitre + vitriol      → aqua fortis     (nitric acid)\naqua fortis + sal    → aqua regia      (dissolves gold)\n```\n\n*Aqua regia* — royal water, because it dissolves the royal metal — is the single\nmost consequential thing to come out of the laboratory tradition. It is a real\nreagent, it does something no other liquid does, and its discovery was driven\nentirely by the transmutation programme.\n\n## The alkahest\n\nThe hypothetical universal solvent, said to dissolve any substance into its\nprima materia. Never produced. The obvious objection — that no vessel could hold\nit — was raised at the time and answered with the claim that it dissolves only\nwhat is imperfect.\n\nThis is unfalsifiable, and its defenders were not troubled by that.\n\n## Tasks\n\n- [x] Distil aqua fortis from nitre and vitriol\n- [x] Prepare aqua regia and test on gold leaf\n- [ ] Write up the alkahest arguments and their rebuttals\n",
+    "processes/magnum-opus.md": "---\ntype: process\nslug: magnum-opus\nlayer: canon\ntradition: western\ntags: [process, framework]\nverified: false\nstages: 4\nstage_range: 1..4\n---\n\n# The magnum opus\n\nThe Great Work: the full sequence that carries the matter from its raw state to\nthe [philosophers' stone](/substances/philosophers-stone.md). The operations vary\nbetween authors; the *colour sequence* is remarkably stable.\n\n## The four stages\n\n| Stage | Colour | Sense |\n|---|---|---|\n| Nigredo | black | putrefaction, reduction to [prima materia](/substances/prima-materia.md) |\n| Albedo | white | washing, purification |\n| Citrinitas | yellow | dawning of the solar principle |\n| Rubedo | red | the completed stone |\n\nLater writers frequently drop citrinitas, giving a three-colour scheme. The\ncompression is worth noting: it tracks a shift from observing the vessel to\nallegorizing the soul.\n\n## Why colour\n\nColour change is the one signal a pre-instrumental laboratory can read reliably.\nIt is reproducible, it is public, and it does not depend on the operator's\njudgement. Building the whole framework on the colour sequence was, given the\navailable instruments, a reasonable methodological choice.\n\n## Operations\n\nThe twelve gates assign operations to the stages. The three documented here:\n\n- [calcination](/processes/calcination.md) — nigredo\n- [dissolution](/processes/dissolution.md) — nigredo into albedo\n- [coagulation](/processes/coagulation.md) — rubedo\n\n## Open questions\n\n- [ ] Map the twelve gates onto the four stages across three sources\n- [ ] Decide whether citrinitas is dropped or absorbed\n",
+    "substances/mercury.md": "---\ntype: substance\nslug: mercury\nlayer: canon\ntradition: western\nelement: mercury\ntags: substance\nverified: true\n---\n\n# Mercury\n\nQuicksilver: a metal that is liquid at room temperature, and therefore the\nobvious emblem of everything that refuses to hold a fixed form.\n\nsymbol:: ☿\nmelting_point:: -38.8\ntoxic:: yes\n\n## As a principle\n\nIn the tria prima, mercury is the volatile spirit — the part of a substance that\ncan be driven off and recondensed. It stands opposite [[salt]], the fixed body,\nwith [[sulphur]] mediating.\n\n| Principle | Role | Fixed? |\n|---|---|---|\n| Mercury | spirit | no |\n| Sulphur | soul | partly |\n| Salt | body | yes |\n\n## As a material\n\nMercury dissolves gold and silver into amalgams, which made it indispensable to\nassayers and irresistible to alchemists: a substance that visibly *takes gold\ninto itself* invites the inference that it can also give gold back.\n\nIt is also poisonous, a fact the laboratory notes record without connecting it\nto the tremors and mania that follow long exposure. See the\n[January notes](/lab/2026-01-notes.md) for handling precautions.\n\n## Reading\n\n- [Paracelsus](/practitioners/paracelsus.md) on the tria prima\n- [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) on the mercury–sulphur theory of metals\n",
+    "substances/philosophers-stone.md": "---\ntype: substance\nslug: philosophers-stone\nlayer: canon\ntradition: western\ntags: [substance, goal, legendary]\nverified: false\n---\n\n# The philosophers' stone\n\nThe *lapis philosophorum* is the end of the [magnum opus](/processes/magnum-opus.md):\na substance said to transmute base metals into gold and to perfect whatever it\ntouches.\n\nappearance:: red\nalso_known_as:: lapis\ntransmutes:: lead\n\n## Claims\n\nThree powers are attributed to it, in descending order of plausibility:\n\n1. **Transmutation** of lead or mercury into gold.\n2. **Medicine** — the *panacea*, curing illness and extending life.\n3. **Perfection** of the practitioner, the stone being a mirror of the soul.\n\nThe third reading dominates the later literature, where the laboratory work is\nexplicitly allegorical.\n\n## Preparation\n\nEvery account is incomplete, and deliberately so. The common skeleton:\n\n- reduce the matter to [prima materia](/substances/prima-materia.md)\n- carry it through the four stages of the [[magnum-opus]]\n- fix the volatile and volatilize the fixed\n\nCompare [[mercury]], whose duality the stone is supposed to resolve.\n\n## Open questions\n\n- The surviving transmutation claims have never been gathered in one place with\n  dates and provenance attached.\n- The shift from literal to allegorical readings is well documented; what caused\n  it is still disputed.\n",
+    "substances/prima-materia.md": "---\ntype: substance\nslug: prima-materia\nlayer: canon\ntradition: western\ntags: [substance, theory]\nverified: false\n---\n\n# Prima materia\n\nThe *prima materia* is the formless first matter from which all substances are\ncomposed — not a reagent you can order, but the state a substance is reduced to\nbefore it can be rebuilt.\n\nstate:: undifferentiated\nobtainable:: no\n\n## Descriptions\n\nThe texts are deliberately evasive. It is called the dragon, the chaos, the\nlead of the philosophers, the vile black earth. Practitioners took this\nmultiplicity as proof that the *prima materia* is a condition rather than an\ningredient.\n\n> That which is below is like that which is above.\n\nThe [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing\nthis reduction and return.\n\n## Relation to the Great Work\n\nReduction to the *prima materia* is the purpose of [[nigredo]], the blackening\nthat opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md)\nis the usual first operation.\n\n## Open questions\n\n- Whether the \"chaos\" and the \"lead of the philosophers\" readings can be\n  reconciled, or whether they simply belong to different schools.\n- How far the term can honestly be traced back through the Alexandrian corpus\n  before it becomes a later retrojection.\n",
+    "substances/salt.md": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
+    "substances/sulphur.md": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[mercury]] and the fixed [[salt]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n",
+    "texts/emerald-tablet.md": "---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
+    "texts/mutus-liber.md": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+  },
+  "cases": [
+    {
+      "name": "root-order-is-path-then-block-id",
+      "notes": "§1.1: blocks scan in (doc path, block_id) order — bytewise, so b_10 sorts before b_2. ($ordinal/$depth project nothing — see `intrinsics`.)",
+      "query": "select o: $ordinal, d: $depth from blocks where $path == \"index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "index.md"
+          },
+          {
+            "id": "b_1",
+            "path": "index.md"
+          },
+          {
+            "id": "b_10",
+            "path": "index.md"
+          },
+          {
+            "id": "b_11",
+            "path": "index.md"
+          },
+          {
+            "id": "b_12",
+            "path": "index.md"
+          },
+          {
+            "id": "b_13",
+            "path": "index.md"
+          },
+          {
+            "id": "b_14",
+            "path": "index.md"
+          },
+          {
+            "id": "b_15",
+            "path": "index.md"
+          },
+          {
+            "id": "b_16",
+            "path": "index.md"
+          },
+          {
+            "id": "b_17",
+            "path": "index.md"
+          },
+          {
+            "id": "b_18",
+            "path": "index.md"
+          },
+          {
+            "id": "b_19",
+            "path": "index.md"
+          },
+          {
+            "id": "b_2",
+            "path": "index.md"
+          },
+          {
+            "id": "b_20",
+            "path": "index.md"
+          },
+          {
+            "id": "b_21",
+            "path": "index.md"
+          },
+          {
+            "id": "b_22",
+            "path": "index.md"
+          },
+          {
+            "id": "b_23",
+            "path": "index.md"
+          },
+          {
+            "id": "b_24",
+            "path": "index.md"
+          },
+          {
+            "id": "b_25",
+            "path": "index.md"
+          },
+          {
+            "id": "b_26",
+            "path": "index.md"
+          },
+          {
+            "id": "b_27",
+            "path": "index.md"
+          },
+          {
+            "id": "b_28",
+            "path": "index.md"
+          },
+          {
+            "id": "b_29",
+            "path": "index.md"
+          },
+          {
+            "id": "b_3",
+            "path": "index.md"
+          },
+          {
+            "id": "b_30",
+            "path": "index.md"
+          },
+          {
+            "id": "b_4",
+            "path": "index.md"
+          },
+          {
+            "id": "b_5",
+            "path": "index.md"
+          },
+          {
+            "id": "b_6",
+            "path": "index.md"
+          },
+          {
+            "id": "b_7",
+            "path": "index.md"
+          },
+          {
+            "id": "b_8",
+            "path": "index.md"
+          },
+          {
+            "id": "b_9",
+            "path": "index.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "fields",
+      "query": "select type, text, attrs from blocks where $path == \"index.md\" && type == \"heading\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Alchemy",
+            "attrs": {
+              "level": 1
+            }
+          },
+          {
+            "id": "b_12",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Processes",
+            "attrs": {
+              "level": 2
+            }
+          },
+          {
+            "id": "b_18",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Practitioners",
+            "attrs": {
+              "level": 2
+            }
+          },
+          {
+            "id": "b_2",
+            "path": "index.md",
+            "type": "heading",
+            "text": "The tria prima",
+            "attrs": {
+              "level": 2
+            }
+          },
+          {
+            "id": "b_25",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Texts",
+            "attrs": {
+              "level": 2
+            }
+          },
+          {
+            "id": "b_29",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Laboratory",
+            "attrs": {
+              "level": 2
+            }
+          },
+          {
+            "id": "b_8",
+            "path": "index.md",
+            "type": "heading",
+            "text": "Substances",
+            "attrs": {
+              "level": 2
+            }
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "attrs-flattening",
+      "notes": "§1.2: a bare non-structural identifier reads attrs.<k>.",
+      "query": "select level, l2: attrs.level from blocks where $path == \"index.md\" && type == \"heading\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "index.md",
+            "level": 1,
+            "l2": 1
+          },
+          {
+            "id": "b_12",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          },
+          {
+            "id": "b_18",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          },
+          {
+            "id": "b_2",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          },
+          {
+            "id": "b_25",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          },
+          {
+            "id": "b_29",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          },
+          {
+            "id": "b_8",
+            "path": "index.md",
+            "level": 2,
+            "l2": 2
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "attrs-absent-is-undefined",
+      "query": "select checked from blocks where $path == \"substances/salt.md\" && (type == \"task\" || type == \"paragraph\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_262",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_263",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_265",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_266",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_268",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_273",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_275",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_277",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_279",
+            "path": "substances/salt.md",
+            "checked": true
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md",
+            "checked": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "checked-flat-filter",
+      "query": "$repo.blocks count { where checked }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 13
+      }
+    },
+    {
+      "name": "intrinsics",
+      "notes": "§1.2: $id/$doc/$path/$body(=text)/$content_hash/$updated_at. $ordinal and $depth are NOT reachable: the engine's recursion intrinsics of the same name shadow them and read undefined outside a follow (§9 candidate).",
+      "query": "select i: $id, d: $doc, o: $ordinal, dp: $depth, b: $body, h: $content_hash, u: $updated_at from blocks where $path == \"substances/salt.md\" && type == \"task\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_279",
+            "path": "substances/salt.md",
+            "i": "b_279",
+            "d": "d_14",
+            "b": "Buy more salt of tartar",
+            "h": "e789186305831740b025de6778e2de6947752ad1cfbfc762a8d9fba59b562e63",
+            "u": "2026-09-27T00:00:00.000Z"
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md",
+            "i": "b_280",
+            "d": "d_14",
+            "b": "Replace the leaching filter papers",
+            "h": "d8c2230035697421671ab4f871e3132bccbb387b7b3af7bd7defe1504730513c",
+            "u": "2026-09-27T00:00:00.000Z"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "block-is-the-row",
+      "query": "from blocks where block.type == \"table\" && $path == \"index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_19",
+            "path": "index.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "doc-reach-through",
+      "query": "from blocks where type == \"task\" && doc.type == \"lab-note\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_52",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_53",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_54",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_55",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_56",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_57",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_58",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_78",
+            "path": "lab/2026-02-notes.md"
+          },
+          {
+            "id": "b_79",
+            "path": "lab/2026-02-notes.md"
+          },
+          {
+            "id": "b_80",
+            "path": "lab/2026-02-notes.md"
+          },
+          {
+            "id": "b_81",
+            "path": "lab/2026-02-notes.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "type-filter-under-path-prefix",
+      "query": "from blocks where type == \"code_fence\" && $path.startsWith(\"processes/\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_143",
+            "path": "processes/calcination.md"
+          },
+          {
+            "id": "b_166",
+            "path": "processes/coagulation.md"
+          },
+          {
+            "id": "b_177",
+            "path": "processes/dissolution.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "open-tasks-on-practitioners",
+      "query": "select text from blocks where type == \"task\" && !checked && doc.type == \"practitioner\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_94",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "text": "Separate the Jabirian corpus into strata by vocabulary"
+          },
+          {
+            "id": "b_120",
+            "path": "practitioners/newton.md",
+            "text": "Read the Index Chemicus entries on [[mercury]]"
+          },
+          {
+            "id": "b_121",
+            "path": "practitioners/newton.md",
+            "text": "Cross-check the furnace dates against the Principia years"
+          },
+          {
+            "id": "b_136",
+            "path": "practitioners/paracelsus.md",
+            "text": "Check which mineral remedies survived into the 18th-century pharmacopoeia"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-children",
+      "notes": "§1.2: `children` is the live children in (ordinal, block_id) order.",
+      "query": "select c: children collect { type, text } from blocks where $path == \"substances/salt.md\" && type == \"list\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_269",
+            "path": "substances/salt.md",
+            "c": [
+              {
+                "type": "list_item",
+                "text": "Incinerate the material completely — see [calcination](/processes/calcination.md)."
+              },
+              {
+                "type": "list_item",
+                "text": "Leach the ash with distilled water."
+              },
+              {
+                "type": "list_item",
+                "text": "Filter, then evaporate slowly to crystallize."
+              }
+            ]
+          },
+          {
+            "id": "b_278",
+            "path": "substances/salt.md",
+            "c": [
+              {
+                "type": "task",
+                "text": "Buy more salt of tartar"
+              },
+              {
+                "type": "task",
+                "text": "Replace the leaching filter papers"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-children-of-a-leaf",
+      "query": "select n: size(children) from blocks where $path == \"index.md\" && type == \"heading\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_12",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_18",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_2",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_25",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_29",
+            "path": "index.md",
+            "n": 0
+          },
+          {
+            "id": "b_8",
+            "path": "index.md",
+            "n": 0
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-nodes",
+      "query": "select k: nodes collect { kind, value } from blocks where $path == \"index.md\" && type == \"list\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_14",
+            "path": "index.md",
+            "k": [
+              {
+                "kind": "md:link",
+                "value": "/processes/calcination.md"
+              },
+              {
+                "kind": "md:link",
+                "value": "/processes/dissolution.md"
+              },
+              {
+                "kind": "md:link",
+                "value": "/processes/coagulation.md"
+              }
+            ]
+          },
+          {
+            "id": "b_26",
+            "path": "index.md",
+            "k": [
+              {
+                "kind": "md:link",
+                "value": "/texts/emerald-tablet.md"
+              },
+              {
+                "kind": "md:link",
+                "value": "/texts/mutus-liber.md"
+              }
+            ]
+          },
+          {
+            "id": "b_4",
+            "path": "index.md",
+            "k": [
+              {
+                "kind": "md:wikilink",
+                "value": "mercury"
+              },
+              {
+                "kind": "md:wikilink",
+                "value": "sulphur"
+              },
+              {
+                "kind": "md:wikilink",
+                "value": "salt"
+              }
+            ]
+          },
+          {
+            "id": "b_9",
+            "path": "index.md",
+            "k": [
+              {
+                "kind": "md:link",
+                "value": "/substances/prima-materia.md"
+              },
+              {
+                "kind": "md:link",
+                "value": "/substances/philosophers-stone.md"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-nodes-exists",
+      "query": "$repo.blocks count { where nodes exists { where kind == \"md:wikilink\" } }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 19
+      }
+    },
+    {
+      "name": "relation-out-edges",
+      "query": "select e: out_edges collect { predicate, dp: $dst_path } from blocks where $path == \"index.md\" && type == \"paragraph\" && has_edge(\"references\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_13",
+            "path": "index.md",
+            "e": [
+              {
+                "predicate": "references",
+                "dp": "processes/magnum-opus.md"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-section",
+      "notes": "§1.2: `section` is the md:section nodes whose range contains the block's top-level ancestor ordinal, (first_ordinal, node_id) order — the h1 and the h2.",
+      "query": "select s: section collect { name, level } from blocks where $path == \"processes/magnum-opus.md\" && type == \"table\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_190",
+            "path": "processes/magnum-opus.md",
+            "s": [
+              {
+                "name": "The magnum opus",
+                "level": 1
+              },
+              {
+                "name": "The four stages",
+                "level": 2
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relation-section-nested-block",
+      "notes": "a nested list item is placed by its top-level ancestor's ordinal.",
+      "query": "select s: section collect { name values } from blocks where $path == \"substances/salt.md\" && type == \"task\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_279",
+            "path": "substances/salt.md",
+            "s": [
+              "Salt",
+              "Supplies"
+            ]
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md",
+            "s": [
+              "Salt",
+              "Supplies"
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "section-exists-equals-under-heading",
+      "query": "from blocks where type == \"list_item\" && section exists { where name == \"Open questions\" }",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_245",
+            "path": "substances/philosophers-stone.md"
+          },
+          {
+            "id": "b_246",
+            "path": "substances/philosophers-stone.md"
+          },
+          {
+            "id": "b_259",
+            "path": "substances/prima-materia.md"
+          },
+          {
+            "id": "b_260",
+            "path": "substances/prima-materia.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-heading-list-items",
+      "query": "select text from blocks where type == \"list_item\" && under_heading(\"Open questions\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_245",
+            "path": "substances/philosophers-stone.md",
+            "text": "The surviving transmutation claims have never been gathered in one place with dates and provenance attached."
+          },
+          {
+            "id": "b_246",
+            "path": "substances/philosophers-stone.md",
+            "text": "The shift from literal to allegorical readings is well documented; what caused it is still disputed."
+          },
+          {
+            "id": "b_259",
+            "path": "substances/prima-materia.md",
+            "text": "Whether the \"chaos\" and the \"lead of the philosophers\" readings can be reconciled, or whether they simply belong to different schools."
+          },
+          {
+            "id": "b_260",
+            "path": "substances/prima-materia.md",
+            "text": "How far the term can honestly be traced back through the Alexandrian corpus before it becomes a later retrojection."
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-heading-case-insensitive-substring",
+      "query": "from blocks where type == \"list_item\" && under_heading(\"open\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_245",
+            "path": "substances/philosophers-stone.md"
+          },
+          {
+            "id": "b_246",
+            "path": "substances/philosophers-stone.md"
+          },
+          {
+            "id": "b_259",
+            "path": "substances/prima-materia.md"
+          },
+          {
+            "id": "b_260",
+            "path": "substances/prima-materia.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-heading-any-block",
+      "query": "$repo.blocks count { where under_heading(\"Open questions\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 12
+      }
+    },
+    {
+      "name": "under-heading-task-vs-list-item",
+      "query": "from blocks where type == \"task\" && under_heading(\"Open questions\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_207",
+            "path": "processes/magnum-opus.md"
+          },
+          {
+            "id": "b_208",
+            "path": "processes/magnum-opus.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-includes-self-and-descendants",
+      "notes": "§1.3: under(id) — ancestor_path contains /id/ or the block is id.",
+      "query": "select type from blocks where under(\"b_4\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_4",
+            "path": "index.md",
+            "type": "list"
+          },
+          {
+            "id": "b_5",
+            "path": "index.md",
+            "type": "list_item"
+          },
+          {
+            "id": "b_6",
+            "path": "index.md",
+            "type": "list_item"
+          },
+          {
+            "id": "b_7",
+            "path": "index.md",
+            "type": "list_item"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-table",
+      "query": "select type, text from blocks where under(\"b_19\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_19",
+            "path": "index.md",
+            "type": "table",
+            "text": "Practitioner Tradition Approximate era [Maria Prophetissa](/practitioners/maria-prophetissa.md) Alexandrian 3rd century [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) Islamic 8th century [Paracelsus](/practitioners/paracelsus.md) Western 16th century [Isaac Newton](/practitioners/newton.md) Western 17th century"
+          },
+          {
+            "id": "b_20",
+            "path": "index.md",
+            "type": "table_row",
+            "text": "Practitioner Tradition Approximate era"
+          },
+          {
+            "id": "b_21",
+            "path": "index.md",
+            "type": "table_row",
+            "text": "[Maria Prophetissa](/practitioners/maria-prophetissa.md) Alexandrian 3rd century"
+          },
+          {
+            "id": "b_22",
+            "path": "index.md",
+            "type": "table_row",
+            "text": "[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) Islamic 8th century"
+          },
+          {
+            "id": "b_23",
+            "path": "index.md",
+            "type": "table_row",
+            "text": "[Paracelsus](/practitioners/paracelsus.md) Western 16th century"
+          },
+          {
+            "id": "b_24",
+            "path": "index.md",
+            "type": "table_row",
+            "text": "[Isaac Newton](/practitioners/newton.md) Western 17th century"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-unknown-id",
+      "query": "$repo.blocks count { where under(\"b_zzz\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "within-path",
+      "query": "$repo.blocks count { where within(\"index.md\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 31
+      }
+    },
+    {
+      "name": "within-glob",
+      "notes": "§1.3: `*` → LIKE %, across `/`.",
+      "query": "select $path from blocks where within(\"lab/*\") && type == \"heading\" && level == 1",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_31",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_59",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "within-doc-id",
+      "query": "$repo.blocks count { where within(\"d_0\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 31
+      }
+    },
+    {
+      "name": "within-glob-escapes-like-metachars",
+      "notes": "§1.3: `_` in the pattern is a literal, not a LIKE wildcard.",
+      "query": "$repo.blocks count { where within(\"lab/2026_01-notes.md\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "under-kind",
+      "query": "from blocks where under_kind(\"list\") && type == \"task\" && $path == \"substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_279",
+            "path": "substances/salt.md"
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-kind-with-name",
+      "notes": "§1.3: the ancestor's text must contain `name` (or attrs.key equal it).",
+      "query": "select text from blocks where under_kind(\"blockquote\", \"below\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_253",
+            "path": "substances/prima-materia.md",
+            "text": "That which is below is like that which is above."
+          },
+          {
+            "id": "b_294",
+            "path": "texts/emerald-tablet.md",
+            "text": "That which is above is from that which is below, and that which is below is from that which is above, working the miracles of one."
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "under-kind-top-level-is-false",
+      "query": "$repo.blocks count { where type == \"heading\" && under_kind(\"list\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "child-count",
+      "query": "select n: child_count() from blocks where $path == \"index.md\" && type == \"list\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_14",
+            "path": "index.md",
+            "n": 3
+          },
+          {
+            "id": "b_26",
+            "path": "index.md",
+            "n": 2
+          },
+          {
+            "id": "b_4",
+            "path": "index.md",
+            "n": 3
+          },
+          {
+            "id": "b_9",
+            "path": "index.md",
+            "n": 2
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "parent-type",
+      "query": "select p: parent_type() from blocks where $path == \"substances/salt.md\" && (type == \"task\" || type == \"heading\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_261",
+            "path": "substances/salt.md",
+            "p": null
+          },
+          {
+            "id": "b_264",
+            "path": "substances/salt.md",
+            "p": null
+          },
+          {
+            "id": "b_267",
+            "path": "substances/salt.md",
+            "p": null
+          },
+          {
+            "id": "b_274",
+            "path": "substances/salt.md",
+            "p": null
+          },
+          {
+            "id": "b_276",
+            "path": "substances/salt.md",
+            "p": null
+          },
+          {
+            "id": "b_279",
+            "path": "substances/salt.md",
+            "p": "list"
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md",
+            "p": "list"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "has-edge",
+      "query": "select $path from blocks where has_edge(\"references\") && type == \"table\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_19",
+            "path": "index.md",
+            "$path": "index.md"
+          },
+          {
+            "id": "b_190",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "has-edge-with-target",
+      "query": "select text from blocks where has_edge(\"references\", \"d_0\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_126",
+            "path": "practitioners/paracelsus.md",
+            "text": "He replaced the four elements with three principles — [[mercury]], [[sulphur]], [[salt]] — as the constituents of every body. See [index](/index.md) for the scheme."
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "has-anchor",
+      "query": "$repo.blocks count { where has_anchor() }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "yaml-path-on-markdown-is-false",
+      "query": "$repo.blocks count { where yaml_path(\"a.b\") || json_pointer(\"/a/b\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "text-phrase",
+      "query": "select text from blocks where text(\"aqua regia\")",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_177",
+            "path": "processes/dissolution.md",
+            "text": "nitre + vitriol → aqua fortis (nitric acid) aqua fortis + sal → aqua regia (dissolves gold)"
+          },
+          {
+            "id": "b_178",
+            "path": "processes/dissolution.md",
+            "text": "*Aqua regia* — royal water, because it dissolves the royal metal — is the single most consequential thing to come out of the laboratory tradition. It is a real reagent, it does something no other liquid does, and its discovery was driven entirely by the transmutation programme."
+          },
+          {
+            "id": "b_183",
+            "path": "processes/dissolution.md",
+            "text": "Distil aqua fortis from nitre and vitriol Prepare aqua regia and test on gold leaf Write up the alkahest arguments and their rebuttals"
+          },
+          {
+            "id": "b_185",
+            "path": "processes/dissolution.md",
+            "text": "Prepare aqua regia and test on gold leaf"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "text-count",
+      "query": "$repo.blocks count { where text(\"mercury\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 23
+      }
+    },
+    {
+      "name": "text-empty-is-false",
+      "notes": "§1.3: an empty sanitized query matches nothing.",
+      "query": "$repo.blocks count { where text(\"\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      }
+    },
+    {
+      "name": "text-punctuation-sanitized",
+      "query": "$repo.blocks count { where text(\"solve/coagula!\") }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 0
+      },
+      "notes": "spec/search §1.2: a token with punctuation is quoted as one phrase (\"solve/coagula!\"), which matches no block."
+    },
+    {
+      "name": "blocks-page",
+      "query": "from blocks where type == \"heading\"",
+      "limit": 10,
+      "expect": {
+        "hits": [
+          {
+            "id": "b_0",
+            "path": "index.md"
+          },
+          {
+            "id": "b_12",
+            "path": "index.md"
+          },
+          {
+            "id": "b_18",
+            "path": "index.md"
+          },
+          {
+            "id": "b_2",
+            "path": "index.md"
+          },
+          {
+            "id": "b_25",
+            "path": "index.md"
+          },
+          {
+            "id": "b_29",
+            "path": "index.md"
+          },
+          {
+            "id": "b_8",
+            "path": "index.md"
+          },
+          {
+            "id": "b_31",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_34",
+            "path": "lab/2026-01-notes.md"
+          },
+          {
+            "id": "b_37",
+            "path": "lab/2026-01-notes.md"
+          }
+        ],
+        "truncated": true,
+        "cursor": "WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImJfMzciXQ",
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "blocks-page-continued",
+      "query": "from blocks where type == \"heading\"",
+      "limit": 10,
+      "cursor": "WyJwcmFjdGl0aW9uZXJzL2phYmlyLWlibi1oYXl5YW4ubWQiLCJiXzE1Il0",
+      "expect": {
+        "hits": [
+          {
+            "id": "b_82",
+            "path": "practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "b_85",
+            "path": "practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "b_88",
+            "path": "practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "b_91",
+            "path": "practitioners/jabir-ibn-hayyan.md"
+          },
+          {
+            "id": "b_102",
+            "path": "practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "b_106",
+            "path": "practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "b_95",
+            "path": "practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "b_98",
+            "path": "practitioners/maria-prophetissa.md"
+          },
+          {
+            "id": "b_108",
+            "path": "practitioners/newton.md"
+          },
+          {
+            "id": "b_111",
+            "path": "practitioners/newton.md"
+          }
+        ],
+        "truncated": true,
+        "cursor": "WyJwcmFjdGl0aW9uZXJzL25ld3Rvbi5tZCIsImJfMTExIl0",
+        "consumer": "collect"
+      }
+    }
+  ]
+}

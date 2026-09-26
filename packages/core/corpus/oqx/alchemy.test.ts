@@ -438,14 +438,16 @@ describe("alchemy corpus — collect { … } projection", () => {
       'select open: nodes collect { select text: value where kind == "md:task" && !attrs.checked } from docs where type == "lab-note"',
     );
     expect(res.hits.map((h) => h.path)).toEqual(["lab/2026-01-notes.md", "lab/2026-02-notes.md"]);
-    expect(res.hits[0]!.open).toEqual([
-      { text: "Repeat the series with copper" },
-      { text: "Plot mass gain against heating time" },
-      { text: "Tabulate the metal sulphides by colour" },
+    // `nodes` comes back in document order (spec/surface §1.2); compare as sets so the assertion pins the members, not the order.
+    const byText = (open: unknown) => (open as { text: string }[]).map((t) => t.text).sort();
+    expect(byText(res.hits[0]!.open)).toEqual([
+      "Plot mass gain against heating time",
+      "Repeat the series with copper",
+      "Tabulate the metal sulphides by colour",
     ]);
-    expect(res.hits[1]!.open).toEqual([
-      { text: "Assay cycle 1 and cycle 4 crops for iron" },
-      { text: "Write the plateau result up for the coagulation note" },
+    expect(byText(res.hits[1]!.open)).toEqual([
+      "Assay cycle 1 and cycle 4 crops for iron",
+      "Write the plateau result up for the coagulation note",
     ]);
   });
 
@@ -507,10 +509,11 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
       'select open: nodes collect { text: value where kind == "md:task" && !attrs.checked } from docs where type == "lab-note"',
     );
     expect(projFirst).toEqual(longhand);
-    expect(projFirst[0]!.open).toEqual([
-      { text: "Repeat the series with copper" },
-      { text: "Plot mass gain against heating time" },
-      { text: "Tabulate the metal sulphides by colour" },
+    // document order (spec/surface §1.2) — compare as a set.
+    expect((projFirst[0]!.open as { text: string }[]).map((t) => t.text).sort()).toEqual([
+      "Plot mass gain against heating time",
+      "Repeat the series with copper",
+      "Tabulate the metal sulphides by colour",
     ]);
   });
 

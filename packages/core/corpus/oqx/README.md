@@ -116,7 +116,7 @@ different sets. Several tests depend on this; keep it fully checked.
   match.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
-  doc→doc `references` edges (64 of them), which the **citation-graph** demos
+  doc→doc `references` edges (89 open edges — wikilinks resolve by path, so every `[[slug]]` is a `phantom:` stub), which the **citation-graph** demos
   walk: `follow doc.out` (outgoing), `follow doc.in` (backlinks). It exercises
   every follow feature — `distinct` (philosophers-stone's 10-document transitive
   citation closure) vs default per-path occurrences (56), a post-walk `$depth`

@@ -21,7 +21,7 @@ import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, 
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
-import { historyNode, diffBlocks, diffUnified, changesSince, docHistory } from "../graph/history.js";
+import { historyNode, diffBlocks, diffUnified, changesSince, docHistory, RevisionNotFound } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus } from "../sync/admin.js";
@@ -101,6 +101,7 @@ function fail(err: unknown): { content: { type: "text"; text: string }[]; isErro
   else if (err instanceof FilterInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false };
   else if (err instanceof CursorInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
   else if (err instanceof MutationError) body = { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
+  else if (err instanceof RevisionNotFound) body = { error: "target_missing", message: err.message, data: { doc: err.docId, rev: err.rev }, retriable: false };
   else body = { error: "repo_not_found", message: String(err), retriable: false };
   return { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
 }

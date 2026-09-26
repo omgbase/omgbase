@@ -1,0 +1,33 @@
+[package]
+name = "omgbase"
+version = "0.1.0"
+description = "omgbase: a versioned, addressable graph layer over authored Markdown — the `omgbase` binary (`omgbase mcp` serves the tool catalog over MCP stdio)"
+keywords = ["markdown", "mcp", "knowledge-base", "sqlite", "omgbase"]
+categories = ["command-line-utilities", "text-processing"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "omgbase"
+path = "src/main.rs"
+
+[dependencies]
+# The catalog this binary serves.
+omgbase-surface = { version = "1.0.0", path = "../omgbase-surface" }
+# Workspace discovery and repo selection (`spec/sync` §1), the settings the
+# embedding provider is read from.
+omgbase-sync = { version = "1.0.0", path = "../omgbase-sync" }
+# The store the surface owns (opened from the workspace's database path).
+omgbase-store = { version = "13.4.1", path = "../omgbase-store" }
+# The external embedding provider behind `semantic()` / `resolve`.
+omgbase-search = { version = "1.0.0", path = "../omgbase-search" }
+# JSON-RPC framing.
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true

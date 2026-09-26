@@ -489,6 +489,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
+name = "omgbase"
+version = "0.1.0"
+dependencies = [
+ "omgbase-search",
+ "omgbase-store",
+ "omgbase-surface",
+ "omgbase-sync",
+ "serde_json",
+]
+
+[[package]]
 name = "omgbase-format"
 version = "0.2.1"
 dependencies = [
@@ -569,6 +580,21 @@ dependencies = [
  "omgbase-reconcile",
  "omgbase-search",
  "regex",
+ "rusqlite",
+ "serde_json",
+]
+
+[[package]]
+name = "omgbase-surface"
+version = "1.0.0"
+dependencies = [
+ "omgbase-format",
+ "omgbase-properties",
+ "omgbase-reconcile",
+ "omgbase-search",
+ "omgbase-store",
+ "omgbase-sync",
+ "oqx",
  "rusqlite",
  "serde_json",
 ]

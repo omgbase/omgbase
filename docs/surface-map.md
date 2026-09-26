@@ -16,6 +16,11 @@
 > identically-shaped result. `--server` can only be *complete* — feel exactly like
 > local — if every remote-capable CLI command has a corresponding tool. This map
 > is the checklist for that; see **`--server` coverage** below for current state.
+>
+> **Spec:** the MCP column — and the read/history operations behind it — is
+> pinned language-neutrally by `spec/surface/README.md` §2–§4 and the fixtures
+> under `spec/surface/cases/` (`reads.json` drives every read tool through the
+> built server). A Rust `omgbase` binary that passes them serves the same catalog.
 
 ## Naming principle
 

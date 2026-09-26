@@ -32,6 +32,14 @@ export function historyNode(store: Store, blockId: string, opts: { limit?: numbe
     .all(blockId, limit) as NodeChange[];
 }
 
+/** A `rev` that names no revision of the document (spec/surface §3: both sides of a diff must exist). The MCP layer maps it to `target_missing` with `{ doc, rev }`. */
+export class RevisionNotFound extends Error {
+  constructor(public readonly docId: string, public readonly rev: string) {
+    super(`no revision ${JSON.stringify(rev)} for document ${docId}`);
+    this.name = "RevisionNotFound";
+  }
+}
+
 export interface DiffEntry {
   kind: "added" | "removed" | "changed" | "unchanged";
   blockId: string;
@@ -63,8 +71,8 @@ export function diffBlocks(store: Store, docId: string, fromRev: string, toRev: 
 // in core/read/document.ts readDocumentAtRevision.
 function blocksAtRevision(store: Store, docId: string, revId: string): Map<string, string> {
   const rev = store.db.prepare("SELECT root_tree FROM revisions WHERE rev_id = ? AND doc_id = ?").get(revId, docId) as { root_tree: Buffer } | undefined;
+  if (!rev) throw new RevisionNotFound(docId, revId);
   const out = new Map<string, string>();
-  if (!rev) return out;
   const blob = store.db.prepare("SELECT bytes FROM blobs WHERE hash = ?");
   const treeNode = store.db.prepare("SELECT entries FROM tree_nodes WHERE hash = ?");
   const walk = (treeHashHex: string): void => {

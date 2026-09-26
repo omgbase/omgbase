@@ -1,0 +1,126 @@
+{
+  "suite": "cursor",
+  "cases": [
+    {
+      "name": "encode-query-keyset",
+      "notes": "§1.4: base64url(JSON [path, id]).",
+      "parts": [
+        "practitioners/maria-prophetissa.md",
+        "d_4"
+      ],
+      "expect": {
+        "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0"
+      }
+    },
+    {
+      "name": "encode-list-keyset",
+      "notes": "docs_list / docs_tree: a one-part tuple.",
+      "parts": [
+        "index.md"
+      ],
+      "expect": {
+        "cursor": "WyJpbmRleC5tZCJd"
+      }
+    },
+    {
+      "name": "encode-unicode-path",
+      "parts": [
+        "notes/café — ☿.md",
+        "d_0"
+      ],
+      "expect": {
+        "cursor": "WyJub3Rlcy9jYWbDqSDigJQg4pi_Lm1kIiwiZF8wIl0"
+      }
+    },
+    {
+      "name": "encode-empty-strings",
+      "parts": [
+        "",
+        ""
+      ],
+      "expect": {
+        "cursor": "WyIiLCIiXQ"
+      }
+    },
+    {
+      "name": "decode-query-keyset",
+      "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0",
+      "arity": 2,
+      "expect": {
+        "parts": [
+          "practitioners/maria-prophetissa.md",
+          "d_4"
+        ]
+      }
+    },
+    {
+      "name": "decode-list-keyset",
+      "cursor": "WyJpbmRleC5tZCJd",
+      "arity": 1,
+      "expect": {
+        "parts": [
+          "index.md"
+        ]
+      }
+    },
+    {
+      "name": "decode-unicode-path",
+      "cursor": "WyJub3Rlcy9jYWbDqSDigJQg4pi_Lm1kIiwiZF8wIl0",
+      "arity": 2,
+      "expect": {
+        "parts": [
+          "notes/café — ☿.md",
+          "d_0"
+        ]
+      }
+    },
+    {
+      "name": "decode-wrong-arity",
+      "notes": "a list cursor handed to query.",
+      "cursor": "WyJpbmRleC5tZCJd",
+      "arity": 2,
+      "expect": {
+        "error": "filter_invalid"
+      }
+    },
+    {
+      "name": "decode-garbage",
+      "cursor": "garbage",
+      "expect": {
+        "error": "filter_invalid"
+      }
+    },
+    {
+      "name": "decode-not-an-array",
+      "cursor": "eyJwYXRoIjoiYS5tZCJ9",
+      "expect": {
+        "error": "filter_invalid"
+      }
+    },
+    {
+      "name": "decode-non-string-part",
+      "cursor": "WyJhLm1kIiwxXQ",
+      "expect": {
+        "error": "filter_invalid"
+      }
+    },
+    {
+      "name": "decode-empty",
+      "cursor": "",
+      "expect": {
+        "error": "filter_invalid"
+      }
+    },
+    {
+      "name": "decode-standard-base64-padding-tolerated",
+      "notes": "base64url decoding accepts padding and standard alphabet characters; the parts are what count.",
+      "cursor": "WyJpbmRleC5tZCJd==",
+      "arity": 1,
+      "expect": {
+        "parts": [
+          "index.md"
+        ]
+      }
+    }
+  ]
+}
