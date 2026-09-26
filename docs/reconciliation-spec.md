@@ -7,7 +7,7 @@
 
 ## 1. Parser
 
-- **Stack:** unified/remark — `remark-parse` + `remark-gfm` + `remark-frontmatter` + a wiki-link micromark extension + an inline-field (Dataview `key:: value`) extraction pass. (ADR-001. If the core ever moves to Rust, comrak replaces this layer behind the same `BlockTree` interface.)
+- **Stack:** unified/remark — `remark-parse` + `remark-gfm` + `remark-frontmatter` + a wiki-link micromark extension + an inline-field (Dataview `key:: value`) extraction pass. (ADR-001.) The mapping from source to `BlockTree` is specified language-neutrally in `spec/format/README.md` with generated fixtures under `spec/format/cases`; the Rust crate `crates/omgbase-format` implements the same contract over the `markdown` crate (a micromark port) and passes the same fixtures.
 - The parser layer's ONLY job is to produce a `BlockTree` with **spans**. Nothing downstream may touch mdast directly.
 - As-built (see `packages/core/src/core/parse/types.ts`), the parser works in **string space**, not bytes: spans are half-open `[start, end)` offsets into the decoded source string and `raw`/`trivia` are string slices. Byte-identical round-trip follows from deterministic UTF-8 re-encoding of equal strings; hashing (02 §5) encodes UTF-8 at hash time.
 
