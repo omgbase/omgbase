@@ -47,8 +47,8 @@ sub-threshold candidate, `position_prior` is over the sibling count, every
 split and merge resolves in one run, and split tombstones are listed in
 `deleted`. The
 reference's unit tests are ported alongside the modules they exercise.
-**Not yet published** on crates.io; when it is, the fixtures will not ship in
-the crate (the runner skips with a note outside the monorepo).
+Published on crates.io; the fixtures do not ship in the crate (the runner
+skips with a note outside the monorepo).
 
 Not included: the evaluation harness (labelled corpora, the release gates of
 `docs/reconciliation-spec.md`) stays with the reference in
