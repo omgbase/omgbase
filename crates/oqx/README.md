@@ -23,7 +23,8 @@ repository, and each reports the spec version it conforms to.
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
 `spec/oqx/cases` (835 cases in 28 files at language version 0.12) and all of them
-pass, so `cargo test -p oqx` requires every case to pass. Not yet published.
+pass, so `cargo test -p oqx` requires every case to pass. Published on crates.io
+as `oqx`.
 
 The runner keeps an allowlist mechanism for the periods when the spec runs
 ahead of the port (from `spec/oqx/README.md`): if `tests/spec-passing.txt`

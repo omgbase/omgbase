@@ -36,8 +36,8 @@ crate 0.2.0) and all of them pass, so `cargo test -p omgbase-format` requires
 every case to pass. `tests/roundtrip.rs` additionally parses every file of the reference's
 round-trip corpus (`packages/core/corpus/roundtrip`) and asserts the §1
 invariants directly. YAML and JSON adapters exist in the reference and are not
-ported yet; they will arrive with their `format` values in the spec. Not yet
-published.
+ported yet; they will arrive with their `format` values in the spec. Published
+on crates.io as `omgbase-format`; the fixtures are not shipped in the crate.
 
 The runner keeps an allowlist mechanism for the periods when the spec runs
 ahead of the port (from `spec/format/README.md` §5): if `tests/spec-passing.txt`
