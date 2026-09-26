@@ -1,7 +1,9 @@
 //! Phase 6a — compound classification (`spec/reconcile/README.md` §5):
 //! splits, merges and copies over the still-unmatched blocks. Split and
 //! merge use dominant-fragment inheritance (`split_dominant_share`; `1.01`
-//! disables it). Copies never steal identity.
+//! disables it), and each pass continues through the document after a hit
+//! (§10, m2.1: every split and every merge resolves in one run). Copies
+//! never steal identity.
 
 use crate::phases::{PhaseState, old_id};
 use crate::similarity::{dice, shingles, token_count, tokenize};
@@ -111,14 +113,19 @@ fn windows(len: usize) -> impl Iterator<Item = (usize, usize)> {
     (0..len).flat_map(move |start| (start + 2..=len).rev().map(move |end| (start, end)))
 }
 
-/// Splits — at most one per document: one old block covered by a run of ≥ 2
-/// adjacent new blocks.
+/// Splits: one old block covered by a run of ≥ 2 adjacent new blocks. Visits
+/// the old blocks unmatched when the pass began, in document order, skipping
+/// any used by the time it is reached; the new candidates are the live
+/// unmatched set, so an earlier split's run is not offered again.
 fn detect_splits(state: &mut PhaseState<'_>) {
     let split_coverage = state.config.split_coverage;
     let split_dominant_share = state.config.split_dominant_share;
     for o in state.unmatched_old() {
+        if state.is_old_used(old_id(o)) {
+            continue;
+        }
         let news = siblings_like(state.unmatched_new(), o);
-        for (start, end) in windows(news.len()) {
+        'windows: for (start, end) in windows(news.len()) {
             let run = &news[start..end];
             if !is_contiguous(run) {
                 continue;
@@ -159,19 +166,24 @@ fn detect_splits(state: &mut PhaseState<'_>) {
                     note_lineage(state, n, DispositionKind::SplitFrom, id);
                 }
             }
-            return; // one split per pass (§10)
+            break 'windows; // the first qualifying window is the split; on to the next O
         }
     }
 }
 
-/// Merges — at most one per document: a run of ≥ 2 adjacent old blocks
-/// covered by one new block.
+/// Merges — the mirror image: a run of ≥ 2 adjacent old blocks covered by
+/// one new block. Visits the new blocks unmatched when the pass began, in
+/// document order, skipping any used by the time it is reached; the old
+/// candidates are the live unmatched set.
 fn detect_merges(state: &mut PhaseState<'_>) {
     let split_coverage = state.config.split_coverage;
     let split_dominant_share = state.config.split_dominant_share;
     for n in state.unmatched_new() {
+        if state.is_new_used(&n.key) {
+            continue;
+        }
         let olds = siblings_like(state.unmatched_old(), n);
-        for (start, end) in windows(olds.len()) {
+        'windows: for (start, end) in windows(olds.len()) {
             let run = &olds[start..end];
             if !is_contiguous(run) {
                 continue;
@@ -220,7 +232,7 @@ fn detect_merges(state: &mut PhaseState<'_>) {
                 }
                 note_lineage(state, n, DispositionKind::MergedInto, old_id(first));
             }
-            return;
+            break 'windows; // the first qualifying window is the merge; on to the next N
         }
     }
 }
@@ -401,6 +413,101 @@ mod tests {
             lineage.detail["counterpart"],
             DetailValue::Str("b_1".to_owned())
         );
+    }
+
+    #[test]
+    fn two_splits_both_resolve() {
+        // m2.0 returned after the first split; m2.1 continues through the
+        // document, offering only the still-unmatched new blocks to the next
+        // old block.
+        let cfg = Config::default();
+        let old = [
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                0,
+                Some("b_1"),
+            ),
+            para(
+                "one two three four five six seven eight nine ten eleven twelve",
+                1,
+                Some("b_2"),
+            ),
+        ];
+        let neu = [
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota",
+                0,
+                None,
+            ),
+            para("kappa lambda mu", 1, None),
+            para("one two three four five six seven eight nine", 2, None),
+            para("ten eleven twelve", 3, None),
+        ];
+        let mut s = PhaseState::new(&old, &neu, &cfg);
+        phase6a_compound(&mut s);
+        assert_eq!(s.matched_id("/0"), Some("b_1"));
+        assert_eq!(s.matched_id("/2"), Some("b_2"));
+        let lineage: Vec<(&str, &DetailValue)> = s
+            .dispositions
+            .iter()
+            .filter(|d| d.kind == DispositionKind::SplitFrom)
+            .map(|d| (d.block_id.as_str(), &d.detail["counterpart"]))
+            .collect();
+        assert_eq!(
+            lineage,
+            [
+                ("NEW:/1", &DetailValue::Str("b_1".to_owned())),
+                ("NEW:/3", &DetailValue::Str("b_2".to_owned())),
+            ]
+        );
+        assert_eq!(
+            s.dispositions[2].detail["split"],
+            DetailValue::List(vec!["/2".into(), "/3".into()])
+        );
+        assert_eq!(s.unmatched_new().len(), 0);
+        assert_eq!(s.unmatched_old().len(), 0);
+    }
+
+    #[test]
+    fn two_merges_both_resolve() {
+        let cfg = Config::default();
+        let old = [
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota",
+                0,
+                Some("b_1a"),
+            ),
+            para("kappa lambda mu", 1, Some("b_1b")),
+            para(
+                "one two three four five six seven eight nine",
+                2,
+                Some("b_2a"),
+            ),
+            para("ten eleven twelve", 3, Some("b_2b")),
+        ];
+        let neu = [
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                0,
+                None,
+            ),
+            para(
+                "one two three four five six seven eight nine ten eleven twelve",
+                1,
+                None,
+            ),
+        ];
+        let mut s = PhaseState::new(&old, &neu, &cfg);
+        phase6a_compound(&mut s);
+        assert_eq!(s.matched_id("/0"), Some("b_1a"));
+        assert_eq!(s.matched_id("/1"), Some("b_2a"));
+        for (id, into) in [("b_1b", "b_1a"), ("b_2b", "b_2a")] {
+            let d = s.dispositions.iter().find(|d| d.block_id == id).unwrap();
+            assert_eq!(d.kind, DispositionKind::MergedInto);
+            assert_eq!(d.detail["into"], DetailValue::Str(into.to_owned()));
+        }
+        assert_eq!(s.unmatched_new().len(), 0);
+        assert_eq!(s.unmatched_old().len(), 0);
     }
 
     #[test]

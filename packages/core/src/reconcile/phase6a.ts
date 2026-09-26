@@ -5,6 +5,9 @@ import { shingles, dice, tokenCount, tokenize } from "./similarity.js";
 // Phase 6a — compound classification (03 §4): split, merge, copy over the
 // still-unmatched. Split/merge use dominant-fragment inheritance (tunable via
 // split.dominant_share; set to 1.01 to disable). Copies never steal identity.
+// Each pass proceeds in document order over the blocks that were unmatched when
+// it began and are still unmatched when reached, resolving every split (merge)
+// it finds (m2.1; m2.0 returned after the first).
 
 function unmatchedOld(state: PhaseState): MatchBlock[] {
   return state.old.filter((b) => !state.usedOld.has(b.blockId!));
@@ -49,11 +52,14 @@ function noteLineage(state: PhaseState, newB: MatchBlock, kind: Disposition["kin
 function detectSplits(state: PhaseState): void {
   const { splitCoverage, splitDominantShare } = state.config;
   for (const o of unmatchedOld(state)) {
+    if (state.usedOld.has(o.blockId!)) continue; // consumed earlier in this pass
     const news = unmatchedNew(state)
       .filter((n) => n.parentKey === o.parentKey && n.type === o.type)
       .sort((a, b) => a.index - b.index);
-    // find a contiguous run (by index) of length ≥2 covering O
-    for (let start = 0; start < news.length; start++) {
+    // find a contiguous run (by index) of length ≥2 covering O; the first hit
+    // (start ascending, longest window first) is the split.
+    let found = false;
+    for (let start = 0; start < news.length && !found; start++) {
       for (let end = news.length; end > start + 1; end--) {
         const run = news.slice(start, end);
         if (!isContiguous(run)) continue;
@@ -76,7 +82,8 @@ function detectSplits(state: PhaseState): void {
           state.dispositions.push({ blockId: o.blockId!, kind: "deleted", confidence: null, reason: "tombstone", matcherV: state.config.matcherV, detail: { splitInto: run.map((n) => n.key) } });
           for (const n of run) noteLineage(state, n, "split_from", o.blockId!);
         }
-        return; // one split per pass (conservative)
+        found = true;
+        break; // on to the next unmatched old block
       }
     }
   }
@@ -86,10 +93,12 @@ function detectSplits(state: PhaseState): void {
 function detectMerges(state: PhaseState): void {
   const { splitCoverage, splitDominantShare } = state.config;
   for (const n of unmatchedNew(state)) {
+    if (state.usedNew.has(n.key)) continue; // consumed earlier in this pass
     const olds = unmatchedOld(state)
       .filter((o) => o.parentKey === n.parentKey && o.type === n.type)
       .sort((a, b) => a.index - b.index);
-    for (let start = 0; start < olds.length; start++) {
+    let found = false;
+    for (let start = 0; start < olds.length && !found; start++) {
       for (let end = olds.length; end > start + 1; end--) {
         const run = olds.slice(start, end);
         if (!isContiguous(run)) continue;
@@ -115,7 +124,8 @@ function detectMerges(state: PhaseState): void {
           }
           noteLineage(state, n, "merged_into", first.blockId!);
         }
-        return;
+        found = true;
+        break; // on to the next unmatched new block
       }
     }
   }

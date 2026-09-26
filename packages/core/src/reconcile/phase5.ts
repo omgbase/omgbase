@@ -15,7 +15,7 @@ interface Candidate {
 
 // score(o,n) = 0.55 text_sim + 0.15 neighbor_ctx + 0.10 parent_match
 //            + 0.10 position_prior + 0.10 anchor_evidence
-function scorePair(o: MatchBlock, n: MatchBlock, state: PhaseState, oldCount: number, newCount: number): number {
+function scorePair(o: MatchBlock, n: MatchBlock, state: PhaseState, oldSiblings: SiblingCounts, newSiblings: SiblingCounts): number {
   const textSimVal = dice(shingles(o.text), shingles(n.text));
 
   // neighbor_ctx: fraction of {prev,next} siblings that are matched pairs.
@@ -24,10 +24,10 @@ function scorePair(o: MatchBlock, n: MatchBlock, state: PhaseState, oldCount: nu
   // parent_match: 1 if parents are a matched pair (or both roots).
   const parentMatch = parentsMatched(o, n, state) ? 1 : 0;
 
-  // position_prior: 1 - |rel_pos(o) - rel_pos(n)|
-  const relO = oldCount > 1 ? o.index / (oldCount - 1) : 0;
-  const relN = newCount > 1 ? n.index / (newCount - 1) : 0;
-  const positionPrior = 1 - Math.abs(relO - relN);
+  // position_prior: 1 - |rel(o) - rel(n)| with rel(b) = b.index / (siblings - 1)
+  // over b's own sibling count (spec §5; m2.1 — m2.0 divided by the size of
+  // the whole flattened list, compressing the prior for nested blocks).
+  const positionPrior = 1 - Math.abs(relPos(o, oldSiblings) - relPos(n, newSiblings));
 
   // anchor_evidence: shared anchors / code-fence info / heading prefix.
   const anchorEvidence = sharedAnchorEvidence(o, n);
@@ -39,6 +39,23 @@ function scorePair(o: MatchBlock, n: MatchBlock, state: PhaseState, oldCount: nu
     0.1 * positionPrior +
     0.1 * anchorEvidence
   );
+}
+
+/** parentKey (null → "") → number of blocks in the tree under that parent. */
+type SiblingCounts = Map<string, number>;
+
+function siblingCounts(blocks: MatchBlock[]): SiblingCounts {
+  const counts: SiblingCounts = new Map();
+  for (const b of blocks) {
+    const k = b.parentKey ?? "";
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function relPos(b: MatchBlock, counts: SiblingCounts): number {
+  const siblings = counts.get(b.parentKey ?? "") ?? 1;
+  return siblings > 1 ? b.index / (siblings - 1) : 0;
 }
 
 function siblingAt(blocks: MatchBlock[], parentKey: string | null, index: number): MatchBlock | undefined {
@@ -114,7 +131,8 @@ function unmatchedNew(state: PhaseState): MatchBlock[] {
  * Phase 5 — scored assignment. Greedy-by-score with R3 order constraints:
  * accept the highest-scoring candidate, discard conflicting candidates
  * (same old or new, or order-crossing with an already-accepted same-parent
- * pair), repeat. Accept while score ≥ θ (θ_small for tiny blocks).
+ * pair), repeat. Accept a candidate when score ≥ θ (θ_small for tiny blocks);
+ * a candidate below its θ is skipped, not a stopping point.
  */
 export function phase5Scored(state: PhaseState): void {
   const olds = unmatchedOld(state);
@@ -123,11 +141,12 @@ export function phase5Scored(state: PhaseState): void {
   // Bulk path guard: too many unmatched ⇒ skip (handled by give-up logic 2.5).
   if (olds.length + news.length > state.config.maxScoredBlocks * 2) return;
 
-  const oldCount = state.old.length;
-  const newCount = state.neu.length;
+  // Sibling counts once per tree (position_prior).
+  const oldSiblings = siblingCounts(state.old);
+  const newSiblings = siblingCounts(state.neu);
 
   const candidates = pruneCandidates(olds, news);
-  for (const c of candidates) c.score = scorePair(c.old, c.neu, state, oldCount, newCount);
+  for (const c of candidates) c.score = scorePair(c.old, c.neu, state, oldSiblings, newSiblings);
   // Deterministic order: score desc, then old key, then new key.
   candidates.sort((a, b) => b.score - a.score || cmp(a.old.key, b.old.key) || cmp(a.neu.key, b.neu.key));
 
@@ -141,7 +160,10 @@ export function phase5Scored(state: PhaseState): void {
   for (const c of candidates) {
     if (state.usedOld.has(c.old.blockId!) || state.usedNew.has(c.neu.key)) continue;
     const threshold = tokenCount(c.neu.text) < state.config.smallBlockTokens ? state.config.thetaSmall : state.config.thetaAccept;
-    if (c.score < threshold) break; // sorted desc: nothing below will qualify either
+    // Sorted desc, but θ differs per candidate (θ_small for tiny new blocks), so a
+    // sub-threshold tiny-block candidate must not end the walk for the regular
+    // candidates sorted below it (m2.1; spec §5 phase 5 step 2).
+    if (c.score < threshold) continue;
 
     // R3: within the same new parent, accepted pairs must not cross in order.
     if (c.old.parentKey === c.neu.parentKey) {

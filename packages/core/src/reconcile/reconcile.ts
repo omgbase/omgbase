@@ -119,16 +119,24 @@ function finalize(state: PhaseState, consumedPool: string[]): DocReconcileResult
     }
   }
 
-  // Remaining old blocks (not carried) → deleted.
-  const deleted: string[] = [];
+  // Remaining old blocks (not carried, not otherwise disposed) → deleted.
   for (const o of state.old) {
     if (!state.usedOld.has(o.blockId!)) {
-      deleted.push(o.blockId!);
       dispositions.push({ blockId: o.blockId!, kind: "deleted", confidence: null, reason: "tombstone", matcherV: state.config.matcherV, detail: {} });
     }
   }
 
-  return { assignment, dispositions, deleted, consumedPool };
+  return { assignment, dispositions, deleted: deletedIds(state.old, dispositions), consumedPool };
+}
+
+/** `deleted` = every old id whose disposition kind is `deleted` — the phase 7
+ * tombstones and the phase 6a non-dominant split tombstones — in old document
+ * order (spec §2; m2.1 — m2.0 listed only the phase 7 ones, so a split
+ * tombstone never reached the resurrection pool). */
+function deletedIds(old: MatchBlock[], dispositions: Disposition[]): string[] {
+  const deletedSet = new Set<string>();
+  for (const d of dispositions) if (d.kind === "deleted") deletedSet.add(d.blockId);
+  return old.filter((o) => deletedSet.has(o.blockId!)).map((o) => o.blockId!);
 }
 
 function bulkRewrite(state: PhaseState): DocReconcileResult {
@@ -142,10 +150,8 @@ function bulkRewrite(state: PhaseState): DocReconcileResult {
     assignment.set(n.key, minted);
     dispositions.push({ blockId: minted, kind: "inserted", confidence: null, reason: null, matcherV: state.config.matcherV, detail: {} });
   }
-  const deleted: string[] = [];
   for (const o of state.old) {
-    deleted.push(o.blockId!);
     dispositions.push({ blockId: o.blockId!, kind: "deleted", confidence: null, reason: "tombstone", matcherV: state.config.matcherV, detail: {} });
   }
-  return { assignment, dispositions, deleted, consumedPool: [] };
+  return { assignment, dispositions, deleted: deletedIds(state.old, dispositions), consumedPool: [] };
 }

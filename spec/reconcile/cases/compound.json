@@ -54,8 +54,8 @@
       }
     },
     {
-      "name": "split-disabled-tombstone-not-in-deleted",
-      "notes": "Pinned §10: config split_dominant_share 1.01 disables inheritance — the old block gets a `deleted` disposition with detail.splitInto but is NOT listed in `deleted`; every fragment is split_from.",
+      "name": "split-disabled-tombstone-in-deleted",
+      "notes": "Fixed in m2.1 (§10): config split_dominant_share 1.01 disables inheritance — the old block gets a `deleted` disposition with detail.splitInto and IS listed in `deleted` (old document order, after the plainly deleted b_0), so it can enter the resurrection pool; every fragment is split_from. Before m2.1 phase 7 only listed the blocks it tombstoned itself, so this id never reached the pool.",
       "config": {
         "split_dominant_share": 1.01
       },
@@ -112,7 +112,8 @@
           }
         ],
         "deleted": [
-          "b_0"
+          "b_0",
+          "b_1"
         ],
         "consumed_pool": []
       }
@@ -189,7 +190,9 @@
             }
           }
         ],
-        "deleted": [],
+        "deleted": [
+          "b_0"
+        ],
         "consumed_pool": []
       }
     },
@@ -394,8 +397,8 @@
       }
     },
     {
-      "name": "two-splits-only-one-resolves",
-      "notes": "Pinned §10: one split per run. Two 12-token paragraphs each split into quarters; the first is resolved as a (non-dominant) split, the second is simply deleted and its fragments inserted.",
+      "name": "two-splits-both-resolve",
+      "notes": "Fixed in m2.1 (§10): every split per run. Two 12-token paragraphs each split into quarters; both resolve as (non-dominant) splits — each old block is tombstoned with detail.splitInto and listed in `deleted`, and all eight fragments are split_from their counterpart. Before m2.1 phase 6a returned after the first split, so the second paragraph was simply deleted and its fragments inserted.",
       "old": {
         "source": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n\none two three four five six seven eight nine ten eleven twelve\n"
       },
@@ -433,7 +436,14 @@
             "kind": "deleted",
             "confidence": null,
             "reason": "tombstone",
-            "detail": {}
+            "detail": {
+              "splitInto": [
+                "/4",
+                "/5",
+                "/6",
+                "/7"
+              ]
+            }
           },
           {
             "block": "new:/0",
@@ -477,34 +487,47 @@
           },
           {
             "block": "new:/4",
-            "kind": "inserted",
+            "kind": "split_from",
             "confidence": null,
-            "reason": null,
-            "detail": {}
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/4"
+            }
           },
           {
             "block": "new:/5",
-            "kind": "inserted",
+            "kind": "split_from",
             "confidence": null,
-            "reason": null,
-            "detail": {}
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/5"
+            }
           },
           {
             "block": "new:/6",
-            "kind": "inserted",
+            "kind": "split_from",
             "confidence": null,
-            "reason": null,
-            "detail": {}
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/6"
+            }
           },
           {
             "block": "new:/7",
-            "kind": "inserted",
+            "kind": "split_from",
             "confidence": null,
-            "reason": null,
-            "detail": {}
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/7"
+            }
           }
         ],
         "deleted": [
+          "b_0",
           "b_1"
         ],
         "consumed_pool": []

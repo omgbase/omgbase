@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { reconcileDocument, type ResurrectionCandidate } from "./reconcile.js";
 import { flatten, type FlatSource } from "./flatten.js";
+import { DEFAULT_CONFIG } from "./types.js";
 import { sha256, normalizeVisibleText } from "../core/hash.js";
 
 // Build a flat "old" tree with assigned ids from [id, raw] pairs (top-level).
@@ -68,6 +71,27 @@ describe("reconcileDocument — end to end", () => {
     const res = reconcileDocument(flatten(oldTree(oldPairs)), flatten(newTree(newRaws)));
     expect(res.dispositions.some((d) => d.kind === "bulk_rewrite")).toBe(true);
     expect(res.deleted.length).toBe(120);
+  });
+
+  it("m2.1: a non-dominant split tombstone is listed in `deleted` (spec §10)", () => {
+    // split_dominant_share 1.01 disables inheritance: the split old block gets a
+    // `deleted` disposition with splitInto and must be in `deleted` (old document
+    // order, after the plainly deleted b_0) so it can enter the resurrection pool.
+    const old = flatten(oldTree([["b_0", "zzz yyy"], ["b_1", "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu"]]));
+    const neu = flatten(newTree(["alpha beta gamma delta epsilon zeta eta theta iota", "kappa lambda mu"]));
+    const res = reconcileDocument(old, neu, { config: { ...DEFAULT_CONFIG, splitDominantShare: 1.01 } });
+    const d = res.dispositions.find((x) => x.blockId === "b_1")!;
+    expect(d.kind).toBe("deleted");
+    expect(d.detail.splitInto).toEqual(["/0", "/1"]);
+    expect(res.deleted).toEqual(["b_0", "b_1"]);
+    expect(res.dispositions.filter((x) => x.kind === "split_from").length).toBe(2);
+  });
+
+  it("stamps matcher_v = \"m\" + spec/reconcile/VERSION on every disposition", () => {
+    const version = readFileSync(fileURLToPath(new URL("../../../../spec/reconcile/VERSION", import.meta.url)), "utf8").trim();
+    expect(DEFAULT_CONFIG.matcherV).toBe(`m${version}`);
+    const res = reconcileDocument(flatten(oldTree([["b_1", "keep this line"]])), flatten(newTree(["keep this line", "a new line"])));
+    expect(res.dispositions.map((d) => d.matcherV)).toEqual(["m2.1", "m2.1"]);
   });
 
   it("is deterministic: identical inputs yield identical assignments", () => {

@@ -40,8 +40,12 @@ disposition carries) and the crate version tracks it as
 ## Status
 
 Conformance-first: `tests/spec.rs` runs every fixture in `spec/reconcile/cases`
-(94 cases in 10 files at matcher version 2.0, crate 2.0.0) and all of them
-pass, so `cargo test -p omgbase-reconcile` requires every case to pass. The
+(95 cases in 10 files at matcher version 2.1, crate 2.1.0) and all of them
+pass, so `cargo test -p omgbase-reconcile` requires every case to pass.
+Matcher 2.1 is the four §10 fixes over 2.0: phase 5 keeps walking past a
+sub-threshold candidate, `position_prior` is over the sibling count, every
+split and merge resolves in one run, and split tombstones are listed in
+`deleted`. The
 reference's unit tests are ported alongside the modules they exercise.
 **Not yet published** on crates.io; when it is, the fixtures will not ship in
 the crate (the runner skips with a note outside the monorepo).
@@ -94,8 +98,10 @@ Mirrors the spec so the two can be read side by side:
   lock, context propagation + children vouching to a fixed point), with
   `classify_kind` (§2) and the §10 phase-3 rule.
 - `phase5` — the scored assignment: pruning, the five-term score summed in
-  the spec's order, the greedy walk with R3 and near misses.
-- `phase6a` — splits, merges, copies (lineage mints).
+  the spec's order (`position_prior` over per-tree sibling counts), the
+  greedy walk that skips sub-threshold candidates, with R3 and near misses.
+- `phase6a` — splits, merges, copies (lineage mints); the split and merge
+  passes continue through the document after each hit.
 - `reconcile` — `reconcile_document` + `Options`: the pipeline, the
   bulk-rewrite check, phase 6b (resurrection) and phase 7 (defaults, minting).
 - `crossdoc` — `cross_doc_match` / `apply_cross_doc_matches` (§7).

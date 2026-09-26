@@ -47,6 +47,52 @@ describe("phase 6a — split", () => {
   });
 });
 
+describe("phase 6a — every split per run (m2.1, spec §10)", () => {
+  it("two old paragraphs each split into quarters both resolve as splits", () => {
+    const s = state(
+      [
+        mb("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu", 0, { id: "b_1" }),
+        mb("one two three four five six seven eight nine ten eleven twelve", 1, { id: "b_2" }),
+      ],
+      [
+        mb("alpha beta gamma", 0), mb("delta epsilon zeta", 1), mb("eta theta iota", 2), mb("kappa lambda mu", 3),
+        mb("one two three", 4), mb("four five six", 5), mb("seven eight nine", 6), mb("ten eleven twelve", 7),
+      ],
+    );
+    phase6aCompound(s);
+    // Non-dominant (first quarter holds 3/12 of the tokens): both tombstoned with splitInto.
+    const d1 = s.dispositions.find((d) => d.blockId === "b_1")!;
+    const d2 = s.dispositions.find((d) => d.blockId === "b_2")!;
+    expect(d1.kind).toBe("deleted");
+    expect(d1.detail.splitInto).toEqual(["/0", "/1", "/2", "/3"]);
+    expect(d2.kind).toBe("deleted"); // m2.0 returned after the first split and left b_2 to phase 7
+    expect(d2.detail.splitInto).toEqual(["/4", "/5", "/6", "/7"]);
+    const lineage = s.dispositions.filter((d) => d.kind === "split_from");
+    expect(lineage.length).toBe(8);
+    expect(lineage.filter((d) => d.detail.counterpart === "b_2").map((d) => d.detail.newKey)).toEqual(["/4", "/5", "/6", "/7"]);
+  });
+
+  it("two merges in one document both resolve", () => {
+    const s = state(
+      [
+        mb("alpha beta gamma delta epsilon zeta eta theta iota", 0, { id: "b_1" }),
+        mb("kappa lambda mu", 1, { id: "b_2" }),
+        mb("one two three four five six seven eight nine", 2, { id: "b_3" }),
+        mb("ten eleven twelve", 3, { id: "b_4" }),
+      ],
+      [
+        mb("alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu", 0),
+        mb("one two three four five six seven eight nine ten eleven twelve", 1),
+      ],
+    );
+    phase6aCompound(s);
+    expect(s.matched.get("/0")).toBe("b_1");
+    expect(s.dispositions.find((d) => d.blockId === "b_2")!.kind).toBe("merged_into");
+    expect(s.matched.get("/1")).toBe("b_3"); // m2.0 returned after the first merge
+    expect(s.dispositions.find((d) => d.blockId === "b_4")!.kind).toBe("merged_into");
+  });
+});
+
 describe("phase 6a — merge", () => {
   it("dominant contributor carries; others merged_into", () => {
     const s = state(

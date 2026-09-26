@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { phase1Exact, phase2Normalized, phase3Anchor, phase4Context, type PhaseState } from "./phases.js";
 import { phase5Scored } from "./phase5.js";
 import { DEFAULT_CONFIG, type MatchBlock } from "./types.js";
+import { flatten } from "./flatten.js";
 import { sha256, normalizeVisibleText } from "../core/hash.js";
 
 function mb(raw: string, index: number, opts: { id?: string; type?: string; parentKey?: string | null } = {}): MatchBlock {
@@ -60,6 +61,63 @@ describe("phase 5 — scored assignment", () => {
     runAll(s);
     // 2-token blocks with 1 shared token: dice below θ_small (0.80) ⇒ not carried.
     expect(s.matched.has("/0")).toBe(false);
+  });
+
+  it("m2.1: a sub-threshold tiny-block candidate is skipped, not a stopping point (spec §10)", () => {
+    // The tiny block's candidate (text_sim 1 by case folding) scores 0.75 and
+    // sorts first, but its θ is θ_small (0.80). The regular paragraph behind it
+    // scores 0.55 × 0.875 + 0.10 + 0.10 = 0.68125 ≥ θ_accept and must still carry.
+    const s = state(
+      [mb("cat dog bird", 0, { id: "b_1" }), mb("one two three four five six seven eight nine ten", 1, { id: "b_2" })],
+      [mb("Cat Dog Bird", 0), mb("one two three four five six seven eight nine eleven", 1)],
+    );
+    runAll(s);
+    expect(s.matched.has("/0")).toBe(false);
+    expect(s.matched.get("/1")).toBe("b_2");
+    const d = s.dispositions.find((x) => x.blockId === "b_2")!;
+    expect(d.reason).toBe("scored");
+    expect(d.confidence).toBeCloseTo(0.68125, 9);
+  });
+
+  it("m2.1: position_prior is over the block's sibling count, not the flattened list size (spec §10)", () => {
+    // Five ten-token items; the 2nd and 4th have two adjacent mid-item tokens
+    // changed (text_sim 0.5). Two paragraphs are inserted above the list, so
+    // the flattened sizes differ (6 old vs 8 new) while every item keeps its
+    // index among five siblings. The list carries by context and the untouched
+    // items lock, so each edited item scores 0.275 + 0.15 + 0.10 + 0.10 × prior.
+    // Sibling-count prior: 1 → 0.625 ≥ 0.62, carry. The m2.0 whole-list prior
+    // gave 0.943 / 0.829 → 0.619 / 0.608, and both items minted.
+    const items = (b: string, d: string) => [
+      "apple banana cherry date elder fig grape honey iris jade",
+      b,
+      "umber violet wheat xenon yarrow zinc amber bronze copper delta",
+      d,
+      "oscar papa quebec romeo sierra tango uniform victor whiskey xray",
+    ];
+    const oldItems = items("kite lemon mango nectar olive peach quince rasp sage thyme", "echo fox golf hotel india juliet kilo lima mike november");
+    const newItems = items("kite lemon mango nectarine olivine peach quince rasp sage thyme", "echo fox golf hostel indigo juliet kilo lima mike november");
+    const list = (raws: string[], ids?: string[]) => ({
+      ...(ids ? { blockId: "b_list" } : {}),
+      type: "list",
+      raw: raws.map((r) => `- ${r}`).join("\n"),
+      children: raws.map((r, i) => ({ ...(ids ? { blockId: ids[i]! } : {}), type: "list_item", raw: `- ${r}`, children: [] })),
+    });
+    const old = flatten([list(oldItems, ["b_1", "b_2", "b_3", "b_4", "b_5"])]);
+    const neu = flatten([
+      { type: "paragraph", raw: "Intro paragraph one.", children: [] },
+      { type: "paragraph", raw: "Intro paragraph two.", children: [] },
+      list(newItems),
+    ]);
+    const s = state(old, neu);
+    runAll(s);
+    expect(s.matched.get("/2")).toBe("b_list");
+    expect(s.matched.get("/2/1")).toBe("b_2");
+    expect(s.matched.get("/2/3")).toBe("b_4");
+    for (const id of ["b_2", "b_4"]) {
+      const d = s.dispositions.find((x) => x.blockId === id)!;
+      expect(d.reason).toBe("scored");
+      expect(d.confidence).toBeCloseTo(0.625, 9);
+    }
   });
 });
 

@@ -196,8 +196,8 @@
       }
     },
     {
-      "name": "small-block-stops-the-walk",
-      "notes": "Pinned §10: the tiny block's candidate (text_sim 1 by case folding, score 0.75) sorts first but is below its theta_small (0.80), and the walk stops there — the regular candidate behind it (score ≈ 0.68 ≥ 0.62) is never reached, so nothing carries.",
+      "name": "small-block-does-not-stop-the-walk",
+      "notes": "Fixed in m2.1 (§10): the tiny block's candidate (text_sim 1 by case folding, score 0.75) sorts first but is below its theta_small (0.80). The walk skips it and continues, so the regular candidate behind it (score ≈ 0.68 ≥ 0.62) carries as edited; the tiny block is deleted and re-minted. Before m2.1 the walk stopped at the first sub-threshold candidate and nothing carried.",
       "old": {
         "source": "cat dog bird\n\none two three four five six seven eight nine ten\n"
       },
@@ -207,7 +207,7 @@
       "expect": {
         "assignment": {
           "/0": null,
-          "/1": null
+          "/1": "b_1"
         },
         "dispositions": [
           {
@@ -219,9 +219,86 @@
           },
           {
             "block": "b_1",
-            "kind": "deleted",
+            "kind": "edited",
+            "confidence": 0.68125,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
             "confidence": null,
-            "reason": "tombstone",
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_0"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "position-prior-nested",
+      "notes": "Fixed in m2.1 (§10): position_prior is over the sibling count, not the flattened list size. A five-item list (ten-token items) where the second and fourth items have two adjacent mid-item tokens changed (text_sim 0.5 each) and two paragraphs are inserted above the list. The list carries by context and the three untouched items lock, so both edited items reach phase 5 with neighbor_ctx 1 and parent_match 1: score = 0.275 + 0.15 + 0.10 + 0.10 × position_prior. Each item keeps its index among five siblings, so the sibling-count prior is 1 and both score 0.625 ≥ 0.62 and carry. Under the m2.0 prior (index / (|flattened| − 1), 6 old blocks vs 8 new) the priors were 0.943 and 0.829, scores 0.619 and 0.608, and both items minted.",
+      "old": {
+        "source": "- apple banana cherry date elder fig grape honey iris jade\n- kite lemon mango nectar olive peach quince rasp sage thyme\n- umber violet wheat xenon yarrow zinc amber bronze copper delta\n- echo fox golf hotel india juliet kilo lima mike november\n- oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+      },
+      "new": {
+        "source": "Intro paragraph one.\n\nIntro paragraph two.\n\n- apple banana cherry date elder fig grape honey iris jade\n- kite lemon mango nectarine olivine peach quince rasp sage thyme\n- umber violet wheat xenon yarrow zinc amber bronze copper delta\n- echo fox golf hostel indigo juliet kilo lima mike november\n- oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null,
+          "/2": "b_0",
+          "/2/0": "b_1",
+          "/2/1": "b_2",
+          "/2/2": "b_3",
+          "/2/3": "b_4",
+          "/2/4": "b_5"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited_moved",
+            "confidence": 0.9166666666666667,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.625,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "edited_moved",
+            "confidence": 0.625,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
             "detail": {}
           },
           {
@@ -239,10 +316,7 @@
             "detail": {}
           }
         ],
-        "deleted": [
-          "b_0",
-          "b_1"
-        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },

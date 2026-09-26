@@ -301,7 +301,7 @@
           "A": {
             "assignment": {
               "/0": null,
-              "/1": null
+              "/1": "a_1"
             },
             "dispositions": [
               {
@@ -313,9 +313,9 @@
               },
               {
                 "block": "a_1",
-                "kind": "deleted",
-                "confidence": null,
-                "reason": "tombstone",
+                "kind": "edited",
+                "confidence": 0.68125,
+                "reason": "scored",
                 "detail": {}
               },
               {
@@ -324,18 +324,10 @@
                 "confidence": null,
                 "reason": null,
                 "detail": {}
-              },
-              {
-                "block": "new:/1",
-                "kind": "inserted",
-                "confidence": null,
-                "reason": null,
-                "detail": {}
               }
             ],
             "deleted": [
-              "a_0",
-              "a_1"
+              "a_0"
             ],
             "consumed_pool": []
           },

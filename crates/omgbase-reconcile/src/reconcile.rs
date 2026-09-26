@@ -2,7 +2,7 @@
 //! order, the bulk-rewrite check, phase 6b (resurrection) and phase 7
 //! (defaults).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::mint::Minter;
 use crate::phase5::phase5_scored;
@@ -134,7 +134,9 @@ fn stamped(
 /// Phase 7: lineage placeholders get their minted id (the id already
 /// assigned to `detail.newKey`, else a fresh mint); every unassigned new
 /// block is minted `inserted`; every old block not carried and not otherwise
-/// disposed is `deleted` and listed.
+/// disposed is `deleted`; `deleted` lists every old id whose disposition is
+/// `deleted` — the tombstones just made and phase 6a's non-dominant split
+/// tombstones — in old document order (§5 step 4, m2.1).
 fn finalize(
     state: PhaseState<'_>,
     consumed_pool: Vec<String>,
@@ -176,11 +178,9 @@ fn finalize(
         }
     }
 
-    let mut deleted = Vec::new();
     for o in state.old {
         let id = old_id(o);
         if !state.is_old_used(id) {
-            deleted.push(id.to_owned());
             dispositions.push(stamped(
                 config,
                 id.to_owned(),
@@ -190,6 +190,7 @@ fn finalize(
             ));
         }
     }
+    let deleted = deleted_ids(state.old, &dispositions);
 
     ReconcileResult {
         assignment,
@@ -199,8 +200,23 @@ fn finalize(
     }
 }
 
+/// Every old id whose disposition kind is `deleted`, in old document order
+/// (§5 phase 7 step 4).
+fn deleted_ids(old: &[MatchBlock], dispositions: &[Disposition]) -> Vec<String> {
+    let tombstoned: HashSet<&str> = dispositions
+        .iter()
+        .filter(|d| d.kind == DispositionKind::Deleted)
+        .map(|d| d.block_id.as_str())
+        .collect();
+    old.iter()
+        .map(old_id)
+        .filter(|id| tombstoned.contains(id))
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Give up on block continuity: one `DOC` `bulk_rewrite` disposition, every
-/// new block minted `inserted`, every old block `deleted`.
+/// new block minted `inserted`, every old block `deleted` and listed.
 fn bulk_rewrite(state: &PhaseState<'_>, minter: &mut dyn Minter) -> ReconcileResult {
     let config = state.config;
     let mut detail = Detail::new();
@@ -227,18 +243,16 @@ fn bulk_rewrite(state: &PhaseState<'_>, minter: &mut dyn Minter) -> ReconcileRes
             Detail::new(),
         ));
     }
-    let mut deleted = Vec::new();
     for o in state.old {
-        let id = old_id(o).to_owned();
-        deleted.push(id.clone());
         dispositions.push(stamped(
             config,
-            id,
+            old_id(o).to_owned(),
             DispositionKind::Deleted,
             Some(Reason::Tombstone),
             Detail::new(),
         ));
     }
+    let deleted = deleted_ids(state.old, &dispositions);
     ReconcileResult {
         assignment,
         dispositions,
@@ -476,8 +490,57 @@ mod tests {
         assert_eq!(d0.kind, DispositionKind::SplitFrom);
         assert_eq!(d0.detail["newKey"], DetailValue::Str("/0".to_owned()));
         assert_eq!(d0.detail["counterpart"], DetailValue::Str("b_1".to_owned()));
-        // The non-dominant split tombstone is a disposition but not in `deleted` (§10).
+        // m2.1: the non-dominant split tombstone is listed in `deleted` like
+        // any tombstone (§10 "split tombstone in deleted").
         assert_eq!(find(&res, "b_1").kind, DispositionKind::Deleted);
-        assert!(res.deleted.is_empty());
+        assert_eq!(res.deleted, ["b_1"]);
+    }
+
+    #[test]
+    fn split_tombstone_in_deleted_keeps_old_document_order() {
+        // A phase-7 tombstone before the split block, the split tombstone,
+        // then another phase-7 tombstone: `deleted` follows old document
+        // order, not the order the dispositions were recorded in.
+        let cfg = Config {
+            split_dominant_share: 1.01,
+            ..Config::default()
+        };
+        let old = flatten(&old_tree(&[
+            ("b_gone1", "first vanished paragraph unrelated words"),
+            (
+                "b_split",
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+            ),
+            ("b_gone2", "second vanished paragraph other unrelated words"),
+        ]));
+        let neu = flatten(&new_tree(&[
+            "alpha beta gamma delta epsilon zeta",
+            "eta theta iota kappa lambda mu",
+        ]));
+        let mut minter = SequentialMinter::new("n");
+        let res = reconcile_document(
+            &old,
+            &neu,
+            Options {
+                config: &cfg,
+                pool: &[],
+                minter: &mut minter,
+            },
+        );
+        assert_eq!(res.deleted, ["b_gone1", "b_split", "b_gone2"]);
+        let split = find(&res, "b_split");
+        assert_eq!(split.kind, DispositionKind::Deleted);
+        assert_eq!(split.reason, Some(Reason::Tombstone));
+        assert_eq!(
+            split.detail["splitInto"],
+            DetailValue::List(vec!["/0".into(), "/1".into()])
+        );
+        assert_eq!(
+            res.dispositions
+                .iter()
+                .filter(|d| d.kind == DispositionKind::Deleted)
+                .count(),
+            3
+        );
     }
 }

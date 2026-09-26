@@ -31,21 +31,25 @@ contract that the rationale describes.
 Every disposition is stamped with a **matcher version** so a database can say
 which matcher made a decision, and a newer matcher never rewrites committed
 dispositions (R6 below). That version is the spec version: `VERSION` holds it
-as `major.minor` (`2.0`), the stamp is `"m" + VERSION` (`m2.0`), and the
+as `major.minor` (`2.1`), the stamp is `"m" + VERSION` (`m2.1`), and the
 `omgbase-reconcile` crate is versioned `<major>.<minor>.<patch>` with the
 patch digit free for bug fixes and packaging, exactly as `oqx` and
 `omgbase-format` track their specs. The reference lives inside
 `@omgbase/core`, which has its own version line; its `DEFAULT_CONFIG.matcherV`
 equals `"m" + VERSION`.
 
-- **Threshold or weight changes** bump the minor (`m2.0 → m2.1`).
-- **Phase changes** (a phase added, removed or reordered; a rule that changes
-  which pairs can carry) bump the major.
+- **Threshold, weight and rule refinements within a phase** bump the minor
+  (`m2.0 → m2.1`).
+- **Phase changes** (a phase added, removed or reordered, or a new kind of
+  evidence a phase reads) bump the major.
 - A fixture added or changed that alters an expected decision is one of the
   two. A fixture that pins existing behavior is neither.
 
 History: `m1.0` phases 1–7 as first shipped; `m2.0` phase 4b (children vouch
-for their parent) and the phase 4/4b fixed point (2026-09-25).
+for their parent) and the phase 4/4b fixed point (2026-09-25); `m2.1` the
+four fixes of §10 (phase 5 keeps walking past a sub-threshold candidate,
+`position_prior` over sibling count, every split and merge per run, split
+tombstones listed in `deleted`) (2026-09-25).
 
 ## The rule for changing the matcher
 
@@ -111,8 +115,9 @@ Result
   assignment      new key → id: a carried old id, a resurrected pool id, or a
                   freshly minted id. Every new key is assigned exactly once.
   dispositions    one per decision (below)
-  deleted         the old ids given a `deleted` disposition by phase 7, in
-                  old document order (see §10 for the phase-6a exception)
+  deleted         every old id whose disposition kind is `deleted` (phase 7
+                  tombstones and phase 6a non-dominant splits), in old
+                  document order
   consumed_pool   the resurrection-pool ids consumed by phase 6b, in the
                   order they were consumed
 
@@ -331,9 +336,9 @@ neighbor_ctx     over d ∈ {−1, +1}: os = old sibling of o at index o.index +
                  matched / total, or 0 when total is 0.
 parent_match     1 when both at root, or o's parent is carried to n's parent;
                  else 0.
-position_prior   1 − |rel(o) − rel(n)| with rel(b) = b.index / (count − 1),
-                 count being |old| for o and |new| for n, and rel = 0 when
-                 count ≤ 1. (Sibling index over the whole list's size: §10.)
+position_prior   1 − |rel(o) − rel(n)| with rel(b) = b.index / (siblings − 1),
+                 siblings being the number of blocks in b's tree with
+                 b.parent_key (b included), and rel = 0 when siblings ≤ 1.
 anchor_evidence  1 when o and n share an anchor string; else 0.
 ```
 
@@ -346,8 +351,9 @@ before `/2`). Walk them:
 
 1. Skip a candidate whose old or new block is already used.
 2. `θ = theta_small` when `tc(n) < small_block_tokens`, else `theta_accept`.
-   If `score < θ`, **stop the walk** (§10: the walk stops at the first
-   candidate below *its* threshold, whichever threshold that is).
+   If `score < θ`, skip the candidate and keep walking (a tiny block's
+   higher threshold must not end the walk for the regular candidates
+   sorted below it).
 3. R3: when `o.parent_key = n.parent_key` (as strings), reject the candidate
    if any pair (*o′*, *n′*) already accepted in this phase under the same new
    parent has `(o′.index − o.index) × (n′.index − n.index) < 0`.
@@ -371,8 +377,9 @@ repeats) that occur in the token *set* of `part`, divided by
 sorted by index whose indices are consecutive; the concatenation of a run is
 its texts joined by one space.
 
-**Splits — at most one per document per run.** For each unmatched old *O* in
-document order, over the unmatched new blocks with `parent_key = O.parent_key`
+**Splits.** For each old *O* that was unmatched when the pass began and is
+still unmatched when reached, in document order (the candidate side is the
+live unmatched set, so earlier splits in the pass are visible), over the unmatched new blocks with `parent_key = O.parent_key`
 and `type = O.type` sorted by index: try every window `[start, end)` of
 length ≥ 2, longest first for each start (`start` ascending, `end`
 descending), skipping non-consecutive windows. The first window with
@@ -384,13 +391,14 @@ descending), skipping non-consecutive windows. The first window with
   `0.8 × coverage`, detail `{ split: [run keys], dominant: first.key }`; every
   other run block is minted with lineage `split_from` (below);
 - otherwise *O* gets `{ kind: deleted, confidence: null, reason: tombstone,
-  detail: { splitInto: [run keys] } }` (and is **not** listed in `deleted`,
-  §10), and every run block is minted with lineage `split_from`.
+  detail: { splitInto: [run keys] } }` (listed in `deleted` like any
+  tombstone), and every run block is minted with lineage `split_from`.
 
-Then the pass ends.
+Then continue with the next unmatched *O*.
 
-**Merges — at most one per document per run.** Mirror image: for each
-unmatched new *N* in document order, over the unmatched old blocks with the
+**Merges.** Mirror image: for each new *N* that was unmatched when the pass
+began and is still unmatched when reached, in document order (the candidate
+side is the live unmatched set), over the unmatched old blocks with the
 same parent key and type sorted by index, the first window (same order) with
 `coverage(N.text, concat) ≥ split_coverage` (no leftover test) is the merge:
 
@@ -403,7 +411,7 @@ same parent key and type sorted by index, the first window (same order) with
   reason: scored, detail: { mergedKey: N.key } }` and *N* is minted with
   lineage `merged_into` whose counterpart is the first run block.
 
-Then the pass ends.
+Then continue with the next unmatched *N*.
 
 **Copies.** For each unmatched new *n* in document order: the first old block
 in document order that is carried (by any phase so far), has `n`'s type and
@@ -437,14 +445,15 @@ entry.
 2. Every new block without an assignment, in document order, is minted with
    `{ kind: inserted, confidence: null, reason: null, detail: {} }`.
 3. Every old block not carried and not otherwise disposed, in document order,
-   gets `{ kind: deleted, confidence: null, reason: tombstone, detail: {} }`
-   and its id is appended to `deleted`.
+   gets `{ kind: deleted, confidence: null, reason: tombstone, detail: {} }`.
+4. `deleted` is every old id whose disposition kind is `deleted`, in old
+   document order.
 
 ## 6. Configuration
 
 | Fixture name | Default | Meaning |
 | --- | --- | --- |
-| `matcher_v` | `"m2.0"` | stamped on every disposition (`"m" + VERSION`) |
+| `matcher_v` | `"m2.1"` | stamped on every disposition (`"m" + VERSION`) |
 | `theta_accept` | 0.62 | phase 5 acceptance |
 | `theta_small` | 0.80 | phase 5 acceptance when the new block has fewer than `small_block_tokens` tokens |
 | `small_block_tokens` | 8 | the tiny-block boundary |
@@ -484,8 +493,10 @@ and `{ block_id: carried_id, kind, confidence, reason: scored, detail: {
 fromDoc: from_doc } }` is appended; in the source document, the `deleted`
 disposition of `carried_id` is removed and the id leaves `deleted`.
 
-The reference implements this (`crossdoc.ts`) but the checkpoint does not
-call it yet; the fixtures pin the function.
+The reference checkpoint calls this between reconciling every document of a
+batch and committing any of them (`packages/core/src/sync/observe.ts`,
+`observeBatch`); a document deleted in the checkpoint contributes its whole
+live tree as *deleted*. The fixtures pin the function.
 
 ## 8. Portability
 
@@ -623,23 +634,25 @@ the fix and the reference was brought to it).
   excludes U+0085 and includes U+FEFF; `omgbase-format`'s helper included
   U+0085 by using `char::is_whitespace`. Corrected there (crate patch) and in
   spec/format §4.1's prose.
-- **Pinned — phase 5 stops at the first sub-threshold candidate.** Candidates
-  are sorted by score, but tiny new blocks use `theta_small` (0.80) where
-  others use `theta_accept` (0.62): a tiny-block candidate scoring 0.70 stops
-  the walk although later regular candidates scoring 0.65 would have
-  qualified. `scored::small-block-stops-the-walk` pins the current behavior.
-  Recommended change (bumps the minor): `continue` instead of stopping.
-- **Pinned — `position_prior` mixes sibling index with list size.** `rel(b) =
-  b.index / (|list| − 1)` uses the block's ordinal among its siblings over the
-  size of the whole flattened list, so nested blocks and documents with
-  containers get compressed priors. Harmless at the top level of a flat
-  document, which is where it was tuned.
-- **Pinned — one split and one merge per run.** Phase 6a returns after the
-  first split it finds and after the first merge; a document with two split
-  paragraphs resolves one of them per checkpoint.
-- **Pinned — non-dominant split tombstone is not in `deleted`.** The old block
-  gets a `deleted` disposition (with `splitInto`) but phase 7 does not list
-  it, so it does not enter the resurrection pool.
+- **Fixed in m2.1 — phase 5 stopped at the first sub-threshold candidate.**
+  Candidates are sorted by score, but tiny new blocks use `theta_small`
+  (0.80) where others use `theta_accept` (0.62): a tiny-block candidate
+  scoring 0.70 ended the walk although later regular candidates scoring 0.65
+  qualified. The walk now skips the candidate and continues
+  (`scored::small-block-does-not-stop-the-walk`).
+- **Fixed in m2.1 — `position_prior` mixed sibling index with list size.**
+  `rel(b) = b.index / (|list| − 1)` used the block's ordinal among its
+  siblings over the size of the whole flattened list, so nested blocks and
+  documents with containers got compressed priors. It is now over the sibling
+  count (`scored::position-prior-nested`).
+- **Fixed in m2.1 — one split and one merge per run.** Phase 6a returned
+  after the first split it found and after the first merge, so a document
+  with two split paragraphs resolved one per checkpoint. Both passes now
+  continue through the document (`compound::two-splits-both-resolve`).
+- **Fixed in m2.1 — non-dominant split tombstone was not in `deleted`.** The
+  old block got a `deleted` disposition (with `splitInto`) but phase 7 did
+  not list it, so it never entered the resurrection pool. `deleted` is now
+  every `deleted` disposition (`compound::split-disabled-tombstone-in-deleted`).
 - **Pinned — resurrection reason.** A norm-hash resurrection records reason
   `exact_hash`, and a consumed raw-hash hit does not fall back to the
   norm-hash entry.
@@ -678,4 +691,9 @@ the fix and the reference was brought to it).
 - 2026-09-25, matcher 2.0 specified as built (fixtures pin the reference,
   oddities listed above rather than silently changed). `VERSION` equals the
   matcher version already stamped in databases, so the Rust crate's first
-  release is 2.0.0.
+  release is on the 2.x line. Brendan kept that over restarting at 0.x.
+- 2026-09-25, matcher 2.1: Brendan chose to fix the four pinned oddities
+  (phase 5 walk, `position_prior`, all splits/merges, split tombstones in
+  `deleted`) as one minor bump, to wire cross-document matching into the
+  checkpoint, and to leave the short-item threshold question to the eval
+  harness (extend it with list-item edit classes, measure, then decide).

@@ -56,9 +56,12 @@ export interface ReconcileConfig {
 }
 
 export const DEFAULT_CONFIG: ReconcileConfig = {
-  // m2.0: phase 4b (children vouch for their parent, reason context_children)
-  // and the phase-4 fixed point; a phase change bumps the major (03 §7).
-  matcherV: "m2.0",
+  // "m" + spec/reconcile/VERSION. m2.0: phase 4b (children vouch for their
+  // parent) and the phase-4 fixed point. m2.1: the four spec §10 fixes — phase 5
+  // skips (not stops at) a sub-threshold candidate, position_prior over the
+  // sibling count, every split and merge per run, split tombstones listed in
+  // `deleted`. Rule refinements bump the minor; phase changes bump the major.
+  matcherV: "m2.1",
   thetaAccept: 0.62,
   thetaSmall: 0.8,
   thetaXdoc: 0.8,

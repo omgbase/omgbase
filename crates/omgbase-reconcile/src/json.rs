@@ -77,7 +77,7 @@ mod tests {
             kind: DispositionKind::Edited,
             confidence: Some(0.75),
             reason: Some(Reason::Scored),
-            matcher_v: "m2.0".to_owned(),
+            matcher_v: "m2.1".to_owned(),
             detail: detail([(
                 "near_misses",
                 DetailValue::List(vec![DetailValue::Map(detail([
@@ -90,7 +90,7 @@ mod tests {
             d.to_json(),
             json!({
                 "block_id": "b_1", "kind": "edited", "confidence": 0.75, "reason": "scored",
-                "matcher_v": "m2.0",
+                "matcher_v": "m2.1",
                 "detail": { "near_misses": [{ "blockId": "b_2", "score": 0.6 }] }
             })
         );
@@ -99,7 +99,7 @@ mod tests {
             kind: DispositionKind::Inserted,
             confidence: None,
             reason: None,
-            matcher_v: "m2.0".to_owned(),
+            matcher_v: "m2.1".to_owned(),
             detail: Detail::new(),
         };
         assert_eq!(inserted.to_json()["confidence"], Value::Null);

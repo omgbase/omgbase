@@ -281,8 +281,8 @@ pub struct ReconcileResult {
     pub assignment: BTreeMap<String, String>,
     /// One per decision.
     pub dispositions: Vec<Disposition>,
-    /// The old ids given a `deleted` disposition by phase 7, in old document
-    /// order (a non-dominant split tombstone is not listed: §10).
+    /// Every old id whose disposition kind is `deleted` — phase 7 tombstones
+    /// and phase 6a non-dominant split tombstones — in old document order.
     pub deleted: Vec<String>,
     /// The pool ids consumed by phase 6b, in the order consumed.
     pub consumed_pool: Vec<String>,

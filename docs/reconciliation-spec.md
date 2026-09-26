@@ -115,25 +115,27 @@ score(o, n) =
     0.55 × text_sim(o, n)          # token 3-gram shingle Dice coefficient over normalized text
   + 0.15 × neighbor_ctx(o, n)      # fraction of {prev, next} siblings that are matched pairs
   + 0.10 × parent_match(o, n)      # 1 if parents are a matched pair (or both roots)
-  + 0.10 × position_prior(o, n)    # 1 − |rel_pos(o) − rel_pos(n)|
-  + 0.10 × anchor_evidence(o, n)   # shared outgoing link targets / code-fence info / heading prefix
+  + 0.10 × position_prior(o, n)    # 1 − |rel(o) − rel(n)|, rel(b) = b.index / (siblings − 1)
+  + 0.10 × anchor_evidence(o, n)   # 1 when o and n share an authored anchor
 ```
 
-Solve greedy-by-score with R3 order constraints (accept highest score, discard conflicting candidates, repeat). Accept while `score ≥ θ_accept`. Reason `scored`, confidence = score.
+`position_prior` compares each block's position among its **own siblings** (`siblings` = the blocks in its tree under the same parent, itself included; `rel = 0` when it is alone). Before m2.1 the denominator was the size of the whole flattened list, which compressed the prior for nested blocks and for documents with containers — `spec/reconcile` §10, fixed in m2.1.
+
+Solve greedy-by-score with R3 order constraints: sort every candidate by score (descending; ties by old key, then new key), walk the list, and accept a candidate whose blocks are both still free, whose `score ≥ θ` (`θ_small` when the new block has fewer than 8 tokens, else `θ_accept`), and which does not cross an already-accepted same-parent pair (R3). A candidate below its θ is **skipped, not a stopping point**: the thresholds differ per candidate, so a tiny block's 0.75 sorted first must not end the walk for a regular candidate at 0.68 behind it (m2.0 broke out of the walk there — `spec/reconcile` §10, fixed in m2.1). Reason `scored`, confidence = score; `detail.near_misses` records the other candidates for that new block within 0.1 below θ.
 
 Candidate pruning: only pairs with |token_count difference| ≤ 3× and a shared 3-gram (inverted shingle index); cap candidates per block at 12 by shingle overlap. If the unmatched set exceeds `matcher.max_scored_blocks` (default 2000), skip Phase 5 entirely (bulk path, §6).
 
 ### Phase 6 — compound classification
-Over the still-unmatched:
+Over the still-unmatched, three passes in this order — splits, merges, copies. Each pass walks its side in document order and resolves **every** split (merge) it finds, moving on to the next still-unmatched block after each hit (m2.0 returned after the first split and the first merge, so a document with two split paragraphs resolved one per checkpoint — `spec/reconcile` §10, fixed in m2.1).
 
-- **Split:** old block O and a run of ≥2 adjacent new blocks N₁..Nₖ (same parent region) where `coverage(concat(N), O) ≥ 0.80` and leftover < 0.2. If one Nᵢ holds ≥ `split.dominant_share` (default 0.70) of O's tokens **and** is the first fragment: Nᵢ **carries** O's id (kind `edited`, confidence 0.8×coverage, detail records split); others minted with `split_from: O`. Otherwise all minted with `split_from: O`. (ADR: dominant-fragment inheritance, tunable; set `split.dominant_share = 1.01` to disable inheritance entirely.)
-- **Merge:** mirror image; merged result carries the dominant contributor's id under the same rule, others `merged_into`.
+- **Split:** old block O and a run of ≥2 adjacent new blocks N₁..Nₖ (same parent, same type) where `coverage(concat(N), O) ≥ 0.80` and leftover < 0.2. If the **first** fragment holds ≥ `split.dominant_share` (default 0.70) of O's tokens: it **carries** O's id (kind `edited`, confidence 0.8×coverage, detail records the split); the others are minted with `split_from: O`. Otherwise O is tombstoned (`deleted`, reason `tombstone`, detail `splitInto`) and every fragment is minted with `split_from: O`. (ADR: dominant-fragment inheritance, tunable; set `split.dominant_share = 1.01` to disable inheritance entirely.)
+- **Merge:** mirror image; the merged result carries the first contributor's id when it holds ≥ `split.dominant_share` of the new block's tokens, the others `merged_into` it; otherwise every contributor is `merged_into` the minted result.
 - **Copy:** unmatched new block with `text_sim ≥ 0.95` to a **matched** (still-present) old block ⇒ mint with `copied_from` lineage. Copies never steal identity.
-- **Cross-document move (same checkpoint):** pool the checkpoint's unmatched-deleted (all docs) × unmatched-inserted sets and greedily accept same-type, different-document pairs by `text_sim ≥ θ_xdoc` (default 0.80; token ratio ≤ 3×). Kind `moved`/`edited_moved`. As built: `crossdoc.ts` implements it (and `spec/reconcile` §7 pins it), but the checkpoint does not call it yet.
+- **Cross-document move (same checkpoint):** pool the checkpoint's unmatched-deleted (all docs) × unmatched-inserted sets and greedily accept same-type, different-document pairs by `text_sim ≥ θ_xdoc` (default 0.80; token ratio ≤ 3×). Kind `moved`/`edited_moved`. As built: `crossdoc.ts` implements it, `spec/reconcile` §7 pins it, and the checkpoint runs it between reconciling every member of a batch and committing any of them (§8).
 - **Resurrection (cross-checkpoint):** match unmatched-inserted against `resurrection_pool` by raw_hash or norm_hash only (exact-class evidence). Kind `resurrected`, and the pool row is consumed. Scored resurrection is experimental (flag `matcher.scored_resurrection`, default off).
 
 ### Phase 7 — defaults
-Remaining old blocks → `deleted` (into resurrection_pool). Remaining new blocks → `inserted` (minted).
+Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted` (reason `tombstone`). The result's `deleted` list — what enters the resurrection pool — is **every** old id whose disposition kind is `deleted`, in old document order: the Phase 7 tombstones and the Phase 6 non-dominant split tombstones alike (m2.0 listed only the former, so a split-away block never reached the pool — `spec/reconcile` §10, fixed in m2.1).
 
 ## 5. Thresholds (config, tuned by the harness)
 
@@ -152,7 +154,7 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 ## 6. Deliberate give-ups
 
 - **Bulk rewrite:** if after Phase 2 more than `bulk.unmatched_frac` of a ≥`bulk.min_blocks` document (counted over the flattened block list) is unmatched: skip Phases 3–6, mint everything — the Phase 1–2 pairs included — and emit one `bulk_rewrite` disposition (doc-scoped) plus `deleted` for all old blocks. Document-level continuity survives; block continuity is honestly surrendered. (An earlier draft also required a mean best-candidate `text_sim < 0.35`; the implementation never had that clause.)
-- **Tiny blocks:** a new block with < 8 tokens uses `θ_small` in Phase 5. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule). (An earlier draft capped tiny-block confidence at 0.8; not implemented — a Phase 5 carry's confidence is its score, and an exact lock on a tiny block is 1.0.)
+- **Tiny blocks:** a new block with < 8 tokens uses `θ_small` in Phase 5; a tiny block's candidate falling short of `θ_small` is skipped and costs the other candidates nothing. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule). (An earlier draft capped tiny-block confidence at 0.8; not implemented — a Phase 5 carry's confidence is its score, and an exact lock on a tiny block is 1.0.)
 - **Many-to-many ambiguity:** overlapping split/merge candidate sets ⇒ take none; mint; record near-misses.
 
 ## 7. Determinism & versioning
@@ -161,20 +163,29 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 - `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`; it equals `"m" + spec/reconcile/VERSION`, and the Rust crate `omgbase-reconcile` is versioned `<major>.<minor>.<patch>` against the same number.
   - `m1.0` — phases 1–7 as first shipped.
   - `m2.0` — Phase 4b (children vouch for their parent, reason `context_children`) and the Phase 4/4b fixed point (2026-09-25, alongside the "visible text" rule for container `text`).
+  - `m2.1` — the four `spec/reconcile` §10 fixes, rule refinements within phases 5–7 (2026-09-25): Phase 5 skips a sub-threshold candidate instead of ending the walk; `position_prior` over the block's sibling count; every split and merge resolved per run; non-dominant split tombstones listed in `deleted`.
 - Re-running a newer matcher NEVER rewrites committed dispositions (R6).
 
 ## 8. Sync pipeline placement
 
 ```
 checkpoint (debounced saves, per architecture §6)
-  → for each changed file:
+  → pass 1, for each changed file (no commits):
+      echo gate: sha256(bytes) == docs.file_hash → suppressed
       parse → BlockTree
       if doc unknown: whole-file raw-hash match against deleted/moved docs → rename else create
-      reconcile(old tree, new tree) → carried/minted tree + dispositions
-  → cross-doc phase over the checkpoint's pooled unmatched sets
-  → one observed commit: revisions + dispositions + edge extraction + index maintenance
+      reconcile(old tree, new tree, pool snapshot) → per-doc assignment + dispositions + deleted
+      (a file gone from the source contributes its whole live tree as deleted)
+  → cross-doc phase over the checkpoint's pooled leftovers (spec/reconcile §7):
+      deleted × inserted across documents at θ_xdoc → moved / edited_moved (detail.fromDoc);
+      the source's deleted disposition and pool entry for that id vanish
+  → pass 2, for each file in batch order, one transaction each:
+      observed commit: revisions + dispositions + edge extraction + index maintenance,
+      or the observed-deletion tombstone
   → convergence check: file_hash == rendered_hash (must hold; else log + re-ingest)
 ```
+
+All three batch entry points — `processCheckpoint` (freshness sweep, one-shot, recovery), the external-source driver `reconcileChanges` (live watcher), and the `observe_many` MCP tool — share this pipeline (`sync/observe.ts::observeBatch`; a single `observe` is a batch of one, so it has no cross-doc phase). Every member of a batch reconciles against one resurrection-pool snapshot with a shared consumed-set, so a pooled id resurrects at most once per checkpoint. A block that moves between files inside one checkpoint is therefore never `deleted`+`inserted`, never pooled, and never `resurrected`; a carried-in id evicts the row its source document may still hold (`blocks.block_id` is a primary key), so the order of files in the batch does not matter. Across checkpoints the resurrection pool remains the mechanism (phase 6b, exact/normalized hash only): a cut and a paste that arrive in separate watcher batches come out as `deleted` then `resurrected`, and an edited move across batches as `deleted` + `inserted`.
 
 Engine-authored writes are echo-suppressed by expected-hash match at the watcher (no checkpoint, no commit).
 

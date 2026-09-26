@@ -82,14 +82,37 @@ fn shared_anchor_evidence(o: &MatchBlock, n: &MatchBlock) -> f64 {
     }
 }
 
+/// The number of blocks under each `parent_key` of one tree (`None` for the
+/// root), computed once per tree for `position_prior`.
+type SiblingCounts<'a> = HashMap<Option<&'a str>, usize>;
+
+fn sibling_counts(blocks: &[MatchBlock]) -> SiblingCounts<'_> {
+    let mut counts = SiblingCounts::new();
+    for b in blocks {
+        *counts.entry(b.parent_key.as_deref()).or_insert(0) += 1;
+    }
+    counts
+}
+
+/// `rel(b) = b.index / (siblings − 1)` with `siblings` the number of blocks in
+/// b's tree sharing b's `parent_key` (b included); 0 when `siblings ≤ 1`.
+fn relative_position(b: &MatchBlock, siblings: &SiblingCounts<'_>) -> f64 {
+    let count = siblings.get(&b.parent_key.as_deref()).copied().unwrap_or(1);
+    if count > 1 {
+        b.index as f64 / (count - 1) as f64
+    } else {
+        0.0
+    }
+}
+
 /// `score(o, n) = 0.55 text_sim + 0.15 neighbor_ctx + 0.10 parent_match
 /// + 0.10 position_prior + 0.10 anchor_evidence`, summed left to right.
 fn score_pair(
     o: &MatchBlock,
     n: &MatchBlock,
     state: &PhaseState<'_>,
-    old_count: usize,
-    new_count: usize,
+    old_siblings: &SiblingCounts<'_>,
+    new_siblings: &SiblingCounts<'_>,
 ) -> f64 {
     let text_sim_val = dice(&shingles(&o.text), &shingles(&n.text));
     let neighbor_ctx = neighbor_context(o, n, state);
@@ -98,18 +121,8 @@ fn score_pair(
     } else {
         0.0
     };
-    // position_prior: sibling index over the whole list's size (§10).
-    let rel_o = if old_count > 1 {
-        o.index as f64 / (old_count - 1) as f64
-    } else {
-        0.0
-    };
-    let rel_n = if new_count > 1 {
-        n.index as f64 / (new_count - 1) as f64
-    } else {
-        0.0
-    };
-    let position_prior = 1.0 - (rel_o - rel_n).abs();
+    let position_prior =
+        1.0 - (relative_position(o, old_siblings) - relative_position(n, new_siblings)).abs();
     let anchor_evidence = shared_anchor_evidence(o, n);
     0.55 * text_sim_val
         + 0.15 * neighbor_ctx
@@ -170,10 +183,12 @@ fn round3(x: f64) -> f64 {
 
 /// Phase 5. Skips when either side has no unmatched blocks or the unmatched
 /// total exceeds `2 × max_scored_blocks`. Candidates are sorted by score
-/// descending, then old key, then new key (bytewise); the walk stops at the
-/// first candidate below *its* threshold (§10). Accepted pairs are `edited`
-/// or `edited_moved` with the score as confidence and the near misses
-/// (within 0.1 below the threshold) in `detail.near_misses`.
+/// descending, then old key, then new key (bytewise); the walk skips a
+/// candidate below *its* threshold and continues (a tiny block's higher
+/// `theta_small` must not end the walk for the regular candidates sorted
+/// below it — §10, m2.1). Accepted pairs are `edited` or `edited_moved` with
+/// the score as confidence and the near misses (within 0.1 below the
+/// threshold) in `detail.near_misses`.
 pub fn phase5_scored(state: &mut PhaseState<'_>) {
     let olds = state.unmatched_old();
     let news = state.unmatched_new();
@@ -183,12 +198,12 @@ pub fn phase5_scored(state: &mut PhaseState<'_>) {
     if olds.len() + news.len() > state.config.max_scored_blocks * 2 {
         return;
     }
-    let old_count = state.old.len();
-    let new_count = state.neu.len();
+    let old_siblings = sibling_counts(state.old);
+    let new_siblings = sibling_counts(state.neu);
 
     let mut candidates = prune_candidates(&olds, &news);
     for c in &mut candidates {
-        c.score = score_pair(c.old, c.neu, state, old_count, new_count);
+        c.score = score_pair(c.old, c.neu, state, &old_siblings, &new_siblings);
     }
     candidates.sort_by(|a, b| {
         desc(a.score, b.score)
@@ -210,7 +225,7 @@ pub fn phase5_scored(state: &mut PhaseState<'_>) {
             state.config.theta_accept
         };
         if c.score < threshold {
-            break; // sorted descending: nothing below qualifies either (§10)
+            continue; // a tiny block's theta_small must not end the walk (§10, m2.1)
         }
 
         if c.old.parent_key == c.neu.parent_key {
@@ -267,7 +282,7 @@ pub fn phase5_scored(state: &mut PhaseState<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phases::testutil::{mb, para};
+    use crate::phases::testutil::{mb, mb_under, para};
     use crate::phases::{phase1_exact, phase2_normalized, phase3_anchor, phase4_context};
     use crate::types::Config;
 
@@ -346,7 +361,13 @@ mod tests {
             &["^a"],
         )];
         let s = PhaseState::new(&old, &neu, &cfg);
-        let score = score_pair(&old[0], &neu[0], &s, 1, 1);
+        let score = score_pair(
+            &old[0],
+            &neu[0],
+            &s,
+            &sibling_counts(&old),
+            &sibling_counts(&neu),
+        );
         // neighbor_ctx is 0 (no siblings on either side), the rest are 1.
         assert_eq!(score, 0.55 + 0.15 * 0.0 + 0.1 + 0.1 + 0.1);
         assert_eq!(round3(0.6785), 0.679);
@@ -400,6 +421,90 @@ mod tests {
         let mut s = PhaseState::new(&old, &neu2, &cfg);
         phase5_scored(&mut s);
         assert_eq!(s.matched_len(), 2);
+    }
+
+    #[test]
+    fn small_block_does_not_stop_the_walk() {
+        // Phase 5 alone (no lock phases): the tiny pair's identical text
+        // scores 0.55 + 0.1 (parent) + 0.1 (position) = 0.75, under
+        // theta_small (0.80) yet sorted above the regular pair at 0.695
+        // (dice 0.9), which clears theta_accept (0.62). m2.0 ended the walk
+        // at the tiny candidate; m2.1 skips it and carries the regular one.
+        let cfg = Config::default();
+        let tiny = "one two three four five six seven";
+        let old = [
+            para(tiny, 0, Some("b_tiny")),
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                1,
+                Some("b_long"),
+            ),
+        ];
+        let neu = [
+            para(tiny, 0, None),
+            para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda nu",
+                1,
+                None,
+            ),
+        ];
+        assert!(token_count(tiny) < cfg.small_block_tokens);
+        let mut s = PhaseState::new(&old, &neu, &cfg);
+        phase5_scored(&mut s);
+        assert_eq!(s.matched_id("/0"), None, "tiny pair is under theta_small");
+        assert_eq!(s.matched_id("/1"), Some("b_long"));
+        let d = &s.dispositions[0];
+        assert_eq!(d.kind, DispositionKind::Edited);
+        assert!(d.confidence.unwrap() < cfg.theta_small);
+        assert!(d.confidence.unwrap() >= cfg.theta_accept);
+    }
+
+    #[test]
+    fn position_prior_nested() {
+        // rel(b) is over the sibling count, not the flattened list size: a
+        // lone root list has rel 0 and its third of three items has rel 1.
+        let cfg = Config::default();
+        let item = "same item text in every slot";
+        let tree = |ids: bool| -> Vec<MatchBlock> {
+            let mut v = vec![mb("- a\n- b\n- c", 0, ids.then_some("b_list"), "list", &[])];
+            for i in 0..3 {
+                let owned = format!("b_{i}");
+                v.push(mb_under(
+                    item,
+                    i,
+                    ids.then_some(owned.as_str()),
+                    "list_item",
+                    &[],
+                    Some("/0"),
+                ));
+            }
+            v
+        };
+        let old = tree(true);
+        let neu = tree(false);
+        let counts = sibling_counts(&old);
+        assert_eq!(counts[&None], 1);
+        assert_eq!(counts[&Some("/0")], 3);
+        assert_eq!(relative_position(&old[0], &counts), 0.0);
+        assert_eq!(relative_position(&old[1], &counts), 0.0);
+        assert_eq!(relative_position(&old[2], &counts), 0.5);
+        assert_eq!(relative_position(&old[3], &counts), 1.0);
+
+        // Identical texts, unmatched parents, unmatched neighbours: the score
+        // differs between the two pairs only in position_prior (1 vs 0). The
+        // m2.0 rule (index over |list| − 1 = 3) gave 1 − |0 − 2/3| = 1/3.
+        let s = PhaseState::new(&old, &neu, &cfg);
+        let new_counts = sibling_counts(&neu);
+        let aligned = score_pair(&old[3], &neu[3], &s, &counts, &new_counts);
+        let shifted = score_pair(&old[1], &neu[3], &s, &counts, &new_counts);
+        assert_eq!(
+            aligned,
+            0.55 + 0.15 * 0.0 + 0.1 * 0.0 + 0.1 * 1.0 + 0.1 * 0.0
+        );
+        assert_eq!(
+            shifted,
+            0.55 + 0.15 * 0.0 + 0.1 * 0.0 + 0.1 * 0.0 + 0.1 * 0.0
+        );
     }
 
     #[test]
