@@ -31,10 +31,12 @@ pub mod text;
 pub use block::{AttrValue, Attrs, Block, BlockKind, BlockTree, Span, UnknownKind};
 pub use markdown::{MarkdownAdapter, parse as parse_markdown};
 pub use render::{full_coverage, render};
-pub use text::{normalize_text, normalize_visible_text};
+pub use text::{
+    block_text, join_texts, normalize_text, normalize_visible_text, uses_children_text,
+};
 
 /// The `spec/format/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "0.1";
+pub const SPEC_VERSION: &str = "0.2";
 
 /// A format: a parser from source text to a block tree, and the splice
 /// renderer back. Every format shares [`render`]; only parsing is

@@ -3,10 +3,11 @@
 
 #![allow(dead_code)]
 
-use omgbase_format::{Block, BlockTree, full_coverage, normalize_visible_text, render};
+use omgbase_format::{Block, BlockKind, BlockTree, block_text, full_coverage, render};
 
 /// Check invariants 1–7 of §1 (plus the §1/§2 shape rules that follow from
-/// them: nested trivia is empty, `text` is the normalization of `raw`),
+/// them: nested trivia is empty, `text` is the §4.1 text of the block given
+/// its children and blockquote depth),
 /// returning the first violation as a message.
 pub fn check_invariants(tree: &BlockTree) -> Result<(), String> {
     let source = tree.source.as_str();
@@ -27,7 +28,13 @@ pub fn check_invariants(tree: &BlockTree) -> Result<(), String> {
         return Err("source begins with a BOM but leading_trivia does not".to_owned());
     }
 
-    fn walk(source: &str, parent: Option<&Block>, block: &Block, path: &str) -> Result<(), String> {
+    fn walk(
+        source: &str,
+        parent: Option<&Block>,
+        block: &Block,
+        path: &str,
+        quote_depth: usize,
+    ) -> Result<(), String> {
         let at = |msg: &str| format!("{path} ({}): {msg}", block.kind);
         // 5. Offsets are bytes into the source, on char boundaries.
         let Some(slice) = source.get(block.span.start..block.span.end) else {
@@ -55,22 +62,29 @@ pub fn check_invariants(tree: &BlockTree) -> Result<(), String> {
                 return Err(at("nested block carries trivia"));
             }
         }
-        if block.text != normalize_visible_text(&block.raw, block.kind) {
-            return Err(at("text is not the §4.1 normalization of raw"));
+        if block.text != block_text(block.kind, &block.raw, &block.children, quote_depth) {
+            return Err(at("text is not the §4.1 text of the block"));
         }
+        let child_depth = quote_depth + usize::from(block.kind == BlockKind::Blockquote);
         let mut prev_end = block.span.start;
         for (i, child) in block.children.iter().enumerate() {
             if child.span.start < prev_end {
                 return Err(at(&format!("child {i} overlaps or precedes its sibling")));
             }
             prev_end = child.span.end;
-            walk(source, Some(block), child, &format!("{path}/{i}"))?;
+            walk(
+                source,
+                Some(block),
+                child,
+                &format!("{path}/{i}"),
+                child_depth,
+            )?;
         }
         Ok(())
     }
 
     for (i, block) in tree.children.iter().enumerate() {
-        walk(source, None, block, &format!("blocks/{i}"))?;
+        walk(source, None, block, &format!("blocks/{i}"), 0)?;
     }
     Ok(())
 }

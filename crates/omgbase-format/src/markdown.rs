@@ -2,7 +2,7 @@
 //! (wooorm's micromark port) with the GFM constructs plus YAML frontmatter —
 //! the same construct set as the reference's micromark configuration.
 //!
-//! Three host divergences are normalized here (README §6):
+//! Four host divergences are normalized here (README §6):
 //!
 //! - **Block starts.** micromark starts a block at its first non-blank byte:
 //!   leading indentation (up to three spaces at the top level, any extra
@@ -21,12 +21,21 @@
 //! - **BOM.** `markdown-rs` tokenizes a leading U+FEFF and reports every
 //!   offset from the true start of the file, so a BOM lands in
 //!   `leading_trivia` (§1 inv. 6) with no adjustment.
+//! - **Ordered lists interrupting a paragraph.** CommonMark lets an ordered
+//!   list interrupt a paragraph only when it starts with `1`; `markdown-rs`
+//!   honours that except for a one-line paragraph that follows a list
+//!   (`- a\n\npara\n3. x`), where it opens a list at `3.`. Such a tree — a
+//!   `paragraph` directly followed, with no blank line, by an ordered `list`
+//!   whose `start` is not 1 — cannot occur in a correct parse, so
+//!   [`parse`] detects it, masks the marker's delimiter byte in a copy of
+//!   the source and parses again ([`invalid_interrupt`]). Spans and `raw`
+//!   always come from the original bytes.
 
 use markdown::mdast::Node;
 use markdown::{Constructs, ParseOptions, to_mdast};
 
 use crate::block::{AttrValue, Attrs, Block, BlockKind, BlockTree, Span};
-use crate::text::normalize_visible_text;
+use crate::text::block_text;
 use crate::{FormatAdapter, render};
 
 /// The Markdown adapter: `format = "markdown"`.
@@ -60,16 +69,71 @@ fn parse_options() -> ParseOptions {
 /// Parse Markdown source into a block tree. Never fails (§1 inv. 8).
 #[must_use]
 pub fn parse(source: &str) -> BlockTree {
-    let children = match to_mdast(source, &parse_options()) {
-        Ok(root) => root
-            .children()
-            .map(|nodes| nodes.iter().map(|n| build(n, source, None)).collect())
-            .unwrap_or_default(),
-        // `to_mdast` only fails on MDX constructs, which are off; keep the
-        // promise anyway with a single opaque block over the content.
-        Err(_) => opaque_fallback(source),
-    };
-    attach_trivia(source, children)
+    // `masked` differs from `source` only at list-marker delimiters that
+    // `markdown-rs` wrongly let open a list (module docs); every other lookup
+    // — spans, raw slices, columns, fences — reads the original bytes.
+    let mut masked: Option<Vec<u8>> = None;
+    loop {
+        let parsed = masked
+            .as_deref()
+            .map(|b| std::str::from_utf8(b).expect("masking replaces ASCII with ASCII"))
+            .unwrap_or(source);
+        let children = match to_mdast(parsed, &parse_options()) {
+            Ok(root) => root
+                .children()
+                .map(|nodes| nodes.iter().map(|n| build(n, source, None, 0)).collect())
+                .unwrap_or_default(),
+            // `to_mdast` only fails on MDX constructs, which are off; keep the
+            // promise anyway with a single opaque block over the content.
+            Err(_) => opaque_fallback(source),
+        };
+        let Some(delimiter) = invalid_interrupt(&children, source) else {
+            return attach_trivia(source, children);
+        };
+        masked.get_or_insert_with(|| source.as_bytes().to_vec())[delimiter] = MASK;
+    }
+}
+
+/// What a wrongly recognized list marker's `.`/`)` becomes so the line reads
+/// as the paragraph continuation CommonMark says it is. Any ASCII letter
+/// works: `3x` starts no block-level construct.
+const MASK: u8 = b'x';
+
+/// The byte offset of the delimiter of the first ordered list that
+/// `markdown-rs` let interrupt a paragraph although its start is not 1
+/// (module docs), searching the whole tree; `None` when the tree is sound.
+fn invalid_interrupt(blocks: &[Block], source: &str) -> Option<usize> {
+    for pair in blocks.windows(2) {
+        let (paragraph, list) = (&pair[0], &pair[1]);
+        if paragraph.kind == BlockKind::Paragraph
+            && list.kind == BlockKind::List
+            && list
+                .attrs
+                .get("start")
+                .is_some_and(|s| *s != AttrValue::Int(1))
+            && is_single_line_break(&source[paragraph.span.end..list.span.start])
+        {
+            let b = source.as_bytes();
+            let mut i = list.span.start;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            return Some(i);
+        }
+    }
+    blocks
+        .iter()
+        .find_map(|b| invalid_interrupt(&b.children, source))
+}
+
+/// Exactly one line ending and otherwise only spaces, tabs and blockquote
+/// markers: the two blocks are on consecutive lines with no blank between.
+fn is_single_line_break(gap: &str) -> bool {
+    let endings = gap.split(['\r', '\n']).count() - 1 - gap.matches("\r\n").count();
+    endings == 1
+        && gap
+            .bytes()
+            .all(|b| matches!(b, b' ' | b'\t' | b'>' | b'\r' | b'\n'))
 }
 
 fn opaque_fallback(source: &str) -> Vec<Block> {
@@ -83,6 +147,7 @@ fn opaque_fallback(source: &str) -> Vec<Block> {
         source,
         Attrs::new(),
         Vec::new(),
+        0,
     )]
 }
 
@@ -288,7 +353,9 @@ fn kind_of(node: &Node) -> (BlockKind, Attrs, TrimMode) {
     (kind, attrs, mode)
 }
 
-fn build(node: &Node, source: &str, parent: Option<&Node>) -> Block {
+/// Build one block. `quote_depth` is the number of `blockquote` ancestors,
+/// which §4.1 step 1 needs to strip `>` markers from a leaf's `text`.
+fn build(node: &Node, source: &str, parent: Option<&Node>, quote_depth: usize) -> Block {
     let position = node
         .position()
         .expect("markdown-rs sets a position on every block-level node");
@@ -319,9 +386,15 @@ fn build(node: &Node, source: &str, parent: Option<&Node>) -> Block {
 
     // Descend only into the container kinds (§1: parser nesting only); an
     // `opaque` node never has block children, whatever mdast holds.
+    let child_depth = quote_depth + usize::from(kind == BlockKind::Blockquote);
     let mut children: Vec<Block> = if kind.is_container() {
         node.children()
-            .map(|nodes| nodes.iter().map(|n| build(n, source, Some(node))).collect())
+            .map(|nodes| {
+                nodes
+                    .iter()
+                    .map(|n| build(n, source, Some(node), child_depth))
+                    .collect()
+            })
             .unwrap_or_default()
     } else {
         Vec::new()
@@ -329,7 +402,8 @@ fn build(node: &Node, source: &str, parent: Option<&Node>) -> Block {
     let floor = children.last().map_or(start, |last| last.span.end);
     let end = trim_end(source, start, position.end.offset, mode, floor);
 
-    // Single-paragraph fold (§3): the item carries the text itself.
+    // Single-paragraph fold (§3): the item carries the text itself — and,
+    // childless, computes it from its own raw under the leaf rule (§4.1).
     if matches!(kind, BlockKind::ListItem | BlockKind::Task)
         && children.len() == 1
         && children[0].kind == BlockKind::Paragraph
@@ -337,22 +411,32 @@ fn build(node: &Node, source: &str, parent: Option<&Node>) -> Block {
         children.clear();
     }
 
-    make_block(kind, Span::new(start, end), source, attrs, children)
+    make_block(
+        kind,
+        Span::new(start, end),
+        source,
+        attrs,
+        children,
+        quote_depth,
+    )
 }
 
+/// Assemble a block; `text` follows §4.1 from the children (already carrying
+/// theirs) or from the raw with `quote_depth` blockquote ancestors.
 fn make_block(
     kind: BlockKind,
     span: Span,
     source: &str,
     attrs: Attrs,
     children: Vec<Block>,
+    quote_depth: usize,
 ) -> Block {
     let raw = &source[span.start..span.end];
     Block {
         kind,
         span,
         raw: raw.to_owned(),
-        text: normalize_visible_text(raw, kind),
+        text: block_text(kind, raw, &children, quote_depth),
         attrs,
         children,
         trivia: String::new(),
@@ -414,7 +498,7 @@ mod tests {
         );
         let b = &tree.children;
         assert_eq!(b[0].raw, "---\na: 1\n---");
-        assert_eq!(b[0].text, "--- a: 1 ---");
+        assert_eq!(b[0].text, "a: 1");
         assert_eq!(attr(&b[1], "level"), Some(&AttrValue::Int(1)));
         assert_eq!(b[1].text, "H1");
 
@@ -449,12 +533,14 @@ mod tests {
         assert_eq!(b[5].children.len(), 1);
         assert_eq!(b[5].children[0].kind, BlockKind::Paragraph);
         assert_eq!(b[5].children[0].raw, "q");
+        assert_eq!(b[5].text, "q");
 
         assert_eq!(attr(&b[6], "lang"), Some(&AttrValue::Str("js".to_owned())));
         assert_eq!(
             attr(&b[6], "info"),
             Some(&AttrValue::Str("meta here".to_owned()))
         );
+        assert_eq!(b[6].text, "code", "fence lines are not visible text");
         assert!(b[7].attrs.is_empty(), "indented code has no lang/info");
         assert_eq!(b[7].raw, "    indented");
         assert_eq!(b[7].text, "indented");
@@ -462,6 +548,9 @@ mod tests {
         assert_eq!(b[8].children.len(), 2, "header row + one body row");
         assert!(b[8].children.iter().all(|r| r.kind == BlockKind::TableRow));
         assert!(b[8].children.iter().all(|r| r.children.is_empty()));
+        assert_eq!(b[8].children[0].text, "a");
+        assert_eq!(b[8].text, "a 1");
+        assert_eq!(b[9].text, "");
         assert!(b[11].children.is_empty());
         assert_eq!(b[11].raw, "[ref]: https://example.com");
         assert_eq!(render(&tree), src);
@@ -538,12 +627,73 @@ mod tests {
     }
 
     #[test]
-    fn setext_heading_keeps_its_underline() {
+    fn setext_heading_raw_keeps_its_underline_text_drops_it() {
         let tree = parse("Title One\n=========\n\nBody.\n");
         assert_eq!(tree.children[0].kind, BlockKind::Heading);
         assert_eq!(attr(&tree.children[0], "level"), Some(&AttrValue::Int(1)));
         assert_eq!(tree.children[0].raw, "Title One\n=========");
-        assert_eq!(tree.children[0].text, "Title One =========");
+        assert_eq!(tree.children[0].text, "Title One");
+    }
+
+    #[test]
+    fn text_is_visible_text_through_the_tree() {
+        // Blockquote depth: continuation `> ` prefixes go from nested leaves,
+        // and a code line that itself starts with `>` survives.
+        let tree = parse(
+            "> level one\n> still one\n>\n> > two\n> > more two\n>\n> ```\n> > not a quote\n> ```\n",
+        );
+        let quote = &tree.children[0];
+        assert_eq!(quote.children[0].raw, "level one\n> still one");
+        assert_eq!(quote.children[0].text, "level one still one");
+        let inner = &quote.children[1];
+        assert_eq!(inner.kind, BlockKind::Blockquote);
+        assert_eq!(inner.children[0].raw, "two\n> > more two");
+        assert_eq!(inner.children[0].text, "two more two");
+        assert_eq!(inner.text, "two more two");
+        let code = &quote.children[2];
+        assert_eq!(code.kind, BlockKind::CodeFence);
+        assert_eq!(code.raw, "```\n> > not a quote\n> ```");
+        assert_eq!(code.text, "> not a quote");
+        assert_eq!(quote.text, "level one still one two more two > not a quote");
+
+        // An item with children loses its bullet; nested lists inline.
+        let tree = parse("- a\n\n  b\n\n  - c\n- d\n");
+        let list = &tree.children[0];
+        let a = &list.children[0];
+        assert_eq!(a.children.len(), 3);
+        assert_eq!(a.text, "a b c");
+        assert_eq!(list.text, "a b c d");
+
+        // An item whose first child is a code fence; a task with children
+        // loses its checkbox along with its bullet (neither is a child's).
+        let tree = parse("- ```\n  code\n  ```\n- [ ] task\n\n  ```js\n  x\n  ```\n");
+        let items = &tree.children[0].children;
+        assert_eq!(items[0].children[0].kind, BlockKind::CodeFence);
+        assert_eq!(items[0].children[0].raw, "```\n  code\n  ```");
+        assert_eq!(items[0].text, "code");
+        assert_eq!(items[1].kind, BlockKind::Task);
+        assert_eq!(items[1].children[0].raw, "task");
+        assert_eq!(items[1].text, "task x");
+        assert_eq!(tree.children[0].text, "code task x");
+
+        // A quoted list: item raws carry `>` on continuation lines.
+        let tree = parse("> - a\n>   more a\n> - b\n");
+        let list = &tree.children[0].children[0];
+        assert_eq!(list.children[0].raw, "- a\n>   more a");
+        assert_eq!(list.children[0].text, "a more a");
+        assert_eq!(tree.children[0].text, "a more a b");
+
+        // Table: header cells then body cells; escaped pipe stays.
+        let tree = parse("| a | b |\n| - | - |\n| 1 \\| x | 2 |\n");
+        let table = &tree.children[0];
+        assert_eq!(table.children[1].text, "1 \\| x 2");
+        assert_eq!(table.text, "a b 1 \\| x 2");
+
+        // Frontmatter, thematic break, indented and unclosed fenced code.
+        let tree = parse("---\ntitle: T\n---\n\n***\n\n    indented\n\n```\nopen\n");
+        let texts: Vec<&str> = tree.children.iter().map(|b| b.text.as_str()).collect();
+        assert_eq!(texts, ["title: T", "", "indented", "open"]);
+        assert_eq!(tree.children[3].raw, "```\nopen");
     }
 
     #[test]
@@ -682,6 +832,52 @@ mod tests {
         assert_eq!(item_content_column("-", 0), 2);
         assert_eq!(quote_content_column("> x", 2), 2);
         assert_eq!(quote_content_column(">x", 1), 1);
+    }
+
+    #[test]
+    fn a_non_1_ordered_list_never_interrupts_a_paragraph() {
+        // edge::list-lazy-marker-lookalike: markdown-rs opens a list at `3.`
+        // after a one-line paragraph that follows a list; CommonMark does not.
+        let src = "- a\n  2. not a marker\n\npara\n3. also not a marker\n";
+        let tree = parse(src);
+        assert_eq!(
+            kinds(&tree),
+            [
+                (BlockKind::List, "- a\n  2. not a marker"),
+                (BlockKind::Paragraph, "para\n3. also not a marker"),
+            ]
+        );
+        assert_eq!(tree.children[1].text, "para 3. also not a marker");
+        assert_eq!(render(&tree), src);
+        // Several such lines, and a fence that then does interrupt.
+        let tree = parse("- a\n\npara\n3. x\n4. y\n   ```\n   c\n   ```\n");
+        assert_eq!(
+            kinds(&tree),
+            [
+                (BlockKind::List, "- a"),
+                (BlockKind::Paragraph, "para\n3. x\n4. y"),
+                (BlockKind::CodeFence, "```\n   c\n   ```"),
+            ]
+        );
+        // Inside a blockquote; `)` delimiter; start 0.
+        let tree = parse("> - a\n>\n> para\n> 3) x\n");
+        let quote = &tree.children[0];
+        assert_eq!(quote.children.len(), 2);
+        assert_eq!(quote.children[1].raw, "para\n> 3) x");
+        assert_eq!(quote.children[1].text, "para 3) x");
+        let tree = parse("- a\n\npara\n0. x\n");
+        assert_eq!(tree.children[1].raw, "para\n0. x");
+        // A list starting at 1, or after a blank line, does interrupt / start.
+        let tree = parse("- a\n\npara\n1. x\n");
+        assert_eq!(tree.children.len(), 3);
+        let tree = parse("- a\n\npara\n\n3. x\n");
+        assert_eq!(tree.children.len(), 3);
+        assert_eq!(attr(&tree.children[2], "start"), Some(&AttrValue::Int(3)));
+        assert!(is_single_line_break("\n"));
+        assert!(is_single_line_break("\r\n> "));
+        assert!(!is_single_line_break("\n\n"));
+        assert!(!is_single_line_break("\r\n\r\n"));
+        assert!(!is_single_line_break(""));
     }
 
     #[test]

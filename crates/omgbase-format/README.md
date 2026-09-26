@@ -31,9 +31,9 @@ version this crate implements, and the crate version tracks it as
 ## Status
 
 Conformance-first, and conformant for Markdown: `tests/spec.rs` runs every
-fixture in `spec/format/cases` (82 cases in 3 files at block-model version 0.1)
-and all of them pass, so `cargo test -p omgbase-format` requires every case to
-pass. `tests/roundtrip.rs` additionally parses every file of the reference's
+fixture in `spec/format/cases` (97 cases in 3 files at block-model version 0.2,
+crate 0.2.0) and all of them pass, so `cargo test -p omgbase-format` requires
+every case to pass. `tests/roundtrip.rs` additionally parses every file of the reference's
 round-trip corpus (`packages/core/corpus/roundtrip`) and asserts the §1
 invariants directly. YAML and JSON adapters exist in the reference and are not
 ported yet; they will arrive with their `format` values in the spec. Not yet
@@ -70,11 +70,20 @@ Mirrors the spec so the two can be read side by side:
 - `block` — `BlockTree`, `Block`, `Span`, `BlockKind`, `Attrs`/`AttrValue`
   (README §1, §3): byte spans, `raw` never ending in a line ending, trivia on
   top-level blocks only, attributes as a sorted map of bool / i64 / string.
-- `text` — `normalize_visible_text` (§4.1): kind-aware marker stripping (ATX
-  hashes; list markers and task checkboxes, anchored at the start of the whole
-  raw), line split on `\r\n` | `\r` | `\n`, the **JavaScript trim set**
-  (Unicode `White_Space` plus U+FEFF — Rust's `str::trim` alone is not it),
-  `[ \t]+` collapse, empty-line drop, NFC.
+- `text` — visible text (§4.1, block model 0.2): `text` is what a reader
+  sees. Leaf blocks (`normalize_visible_text(raw, kind, quote_depth)`) strip
+  up to `quote_depth` blockquote markers from every line after the first,
+  then their kind's syntax — ATX hashes or the setext underline, frontmatter
+  and code fences (indented code untouched), list markers and task
+  checkboxes, table pipes (escaped `\|` stays), a thematic break entirely —
+  then `normalize_text`: line split on `\r\n` | `\r` | `\n`, the
+  **JavaScript trim set** (Unicode `White_Space` plus U+FEFF — Rust's
+  `str::trim` alone is not it), `[ \t]+` collapse, empty-line drop, NFC.
+  Containers (`list`, `blockquote`, `table`, and an item with children) are
+  their children's texts joined by one space, empties skipped (`join_texts`).
+  `block_text(kind, raw, children, quote_depth)` picks the rule for a block
+  whose children already carry their text — the same tree context any
+  consumer recomputing `text` from stored blocks needs.
 - `hash` — `raw_hash` / `norm_hash` (§4.2): SHA-256 over UTF-8 bytes, plus a
   lowercase hex helper.
 - `render` — the splice renderer (`leading_trivia + Σ(raw + trivia)`) and the
@@ -116,6 +125,15 @@ there rather than special-casing fixtures:
 - **BOM.** `markdown-rs` tokenizes a leading U+FEFF and reports offsets from
   the true start of the file, so a BOM lands in `leading_trivia` with no
   adjustment (§1 inv. 6).
+- **Ordered lists interrupting a paragraph.** CommonMark lets an ordered list
+  interrupt a paragraph only when it starts with `1`. `markdown-rs` honours
+  that except for a one-line paragraph that directly follows a list
+  (`- a\n\npara\n3. x`), where it opens a list at `3.`; micromark keeps the
+  line as paragraph continuation (`edge::list-lazy-marker-lookalike`). A
+  `paragraph` followed with no blank line by an ordered `list` whose `start`
+  is not 1 cannot occur in a correct parse, so the port detects that shape,
+  masks the marker's `.`/`)` in a copy of the source and parses again; spans
+  and `raw` always come from the original bytes.
 
 Everything else the spec lists in §6 (UTF-16 vs bytes, the trim set, ASCII
 digits in list markers, CRLF) is handled where the spec says.
