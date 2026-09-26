@@ -59,18 +59,20 @@ describe("phase 5 — scored assignment", () => {
   it("applies θ_small to tiny blocks (harder to accept)", () => {
     const s = state([mb("cat dog", 0, { id: "b_1" })], [mb("cat fish", 0)]);
     runAll(s);
-    // 2-token blocks with 1 shared token: dice below θ_small (0.80) ⇒ not carried.
+    // 2-token blocks with 1 shared token: no shared shingle ⇒ score below θ_small ⇒ not carried.
     expect(s.matched.has("/0")).toBe(false);
   });
 
   it("m2.1: a sub-threshold tiny-block candidate is skipped, not a stopping point (spec §10)", () => {
     // The tiny block's candidate (text_sim 1 by case folding) scores 0.75 and
-    // sorts first, but its θ is θ_small (0.80). The regular paragraph behind it
-    // scores 0.55 × 0.875 + 0.10 + 0.10 = 0.68125 ≥ θ_accept and must still carry.
+    // sorts first, but its θ is θ_small — held at the pre-m2.2 value 0.80 here so
+    // the skip is exercised. The regular paragraph behind it scores
+    // 0.55 × 0.875 + 0.10 + 0.10 = 0.68125 ≥ θ_accept and must still carry.
     const s = state(
       [mb("cat dog bird", 0, { id: "b_1" }), mb("one two three four five six seven eight nine ten", 1, { id: "b_2" })],
       [mb("Cat Dog Bird", 0), mb("one two three four five six seven eight nine eleven", 1)],
     );
+    s.config = { ...DEFAULT_CONFIG, thetaSmall: 0.8 };
     runAll(s);
     expect(s.matched.has("/0")).toBe(false);
     expect(s.matched.get("/1")).toBe("b_2");

@@ -237,7 +237,7 @@
     },
     {
       "name": "same-doc-never-matches",
-      "notes": "A's deleted 'cat dog bird' and inserted 'Cat Dog Bird' have text_sim 1 (case folding) but are in the same document: the cross-document pass never pairs them; no moves.",
+      "notes": "A's 'cat dog bird' → 'Cat Dog Bird' (text_sim 1 by case folding) carries within A by phase 5 since m2.2 (score 0.75 ≥ theta_small 0.62; under m2.0/m2.1 it was deleted + inserted). Either way nothing from A's leftovers pairs with A's own inserted blocks: the cross-document pass never matches within one document; no moves.",
       "docs": [
         {
           "id": "A",
@@ -300,15 +300,15 @@
         "docs": {
           "A": {
             "assignment": {
-              "/0": null,
+              "/0": "a_0",
               "/1": "a_1"
             },
             "dispositions": [
               {
                 "block": "a_0",
-                "kind": "deleted",
-                "confidence": null,
-                "reason": "tombstone",
+                "kind": "edited",
+                "confidence": 0.75,
+                "reason": "scored",
                 "detail": {}
               },
               {
@@ -317,18 +317,9 @@
                 "confidence": 0.68125,
                 "reason": "scored",
                 "detail": {}
-              },
-              {
-                "block": "new:/0",
-                "kind": "inserted",
-                "confidence": null,
-                "reason": null,
-                "detail": {}
               }
             ],
-            "deleted": [
-              "a_0"
-            ],
+            "deleted": [],
             "consumed_pool": []
           },
           "B": {

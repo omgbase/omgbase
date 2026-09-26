@@ -86,10 +86,10 @@ pub use types::{
 };
 
 /// The `spec/reconcile/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "2.1";
+pub const SPEC_VERSION: &str = "2.2";
 
 /// The matcher version stamped on every disposition: `"m" + SPEC_VERSION`.
-pub const MATCHER_V: &str = "m2.1";
+pub const MATCHER_V: &str = "m2.2";
 
 #[cfg(test)]
 mod tests {

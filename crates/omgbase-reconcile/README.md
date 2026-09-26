@@ -40,12 +40,12 @@ disposition carries) and the crate version tracks it as
 ## Status
 
 Conformance-first: `tests/spec.rs` runs every fixture in `spec/reconcile/cases`
-(95 cases in 10 files at matcher version 2.1, crate 2.1.0) and all of them
+(95 cases in 10 files at matcher version 2.2, crate 2.2.0) and all of them
 pass, so `cargo test -p omgbase-reconcile` requires every case to pass.
 Matcher 2.1 is the four §10 fixes over 2.0: phase 5 keeps walking past a
 sub-threshold candidate, `position_prior` is over the sibling count, every
 split and merge resolves in one run, and split tombstones are listed in
-`deleted`. The
+`deleted`; matcher 2.2 lowers `theta_small` to 0.62. The
 reference's unit tests are ported alongside the modules they exercise.
 Published on crates.io; the fixtures do not ship in the crate (the runner
 skips with a note outside the monorepo).

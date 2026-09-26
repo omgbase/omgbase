@@ -142,7 +142,7 @@ Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted`
 | Name | Default | Meaning |
 |---|---|---|
 | `θ_accept` | 0.62 | Phase-5 acceptance |
-| `θ_small` | 0.80 | Acceptance for blocks with < 8 tokens |
+| `θ_small` | 0.62 | Acceptance for blocks with < 8 tokens (0.80 until m2.1; lowered in m2.2 after the structured eval suite showed precision 1.000 at both and multi-edit lists recovering their items) |
 | `context.sim_floor` | 0.35 | Phase-4 `text_sim` floor (`contextSimFloor`) |
 | `children.vouch_frac` | 0.50 | Phase-4b: fraction of an old container's children that must have carried into the one new container (`childrenVouchFrac`) |
 | `θ_xdoc` | 0.80 | Cross-document acceptance |
@@ -162,6 +162,7 @@ Remaining new blocks → `inserted` (minted). Remaining old blocks → `deleted`
 - The matcher MUST be deterministic for a given (old tree, new bytes, config). No RNG, no wall-clock influence.
 - `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`; it equals `"m" + spec/reconcile/VERSION`, and the Rust crate `omgbase-reconcile` is versioned `<major>.<minor>.<patch>` against the same number.
   - `m1.0` — phases 1–7 as first shipped.
+  - `m2.2` — `θ_small` 0.80 → 0.62 (2026-09-26, eval-harness driven).
   - `m2.0` — Phase 4b (children vouch for their parent, reason `context_children`) and the Phase 4/4b fixed point (2026-09-25, alongside the "visible text" rule for container `text`).
   - `m2.1` — the four `spec/reconcile` §10 fixes, rule refinements within phases 5–7 (2026-09-25): Phase 5 skips a sub-threshold candidate instead of ending the walk; `position_prior` over the block's sibling count; every split and merge resolved per run; non-dominant split tombstones listed in `deleted`.
 - Re-running a newer matcher NEVER rewrites committed dispositions (R6).

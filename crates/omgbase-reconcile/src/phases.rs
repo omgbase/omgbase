@@ -576,7 +576,7 @@ mod tests {
             d.reason == Some(Reason::ExactHash)
                 && d.confidence == Some(1.0)
                 && d.kind == DispositionKind::Same
-                && d.matcher_v == "m2.1"
+                && d.matcher_v == crate::MATCHER_V
         }));
     }
 

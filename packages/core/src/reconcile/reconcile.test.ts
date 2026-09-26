@@ -91,7 +91,7 @@ describe("reconcileDocument — end to end", () => {
     const version = readFileSync(fileURLToPath(new URL("../../../../spec/reconcile/VERSION", import.meta.url)), "utf8").trim();
     expect(DEFAULT_CONFIG.matcherV).toBe(`m${version}`);
     const res = reconcileDocument(flatten(oldTree([["b_1", "keep this line"]])), flatten(newTree(["keep this line", "a new line"])));
-    expect(res.dispositions.map((d) => d.matcherV)).toEqual(["m2.1", "m2.1"]);
+    expect(res.dispositions.map((d) => d.matcherV)).toEqual([`m${version}`, `m${version}`]);
   });
 
   it("is deterministic: identical inputs yield identical assignments", () => {

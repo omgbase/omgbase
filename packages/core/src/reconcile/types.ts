@@ -60,10 +60,11 @@ export const DEFAULT_CONFIG: ReconcileConfig = {
   // parent) and the phase-4 fixed point. m2.1: the four spec §10 fixes — phase 5
   // skips (not stops at) a sub-threshold candidate, position_prior over the
   // sibling count, every split and merge per run, split tombstones listed in
-  // `deleted`. Rule refinements bump the minor; phase changes bump the major.
-  matcherV: "m2.1",
+  // `deleted`. m2.2: thetaSmall 0.80 → 0.62 (eval harness, 2026-09-26). Rule
+  // refinements bump the minor; phase changes bump the major.
+  matcherV: "m2.2",
   thetaAccept: 0.62,
-  thetaSmall: 0.8,
+  thetaSmall: 0.62,
   thetaXdoc: 0.8,
   splitCoverage: 0.8,
   splitDominantShare: 0.7,

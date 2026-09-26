@@ -279,7 +279,7 @@ mod tests {
         assert_eq!(d.kind, DispositionKind::Moved);
         assert_eq!(d.reason, Some(Reason::Scored));
         assert_eq!(d.detail["fromDoc"], DetailValue::Str("A".to_owned()));
-        assert_eq!(d.matcher_v, "m2.1");
+        assert_eq!(d.matcher_v, crate::MATCHER_V);
     }
 
     #[test]

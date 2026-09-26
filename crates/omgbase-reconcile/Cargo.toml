@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-reconcile"
-version = "2.1.0"
+version = "2.2.0"
 description = "omgbase reconciliation: keeps block identity across edits — the matcher that decides which blocks carry an id and which are minted — Rust implementation"
 keywords = ["markdown", "diff", "matching", "reconciliation", "omgbase"]
 categories = ["text-processing", "algorithms"]

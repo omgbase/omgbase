@@ -31,7 +31,7 @@ contract that the rationale describes.
 Every disposition is stamped with a **matcher version** so a database can say
 which matcher made a decision, and a newer matcher never rewrites committed
 dispositions (R6 below). That version is the spec version: `VERSION` holds it
-as `major.minor` (`2.1`), the stamp is `"m" + VERSION` (`m2.1`), and the
+as `major.minor` (`2.2`), the stamp is `"m" + VERSION` (`m2.2`), and the
 `omgbase-reconcile` crate is versioned `<major>.<minor>.<patch>` with the
 patch digit free for bug fixes and packaging, exactly as `oqx` and
 `omgbase-format` track their specs. The reference lives inside
@@ -49,7 +49,8 @@ History: `m1.0` phases 1–7 as first shipped; `m2.0` phase 4b (children vouch
 for their parent) and the phase 4/4b fixed point (2026-09-25); `m2.1` the
 four fixes of §10 (phase 5 keeps walking past a sub-threshold candidate,
 `position_prior` over sibling count, every split and merge per run, split
-tombstones listed in `deleted`) (2026-09-25).
+tombstones listed in `deleted`) (2026-09-25); `m2.2` `theta_small` 0.80 → 0.62
+(2026-09-26).
 
 ## The rule for changing the matcher
 
@@ -453,9 +454,9 @@ entry.
 
 | Fixture name | Default | Meaning |
 | --- | --- | --- |
-| `matcher_v` | `"m2.1"` | stamped on every disposition (`"m" + VERSION`) |
+| `matcher_v` | `"m2.2"` | stamped on every disposition (`"m" + VERSION`) |
 | `theta_accept` | 0.62 | phase 5 acceptance |
-| `theta_small` | 0.80 | phase 5 acceptance when the new block has fewer than `small_block_tokens` tokens |
+| `theta_small` | 0.62 | phase 5 acceptance when the new block has fewer than `small_block_tokens` tokens (0.80 before m2.2) |
 | `small_block_tokens` | 8 | the tiny-block boundary |
 | `context_sim_floor` | 0.35 | phase 4a `text_sim` floor |
 | `children_vouch_frac` | 0.50 | phase 4b: fraction of an old container's children that must have carried into one new container |
@@ -697,3 +698,10 @@ the fix and the reference was brought to it).
   `deleted`) as one minor bump, to wire cross-document matching into the
   checkpoint, and to leave the short-item threshold question to the eval
   harness (extend it with list-item edit classes, measure, then decide).
+- 2026-09-26, matcher 2.2: `theta_small` lowered from 0.80 to 0.62, equal to
+  `theta_accept`. The eval harness (structured mode, n=300 per cell) showed
+  precision 1.000 under both values while the multi-edit-list classes, which
+  phase 5 judges against `theta_small` at a score near 0.76, gained recall:
+  `item-edit-last` 0.77 → 0.86–0.97 and `item-gains-nested-list` 0.74–0.82 →
+  0.84–0.96 at 3–6 words. Brendan chose it "for now"; the tiny-block gate
+  stays as a separate knob. The `context_sim_floor` (0.35) is unchanged.

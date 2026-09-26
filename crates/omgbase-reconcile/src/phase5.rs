@@ -427,10 +427,14 @@ mod tests {
     fn small_block_does_not_stop_the_walk() {
         // Phase 5 alone (no lock phases): the tiny pair's identical text
         // scores 0.55 + 0.1 (parent) + 0.1 (position) = 0.75, under
-        // theta_small (0.80) yet sorted above the regular pair at 0.695
-        // (dice 0.9), which clears theta_accept (0.62). m2.0 ended the walk
-        // at the tiny candidate; m2.1 skips it and carries the regular one.
-        let cfg = Config::default();
+        // theta_small held at its pre-m2.2 value 0.80 (so the skip is
+        // exercised) yet sorted above the regular pair at 0.695 (dice 0.9),
+        // which clears theta_accept (0.62). m2.0 ended the walk at the tiny
+        // candidate; m2.1 skips it and carries the regular one.
+        let cfg = Config {
+            theta_small: 0.8,
+            ..Config::default()
+        };
         let tiny = "one two three four five six seven";
         let old = [
             para(tiny, 0, Some("b_tiny")),

@@ -197,7 +197,10 @@
     },
     {
       "name": "small-block-does-not-stop-the-walk",
-      "notes": "Fixed in m2.1 (§10): the tiny block's candidate (text_sim 1 by case folding, score 0.75) sorts first but is below its theta_small (0.80). The walk skips it and continues, so the regular candidate behind it (score ≈ 0.68 ≥ 0.62) carries as edited; the tiny block is deleted and re-minted. Before m2.1 the walk stopped at the first sub-threshold candidate and nothing carried.",
+      "notes": "Fixed in m2.1 (§10): with theta_small held at its pre-m2.2 value 0.80, the tiny block's candidate (text_sim 1 by case folding, score 0.75) sorts first but is below its theta_small. The walk skips it and continues, so the regular candidate behind it (score ≈ 0.68 ≥ theta_accept 0.62) carries as edited; the tiny block is deleted and re-minted. Before m2.1 the walk stopped at the first sub-threshold candidate and nothing carried.",
+      "config": {
+        "theta_small": 0.8
+      },
       "old": {
         "source": "cat dog bird\n\none two three four five six seven eight nine ten\n"
       },
@@ -235,6 +238,40 @@
         "deleted": [
           "b_0"
         ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "tiny-block-carries-at-default-theta-small",
+      "notes": "m2.2: theta_small is 0.62 (was 0.80), so the same tiny block (score 0.75, under the old gate) now carries as edited alongside the regular paragraph. Compare small-block-does-not-stop-the-walk, which pins the m2.1 skip with theta_small overridden back to 0.80.",
+      "old": {
+        "source": "cat dog bird\n\none two three four five six seven eight nine ten\n"
+      },
+      "new": {
+        "source": "Cat Dog Bird\n\none two three four five six seven eight nine eleven\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.68125,
+            "reason": "scored",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
         "consumed_pool": []
       }
     },

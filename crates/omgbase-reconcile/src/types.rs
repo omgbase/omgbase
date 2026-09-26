@@ -245,7 +245,7 @@ impl Default for Config {
         Self {
             matcher_v: MATCHER_V.to_owned(),
             theta_accept: 0.62,
-            theta_small: 0.8,
+            theta_small: 0.62,
             small_block_tokens: 8,
             context_sim_floor: 0.35,
             children_vouch_frac: 0.5,
