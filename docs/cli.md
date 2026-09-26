@@ -175,11 +175,11 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 
 | Command | Expands to |
 |---|---|
-| `omg insert <to> [--at end\|start\|before X\|after X] (-m md \| -f file \| -)` | `insert` |
+| `omg insert <to> [--at end\|start\|before X\|after X] [--expect parent_children_hash] (-m md \| -f file \| -)` | `insert` (`--expect` is the destination-parent CAS: the parent's direct child ids joined by `,`, sha256 hex) |
 | `omg update <block> (-m md \| -f file \| -) [--expect hash]` | `update` (CAS: §5.7) |
 | `omg edit <block>` | read → `$EDITOR` on the raw markdown → `update` with the pre-read hash as CAS. The human structural-edit loop for when opening the whole file is the slower path. |
 | `omg node set <nodeId> <prop> <value>` / `omg node props <nodeId>` | Surgically set one editable property of a projected node (e.g. a link's target/text, a task's `checked`) via the adapter's registered editor — expands to a single `update` op. `node props` lists a node's editable properties (`editablePropsFor`). |
-| `omg move <blocks…\|-> --to <parent> [--at …]` / `omg move --section <heading> --to …` | `move` / `sections_move` |
+| `omg move <blocks…\|-> --to <parent> [--at …] [--expect parent_children_hash]` / `omg move --section <heading> --to …` | `move` (same destination CAS as `insert`) / `sections_move` |
 | `omg rm <blocks…\|->` | `remove` (resurrection pool catches regret) |
 | `omg done <blocks…\|-> [--undo]` | `tasks_complete` (`--undo` ⇒ `update attrs.checked=false`) |
 | `omg append <heading-loc> (-m md \| -f \| -)` | `sections_append` |

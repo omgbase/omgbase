@@ -9,13 +9,84 @@
 //! stderr (a provider hiccup must not take the host down; the next schedule
 //! retries). `flush` runs a final drain synchronously (shutdown).
 //!
-//! The thread builds its own store connection and its own provider
-//! instance: the main thread's provider serves `semantic()` queries and stays
-//! single-owner, and neither a `Store` nor a boxed provider is `Send`.
+//! The thread builds its own store connection (a `Store` is not `Send`) but
+//! shares the process's **one** embedding provider with the query path, as
+//! the reference shares one `embedding.worker` between `semantic()` and its
+//! `EmbedDrainer`: a [`SharedProvider`] is a cloneable handle over the
+//! provider, locked only around each `embed` batch — a `semantic()` query
+//! that lands mid-drain waits for one batch at most, never for the drain.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+use omgbase_search::EmbeddingProvider;
+
+/// One embedding provider process, shared by every thread that embeds: the
+/// surface (`semantic()`, `resolve`) and the drain thread each hold a clone.
+/// The identity (`model`/`dim`/`max_input_tokens`) is read once at
+/// construction so it is served without the lock; `embed` takes the lock
+/// for the duration of one batch and releases it — the granularity a
+/// waiting query pays for. The provider (and its child process) drops with
+/// the last clone.
+#[derive(Clone)]
+pub struct SharedProvider {
+    model: String,
+    dim: usize,
+    max_input_tokens: Option<u32>,
+    inner: Arc<Mutex<Box<dyn EmbeddingProvider + Send>>>,
+}
+
+impl SharedProvider {
+    /// Wrap a provider (built once) for sharing.
+    pub fn new(provider: Box<dyn EmbeddingProvider + Send>) -> Self {
+        Self {
+            model: provider.model().to_owned(),
+            dim: provider.dim(),
+            max_input_tokens: provider.max_input_tokens(),
+            inner: Arc::new(Mutex::new(provider)),
+        }
+    }
+
+    /// How many handles share the provider (tests, diagnostics).
+    #[must_use]
+    pub fn handles(&self) -> usize {
+        Arc::strong_count(&self.inner)
+    }
+}
+
+impl std::fmt::Debug for SharedProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SharedProvider")
+            .field("model", &self.model)
+            .field("dim", &self.dim)
+            .field("handles", &self.handles())
+            .finish_non_exhaustive()
+    }
+}
+
+impl EmbeddingProvider for SharedProvider {
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn dim(&self) -> usize {
+        self.dim
+    }
+
+    fn max_input_tokens(&self) -> Option<u32> {
+        self.max_input_tokens
+    }
+
+    /// One batch under the lock. A poisoned lock (a provider panicked
+    /// mid-batch on another thread) is taken anyway: the provider's own
+    /// state decides whether the next request works.
+    fn embed(&self, texts: &[String]) -> omgbase_search::Result<Vec<Vec<f32>>> {
+        let guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        guard.embed(texts)
+    }
+}
 
 /// The debounce the reference uses.
 pub const DEBOUNCE: Duration = Duration::from_millis(500);
@@ -71,9 +142,10 @@ pub struct Drainer {
 
 impl Drainer {
     /// Start the thread. `init` runs *on the thread* and builds the drain
-    /// closure (opening the store connection and the provider there); when
-    /// it fails the thread logs once and idles, acknowledging flushes, so a
-    /// broken embedder is never fatal.
+    /// closure (opening the store connection there; the provider handle it
+    /// captures is the host's shared one); when it fails the thread logs
+    /// once and idles, acknowledging flushes, so a broken store is never
+    /// fatal.
     pub fn spawn<I>(debounce: Duration, init: I) -> Self
     where
         I: FnOnce() -> Result<DrainFn, String> + Send + 'static,
@@ -239,9 +311,92 @@ fn run_until_clean(
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
 
     const FAST: Duration = Duration::from_millis(40);
+
+    /// A fake provider that counts how often it is "spawned" and how many
+    /// `embed` calls overlap (the shared handle must keep that at one).
+    #[derive(Default)]
+    struct Counting {
+        spawned: Arc<AtomicUsize>,
+        calls: Arc<AtomicUsize>,
+        in_flight: Arc<AtomicUsize>,
+        max_in_flight: Arc<AtomicUsize>,
+    }
+
+    impl Counting {
+        fn spawn(&self) -> Box<dyn EmbeddingProvider + Send> {
+            self.spawned.fetch_add(1, Ordering::SeqCst);
+            Box::new(Counting {
+                spawned: Arc::clone(&self.spawned),
+                calls: Arc::clone(&self.calls),
+                in_flight: Arc::clone(&self.in_flight),
+                max_in_flight: Arc::clone(&self.max_in_flight),
+            })
+        }
+    }
+
+    impl EmbeddingProvider for Counting {
+        fn model(&self) -> &str {
+            "counting-2"
+        }
+
+        fn dim(&self) -> usize {
+            2
+        }
+
+        fn max_input_tokens(&self) -> Option<u32> {
+            Some(16)
+        }
+
+        fn embed(&self, texts: &[String]) -> omgbase_search::Result<Vec<Vec<f32>>> {
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_in_flight.fetch_max(now, Ordering::SeqCst);
+            // Long enough for the other thread's call to arrive meanwhile.
+            std::thread::sleep(Duration::from_millis(2));
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        }
+    }
+
+    #[test]
+    fn two_handles_share_one_provider_and_serialize_its_calls() {
+        let counting = Counting::default();
+        let shared = SharedProvider::new(counting.spawn());
+        assert_eq!(
+            (shared.model(), shared.dim(), shared.max_input_tokens()),
+            ("counting-2", 2, Some(16)),
+            "the identity is the provider's, served without the lock"
+        );
+        // The surface's handle and the drain thread's handle.
+        let query_path = shared.clone();
+        let drain_path = shared.clone();
+        assert_eq!(shared.handles(), 3);
+        let drain = std::thread::spawn(move || {
+            for _ in 0..20 {
+                let batch = vec!["a".to_owned(), "b".to_owned()];
+                assert_eq!(drain_path.embed(&batch).unwrap().len(), 2);
+            }
+        });
+        for _ in 0..20 {
+            assert_eq!(query_path.embed_query("q").unwrap(), vec![1.0, 0.0]);
+        }
+        drain.join().unwrap();
+        assert_eq!(counting.spawned.load(Ordering::SeqCst), 1, "one provider");
+        assert_eq!(counting.calls.load(Ordering::SeqCst), 40);
+        assert_eq!(
+            counting.max_in_flight.load(Ordering::SeqCst),
+            1,
+            "calls from the two handles never overlap"
+        );
+        drop(query_path);
+        assert_eq!(
+            shared.handles(),
+            1,
+            "the drain thread's clone went with its thread, the query path's with the surface"
+        );
+    }
 
     struct Harness {
         tx: Sender<Msg>,

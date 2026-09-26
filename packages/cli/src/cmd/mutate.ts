@@ -78,19 +78,20 @@ async function runInsert(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: content.rest,
     allowPositionals: true,
-    options: { at: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
+    options: { at: { type: "string" }, expect: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
     return renderHelp(cli, {
       name: "insert",
       summary: "Insert markdown as new block(s) under a parent block or heading",
-      usage: "insert <to> (-m <markdown> | -f <file> | -) [--at end|start|before <id>|after <id>] [--actor <s>] [--dry-run]",
+      usage: "insert <to> (-m <markdown> | -f <file> | -) [--at end|start|before <id>|after <id>] [--expect <parent_children_hash>] [--actor <s>] [--dry-run]",
       options: [
         ["<to>", "parent block id, or a heading block id to append into its section"],
         ["-m <markdown>", "content inline"],
         ["-f <file>", "content from a file"],
         ["-", "content from stdin"],
         ["--at <pos>", "end (default) | start | before <id> | after <id>"],
+        ["--expect <hash>", "destination CAS: fail with stale_expectation unless the parent's direct child ids (joined by \",\", sha256 hex) still hash to this"],
         ["--actor <s>", "commit actor (default human:$USER)"],
       ],
     });
@@ -98,11 +99,13 @@ async function runInsert(cli: Cli, args: string[]): Promise<number> {
   const to = positionals[0];
   if (!to) throw new CliUsageError("insert requires a <to> parent (block id, or a heading id for section append)");
   const markdown = readContent(content);
-  if (cli.flags.server) return runOpsRemote(cli, "blocks_insert", { to, markdown, at: parseAt(values) });
+  // The destination-parent CAS (spec/mutate §1.2) rides as the op-level expect.
+  const expect = values.expect ? { expect: { parent_children_hash: values.expect } } : {};
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_insert", { to, markdown, at: parseAt(values), ...expect });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const parent = block(cli, ws, repo.repoId, to);
-  const op: Op = { op: "insert", to: { parent, at: parseAt(values) } as To, markdown };
+  const op: Op = { op: "insert", to: { parent, at: parseAt(values) } as To, markdown, ...expect };
   return runOps(cli, ws, repo, [op], actorOf(values));
 }
 
@@ -154,17 +157,18 @@ async function runMove(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { to: { type: "string" }, at: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
+    options: { to: { type: "string" }, at: { type: "string" }, expect: { type: "string" }, actor: { type: "string" }, help: { type: "boolean" } },
   });
   if (values.help) {
     return renderHelp(cli, {
       name: "move",
       summary: "Move block(s) under a new parent, identity preserved",
-      usage: "move <blocks…|-> --to <parent> [--at end|start|before <id>|after <id>] [--actor <s>] [--dry-run]",
+      usage: "move <blocks…|-> --to <parent> [--at end|start|before <id>|after <id>] [--expect <parent_children_hash>] [--actor <s>] [--dry-run]",
       options: [
         ["<blocks…>", "block ids; `-` reads them from stdin, one per line"],
         ["--to <parent>", "destination parent block"],
         ["--at <pos>", "end (default) | start | before <id> | after <id>"],
+        ["--expect <hash>", "destination CAS: fail with stale_expectation unless the destination's direct child ids (joined by \",\", sha256 hex) still hash to this"],
         ["--actor <s>", "commit actor (default human:$USER)"],
       ],
     });
@@ -172,12 +176,14 @@ async function runMove(cli: Cli, args: string[]): Promise<number> {
   if (!values.to) throw new CliUsageError("move requires --to <parent>");
   const refs = expandBlockArgs(positionals);
   if (refs.length === 0) throw new CliUsageError("move requires one or more blocks (or - for stdin)");
-  if (cli.flags.server) return runOpsRemote(cli, "blocks_move", { blocks: refs, to: values.to, at: parseAt(values) });
+  // The destination-parent CAS (spec/mutate §1.2), checked once for the run.
+  const expect = values.expect ? { expect: { parent_children_hash: values.expect } } : {};
+  if (cli.flags.server) return runOpsRemote(cli, "blocks_move", { blocks: refs, to: values.to, at: parseAt(values), ...expect });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
   const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
   const parent = block(cli, ws, repo.repoId, values.to);
-  const op: Op = { op: "move", blocks, to: { parent, at: parseAt(values) } as To };
+  const op: Op = { op: "move", blocks, to: { parent, at: parseAt(values) } as To, ...expect };
   return runOps(cli, ws, repo, [op], actorOf(values));
 }
 

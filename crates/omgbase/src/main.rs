@@ -17,12 +17,18 @@
 //! on stderr and semantic queries fail `semantic_unavailable`).
 //!
 //! Threads: the MCP loop runs on the main thread and owns the surface's
-//! store and provider; the watcher and the drainer each own a store
-//! connection of their own over the same WAL database (busy timeout on
-//! every connection) and, for the drainer, a second provider instance.
+//! store; the watcher and the drainer each own a store connection of their
+//! own over the same WAL database (busy timeout on every connection). The
+//! embedding provider is **one** process for the whole host, as the
+//! reference's one `embedding.worker` serves both `semantic()` and its
+//! `EmbedDrainer`: it is spawned once here and shared through a
+//! [`drain::SharedProvider`] — the surface holds one handle for the query
+//! path, the drain thread another, and the lock is held per `embed` batch,
+//! so a query that lands mid-drain waits for one batch, never the drain.
 //! Shutdown — stdin EOF, `SIGINT` or `SIGTERM` — stops the watcher
 //! (unwatch, close the adapter, join), releases the lease, flushes and
-//! closes the drainer, then drops the surface (killing its provider).
+//! closes the drainer (whose handle drops with its thread), then drops the
+//! surface, whose handle is the last: the provider child is killed there.
 //!
 //! Two environment variables are the conformance seams of `spec/surface`
 //! §7.1, for cross-engine interop runs only: `OMGBASE_SPEC_MINTER=sequential`
@@ -46,7 +52,7 @@ use omgbase_store::{IdMinter, RandomMinter, SequentialMinter, Store};
 use omgbase_surface::Surface;
 use omgbase_sync::Workspace;
 
-use crate::drain::{DrainFn, DrainReport, Drainer};
+use crate::drain::{DrainFn, DrainReport, Drainer, SharedProvider};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -263,12 +269,13 @@ fn embedding_settings(ws: &Workspace, repo_id: &str) -> Option<EmbeddingSettings
         .then_some(cfg)
 }
 
-/// The settings as a provider for the query path (`semantic()`, `resolve`).
-fn embedding_provider(cfg: &EmbeddingSettings) -> Option<Box<dyn EmbeddingProvider>> {
+/// The settings as the host's one provider, spawned here and shared by the
+/// query path (`semantic()`, `resolve`) and the drain thread.
+fn embedding_provider(cfg: &EmbeddingSettings) -> Option<SharedProvider> {
     match create_external_provider(cfg) {
         Ok(Some(p)) => {
             eprintln!("[mcp] semantic query enabled via {}", p.model());
-            Some(p)
+            Some(SharedProvider::new(p))
         }
         Ok(None) => None,
         Err(e) => {
@@ -278,28 +285,21 @@ fn embedding_provider(cfg: &EmbeddingSettings) -> Option<Box<dyn EmbeddingProvid
     }
 }
 
-/// The drainer over its own connection and its own provider instance,
-/// both built on the drain thread (`spec/search` §2.6).
+/// The drainer over its own connection (built on the drain thread) and a
+/// handle to the host's shared provider (`spec/search` §2.6): every batch
+/// the drain embeds takes the provider lock once and releases it.
 fn start_drainer(
     db: &Path,
     repo_id: &str,
     minters: &MinterSource,
-    cfg: &EmbeddingSettings,
+    provider: SharedProvider,
 ) -> Drainer {
-    let (db, repo_id, minters, cfg) = (
-        db.to_path_buf(),
-        repo_id.to_owned(),
-        minters.clone(),
-        cfg.clone(),
-    );
+    let (db, repo_id, minters) = (db.to_path_buf(), repo_id.to_owned(), minters.clone());
     Drainer::spawn(drain::DEBOUNCE, move || {
         let store = open_store(&db, &minters)?;
-        let provider = create_external_provider(&cfg)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "no embedding provider configured".to_owned())?;
         Ok(Box::new(move || {
             let stats = store
-                .drain(&repo_id, provider.as_ref())
+                .drain(&repo_id, &provider)
                 .map_err(|e| e.to_string())?;
             Ok(DrainReport {
                 embedded: stats.blocks.embedded + stats.docs.embedded,
@@ -444,11 +444,11 @@ fn run_mcp(args: &[String]) -> Result<(), String> {
     ws.close().map_err(|e| e.to_string())?;
 
     // The drainer: only when the provider is live (the reference gates it on
-    // `embedding` having loaded — a broken embedder disables auto-embed too).
-    let drainer = match (&embedding, provider.is_some()) {
-        (Some(cfg), true) => Some(start_drainer(&db, &repo.repo_id, &minters, cfg)),
-        _ => None,
-    };
+    // `embedding` having loaded — a broken embedder disables auto-embed too);
+    // it shares the provider the query path uses.
+    let drainer = provider
+        .as_ref()
+        .map(|p| start_drainer(&db, &repo.repo_id, &minters, p.clone()));
     let drain_handle = drainer.as_ref().map(Drainer::handle);
 
     // The watcher: off with --no-watch or when another live watcher holds
@@ -492,9 +492,13 @@ fn run_mcp(args: &[String]) -> Result<(), String> {
     let shared: Shared = Arc::new(Mutex::new(Some(Helpers { watcher, drainer })));
     spawn_signal_thread(Arc::clone(&shared));
 
-    // The surface owns its store: a connection of its own over the database.
+    // The surface owns its store — a connection of its own over the database
+    // — and the query path's handle to the shared provider (the last one
+    // standing at shutdown, so dropping the surface kills the child).
     let store = open_store(&db, &minters)?;
-    let mut surface = Surface::new(store, &repo.repo_id, provider);
+    let query_provider: Option<Box<dyn EmbeddingProvider>> =
+        provider.map(|p| Box::new(p) as Box<dyn EmbeddingProvider>);
+    let mut surface = Surface::new(store, &repo.repo_id, query_provider);
     if let Some(ts) = seams.clock {
         surface = surface.with_clock(move || ts.clone());
     }
@@ -507,8 +511,9 @@ fn run_mcp(args: &[String]) -> Result<(), String> {
         omgbase_dir: Some(omgbase_dir),
     };
     let served = mcp::serve(&mut surface, VERSION, &serve_opts).map_err(|e| e.to_string());
-    // stdin closed (or the loop failed): stop the helpers, then the surface
-    // drops with its provider.
+    // stdin closed (or the loop failed): stop the helpers (the drain thread's
+    // provider handle goes with it), then the surface drops with the last
+    // handle — the provider child dies here.
     if let Some(h) = take_helpers(&shared) {
         h.shutdown();
     }

@@ -53,8 +53,9 @@ fn bootstrap(w: &TempDir) -> String {
 }
 
 /// A stdio embedding provider (`spec/search` §5) in a few lines of node:
-/// the handshake, then one deterministic 4-vector per text. `None` when
-/// `node` is unavailable.
+/// the handshake, then one deterministic 4-vector per text. Every start
+/// appends its pid to [`EMBEDDER_SPAWNS`] (one line per child process).
+/// `None` when `node` is unavailable.
 fn fake_embedder(w: &TempDir) -> Option<String> {
     if !node_available() {
         return None;
@@ -64,6 +65,8 @@ fn fake_embedder(w: &TempDir) -> Option<String> {
     std::fs::write(
         &script,
         r#"import { createInterface } from "node:readline";
+import { appendFileSync } from "node:fs";
+appendFileSync(new URL("./fake-embedder.spawns", import.meta.url), `${process.pid}\n`);
 process.stdout.write(JSON.stringify({ model: "fake-4", dim: 4 }) + "\n");
 const rl = createInterface({ input: process.stdin });
 rl.on("line", (line) => {
@@ -81,6 +84,16 @@ rl.on("close", () => process.exit(0));
     )
     .unwrap();
     Some(format!("node {}", script.display()))
+}
+
+/// Where the fake embedder logs its starts, relative to the workspace.
+const EMBEDDER_SPAWNS: &str = ".omgbase/fake-embedder.spawns";
+
+/// How many fake embedder processes a run started.
+fn embedder_spawns(w: &TempDir) -> usize {
+    std::fs::read_to_string(w.path().join(EMBEDDER_SPAWNS))
+        .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+        .unwrap_or(0)
 }
 
 /// Twenty-six words: past `MIN_EMBED_TOKENS`, so the paragraph embeds.
@@ -508,5 +521,10 @@ fn a_write_schedules_a_drain_and_shutdown_flushes_it() {
     assert!(
         count(&db, "doc_embeddings") >= 1,
         "the document's vector too"
+    );
+    assert_eq!(
+        embedder_spawns(&w),
+        1,
+        "the query path and the drain share one provider process"
     );
 }

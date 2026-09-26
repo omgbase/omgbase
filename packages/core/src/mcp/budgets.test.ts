@@ -4,6 +4,7 @@ import { ensureRepo } from "../core/attach.js";
 import { ingestFile } from "../core/ingest.js";
 import { docsOutline } from "../core/read/outline.js";
 import { nodesGetMany } from "../core/read/nodes.js";
+import { docsReadMany } from "../core/read/document.js";
 import { oqxRun } from "../oqx/run.js";
 import { textSearch } from "../search/text.js";
 import { docsList, docsTree } from "../core/read/reader.js";
@@ -42,6 +43,34 @@ describe("budget_tokens + cursor audit", () => {
     const res = nodesGetMany(store, docId, ids, { resolution: "text", budgetTokens: 20 });
     expect(res.truncated).toBe(true);
     expect(res.nodes.length).toBeLessThan(ids.length);
+  });
+
+  // spec/surface §2 (1.2): one list contract for every budgeted read — the first
+  // item always ships, even when it alone exceeds the budget; `truncated` only
+  // says more remained.
+  it("nodes_get_many and docs_get_many return at least one item under any budget", () => {
+    const docId = bigDoc();
+    ingestFile(store, repoId, "second.md", "# Second\n\nA paragraph.\n");
+    const ids = (store.db.prepare("SELECT block_id FROM blocks WHERE doc_id=? AND type='paragraph' ORDER BY ordinal").all(docId) as { block_id: string }[]).map((r) => r.block_id);
+    const many = nodesGetMany(store, docId, ids, { resolution: "text", budgetTokens: 1 });
+    expect(many.nodes.map((n) => n.id)).toEqual([ids[0]]);
+    expect(many.truncated).toBe(true);
+    // Alone, the oversized item is the whole batch: nothing remained, so not truncated.
+    const one = nodesGetMany(store, docId, [ids[0]!], { resolution: "text", budgetTokens: 1 });
+    expect(one.nodes.length).toBe(1);
+    expect(one.truncated).toBe(false);
+    // An unresolved id ahead of the first hit does not consume the floor.
+    const skip = nodesGetMany(store, docId, ["b_nope", ids[0]!], { resolution: "text", budgetTokens: 1 });
+    expect(skip.nodes.length).toBe(1);
+    expect(skip.unresolved).toEqual(["b_nope"]);
+    expect(skip.truncated).toBe(false);
+
+    const docs = docsReadMany(store, repoId, ["big.md", "second.md"], { budgetTokens: 1 });
+    expect(docs.items.map((d) => d.path)).toEqual(["big.md"]);
+    expect(docs.truncated).toBe(true);
+    const single = docsReadMany(store, repoId, ["big.md"], { budgetTokens: 1 });
+    expect(single.items.length).toBe(1);
+    expect(single.truncated).toBe(false);
   });
 
   it("query carries truncated + a resumable cursor", () => {

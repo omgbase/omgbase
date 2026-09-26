@@ -95,9 +95,15 @@ pub fn embedder_env(settings: &EmbeddingSettings) -> HashMap<String, String> {
 /// Build the provider the settings name: `None` when no provider is set
 /// (`semantic_unavailable` is the caller's), an error when it cannot be
 /// spawned or fails its handshake (`embedder_failed`).
+///
+/// The box is `Send + Sync`: a host shares **one** provider process between
+/// its query path and its background drain thread (`spec/search` §2.6), so
+/// the provider must cross threads and serialize its own pipe traffic (the
+/// [`StdioProvider`] locks around each request; the http provider holds no
+/// connection state).
 pub fn create_external_provider(
     settings: &EmbeddingSettings,
-) -> Result<Option<Box<dyn EmbeddingProvider>>> {
+) -> Result<Option<Box<dyn EmbeddingProvider + Send + Sync>>> {
     let Some(spec) = settings
         .provider
         .as_deref()
@@ -143,6 +149,10 @@ struct Pipes {
 
 /// §5 stdio: a spawned command; one handshake line, then `{id, texts}` →
 /// `{id, vectors}` per request. The child is killed on drop.
+///
+/// `Send + Sync`: the pipes sit behind a mutex, so one instance serves
+/// several threads with one request in flight at a time — a host's query
+/// path and its drain thread share one child (`spec/search` §2.6).
 pub struct StdioProvider {
     identity: Identity,
     command: String,
@@ -365,6 +375,17 @@ impl EmbeddingProvider for HttpProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The providers cross threads (one instance is shared by a host's
+    /// query path and its drain thread); this fails to compile otherwise.
+    #[test]
+    fn providers_are_send_and_sync() {
+        fn assert_shareable<T: Send + Sync>() {}
+        assert_shareable::<StdioProvider>();
+        #[cfg(feature = "http")]
+        assert_shareable::<HttpProvider>();
+        assert_shareable::<Box<dyn EmbeddingProvider + Send + Sync>>();
+    }
 
     #[test]
     fn settings_env_and_url_detection() {

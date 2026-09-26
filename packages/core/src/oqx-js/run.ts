@@ -7,7 +7,7 @@
 import { parse, PlannedEngine, InMemoryEngine, OqxError } from "@omgbase/oqx";
 import type { Engine } from "@omgbase/oqx";
 import type { Query, Expr, Where, OpNode, SelectItem, Subquery, Follow } from "@omgbase/oqx";
-import { makeStoreContext, type StoreContextOptions } from "./context.js";
+import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
 import { SQLiteQueryPlanner } from "./planner.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
@@ -196,10 +196,31 @@ const PATH_ITEM: SelectItem = { kind: "field", name: "__oqx_path", expr: { kind:
 // ordinary record field and is peeled off at the end.
 const VALUE_KEY = "__oqx_value";
 
+// Rows as values (spec/surface §1.4, 1.2). The engine hands back store rows
+// wherever the projection made a row a VALUE — a nested `collect { }` /
+// `first { }` / `single { }` with an empty projection ("the row itself",
+// spec/oqx §12), a `values` projection of `$value`/`$self`, a field bound to a
+// row — and a store row is not a wire shape (column names, `attrs` as a JSON
+// string, the `__path` join column, Buffers). Walk the projected value and
+// render every tagged row as `{ id, path }`; everything else passes through
+// untouched (plain records and arrays are descended, scalars kept). Hits are
+// records the engine built from the injected id/path items, never rows.
+function renderValue(v: unknown): unknown {
+  if (v === null || typeof v !== "object") return v;
+  const ref = rowRef(v);
+  if (ref) return ref;
+  if (Array.isArray(v)) return v.map(renderValue);
+  const proto = Object.getPrototypeOf(v);
+  if (proto !== Object.prototype && proto !== null) return v; // Buffer, Map, … — not a record
+  const out: Record<string, unknown> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = renderValue(x);
+  return out;
+}
+
 function toHit(row: unknown): OqxHit {
   const o = row as Record<string, unknown>;
   const { __oqx_id, __oqx_path, ...rest } = o;
-  return { id: String(__oqx_id), path: String(__oqx_path ?? ""), ...rest };
+  return { id: String(__oqx_id), path: String(__oqx_path ?? ""), ...(renderValue(rest) as Record<string, unknown>) };
 }
 
 // Top-level `select distinct`: dedup hits by their USER projection (every field

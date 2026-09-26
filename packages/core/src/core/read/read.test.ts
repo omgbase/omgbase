@@ -193,6 +193,10 @@ describe("docsReadMany — batch whole-document read", () => {
     const res = docsReadMany(store!, repoId, ["a.md", "b.md", "c.md"], { budgetTokens: 20 });
     expect(res.truncated).toBe(true);
     expect(res.items.length).toBeLessThan(3);
+    // spec/surface §2 (1.2): the first item ships even when it alone exceeds the
+    // budget (the budget is checked before the second item onward).
+    expect(res.items.length).toBe(1);
+    expect(res.items[0]!.path).toBe("a.md");
   });
 });
 

@@ -216,8 +216,13 @@ export function docsReadMany(
       continue;
     }
 
+    // The budget is checked before the SECOND item onward (spec/surface §2, 1.2):
+    // the first item is always emitted even when it alone exceeds the budget —
+    // the same "at least one row" contract docs_list/docs_tree keep, so a
+    // budgeted client always makes progress. `truncated` stays honest: it is
+    // set only when the budget stopped an item that would otherwise have shipped.
     const cost = Math.ceil(JSON.stringify(read).length / 4);
-    if (tokens + cost > budget) {
+    if (items.length > 0 && tokens + cost > budget) {
       truncated = true;
       break;
     }

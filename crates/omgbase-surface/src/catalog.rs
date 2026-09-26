@@ -129,6 +129,30 @@ fn arg_object<'a>(args: &'a Json, key: &str) -> Result<Option<&'a Map<String, Js
     }
 }
 
+fn hex_field(e: &Map<String, Json>, k: &str) -> Option<String> {
+    e.get(k).and_then(Json::as_str).map(str::to_owned)
+}
+
+/// A block tool's `expect { content_hash?, parent_children_hash? }` (the
+/// reference's `expectSchema`, both keys optional), or `None` when absent.
+fn arg_expect(args: &Json) -> Result<Option<Expect>> {
+    Ok(arg_object(args, "expect")?.map(|e| Expect {
+        content_hash: hex_field(e, "content_hash"),
+        parent_children_hash: hex_field(e, "parent_children_hash"),
+    }))
+}
+
+/// `blocks_insert` / `blocks_move`'s `expect { parent_children_hash? }` — the
+/// destination-parent CAS of `spec/mutate` §1.2 (1.2). A `content_hash` has
+/// no meaning on these ops and is dropped, not an error (the reference's zod
+/// schema strips it).
+fn arg_parent_expect(args: &Json) -> Result<Option<Expect>> {
+    Ok(arg_object(args, "expect")?.map(|e| Expect {
+        content_hash: None,
+        parent_children_hash: hex_field(e, "parent_children_hash"),
+    }))
+}
+
 fn resolution_arg(args: &Json, default: Resolution) -> Result<Resolution> {
     match arg_str(args, "resolution") {
         None => Ok(default),
@@ -189,6 +213,13 @@ fn at_schema() -> Json {
 }
 fn expect_schema() -> Json {
     json!({ "type": "object", "properties": { "content_hash": { "type": "string" }, "parent_children_hash": { "type": "string" } } })
+}
+/// `blocks_insert` / `blocks_move` carry the op-level expectation of
+/// `spec/mutate` §1.2: only `parent_children_hash` has a meaning there (no
+/// target block whose content could be checked), so the schema names that
+/// key alone, as the reference's `parentExpectSchema`.
+fn parent_expect_schema() -> Json {
+    json!({ "type": "object", "properties": { "parent_children_hash": { "type": "string" } } })
 }
 
 /// The catalog (§4 table), in the reference's registration order.
@@ -353,12 +384,13 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_insert",
-            description: "Insert blocks parsed from `markdown` under `to` (a block ref, or a document ref for its top level) at `at` (end|start|{before|after}).",
+            description: "Insert blocks parsed from `markdown` under `to` (a block ref, or a document ref for its top level) at `at` (end|start|{before|after}). Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by `,` and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted.",
             input_schema: schema(
                 &[
                     ("to", s()),
                     ("markdown", s()),
                     ("at", at_schema()),
+                    ("expect", parent_expect_schema()),
                     ("dry_run", b()),
                 ],
                 &["to", "markdown"],
@@ -383,12 +415,13 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "blocks_move",
-            description: "Move blocks under a new parent at a position; `to` is a block ref or the blocks' own document.",
+            description: "Move blocks under a new parent at a position; `to` is a block ref or the blocks' own document. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by `,`, sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted.",
             input_schema: schema(
                 &[
                     ("blocks", strings()),
                     ("to", s()),
                     ("at", at_schema()),
+                    ("expect", parent_expect_schema()),
                     ("dry_run", b()),
                 ],
                 &["blocks", "to"],
@@ -1351,7 +1384,7 @@ impl Surface {
                     doc,
                     to: To { parent, at },
                     markdown: arg_string(args, "markdown")?,
-                    expect: None,
+                    expect: arg_parent_expect(args)?,
                 }];
                 Ok(apply_json(&self.apply_ops(
                     &repo,
@@ -1365,17 +1398,8 @@ impl Surface {
                 let (repo, root) = self.scope(args)?;
                 self.require_root(root.as_deref())?;
                 let block = self.resolve_block_ref(&repo, &arg_string(args, "block")?)?;
-                let expect = match arg_object(args, "expect")? {
-                    Some(e) => Some(Expect {
-                        content_hash: e
-                            .get("content_hash")
-                            .and_then(Json::as_str)
-                            .map(str::to_owned),
-                        parent_children_hash: e
-                            .get("parent_children_hash")
-                            .and_then(Json::as_str)
-                            .map(str::to_owned),
-                    }),
+                let expect = match arg_expect(args)? {
+                    Some(e) => Some(e),
                     None => self.pin_hash(&block)?.map(Expect::content),
                 };
                 let checked = arg_bool(args, "checked")?;
@@ -1442,7 +1466,7 @@ impl Surface {
                 let ops = vec![Op::Move {
                     blocks,
                     to: To { parent, at },
-                    expect: None,
+                    expect: arg_parent_expect(args)?,
                 }];
                 Ok(apply_json(&self.apply_ops(
                     &repo,
@@ -2257,6 +2281,95 @@ mod tests {
         assert_eq!(repos.body["repos"][0]["slug"], "fixture");
         let unknown = s.call("docs_list", json!({ "repo": "zzz" }));
         assert_eq!(unknown.body["error"], "repo_not_found");
+    }
+
+    #[test]
+    fn insert_and_move_carry_the_destination_parent_cas_and_many_reads_keep_one_item() {
+        let mut s = surface();
+        s.call(
+            "observe",
+            json!({ "path": "a.md", "content": "# T\n\nOne.\n\nTwo.\n" }),
+        );
+        s.call("observe", json!({ "path": "b.md", "content": "# U\n" }));
+        // §4 (1.2): a stale `expect.parent_children_hash` on blocks_insert is
+        // the kernel's destination-parent CAS: `stale_expectation` carrying the
+        // current hash, from which the caller retries without a read.
+        let stale = s.call(
+            "blocks_insert",
+            json!({ "to": "a.md", "markdown": "Three.", "expect": { "parent_children_hash": "00" } }),
+        );
+        assert!(stale.is_error, "{}", stale.body);
+        assert_eq!(stale.body["error"], "stale_expectation");
+        assert_eq!(stale.body["retriable"], true);
+        let current = stale.body["data"]["current"]["parent_children_hash"]
+            .as_str()
+            .expect("current hash")
+            .to_owned();
+        assert_eq!(current.len(), 64, "{current}");
+        let ok = s.call(
+            "blocks_insert",
+            json!({ "to": "a.md", "markdown": "Three.", "expect": { "parent_children_hash": current, "content_hash": "dropped, not checked" } }),
+        );
+        assert!(!ok.is_error, "{}", ok.body);
+        assert_eq!(ok.body["committed"], true);
+        let read = s.call("docs_read", json!({ "doc": "a.md" }));
+        assert_eq!(read.body["content"], "# T\n\nOne.\n\nTwo.\n\nThree.\n");
+        // blocks_move: the destination is checked once for the whole run.
+        let stale = s.call(
+            "blocks_move",
+            json!({ "blocks": ["b_1", "b_2"], "to": "a.md", "at": "end", "expect": { "parent_children_hash": "00" } }),
+        );
+        assert_eq!(stale.body["error"], "stale_expectation", "{}", stale.body);
+        let current = stale.body["data"]["current"]["parent_children_hash"]
+            .as_str()
+            .expect("current hash")
+            .to_owned();
+        let ok = s.call(
+            "blocks_move",
+            json!({ "blocks": ["b_1", "b_2"], "to": "a.md", "at": "end", "expect": { "parent_children_hash": current } }),
+        );
+        assert!(!ok.is_error, "{}", ok.body);
+        let read = s.call("docs_read", json!({ "doc": "a.md" }));
+        assert_eq!(read.body["content"], "# T\n\nThree.\n\nOne.\n\nTwo.\n\n");
+        // A `dry_run` still runs the CAS.
+        let dry = s.call(
+            "blocks_move",
+            json!({ "blocks": ["b_1"], "to": "a.md", "at": "start", "dry_run": true, "expect": { "parent_children_hash": "00" } }),
+        );
+        assert_eq!(dry.body["error"], "stale_expectation", "{}", dry.body);
+        // §2 (1.2): the budget is applied from the second item on — one item
+        // always comes back, `truncated` says more remained.
+        let many = s.call(
+            "docs_get_many",
+            json!({ "docs": ["a.md", "b.md"], "budget_tokens": 1 }),
+        );
+        assert_eq!(
+            many.body["items"].as_array().unwrap().len(),
+            1,
+            "{}",
+            many.body
+        );
+        assert_eq!(many.body["items"][0]["path"], "a.md");
+        assert_eq!(many.body["truncated"], true);
+        let one = s.call(
+            "docs_get_many",
+            json!({ "docs": ["b.md"], "budget_tokens": 1 }),
+        );
+        assert_eq!(one.body["items"].as_array().unwrap().len(), 1);
+        assert_eq!(one.body["truncated"], false);
+        let nodes = s.call(
+            "nodes_get_many",
+            json!({ "ids": ["b_zzz", "b_1", "b_2"], "resolution": "full", "budget_tokens": 1 }),
+        );
+        assert_eq!(
+            nodes.body["nodes"].as_array().unwrap().len(),
+            1,
+            "{}",
+            nodes.body
+        );
+        assert_eq!(nodes.body["nodes"][0]["id"], "b_1");
+        assert_eq!(nodes.body["truncated"], true);
+        assert_eq!(nodes.body["unresolved"], json!(["b_zzz"]));
     }
 
     #[test]

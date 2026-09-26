@@ -932,8 +932,8 @@
       }
     },
     {
-      "name": "nested-collect-empty-projection-yields-raw-row",
-      "notes": "§9 candidate: a collect with NO projection returns the store row as-is — column names (node_id, repo_id, span_*), attrs as the stored JSON string, and the reference's __path join column.",
+      "name": "nested-collect-empty-projection",
+      "notes": "§1.4 rows as values (1.2): a nested collect with NO projection yields the row itself (spec/oqx §12), rendered as { id, path } — the node id and its document path — never the store row (§9: before 1.2 the raw row leaked: node_id/repo_id/span_* columns, attrs as a JSON string, the join column __path).",
       "query": "select tasks: nodes collect { where kind == \"md:task\" } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
@@ -942,30 +942,59 @@
             "path": "substances/salt.md",
             "tasks": [
               {
-                "node_id": "n_0ddcacdef653",
-                "repo_id": "rp_0",
-                "doc_id": "d_14",
-                "block_id": "b_279",
-                "kind": "md:task",
-                "name": null,
-                "value": "Buy more salt of tartar",
-                "span_start": 0,
-                "span_end": 29,
-                "attrs": "{\"checked\":true}",
-                "__path": "substances/salt.md"
+                "id": "n_0ddcacdef653",
+                "path": "substances/salt.md"
               },
               {
-                "node_id": "n_6d35d6b1d52b",
-                "repo_id": "rp_0",
-                "doc_id": "d_14",
-                "block_id": "b_280",
-                "kind": "md:task",
-                "name": null,
-                "value": "Replace the leaching filter papers",
-                "span_start": 0,
-                "span_end": 40,
-                "attrs": "{\"checked\":true}",
-                "__path": "substances/salt.md"
+                "id": "n_6d35d6b1d52b",
+                "path": "substances/salt.md"
+              }
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "nested-first-empty-projection",
+      "notes": "§1.4 rows as values (1.2): first { } / single { } with no projection render the row as { id, path } (or null when nothing matches).",
+      "query": "select latest: nodes first { where kind == \"md:task\" }, none: nodes single { where kind == \"nope\" } from docs where $path == \"substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_14",
+            "path": "substances/salt.md",
+            "latest": {
+              "id": "n_0ddcacdef653",
+              "path": "substances/salt.md"
+            },
+            "none": null
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "nested-collect-values-of-rows",
+      "notes": "§1.4 rows as values (1.2): a `values` projection whose item is the row ($value) renders each row as { id, path }.",
+      "query": "select tasks: nodes collect { select $value values where kind == \"md:task\" } from docs where $path == \"substances/salt.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_14",
+            "path": "substances/salt.md",
+            "tasks": [
+              {
+                "id": "n_0ddcacdef653",
+                "path": "substances/salt.md"
+              },
+              {
+                "id": "n_6d35d6b1d52b",
+                "path": "substances/salt.md"
               }
             ]
           }

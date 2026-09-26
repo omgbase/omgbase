@@ -204,6 +204,44 @@ pub fn strip_tags(v: Value) -> Value {
     }
 }
 
+/// §1.4 rows as values (1.2): a store row that surfaces as a VALUE in a result
+/// tree — a nested `collect { }` / `first { }` / `single { }` with an empty
+/// projection, or a `values` item that is a row — renders as `{ id, path }`
+/// (the target's id column as a string; the owning document's path: a docs
+/// row's `path`, every other row's `__path` join column), never the store
+/// row. Everything else recurses, dropping the hidden tag as [`strip_tags`].
+#[must_use]
+pub fn render_row_values(v: Value) -> Value {
+    match v {
+        Value::Object(o) => {
+            let row = Value::Object(o);
+            if let Some(t) = target_of(&row) {
+                let (id_col, path_col) = match t {
+                    Target::Docs => ("doc_id", "path"),
+                    Target::Blocks => ("block_id", "__path"),
+                    Target::Nodes => ("node_id", "__path"),
+                    Target::Edges => ("edge_id", "__path"),
+                };
+                let mut out = Object::with_capacity(2);
+                out.insert("id", Value::Str(col_str(&row, id_col)));
+                out.insert("path", Value::Str(col_str(&row, path_col)));
+                return Value::Object(out);
+            }
+            let Value::Object(o) = row else {
+                unreachable!()
+            };
+            Value::Object(
+                o.into_iter()
+                    .filter(|(k, _)| k != TAG_KEY)
+                    .map(|(k, x)| (k, render_row_values(x)))
+                    .collect(),
+            )
+        }
+        Value::Array(a) => Value::Array(a.into_iter().map(render_row_values).collect()),
+        other => other,
+    }
+}
+
 impl<'a> StoreContext<'a> {
     /// A context over `conn` scoped to `repo_id`, with the query phrases'
     /// vectors for `semantic(...)` (empty when no provider ran).
@@ -1218,6 +1256,66 @@ mod tests {
         assert_eq!(glob_to_like("a*/b_%", true), "a%/b\\_\\%");
         assert_eq!(glob_to_like("a\\b*", true), "a\\\\b%");
         assert_eq!(glob_to_like("a\\b*", false), "a\\b%");
+    }
+
+    #[test]
+    fn rows_surfacing_as_values_render_id_and_path() {
+        // §1.4 (1.2): a tagged store row anywhere in a value tree is
+        // `{ id, path }`; untagged records keep their keys, minus the tag.
+        let mut node = Object::new();
+        node.insert("node_id", Value::Str("n_1".into()));
+        node.insert("attrs", Value::Str("{\"checked\":true}".into()));
+        node.insert("__path", Value::Str("a.md".into()));
+        let mut doc = Object::new();
+        doc.insert("doc_id", Value::Str("d_0".into()));
+        doc.insert("path", Value::Str("a.md".into()));
+        doc.insert("blob", Value::Str("ff".into()));
+        let mut record = Object::new();
+        record.insert(TAG_KEY, Value::Str("junk".into()));
+        record.insert(
+            "tasks",
+            Value::Array(vec![
+                tag_row(node, Target::Nodes),
+                tag_row(doc, Target::Docs),
+            ]),
+        );
+        let out = render_row_values(Value::Object(record));
+        let o = out.as_object().unwrap();
+        assert!(o.get(TAG_KEY).is_none());
+        let tasks = o.get("tasks").unwrap().as_array().unwrap();
+        let keys = |v: &Value| -> Vec<String> {
+            v.as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, _)| k.to_owned())
+                .collect()
+        };
+        assert_eq!(keys(&tasks[0]), ["id", "path"]);
+        assert_eq!(
+            tasks[0].as_object().unwrap().get("id"),
+            Some(&Value::Str("n_1".into()))
+        );
+        assert_eq!(
+            tasks[0].as_object().unwrap().get("path"),
+            Some(&Value::Str("a.md".into()))
+        );
+        assert_eq!(keys(&tasks[1]), ["id", "path"]);
+        assert_eq!(
+            tasks[1].as_object().unwrap().get("id"),
+            Some(&Value::Str("d_0".into()))
+        );
+        // An id column that is not a string still renders as its string form.
+        let mut edge = Object::new();
+        edge.insert("edge_id", Value::Number(7.0));
+        let e = render_row_values(tag_row(edge, Target::Edges));
+        assert_eq!(
+            e.as_object().unwrap().get("id"),
+            Some(&Value::Str("7".into()))
+        );
+        assert_eq!(
+            e.as_object().unwrap().get("path"),
+            Some(&Value::Str(String::new()))
+        );
     }
 
     #[test]

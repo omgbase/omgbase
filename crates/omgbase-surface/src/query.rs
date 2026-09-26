@@ -17,7 +17,7 @@ use oqx::ast::{Expr, Follow, OpNode, OrderSpec, Query, SelectItem, Subquery, Whe
 use oqx::{Consumer, Engine, InMemoryEngine, Value};
 use serde_json::{Map, Value as Json};
 
-use crate::context::{SemanticVec, StoreContext, strip_tags};
+use crate::context::{SemanticVec, StoreContext, render_row_values};
 use crate::cursor::{decode_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
 use crate::planner::SqlitePlanner;
@@ -407,9 +407,11 @@ pub fn collect_semantic_phrases(source: &str) -> Vec<String> {
 
 /// A projected row as a hit: `{ id, path, ...rest }` with the injected
 /// columns peeled off (JavaScript's `String()` on the id, `""` for an absent
-/// path).
+/// path). The projection's values are rendered per §1.4 "rows as values": a
+/// store row nested in the result (an empty-projection `collect { }` and
+/// friends) becomes `{ id, path }`.
 fn to_hit(row: Value) -> Value {
-    let Value::Object(o) = strip_tags(row) else {
+    let Value::Object(o) = render_row_values(row) else {
         return Value::Object(oqx::Object::new());
     };
     let mut id = Value::Undefined;
@@ -502,7 +504,7 @@ fn value_of(hit: &Value) -> Value {
 }
 
 fn without_value_key(hit: Value) -> Json {
-    strip_tags(hit).to_canonical_json()
+    hit.to_canonical_json()
 }
 
 // ---- the run --------------------------------------------------------------------------
@@ -699,7 +701,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
             Some(r) => {
                 let hit = to_hit(r);
                 if top_values {
-                    out.values = Some(vec![strip_tags(value_of(&hit)).to_canonical_json()]);
+                    out.values = Some(vec![value_of(&hit).to_canonical_json()]);
                 } else {
                     out.hits = vec![without_value_key(hit)];
                 }
@@ -754,7 +756,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     if top_values {
         out.values = Some(
             page.iter()
-                .map(|h| strip_tags(value_of(h)).to_canonical_json())
+                .map(|h| value_of(h).to_canonical_json())
                 .collect(),
         );
     } else {

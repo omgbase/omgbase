@@ -78,6 +78,15 @@ const toSchema = z.object({
   ]),
   at: atSchema,
 });
+// blocks_insert / blocks_move carry the op-level expectation of spec/mutate §1.2:
+// only `parent_children_hash` (the destination parent's live direct child ids
+// joined by "," and sha256-hexed) has a meaning there — there is no target block
+// whose content_hash could be checked — so the schema names that one key alone
+// (an accidental `content_hash` is dropped, not an error; the kernel would
+// ignore it anyway).
+const parentExpectSchema = z.object({
+  parent_children_hash: z.string().optional(),
+});
 const expectSchema = z.object({
   content_hash: z.string().optional(),
   parent_children_hash: z.string().optional(),
@@ -314,7 +323,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_get_many",
     {
       description:
-        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`content` = complete file bytes verbatim, `properties` grouped by source, plus `path`/`docId`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block id → content hash} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it. Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
+        "Batch whole-document read — the hydrate half of query→hydrate. The plural of docs_read: pass `docs`, a list of refs (each a doc id OR a path, same id-or-path symmetry docs_read accepts in its `doc` field), and get back one full read per ref. Returns `{ items, errors, truncated }`: each found doc is a full docs_read projection (`content` = complete file bytes verbatim, `properties` grouped by source, plus `path`/`docId`/`rev`, and — with include_ids:true — the document's ordered block `ids`, a `hashes` {block id → content hash} map for raw-`apply` CAS pinning, and a `parents` {block id → parent block id | null} map so top-level vs nested blocks are distinguishable without an outline read); a ref that resolves to no live document lands in `errors` as {ref, error:\"doc_not_found\"} WITHOUT failing the call, so one bad ref never sinks the batch. Duplicate refs collapse first-seen (a repeated ref yields a single item). Capped at " + MANY_DOCS_CAP + " refs per call; excess refs are dropped and `truncated` is set. Pass budget_tokens to cap total hydrated size — the batch stops early and flags `truncated` when the next doc would exceed it; the FIRST doc always ships even when it alone exceeds the budget (the same at-least-one-row contract as docs_list/docs_tree, so a budgeted caller always makes progress). Use this after query/text_search/resolve to pull N whole docs in ONE round-trip instead of N serial docs_read calls; for a single doc use docs_read, and for lean structure-only orientation use docs_outline.",
       inputSchema: {
         docs: z.array(z.string()),
         include_ids: z.boolean().optional(),
@@ -365,7 +374,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "nodes_get_many",
     {
       description:
-        "Fetch up to 100 blocks by id (in request order) with budget truncation. Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side; `doc`/`path` is an optional SCOPE (ids from other docs then count as unresolved), not a requirement. Result carries `nodes`, `truncated` (cap or `budget_tokens` hit), and `unresolved` — the requested ids that name no live block (never silently dropped).",
+        "Fetch up to 100 blocks by id (in request order) with budget truncation. Block ids are globally unique, so `ids` may span ANY number of documents — each id is resolved to its owning doc server-side; `doc`/`path` is an optional SCOPE (ids from other docs then count as unresolved), not a requirement. Result carries `nodes`, `truncated` (cap or `budget_tokens` hit — the first resolved node always ships even when it alone exceeds the budget, so a budgeted caller always makes progress), and `unresolved` — the requested ids that name no live block (never silently dropped).",
       inputSchema: {
         doc: z.string().optional(),
         path: z.string().optional(),
@@ -631,8 +640,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_insert",
     {
-      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block, or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Expands to one insert op through the kernel writer.",
-      inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Insert new block(s) parsed from `markdown` under a parent, at a position. `to` names the parent: a BLOCK ref (id or locator) nests the new blocks under that block, or a DOCUMENT ref (doc id or path) places them at the document's top level — so appending a new section to a document is `{ to: \"<path>\", markdown: \"## New\\n\\n…\" }` (the positional generalization of docs_append). `at` places among the parent's children: \"end\" (default) / \"start\" / {before|after: <block ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS: the parent's CURRENT direct child ids (the document's top-level ids for a document `to`) joined by \",\" and sha256-hexed — compute it from docs_read include_ids (`ids` filtered by `parents`) — and the insert fails `stale_expectation` (with `data.current.parent_children_hash`) if the siblings changed under you; `content_hash` has no meaning here (there is no target block) and is not accepted. Expands to one insert op through the kernel writer.",
+      inputSchema: { to: z.string(), markdown: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -640,8 +649,10 @@ export function buildServer(ctx: ServerContext): McpServer {
         const root = requireRoot(rootPath);
         const { parent, docId } = resolveParentRef(repoId, args.to);
         const to = { parent, at: resolveAt(repoId, args.at) };
-        // A document parent carries no block to infer the doc from; pin it.
-        const ops: Op[] = [{ op: "insert", ...(typeof parent === "object" ? { doc: docId } : {}), to, markdown: args.markdown } as Op];
+        // A document parent carries no block to infer the doc from; pin it. The
+        // caller's expect rides through as the op-level expectation (spec/mutate
+        // §1.2: checked against the destination parent before the op mutates).
+        const ops: Op[] = [{ op: "insert", ...(typeof parent === "object" ? { doc: docId } : {}), to, markdown: args.markdown, ...(args.expect ? { expect: args.expect } : {}) } as Op];
         return applyOps(repoId, root, ops, "blocks_insert", args.dry_run);
       } catch (e) {
         return fail(e);
@@ -682,8 +693,8 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "blocks_move",
     {
-      description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref, or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. One move op through the kernel writer.",
-      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
+      description: "Move block(s) under a new parent at a position. `blocks` are block refs; `to` (the parent) is a block ref, or the blocks' OWN document (id or path) to move them to its top level — moving to ANOTHER document's root is not expressible (target_missing): anchor on a block in that document with `at` {before|after} instead. `at` is \"end\"/\"start\"/{before|after: <ref>}. Optional `expect.parent_children_hash` is the destination-parent CAS (as blocks_insert: the destination parent's CURRENT direct child ids joined by \",\", sha256 hex), checked once for the whole run before anything moves — `stale_expectation` with `data.current.parent_children_hash` if the destination's children changed; `content_hash` is meaningless here and not accepted. One move op through the kernel writer.",
+      inputSchema: { blocks: z.array(z.string()), to: z.string(), at: atSchema.optional(), expect: parentExpectSchema.optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
@@ -697,7 +708,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           throw new EngineError("target_missing", `blocks_move cannot target another document's root (${args.to}); anchor on a block in that document with at.before/at.after`, { data: { to: args.to } });
         }
         const to = { parent, at: resolveAt(repoId, args.at) };
-        const ops: Op[] = [{ op: "move", blocks, to } as Op];
+        const ops: Op[] = [{ op: "move", blocks, to, ...(args.expect ? { expect: args.expect } : {}) } as Op];
         return applyOps(repoId, root, ops, "blocks_move", args.dry_run);
       } catch (e) {
         return fail(e);

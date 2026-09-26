@@ -358,8 +358,9 @@ provider. **Allowlist (Rust).** `crates/omgbase-search/tests/spec-passing.txt`
   write and after a watcher checkpoint that ingested or deleted something,
   debounce 500 ms, run single-flight with one re-run if dirtied mid-drain,
   flush at shutdown, log `embedded N block(s)`, and never fail a tool call
-  on a drain error; the port spawns a second provider instance for the
-  drain thread where the reference shares one worker.
+  on a drain error; both hosts share one provider instance between the
+  query path and the drain (the port's drain thread locks it per batch, so
+  a query waits for one batch at most).
 - **Pinned — bm25 needs non-matching rows.** When every indexed row matches
   a query, FTS5 clamps idf and all scores collapse to about 1e-6; fixtures
   include filler blocks so scores differ, and any added block anywhere in

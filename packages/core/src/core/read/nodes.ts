@@ -132,8 +132,12 @@ export function nodesGetMany(
       continue;
     }
     const projected = project(store, node, resolution, false);
+    // At least one resolved node is always returned (spec/surface §2, 1.2): the
+    // budget is checked before the second node onward, as docsReadMany does, so
+    // a first node that alone exceeds it still ships and `truncated` only says
+    // that more remained.
     const cost = Math.ceil(JSON.stringify(projected).length / 4);
-    if (tokens + cost > budget) {
+    if (nodes.length > 0 && tokens + cost > budget) {
       truncated = true;
       break;
     }

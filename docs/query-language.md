@@ -267,7 +267,14 @@ nested/correlated scopes:
 - **`select`:** default hit is `{id, path}`; add `name: <expr>` fields and nested
   `collect { … }` / `first { … }` / `single { … }`. An item that is not a plain
   navigation (a call, arithmetic) needs an alias — `n: size(tags)` — unless the
-  projection is in `values` mode.
+  projection is in `values` mode. **Rows as values** (surface 1.2): wherever a
+  store row surfaces as a *value* rather than a hit — a nested `collect { }` /
+  `first { }` / `single { }` with an **empty** projection ("the row itself",
+  oqx §12), a `values` projection of `$value`, a field bound to a row — it is
+  rendered as `{ id, path }` (the row's id and its document's path), never the
+  raw store row (before 1.2 the columns leaked, `attrs` as a JSON string and the
+  `__path` join column included). `tasks: nodes collect { where kind ==
+  "md:task" }` is therefore a list of `{ id, path }` node refs.
 - **`values`** (oqx ≥ 0.8): `select <expr> values` — exactly **one** item — makes
   each row's result the bare value rather than a `{ name: value }` record. At the
   top level the result carries `values: […]` in place of `hits` (empty), paged

@@ -360,12 +360,13 @@ pub fn docs_read_many(
             errors.push(json!({ "ref": r, "error": "doc_not_found" }));
             continue;
         };
+        // §2 (1.2): the budget is checked from the second item onward — a
+        // first item that alone exceeds it is still emitted (the
+        // `docs_list`/`docs_tree` floor, one list contract).
         let cost = token_cost(&read);
-        if let Some(b) = budget_tokens {
-            if tokens + cost > b {
-                truncated = true;
-                break;
-            }
+        if !items.is_empty() && budget_tokens.is_some_and(|b| tokens + cost > b) {
+            truncated = true;
+            break;
         }
         tokens += cost;
         items.push(read);
@@ -546,12 +547,11 @@ pub fn nodes_get_many(
             continue;
         };
         let projected = project(conn, node, resolution, false)?;
+        // §2 (1.2): at least one resolved node, as `docs_read_many`.
         let cost = token_cost(&projected);
-        if let Some(b) = budget_tokens {
-            if tokens + cost > b {
-                truncated = true;
-                break;
-            }
+        if !nodes.is_empty() && budget_tokens.is_some_and(|b| tokens + cost > b) {
+            truncated = true;
+            break;
         }
         tokens += cost;
         nodes.push(projected);
