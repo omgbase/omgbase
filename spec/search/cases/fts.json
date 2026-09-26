@@ -1,0 +1,1230 @@
+{
+  "suite": "fts",
+  "cases": [
+    {
+      "name": "ranking-by-term-frequency",
+      "notes": "§1.3: three blocks with `apple` ×1/×2/×3 and different lengths rank tf=3 first; four filler blocks keep idf positive (FTS5 clamps idf ≤ 0 to 1e-6, which would flatten the scores under the tolerance).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Orchard notes\n\napple pie recipe\n\napple apple orchard tour\n\napple apple apple harvest festival season\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "apple"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_3",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple apple apple harvest festival season",
+                "score": 0.35290962269233633
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple apple orchard tour",
+                "score": 0.34199489209360434
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple pie recipe",
+                "score": 0.2764458711089968
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Orchard notes · a.md",
+            "input_hash": "1a32af295cb0a61ed274057460ded9ea0811976d9434b4dde5ab03397daf54d5",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "prefix-query",
+      "notes": "`app*` matches apple/application/apply (prefix on the stemmed index); `apple` alone matches only the block whose stem is `appl`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "apple\n\napplication form\n\napply now please\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "app*"
+          }
+        },
+        {
+          "search": {
+            "text": "apple"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple",
+                "score": 0.3485277458107696
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "application form",
+                "score": 0.2952334545824238
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apply now please",
+                "score": 0.2560761753430707
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple",
+                "score": 2.0335448174671025
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "97259b1ae409a9fa47d1c8af22e6701276b27b07da2d7055eaeec9c0dd328617",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "phrase-query",
+      "notes": "A quoted phrase is an adjacency match; the same words unquoted are an AND over three blocks of different lengths.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "red apple\n\napple red today\n\nred delicious apple pie\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "\"red apple\""
+          }
+        },
+        {
+          "search": {
+            "text": "red apple"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "red apple",
+                "score": 1.78821593755296
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "red apple",
+                "score": 0.6129620201973323
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "apple red today",
+                "score": 0.537832434064196
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "red delicious apple pie",
+                "score": 0.47910896206065307
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "6c7cd398baa69017167783219a757a78bdb5a048ef7ce5b1ad71a3ecc1193351",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "tombstoned-block-gone",
+      "notes": "§1.1: a block removed by an edit loses its FTS row; the survivor keeps its id and score changes with the index statistics.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "gamma ray burst\n\ngamma gamma function values table\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "gamma"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "gamma ray burst\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "gamma"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 6
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "gamma gamma function values table",
+                "score": 0.755112795786664
+              },
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "gamma ray burst",
+                "score": 0.6547497026757783
+              }
+            ],
+            "truncated": false
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "moved": 4,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "gamma ray burst",
+                "score": 1.2021464310556804
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "e50bc735c4bc14e1bce63a799b4c38f12a0729b0aa54c275c6dc9d42b353db39",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "edit-changes-results",
+      "notes": "An edit re-indexes the block under the same rowid: the old word stops matching, the new one matches with the same block_id.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "The cats sleep all day on the warm windowsill while the house stays quiet.\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "cats"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "The dogs sleep all day on the warm windowsill while the house stays quiet.\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "cats"
+          }
+        },
+        {
+          "search": {
+            "text": "dogs"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "The cats sleep all day on the warm windowsill while the house stays quiet.",
+                "score": 0.7108667750205416
+              }
+            ],
+            "truncated": false
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited": 1,
+                "same": 4
+              }
+            }
+          ],
+          {
+            "hits": [],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "The dogs sleep all day on the warm windowsill while the house stays quiet.",
+                "score": 0.7108667750205416
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "8fa0361895675eae36e15087300f3b6cb6648b9f52340654da9e7f15166c83fa",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "truncation-with-limit",
+      "notes": "`truncated` is true when more than `limit` blocks matched; the hits are the best `limit`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "kiwi\n\nkiwi kiwi fruit\n\nkiwi kiwi kiwi fruit salad bowl\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "kiwi",
+            "limit": 2
+          }
+        },
+        {
+          "search": {
+            "text": "kiwi",
+            "limit": 3
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "kiwi kiwi fruit",
+                "score": 0.3653160177298052
+              },
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "kiwi",
+                "score": 0.35848342388199084
+              }
+            ],
+            "truncated": true
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "kiwi kiwi fruit",
+                "score": 0.3653160177298052
+              },
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "kiwi",
+                "score": 0.35848342388199084
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "kiwi kiwi kiwi fruit salad bowl",
+                "score": 0.3489122645065008
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "b6d83d45bfe2b77ff0ddf448050e3f44b3d33a4d5a5267d3e35d96787b7dd314",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "no-word-chars-no-hits",
+      "notes": "§1.3: an empty sanitized query is no hits (the MATCH is skipped), never an error.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "some words here\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "---"
+          }
+        },
+        {
+          "search": {
+            "text": "\"   \""
+          }
+        },
+        {
+          "search": {
+            "text": ""
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "hits": [],
+            "truncated": false
+          },
+          {
+            "hits": [],
+            "truncated": false
+          },
+          {
+            "hits": [],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "4a96cc163a54ea4c6088cf65a4797eb5b87c5cb6a51b9d359be72a2b71d6c895",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "porter-stemming",
+      "notes": "`porter unicode61`: `runs` finds `running` (both stem to `run`); `runner` keeps its own stem and does not match.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "running shoes\n\nrunner profile page\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "runs"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 6
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "running shoes",
+                "score": 1.5755085004414189
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "f8a4b0366d576fb71dea2021ce9b62a1c5e00fe3314e6f16456feb1dd5293413",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "unicode61-case-and-diacritics-folded",
+      "notes": "unicode61 folds case and (by default) removes diacritics: `cafe` and `CAFÉ` both find `Café`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "Café menu\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "cafe"
+          }
+        },
+        {
+          "search": {
+            "text": "CAFÉ"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "Café menu",
+                "score": 1.342748352816579
+              }
+            ],
+            "truncated": false
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "Café menu",
+                "score": 1.342748352816579
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "a421d96a468319affdd570e267dc92901c9e707d5e13acb95df3fc6fa22701b9",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "slash-query-is-an-and",
+      "notes": "`guides/onboarding` is one quoted token that the tokenizer splits: only the block with both terms matches.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "guides onboarding checklist\n\nguides only here\n\nonboarding only here\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "guides/onboarding"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "guides onboarding checklist",
+                "score": 1.5690377195260405
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "a01b55c8224cee6c68859d0b3ab008da086b83f3c83120ce7fd3f80d0406d805",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "hit-fields-heading-list-and-item",
+      "notes": "Every live block is indexed, containers included: a word in a list item hits the heading, the `list` (its text is the joined children) and the `list_item`; `type`/`text` are the block's.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Kelp forests\n\n- kelp grows fast\n- otters eat urchins\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n\nincididunt lorem ipsum dolor.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "kelp"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 9
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "heading",
+                "text": "Kelp forests",
+                "score": 0.766624715046118
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list_item",
+                "text": "kelp grows fast",
+                "score": 0.6759727414421245
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "list",
+                "text": "kelp grows fast otters eat urchins",
+                "score": 0.4989669481550164
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Kelp forests · a.md",
+            "input_hash": "571fd225f84a81c0a5e3509e2c421f724c3a176975b0db0d051bbaad56ac5537",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "deleted-doc-blocks-gone",
+      "notes": "§1.1: tombstoning a document removes its blocks' FTS rows.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "zephyr winds\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "zephyr zephyr breeze report\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "zephyr"
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "zephyr"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_3",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "type": "paragraph",
+                "text": "zephyr zephyr breeze report",
+                "score": 0.7880574676250017
+              },
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "zephyr winds",
+                "score": 0.7220526543467656
+              }
+            ],
+            "truncated": false
+          },
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_3",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "type": "paragraph",
+                "text": "zephyr zephyr breeze report",
+                "score": 0.7023852326782373
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "974bb46759c41c812685c3a7ec2df85bc796d1acdae1bd135a3e98bb2879f952",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "deleted-then-recreated-doc-reindexes",
+      "notes": "Delete then re-observe the same path: the FTS delete targets only live rows, so the re-ingest indexes cleanly (one hit, not a corrupt index).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "quartz crystal\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:02:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "quartz crystal\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n"
+              }
+            ]
+          }
+        },
+        {
+          "search": {
+            "text": "quartz"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "resurrected": 4
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "type": "paragraph",
+                "text": "quartz crystal",
+                "score": 1.027432051178184
+              }
+            ],
+            "truncated": false
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "52202f3de0b0c0f4221bf123f27369e6992d58e7cb281b5106b8ec178fe01e86",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    }
+  ]
+}

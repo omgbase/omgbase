@@ -57,7 +57,9 @@ The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts
 
 ## 5. Hybrid retrieval & ranking
 
-- Lexical: FTS5 (`bm25()`), block grain.
+Specified in `spec/search/README.md` §1 (FTS index + query sanitizer), §3 (cosine, vector search) and §4 (fusion, boosts, `resolve`); the fixtures under `spec/search/cases` (`fts.json`, `rank.json`) are the executable contract and win over this summary.
+
+- Lexical: FTS5 (`bm25()`), block grain. Only live blocks are indexed; the user string is compiled to a grammar-free MATCH expression (`search/fts-query.ts`).
 - Vector: **brute-force cosine** over the current block embeddings (`search/vector.ts`); sqlite-vec/pgvector are the deferred pressure valve, not v1.
 - Fusion: **RRF** — `score(d) = Σ 1/(60 + rank_i(d))` over the active rankers.
 - Boosts (multiplicative, explainable): title match ×1.25, heading-chain match ×1.15, path-segment match ×1.10, layer (`canon` ×1.30, `working` ×1.15, `proposed` ×1.0, `draft` ×0.85). A `recency` multiplier slot exists in the boost struct but is not yet computed (`search/rrf.ts`).
@@ -66,12 +68,14 @@ The `query` tool takes a **single OQX string** (`packages/core/src/mcp/server.ts
 
 ## 6. Embeddings
 
-- **Unit:** individual blocks (paragraphs, list items/tasks, table rows, headings). Blocks under 24 tokens (`shouldEmbed`, `search/embeddings.ts`) are not embedded on their own — they still feed the token-weighted doc-level pooled vector.
+Specified in `spec/search/README.md` §2 (which blocks embed, context/input, cache keys, document input, pooling, draining), §5 (provider protocol) and §6 (the fixture embedder used only by the runners); `spec/search/cases/embed.json` is the executable contract.
+
+- **Unit:** individual blocks (paragraphs, list items/tasks, table rows, headings; frontmatter is a revision blob, not a block). Blocks under 24 whitespace tokens (`shouldEmbed`, `search/embeddings.ts`) are never embedded, and — because the pooled document vector averages only *cached* block vectors — they contribute nothing to it either (spec/search §8): a long document made only of short blocks that is over the whole-doc budget gets no document vector at all.
 - **Input text:** `"{doc title} · {path} · {heading chain} · {block type}\n{block text}"`. Queries embed bare.
 - **Key:** `(content_hash, ctx_hash, model)` — pure content addressing; identity errors cannot poison the cache.
 - **Worker:** async queue; recomputes on content or ancestry-context change (a heading rename shifts its subtree's `ctx_hash`). Because vectors are keyed by `(content_hash, ctx_hash, model)`, a changed block simply misses the cache until the worker drains — semantic recall degrades silently for not-yet-embedded blocks rather than serving a stale vector (`search/drain.ts`).
 - **Hook:** the embedding provider is an **external process or endpoint** named in repo settings — `embedding.provider` is either a shell command (spawned, spoken to over a newline-delimited JSON stdio protocol: one `{model, dim, maxInputTokens?}` handshake line, then `{id, texts}` → `{id, vectors}`) or an `http(s)` URL (`GET` → metadata, `POST {texts}` → `{vectors}`) — `search/external.ts`, settings shape in `search/provider.ts`. Nothing is imported in-process, so core carries no ML dependency; `@omgbase/embedder`'s `omgbase-embedder` binary is the default local embedder and an HTTP endpoint is the same contract over the wire. Optional `embedding.model` / `dim` / `maxInputTokens`: for a spawned command they are exported as `OMGBASE_EMBEDDER_MODEL` / `_DIM` / `_MAX_TOKENS` (an explicit setting wins over an inherited variable; unset settings leave the ambient env alone), and in every case the provider's handshake/metadata reply is what the engine records. No provider configured ⇒ `semantic_unavailable`; a configured provider that fails to spawn/handshake ⇒ `embedder_failed`. (The CLI prints an egress notice before embedding, since vault text leaves the machine.)
-- Doc-level embedding (`method: "whole" | "pooled"`): the whole-document input — a header line + reconstructed body — is embedded when it fits the token budget (the provider's/config's `maxInputTokens`, else `DEFAULT_DOC_TOKEN_BUDGET` = 512); over budget it falls back to a token-weighted pooled mean of the doc's already-cached block vectors (zero embedding calls). Its sha256 is the freshness key for both strategies.
+- Doc-level embedding (`method: "whole" | "pooled"`): the whole-document input — a header line + reconstructed body — is embedded when its estimated tokens (`ceil(words × 1.3)`) fit the budget (the provider's/config's `maxInputTokens`, else `DEFAULT_DOC_TOKEN_BUDGET` = 512, minus a 16-token header margin); over budget it falls back to a token-weighted pooled mean of the doc's already-cached block vectors (zero embedding calls; no row while none is cached). Its sha256 is the freshness key for both strategies.
 
 ## 7. Collections
 

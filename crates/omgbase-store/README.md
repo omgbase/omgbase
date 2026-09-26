@@ -32,4 +32,10 @@ rows (`omgbase-properties`, store 13.1; `spec/properties`) and, since store
 (minting `x` per new URI), the `edges` validity intervals (minting `e` per
 new edge), the `doc_edges` rollup, and phantom adoption when a document row
 is created. The graph conformance runner lives in
-`crates/omgbase-graph/tests/spec.rs` and drives this crate.
+`crates/omgbase-graph/tests/spec.rs` and drives this crate. Since store 13.3
+the store also runs `spec/search`: `text_search` over `blocks_fts`, the
+embedding drain (`build_embed_tasks`/`embed_process`,
+`build_doc_embed_tasks`/`embed_process_docs`) over the `embeddings` and
+`doc_embeddings` caches with any `omgbase_search::EmbeddingProvider`,
+`vector_search`/`doc_vector_search`, `hybrid_search` and `resolve`; the
+search conformance runner is `crates/omgbase-search/tests/spec.rs`.

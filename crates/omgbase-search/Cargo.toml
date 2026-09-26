@@ -1,0 +1,42 @@
+[package]
+name = "omgbase-search"
+version = "1.0.0"
+description = "omgbase search: FTS5 query sanitizer, embedding inputs and cache keys, block-vector pooling, cosine, RRF fusion with explainable boosts, and the external embedding-provider protocol — Rust implementation"
+keywords = ["markdown", "search", "embeddings", "fts5", "omgbase"]
+categories = ["text-processing", "database-implementations"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-search#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+# The http(s) provider of spec/search §5 (`GET` metadata, `POST` embed).
+# Off by default: it brings a TLS stack; the stdio provider needs nothing.
+http = ["dep:ureq"]
+
+[dependencies]
+# `ctx_hash`, the document `input_hash`, the fixture embedder (§2.2, §2.4, §6).
+sha2 = "0.10"
+# The sanitizer's letter/digit test: Unicode general categories `L`/`N` (§1.2).
+regex = "1"
+# The provider protocol (NDJSON handshake/requests, HTTP bodies) and the
+# JS-`String()` rendering of merged property values for boosts (§4).
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+# The http(s) provider (feature `http`).
+ureq = { version = "3", features = ["json"], optional = true }
+
+[dev-dependencies]
+# The conformance runner (`tests/spec.rs`) drives the store, which calls this
+# crate for its queries and the drain (spec/search §7). Path-only: a
+# dev-dependency cycle Cargo permits and drops when publishing.
+omgbase-store = { path = "../omgbase-store" }
+omgbase-reconcile = { path = "../omgbase-reconcile" }
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+[lints]
+workspace = true

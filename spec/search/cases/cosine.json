@@ -1,0 +1,140 @@
+{
+  "suite": "cosine",
+  "cases": [
+    {
+      "name": "identical-unit",
+      "notes": "Same direction → 1.",
+      "a": [
+        1,
+        0,
+        0
+      ],
+      "b": [
+        1,
+        0,
+        0
+      ],
+      "expect": 1
+    },
+    {
+      "name": "orthogonal",
+      "notes": "→ 0.",
+      "a": [
+        1,
+        0
+      ],
+      "b": [
+        0,
+        1
+      ],
+      "expect": 0
+    },
+    {
+      "name": "opposite",
+      "notes": "→ −1.",
+      "a": [
+        1,
+        0
+      ],
+      "b": [
+        -1,
+        0
+      ],
+      "expect": -1
+    },
+    {
+      "name": "scaled-copy",
+      "notes": "Magnitude does not matter.",
+      "a": [
+        0.5,
+        0.25,
+        -0.125
+      ],
+      "b": [
+        2,
+        1,
+        -0.5
+      ],
+      "expect": 1
+    },
+    {
+      "name": "zero-vector-left",
+      "notes": "A zero norm → 0 (the neutral, non-matching score), not NaN.",
+      "a": [
+        0,
+        0,
+        0
+      ],
+      "b": [
+        1,
+        2,
+        3
+      ],
+      "expect": 0
+    },
+    {
+      "name": "both-zero",
+      "notes": "→ 0.",
+      "a": [
+        0,
+        0
+      ],
+      "b": [
+        0,
+        0
+      ],
+      "expect": 0
+    },
+    {
+      "name": "empty-vectors",
+      "notes": "n = 0 → norms 0 → 0.",
+      "a": [],
+      "b": [],
+      "expect": 0
+    },
+    {
+      "name": "unequal-lengths-tail-ignored",
+      "notes": "n = min(|a|, |b|) = 2: the third component of `a` never enters dot or ‖a‖².",
+      "a": [
+        1,
+        2,
+        3
+      ],
+      "b": [
+        1,
+        2
+      ],
+      "expect": 0.9999999999999998
+    },
+    {
+      "name": "negative-components",
+      "notes": "[2, −1]·[1, 1] = 1; ‖a‖² = 5, ‖b‖² = 2 → 1/√10.",
+      "a": [
+        2,
+        -1
+      ],
+      "b": [
+        1,
+        1
+      ],
+      "expect": 0.31622776601683794
+    },
+    {
+      "name": "float32-representable-decimals",
+      "notes": "Dyadic fractions round-trip float32 exactly; the arithmetic is f64.",
+      "a": [
+        0.5,
+        0.25,
+        -0.125,
+        0.75
+      ],
+      "b": [
+        0.75,
+        0.5,
+        0.125,
+        -0.25
+      ],
+      "expect": 0.3333333333333333
+    }
+  ]
+}

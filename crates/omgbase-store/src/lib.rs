@@ -37,7 +37,9 @@
 //! [`writers`] (blobs, tree nodes, commits, revisions), [`observe`] (§5),
 //! [`properties`] (the `properties` rows of `spec/properties`, written in
 //! §5.4), [`graph`] (the `nodes`, `external_nodes`, `edges` and `doc_edges`
-//! rows of `spec/graph`, written in §5.4), [`read`] (§5.2, §6), [`derived`]
+//! rows of `spec/graph`, written in §5.4), [`search`] (`spec/search`:
+//! `text_search`, the embedding drain over the `embeddings`/`doc_embeddings`
+//! caches, vector, hybrid and `resolve`), [`read`] (§5.2, §6), [`derived`]
 //! (§4.5 sections, FTS, §7 rebuild and GC).
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
@@ -55,6 +57,7 @@ pub mod order_key;
 pub mod properties;
 pub mod read;
 pub mod schema;
+pub mod search;
 pub mod time;
 pub mod tree;
 pub mod writers;
@@ -73,14 +76,21 @@ pub use observe::{BatchItem, BatchOutcome, DeleteOutcome, ObserveOutcome, has_co
 pub use omgbase_graph::{EdgeDescriptor, ProjectedNode};
 pub use omgbase_properties::PropertyRow;
 pub use omgbase_reconcile::{Config, MatchBlock, PoolEntry};
+pub use omgbase_search::{
+    Boosts, DocEmbedBlockRef, DocEmbedMethod, DocEmbedTask, EmbedTask, EmbeddingProvider, Evidence,
+};
 pub use read::RevisionRead;
 pub use schema::{SCHEMA_SQL, SCHEMA_VERSION};
+pub use search::{
+    DocEmbedStats, DocVectorHit, DocVectorRow, DrainStats, EmbedStats, ForeignVectors, HybridHit,
+    HybridQuery, QueryVector, ResolveHit, TextHit, TextSearchResult, VectorHit,
+};
 pub use tree::{TreeEntry, canonical_attrs, canonical_json, serialize_tree_entries, tree_hash};
 pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.2";
+pub const SPEC_VERSION: &str = "13.3";
 
 /// The one format this crate ingests (`docs.format`).
 pub const FORMAT_MARKDOWN: &str = "markdown";
@@ -97,28 +107,13 @@ impl std::fmt::Debug for Store {
     }
 }
 
-/// Cosine similarity of two little-endian float32 vector blobs (the
-/// reference's `cosineFloat32`): products and sums in f64 over the shorter
-/// length; `0.0` when either norm is zero.
+/// Cosine similarity of two little-endian float32 vector blobs
+/// (`spec/search` §3, the reference's `cosineFloat32`): products and sums in
+/// f64 over the shorter length (each blob floored to a multiple of 4 bytes);
+/// `0.0` when either norm is zero.
 #[must_use]
 pub fn cosine_bytes(a: &[u8], b: &[u8]) -> f64 {
-    let floats = |bytes: &[u8]| {
-        bytes
-            .chunks_exact(4)
-            .map(|c| f64::from(f32::from_le_bytes([c[0], c[1], c[2], c[3]])))
-            .collect::<Vec<f64>>()
-    };
-    let (a, b) = (floats(a), floats(b));
-    let (mut dot, mut na, mut nb) = (0.0, 0.0, 0.0);
-    for (x, y) in a.iter().zip(&b) {
-        dot += x * y;
-        na += x * x;
-        nb += y * y;
-    }
-    if na == 0.0 || nb == 0.0 {
-        return 0.0;
-    }
-    dot / (na.sqrt() * nb.sqrt())
+    omgbase_search::cosine_bytes(a, b)
 }
 
 fn cosine_udf(ctx: &Context<'_>) -> rusqlite::Result<Option<f64>> {

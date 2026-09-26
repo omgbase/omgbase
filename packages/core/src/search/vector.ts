@@ -43,10 +43,17 @@ export function vectorSearch(store: Store, repoId: string, model: string, queryV
     )
     .all(repoId, model) as { blockId: string; docId: string; path: string; vec: Buffer }[];
 
-  const scored = rows.map((r) => {
+  // One hit per live block (spec/search §3). Several cache rows can join to the
+  // same block — a stale ctx row survives a heading rename next to the fresh one
+  // — and the block keeps its best cosine, not one hit per row.
+  const best = new Map<string, VectorHit>();
+  for (const r of rows) {
     const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4);
-    return { blockId: r.blockId, docId: r.docId, path: r.path, cosine: cosine(queryVec, v) };
-  });
+    const c = cosine(queryVec, v);
+    const prev = best.get(r.blockId);
+    if (!prev || c > prev.cosine) best.set(r.blockId, { blockId: r.blockId, docId: r.docId, path: r.path, cosine: c });
+  }
+  const scored = [...best.values()];
   scored.sort((a, b) => b.cosine - a.cosine || (a.blockId < b.blockId ? -1 : 1));
   return scored.slice(0, limit);
 }
@@ -67,10 +74,16 @@ export function docVectorSearch(store: Store, repoId: string, model: string, que
     )
     .all(repoId, model) as { docId: string; path: string; vec: Buffer }[];
 
-  const scored = rows.map((r) => {
+  // (doc_id, model) is the primary key, so this is one row per doc already;
+  // keep the best-cosine rule for symmetry with vectorSearch.
+  const best = new Map<string, DocVectorHit>();
+  for (const r of rows) {
     const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4);
-    return { docId: r.docId, path: r.path, cosine: cosine(queryVec, v) };
-  });
+    const c = cosine(queryVec, v);
+    const prev = best.get(r.docId);
+    if (!prev || c > prev.cosine) best.set(r.docId, { docId: r.docId, path: r.path, cosine: c });
+  }
+  const scored = [...best.values()];
   scored.sort((a, b) => b.cosine - a.cosine || (a.docId < b.docId ? -1 : 1));
   return scored.slice(0, limit);
 }

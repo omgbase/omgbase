@@ -319,7 +319,8 @@ export interface ObserveEvaluation {
   problems: string[];
 }
 
-function toOutcome(o: BatchOutcome): ObservedOutcome | GoneOutcome {
+/** One `observeBatch` outcome as the fixture records it (README §9.4 "Expect": `steps`). Exported for the specs that reuse the observation-script shape (graph, search, …). */
+export function toOutcome(o: BatchOutcome): ObservedOutcome | GoneOutcome {
   if (o.kind === "deleted") return { path: o.path, deleted: o.docId !== null, doc: o.docId };
   const dispositions: Record<string, number> = {};
   for (const d of o.dispositions) dispositions[d.kind] = d.count;
@@ -747,16 +748,22 @@ function validateConfig(at: string, config: unknown, problems: string[]): void {
   }
 }
 
+/** A spec-specific step validator: `body` is the step's single value, `here` its path (for messages). */
+export type ExtraStepValidator = (body: unknown, here: string, problems: string[]) => void;
+
 /**
  * Validate a §9.4 `steps` list, appending problems; returns the step count (or
  * -1 when the list itself is malformed). Exported because every observation-
- * script spec (graph, search, …) reuses this input shape verbatim.
+ * script spec (graph, search, …) reuses this input shape verbatim; a spec that
+ * adds step kinds of its own (search: `drain`, `search`) passes them in `extra`,
+ * keyed by the step's single key.
  */
-export function validateSteps(at: string, steps: unknown, problems: string[]): number {
+export function validateSteps(at: string, steps: unknown, problems: string[], extra: Record<string, ExtraStepValidator> = {}): number {
   if (!Array.isArray(steps) || steps.length === 0) {
     problems.push(`${at}: \`steps\` must be a non-empty array`);
     return -1;
   }
+  const kinds = ["observe", "sweep", ...Object.keys(extra)];
   steps.forEach((s, i) => {
     const here = `${at}.steps[${i}]`;
     if (!isRecord(s)) {
@@ -764,11 +771,16 @@ export function validateSteps(at: string, steps: unknown, problems: string[]): n
       return;
     }
     const keys = Object.keys(s);
-    if (keys.length !== 1 || (keys[0] !== "observe" && keys[0] !== "sweep")) {
-      problems.push(`${here}: a step is exactly one of \`observe\` / \`sweep\` (got ${keys.join(", ")})`);
+    if (keys.length !== 1 || !kinds.includes(keys[0]!)) {
+      problems.push(`${here}: a step is exactly one of ${kinds.map((k) => `\`${k}\``).join(" / ")} (got ${keys.join(", ")})`);
       return;
     }
     const body = s[keys[0]!];
+    const validator = extra[keys[0]!];
+    if (validator) {
+      validator(body, here, problems);
+      return;
+    }
     if (!isRecord(body) || typeof body.ts !== "string" || !TS_RE.test(body.ts)) {
       problems.push(`${here}: \`ts\` must be RFC 3339 UTC with three fractional digits and Z (§2.4)`);
     }

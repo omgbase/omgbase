@@ -65,6 +65,26 @@ describe("vectorSearch (semantic mode, brute-force cosine)", () => {
     expect(consensusRank === -1 || consensusRank === hits.length - 1).toBe(true);
   });
 
+  it("one hit per live block: a stale ctx row next to the fresh one keeps the best cosine (spec/search §3)", async () => {
+    const text = "the cat sat on the warm mat by the fireplace all afternoon long today and then slept";
+    ingestFile(store, repoId, "a.md", `# Old\n\n${text}\n`);
+    const worker = new EmbeddingWorker(store, bowProvider());
+    const row = store.db.prepare("SELECT block_id, lower(hex(raw_hash)) h FROM blocks WHERE type='paragraph' AND deleted_commit IS NULL").get() as { block_id: string; h: string };
+    // Two cache rows for the same content under two contexts (a heading rename).
+    await worker.process([
+      { blockId: row.block_id, contentHashHex: row.h, ctx: contextPrefix({ docTitle: "Old", path: "a.md", headingChain: ["Old"], blockType: "paragraph" }), text },
+      { blockId: row.block_id, contentHashHex: row.h, ctx: contextPrefix({ docTitle: "New", path: "a.md", headingChain: ["New"], blockType: "paragraph" }), text },
+    ]);
+    expect((store.db.prepare("SELECT count(*) c FROM embeddings").get() as { c: number }).c).toBe(2);
+    const q = await worker.embedQuery("New a.md cat mat fireplace");
+    const hits = vectorSearch(store, repoId, "bow-1", q);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.blockId).toBe(row.block_id);
+    // The surviving cosine is the best of the two rows.
+    const cosines = (store.db.prepare("SELECT cosine(?, vec) c FROM embeddings").all(Buffer.from(q.buffer)) as { c: number }[]).map((r) => r.c);
+    expect(hits[0]!.cosine).toBeCloseTo(Math.max(...cosines), 12);
+  });
+
   it("returns nothing when no vectors are indexed", async () => {
     ingestFile(store, repoId, "a.md", "# H\n\nun-embedded paragraph content here for the test\n");
     const worker = new EmbeddingWorker(store, bowProvider());

@@ -1,0 +1,3380 @@
+{
+  "suite": "rank",
+  "cases": [
+    {
+      "name": "vector-ordering-by-cosine",
+      "notes": "§3: every cached row joined to a live block, scored by cosine to the bare query embedding, descending.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight\n"
+              },
+              {
+                "path": "c.md",
+                "source": "uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "c.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 3,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": 0.49697926141753573
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_2",
+                "path": "c.md",
+                "cosine": -0.05637782346474245
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "cosine": -0.4970422650172873
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "a.md · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx": "b.md · b.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+            "ctx": "c.md · c.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "c.md · c.md",
+            "input_hash": "9e8a5b3901f82a943d9e6e042b157dd38fd6c2b04e76ab6e0afca3c8bdd0a10f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+            "ctx_hash": "b89c14394b6a65a5e16e5c89d901a0504576a74711c0190b56dafc030d008c57",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.10849162191152573,
+              -0.6399213075637817,
+              0.2885514497756958,
+              -0.3186289370059967,
+              0.5674720406532288,
+              -0.24172374606132507,
+              -0.0805610790848732,
+              -0.08365996927022934
+            ]
+          },
+          {
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx_hash": "1a8f4fb2d6ee5694612a3799d2f375b2215c375ddc248a80f6fb8923475cfb8f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.28735822439193726,
+              -0.06368298083543777,
+              0.3288790285587311,
+              -0.1394391804933548,
+              -0.29515695571899414,
+              0.23825590312480927,
+              -0.5288224816322327,
+              0.6018540263175964
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.2976870536804199,
+              0.3468553423881531,
+              0.04954390972852707,
+              0.09999094903469086,
+              -0.43040624260902405,
+              -0.5000346302986145,
+              0.4359208941459656,
+              -0.39154794812202454
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.3870680332183838,
+              -0.4924142360687256,
+              0.14053751528263092,
+              -0.34570935368537903,
+              -0.19331993162631989,
+              0.2413652390241623,
+              -0.44114404916763306,
+              -0.4221409261226654
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "9e8a5b3901f82a943d9e6e042b157dd38fd6c2b04e76ab6e0afca3c8bdd0a10f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.15790194272994995,
+              -0.190134659409523,
+              -0.6515916585922241,
+              -0.4416346848011017,
+              -0.3431996703147888,
+              -0.09297200292348862,
+              -0.43902939558029175,
+              -0.011239039711654186
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "vector-tie-identical-blocks-id-order",
+      "notes": "§8: two identical live blocks share one cache row and are two hits with equal cosine, ordered by block_id.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Same\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": -0.32315595956447224
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": -0.32315595956447224
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · a.md · Same · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · a.md · Same · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Same · a.md",
+            "input_hash": "d2b16ac5b3839751fb987173dc97e72f038b8eb8a4640cf7f06c65792ada4ea9",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              },
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "8f444f51c0f932de5d7d3a46407fa06d6de59960fae0c5311ba406618a417969",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.30232781171798706,
+              -0.20626673102378845,
+              -0.45683589577674866,
+              -0.12040012329816818,
+              0.3453628718852997,
+              0.4627934694290161,
+              -0.0196211040019989,
+              -0.5558942556381226
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "d2b16ac5b3839751fb987173dc97e72f038b8eb8a4640cf7f06c65792ada4ea9",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.30232781171798706,
+              -0.20626673102378845,
+              -0.45683589577674866,
+              -0.12040012329816818,
+              0.3453628718852997,
+              0.4627934694290161,
+              -0.0196211040019989,
+              -0.5558942556381226
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "vector-limit",
+      "notes": "`limit` truncates after sorting.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight\n"
+              },
+              {
+                "path": "c.md",
+                "source": "uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo",
+            "limit": 1
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "c.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 3,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": 0.49697926141753573
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "a.md · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx": "b.md · b.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+            "ctx": "c.md · c.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "c.md · c.md",
+            "input_hash": "9e8a5b3901f82a943d9e6e042b157dd38fd6c2b04e76ab6e0afca3c8bdd0a10f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "03525e132ecb4f14466d2223f36ce3b117870afcf94672946c97d69003e1c169",
+            "ctx_hash": "b89c14394b6a65a5e16e5c89d901a0504576a74711c0190b56dafc030d008c57",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.10849162191152573,
+              -0.6399213075637817,
+              0.2885514497756958,
+              -0.3186289370059967,
+              0.5674720406532288,
+              -0.24172374606132507,
+              -0.0805610790848732,
+              -0.08365996927022934
+            ]
+          },
+          {
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx_hash": "1a8f4fb2d6ee5694612a3799d2f375b2215c375ddc248a80f6fb8923475cfb8f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.28735822439193726,
+              -0.06368298083543777,
+              0.3288790285587311,
+              -0.1394391804933548,
+              -0.29515695571899414,
+              0.23825590312480927,
+              -0.5288224816322327,
+              0.6018540263175964
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.2976870536804199,
+              0.3468553423881531,
+              0.04954390972852707,
+              0.09999094903469086,
+              -0.43040624260902405,
+              -0.5000346302986145,
+              0.4359208941459656,
+              -0.39154794812202454
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.3870680332183838,
+              -0.4924142360687256,
+              0.14053751528263092,
+              -0.34570935368537903,
+              -0.19331993162631989,
+              0.2413652390241623,
+              -0.44114404916763306,
+              -0.4221409261226654
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "9e8a5b3901f82a943d9e6e042b157dd38fd6c2b04e76ab6e0afca3c8bdd0a10f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.15790194272994995,
+              -0.190134659409523,
+              -0.6515916585922241,
+              -0.4416346848011017,
+              -0.3431996703147888,
+              -0.09297200292348862,
+              -0.43902939558029175,
+              -0.011239039711654186
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "vector-stale-ctx-row-dedupes",
+      "notes": "§3: the join is on `raw_hash = content_hash`, so after a heading rename the block has two cache rows (old and new ctx); it is ONE hit with the higher cosine.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Old\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# New\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": -0.1414909680282571
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "New · a.md · New · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "New · a.md",
+            "input_hash": "b45c043dab0c1965dc9bf55537abe9da14fd79715c4a8cb273ece1ae350a353b",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "47ad5197b3cdc3d369add1f055cf9a01bf661a7db0db28a48a84ec5a4a5dd47c",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.492306649684906,
+              0.3991119861602783,
+              0.0606563463807106,
+              0.4572758078575134,
+              0.12038647383451462,
+              0.4365675747394562,
+              0.05253871530294418,
+              0.42156726121902466
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "ea2b2a95a2a6250fd9f5e1152fb5d5d20b4e4b990b4b2a86e5d18e6ec760f90b",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.11449386924505234,
+              -0.3772567808628082,
+              0.0015748351579532027,
+              0.5855371356010437,
+              0.3048590421676636,
+              0.6250755190849304,
+              0.12959441542625427,
+              0.03548405319452286
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "b45c043dab0c1965dc9bf55537abe9da14fd79715c4a8cb273ece1ae350a353b",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.19902075827121735,
+              -0.4703998863697052,
+              0.16362477838993073,
+              -0.3899868428707123,
+              0.35199257731437683,
+              0.44597604870796204,
+              -0.27492019534111023,
+              0.4023398160934448
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "hybrid-stale-ctx-row-first-wins",
+      "notes": "§4: with a stale ctx row still cached, the block's `vector_rank`/`cosine` are those of its first (best) occurrence — the same first-occurrence rule as FTS.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Old\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# New\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "alpha bravo"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 2,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 1,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "cosine": 0.4549293333195883
+              }
+            ]
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.03278688524590164,
+                "evidence": {
+                  "rrf": 0.03278688524590164,
+                  "boosts": {},
+                  "fts_rank": 1,
+                  "vector_rank": 1,
+                  "cosine": 0.4549293333195883
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "New · a.md · New · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "New · a.md",
+            "input_hash": "55a5682800d4d22cfdb4e7929990e3857d00be5e625f43e1e1782074f36268ec",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "47ad5197b3cdc3d369add1f055cf9a01bf661a7db0db28a48a84ec5a4a5dd47c",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.33320656418800354,
+              -0.584042489528656,
+              -0.026171062141656876,
+              -0.40475377440452576,
+              0.23787863552570343,
+              0.08243217319250107,
+              0.10588456690311432,
+              -0.5556657314300537
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "ea2b2a95a2a6250fd9f5e1152fb5d5d20b4e4b990b4b2a86e5d18e6ec760f90b",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.08078290522098541,
+              -0.27565616369247437,
+              -0.33693066239356995,
+              -0.23351240158081055,
+              0.49066150188446045,
+              -0.13905340433120728,
+              0.4356585144996643,
+              0.5473158359527588
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "55a5682800d4d22cfdb4e7929990e3857d00be5e625f43e1e1782074f36268ec",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.16958504915237427,
+              -0.09546343982219696,
+              -0.5091931223869324,
+              0.32902705669403076,
+              0.5033277869224548,
+              0.414707213640213,
+              0.10236102342605591,
+              0.39848771691322327
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "vector-no-rows-no-hits",
+      "notes": "Short blocks never embed → nothing to score.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "short one.\n\nshort two.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "semantic": "alpha bravo"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 0,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": []
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "b12adeecb151ffc51c547c5a33a2aaf05c99c48583fdfa3565ddb6f4bd49d959",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "b12adeecb151ffc51c547c5a33a2aaf05c99c48583fdfa3565ddb6f4bd49d959",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.2248600870370865,
+              0.43413281440734863,
+              0.22555682063102722,
+              0.5843610763549805,
+              -0.45583900809288025,
+              -0.016677144914865494,
+              -0.3492553234100342,
+              0.19638298451900482
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "hybrid-fusion-both-rankers",
+      "notes": "§4: a.md hits both rankers, b.md only the vector ranker, c.md (short) only FTS; rrf = Σ 1/(60 + rank). Filler keeps idf positive.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight\n"
+              },
+              {
+                "path": "c.md",
+                "source": "harbor lights\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor lights"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "c.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_3",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 4,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.03252247488101534,
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {},
+                  "fts_rank": 2,
+                  "vector_rank": 1,
+                  "cosine": 0.3429983692340437
+                }
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_2",
+                "path": "c.md",
+                "score": 0.01639344262295082,
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {},
+                  "fts_rank": 1
+                }
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "score": 0.016129032258064516,
+                "evidence": {
+                  "rrf": 0.016129032258064516,
+                  "boosts": {},
+                  "vector_rank": 2,
+                  "cosine": -0.7095903836278354
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "a.md · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx": "b.md · b.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "c.md · c.md",
+            "input_hash": "0bc9a1073c415cb0a19af64d759cdfd23f25c6cd696d41991cade2c41608e475",
+            "method_if_embedded": "whole",
+            "blocks": []
+          },
+          {
+            "doc_id": "d_3",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx_hash": "1a8f4fb2d6ee5694612a3799d2f375b2215c375ddc248a80f6fb8923475cfb8f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.28735822439193726,
+              -0.06368298083543777,
+              0.3288790285587311,
+              -0.1394391804933548,
+              -0.29515695571899414,
+              0.23825590312480927,
+              -0.5288224816322327,
+              0.6018540263175964
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.5397244691848755,
+              -0.36112090945243835,
+              0.2504465878009796,
+              0.46247026324272156,
+              0.18950536847114563,
+              -0.3501623868942261,
+              -0.32985618710517883,
+              -0.1853533834218979
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.48671308159828186,
+              0.2944490313529968,
+              0.25823572278022766,
+              0.34864985942840576,
+              0.40417593717575073,
+              -0.11295066773891449,
+              0.4781213700771332,
+              -0.28888002038002014
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.3870680332183838,
+              -0.4924142360687256,
+              0.14053751528263092,
+              -0.34570935368537903,
+              -0.19331993162631989,
+              0.2413652390241623,
+              -0.44114404916763306,
+              -0.4221409261226654
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "0bc9a1073c415cb0a19af64d759cdfd23f25c6cd696d41991cade2c41608e475",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.5487662553787231,
+              0.15596690773963928,
+              -0.31989309191703796,
+              -0.16673913598060608,
+              0.15867841243743896,
+              0.5586346983909607,
+              -0.04905611276626587,
+              0.45248016715049744
+            ]
+          },
+          {
+            "doc_id": "d_3",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "boost-title",
+      "notes": "The merged `title` property (lower-cased) contains a term → ×1.25; `$title` (an H1) is not consulted.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: Harbor log\n---\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# Harbor\n\nkilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.04032258064516129,
+                "evidence": {
+                  "rrf": 0.03225806451612903,
+                  "boosts": {
+                    "title": 1.25
+                  },
+                  "fts_rank": 2,
+                  "vector_rank": 2,
+                  "cosine": -0.6198169251620251
+                }
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "score": 0.037106427270361696,
+                "evidence": {
+                  "rrf": 0.032266458495966696,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 3,
+                  "vector_rank": 1,
+                  "cosine": 0.4956824311545123
+                }
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "score": 0.01885245901639344,
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 1
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "Harbor log · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx": "Harbor · b.md · Harbor · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Harbor log · a.md",
+            "input_hash": "553ba58e82b9cf8b9ea58e748733f35a5740bd7f57a01a20acea36d17adac6a3",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "Harbor · b.md",
+            "input_hash": "37f1999d8bb6ef6348c7bb6e8934f0d93b2443225626dd0c2fd4fe791043bbad",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+                "tokens": 33
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx_hash": "c57929b01439fcf68c9e80ccb2021bf86ddef67bdee6885ba3c40565e7d4f406",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.3962472975254059,
+              -0.501878559589386,
+              -0.5041636228561401,
+              -0.20066475868225098,
+              0.4414120316505432,
+              -0.0886354073882103,
+              -0.06088414788246155,
+              -0.3004179894924164
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "ff996f08cf0401bb3232ac5bff5810d72035d1f1dbb843d948e10c649d061f7f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.4189850687980652,
+              0.16884538531303406,
+              -0.1246221512556076,
+              0.6548423171043396,
+              0.24497485160827637,
+              -0.4744988679885864,
+              0.11326606571674347,
+              -0.23152226209640503
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "553ba58e82b9cf8b9ea58e748733f35a5740bd7f57a01a20acea36d17adac6a3",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.27559980750083923,
+              0.2420198619365692,
+              0.017557736486196518,
+              0.5125977993011475,
+              0.1974899172782898,
+              0.09315039217472076,
+              0.046405285596847534,
+              0.743353009223938
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "37f1999d8bb6ef6348c7bb6e8934f0d93b2443225626dd0c2fd4fe791043bbad",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.3706480860710144,
+              0.13176076114177704,
+              0.06024927645921707,
+              0.5729659199714661,
+              -0.28404664993286133,
+              0.30570706725120544,
+              0.0473494827747345,
+              0.5804807543754578
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "boost-heading",
+      "notes": "A section heading whose range contains the block contains a term → ×1.15 (the heading block itself also matches FTS and sits in its own range).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Harbor\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# Other\n\nkilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_1",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.037400846113167636,
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 2,
+                  "vector_rank": 1,
+                  "cosine": -0.02524973677683859
+                }
+              },
+              {
+                "block_id": "b_3",
+                "doc_id": "d_1",
+                "path": "b.md",
+                "score": 0.03200204813108039,
+                "evidence": {
+                  "rrf": 0.03200204813108039,
+                  "boosts": {},
+                  "fts_rank": 3,
+                  "vector_rank": 2,
+                  "cosine": -0.2371540435264992
+                }
+              },
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.01885245901639344,
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 1
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "Harbor · a.md · Harbor · paragraph"
+          },
+          {
+            "block_id": "b_3",
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx": "Other · b.md · Other · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Harbor · a.md",
+            "input_hash": "71b11baaeffebf96014ada51bdb6822b1f90666fab4592abe3eec4f9ab518a9b",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "Other · b.md",
+            "input_hash": "7f28aa08d0ea42a5141dc497b5e450f9d61086970522f0ba3b7f9fa874f985ba",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+                "tokens": 33
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx_hash": "40bba526fe0b4ad2bfe02ed5532305f8d8c9a1c22ee7b6eeabe89064a40720f2",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.33773094415664673,
+              0.5630062222480774,
+              0.2723129987716675,
+              -0.11324106156826019,
+              0.16262538731098175,
+              -0.492550253868103,
+              0.22099390625953674,
+              0.40508365631103516
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "fd3d3f1abbb0a3b920f24c3ae269f7291334a1fb5539d411bf10be7085750247",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.22104178369045258,
+              -0.4326758086681366,
+              -0.47714748978614807,
+              -0.34986698627471924,
+              -0.1564158797264099,
+              -0.40679895877838135,
+              0.2393571138381958,
+              -0.4081818163394928
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "71b11baaeffebf96014ada51bdb6822b1f90666fab4592abe3eec4f9ab518a9b",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.06106845661997795,
+              -0.4282795488834381,
+              0.4780513644218445,
+              0.2714273929595947,
+              -0.5408622622489929,
+              0.38552746176719666,
+              0.263423889875412,
+              0.009262396022677422
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "7f28aa08d0ea42a5141dc497b5e450f9d61086970522f0ba3b7f9fa874f985ba",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.00459655886515975,
+              0.22951866686344147,
+              0.4418348968029022,
+              -0.33501556515693665,
+              -0.589095413684845,
+              0.3745395839214325,
+              0.29427576065063477,
+              -0.2567780911922455
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "boost-path",
+      "notes": "The lower-cased path contains a term → ×1.10.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "harbor/log.md",
+                "source": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "notes/log.md",
+                "source": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "harbor/log.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "notes/log.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "harbor/log.md",
+                "score": 0.03577472236911688,
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {
+                    "path": 1.1
+                  },
+                  "fts_rank": 1,
+                  "vector_rank": 2,
+                  "cosine": -0.4339352882432208
+                }
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_1",
+                "path": "notes/log.md",
+                "score": 0.03252247488101534,
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {},
+                  "fts_rank": 2,
+                  "vector_rank": 1,
+                  "cosine": 0.3126825215830224
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "harbor/log.md · harbor/log.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx": "notes/log.md · notes/log.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_2",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          },
+          {
+            "doc_id": "d_0",
+            "header": "harbor/log.md · harbor/log.md",
+            "input_hash": "88ed710a3a79e1895f1e0e1d6f7dfc409a59495ba2b089cb176d6693ae506e9f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "notes/log.md · notes/log.md",
+            "input_hash": "a1dedd1265b5e98d6520bab0014ae2a450e9c710af3dbf0b29f65c8fc01a85ee",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+                "tokens": 33
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx_hash": "e869ccdfa8090eee055f9fdabdd318ad357b9a0afe3f530c10860300d0398436",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.24018247425556183,
+              0.3102886974811554,
+              -0.3569682240486145,
+              0.170186847448349,
+              0.3948015868663788,
+              -0.28485584259033203,
+              -0.48103633522987366,
+              0.4703576862812042
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "e6a085abc000d872eb60d9ccc6bded5fb4ab50dce359d9f61ad563000eb77737",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.0232537928968668,
+              0.28374218940734863,
+              -0.5094120502471924,
+              -0.1233665868639946,
+              -0.22862562537193298,
+              -0.0752328559756279,
+              0.49793344736099243,
+              -0.581689178943634
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "88ed710a3a79e1895f1e0e1d6f7dfc409a59495ba2b089cb176d6693ae506e9f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.04236306995153427,
+              -0.07098200172185898,
+              -0.32990550994873047,
+              0.46282416582107544,
+              -0.15602324903011322,
+              -0.5403955578804016,
+              -0.07834062725305557,
+              0.58958899974823
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "a1dedd1265b5e98d6520bab0014ae2a450e9c710af3dbf0b29f65c8fc01a85ee",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.14910881221294403,
+              0.40975043177604675,
+              -0.11574613302946091,
+              0.46469566226005554,
+              -0.11830852925777435,
+              0.2583801746368408,
+              -0.5578359961509705,
+              0.43427371978759766
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "boost-layer",
+      "notes": "`layer`: canon ×1.30, working ×1.15, draft ×0.85; `proposed` is ×1.0 and absent (§8). Different lengths avoid bm25 ties.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "canon.md",
+                "source": "---\nlayer: canon\n---\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "working.md",
+                "source": "---\nlayer: working\n---\n\nkilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine\n"
+              },
+              {
+                "path": "draft.md",
+                "source": "---\nlayer: draft\n---\n\nuniform victor whiskey harbor yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty\n"
+              },
+              {
+                "path": "proposed.md",
+                "source": "---\nlayer: proposed\n---\n\nfive six seven harbor nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty red orange yellow green blue indigo violet alpha bravo charlie delta\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "canon.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "working.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "draft.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "proposed.md",
+              "echo": false,
+              "doc": "d_3",
+              "commit": "c_3",
+              "rev": "r_3",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_4",
+              "commit": "c_4",
+              "rev": "r_4",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 4,
+            "cached": 0,
+            "doc_embedded": 4,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "canon.md",
+                "score": 0.041623975409836075,
+                "evidence": {
+                  "rrf": 0.032018442622950824,
+                  "boosts": {
+                    "layer": 1.3
+                  },
+                  "fts_rank": 1,
+                  "vector_rank": 4,
+                  "cosine": -0.17020506009812753
+                }
+              },
+              {
+                "block_id": "b_1",
+                "doc_id": "d_1",
+                "path": "working.md",
+                "score": 0.037400846113167636,
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {
+                    "layer": 1.15
+                  },
+                  "fts_rank": 2,
+                  "vector_rank": 1,
+                  "cosine": 0.9077425082413302
+                }
+              },
+              {
+                "block_id": "b_3",
+                "doc_id": "d_3",
+                "path": "proposed.md",
+                "score": 0.03149801587301587,
+                "evidence": {
+                  "rrf": 0.03149801587301587,
+                  "boosts": {},
+                  "fts_rank": 4,
+                  "vector_rank": 3,
+                  "cosine": -0.09924909753488674
+                }
+              },
+              {
+                "block_id": "b_2",
+                "doc_id": "d_2",
+                "path": "draft.md",
+                "score": 0.027201740911418328,
+                "evidence": {
+                  "rrf": 0.03200204813108039,
+                  "boosts": {
+                    "layer": 0.85
+                  },
+                  "fts_rank": 3,
+                  "vector_rank": 2,
+                  "cosine": 0.25004108811642933
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "canon.md · canon.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "41ff0cd252631c29a8c08672500cb5cad7b426e7bcf3561e747ba378762a1f31",
+            "ctx": "draft.md · draft.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_3",
+            "content_hash": "c2f56e0b109e4ae7f996685e0250b311e1179f0c49fb8bf64900446cb0e42fea",
+            "ctx": "proposed.md · proposed.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx": "working.md · working.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "canon.md · canon.md · layer: canon",
+            "input_hash": "a59168169427dbebc83da6ed156690bdb33098254ca8d5ae6c11c2f9ec9662c4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "draft.md · draft.md · layer: draft",
+            "input_hash": "604be54c447741f4c90cbd307bbdb7def7d7837e4d69c221b1aebfb7f420edb8",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "41ff0cd252631c29a8c08672500cb5cad7b426e7bcf3561e747ba378762a1f31",
+                "tokens": 34
+              }
+            ]
+          },
+          {
+            "doc_id": "d_4",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          },
+          {
+            "doc_id": "d_3",
+            "header": "proposed.md · proposed.md · layer: proposed",
+            "input_hash": "afd0ae0f82c124b181bd14353cac5edfce8444a0848a941e08c88fd84660ec11",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "c2f56e0b109e4ae7f996685e0250b311e1179f0c49fb8bf64900446cb0e42fea",
+                "tokens": 36
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "working.md · working.md · layer: working",
+            "input_hash": "cbf1c71260ead366a7ed037df018b1d0e9ba285cb5dc250cc68f67090872234f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+                "tokens": 33
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "41ff0cd252631c29a8c08672500cb5cad7b426e7bcf3561e747ba378762a1f31",
+            "ctx_hash": "8b7dfaff148b7d1c8a1093770493fc133a39d98319b7a75fa3038dcb1ce8bbe4",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.3621565103530884,
+              0.4762154817581177,
+              -0.10979139804840088,
+              0.09639058262109756,
+              0.5867266058921814,
+              -0.43479663133621216,
+              -0.17190954089164734,
+              0.2405557781457901
+            ]
+          },
+          {
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx_hash": "78c8115fd22303d04138aa845ee0cf9de1842e97a286dc9f024746cf754d2bfe",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.365663081407547,
+              0.041170861572027206,
+              -0.39790377020835876,
+              -0.40295448899269104,
+              0.18554309010505676,
+              0.3544377386569977,
+              -0.44093647599220276,
+              0.4352222681045532
+            ]
+          },
+          {
+            "content_hash": "c2f56e0b109e4ae7f996685e0250b311e1179f0c49fb8bf64900446cb0e42fea",
+            "ctx_hash": "e1bf08175ea22d135f4c0928da3fc05254255910857f09b374ba3da6f73e05b3",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.14354349672794342,
+              -0.5210651159286499,
+              0.6056646108627319,
+              -0.2990049719810486,
+              -0.24054543673992157,
+              -0.3125486373901367,
+              0.19642624258995056,
+              0.23983487486839294
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "1c089cefbb108cf9f738c8eaf4d79fcda1683bbb8a40247845ff2e7bb82c88b3",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.43934741616249084,
+              0.08187352865934372,
+              0.4717758297920227,
+              -0.4914645254611969,
+              -0.44445985555648804,
+              -0.0841732993721962,
+              0.17257387936115265,
+              0.3189816474914551
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "a59168169427dbebc83da6ed156690bdb33098254ca8d5ae6c11c2f9ec9662c4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.21979059278964996,
+              -0.13989582657814026,
+              0.11791105568408966,
+              0.5377699136734009,
+              0.4226355254650116,
+              0.2277435064315796,
+              -0.6236522197723389,
+              0.09793736040592194
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "cbf1c71260ead366a7ed037df018b1d0e9ba285cb5dc250cc68f67090872234f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.3366648554801941,
+              0.315070778131485,
+              -0.13779854774475098,
+              0.3697226345539093,
+              0.17700381577014923,
+              -0.5519648194313049,
+              0.4969319701194763,
+              0.2208326756954193
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "604be54c447741f4c90cbd307bbdb7def7d7837e4d69c221b1aebfb7f420edb8",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.1804216206073761,
+              0.5764533877372742,
+              -0.3387809693813324,
+              -0.35307422280311584,
+              0.4156932830810547,
+              0.3482060730457306,
+              -0.02424071729183197,
+              0.3179301917552948
+            ]
+          },
+          {
+            "doc_id": "d_3",
+            "model": "fixture-hash-8",
+            "input_hash": "afd0ae0f82c124b181bd14353cac5edfce8444a0848a941e08c88fd84660ec11",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.14354349672794342,
+              -0.5210651159286499,
+              0.6056646108627319,
+              -0.2990049719810486,
+              -0.24054543673992157,
+              -0.3125486373901367,
+              0.19642624258995056,
+              0.23983487486839294
+            ]
+          },
+          {
+            "doc_id": "d_4",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "terms-lower-cased",
+      "notes": "The FTS tokenizer folds case and the boost terms are lower-cased: `HARBOR` still earns the title and path boosts.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "harbor.md",
+                "source": "---\ntitle: Harbor log\n---\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "HARBOR",
+            "semantic": "HARBOR"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "harbor.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 2,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "harbor.md",
+                "score": 0.04508196721311476,
+                "evidence": {
+                  "rrf": 0.03278688524590164,
+                  "boosts": {
+                    "title": 1.25,
+                    "path": 1.1
+                  },
+                  "fts_rank": 1,
+                  "vector_rank": 1,
+                  "cosine": 0.08676202649215388
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "Harbor log · harbor.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_1",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          },
+          {
+            "doc_id": "d_0",
+            "header": "Harbor log · harbor.md",
+            "input_hash": "9d85ffe221fcaf8388395ead1dff7aaf3266c31a5470d4d88c4757e2810203c8",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "1c3f9ded7f37fc4064e8e9a9c88508cce6cb78762eaa85a6c2664783582c1656",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.18539945781230927,
+              -0.26928845047950745,
+              0.5009505152702332,
+              -0.47159135341644287,
+              0.21525724232196808,
+              -0.5060165524482727,
+              -0.049673210829496384,
+              0.33897653222084045
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "9d85ffe221fcaf8388395ead1dff7aaf3266c31a5470d4d88c4757e2810203c8",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.14923399686813354,
+              0.6464700102806091,
+              -0.4752483069896698,
+              0.24018625915050507,
+              0.04157620668411255,
+              -0.1684473156929016,
+              -0.49540945887565613,
+              -0.026865079998970032
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "hybrid-limit",
+      "notes": "`limit` applies after fusion and boosts.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "search": {
+            "text": "harbor",
+            "semantic": "harbor",
+            "limit": 1
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "block_id": "b_0",
+                "doc_id": "d_0",
+                "path": "a.md",
+                "score": 0.03278688524590164,
+                "evidence": {
+                  "rrf": 0.03278688524590164,
+                  "boosts": {},
+                  "fts_rank": 1,
+                  "vector_rank": 1,
+                  "cosine": -0.3196026912408786
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "a.md · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx": "b.md · b.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "b2e1a4cb12806b16a76ddb7704fe86de8acb3c0def65607631fade77a7f70cfe",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+                "tokens": 33
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "65aa8e8987695c121317a9323c74bf1c2571c0db69bdafe48d7290f37a095c4b",
+            "ctx_hash": "1a8f4fb2d6ee5694612a3799d2f375b2215c375ddc248a80f6fb8923475cfb8f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.5593624114990234,
+              -0.15438827872276306,
+              -0.21639901399612427,
+              0.689017117023468,
+              -0.1661107838153839,
+              0.05718717724084854,
+              0.2680100202560425,
+              -0.19751527905464172
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.5397244691848755,
+              -0.36112090945243835,
+              0.2504465878009796,
+              0.46247026324272156,
+              0.18950536847114563,
+              -0.3501623868942261,
+              -0.32985618710517883,
+              -0.1853533834218979
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.48671308159828186,
+              0.2944490313529968,
+              0.25823572278022766,
+              0.34864985942840576,
+              0.40417593717575073,
+              -0.11295066773891449,
+              0.4781213700771332,
+              -0.28888002038002014
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "b2e1a4cb12806b16a76ddb7704fe86de8acb3c0def65607631fade77a7f70cfe",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.249860018491745,
+              0.18068838119506836,
+              -0.5377107262611389,
+              -0.10269284248352051,
+              0.1936172991991043,
+              0.44916489720344543,
+              -0.6040433645248413,
+              0.033732205629348755
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "resolve-locator-and-preview",
+      "notes": "§4 `resolve`: `locator = path#type[ordinal]` (a nested item's ordinal is its sibling ordinal), `preview` = the first 12 words + `…` when cut. Text-only (no vector ranker).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Harbor\n\nalpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango\n\n- kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight\n- second item words here\n\nlorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n\nincididunt lorem ipsum dolor.\n"
+              }
+            ]
+          }
+        },
+        {
+          "resolve": {
+            "query": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 10
+              }
+            }
+          ],
+          {
+            "hits": [
+              {
+                "id": "b_0",
+                "locator": "a.md#heading[0]",
+                "preview": "Harbor",
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 1
+                }
+              },
+              {
+                "id": "b_1",
+                "locator": "a.md#paragraph[1]",
+                "preview": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima…",
+                "evidence": {
+                  "rrf": 0.016129032258064516,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 2
+                }
+              },
+              {
+                "id": "b_3",
+                "locator": "a.md#list_item[0]",
+                "preview": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor…",
+                "evidence": {
+                  "rrf": 0.015873015873015872,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 3
+                }
+              },
+              {
+                "id": "b_2",
+                "locator": "a.md#list[2]",
+                "preview": "kilo lima mike harbor oscar papa quebec romeo sierra tango uniform victor…",
+                "evidence": {
+                  "rrf": 0.015625,
+                  "boosts": {
+                    "heading": 1.15
+                  },
+                  "fts_rank": 4
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_3",
+            "content_hash": "30168c25873a40d34a41b00091d8fac99a66351c41e9a74661da3a3cfdc606c3",
+            "ctx": "Harbor · a.md · Harbor · list_item"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "0f294d5342b06a4298cf3e6eda8be21d3734f52ffe4819a989e47d84be25e69d",
+            "ctx": "Harbor · a.md · Harbor · list"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Harbor · a.md",
+            "input_hash": "b4d27e744322ebe659abd0a07a0b788d67328e965f8803f3c4dedc5f7c0ac36e",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "30168c25873a40d34a41b00091d8fac99a66351c41e9a74661da3a3cfdc606c3",
+                "tokens": 32
+              },
+              {
+                "content_hash": "0f294d5342b06a4298cf3e6eda8be21d3734f52ffe4819a989e47d84be25e69d",
+                "tokens": 37
+              }
+            ]
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "resolve-with-vector",
+      "notes": "`resolve` with a query vector: hybrid evidence carries both ranks; default limit 10.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight\n"
+              },
+              {
+                "path": "f.md",
+                "source": "lorem ipsum dolor sit.\n\nsit amet consectetur adipiscing.\n\nadipiscing elit sed do.\n\ndo eiusmod tempor incididunt.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "resolve": {
+            "query": "harbor",
+            "semantic": "harbor"
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "f.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 4
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "hits": [
+              {
+                "id": "b_0",
+                "locator": "a.md#paragraph[0]",
+                "preview": "alpha bravo charlie harbor echo foxtrot golf hotel india juliet kilo lima…",
+                "evidence": {
+                  "rrf": 0.03252247488101534,
+                  "boosts": {},
+                  "fts_rank": 1,
+                  "vector_rank": 2,
+                  "cosine": -0.3196026912408786
+                }
+              },
+              {
+                "id": "b_1",
+                "locator": "b.md#paragraph[0]",
+                "preview": "kilo lima mike november oscar papa quebec romeo sierra tango uniform victor…",
+                "evidence": {
+                  "rrf": 0.01639344262295082,
+                  "boosts": {},
+                  "vector_rank": 1,
+                  "cosine": 0.3193798659407372
+                }
+              }
+            ]
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx": "a.md · a.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx": "b.md · b.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "b.md · b.md",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "f.md · f.md",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "aaaade2751014d19f7a6972260620574d1ac299afd3983324157096116365dfe",
+            "ctx_hash": "1a8f4fb2d6ee5694612a3799d2f375b2215c375ddc248a80f6fb8923475cfb8f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.28735822439193726,
+              -0.06368298083543777,
+              0.3288790285587311,
+              -0.1394391804933548,
+              -0.29515695571899414,
+              0.23825590312480927,
+              -0.5288224816322327,
+              0.6018540263175964
+            ]
+          },
+          {
+            "content_hash": "f927d759606396c25f7483d8c4410434e03f694675c14c47998d21d58ed2c70d",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.5397244691848755,
+              -0.36112090945243835,
+              0.2504465878009796,
+              0.46247026324272156,
+              0.18950536847114563,
+              -0.3501623868942261,
+              -0.32985618710517883,
+              -0.1853533834218979
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "0051cd3ec3bedb76ea07625efd6d343738ce2e425ef356abbd168b5c9555625f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.48671308159828186,
+              0.2944490313529968,
+              0.25823572278022766,
+              0.34864985942840576,
+              0.40417593717575073,
+              -0.11295066773891449,
+              0.4781213700771332,
+              -0.28888002038002014
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "d2fc166d9e2135e1568db3bf216b257e2bb74bd7fef183ada5c7609a191086a4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.3870680332183838,
+              -0.4924142360687256,
+              0.14053751528263092,
+              -0.34570935368537903,
+              -0.19331993162631989,
+              0.2413652390241623,
+              -0.44114404916763306,
+              -0.4221409261226654
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "748fa400fe55b3890bd58355514a36be63194daa9385deb05ca862bbb9ab9d56",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.056428611278533936,
+              0.17759066820144653,
+              0.6231811046600342,
+              0.2542226016521454,
+              -0.5730245113372803,
+              0.01644590124487877,
+              -0.23040638864040375,
+              -0.3613570034503937
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

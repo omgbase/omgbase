@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-store"
-version = "13.2.0"
+version = "13.3.0"
 description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
 keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -26,6 +26,10 @@ omgbase-properties = { version = "1.0.0", path = "../omgbase-properties" }
 # edge descriptors, URI normalization and relative-path resolution; the store
 # resolves, mints `x`/`e`, keeps the intervals and the rollup (store 13.2).
 omgbase-graph = { version = "1.0.0", path = "../omgbase-graph" }
+# The search layer (`spec/search`): the FTS sanitizer, embedding inputs and
+# cache keys, pooling, cosine, fusion and boosts, the provider seam; the
+# store runs the queries and the drain over its caches (store 13.3).
+omgbase-search = { version = "1.0.0", path = "../omgbase-search" }
 # `bundled`: compile SQLite from source (FTS5 + JSON1 included) so the crate
 # needs no system library; the same version the `oqx` crate uses, so the
 # workspace builds one SQLite. `functions`: the `cosine` scalar.

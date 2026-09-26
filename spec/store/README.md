@@ -803,8 +803,13 @@ brought to it).
 
 ## Decisions
 
+- 2026-09-26, store 13.3: the store runs `spec/search` — `text_search`, the
+  embedding drain over the `embeddings`/`doc_embeddings` caches, vector and
+  hybrid search. Nothing new is written in the commit; the caches are filled
+  by the drain. No DDL change.
 - 2026-09-26, store 13.2: the store writes the `spec/graph` tables in the
-  commit (§5.4 step 9c) and adopts phantoms on doc creation. No DDL change.
+  commit (§5.4 step 9c) and adopts phantoms whenever a doc row becomes live.
+  No DDL change.
 - 2026-09-26, store 13.1: the store writes `spec/properties` rows in the
   commit (§5.4 step 9b). No DDL change; a semantic minor.
 - 2026-09-26, store 13.0 specified as built: the schema version is the spec

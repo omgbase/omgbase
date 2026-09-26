@@ -1,0 +1,2447 @@
+{
+  "suite": "embed",
+  "cases": [
+    {
+      "name": "should-embed-threshold",
+      "notes": "§2.1: 23 tokens does not embed, 24 and 25 do. Every doc is within the 48-token budget (header 3 words + body), so all three embed whole.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "t23.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey\n"
+              },
+              {
+                "path": "t24.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "t25.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "t23.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "t24.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            },
+            {
+              "path": "t25.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 3,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "t24.md · t24.md ·  · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "b8a81d441a1e0986d7db58a58555756a0b3749a31ee9a4c5c471320e8da8b2be",
+            "ctx": "t25.md · t25.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "t23.md · t23.md",
+            "input_hash": "ac5e8df09f05a336f409c3cf7412c645af9906627a663a0d3c23dc2f232da232",
+            "method_if_embedded": "whole",
+            "blocks": []
+          },
+          {
+            "doc_id": "d_1",
+            "header": "t24.md · t24.md",
+            "input_hash": "dcf27373662ff84c7fb01ae0576641944e765e8dd760cade84465229b506bf4d",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "header": "t25.md · t25.md",
+            "input_hash": "69dc7f476a5ce95b61ff5aac8bbe9ed2b70192d46b7e24a71dbd49db525fe628",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "b8a81d441a1e0986d7db58a58555756a0b3749a31ee9a4c5c471320e8da8b2be",
+                "tokens": 33
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "b8a81d441a1e0986d7db58a58555756a0b3749a31ee9a4c5c471320e8da8b2be",
+            "ctx_hash": "b5a167332b02a9fedba98463d6c1f5c45ca88a0d25a2be0ed8ab52da7e627750",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.36023470759391785,
+              0.08986242115497589,
+              -0.267953097820282,
+              -0.032795216888189316,
+              0.4760994017124176,
+              -0.17551128566265106,
+              0.7180502414703369,
+              0.12731978297233582
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "1ffbb8476c81af6d067b1cdc34b2a90b963b0ee454871ef036f0ab69eaaa802a",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.25263264775276184,
+              -0.42643144726753235,
+              0.4223063886165619,
+              -0.031852949410676956,
+              0.5152087807655334,
+              0.5061400532722473,
+              -0.08735685050487518,
+              -0.21383769810199738
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "ac5e8df09f05a336f409c3cf7412c645af9906627a663a0d3c23dc2f232da232",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.2675149142742157,
+              0.0840451642870903,
+              0.1870378851890564,
+              0.21230913698673248,
+              0.6996226906776428,
+              0.40885022282600403,
+              -0.07191590964794159,
+              0.42368796467781067
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "dcf27373662ff84c7fb01ae0576641944e765e8dd760cade84465229b506bf4d",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.46645721793174744,
+              -0.06297647953033447,
+              -0.12955020368099213,
+              0.6037214398384094,
+              -0.0015584840439260006,
+              -0.5074874758720398,
+              -0.20374973118305206,
+              -0.31325528025627136
+            ]
+          },
+          {
+            "doc_id": "d_2",
+            "model": "fixture-hash-8",
+            "input_hash": "69dc7f476a5ce95b61ff5aac8bbe9ed2b70192d46b7e24a71dbd49db525fe628",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.17816521227359772,
+              -0.005799996666610241,
+              -0.17414136230945587,
+              0.8478840589523315,
+              -0.24144648015499115,
+              -0.30038952827453613,
+              0.09451323002576828,
+              0.2480480968952179
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-title-from-frontmatter",
+      "notes": "§2.2: `doc_title` is the frontmatter `title` (a scalar string); the doc header (§2.4) prefers `$title`, the H1.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: Orchard Guide\n---\n\n# Planting\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Orchard Guide · a.md · Planting · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Planting · a.md",
+            "input_hash": "828895858eafdbce8eb6282a9e7f28f660029dd98d3449fba9b8503fbaa093c4",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "26042c05cee4438b874340b3566013a94c1c06405e61827bcf5561e5f0f09efa",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.7101030349731445,
+              -0.06323462724685669,
+              0.05789627507328987,
+              -0.10537596791982651,
+              -0.040003735572099686,
+              -0.3701900541782379,
+              -0.4982201159000397,
+              0.3007235825061798
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "828895858eafdbce8eb6282a9e7f28f660029dd98d3449fba9b8503fbaa093c4",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.01584782265126705,
+              0.13463929295539856,
+              0.09187338501214981,
+              0.574346125125885,
+              0.09204445034265518,
+              -0.5494930148124695,
+              0.19079703092575073,
+              -0.5445077419281006
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-title-first-heading-fallback",
+      "notes": "No frontmatter title → the first section heading's text.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Planting\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Planting · a.md · Planting · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Planting · a.md",
+            "input_hash": "8d75a7b52bc2b65ebc68b11548436f1f66a1e5eceac576e25a98622b6a5f501f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "9033036467946199d28d4b0b68ce95a3b218249ed45b3f9d9b091924c2a3667f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.234816312789917,
+              0.39478087425231934,
+              -0.6453561186790466,
+              0.32119032740592957,
+              -0.362577348947525,
+              0.16578078269958496,
+              0.3151414394378662,
+              -0.10536551475524902
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "8d75a7b52bc2b65ebc68b11548436f1f66a1e5eceac576e25a98622b6a5f501f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.09230587631464005,
+              0.27233651280403137,
+              -0.5777456164360046,
+              0.37288039922714233,
+              0.4142981469631195,
+              0.3366331458091736,
+              -0.38225698471069336,
+              -0.11574736982584
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-title-path-fallback",
+      "notes": "No title, no heading → the path; the heading chain is empty (`title · path ·  · paragraph`).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "a.md · a.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.2976870536804199,
+              0.3468553423881531,
+              0.04954390972852707,
+              0.09999094903469086,
+              -0.43040624260902405,
+              -0.5000346302986145,
+              0.4359208941459656,
+              -0.39154794812202454
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-title-blank-or-non-string-falls-back",
+      "notes": "A blank frontmatter title and a numeric one are not `doc_title`; both fall back to the first heading.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "blank.md",
+                "source": "---\ntitle: \"   \"\n---\n\n# Fallback Heading\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "number.md",
+                "source": "---\ntitle: 42\n---\n\n# Numeric Fallback\n\nfoxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "blank.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "number.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 2,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Fallback Heading · blank.md · Fallback Heading · paragraph"
+          },
+          {
+            "block_id": "b_3",
+            "content_hash": "247145e94ab571a6cd2e43aa166ab03bf764013225107683dce74325295cf61b",
+            "ctx": "Numeric Fallback · number.md · Numeric Fallback · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Fallback Heading · blank.md",
+            "input_hash": "7d810f81af477d52e35816171a5d065be742f4622b74a9c2cc86fd205fd4d04e",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "Numeric Fallback · number.md",
+            "input_hash": "77becbdf5cb90b6f9f77704e65bc60238ad36b117063fb56e51bdb7d1e72e8ec",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "247145e94ab571a6cd2e43aa166ab03bf764013225107683dce74325295cf61b",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "247145e94ab571a6cd2e43aa166ab03bf764013225107683dce74325295cf61b",
+            "ctx_hash": "b11b19d309af59589b8601ed935c488b1215e88f3cb37dc60466cd0b7881d457",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.025318540632724762,
+              0.2733355760574341,
+              -0.052441734820604324,
+              0.5812799334526062,
+              0.5616530179977417,
+              0.12321832031011581,
+              -0.4891892075538635,
+              -0.11860524117946625
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "02ad7290bda77e1ed8c6c6290ef53ce672a72a91c23db30c6ee543aa0b017767",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.10182823985815048,
+              -0.22546689212322235,
+              0.4487309157848358,
+              -0.43404510617256165,
+              0.1710103154182434,
+              0.5268832445144653,
+              0.36887186765670776,
+              -0.32576701045036316
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "7d810f81af477d52e35816171a5d065be742f4622b74a9c2cc86fd205fd4d04e",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.010088866576552391,
+              -0.4550418257713318,
+              0.19124603271484375,
+              -0.010831507854163647,
+              0.40185606479644775,
+              -0.42840152978897095,
+              -0.4111153781414032,
+              -0.492047518491745
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "77becbdf5cb90b6f9f77704e65bc60238ad36b117063fb56e51bdb7d1e72e8ec",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.05374349281191826,
+              0.49391376972198486,
+              -0.22963359951972961,
+              -0.758804202079773,
+              0.20484064519405365,
+              -0.10215967893600464,
+              -0.1709696650505066,
+              -0.20740894973278046
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-heading-chain-shallowest-first",
+      "notes": "§2.2: the sections containing the block's ordinal, level ascending, joined by ` › `.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Top\n\n## Middle\n\n### Deep\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\n## Other\n\nhotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 6
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_3",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Top · a.md · Top › Middle › Deep · paragraph"
+          },
+          {
+            "block_id": "b_5",
+            "content_hash": "ccd2aa2e276c727eff371c536f593c5dde3a2271a066a7043162122558204e81",
+            "ctx": "Top · a.md · Top › Other · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Top · a.md",
+            "input_hash": "2331232a624dad78ead222419b2e6aa0dee212e77ab8ac20fd8e98a0fdc7efdf",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              },
+              {
+                "content_hash": "ccd2aa2e276c727eff371c536f593c5dde3a2271a066a7043162122558204e81",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "ccd2aa2e276c727eff371c536f593c5dde3a2271a066a7043162122558204e81",
+            "ctx_hash": "9fbb2fc3c474f0d69534724d7ee2f6e8f07600227fb4776d4bbb1e56dc9bb55f",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.04394195228815079,
+              -0.32853373885154724,
+              -0.5502449870109558,
+              -0.2613082826137543,
+              0.4956318438053131,
+              0.10269884765148163,
+              -0.38151752948760986,
+              -0.34253400564193726
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "8b313744c568f818a0f9c4e41e2bf501701a9ee5db82787e05f59c17a4b05571",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.24799108505249023,
+              0.2543155252933502,
+              -0.46991899609565735,
+              -0.5084713101387024,
+              -0.07030072063207626,
+              -0.29776254296302795,
+              -0.532204806804657,
+              0.13270428776741028
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "2331232a624dad78ead222419b2e6aa0dee212e77ab8ac20fd8e98a0fdc7efdf",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              0.173785001039505,
+              -0.04418140649795532,
+              -0.6072940826416016,
+              -0.45824259519577026,
+              0.2531956434249878,
+              -0.11611959338188171,
+              -0.5439303517341614,
+              -0.1249096617102623
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "ctx-nested-list-item-inherits-top-level-ordinal",
+      "notes": "§8: a nested block's chain is computed from its *sibling* ordinal against top-level ranges — the list item (ordinal 0 inside its list) gets the chain of top-level ordinal 0 (`Intro`), while its `list` container (ordinal 3) gets `Intro › Second`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Intro\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\n## Second\n\n- juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 5
+              }
+            }
+          ],
+          {
+            "embedded": 3,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_4",
+            "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+            "ctx": "Intro · a.md · Intro · list_item"
+          },
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Intro · a.md · Intro · paragraph"
+          },
+          {
+            "block_id": "b_3",
+            "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+            "ctx": "Intro · a.md · Intro › Second · list"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Intro · a.md",
+            "input_hash": "0bd4f7e4421dc03607837acc6854967af9ebf74197980fcd1689074f57325f5f",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+                "tokens": 32
+              },
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              },
+              {
+                "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+            "ctx_hash": "448dc8f9322873866eb91a7b4f539fca2fe8a8ef9c7a6e83d9a8b29ef3212b3c",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.04969855397939682,
+              0.382994145154953,
+              0.01812535524368286,
+              0.29320427775382996,
+              -0.4543720483779907,
+              -0.2503729462623596,
+              0.6383082866668701,
+              0.29659774899482727
+            ]
+          },
+          {
+            "content_hash": "dbc13d0b177d06f80fba7b9b6d54b2c29035103afd050d9be73acc740ede91a7",
+            "ctx_hash": "88eb20a424321147d50c5e1449a536b3c780733789fe1ce409e046ae23e531bd",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.4608496427536011,
+              -0.25983840227127075,
+              0.36999526619911194,
+              0.4786386787891388,
+              -0.3623813986778259,
+              -0.441593736410141,
+              0.09026063978672028,
+              0.14013507962226868
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "adf33486f86835f280bf4e9ff70f572744879c37111d85f3f1573abbeffc464a",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.20404276251792908,
+              0.6024430394172668,
+              -0.2922692894935608,
+              -0.041663579642772675,
+              0.4554997384548187,
+              -0.39195922017097473,
+              -0.3336396813392639,
+              0.1893257349729538
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "0bd4f7e4421dc03607837acc6854967af9ebf74197980fcd1689074f57325f5f",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.17648786306381226,
+              0.4178045988082886,
+              0.05519183352589607,
+              0.420442134141922,
+              -0.20801228284835815,
+              -0.6241317391395569,
+              0.22740288078784943,
+              0.3604886531829834
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "cache-shared-within-doc-identical-blocks",
+      "notes": "§2.3: two identical blocks under one context are two tasks but one cache row; both misses are sent to the provider (`embedded` counts tasks, not rows).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Same\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · a.md · Same · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · a.md · Same · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Same · a.md",
+            "input_hash": "d2b16ac5b3839751fb987173dc97e72f038b8eb8a4640cf7f06c65792ada4ea9",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              },
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "8f444f51c0f932de5d7d3a46407fa06d6de59960fae0c5311ba406618a417969",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.30232781171798706,
+              -0.20626673102378845,
+              -0.45683589577674866,
+              -0.12040012329816818,
+              0.3453628718852997,
+              0.4627934694290161,
+              -0.0196211040019989,
+              -0.5558942556381226
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "d2b16ac5b3839751fb987173dc97e72f038b8eb8a4640cf7f06c65792ada4ea9",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.30232781171798706,
+              -0.20626673102378845,
+              -0.45683589577674866,
+              -0.12040012329816818,
+              0.3453628718852997,
+              0.4627934694290161,
+              -0.0196211040019989,
+              -0.5558942556381226
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "identical-blocks-in-two-docs-distinct-ctx",
+      "notes": "The path is part of `ctx`, so identical text in two documents is two cache rows (same content_hash, different ctx_hash).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Same\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# Same\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 2,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · a.md · Same · paragraph"
+          },
+          {
+            "block_id": "b_3",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Same · b.md · Same · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Same · a.md",
+            "input_hash": "91a280a83e7e4a9a81e15281e4acefef192eb16012bc19e84a13970facdf1209",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "header": "Same · b.md",
+            "input_hash": "648f6e002d5ee2e51db227c627744306bffe4446e3f9d24ed64cc160e109e9d5",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "8f444f51c0f932de5d7d3a46407fa06d6de59960fae0c5311ba406618a417969",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.30232781171798706,
+              -0.20626673102378845,
+              -0.45683589577674866,
+              -0.12040012329816818,
+              0.3453628718852997,
+              0.4627934694290161,
+              -0.0196211040019989,
+              -0.5558942556381226
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "90d1ce04541b783b47b075a0331154ee92b4f27457923b0279b40d9591206ce6",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.4700295627117157,
+              -0.5312983989715576,
+              -0.18308407068252563,
+              0.4449672996997833,
+              -0.09100641310214996,
+              0.07806836813688278,
+              -0.39132174849510193,
+              -0.3126803934574127
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "91a280a83e7e4a9a81e15281e4acefef192eb16012bc19e84a13970facdf1209",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.098287433385849,
+              0.0036684975493699312,
+              -0.36509716510772705,
+              -0.2976055145263672,
+              0.010482977144420147,
+              -0.25356176495552063,
+              0.5611059665679932,
+              0.6238731741905212
+            ]
+          },
+          {
+            "doc_id": "d_1",
+            "model": "fixture-hash-8",
+            "input_hash": "648f6e002d5ee2e51db227c627744306bffe4446e3f9d24ed64cc160e109e9d5",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.1269877701997757,
+              -0.08329363912343979,
+              -0.38240957260131836,
+              0.4576856791973114,
+              -0.4549378454685211,
+              -0.40829703211784363,
+              -0.4097793996334076,
+              -0.28218603134155273
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "heading-rename-invalidates-descendants",
+      "notes": "§2.3: renaming the heading changes the descendant's ctx_hash → a cache miss on the next drain; the old row remains. The doc input changed too → re-embedded whole.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Old\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# New\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "New · a.md · New · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "New · a.md",
+            "input_hash": "b45c043dab0c1965dc9bf55537abe9da14fd79715c4a8cb273ece1ae350a353b",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "47ad5197b3cdc3d369add1f055cf9a01bf661a7db0db28a48a84ec5a4a5dd47c",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.492306649684906,
+              0.3991119861602783,
+              0.0606563463807106,
+              0.4572758078575134,
+              0.12038647383451462,
+              0.4365675747394562,
+              0.05253871530294418,
+              0.42156726121902466
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "ea2b2a95a2a6250fd9f5e1152fb5d5d20b4e4b990b4b2a86e5d18e6ec760f90b",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.11449386924505234,
+              -0.3772567808628082,
+              0.0015748351579532027,
+              0.5855371356010437,
+              0.3048590421676636,
+              0.6250755190849304,
+              0.12959441542625427,
+              0.03548405319452286
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "b45c043dab0c1965dc9bf55537abe9da14fd79715c4a8cb273ece1ae350a353b",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.19902075827121735,
+              -0.4703998863697052,
+              0.16362477838993073,
+              -0.3899868428707123,
+              0.35199257731437683,
+              0.44597604870796204,
+              -0.27492019534111023,
+              0.4023398160934448
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "whole-doc-within-budget",
+      "notes": "§2.4: header (3 words) + 24 words = 27 words → ceil(27 × 1.3) = 36 ≤ 48 → `whole`; the vector is the fixture embedding of the input.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "a.md · a.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.2976870536804199,
+              0.3468553423881531,
+              0.04954390972852707,
+              0.09999094903469086,
+              -0.43040624260902405,
+              -0.5000346302986145,
+              0.4359208941459656,
+              -0.39154794812202454
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pooled-doc-over-budget-single-block",
+      "notes": "§2.5: 3 + 40 words → 56 tokens > 48 → pooled from the one cached block: the doc vector equals the block vector.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "9109f46ec97bfcc10c4d82641e7611f70b4b7f694be4da87e89911c4959c61d5",
+            "ctx": "a.md · a.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "e755e9680a6858d39ac9b6d433b9dc425a4f037a56ce82eedbaa516b6c90c1ae",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "9109f46ec97bfcc10c4d82641e7611f70b4b7f694be4da87e89911c4959c61d5",
+                "tokens": 52
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "9109f46ec97bfcc10c4d82641e7611f70b4b7f694be4da87e89911c4959c61d5",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.07342514395713806,
+              0.3677794635295868,
+              -0.43891650438308716,
+              0.44703513383865356,
+              0.42000338435173035,
+              0.3950848877429962,
+              0.36191093921661377,
+              0.05817606672644615
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "e755e9680a6858d39ac9b6d433b9dc425a4f037a56ce82eedbaa516b6c90c1ae",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.07342514395713806,
+              0.3677794635295868,
+              -0.43891650438308716,
+              0.44703513383865356,
+              0.42000338435173035,
+              0.3950848877429962,
+              0.36191093921661377,
+              0.05817606672644615
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pooled-two-blocks-weighted",
+      "notes": "§2.5: weights are `estimate_tokens(text)` — 32 for 24 words and 39 for 30 — the mean is accumulated in f64 and L2-normalized.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Pool\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\nuniform victor whiskey xray yankee zulu one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty red orange yellow green\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "embedded": 2,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "Pool · a.md · Pool · paragraph"
+          },
+          {
+            "block_id": "b_2",
+            "content_hash": "0fbfb90ea6d5cf6f66a25d8d165d405edee61e53553f77b8baae23c2d2addb59",
+            "ctx": "Pool · a.md · Pool · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Pool · a.md",
+            "input_hash": "b3af59e5db4ccff8d541f0ba3c03ca52dd4005e479e1ba673f1e1a2dde1f21f8",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              },
+              {
+                "content_hash": "0fbfb90ea6d5cf6f66a25d8d165d405edee61e53553f77b8baae23c2d2addb59",
+                "tokens": 39
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "0fbfb90ea6d5cf6f66a25d8d165d405edee61e53553f77b8baae23c2d2addb59",
+            "ctx_hash": "6852f9c8f308a7e7e67108d7d6699e98a5d6e67bba04613173e0ea0dc2757b10",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.28606340289115906,
+              -0.5448027849197388,
+              0.0004167070146650076,
+              -0.04782605916261673,
+              0.2864682078361511,
+              -0.5819016098976135,
+              0.42967256903648376,
+              0.11738041788339615
+            ]
+          },
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "6852f9c8f308a7e7e67108d7d6699e98a5d6e67bba04613173e0ea0dc2757b10",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.43835410475730896,
+              -0.44073984026908875,
+              0.5011271834373474,
+              0.216025710105896,
+              0.48655909299850464,
+              0.15675505995750427,
+              0.23341944813728333,
+              0.0013958974741399288
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "b3af59e5db4ccff8d541f0ba3c03ca52dd4005e479e1ba673f1e1a2dde1f21f8",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              0.050933126360177994,
+              -0.6271768808364868,
+              0.28479108214378357,
+              0.08955173939466476,
+              0.4744439125061035,
+              -0.3136329650878906,
+              0.4298153817653656,
+              0.08200982958078384
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pooled-doc-with-no-embeddable-blocks-stays-queued",
+      "notes": "§8: ten short paragraphs (53 words → 69 tokens) are over budget, but no block embeds, so nothing pools and the document has no row after the drain.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo\n\nfoxtrot golf hotel india juliet\n\nkilo lima mike november oscar\n\npapa quebec romeo sierra tango\n\nuniform victor whiskey xray yankee\n\nzulu one two three four\n\nfive six seven eight nine\n\nten eleven twelve thirteen fourteen\n\nfifteen sixteen seventeen eighteen nineteen\n\ntwenty red orange yellow green\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 10
+              }
+            }
+          ],
+          {
+            "embedded": 0,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md",
+            "input_hash": "5d281338ee8482e88de8e2e7ba9761870267f3c18721a22e9359243fb77a3a47",
+            "method_if_embedded": "pooled",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": []
+      }
+    },
+    {
+      "name": "second-drain-all-cached",
+      "notes": "Nothing changed between drains: the block is cached and the doc vector is fresh.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# T\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          {
+            "embedded": 0,
+            "cached": 1,
+            "doc_embedded": 0,
+            "doc_cached": 1,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "T · a.md · T · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "T · a.md",
+            "input_hash": "c189461f211fb3f385b9dfa6ece3150748876881d297e786ed4aee2ff1324bdc",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "b6001cef30a1f488db1034d011ecd4008d8686b5ec24bff4c02822460f5b47e5",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.4504395127296448,
+              0.23582199215888977,
+              0.16909904778003693,
+              0.19843941926956177,
+              0.470988005399704,
+              0.5197523236274719,
+              -0.42310968041419983,
+              0.0502551905810833
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "c189461f211fb3f385b9dfa6ece3150748876881d297e786ed4aee2ff1324bdc",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.28787946701049805,
+              -0.254231333732605,
+              -0.4167581796646118,
+              0.22820162773132324,
+              0.02514602057635784,
+              0.4201555848121643,
+              0.47830629348754883,
+              -0.4698813855648041
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "edit-short-block-reembeds-doc-only",
+      "notes": "Editing a block that does not embed leaves the block cache warm but changes the doc input → only the doc is re-embedded.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# T\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\nshort line.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# T\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n\nshort line changed.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 3
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "deleted": 1,
+                "inserted": 1,
+                "same": 2
+              }
+            }
+          ],
+          {
+            "embedded": 0,
+            "cached": 1,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "T · a.md · T · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "T · a.md",
+            "input_hash": "afcb29b98e4589fa6ffaa0f0da72041f5a5169e8cd3edc8e4d7689d0a26d8a93",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "b6001cef30a1f488db1034d011ecd4008d8686b5ec24bff4c02822460f5b47e5",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.4504395127296448,
+              0.23582199215888977,
+              0.16909904778003693,
+              0.19843941926956177,
+              0.470988005399704,
+              0.5197523236274719,
+              -0.42310968041419983,
+              0.0502551905810833
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "afcb29b98e4589fa6ffaa0f0da72041f5a5169e8cd3edc8e4d7689d0a26d8a93",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              0.25584420561790466,
+              -0.4618285596370697,
+              0.07639465481042862,
+              0.05341457575559616,
+              -0.08576233685016632,
+              0.1763235181570053,
+              0.4841604232788086,
+              -0.6631081104278564
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "doc-header-title-precedence",
+      "notes": "§8: the block ctx uses the frontmatter `title` (`FM`); the doc header uses `$title` (`H1`) — pinned by `input_hash` and the whole-doc vector.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: FM\n---\n\n# H1\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_1",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "FM · a.md · H1 · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "H1 · a.md",
+            "input_hash": "21f722336b254cf42a1ea3a507f78d9b17f65f71e8dcaa98e64f1da2b4cabce6",
+            "method_if_embedded": "whole",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "a9d6ff0e1f1d18aba534af29f237d1f8cd57f96a78b3552ac6bf968ffb4cf13d",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              0.4893398880958557,
+              0.07471559941768646,
+              -0.2961895763874054,
+              -0.4863627851009369,
+              -0.1624169945716858,
+              -0.5378289818763733,
+              -0.00112669647205621,
+              0.33918496966362
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "21f722336b254cf42a1ea3a507f78d9b17f65f71e8dcaa98e64f1da2b4cabce6",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.44869256019592285,
+              -0.4475741982460022,
+              -0.0995054617524147,
+              -0.24356797337532043,
+              -0.4097925126552582,
+              0.17009218037128448,
+              -0.5727552175521851,
+              0.06492971628904343
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "doc-header-type-and-layer",
+      "notes": "§2.4: `type: note · layer: canon` join the header when they are non-blank strings; no title → the path twice. Pinned by `input_hash`.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntype: note\nlayer: canon\n---\n\nalpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 1
+          }
+        ],
+        "embed_tasks": [
+          {
+            "block_id": "b_0",
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx": "a.md · a.md ·  · paragraph"
+          }
+        ],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "a.md · a.md · type: note · layer: canon",
+            "input_hash": "7b7e29043b52754c8080a3477f5ab82d79c2f3dac60e42ae8c0816ce49b4da35",
+            "method_if_embedded": "pooled",
+            "blocks": [
+              {
+                "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+                "tokens": 32
+              }
+            ]
+          }
+        ],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "7b7e29043b52754c8080a3477f5ab82d79c2f3dac60e42ae8c0816ce49b4da35",
+            "method": "pooled",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontmatter-is-not-a-block",
+      "notes": "Frontmatter is the revision's `frontmatter_blob`, not a `blocks` row (spec/store §3.1), so 24+ tokens of YAML never embed on their own; they reach the index only inside the whole-document input (reconstruct is the whole file).",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "---\ntitle: Meta\ndescription: alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n---\n\n# Body\n\nshort.\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "embedded": 0,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [
+          {
+            "doc_id": "d_0",
+            "header": "Body · a.md",
+            "input_hash": "1adbfd600db5b3622be093ee91ec61327819abf13e4b90a2808a25f82aa1e475",
+            "method_if_embedded": "whole",
+            "blocks": []
+          }
+        ],
+        "embeddings": [],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "1adbfd600db5b3622be093ee91ec61327819abf13e4b90a2808a25f82aa1e475",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.4505424499511719,
+              0.5584951639175415,
+              -0.509112536907196,
+              0.2288948893547058,
+              -0.3747284710407257,
+              0.0887860506772995,
+              0.07984219491481781,
+              -0.1372116506099701
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "tombstoned-doc-rows-linger",
+      "notes": "Deleting a document empties its tasks; its `embeddings` and `doc_embeddings` rows are never pruned by a drain.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray\n"
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": null
+              }
+            ]
+          }
+        },
+        {
+          "drain": true
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 1
+              }
+            }
+          ],
+          {
+            "embedded": 1,
+            "cached": 0,
+            "doc_embedded": 1,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          },
+          [
+            {
+              "path": "a.md",
+              "deleted": true,
+              "doc": "d_0"
+            }
+          ],
+          {
+            "embedded": 0,
+            "cached": 0,
+            "doc_embedded": 0,
+            "doc_cached": 0,
+            "doc_pooled": 0
+          }
+        ],
+        "embed_tasks": [],
+        "doc_tasks": [],
+        "embeddings": [
+          {
+            "content_hash": "f59eb81179db17daecf97f1c2538bab3054c208e3ee56d81390b47a54bfbb8a9",
+            "ctx_hash": "244d0a2c1f981e6418db4fcf962258aae15c4d8afbde383aef064809816c2aa0",
+            "model": "fixture-hash-8",
+            "dim": 8,
+            "vec": [
+              -0.37559401988983154,
+              0.1789083629846573,
+              0.388969749212265,
+              -0.32227766513824463,
+              0.29477962851524353,
+              -0.5557310581207275,
+              0.10294657200574875,
+              0.406731516122818
+            ]
+          }
+        ],
+        "doc_embeddings": [
+          {
+            "doc_id": "d_0",
+            "model": "fixture-hash-8",
+            "input_hash": "3740d4c38c1b986f16d105cdea8720500a882caef8cf96e3ecb558db84ea7a1f",
+            "method": "whole",
+            "dim": 8,
+            "vec": [
+              -0.2976870536804199,
+              0.3468553423881531,
+              0.04954390972852707,
+              0.09999094903469086,
+              -0.43040624260902405,
+              -0.5000346302986145,
+              0.4359208941459656,
+              -0.39154794812202454
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

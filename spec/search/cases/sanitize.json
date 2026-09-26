@@ -1,0 +1,137 @@
+{
+  "suite": "sanitize",
+  "cases": [
+    {
+      "name": "single-word",
+      "notes": "§1.2: one bareword → one quoted token.",
+      "input": "hello",
+      "expect": "\"hello\""
+    },
+    {
+      "name": "two-words-implicit-and",
+      "notes": "Whitespace-separated tokens, joined by single spaces (FTS5 implicit AND).",
+      "input": "guides onboarding",
+      "expect": "\"guides\" \"onboarding\""
+    },
+    {
+      "name": "slash-path-is-one-token",
+      "notes": "`guides/onboarding` is one quoted token; the tokenizer splits on `/`, so it is an AND of two terms.",
+      "input": "guides/onboarding",
+      "expect": "\"guides/onboarding\""
+    },
+    {
+      "name": "phrase-then-prefix",
+      "notes": "The README example: a quoted phrase stays a phrase, a trailing `*` on a bareword becomes a prefix.",
+      "input": "\"exact phrase\" other*",
+      "expect": "\"exact phrase\" \"other\"*"
+    },
+    {
+      "name": "unclosed-quote-runs-to-end",
+      "notes": "A missing closing quote: the phrase runs to the end of the input.",
+      "input": "\"runs to the end",
+      "expect": "\"runs to the end\""
+    },
+    {
+      "name": "prefix-star",
+      "notes": "The `*` is stripped and re-appended outside the quotes.",
+      "input": "embed*",
+      "expect": "\"embed\"*"
+    },
+    {
+      "name": "star-alone-dropped",
+      "notes": "A bare `*` has no letter or digit once stripped → dropped → empty.",
+      "input": "*",
+      "expect": ""
+    },
+    {
+      "name": "double-star-strips-one",
+      "notes": "Only the last `*` is a prefix marker; the inner one stays in the quoted token.",
+      "input": "foo**",
+      "expect": "\"foo*\"*"
+    },
+    {
+      "name": "star-in-middle-kept",
+      "notes": "`*` is only special at the end of a bareword.",
+      "input": "em*bed",
+      "expect": "\"em*bed\""
+    },
+    {
+      "name": "punctuation-only-dropped",
+      "notes": "Tokens with no Unicode letter or digit are dropped; nothing survives → empty.",
+      "input": "--- ::: ()",
+      "expect": ""
+    },
+    {
+      "name": "punctuation-inside-kept",
+      "notes": "A token with letters keeps its punctuation (the tokenizer strips it later).",
+      "input": "foo-bar :colon: a/b",
+      "expect": "\"foo-bar\" \":colon:\" \"a/b\""
+    },
+    {
+      "name": "quote-inside-bareword-splits",
+      "notes": "A `\"` ends a bareword and starts a phrase: barewords and phrases can never contain a quote, so the `\"\"` doubling rule is unreachable (§8 candidate).",
+      "input": "a\"b",
+      "expect": "\"a\" \"b\""
+    },
+    {
+      "name": "quotes-never-nest",
+      "notes": "`\"a \"b\" c\"` is phrase `a `, bareword `b`, phrase ` c`.",
+      "input": "\"a \"b\" c\"",
+      "expect": "\"a \" \"b\" \" c\""
+    },
+    {
+      "name": "phrase-punctuation-only-dropped",
+      "notes": "A phrase with no letter or digit is dropped.",
+      "input": "\"---\"",
+      "expect": ""
+    },
+    {
+      "name": "phrase-adjacent-bareword",
+      "notes": "A bareword may follow a closing quote without whitespace.",
+      "input": "\"a b\"c*",
+      "expect": "\"a b\" \"c\"*"
+    },
+    {
+      "name": "unicode-letters-kept",
+      "notes": "Unicode `L` counts as a word character.",
+      "input": "héllo wörld 日本語",
+      "expect": "\"héllo\" \"wörld\" \"日本語\""
+    },
+    {
+      "name": "unicode-digits-kept",
+      "notes": "Unicode `N` (here Arabic-Indic digits) counts as a word character.",
+      "input": "٣٤٥",
+      "expect": "\"٣٤٥\""
+    },
+    {
+      "name": "fts5-operators-neutralized",
+      "notes": "AND/OR/NOT/NEAR are plain quoted tokens, never operators.",
+      "input": "NOT apple AND pie OR NEAR",
+      "expect": "\"NOT\" \"apple\" \"AND\" \"pie\" \"OR\" \"NEAR\""
+    },
+    {
+      "name": "column-filter-neutralized",
+      "notes": "A `col:term` is one quoted token, not a column filter.",
+      "input": "text:apple",
+      "expect": "\"text:apple\""
+    },
+    {
+      "name": "mixed-whitespace",
+      "notes": "Tabs and newlines are separators (`\\s`).",
+      "input": "a\tb\nc  d",
+      "expect": "\"a\" \"b\" \"c\" \"d\""
+    },
+    {
+      "name": "empty-input",
+      "notes": "Empty in, empty out.",
+      "input": "",
+      "expect": ""
+    },
+    {
+      "name": "whitespace-only",
+      "notes": "Only separators → empty.",
+      "input": " \t\n ",
+      "expect": ""
+    }
+  ]
+}

@@ -18,6 +18,8 @@ pub enum Error {
     InvalidTimestamp(String),
     /// A JSON column did not parse (tree entries, attrs, detail).
     Json(serde_json::Error),
+    /// The embedding provider failed (`spec/search` §5).
+    Search(omgbase_search::Error),
     /// Anything else, with a message.
     Other(String),
 }
@@ -32,6 +34,7 @@ impl fmt::Display for Error {
             ),
             Error::InvalidTimestamp(ts) => write!(f, "invalid RFC 3339 UTC timestamp {ts:?}"),
             Error::Json(e) => write!(f, "json: {e}"),
+            Error::Search(e) => write!(f, "search: {e}"),
             Error::Other(msg) => f.write_str(msg),
         }
     }
@@ -42,6 +45,7 @@ impl std::error::Error for Error {
         match self {
             Error::Sqlite(e) => Some(e),
             Error::Json(e) => Some(e),
+            Error::Search(e) => Some(e),
             _ => None,
         }
     }
@@ -56,6 +60,12 @@ impl From<rusqlite::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
         Error::Json(e)
+    }
+}
+
+impl From<omgbase_search::Error> for Error {
+    fn from(e: omgbase_search::Error) -> Self {
+        Error::Search(e)
     }
 }
 
