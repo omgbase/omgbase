@@ -47,11 +47,19 @@ A **bare identifier** resolves against exactly **one** scope — the current one
 and never climbs:
 
 1. `$value` — the scope's row itself (absent at the root).
-2. `$key` — the property key, in an entry scope only (§21).
+2. `$key` — the property key, in an entry scope (§21).
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
-   intrinsics, on a `follow` occurrence only (§20).
+   intrinsics, on a `follow` occurrence (§20).
 4. a value **lifted** into this scope by a `^name:` item (§19).
 5. at the root scope: the named root; elsewhere: the row's own property.
+
+Steps 2 and 3 apply only where the scope **carries** that metadata: an entry
+scope for `$key`, a walk occurrence for the recursion intrinsics. Anywhere
+else the name is an ordinary property read (step 5), so a host whose rows
+carry a `$depth` or `$ordinal` of their own (omgbase's blocks do) exposes it
+outside a `follow`, and a plain-JSON row `{ "$depth": 3 }` projects `3`.
+Since 0.13; before, the six names read absent everywhere they were not
+metadata, shadowing the row.
 
 A name the scope lacks is **absent**. Present-but-falsy values are ordinary
 values. `^name` reads from exactly one scope out per caret; past the root it is
@@ -453,7 +461,8 @@ is not an `id` of `"1"`. A revisit of an identity on the current path is admitte
 **once** as `$stop == "cycle"` and not expanded, so cycles terminate. A node
 reached by N distinct paths yields N occurrences; `follow distinct` keeps the
 minimal `(depth, path)` occurrence per identity. Intrinsics belong to the
-occurrence's scope: inside a nested block `$depth` is absent and `^$depth` is
+occurrence's scope: inside a nested block `$depth` is the nested row's own
+`$depth` property (absent unless the host provides one, §2) and `^$depth` is
 the occurrence's. `follow` is legal at the top level and inside a
 select-position `collect`; inside a where-position directive it is an eval
 error. [`follow`]
