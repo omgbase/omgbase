@@ -1,0 +1,575 @@
+{
+  "suite": "compound",
+  "cases": [
+    {
+      "name": "split-dominant",
+      "notes": "A second unmatched old block ('zzz yyy') keeps 4a off and position_prior 0 keeps phase 5 below θ, so 6a sees the split: the first fragment holds 9/12 tokens (≥ 0.7) → it inherits the id (`edited`, 0.8 × coverage, detail split/dominant); the rest are split_from.",
+      "old": {
+        "source": "zzz yyy\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n"
+      },
+      "new": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota\n\nkappa lambda mu\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1",
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.8,
+            "reason": "scored",
+            "detail": {
+              "split": [
+                "/0",
+                "/1"
+              ],
+              "dominant": "/0"
+            }
+          },
+          {
+            "block": "new:/1",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/1"
+            }
+          }
+        ],
+        "deleted": [
+          "b_0"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "split-disabled-tombstone-not-in-deleted",
+      "notes": "Pinned §10: config split_dominant_share 1.01 disables inheritance — the old block gets a `deleted` disposition with detail.splitInto but is NOT listed in `deleted`; every fragment is split_from.",
+      "config": {
+        "split_dominant_share": 1.01
+      },
+      "old": {
+        "source": "zzz yyy\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n"
+      },
+      "new": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota\n\nkappa lambda mu\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {
+              "splitInto": [
+                "/0",
+                "/1"
+              ]
+            }
+          },
+          {
+            "block": "new:/0",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/0"
+            }
+          },
+          {
+            "block": "new:/1",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/1"
+            }
+          }
+        ],
+        "deleted": [
+          "b_0"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "split-quarters-non-dominant",
+      "notes": "A 12-token paragraph split into four 3-token fragments: token ratio 4 > 3 prunes every phase-5 candidate and 4a ties on text_sim; 6a covers the run fully, the first fragment holds 0.25 < 0.7 → tombstone (not in `deleted`) and four split_from mints.",
+      "old": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n"
+      },
+      "new": {
+        "source": "alpha beta gamma\n\ndelta epsilon zeta\n\neta theta iota\n\nkappa lambda mu\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null,
+          "/2": null,
+          "/3": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {
+              "splitInto": [
+                "/0",
+                "/1",
+                "/2",
+                "/3"
+              ]
+            }
+          },
+          {
+            "block": "new:/0",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/0"
+            }
+          },
+          {
+            "block": "new:/1",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/1"
+            }
+          },
+          {
+            "block": "new:/2",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/2"
+            }
+          },
+          {
+            "block": "new:/3",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/3"
+            }
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "merge-dominant",
+      "notes": "Two old paragraphs become one (an inserted heading in front drops position_prior so phase 5 stays below θ): the first old block holds 9/12 of the merged tokens → it carries (`edited`, 0.8 × coverage, detail merge/dominant); the second is merged_into with detail.into.",
+      "old": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota\n\nkappa lambda mu\n"
+      },
+      "new": {
+        "source": "# New heading\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8,
+            "reason": "scored",
+            "detail": {
+              "merge": [
+                "b_0",
+                "b_1"
+              ],
+              "dominant": "b_0"
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "merged_into",
+            "confidence": 0.8,
+            "reason": "scored",
+            "detail": {
+              "into": "b_0"
+            }
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "merge-non-dominant",
+      "notes": "config split_dominant_share 1.01: no old block dominates → both are merged_into (confidence null, detail.mergedKey) and the merged block is minted with merged_into lineage whose counterpart is the first run block.",
+      "config": {
+        "split_dominant_share": 1.01
+      },
+      "old": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota\n\nkappa lambda mu\n"
+      },
+      "new": {
+        "source": "# New heading\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "mergedKey": "/1"
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "mergedKey": "/1"
+            }
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/1"
+            }
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "merge-thirds-non-dominant",
+      "notes": "Three 4-token paragraphs merge into one 12-token paragraph (ratio exactly 3 keeps phase-5 candidates, but text_sim is low): 6a merge run of three, first share 4/12 < 0.7 → three merged_into + a merged_into-lineage mint.",
+      "old": {
+        "source": "one two three four\n\nfive six seven eight\n\nnine ten eleven twelve\n"
+      },
+      "new": {
+        "source": "one two three four five six seven eight nine ten eleven twelve\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "mergedKey": "/0"
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "mergedKey": "/0"
+            }
+          },
+          {
+            "block": "b_2",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "mergedKey": "/0"
+            }
+          },
+          {
+            "block": "new:/0",
+            "kind": "merged_into",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/0"
+            }
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "copy-never-steals",
+      "notes": "A near-duplicate (≥ 0.95 dice) of a block that already carried is minted with copied_from lineage; the original keeps its id.",
+      "old": {
+        "source": "shared reusable sentence that appears twice within this rather long document body spanning many tokens indeed here\n"
+      },
+      "new": {
+        "source": "shared reusable sentence that appears twice within this rather long document body spanning many tokens indeed here\n\nshared reusable sentence that appears twice within this rather long document body spanning many tokens indeed here today\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "copied_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/1"
+            }
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "two-splits-only-one-resolves",
+      "notes": "Pinned §10: one split per run. Two 12-token paragraphs each split into quarters; the first is resolved as a (non-dominant) split, the second is simply deleted and its fragments inserted.",
+      "old": {
+        "source": "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n\none two three four five six seven eight nine ten eleven twelve\n"
+      },
+      "new": {
+        "source": "alpha beta gamma\n\ndelta epsilon zeta\n\neta theta iota\n\nkappa lambda mu\n\none two three\n\nfour five six\n\nseven eight nine\n\nten eleven twelve\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null,
+          "/2": null,
+          "/3": null,
+          "/4": null,
+          "/5": null,
+          "/6": null,
+          "/7": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {
+              "splitInto": [
+                "/0",
+                "/1",
+                "/2",
+                "/3"
+              ]
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/0"
+            }
+          },
+          {
+            "block": "new:/1",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/1"
+            }
+          },
+          {
+            "block": "new:/2",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/2"
+            }
+          },
+          {
+            "block": "new:/3",
+            "kind": "split_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_0",
+              "newKey": "/3"
+            }
+          },
+          {
+            "block": "new:/4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/6",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/7",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "duplicated-thematic-break",
+      "notes": "dice(∅, ∅) = 1: one `---` in old, two in new. Phase 1 groups differ in size (1 vs 2); 4a ties (both candidates text_sim 1); phase 5 scores both with text_sim 1 — neighbor context (both neighbours matched) puts the first at 0.875 ≥ theta_small, so the byte-identical break is carried as `edited` (scored); the second break scores 0.725 < 0.80 and is then a copied_from of the first (dice 1 ≥ copy_sim).",
+      "old": {
+        "source": "a\n\n---\n\nb\n"
+      },
+      "new": {
+        "source": "a\n\n---\n\nb\n\n---\n\nc\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2",
+          "/3": null,
+          "/4": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.875,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/3",
+            "kind": "copied_from",
+            "confidence": null,
+            "reason": "scored",
+            "detail": {
+              "counterpart": "b_1",
+              "newKey": "/3"
+            }
+          },
+          {
+            "block": "new:/4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

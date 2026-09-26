@@ -1,0 +1,381 @@
+{
+  "suite": "anchors",
+  "cases": [
+    {
+      "name": "anchor-lock-rewritten-text",
+      "notes": "Phase 3: a unique shared anchor carries the block at 0.99 (reason anchor) even though the text was rewritten; kind is classified (`edited`).",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "Old text about risks ^risk-1",
+            "anchors": [
+              "^risk-1"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "Completely rewritten risk statement ^risk-1",
+            "anchors": [
+              "^risk-1"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "anchor",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "anchor-type-mismatch",
+      "notes": "Phase 3 is type-gated (R2): the same anchor on a paragraph and a heading pairs nothing.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "Old text about risks ^risk-1",
+            "anchors": [
+              "^risk-1"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "heading",
+            "raw": "# Completely rewritten risk statement ^risk-1",
+            "anchors": [
+              "^risk-1"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": null
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "non-unique-anchor",
+      "notes": "Two old blocks carry the same anchor: the old group has two members, so phase 3 skips it; the texts share no shingle, so both are deleted and the new block minted.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "alpha beta gamma ^dup",
+            "anchors": [
+              "^dup"
+            ],
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "delta epsilon zeta ^dup",
+            "anchors": [
+              "^dup"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "eta theta iota ^dup",
+            "anchors": [
+              "^dup"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": null
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1",
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "two-anchors-one-block",
+      "notes": "§10 fixed — phase 3 double carry: the old block carries anchors [^a, ^b]; two new blocks carry ^a and ^b. The block is carried once (to ^a's block, first anchor group) and the ^b block is minted; the stale second group is skipped (R1).",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "Shared block with two anchors ^a ^b",
+            "anchors": [
+              "^a",
+              "^b"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "First rewrite ^a",
+            "anchors": [
+              "^a"
+            ],
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "Second rewrite ^b",
+            "anchors": [
+              "^b"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1",
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "anchor",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "anchor-moved-classification",
+      "notes": "An anchored block that moved and changed text is `edited_moved` (kind classified by position and raw hash, as in every locking phase).",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "Intro paragraph.",
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "Anchored paragraph text ^anc",
+            "anchors": [
+              "^anc"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "Anchored paragraph, rewritten ^anc",
+            "anchors": [
+              "^anc"
+            ],
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "Intro paragraph.",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_2",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.99,
+            "reason": "anchor",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "anchor-evidence-in-score",
+      "notes": "Phase 5 anchor_evidence: three byte-identical old blocks (3-vs-1 groups pair nothing in phases 1–2; 4a skips with three unmatched) differ only in `anchors`, and `^two` sits on two of them so phase 3 skips it (non-unique). Without the anchor term the first (position_prior 1) would win at 0.75; the middle one shares the new block's anchor and scores 0.55 + 0.1 + 0.05 + 0.1 = 0.80 → it carries (edited_moved); the others are deleted.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "twin paragraph text repeated in three places of the document",
+            "anchors": [
+              "^one"
+            ],
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "twin paragraph text repeated in three places of the document",
+            "anchors": [
+              "^two"
+            ],
+            "children": []
+          },
+          {
+            "id": "b_3",
+            "type": "paragraph",
+            "raw": "twin paragraph text repeated in three places of the document",
+            "anchors": [
+              "^two"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "twin paragraph text repeated in three places of the document",
+            "anchors": [
+              "^two"
+            ],
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.8,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1",
+          "b_3"
+        ],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

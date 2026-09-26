@@ -1,0 +1,908 @@
+{
+  "suite": "checkpoint",
+  "cases": [
+    {
+      "name": "cut-paste-across-files",
+      "notes": "A deleted in A and inserted in B with identical bytes: one move (`moved`, confidence 1); B's assignment carries a_1, its inserted disposition is replaced by a moved one with detail.fromDoc, and A no longer lists a_1 as deleted.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [
+          {
+            "from_doc": "A",
+            "to_doc": "B",
+            "carried_id": "a_1",
+            "new_key": "/1",
+            "kind": "moved",
+            "confidence": 1
+          }
+        ],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": "a_1"
+            },
+            "dispositions": [
+              {
+                "block": "a_1",
+                "kind": "moved",
+                "confidence": 1,
+                "reason": "scored",
+                "detail": {
+                  "fromDoc": "A"
+                }
+              },
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "edited-move-across-files",
+      "notes": "The pasted paragraph was edited (one word): text_sim ≥ theta_xdoc → `edited_moved` with confidence = text_sim.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b edited",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [
+          {
+            "from_doc": "A",
+            "to_doc": "B",
+            "carried_id": "a_1",
+            "new_key": "/1",
+            "kind": "edited_moved",
+            "confidence": 0.9166666666666666
+          }
+        ],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": "a_1"
+            },
+            "dispositions": [
+              {
+                "block": "a_1",
+                "kind": "edited_moved",
+                "confidence": 0.9166666666666666,
+                "reason": "scored",
+                "detail": {
+                  "fromDoc": "A"
+                }
+              },
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "same-doc-never-matches",
+      "notes": "A's deleted 'cat dog bird' and inserted 'Cat Dog Bird' have text_sim 1 (case folding) but are in the same document: the cross-document pass never pairs them; no moves.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "cat dog bird",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "one two three four five six seven eight nine ten",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "Cat Dog Bird",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "one two three four five six seven eight nine eleven",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": null,
+              "/1": null
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "deleted",
+                "confidence": null,
+                "reason": "tombstone",
+                "detail": {}
+              },
+              {
+                "block": "a_1",
+                "kind": "deleted",
+                "confidence": null,
+                "reason": "tombstone",
+                "detail": {}
+              },
+              {
+                "block": "new:/0",
+                "kind": "inserted",
+                "confidence": null,
+                "reason": null,
+                "detail": {}
+              },
+              {
+                "block": "new:/1",
+                "kind": "inserted",
+                "confidence": null,
+                "reason": null,
+                "detail": {}
+              }
+            ],
+            "deleted": [
+              "a_0",
+              "a_1"
+            ],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0"
+            },
+            "dispositions": [
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "below-theta-xdoc-mints",
+      "notes": "Deleted in A, inserted in B with text_sim below 0.8 (three words changed): no move; A keeps the deletion, B keeps the mint.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "this whole paragraph was cut from file a then pasted into file b intact",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "a_1",
+                "kind": "deleted",
+                "confidence": null,
+                "reason": "tombstone",
+                "detail": {}
+              }
+            ],
+            "deleted": [
+              "a_1"
+            ],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": null
+            },
+            "dispositions": [
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "new:/1",
+                "kind": "inserted",
+                "confidence": null,
+                "reason": null,
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "greedy-best-pair-wins",
+      "notes": "Two documents each delete a candidate for B's one inserted paragraph: A's is byte-identical (text_sim 1), C's is edited (lower) → A's wins; C's stays deleted.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "C",
+          "old": {
+            "blocks": [
+              {
+                "id": "c_0",
+                "type": "paragraph",
+                "raw": "file c keeps this",
+                "children": []
+              },
+              {
+                "id": "c_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b edited",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file c keeps this",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [
+          {
+            "from_doc": "A",
+            "to_doc": "B",
+            "carried_id": "a_1",
+            "new_key": "/1",
+            "kind": "moved",
+            "confidence": 1
+          }
+        ],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": "a_1"
+            },
+            "dispositions": [
+              {
+                "block": "a_1",
+                "kind": "moved",
+                "confidence": 1,
+                "reason": "scored",
+                "detail": {
+                  "fromDoc": "A"
+                }
+              },
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          },
+          "C": {
+            "assignment": {
+              "/0": "c_0"
+            },
+            "dispositions": [
+              {
+                "block": "c_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "c_1",
+                "kind": "deleted",
+                "confidence": null,
+                "reason": "tombstone",
+                "detail": {}
+              }
+            ],
+            "deleted": [
+              "c_1"
+            ],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "type-gate-across-docs",
+      "notes": "A deleted paragraph and an inserted heading with the same visible text never pair (R2 applies across documents too).",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "heading",
+                "raw": "# this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "a_1",
+                "kind": "deleted",
+                "confidence": null,
+                "reason": "tombstone",
+                "detail": {}
+              }
+            ],
+            "deleted": [
+              "a_1"
+            ],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": null
+            },
+            "dispositions": [
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "new:/1",
+                "kind": "inserted",
+                "confidence": null,
+                "reason": null,
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    },
+    {
+      "name": "two-moves-in-one-checkpoint",
+      "notes": "Two different paragraphs move A → B and B → A in the same checkpoint: two moves, applied independently; each source loses its deletion and each destination carries the id.",
+      "docs": [
+        {
+          "id": "A",
+          "old": {
+            "blocks": [
+              {
+                "id": "a_0",
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "id": "a_1",
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file a keeps this",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "the other paragraph travels from b to a with all of its words",
+                "children": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "B",
+          "old": {
+            "blocks": [
+              {
+                "id": "b_0",
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "id": "b_1",
+                "type": "paragraph",
+                "raw": "the other paragraph travels from b to a with all of its words",
+                "children": []
+              }
+            ]
+          },
+          "new": {
+            "blocks": [
+              {
+                "type": "paragraph",
+                "raw": "file b original line",
+                "children": []
+              },
+              {
+                "type": "paragraph",
+                "raw": "this whole paragraph gets cut from file a and pasted into file b intact",
+                "children": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "moves": [
+          {
+            "from_doc": "A",
+            "to_doc": "B",
+            "carried_id": "a_1",
+            "new_key": "/1",
+            "kind": "moved",
+            "confidence": 1
+          },
+          {
+            "from_doc": "B",
+            "to_doc": "A",
+            "carried_id": "b_1",
+            "new_key": "/1",
+            "kind": "moved",
+            "confidence": 1
+          }
+        ],
+        "docs": {
+          "A": {
+            "assignment": {
+              "/0": "a_0",
+              "/1": "b_1"
+            },
+            "dispositions": [
+              {
+                "block": "a_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              },
+              {
+                "block": "b_1",
+                "kind": "moved",
+                "confidence": 1,
+                "reason": "scored",
+                "detail": {
+                  "fromDoc": "B"
+                }
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          },
+          "B": {
+            "assignment": {
+              "/0": "b_0",
+              "/1": "a_1"
+            },
+            "dispositions": [
+              {
+                "block": "a_1",
+                "kind": "moved",
+                "confidence": 1,
+                "reason": "scored",
+                "detail": {
+                  "fromDoc": "A"
+                }
+              },
+              {
+                "block": "b_0",
+                "kind": "same",
+                "confidence": 1,
+                "reason": "exact_hash",
+                "detail": {}
+              }
+            ],
+            "deleted": [],
+            "consumed_pool": []
+          }
+        }
+      }
+    }
+  ]
+}

@@ -212,8 +212,9 @@ fenced vs indented code, quoted or not).
    - `paragraph`, `html_block`, `opaque`: nothing.
 3. Split into lines on `\r\n`, `\r` or `\n`.
 4. Trim each line at both ends using the **JavaScript trim set**: Unicode
-   `White_Space` plus U+FEFF. (Rust's `str::trim` omits U+FEFF; a port adds
-   it.)
+   `White_Space` **minus U+0085**, plus U+FEFF. (Rust's `str::trim` strips
+   U+0085 and keeps U+FEFF; a port adjusts both. `edge::nel-inside-line`
+   pins the NEL.)
 5. Within each line collapse every run of spaces and tabs (`[ \t]+`) to one
    space.
 6. Drop empty lines; join the rest with a single space.
@@ -341,8 +342,11 @@ host, with the rule this spec picks:
 - **Block starts in `markdown-rs`.** It includes leading indentation in every
   block's position where micromark excludes it (see §1 inv. 7). The port
   computes the container's content column and skips the indentation.
-- **Trim set.** JS `String.prototype.trim` removes U+FEFF; Rust's does not.
-  §4.1 step 3 picks the JS set.
+- **Trim set.** JS `String.prototype.trim` (and `\s`) removes U+FEFF and
+  leaves U+0085; Rust's `char::is_whitespace` does the opposite on both.
+  §4.1 step 4 picks the JS set. The port's first helper used
+  `is_whitespace() || FEFF` and so trimmed NEL; found while specifying the
+  reconcile tokenizer, which shares the set (`spec/reconcile` §4).
 - **Digits.** The list-marker pattern uses ASCII digits only.
 - **Line endings.** `\r\n`, `\r` and `\n` are all line endings for §4.1; a
   block's `raw` never ends in one (§1 inv. 4); CRLF sources round-trip

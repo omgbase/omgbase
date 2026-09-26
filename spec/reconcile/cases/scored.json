@@ -1,0 +1,524 @@
+{
+  "suite": "scored",
+  "cases": [
+    {
+      "name": "two-adjacent-edited-paragraphs",
+      "notes": "Two adjacent edited paragraphs defeat phase 4a (two unmatched old); phase 5 scores both by shingle overlap and accepts both as `edited` (reason scored, confidence = score).",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single morning here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter today with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single evening here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter tomorrow with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1",
+          "/1": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.6631578947368421,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.6583333333333333,
+            "reason": "scored",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "tiny-block-theta-small",
+      "notes": "A 2-token block uses theta_small (0.80): 'cat dog' vs 'cat fish' share no shingle (text_sim 0) → pruned, deleted + inserted.",
+      "old": {
+        "source": "cat dog\n"
+      },
+      "new": {
+        "source": "cat fish\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_0"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "near-miss-recorded",
+      "notes": "R5: the runner-up candidate for the new block scores within 0.1 below θ (0.62) and is recorded in the winner's detail.near_misses with the score rounded to three decimals.",
+      "old": {
+        "source": "# H\n\none two three four five six alpha beta gamma delta\n\none two three four five six seven eight nine eleven\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\none two three four five six seven eight nine ten\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_2",
+          "/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited_moved",
+            "confidence": 0.7395833333333334,
+            "reason": "scored",
+            "detail": {
+              "near_misses": [
+                {
+                  "blockId": "b_1",
+                  "score": 0.533
+                }
+              ]
+            }
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "r3-crossing-rejected",
+      "notes": "R3: two same-parent candidates with equal scores (case-folded text, text_sim 1) would cross in sibling order; the first (lower old key) is accepted as edited_moved, the crossing one is rejected → its old block is deleted and the new block minted.",
+      "old": {
+        "source": "Alpha beta gamma delta epsilon zeta eta theta iota kappa\n\nOne two three four five six seven eight nine ten\n"
+      },
+      "new": {
+        "source": "one two three four five six seven eight nine ten\n\nalpha beta gamma delta epsilon zeta eta theta iota kappa\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited_moved",
+            "confidence": 0.65,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "small-block-stops-the-walk",
+      "notes": "Pinned §10: the tiny block's candidate (text_sim 1 by case folding, score 0.75) sorts first but is below its theta_small (0.80), and the walk stops there — the regular candidate behind it (score ≈ 0.68 ≥ 0.62) is never reached, so nothing carries.",
+      "old": {
+        "source": "cat dog bird\n\none two three four five six seven eight nine ten\n"
+      },
+      "new": {
+        "source": "Cat Dog Bird\n\none two three four five six seven eight nine eleven\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_0",
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "max-scored-blocks-skip",
+      "notes": "config max_scored_blocks 1: 2 + 2 unmatched exceeds 2 × 1, so phase 5 is skipped entirely; both edited paragraphs are deleted and minted.",
+      "config": {
+        "max_scored_blocks": 1
+      },
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single morning here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter today with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single evening here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter tomorrow with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1",
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "max-scored-blocks-boundary",
+      "notes": "config max_scored_blocks 2: 2 + 2 unmatched equals 2 × 2 (not greater) → phase 5 runs and carries both.",
+      "config": {
+        "max_scored_blocks": 2
+      },
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single morning here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter today with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single evening here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter tomorrow with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1",
+          "/1": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.6631578947368421,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.6583333333333333,
+            "reason": "scored",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "theta-accept-override",
+      "notes": "config theta_accept 0.9: the same two edited paragraphs now score below θ → the walk stops at the first candidate and both mint.",
+      "config": {
+        "theta_accept": 0.9
+      },
+      "old": {
+        "blocks": [
+          {
+            "id": "b_1",
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single morning here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "id": "b_2",
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter today with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "paragraph",
+            "raw": "the quick brown fox jumps over the lazy dog every single evening here now while birds sing softly above the field",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "a separate second paragraph discussing entirely different subject matter tomorrow with many words to raise the shingle overlap count high",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1",
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "neighbor-context-breaks-tie",
+      "notes": "Two old paragraphs with identical text (2-vs-2 groups lock in phase 1 when both survive; here one new copy was edited so the groups are 2 vs 1 and pair nothing): the surviving exact copy and the edited copy are both resolved by phase 5, where neighbor_ctx and position_prior decide which old id goes where.",
+      "old": {
+        "source": "# A\n\nshared sentence that appears twice in this document verbatim\n\n# B\n\nshared sentence that appears twice in this document verbatim\n"
+      },
+      "new": {
+        "source": "# A\n\nshared sentence that appears twice in this document verbatim\n\n# B\n\nshared sentence that appears twice in this document reworded\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2",
+          "/3": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.9,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "edited",
+            "confidence": 0.8214285714285714,
+            "reason": "scored",
+            "detail": {
+              "near_misses": [
+                {
+                  "blockId": "b_1",
+                  "score": 0.605
+                }
+              ]
+            }
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

@@ -95,6 +95,10 @@ export function phase3Anchor(state: PhaseState): void {
     const news = newByAnchor.get(a);
     if (olds.length === 1 && news && news.length === 1 && olds[0]!.type === news[0]!.type) {
       const o = olds[0]!, n = news[0]!;
+      // The groups were built before any carry in this phase: a block with two
+      // anchors sits in two groups, and its second group is stale once the first
+      // carried it (R1: an id is carried at most once).
+      if (state.usedOld.has(o.blockId!) || state.usedNew.has(n.key)) continue;
       carry(state, o, n, classifyKind(o, n), 0.99, "anchor");
     }
   }

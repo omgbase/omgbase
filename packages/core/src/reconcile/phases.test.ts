@@ -76,6 +76,22 @@ describe("phase 3 — anchor lock", () => {
     expect(s.matched.get("/0")).toBe("b_1");
     expect(s.dispositions[0]!.reason).toBe("anchor");
   });
+
+  it("carries a block with two anchors once (R1): the second anchor's group is stale", () => {
+    // Old b_1 carries [^a, ^b]; two new blocks carry ^a and ^b respectively.
+    // Both anchor groups are 1:1, but b_1 may be carried only once — the
+    // second new block is left for later phases (here: unmatched).
+    const s = state(
+      [mb("Shared block with two anchors", 0, { id: "b_1", anchors: ["^a", "^b"] })],
+      [mb("First rewrite", 0, { anchors: ["^a"] }), mb("Second rewrite", 1, { anchors: ["^b"] })],
+    );
+    phase3Anchor(s);
+    expect(s.matched.get("/0")).toBe("b_1");
+    expect(s.matched.has("/1")).toBe(false);
+    expect([...s.matched.values()].filter((id) => id === "b_1")).toHaveLength(1);
+    expect(s.dispositions).toHaveLength(1);
+    expect(s.usedOld.has("b_1")).toBe(true);
+  });
 });
 
 describe("phase 4 — context propagation", () => {

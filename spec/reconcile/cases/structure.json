@@ -1,0 +1,783 @@
+{
+  "suite": "structure",
+  "cases": [
+    {
+      "name": "insert-paragraph-mid-doc",
+      "notes": "A paragraph inserted between two locked paragraphs: minted; the following blocks are `moved` (index shift).",
+      "old": {
+        "source": "# Title\n\nFirst paragraph of the document.\n\nSecond paragraph of the document.\n\n## Section\n\nClosing words.\n"
+      },
+      "new": {
+        "source": "# Title\n\nFirst paragraph of the document.\n\nA brand new paragraph in the middle.\n\nSecond paragraph of the document.\n\n## Section\n\nClosing words.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": null,
+          "/3": "b_2",
+          "/4": "b_3",
+          "/5": "b_4"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "delete-paragraph-mid-doc",
+      "notes": "A paragraph deleted mid-document: tombstoned; the following blocks are `moved`.",
+      "old": {
+        "source": "# Title\n\nFirst paragraph of the document.\n\nSecond paragraph of the document.\n\n## Section\n\nClosing words.\n"
+      },
+      "new": {
+        "source": "# Title\n\nFirst paragraph of the document.\n\n## Section\n\nClosing words.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_3",
+          "/3": "b_4"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "reorder-two-sections",
+      "notes": "Two heading + paragraph sections swap places: every block locks exactly and is classified `moved`.",
+      "old": {
+        "source": "# Doc\n\n## Alpha\n\nAlpha body text.\n\n## Beta\n\nBeta body text.\n"
+      },
+      "new": {
+        "source": "# Doc\n\n## Beta\n\nBeta body text.\n\n## Alpha\n\nAlpha body text.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_3",
+          "/2": "b_4",
+          "/3": "b_1",
+          "/4": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "edit-one-item-in-long-list",
+      "notes": "Six five-word items, two words changed mid-item: five items lock and the list carries by context (0.929), but the edited item shares only 1 of 3 shingles (text_sim 0.333 < 0.35 floor) and phase 5 scores it 0.533 < 0.62 → it loses its identity (deleted + inserted). Compare edit-one-item-last-word.",
+      "old": {
+        "source": "- first item with some words\n- second item with some words\n- third item with some words\n- fourth item with some words\n- fifth item with some words\n- sixth item with some words\n"
+      },
+      "new": {
+        "source": "- first item with some words\n- second item with some words\n- third item with some words\n- fourth item with different words\n- fifth item with some words\n- sixth item with some words\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/2": "b_3",
+          "/0/3": null,
+          "/0/4": "b_5",
+          "/0/5": "b_6"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.9289473684210526,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_6",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_4"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "edit-one-item-last-word",
+      "notes": "The same list with only the fourth item's last word changed: 2 of 3 shingles survive (text_sim 0.667) → the item carries under the (list, list) pair by context at 0.75 + 0.2 × 2/3.",
+      "old": {
+        "source": "- first item with some words\n- second item with some words\n- third item with some words\n- fourth item with some words\n- fifth item with some words\n- sixth item with some words\n"
+      },
+      "new": {
+        "source": "- first item with some words\n- second item with some words\n- third item with some words\n- fourth item with some phrases\n- fifth item with some words\n- sixth item with some words\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/2": "b_3",
+          "/0/3": "b_4",
+          "/0/4": "b_5",
+          "/0/5": "b_6"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.922972972972973,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_6",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "move-item-between-lists",
+      "notes": "An item moves from the first list to the second: it locks exactly as `moved` (different parent key); both lists carry by children vouching (4b), each being the unique source of its new list's carried children.",
+      "old": {
+        "source": "- one item here\n- two item here\n- three item here\n\nbetween\n\n- four item here\n- five item here\n"
+      },
+      "new": {
+        "source": "- one item here\n- two item here\n\nbetween\n\n- four item here\n- three item here\n- five item here\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/1": "b_4",
+          "/2": "b_5",
+          "/2/0": "b_6",
+          "/2/1": "b_3",
+          "/2/2": "b_7"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 3
+            }
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "edited",
+            "confidence": 0.95,
+            "reason": "context_children",
+            "detail": {
+              "children_carried": 2,
+              "children_total": 2
+            }
+          },
+          {
+            "block": "b_6",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_7",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "wrap-paragraph-in-blockquote",
+      "notes": "A paragraph wrapped in `> `: the paragraph's raw is unchanged, so it locks exactly and is classified `moved` (its parent key changed); the new blockquote is minted.",
+      "old": {
+        "source": "# H\n\nA paragraph that will be quoted.\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\n> A paragraph that will be quoted.\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/1/0": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "add-nested-list-under-item",
+      "notes": "A three-word item gains a nested list: it now has children (paragraph + list) and its text becomes 'second item text nested one nested two'. The list (lone unmatched root) carries by context; the item shares 1 of 6 shingles (0.333 < 0.35) and scores 0.514 in phase 5 → it loses its identity; its new children are minted. Compare add-nested-list-under-wordy-item.",
+      "old": {
+        "source": "- first item text\n- second item text\n- third item text\n"
+      },
+      "new": {
+        "source": "- first item text\n- second item text\n  - nested one\n  - nested two\n- third item text\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": null,
+          "/0/1/0": null,
+          "/0/1/1": null,
+          "/0/1/1/0": null,
+          "/0/1/1/1": null,
+          "/0/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8611111111111112,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "add-nested-list-under-wordy-item",
+      "notes": "A six-word item gains the same nested list: 4 of its shingles survive among the 8 of the composed text (text_sim 0.667) → the item carries under the (list, list) pair at 0.883; the paragraph child and nested list are minted.",
+      "old": {
+        "source": "- first item text\n- second item with enough words here\n- third item text\n"
+      },
+      "new": {
+        "source": "- first item text\n- second item with enough words here\n  - nested one\n  - nested two\n- third item text\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/1/0": null,
+          "/0/1/1": null,
+          "/0/1/1/0": null,
+          "/0/1/1/1": null,
+          "/0/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1/1/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "list-becomes-task-list",
+      "notes": "Items become tasks: list_item → task is a type change (R2) so no item carries — deleted + inserted — while the list norm-locks (`edited`, its text is unchanged).",
+      "old": {
+        "source": "- write the spec\n- ship it\n"
+      },
+      "new": {
+        "source": "- [ ] write the spec\n- [ ] ship it\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": null,
+          "/0/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "new:/0/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/0/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1",
+          "b_2"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "heading-level-change",
+      "notes": "## → ###: same kind (heading) and same text → norm lock `edited` 0.99.",
+      "old": {
+        "source": "## Section title\n\nBody.\n"
+      },
+      "new": {
+        "source": "### Section title\n\nBody.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "frontmatter-ignored",
+      "notes": "A frontmatter block is dropped before matching on both sides: adding one shifts nothing (keys are over the remaining blocks) and the body locks `same`.",
+      "old": {
+        "source": "# Title\n\nBody paragraph.\n"
+      },
+      "new": {
+        "source": "---\ntitle: x\n---\n\n# Title\n\nBody paragraph.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

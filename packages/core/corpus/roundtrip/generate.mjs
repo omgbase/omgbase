@@ -86,6 +86,11 @@ const edgeTextCorners = {
   "fence-unclosed-tilde-last-line.md": "```\ncode\n~~~\n",
   "fence-shorter-closer-content.md": "````\ncode\n```\n",
   "table-backslash-pipes.md": "| a | b |\n| - | - |\n| x | y \\|\n| p \\\\| q |\n",
+  // U+0085 (NEL) is Unicode White_Space but not in the JavaScript `\s` set,
+  // so it is neither trimmed nor collapsed: it stays in `text` mid-line and at
+  // the end of a line (spec/format §4.1 step 4; spec/reconcile §4 tokenizes
+  // with the same set, so a NEL does not split tokens).
+  "nel-inside-line.md": "a nel\u0085inside the line and one at the end\u0085\nnext line\n\nafter\n",
 };
 for (const [name, body] of Object.entries(edgeTextCorners)) write(`edge/${name}`, body);
 

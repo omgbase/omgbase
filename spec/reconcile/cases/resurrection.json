@@ -1,0 +1,313 @@
+{
+  "suite": "resurrection",
+  "cases": [
+    {
+      "name": "pool-exact-hash",
+      "notes": "Phase 6b: an unmatched new block whose (type, raw_hash) is in the pool takes the pool id (resurrected, 0.99, exact_hash); consumed_pool lists it.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\na resurrected paragraph from a prior checkpoint\n"
+      },
+      "pool": [
+        {
+          "id": "b_old",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph from a prior checkpoint"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_old"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_old",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": [
+          "b_old"
+        ]
+      }
+    },
+    {
+      "name": "pool-norm-hash-reason-exact-hash",
+      "notes": "Pinned §10: a norm-hash hit (same visible text, different bytes) resurrects with reason exact_hash.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\na   resurrected   paragraph\n"
+      },
+      "pool": [
+        {
+          "id": "b_old",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_old"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_old",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": [
+          "b_old"
+        ]
+      }
+    },
+    {
+      "name": "pool-explicit-text",
+      "notes": "A pool entry may give `text` explicitly (its norm_hash is sha256(text)); here the raw would normalize differently, so only the explicit text matches the new block's visible text.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\nvisible text of the entry\n"
+      },
+      "pool": [
+        {
+          "id": "b_old",
+          "type": "paragraph",
+          "raw": "something else entirely",
+          "text": "visible text of the entry"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_old"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_old",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": [
+          "b_old"
+        ]
+      }
+    },
+    {
+      "name": "pool-duplicate-hash-later-wins",
+      "notes": "Two pool entries with the same (type, raw_hash): the later one wins the index, so its id is the one resurrected.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\na resurrected paragraph from a prior checkpoint\n"
+      },
+      "pool": [
+        {
+          "id": "b_first",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph from a prior checkpoint"
+        },
+        {
+          "id": "b_second",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph from a prior checkpoint"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_second"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_second",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": [
+          "b_second"
+        ]
+      }
+    },
+    {
+      "name": "pool-consumed-raw-hit-no-fallback",
+      "notes": "Pinned §10: two new copies of a pooled block; the first consumes the raw-hash entry, the second's raw-hash hit is already consumed and does NOT fall back to the norm-hash entry (a different pool id with the same visible text) → inserted.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\na resurrected paragraph from a prior checkpoint\n\na resurrected paragraph from a prior checkpoint\n"
+      },
+      "pool": [
+        {
+          "id": "b_raw",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph from a prior checkpoint"
+        },
+        {
+          "id": "b_norm",
+          "type": "paragraph",
+          "raw": "a resurrected paragraph   from   a prior checkpoint"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_raw",
+          "/2": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_raw",
+            "kind": "resurrected",
+            "confidence": 0.99,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": [
+          "b_raw"
+        ]
+      }
+    },
+    {
+      "name": "pool-type-gate",
+      "notes": "Pool lookup is keyed by (type, hash): a heading entry never resurrects a paragraph with the same bytes.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n\na resurrected paragraph from a prior checkpoint\n"
+      },
+      "pool": [
+        {
+          "id": "b_old",
+          "type": "heading",
+          "raw": "a resurrected paragraph from a prior checkpoint"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "pool-does-not-touch-carried-blocks",
+      "notes": "Only unmatched new blocks consult the pool: a block that locked to an old id keeps it even when a pool entry has the same hash; consumed_pool stays empty.",
+      "old": {
+        "source": "existing content here\n"
+      },
+      "new": {
+        "source": "existing content here\n"
+      },
+      "pool": [
+        {
+          "id": "b_old",
+          "type": "paragraph",
+          "raw": "existing content here"
+        }
+      ],
+      "expect": {
+        "assignment": {
+          "/0": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

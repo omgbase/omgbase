@@ -1510,6 +1510,39 @@
       }
     },
     {
+      "name": "nel-inside-line",
+      "source": "a nelinside the line and one at the end\nnext line\n\nafter\n",
+      "expect": {
+        "leading_trivia": "",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "span": [
+              0,
+              53
+            ],
+            "text": "a nelinside the line and one at the end next line",
+            "attrs": {},
+            "trivia": "\n\n",
+            "raw_hash": "4afc3733c979b2ca7e43ca94c31812cbf39cd54973c871d2b1dbd742db9411f3",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "span": [
+              55,
+              60
+            ],
+            "text": "after",
+            "attrs": {},
+            "trivia": "\n",
+            "raw_hash": "f39592393ef0859cb196a52693d2cea00fb2df784b3c04ae54aa7cadb8e562f8",
+            "children": []
+          }
+        ]
+      }
+    },
+    {
       "name": "nfd-composed",
       "source": "# Café NFD\n\nrésumé with combining acute; é already NFC.\n",
       "expect": {

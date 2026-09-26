@@ -1,0 +1,755 @@
+{
+  "suite": "phases",
+  "cases": [
+    {
+      "name": "exact-lock-two-paragraphs",
+      "notes": "Phase 1: byte-identical blocks lock as `same` with confidence 1 and reason exact_hash.",
+      "old": {
+        "source": "Hello world.\n\nSecond.\n"
+      },
+      "new": {
+        "source": "Hello world.\n\nSecond.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "identical-document-with-structure",
+      "notes": "Phase 1 over a nested tree: every block (list, items, quote, its paragraph) locks `same`; keys and pre-order ids line up.",
+      "old": {
+        "source": "# Title\n\nIntro.\n\n- one\n- two\n\n> quoted\n> more\n\nEnd.\n"
+      },
+      "new": {
+        "source": "# Title\n\nIntro.\n\n- one\n- two\n\n> quoted\n> more\n\nEnd.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2",
+          "/2/0": "b_3",
+          "/2/1": "b_4",
+          "/3": "b_5",
+          "/3/0": "b_6",
+          "/4": "b_7"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_4",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_5",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_6",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_7",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "empty-to-content",
+      "notes": "No old blocks: every new block is minted `inserted`; deleted is empty.",
+      "old": {
+        "source": ""
+      },
+      "new": {
+        "source": "# Title\n\nBody.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": null
+        },
+        "dispositions": [
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "content-to-empty",
+      "notes": "No new blocks: every old block is `deleted` (tombstone) in document order.",
+      "old": {
+        "source": "# Title\n\nBody.\n"
+      },
+      "new": {
+        "source": ""
+      },
+      "expect": {
+        "assignment": {},
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_0",
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "moved-swap",
+      "notes": "Phase 1 classifies a carry whose sibling index changed as `moved` (content equal).",
+      "old": {
+        "source": "A\n\nB\n"
+      },
+      "new": {
+        "source": "B\n\nA\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_1",
+          "/1": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "insertion-pushes-siblings-to-moved",
+      "notes": "Pinned §10: `moved` compares positional keys, so after an insertion every following sibling is `moved` even though its parent is the same block.",
+      "old": {
+        "source": "# H\n\nFirst paragraph.\n\nSecond paragraph.\n"
+      },
+      "new": {
+        "source": "# H\n\nInserted paragraph.\n\nFirst paragraph.\n\nSecond paragraph.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": "b_1",
+          "/3": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "unequal-hash-groups-pair-nothing-in-phase-1",
+      "notes": "Two byte-identical old blocks vs one new: the (type, raw_hash) groups differ in size, so phases 1–2 pair nothing; phase 5 then carries the first as `edited` (never `same`) and the second is deleted.",
+      "old": {
+        "source": "this exact paragraph appears twice in the old document today\n\nthis exact paragraph appears twice in the old document today\n"
+      },
+      "new": {
+        "source": "this exact paragraph appears twice in the old document today\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.75,
+            "reason": "scored",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "normalized-lock-is-edited",
+      "notes": "Phase 2: same visible text, different bytes → `edited` at 0.99 with reason normalized_hash (content equality is byte identity).",
+      "old": {
+        "source": "Hello   world.\n"
+      },
+      "new": {
+        "source": "Hello world.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "type-gate-paragraph-to-heading",
+      "notes": "R2 in every phase: a paragraph that becomes a heading with the same text is not carried by the norm lock, by context, or by scoring; it is deleted and the heading minted.",
+      "old": {
+        "source": "Risks\n\nBody paragraph stays the same here.\n"
+      },
+      "new": {
+        "source": "# Risks\n\nBody paragraph stays the same here.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": null,
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_0"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "deleted-block",
+      "notes": "An old block that vanished gets `deleted` (tombstone) and is listed in `deleted`.",
+      "old": {
+        "source": "keep this line\n\ndelete this line\n"
+      },
+      "new": {
+        "source": "keep this line\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "brief-example-blocks",
+      "notes": "docs/reconciliation-spec §10 brief example in `blocks` form: the insertion is minted; the edited paragraph carries by context propagation as edited_moved (index shifted).",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_h",
+            "type": "heading",
+            "raw": "## Risks",
+            "children": []
+          },
+          {
+            "id": "b_p1",
+            "type": "paragraph",
+            "raw": "Stable block identity is difficult.",
+            "children": []
+          },
+          {
+            "id": "b_p2",
+            "type": "paragraph",
+            "raw": "Another paragraph.",
+            "children": []
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "heading",
+            "raw": "## Risks",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "A newly inserted paragraph.",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "Stable block identity is quite difficult.",
+            "children": []
+          },
+          {
+            "type": "paragraph",
+            "raw": "Another paragraph.",
+            "children": []
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_h",
+          "/1": null,
+          "/2": "b_p1",
+          "/3": "b_p2"
+        },
+        "dispositions": [
+          {
+            "block": "b_h",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_p1",
+            "kind": "edited_moved",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_p2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "brief-example-source",
+      "notes": "The same brief example from Markdown sources (packages/core/corpus/matcher/fixtures/brief-example); ids are b_0.. in pre-order.",
+      "old": {
+        "source": "## Risks\n\nStable block identity is difficult.\n\nAnother paragraph.\n"
+      },
+      "new": {
+        "source": "## Risks\n\nA newly inserted paragraph.\n\nStable block identity is quite difficult.\n\nAnother paragraph.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": "b_1",
+          "/3": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited_moved",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "context-lone-unmatched-child",
+      "notes": "Phase 4a: with its neighbours locked, the lone unmatched old child carries to its best new candidate (context_unique, 0.75 + 0.2 × text_sim).",
+      "old": {
+        "source": "# Heading\n\nStable block identity is difficult.\n\nTail.\n"
+      },
+      "new": {
+        "source": "# Heading\n\nStable block identity is quite difficult.\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.8642857142857143,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "context-below-floor-mints",
+      "notes": "Phase 4a: the lone unmatched old child does not carry when text_sim is below context_sim_floor (0.35); phase 5 has no shared shingle either → deleted + inserted.",
+      "old": {
+        "source": "# Heading\n\napple banana cherry date\n\nTail.\n"
+      },
+      "new": {
+        "source": "# Heading\n\nxylophone quartz nebula fjord\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "context-tie-mints",
+      "notes": "Phase 4a: two candidates tie on text_sim (0.5 each) → no best (R4); phase 5 scores both below θ → the old block is deleted and both new blocks minted.",
+      "old": {
+        "source": "# Heading\n\nalpha beta gamma delta\n\nTail.\n"
+      },
+      "new": {
+        "source": "# Heading\n\nalpha beta gamma omega\n\nomega beta gamma delta\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": null,
+          "/3": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "moved",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          },
+          {
+            "block": "new:/2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "context-type-gate",
+      "notes": "Phase 4a candidates are type-gated: the lone unmatched old paragraph has only a heading as a same-text candidate → no carry.",
+      "old": {
+        "source": "# Heading\n\nalpha beta gamma delta\n\nTail.\n"
+      },
+      "new": {
+        "source": "# Heading\n\n## alpha beta gamma delta\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": null,
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "deleted",
+            "confidence": null,
+            "reason": "tombstone",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "new:/1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "detail": {}
+          }
+        ],
+        "deleted": [
+          "b_1"
+        ],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

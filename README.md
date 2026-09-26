@@ -84,7 +84,8 @@ docs/            as-built design reference · decision log (ADRs)
 crates/          the Rust side (cargo workspace at the root; independent of pnpm)
   oqx/           oqx — Rust implementation of OQX, conformant to spec/oqx (README: crates/oqx/README.md)
   omgbase-format/ omgbase-format — Rust format layer: source → block tree, splice render, conformant to spec/format
-spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus)
+  omgbase-reconcile/ omgbase-reconcile — Rust block-identity matcher (phases, dispositions, cross-doc moves), conformant to spec/reconcile
+spec/            language-neutral specifications both sides run: oqx/ (grammar, semantics, fixtures) · format/ (block model, fixtures generated from core's round-trip corpus) · reconcile/ (the matcher: rules, thresholds, fixtures with reference-generated expectations)
 ```
 
 Rendering is **splice-only**: untouched blocks emit their exact retained bytes; only changed blocks are re-serialized. A lint rule bans `remark-stringify` to enforce this.

@@ -1,0 +1,545 @@
+{
+  "suite": "text",
+  "cases": [
+    {
+      "name": "nbsp-inside-line-splits-tokens",
+      "notes": "U+00A0 survives in `text` (not trimmed/collapsed) so the norm lock misses, but it is in the JS `\\s` set: tokens are unchanged, text_sim 1 → context_unique at 0.95.",
+      "old": {
+        "source": "# H\n\nalpha beta gamma delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\nalpha beta gamma delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.95,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "feff-inside-line-splits-tokens",
+      "notes": "U+FEFF inside a line: same as NBSP — kept in `text`, splits tokens, text_sim 1 → context_unique at 0.95.",
+      "old": {
+        "source": "# H\n\nalpha beta gamma delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\nalpha beta gamma﻿delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.95,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "nel-inside-line-does-not-split",
+      "notes": "U+0085 is NOT in the JS `\\s` set: 'beta\\u0085gamma' is one token, so 3 of the shingles change; the paragraph still carries by context but at 0.75 + 0.2 × 6/11 instead of 0.95 (compare the NBSP case).",
+      "old": {
+        "source": "# H\n\nalpha beta gamma delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\nalpha betagamma delta epsilon zeta eta theta\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.8590909090909091,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "case-fold-greek-final-sigma",
+      "notes": "Lowercasing is Unicode default case mapping: ΟΔΥΣΣΕΥΣ → οδυσσευς (final ς). The texts differ (no norm lock) but tokenize equal → text_sim 1 → context_unique 0.95, kind edited.",
+      "old": {
+        "source": "# H\n\nΟΔΥΣΣΕΥΣ returns home to Ithaca after twenty years\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\nοδυσσευς returns home to Ithaca after twenty years\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.95,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "case-fold-ascii-two-tokens",
+      "notes": "A two-token text has one shingle; 'Hello World' and 'hello world' tokenize equal → text_sim 1 through 4a (0.95).",
+      "old": {
+        "source": "# H\n\nHello World\n\nTail.\n"
+      },
+      "new": {
+        "source": "# H\n\nhello world\n\nTail.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1",
+          "/2": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.95,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "blockquote-continuation-prefix-stripped",
+      "notes": "`blocks` form with nested raw keeping its `> ` prefixes: the quoted paragraph is reflowed (bytes differ) but its visible text — with the continuation prefixes removed at depth 1 — is identical, so both the paragraph and the blockquote (container text = child text) norm-lock as `edited` 0.99.",
+      "old": {
+        "blocks": [
+          {
+            "id": "b_q",
+            "type": "blockquote",
+            "raw": "> quoted line one\n> quoted line two\n> quoted line three",
+            "children": [
+              {
+                "id": "b_p",
+                "type": "paragraph",
+                "raw": "quoted line one\n> quoted line two\n> quoted line three",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "new": {
+        "blocks": [
+          {
+            "type": "blockquote",
+            "raw": "> quoted line one quoted\n> line two quoted line three",
+            "children": [
+              {
+                "type": "paragraph",
+                "raw": "quoted line one quoted\n> line two quoted line three",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_q",
+          "/0/0": "b_p"
+        },
+        "dispositions": [
+          {
+            "block": "b_p",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_q",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "blockquote-reflow-source",
+      "notes": "The same reflow from Markdown sources (the parser's nested raw keeps the `> ` prefixes): paragraph and blockquote norm-lock.",
+      "old": {
+        "source": "> quoted line one\n> quoted line two\n> quoted line three\n\nafter\n"
+      },
+      "new": {
+        "source": "> quoted line one quoted\n> line two quoted line three\n\nafter\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/1": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "table-cell-edited",
+      "notes": "table_row text drops the pipes: the header and first body row lock `same`; the table carries by context (its text is the rows' texts); then the edited row carries under the (table, table) pair by shingle overlap (2 of 3 shared → 0.75 + 0.2 × 2/3).",
+      "old": {
+        "source": "| Name | Value |\n| ---- | ----- |\n| alpha item | first value here |\n| bravo item | second value here |\n"
+      },
+      "new": {
+        "source": "| Name | Value |\n| ---- | ----- |\n| alpha item | first value here |\n| bravo item | second value CHANGED |\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2",
+          "/0/2": "b_3"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.93,
+            "reason": "context_unique",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_3",
+            "kind": "edited",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "task-toggle-normalized-lock",
+      "notes": "Toggling `[ ]` → `[x]` changes raw but not text (the checkbox is task syntax): the task norm-locks as `edited` 0.99; so does the list (container text unchanged).",
+      "old": {
+        "source": "- [ ] write the spec\n- [x] ship it\n"
+      },
+      "new": {
+        "source": "- [x] write the spec\n- [x] ship it\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "setext-vs-atx-heading",
+      "notes": "Setext → ATX: same heading text → norm lock `edited` 0.99.",
+      "old": {
+        "source": "Title\n=====\n\nBody.\n"
+      },
+      "new": {
+        "source": "# Title\n\nBody.\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "fenced-vs-indented-code",
+      "notes": "Indented code → fenced code: both are code_fence with the same text (fences removed) → norm lock.",
+      "old": {
+        "source": "para\n\n    code line\n    another\n"
+      },
+      "new": {
+        "source": "para\n\n```\ncode line\nanother\n```\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/1": "b_1"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "nfd-vs-nfc-normalized-lock",
+      "notes": "Visible text is NFC: 'café' written with a combining acute (NFD) and precomposed (NFC) have different bytes and the same text → norm lock.",
+      "old": {
+        "source": "café au lait\n"
+      },
+      "new": {
+        "source": "café au lait\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    },
+    {
+      "name": "bullet-marker-change-normalized-lock",
+      "notes": "`-` → `*` markers: every item and the list norm-lock as `edited` 0.99 (markers are list syntax, not text).",
+      "old": {
+        "source": "- one item\n- two item\n"
+      },
+      "new": {
+        "source": "* one item\n* two item\n"
+      },
+      "expect": {
+        "assignment": {
+          "/0": "b_0",
+          "/0/0": "b_1",
+          "/0/1": "b_2"
+        },
+        "dispositions": [
+          {
+            "block": "b_0",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_1",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          },
+          {
+            "block": "b_2",
+            "kind": "edited",
+            "confidence": 0.99,
+            "reason": "normalized_hash",
+            "detail": {}
+          }
+        ],
+        "deleted": [],
+        "consumed_pool": []
+      }
+    }
+  ]
+}

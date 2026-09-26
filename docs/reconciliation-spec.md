@@ -64,6 +64,8 @@ Inter-block bytes (blank lines, HTML comments between blocks, stray whitespace) 
 
 Given: the last persisted `BlockTree` (with block IDs) for a document, and new file bytes. Produce: a new tree where every node either **carries** an existing `block_id` or is **minted**, plus a disposition list (`data-model.md` dispositions table) describing each carry/mint with kind, confidence, reason.
 
+The matcher is specified language-neutrally in `spec/reconcile/README.md` (every phase as an exact rule, the fixture contract, and the reference oddities the Rust port surfaced) with executable fixtures under `spec/reconcile/cases` whose expectations the reference generates; the Rust crate `crates/omgbase-reconcile` passes the same fixtures. Sections 4–7 here are the rationale and the shape; where they and the spec differ in detail, the spec (and its fixtures) win.
+
 Hard rules:
 
 - R1 — A block_id appears at most once in the output tree.
@@ -84,7 +86,7 @@ Group by `raw_hash`. Pair groups with equal cardinality 1:1 in document order; a
 Same over `norm_hash`. Reason `normalized_hash`, confidence 0.99.
 
 ### Phase 3 — anchor lock
-Blocks carrying the same authored `^block-ref` anchor pair directly (unique on both sides). Reason `anchor`, confidence 0.99.
+Blocks carrying the same authored `^block-ref` anchor pair directly (unique on both sides). Reason `anchor`, confidence 0.99. A block with several anchors is carried at most once: once an anchor has paired it, its other anchor groups are stale and skipped (R1; the first implementation carried it twice — `spec/reconcile` §10).
 
 ### Phase 4 — context propagation
 For each parent pair already matched (or both roots): if exactly one unmatched old child remains, pair it with its best-matching unmatched new child of the same type under the new parent if `text_sim ≥ contextSimFloor` (0.35) and the best is unique. Reason `context_unique`, confidence `0.75 + 0.2 × text_sim`. Insertions in the gap lose to the better-matching candidate rather than blocking the carry.
@@ -127,7 +129,7 @@ Over the still-unmatched:
 - **Split:** old block O and a run of ≥2 adjacent new blocks N₁..Nₖ (same parent region) where `coverage(concat(N), O) ≥ 0.80` and leftover < 0.2. If one Nᵢ holds ≥ `split.dominant_share` (default 0.70) of O's tokens **and** is the first fragment: Nᵢ **carries** O's id (kind `edited`, confidence 0.8×coverage, detail records split); others minted with `split_from: O`. Otherwise all minted with `split_from: O`. (ADR: dominant-fragment inheritance, tunable; set `split.dominant_share = 1.01` to disable inheritance entirely.)
 - **Merge:** mirror image; merged result carries the dominant contributor's id under the same rule, others `merged_into`.
 - **Copy:** unmatched new block with `text_sim ≥ 0.95` to a **matched** (still-present) old block ⇒ mint with `copied_from` lineage. Copies never steal identity.
-- **Cross-document move (same checkpoint):** run Phases 1–5 across the pooled unmatched-deleted (all docs in checkpoint) × unmatched-inserted sets, θ raised to `θ_xdoc` (default 0.80). Kind `moved`/`edited_moved`.
+- **Cross-document move (same checkpoint):** pool the checkpoint's unmatched-deleted (all docs) × unmatched-inserted sets and greedily accept same-type, different-document pairs by `text_sim ≥ θ_xdoc` (default 0.80; token ratio ≤ 3×). Kind `moved`/`edited_moved`. As built: `crossdoc.ts` implements it (and `spec/reconcile` §7 pins it), but the checkpoint does not call it yet.
 - **Resurrection (cross-checkpoint):** match unmatched-inserted against `resurrection_pool` by raw_hash or norm_hash only (exact-class evidence). Kind `resurrected`, and the pool row is consumed. Scored resurrection is experimental (flag `matcher.scored_resurrection`, default off).
 
 ### Phase 7 — defaults
@@ -149,14 +151,14 @@ Remaining old blocks → `deleted` (into resurrection_pool). Remaining new block
 
 ## 6. Deliberate give-ups
 
-- **Bulk rewrite:** if after Phase 2 more than `bulk.unmatched_frac` of a ≥`bulk.min_blocks` document is unmatched and mean best-candidate `text_sim < 0.35`: skip Phases 4–6, mint everything, emit one `bulk_rewrite` disposition (doc-scoped) plus `deleted` for all old blocks. Document-level continuity survives; block continuity is honestly surrendered.
-- **Tiny blocks:** < 8 tokens use `θ_small`; confidence capped at 0.8. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule).
+- **Bulk rewrite:** if after Phase 2 more than `bulk.unmatched_frac` of a ≥`bulk.min_blocks` document (counted over the flattened block list) is unmatched: skip Phases 3–6, mint everything — the Phase 1–2 pairs included — and emit one `bulk_rewrite` disposition (doc-scoped) plus `deleted` for all old blocks. Document-level continuity survives; block continuity is honestly surrendered. (An earlier draft also required a mean best-candidate `text_sim < 0.35`; the implementation never had that clause.)
+- **Tiny blocks:** a new block with < 8 tokens uses `θ_small` in Phase 5. Nothing operational may depend on tiny-block identity (guaranteed by the load-path rule). (An earlier draft capped tiny-block confidence at 0.8; not implemented — a Phase 5 carry's confidence is its score, and an exact lock on a tiny block is 1.0.)
 - **Many-to-many ambiguity:** overlapping split/merge candidate sets ⇒ take none; mint; record near-misses.
 
 ## 7. Determinism & versioning
 
 - The matcher MUST be deterministic for a given (old tree, new bytes, config). No RNG, no wall-clock influence.
-- `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`.
+- `matcher_v` (semver-ish string) is stamped on every disposition. Threshold/weight changes bump the minor; phase changes bump the major. The constant is `DEFAULT_CONFIG.matcherV` in `packages/core/src/reconcile/types.ts`; it equals `"m" + spec/reconcile/VERSION`, and the Rust crate `omgbase-reconcile` is versioned `<major>.<minor>.<patch>` against the same number.
   - `m1.0` — phases 1–7 as first shipped.
   - `m2.0` — Phase 4b (children vouch for their parent, reason `context_children`) and the Phase 4/4b fixed point (2026-09-25, alongside the "visible text" rule for container `text`).
 - Re-running a newer matcher NEVER rewrites committed dispositions (R6).
