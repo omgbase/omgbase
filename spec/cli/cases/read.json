@@ -1,0 +1,861 @@
+{
+  "suite": "read",
+  "cases": [
+    {
+      "name": "repos",
+      "notes": "§6: glyph, slug, root, counts",
+      "workspace": "alchemy",
+      "argv": [
+        "repos"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  * fixture  <workspace>/vault  18 docs  314 blocks\n"
+      }
+    },
+    {
+      "name": "repos-json",
+      "notes": "§9: a CLI-shaped array, not a library result",
+      "workspace": "alchemy",
+      "argv": [
+        "repos",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"slug\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314}]\n"
+      }
+    },
+    {
+      "name": "repos-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "repos",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"slug\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314}\n"
+      }
+    },
+    {
+      "name": "repos-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "repos",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "fixture\n"
+      }
+    },
+    {
+      "name": "status",
+      "notes": "§6: wordmark, root, rule, the two-column figure grid",
+      "workspace": "alchemy",
+      "argv": [
+        "status"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  fixture\n  <workspace>/vault\n  ----------------------------------------\n  [D] docs  18            watcher o none\n  [B] blocks  314         synced  ok converged\n  * commits  18           queue   empty\n  > edges  64             commit# 18\n"
+      }
+    },
+    {
+      "name": "status-json",
+      "workspace": "alchemy",
+      "argv": [
+        "status",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+      }
+    },
+    {
+      "name": "status-ids-is-json",
+      "notes": "§9: every non-human mode prints the JSON object",
+      "workspace": "alchemy",
+      "argv": [
+        "status",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+      }
+    },
+    {
+      "name": "ls",
+      "notes": "§6: path, `N blocks`, relative time (0s ago under the pinned clock)",
+      "workspace": "alchemy",
+      "argv": [
+        "ls"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\n"
+      }
+    },
+    {
+      "name": "ls-glob",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "lab/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "lab/2026-01-notes.md  28 blocks  0s ago\nlab/2026-02-notes.md  23 blocks  0s ago\n"
+      }
+    },
+    {
+      "name": "ls-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "index.md\nlab/2026-01-notes.md\nlab/2026-02-notes.md\npractitioners/jabir-ibn-hayyan.md\npractitioners/maria-prophetissa.md\npractitioners/newton.md\npractitioners/paracelsus.md\nprocesses/calcination.md\nprocesses/coagulation.md\nprocesses/dissolution.md\nprocesses/magnum-opus.md\nsubstances/mercury.md\nsubstances/philosophers-stone.md\nsubstances/prima-materia.md\nsubstances/salt.md\nsubstances/sulphur.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "ls-json-glob",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "texts/*",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"path\":\"texts/emerald-tablet.md\",\"blocks\":13,\"ts\":\"2026-09-27T00:00:00.000Z\"},{\"path\":\"texts/mutus-liber.md\",\"blocks\":12,\"ts\":\"2026-09-27T00:00:00.000Z\"}]\n"
+      }
+    },
+    {
+      "name": "ls-jsonl-glob",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "texts/*",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"path\":\"texts/emerald-tablet.md\",\"blocks\":13,\"ts\":\"2026-09-27T00:00:00.000Z\"}\n{\"path\":\"texts/mutus-liber.md\",\"blocks\":12,\"ts\":\"2026-09-27T00:00:00.000Z\"}\n"
+      }
+    },
+    {
+      "name": "ls-no-match",
+      "notes": "an empty listing is a stderr note, exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "nope/*"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no documents\n"
+      }
+    },
+    {
+      "name": "ls-no-match-json",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "nope/*",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n"
+      }
+    },
+    {
+      "name": "outline",
+      "notes": "§6: wordmark + rule, then the wire format",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "outline-alias",
+      "workspace": "alchemy",
+      "argv": [
+        "ol",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "outline-doc-id",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "d_17"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "outline-json",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n"
+      }
+    },
+    {
+      "name": "outline-depth",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "index.md",
+        "--depth",
+        "1"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  index.md\n  ----------------------------------------\nb_0 h1   Alchemy  §\nb_1 p    The art of transformation — part proto-chemistry, part philosophy, part…\nb_2 h2   The tria prima  §\nb_3 p    Paracelsus reduced the material world to three principles:\nb_4 ul\n  b_5 li   [[mercury]] — the volatile spirit\n  b_6 li   [[sulphur]] — the combustible soul\n  b_7 li   [[salt]] — the fixed body\nb_8 h2   Substances  §\nb_9 ul\n  b_10 li   [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n  b_11 li   [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\nb_12 h2   Processes  §\nb_13 p    The [magnum opus](/processes/magnum-opus.md) organizes the operations into stages. Individual operations…\nb_14 ul\n  b_15 li   [calcination](/processes/calcination.md)\n  b_16 li   [dissolution](/processes/dissolution.md)\n  b_17 li   [coagulation](/processes/coagulation.md)\nb_18 h2   Practitioners  §\nb_19 tbl\n  b_20 tr   Practitioner Tradition Approximate era\n  b_21 tr   [Maria Prophetissa](/practitioners/maria-prophetissa.md) Alexandrian 3rd century\n  b_22 tr   [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) Islamic 8th century\n  b_23 tr   [Paracelsus](/practitioners/paracelsus.md) Western 16th century\n  b_24 tr   [Isaac Newton](/practitioners/newton.md) Western 17th century\nb_25 h2   Texts  §\nb_26 ul\n  b_27 li   [The Emerald Tablet](/texts/emerald-tablet.md)\n  b_28 li   [Mutus Liber](/texts/mutus-liber.md)\nb_29 h2   Laboratory  §\nb_30 p    Working notes live under `lab/`.\n"
+      }
+    },
+    {
+      "name": "outline-skeleton",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "texts/mutus-liber.md",
+        "--skeleton"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1     §\nb_303 p\nb_304 p\nb_305 h2     §\nb_306 p\nb_307 p\nb_308 h2     §\nb_309 p\nb_310 ul\n  b_311 li\n  b_312 li\n  b_313 li\n"
+      }
+    },
+    {
+      "name": "outline-section-is-ignored",
+      "notes": "§9: --section parses and does nothing",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "texts/mutus-liber.md",
+        "--section",
+        "Contents"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "outline-ids-is-json",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "texts/mutus-liber.md",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n"
+      }
+    },
+    {
+      "name": "outline-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "outline",
+        "nope.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no document nope.md\n"
+      }
+    },
+    {
+      "name": "outline-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "outline"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: outline requires a <doc|path>\n"
+      }
+    },
+    {
+      "name": "cat-doc",
+      "notes": "§6: exact bytes",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "cat-doc-id",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "d_17"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+      }
+    },
+    {
+      "name": "cat-block",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_303"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n"
+      }
+    },
+    {
+      "name": "cat-many",
+      "notes": "several refs in order, like unix cat",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_302",
+        "b_305",
+        "b_308"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "# Mutus Liber\n## Contents\n## Status of these notes\n"
+      }
+    },
+    {
+      "name": "cat-stdin",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "-"
+      ],
+      "stdin": "b_302\nb_305\n",
+      "expect": {
+        "exit": 0,
+        "stdout": "# Mutus Liber\n## Contents\n"
+      }
+    },
+    {
+      "name": "cat-stdin-empty",
+      "notes": "§2.3: `-` with empty stdin is a usage error",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "-"
+      ],
+      "stdin": "",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: cat requires a <node> (or - to read refs from stdin)\n"
+      }
+    },
+    {
+      "name": "cat-block-json",
+      "notes": "nodes_get at raw",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_303",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_303\",\"type\":\"paragraph\",\"raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"content_hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\"}\n"
+      }
+    },
+    {
+      "name": "cat-doc-json",
+      "notes": "§9: `{ doc, path, content }`, keys renamed from docs_read",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n"
+      }
+    },
+    {
+      "name": "cat-many-json",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_302",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"},{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}]\n"
+      }
+    },
+    {
+      "name": "cat-many-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_302",
+        "b_305",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\"}\n{\"id\":\"b_305\",\"type\":\"heading\",\"raw\":\"## Contents\",\"content_hash\":\"624e5c6774ba967b017d18ec4ffe2e77c1cffa258162a6f11b4625cd3708f9ec\"}\n"
+      }
+    },
+    {
+      "name": "cat-resolution-text",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_303",
+        "--resolution",
+        "text"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\n"
+      }
+    },
+    {
+      "name": "cat-resolution-full-json",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_311",
+        "--resolution",
+        "full",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}\n"
+      }
+    },
+    {
+      "name": "cat-resolution-on-doc-warns",
+      "notes": "§6: a document is always its bytes; the flag is warned about on stderr",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "texts/mutus-liber.md",
+        "--resolution",
+        "text"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n",
+        "stderr": "  --resolution text ignored for texts/mutus-liber.md: a document is always its exact bytes (resolutions apply to block refs)\n"
+      }
+    },
+    {
+      "name": "cat-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "nope.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no node nope.md\n"
+      }
+    },
+    {
+      "name": "cat-missing-block",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "b_9999"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no node b_9999\n"
+      }
+    },
+    {
+      "name": "cat-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "cat"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: cat requires a <node> (or - to read refs from stdin)\n"
+      }
+    },
+    {
+      "name": "show-doc",
+      "notes": "§6: the document card — properties, out edges, backlinks",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = draft\n    tradition = western\n    era = 1677\n    tags = [\"text\",\"images\"]\n    verified = false\n    $title = Mutus Liber\n  out edges\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "show-block",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_303"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  [B] paragraph  b_303\n  ----------------------------------------\n  placement  parent=— ordinal=1 depth=0\n  text  The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\n"
+      }
+    },
+    {
+      "name": "show-heading",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_302"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  # heading  b_302\n  ----------------------------------------\n  placement  parent=— ordinal=0 depth=0\n  attrs\n    level = 1\n  text  Mutus Liber\n"
+      }
+    },
+    {
+      "name": "show-task",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_311"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  [ ] task  b_311\n  ----------------------------------------\n  placement  parent=b_310 ordinal=0 depth=1\n  attrs\n    checked = false\n  text  Obtain a facsimile with plate numbering\n"
+      }
+    },
+    {
+      "name": "show-history",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_303",
+        "--include",
+        "history"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  [B] paragraph  b_303\n  ----------------------------------------\n  placement  parent=— ordinal=1 depth=0\n  text  The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\n  history\n    #18 inserted observed 2026-09-27T00:00:00.000Z\n"
+      }
+    },
+    {
+      "name": "show-block-json",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_303",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_303\",\"type\":\"paragraph\",\"raw\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\",\"content_hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\",\"text\":\"The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no text. The entire Great Work, allegedly, in pictures.\",\"attrs\":{},\"placement\":{\"parent\":null,\"ordinal\":1,\"depth\":0}}\n"
+      }
+    },
+    {
+      "name": "show-doc-json",
+      "notes": "§9: a CLI-shaped card",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"kind\":\"document\",\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"properties\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\",\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false,\"$title\":\"Mutus Liber\"},\"edges\":{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}}\n"
+      }
+    },
+    {
+      "name": "show-many",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_302",
+        "b_311"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  # heading  b_302\n  ----------------------------------------\n  placement  parent=— ordinal=0 depth=0\n  attrs\n    level = 1\n  text  Mutus Liber\n  [ ] task  b_311\n  ----------------------------------------\n  placement  parent=b_310 ordinal=0 depth=1\n  attrs\n    checked = false\n  text  Obtain a facsimile with plate numbering\n"
+      }
+    },
+    {
+      "name": "show-many-json",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_302",
+        "b_311",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"placement\":{\"parent\":null,\"ordinal\":0,\"depth\":0}},{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}]\n"
+      }
+    },
+    {
+      "name": "show-many-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "b_302",
+        "b_311",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_302\",\"type\":\"heading\",\"raw\":\"# Mutus Liber\",\"content_hash\":\"15f54d05ad1c1ffc35a23f7d24c6083a12edc5a4e5efc5cfe7a0628e0b93fafd\",\"text\":\"Mutus Liber\",\"attrs\":{\"level\":1},\"placement\":{\"parent\":null,\"ordinal\":0,\"depth\":0}}\n{\"id\":\"b_311\",\"type\":\"task\",\"raw\":\"- [ ] Obtain a facsimile with plate numbering\",\"content_hash\":\"31c205b3e59317c1eace88de62a9ea69cfe18fa6a9c51adf3b5236f42f9a86fb\",\"text\":\"Obtain a facsimile with plate numbering\",\"attrs\":{\"checked\":false},\"placement\":{\"parent\":\"b_310\",\"ordinal\":0,\"depth\":1}}\n"
+      }
+    },
+    {
+      "name": "show-stdin",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "-"
+      ],
+      "stdin": "b_302\n",
+      "expect": {
+        "exit": 0,
+        "stdout": "  # heading  b_302\n  ----------------------------------------\n  placement  parent=— ordinal=0 depth=0\n  attrs\n    level = 1\n  text  Mutus Liber\n"
+      }
+    },
+    {
+      "name": "show-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "show",
+        "nope.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no node nope.md\n"
+      }
+    },
+    {
+      "name": "find",
+      "notes": "§6: id, locator, preview",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald tablet"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\nb_27  index.md#list_item[0]  [The Emerald Tablet](/texts/emerald-tablet.md)\nb_254  substances/prima-materia.md#paragraph[6]  The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.\n"
+      }
+    },
+    {
+      "name": "find-words-are-joined",
+      "notes": "positionals join with a space",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "tablet",
+        "-n",
+        "3"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\nb_27  index.md#list_item[0]  [The Emerald Tablet](/texts/emerald-tablet.md)\nb_254  substances/prima-materia.md#paragraph[6]  The [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing this reduction and return.\n"
+      }
+    },
+    {
+      "name": "find-one",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "-1"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289\n"
+      }
+    },
+    {
+      "name": "find-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "--ids",
+        "-n",
+        "2"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289\nb_27\n"
+      }
+    },
+    {
+      "name": "find-json",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "--json",
+        "-n",
+        "2"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"id\":\"b_289\",\"locator\":\"texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}},{\"id\":\"b_27\",\"locator\":\"index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}]\n"
+      }
+    },
+    {
+      "name": "find-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "--jsonl",
+        "-n",
+        "2"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"b_289\",\"locator\":\"texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}\n{\"id\":\"b_27\",\"locator\":\"index.md#list_item[0]\",\"preview\":\"[The Emerald Tablet](/texts/emerald-tablet.md)\",\"evidence\":{\"rrf\":0.01639344262295082,\"boosts\":{\"layer\":1.3},\"ftsRank\":1}}\n"
+      }
+    },
+    {
+      "name": "find-verbose",
+      "notes": "evidence goes to stderr",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "-v",
+        "-n",
+        "1"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\n",
+        "stderr": "    {\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}\n"
+      }
+    },
+    {
+      "name": "find-no-semantic",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "emerald",
+        "--no-semantic",
+        "-n",
+        "1"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\n"
+      }
+    },
+    {
+      "name": "find-none",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "zzzzqqq"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no matches\n"
+      }
+    },
+    {
+      "name": "find-none-one",
+      "notes": "-1 with no hit prints nothing",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "zzzzqqq",
+        "-1"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": ""
+      }
+    },
+    {
+      "name": "find-none-json",
+      "workspace": "alchemy",
+      "argv": [
+        "find",
+        "zzzzqqq",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n"
+      }
+    },
+    {
+      "name": "find-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "find"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: find requires <text>\n"
+      }
+    }
+  ]
+}

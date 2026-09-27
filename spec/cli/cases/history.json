@@ -1,0 +1,832 @@
+{
+  "suite": "history",
+  "cases": [
+    {
+      "name": "log",
+      "notes": "§6: `#seq origin summary`, oldest first from the cursor",
+      "workspace": "alchemy",
+      "argv": [
+        "log"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n#3 observed observed: lab/2026-02-notes.md — 23 inserted\n#4 observed observed: practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: practitioners/newton.md — 14 inserted\n#7 observed observed: practitioners/paracelsus.md — 16 inserted\n#8 observed observed: processes/calcination.md — 20 inserted\n#9 observed observed: processes/coagulation.md — 14 inserted\n#10 observed observed: processes/dissolution.md — 15 inserted\n#11 observed observed: processes/magnum-opus.md — 22 inserted\n#12 observed observed: substances/mercury.md — 17 inserted\n#13 observed observed: substances/philosophers-stone.md — 21 inserted\n#14 observed observed: substances/prima-materia.md — 14 inserted\n#15 observed observed: substances/salt.md — 20 inserted\n#16 observed observed: substances/sulphur.md — 8 inserted\n#17 observed observed: texts/emerald-tablet.md — 13 inserted\n#18 observed observed: texts/mutus-liber.md — 12 inserted\n"
+      }
+    },
+    {
+      "name": "log-limit-footer",
+      "notes": "the truncation footer names the next cursor",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "-n",
+        "2"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n",
+        "stderr": "… truncated; continue with --cursor 2\n"
+      }
+    },
+    {
+      "name": "log-ids",
+      "notes": "§9: --ids prints commit ids and no footer",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "-n",
+        "2",
+        "--ids"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "c_0\nc_1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "log-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "-n",
+        "1",
+        "--jsonl"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}\n",
+        "stderr": "… truncated; continue with --cursor 1\n"
+      }
+    },
+    {
+      "name": "log-json",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "-n",
+        "1",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"digests\":[{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}],\"cursor\":1,\"truncated\":true,\"head\":18}\n"
+      }
+    },
+    {
+      "name": "log-cursor",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--cursor",
+        "17"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "#18 observed observed: texts/mutus-liber.md — 12 inserted\n"
+      }
+    },
+    {
+      "name": "log-cursor-json",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--cursor",
+        "17",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"digests\":[{\"commit\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: texts/mutus-liber.md — 12 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}]}],\"cursor\":18,\"truncated\":false,\"head\":18}\n"
+      }
+    },
+    {
+      "name": "log-since-literal",
+      "notes": "--since <ISO> → the commits after the last one before that instant",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--since",
+        "2026-09-26T00:00:00Z",
+        "-n",
+        "1"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "#1 observed observed: index.md — 31 inserted\n",
+        "stderr": "… truncated; continue with --cursor 1\n"
+      }
+    },
+    {
+      "name": "log-since-future",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--since",
+        "2026-09-28T00:00:00Z"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no changes\n"
+      }
+    },
+    {
+      "name": "log-since-relative",
+      "notes": "24h resolves against the (pinned) clock",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--since",
+        "24h",
+        "-n",
+        "1"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "#1 observed observed: index.md — 31 inserted\n",
+        "stderr": "… truncated; continue with --cursor 1\n"
+      }
+    },
+    {
+      "name": "log-since-garbage",
+      "notes": "§9: an unparsable --since means the epoch",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--since",
+        "garbage",
+        "-n",
+        "1"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "#1 observed observed: index.md — 31 inserted\n",
+        "stderr": "… truncated; continue with --cursor 1\n"
+      }
+    },
+    {
+      "name": "log-origin-api-empty",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--origin",
+        "api"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no changes\n"
+      }
+    },
+    {
+      "name": "log-origin-observed-limit",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--origin",
+        "observed",
+        "-n",
+        "1",
+        "--cursor",
+        "16"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "#17 observed observed: texts/emerald-tablet.md — 13 inserted\n"
+      }
+    },
+    {
+      "name": "log-after-writes",
+      "notes": "api commits carry the actor in the summary; --origin filters",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "done",
+            "b_311",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): texts/mutus-liber.md — 12 edited\n#20 api      api(human:spec): texts/mutus-liber.md — 12 edited\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--origin",
+            "api",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"digests\":[{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}]},{\"commit\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"b37b7d543115d4630871628739402dba87cf6137a4029d213124045838358240\"}]}],\"cursor\":20,\"truncated\":false,\"head\":20}\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--origin",
+            "api",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "c_18\nc_19\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--since",
+            "2026-09-27T00:00:00.000Z"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n#3 observed observed: lab/2026-02-notes.md — 23 inserted\n#4 observed observed: practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: practitioners/newton.md — 14 inserted\n#7 observed observed: practitioners/paracelsus.md — 16 inserted\n#8 observed observed: processes/calcination.md — 20 inserted\n#9 observed observed: processes/coagulation.md — 14 inserted\n#10 observed observed: processes/dissolution.md — 15 inserted\n#11 observed observed: processes/magnum-opus.md — 22 inserted\n#12 observed observed: substances/mercury.md — 17 inserted\n#13 observed observed: substances/philosophers-stone.md — 21 inserted\n#14 observed observed: substances/prima-materia.md — 14 inserted\n#15 observed observed: substances/salt.md — 20 inserted\n#16 observed observed: substances/sulphur.md — 8 inserted\n#17 observed observed: texts/emerald-tablet.md — 13 inserted\n#18 observed observed: texts/mutus-liber.md — 12 inserted\n#19 api      api(human:spec): texts/mutus-liber.md — 12 edited\n#20 api      api(human:spec): texts/mutus-liber.md — 12 edited\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "hist",
+      "notes": "§6: `#seq kind (confidence) origin ts`, newest first",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "b_303"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+      }
+    },
+    {
+      "name": "hist-json",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "b_303",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"commitId\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"kind\":\"inserted\",\"confidence\":null,\"reason\":null}]\n"
+      }
+    },
+    {
+      "name": "hist-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "b_303",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"commitId\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"kind\":\"inserted\",\"confidence\":null,\"reason\":null}\n"
+      }
+    },
+    {
+      "name": "hist-ids-is-human",
+      "notes": "§9: --ids falls back to the human rendering",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "b_303",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+      }
+    },
+    {
+      "name": "hist-on-doc",
+      "notes": "a document ref is block_missing",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: hist needs a block id; got texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "hist-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "hist",
+        "b_9999"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: hist needs a block id; got b_9999\n"
+      }
+    },
+    {
+      "name": "hist-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "hist"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: hist requires a <node>\n"
+      }
+    },
+    {
+      "name": "hist-after-writes",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised twice.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#20 edited (1.00) api 2026-09-27T00:00:00.000Z\n#19 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309",
+            "-n",
+            "1"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#20 edited (1.00) api 2026-09-27T00:00:00.000Z\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[{\"commitId\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"kind\":\"edited\",\"confidence\":1,\"reason\":\"api\"},{\"commitId\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"kind\":\"edited\",\"confidence\":1,\"reason\":\"api\"},{\"commitId\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"kind\":\"inserted\",\"confidence\":null,\"reason\":null}]\n"
+          }
+        },
+        {
+          "argv": [
+            "show",
+            "b_309",
+            "--include",
+            "history"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  [B] paragraph  b_309\n  ----------------------------------------\n  placement  parent=— ordinal=7 depth=0\n  text  Draft, revised twice.\n  history\n    #20 edited api 2026-09-27T00:00:00.000Z\n    #19 edited api 2026-09-27T00:00:00.000Z\n    #18 inserted observed 2026-09-27T00:00:00.000Z\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "diff-single-revision",
+      "notes": "§6: one revision → previous == current → `no changes`",
+      "workspace": "alchemy",
+      "argv": [
+        "diff",
+        "texts/mutus-liber.md"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no changes\n"
+      }
+    },
+    {
+      "name": "diff-single-revision-json",
+      "workspace": "alchemy",
+      "argv": [
+        "diff",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_17\",\"to\":\"r_17\",\"diff\":\"\"}\n"
+      }
+    },
+    {
+      "name": "diff-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "diff",
+        "nope.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no document nope.md\n"
+      }
+    },
+    {
+      "name": "diff-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "diff"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: diff requires a <doc>\n"
+      }
+    },
+    {
+      "name": "diff-after-writes",
+      "notes": "default previous → current; --from/--to pick revisions; --jsonl falls back to human (§9)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "From the second write.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -11,7 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft, revised.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "texts/mutus-liber.md",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -11,7 +11,7 @@\\n real strand of practice: dew was held to be a celestial condensate and a candidate\\n [prima materia](/substances/prima-materia.md).\\n ## Status of these notes\\n-Draft, revised.\\n+From the second write.\\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\\n - [ ] Decide whether the dew operation is literal\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "d_17",
+            "--from",
+            "r_17"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -11,8 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "texts/mutus-liber.md",
+            "--from",
+            "r_17",
+            "--to",
+            "r_18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -11,8 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Draft, revised.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "texts/mutus-liber.md",
+            "--to",
+            "r_9999"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[error]: no revision \"r_9999\" for document d_17\n"
+          }
+        },
+        {
+          "argv": [
+            "diff",
+            "texts/mutus-liber.md",
+            "--jsonl"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "@@ -11,7 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft, revised.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "links",
+      "notes": "§6: out edges then backlinks, grouped by predicate",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-hub",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "index.md"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_10 ×1\n    references > d_12 ×1\n    references > d_13 ×1\n    references > d_16 ×1\n    references > d_17 ×1\n    references > d_3 ×1\n    references > d_4 ×1\n    references > d_5 ×1\n    references > d_6 ×1\n    references > d_7 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n    references > phantom:mercury ×1\n    references > phantom:salt ×1\n    references > phantom:sulphur ×1\n  in (backlinks)\n    d_6 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-in",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--in"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-out",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--out"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n"
+      }
+    },
+    {
+      "name": "links-both-flags",
+      "notes": "--in --out together means both",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--in",
+        "--out"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-pred",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "index.md",
+        "--pred",
+        "references"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_10 ×1\n    references > d_12 ×1\n    references > d_13 ×1\n    references > d_16 ×1\n    references > d_17 ×1\n    references > d_3 ×1\n    references > d_4 ×1\n    references > d_5 ×1\n    references > d_6 ×1\n    references > d_7 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n    references > phantom:mercury ×1\n    references > phantom:salt ×1\n    references > phantom:sulphur ×1\n  in (backlinks)\n    d_6 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-pred-none",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "index.md",
+        "--pred",
+        "nope"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no links\n"
+      }
+    },
+    {
+      "name": "links-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_13\nd_0\n"
+      }
+    },
+    {
+      "name": "links-json",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
+      }
+    },
+    {
+      "name": "links-blocks-json",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--blocks",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
+      }
+    },
+    {
+      "name": "links-blocks",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--blocks"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-jsonl-is-human",
+      "notes": "§9",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "texts/mutus-liber.md",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-block-ref",
+      "notes": "a block ref reports its document's edges",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "b_307"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+      }
+    },
+    {
+      "name": "links-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "links",
+        "nope.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no node nope.md\n"
+      }
+    },
+    {
+      "name": "links-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "links"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: links requires a <node>\n"
+      }
+    }
+  ]
+}

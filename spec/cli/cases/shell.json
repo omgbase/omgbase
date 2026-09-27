@@ -1,0 +1,555 @@
+{
+  "suite": "shell",
+  "cases": [
+    {
+      "name": "script-basic",
+      "notes": "§7: one command per line; a collection result prints the `N rows — address with @1..@N` hint on stderr",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "query 'from docs where type == \"text\"'\nshow @1\nexit\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n  omgbase  >  texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "script-comments-and-blanks",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "# a comment\n\n   \nls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "script-exit-stops",
+      "notes": "nothing after `exit` runs; `quit` is the same",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls --ids texts/*\nexit\nls --ids lab/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "script-quit",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "quit\nls\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "script-eof-ends",
+      "notes": "stdin EOF ends the session, exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls --ids texts/*",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "exit-code-is-last-failure",
+      "notes": "the session exits with the last non-zero code",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "cat nope.md\nls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 1,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "error[doc_missing]: no node nope.md\n  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "exit-code-usage",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "cat\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: cat requires a <node> (or - to read refs from stdin)\n"
+      }
+    },
+    {
+      "name": "frame-and-rows",
+      "notes": "@N is a row of the last displayed collection; a card leaves the frame intact",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "query 'from docs where type == \"text\"'\ncat @2 --json\nshow @1\ncat @2 --json\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n  omgbase  >  texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "frame-out-of-range",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "query 'from docs where type == \"text\"'\ncat @9\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\nusage: @9 out of range (2 rows)\n"
+      }
+    },
+    {
+      "name": "frame-none",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "cat @1\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: no displayed collection to index with @N\n"
+      }
+    },
+    {
+      "name": "previous-result",
+      "notes": "@_ is the previous typed result; .field reads a shallow field",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "show texts/mutus-liber.md --json\n@_.path\n@_.kind\n@_.nope\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "{\"kind\":\"document\",\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"properties\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\",\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false,\"$title\":\"Mutus Liber\"},\"edges\":{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}}\ntexts/mutus-liber.md\n",
+        "stderr": "usage: cannot read .kind of a non-object\nusage: cannot read .nope of a non-object\n"
+      }
+    },
+    {
+      "name": "previous-result-string",
+      "notes": "cat captures the bytes: @_ is a string",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "cat b_302\n@_\n@_.path\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "# Mutus Liber\nb_302\n",
+        "stderr": "usage: no field .path\n"
+      }
+    },
+    {
+      "name": "previous-result-none",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@_\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: no previous result (@_)\n"
+      }
+    },
+    {
+      "name": "bindings",
+      "notes": "@name = <command> runs quietly and binds a snapshot; [i] and .field address it",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@t = query 'from docs where type == \"text\"'\nbindings\ncat @t[2] --json\n@t[1].path\n@t[1].id\n@t[3]\ncat @t\nunset t\nunset t\nbindings\n@t\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "@t  2 rows\n{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\ntexts/emerald-tablet.md\nd_16\n",
+        "stderr": "  @t = 2 rows\nusage: [3] out of range (2 items)\nusage: reference is a collection; select one with [i]\n  unset @t\n  no binding @t\n  no bindings\nusage: no binding @t\n"
+      }
+    },
+    {
+      "name": "bindings-from-ref",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "query 'from docs where type == \"text\"'\n@first = @1\n@first\ncat @first --json\n@all = @_\n@all\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\nd_16\n{\"doc\":\"d_16\",\"path\":\"texts/emerald-tablet.md\",\"content\":\"---\\ntype: text\\nlayer: canon\\ntradition: islamic\\nera: 800\\ntags: [text, hermetic]\\nverified: true\\n---\\n\\n# The Emerald Tablet\\n\\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\\nearliest surviving in Arabic around the 8th century, and the most quoted text in\\nthe entire tradition.\\n\\nlength:: short\\nattributed_to:: hermes\\n\\n## The text\\n\\n> That which is above is from that which is below, and that which is below is\\n> from that which is above, working the miracles of one.\\n\\n> And as all things have been and arose from one by the mediation of one, so all\\n> things have their birth from this one thing by adaptation.\\n\\n## Why it dominated\\n\\nIt is short enough to memorize, concrete enough to sound like instructions, and\\nvague enough to support any reading. Every practitioner from\\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\\nproduced a commentary, and the commentaries agree on nothing.\\n\\nNewton's translation survives in his own hand. He read it, plausibly, as\\ndescribing distillation and condensation — the below rising and the above\\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\\n[coagulation](/processes/coagulation.md).\\n\\n## Assessment\\n\\nRead as chemistry it says nothing operational. Read as a statement that the same\\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\\nto be true, arrived at for no good reason.\\n\"}\n---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
+        "stderr": "  2 rows — address with @1..@2\n  @first = d_16\n  @all = \"---\ntype: text\nlayer: canon\ntradition: islami…\"\n"
+      }
+    },
+    {
+      "name": "bindings-scalar",
+      "notes": "a count binds a number",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@n = q '$repo.docs count { where layer == \"canon\" }'\n@n\nbindings\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "13\n@n  13\n",
+        "stderr": "  @n = 13\n"
+      }
+    },
+    {
+      "name": "bindings-failed-command",
+      "notes": "a failing command binds nothing",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@x = cat nope.md\nbindings\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no node nope.md\n  no bindings\n"
+      }
+    },
+    {
+      "name": "bindings-bad-targets",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@1 = ls\n@_ = ls\n@x[1] = ls\n@x.f = ls\n@x =\n@9x = ls\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: bad binding name '@1' (use a letter-led identifier)\nusage: bad binding name '@_' (use a letter-led identifier)\nusage: cannot assign to @name[i] or @name.field — bind a whole result to @name\nusage: cannot assign to @name[i] or @name.field — bind a whole result to @name\nusage: @name = <command | @ref>\nusage: bad reference '@9x' (use @N, @_, @name, optional [i] and .field)\n"
+      }
+    },
+    {
+      "name": "inspect-collection",
+      "notes": "a bare collection reference lists `[i] id  label` and becomes the frame",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@t = query 'from docs where type == \"text\"'\n@t\ncat @2 --json\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "[1] d_16  texts/emerald-tablet.md\n[2] d_17  texts/mutus-liber.md\n{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
+        "stderr": "  @t = 2 rows\n  2 rows\n"
+      }
+    },
+    {
+      "name": "bad-reference",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "@t = ls\n@t[x]\n@t..\n@\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "  @t = 18 rows\nusage: bad reference '@t[x]' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@t..' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@' (use @N, @_, @name, optional [i] and .field)\n"
+      }
+    },
+    {
+      "name": "find-frame",
+      "notes": "find hits are a frame; the row's id is the argv substitution",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "find emerald -n 2\ncat @2\n@_\n@2.locator\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\nb_27  index.md#list_item[0]  [The Emerald Tablet](/texts/emerald-tablet.md)\n- [The Emerald Tablet](/texts/emerald-tablet.md)\nb_27\nindex.md#list_item[0]\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "ls-frame",
+      "notes": "ls rows substitute their path",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls texts/*\noutline @2 --json\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "links-frame",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "links texts/mutus-liber.md\ncat @1 --json\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n{\"doc\":\"d_13\",\"path\":\"substances/prima-materia.md\",\"content\":\"---\\ntype: substance\\nslug: prima-materia\\nlayer: canon\\ntradition: western\\ntags: [substance, theory]\\nverified: false\\n---\\n\\n# Prima materia\\n\\nThe *prima materia* is the formless first matter from which all substances are\\ncomposed — not a reagent you can order, but the state a substance is reduced to\\nbefore it can be rebuilt.\\n\\nstate:: undifferentiated\\nobtainable:: no\\n\\n## Descriptions\\n\\nThe texts are deliberately evasive. It is called the dragon, the chaos, the\\nlead of the philosophers, the vile black earth. Practitioners took this\\nmultiplicity as proof that the *prima materia* is a condition rather than an\\ningredient.\\n\\n> That which is below is like that which is above.\\n\\nThe [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing\\nthis reduction and return.\\n\\n## Relation to the Great Work\\n\\nReduction to the *prima materia* is the purpose of [[nigredo]], the blackening\\nthat opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md)\\nis the usual first operation.\\n\\n## Open questions\\n\\n- Whether the \\\"chaos\\\" and the \\\"lead of the philosophers\\\" readings can be\\n  reconciled, or whether they simply belong to different schools.\\n- How far the term can honestly be traced back through the Alexandrian corpus\\n  before it becomes a later retrojection.\\n\"}\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "log-does-not-capture",
+      "notes": "§9: log/hist/outline/diff/status/repos leave @_ and the frame untouched",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls texts/*\nlog -n 1\n@1\nhist b_303\n@_\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n#1 observed observed: index.md — 31 inserted\ntexts/emerald-tablet.md\n#18 inserted observed 2026-09-27T00:00:00.000Z\ntexts/emerald-tablet.md\n",
+        "stderr": "  2 rows — address with @1..@2\n… truncated; continue with --cursor 1\n"
+      }
+    },
+    {
+      "name": "mutation-frame",
+      "notes": "an ApplyResult's minted ids are the frame",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "insert b_310 -m '- [ ] From the shell' --actor human:spec\ncat @1\ndone @1 --actor human:spec\ncat @_[1]\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "b_315\n- [ ] From the shell\nb_315\n- [x] From the shell\n",
+        "stderr": "  1 row — address with @1..@1\n  ok committed · 1 document touched\n  1 row — address with @1..@1\n  ok committed · 1 document touched\n"
+      }
+    },
+    {
+      "name": "node-frame",
+      "notes": "node hits substitute their block for block-taking verbs",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "query 'select $id, attrs.checked from nodes where kind == \"md:task\" && doc.$path == \"texts/mutus-liber.md\"'\ncat @1\nnode set @1 checked true --actor human:spec\nquery 'select $id, attrs.checked from nodes where kind == \"md:task\" && doc.$path == \"texts/mutus-liber.md\"'\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "id              path                  $id             checked\nn_5ebb7234aa44  texts/mutus-liber.md  n_5ebb7234aa44  false\nn_cb80a4290986  texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  texts/mutus-liber.md  n_d547e97aa408  false\n- [ ] Obtain a facsimile with plate numbering\nb_311\nid              path                  $id             checked\nn_5ebb7234aa44  texts/mutus-liber.md  n_5ebb7234aa44  false\nn_cb80a4290986  texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  texts/mutus-liber.md  n_d547e97aa408  false\n",
+        "stderr": "  3 rows — address with @1..@3\n  1 row — address with @1..@1\n  ok committed · 1 document touched\n  3 rows — address with @1..@3\n"
+      }
+    },
+    {
+      "name": "tokenizer",
+      "notes": "single quotes literal, double quotes with escapes, backslash outside quotes",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "q 'from docs where $path == \"texts/mutus-liber.md\"' --ids\nq \"from docs where \\$path == \\\"texts/mutus-liber.md\\\"\" --ids\nq from\\ docs\\ where\\ type\\ ==\\ \\\"text\\\" --ids\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_17\nd_17\nd_16\nd_17\n",
+        "stderr": "  1 row — address with @1..@1\n  1 row — address with @1..@1\n  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "tokenizer-errors",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "q 'unterminated\nq \"unterminated\nls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "usage: unterminated single quote\nusage: unterminated double quote\n  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "unknown-command",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "zzz\nstatsu\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown command 'zzz'\n  hint: run 'omg --help' for the command list\nusage: unknown command 'statsu'\n  hint: did you mean 'status'? run 'omg --help' for the command list\n"
+      }
+    },
+    {
+      "name": "global-flags-per-line",
+      "notes": "each line parses like a fresh argv: --json, --stale, -C",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "status --json\n--ids ls texts/*\nls --stale --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\n  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "help-line",
+      "workspace": "alchemy",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "?\nls --help\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "  omg shell — session bindings\n  run any omg command; results become addressable:\n  @1 @2 …   rows of the last displayed collection\n  @_         the previous command's result\n  @name      a named binding (also @name[i], @name.field)\n  \n  @x = <cmd|@ref>      bind a snapshot of a result\n  unset x              drop a binding\n  bindings             list bindings\n  exit / quit          leave the shell\n  ls — List live documents: path, block count, last-commit time (always the complete listing)\n  usage: omg ls [<glob>] [--ids|--json|--jsonl]\n  options:\n    <glob>      path filter; `*` matches any run of characters (`notes/*.md`)\n    --ids       paths only, one per line (pipe fuel)\n    -h, --help  show this help\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "prompt-flag",
+      "notes": "§7.1: --prompt emits the prompt before each line, no trailing newline",
+      "workspace": "alchemy",
+      "argv": [
+        "shell",
+        "--prompt",
+        "P> "
+      ],
+      "stdin": "ls --ids texts/*\nq '$repo.docs count { }'\nexit\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "P> texts/emerald-tablet.md\ntexts/mutus-liber.md\nP> 18\nP> ",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "prompt-env",
+      "workspace": "alchemy",
+      "env": {
+        "OMG_SHELL_PROMPT": "omg> "
+      },
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "omg> texts/emerald-tablet.md\ntexts/mutus-liber.md\nomg> ",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "prompt-flag-wins",
+      "workspace": "alchemy",
+      "env": {
+        "OMG_SHELL_PROMPT": "env> "
+      },
+      "argv": [
+        "shell",
+        "--prompt",
+        "flag> "
+      ],
+      "stdin": "ls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "flag> texts/emerald-tablet.md\ntexts/mutus-liber.md\nflag> ",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "prompt-empty-env-is-unset",
+      "workspace": "alchemy",
+      "env": {
+        "OMG_SHELL_PROMPT": ""
+      },
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls --ids texts/*\n",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stderr": "  2 rows — address with @1..@2\n"
+      }
+    },
+    {
+      "name": "no-workspace",
+      "workspace": "none",
+      "argv": [
+        "shell"
+      ],
+      "stdin": "ls\n",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "server-flag-ok",
+      "notes": "shell accepts --server but each line then needs the remote; unpinned beyond the help card",
+      "workspace": "none",
+      "argv": [
+        "shell",
+        "--server",
+        "omg mcp",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  shell — A persistent session: one open workspace across commands, and results become typed bindings (@1/@_/@name)\n  usage: omg shell [--prompt <str>] [--server <cmd|url>]\n  options:\n    --prompt <str>      emit <str> before reading each piped line so a driver (e.g. recital) can sync on it; also $OMG_SHELL_PROMPT (--prompt wins)\n    --server <cmd|url>  run every line against a remote engine over MCP\n    -h, --help          show this help\n\n  Interactive on a TTY (type `?` for binding help, `exit` to leave); a script runner when stdin is piped (one command per line).\n"
+      }
+    }
+  ]
+}

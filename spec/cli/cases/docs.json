@@ -1,0 +1,762 @@
+{
+  "suite": "docs",
+  "cases": [
+    {
+      "name": "new",
+      "notes": "§6: `created <path>` on stderr, the doc id on stdout; the file lands in the working tree",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "notes/new.md",
+            "-m",
+            "---\ntitle: New\n---\n# New\n\nHello.\n",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created notes/new.md\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "notes/new.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntitle: New\n---\n# New\n\nHello.\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "notes/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "notes/new.md  2 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "notes/new.md",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"text\":\"b_314 h1   New  §\\nb_315 p    Hello.\",\"truncated\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): notes/new.md — 2 inserted\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new-json",
+      "workspace": "alchemy",
+      "argv": [
+        "new",
+        "notes/new.md",
+        "-m",
+        "# New\n",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_18\",\"path\":\"notes/new.md\",\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "new-from-file",
+      "workspace": "alchemy",
+      "files": {
+        "draft.md": "# From a file\n\nBody.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "notes/f.md",
+            "-f",
+            "draft.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created notes/f.md\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "notes/f.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# From a file\n\nBody.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new-from-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "notes/s.md",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "# Stdin\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created notes/s.md\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "notes/s.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# Stdin\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new-duplicate",
+      "notes": "path_taken; the MutationError payload prints as `{}` (§9)",
+      "workspace": "alchemy",
+      "argv": [
+        "new",
+        "index.md",
+        "-m",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[path_taken]: document already exists at index.md\n  {}\n"
+      }
+    },
+    {
+      "name": "new-duplicate-json",
+      "workspace": "alchemy",
+      "argv": [
+        "new",
+        "index.md",
+        "-m",
+        "x",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"path_taken\",\"message\":\"document already exists at index.md\",\"data\":{},\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "new-dry-run-commits",
+      "notes": "§9: --dry-run is not honored by the document verbs — the document is created",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "notes/dry.md",
+            "-m",
+            "# Dry\n",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created notes/dry.md\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "notes/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "notes/dry.md  1 blocks  0s ago\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "new-no-path",
+      "workspace": "alchemy",
+      "argv": [
+        "new",
+        "-m",
+        "x"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: new requires a <path>\n"
+      }
+    },
+    {
+      "name": "mv",
+      "notes": "§6: identity preserved across the rename; inbound links are not rewritten (the human output does not say so — §9); the move's digest has an empty summary (§9)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "mv",
+            "texts/mutus-liber.md",
+            "texts/silent-book.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok moved to texts/silent-book.md\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/silent-book.md     12 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "d_17",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_26"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): \n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mv-json",
+      "workspace": "alchemy",
+      "argv": [
+        "mv",
+        "d_17",
+        "texts/silent-book.md",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_17\",\"path\":\"texts/silent-book.md\",\"committed\":true,\"dangling\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"block\":\"b_28\",\"target\":\"/texts/mutus-liber.md\",\"anchor\":null}],\"retargeted\":null}\n"
+      }
+    },
+    {
+      "name": "mv-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "mv",
+        "notes/nope.md",
+        "x.md",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no document notes/nope.md\n  {}\n"
+      }
+    },
+    {
+      "name": "mv-onto-existing",
+      "workspace": "alchemy",
+      "argv": [
+        "mv",
+        "texts/mutus-liber.md",
+        "index.md",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[path_taken]: a document already exists at index.md\n  {}\n"
+      }
+    },
+    {
+      "name": "mv-one-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "mv",
+        "index.md"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: mv requires <doc> and <new-path>\n"
+      }
+    },
+    {
+      "name": "meta",
+      "notes": "§6: --set parses YAML scalars, --set-json structures, --unset removes; the body is untouched",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "meta",
+            "texts/mutus-liber.md",
+            "--set",
+            "layer=canon",
+            "--set",
+            "era=1702",
+            "--set",
+            "verified=true",
+            "--set-json",
+            "tags=[\"text\",\"plates\"]",
+            "--unset",
+            "tradition",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok patched texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: canon\nera: 1702\ntags:\n  - text\n  - plates\nverified: true\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "show",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\n  properties\n    length = fifteen plates\n    attributed_to = altus\n    type = text\n    layer = canon\n    era = 1702\n    tags = [\"text\",\"plates\"]\n    verified = true\n    $title = Mutus Liber\n  out edges\n    references > d_13 ×1\n  backlinks\n    d_0 > references ×1\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "meta-json",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "texts/mutus-liber.md",
+        "--set",
+        "layer=canon",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "meta-nothing",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: meta requires --set or --unset\n"
+      }
+    },
+    {
+      "name": "meta-bad-set",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "texts/mutus-liber.md",
+        "--set",
+        "nokey"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --set expects k=v, got 'nokey'\n"
+      }
+    },
+    {
+      "name": "meta-bad-set-json",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "texts/mutus-liber.md",
+        "--set-json",
+        "nokey"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --set-json expects k=json, got 'nokey'\n"
+      }
+    },
+    {
+      "name": "meta-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "nope.md",
+        "--set",
+        "a=b",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no document nope.md\n  {}\n"
+      }
+    },
+    {
+      "name": "meta-no-doc",
+      "workspace": "alchemy",
+      "argv": [
+        "meta",
+        "--set",
+        "a=b"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: meta requires a <doc>\n"
+      }
+    },
+    {
+      "name": "rm-doc",
+      "notes": "§6 (--doc): tombstone; the file leaves the tree",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok deleted texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[doc_missing]: no node texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[doc_missing]: no document texts/mutus-liber.md\n  {}\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rm-doc-json",
+      "workspace": "alchemy",
+      "argv": [
+        "rm",
+        "--doc",
+        "d_17",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "rm-doc-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "rm",
+        "--doc",
+        "nope.md",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: no document nope.md\n  {}\n"
+      }
+    },
+    {
+      "name": "update-doc",
+      "notes": "§6 (document target): --plan prints the opset, a commit reports the summary and the ids",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "texts/mutus-liber.md",
+            "-f",
+            "-",
+            "--plan"
+          ],
+          "stdin": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\n## Status of these notes\n\nRevised wholesale.\n\n- [x] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "REMOVE b_307     deleted [tombstone]\nREMOVE b_309     deleted [tombstone]\nUPDATE b_310     edited ~0.88 [context_children]\nINSERT (new)     inserted\nRETILE b_308     retiled\nRETILE (new)     retiled\n\npreserved: 6  updated: 1  moved: 0  created: 1  removed: 2  split: 0  merged: 0  ambiguous: 0\n",
+            "stderr": "  plan for texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "texts/mutus-liber.md",
+            "-f",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\n## Status of these notes\n\nRevised wholesale.\n\n- [x] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_307\nb_309\nb_310\nb_322\nb_308\nb_322\n",
+            "stderr": "  ok updated texts/mutus-liber.md · 6 preserved, 1 updated, 0 moved, 1 created, 2 removed\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\n## Status of these notes\n\nRevised wholesale.\n\n- [x] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_308 h2   Status of these notes  §\nb_322 p    Revised wholesale.\nb_310 ul\n  b_311 li   ☑ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): texts/mutus-liber.md — 9 edited, 1 inserted\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-doc-json",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "d_17",
+        "-m",
+        "# Mutus Liber\n\nOnly this.\n",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"opset\":{\"version\":1,\"kind\":\"doc_update\",\"target\":{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"},\"precondition\":{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"baseRevision\":\"r_17\",\"baseContentHash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"},\"matcherV\":\"m2.3\",\"ops\":[{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_303\"],\"expect\":{\"b_303\":{\"content_hash\":\"afd258987f51af3d86b749b4f6b4d0a1104e7f1142102698371bba6d56065fc1\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_303\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_304\"],\"expect\":{\"b_304\":{\"content_hash\":\"e946ad127eb93c0f1fbe58ed1d692d86be0ea3bd5899af48da8bf5bda347b217\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_304\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_305\"],\"expect\":{\"b_305\":{\"content_hash\":\"624e5c6774ba967b017d18ec4ffe2e77c1cffa258162a6f11b4625cd3708f9ec\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_305\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_306\"],\"expect\":{\"b_306\":{\"content_hash\":\"f3b0af650827ab70ecc2166cce827455fa40b20174c65123819b47f4e5eb8854\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_306\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_307\"],\"expect\":{\"b_307\":{\"content_hash\":\"2730f7f1455d6489c9656370cbea8a79d6788a0ca1955d9e7e979b9655d42a36\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_307\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_308\"],\"expect\":{\"b_308\":{\"content_hash\":\"fd98765499f0361dde59d89c2dcf7d926336f1708000566bce888ef029a2cb71\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_308\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_309\"],\"expect\":{\"b_309\":{\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_309\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"remove\",\"blocks\":[\"b_310\"],\"expect\":{\"b_310\":{\"content_hash\":\"64a404dae30aeef5b3559cae73a55b6bc1d5ee06cc3575438851fda0eda5d443\"}}},\"disposition\":\"deleted\",\"blocks\":[\"b_310\"],\"confidence\":null,\"reason\":\"tombstone\"},{\"op\":{\"op\":\"insert\",\"doc\":\"d_17\",\"to\":{\"parent\":{\"doc\":true},\"at\":{\"after\":\"b_302\"}},\"markdown\":\"Only this.\"},\"disposition\":\"inserted\",\"blocks\":[],\"confidence\":null,\"reason\":null},{\"op\":{\"op\":\"update\",\"block\":\"b_302\",\"trivia\":\"\\n\\n\"},\"disposition\":\"retiled\",\"blocks\":[\"b_302\"],\"confidence\":null,\"reason\":null},{\"op\":{\"op\":\"update\",\"block\":\"$8.ids[0]\",\"trivia\":\"\\n\"},\"disposition\":\"retiled\",\"blocks\":[],\"confidence\":null,\"reason\":null}],\"frontmatter\":{\"raw\":null},\"summary\":{\"preserved\":1,\"updated\":0,\"moved\":0,\"created\":1,\"removed\":8,\"split\":0,\"merged\":0,\"ambiguous\":0},\"converges\":true,\"diagnostics\":[]},\"result\":{\"results\":[{\"ids\":[\"b_303\"],\"removed\":[\"b_303\"]},{\"ids\":[\"b_304\"],\"removed\":[\"b_304\"]},{\"ids\":[\"b_305\"],\"removed\":[\"b_305\"]},{\"ids\":[\"b_306\"],\"removed\":[\"b_306\"]},{\"ids\":[\"b_307\"],\"removed\":[\"b_307\"]},{\"ids\":[\"b_308\"],\"removed\":[\"b_308\"]},{\"ids\":[\"b_309\"],\"removed\":[\"b_309\"]},{\"ids\":[\"b_310\"],\"removed\":[\"b_310\",\"b_311\",\"b_312\",\"b_313\"]},{\"ids\":[\"b_316\"]},{\"ids\":[\"b_302\"]},{\"ids\":[\"b_316\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}}\n"
+      }
+    },
+    {
+      "name": "update-doc-dry-run",
+      "notes": "the global --dry-run is the plan",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "texts/mutus-liber.md",
+            "-m",
+            "# Mutus Liber\n\nOnly this.\n",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "REMOVE b_303     deleted [tombstone]\nREMOVE b_304     deleted [tombstone]\nREMOVE b_305     deleted [tombstone]\nREMOVE b_306     deleted [tombstone]\nREMOVE b_307     deleted [tombstone]\nREMOVE b_308     deleted [tombstone]\nREMOVE b_309     deleted [tombstone]\nREMOVE b_310     deleted [tombstone]\nINSERT (new)     inserted\nRETILE b_302     retiled\nRETILE (new)     retiled\n\npreserved: 1  updated: 0  moved: 0  created: 1  removed: 8  split: 0  merged: 0  ambiguous: 0\n",
+            "stderr": "  plan for texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no changes\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-doc-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "nope.md",
+        "-m",
+        "# x\n",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: doc nope.md not found\n  {\n    \"doc\": \"nope.md\"\n  }\n"
+      }
+    },
+    {
+      "name": "update-doc-no-content",
+      "notes": "no -m/-f and empty stdin → an empty document",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "texts/mutus-liber.md",
+        "--plan"
+      ],
+      "stdin": "",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "REMOVE b_302     deleted [tombstone]\nREMOVE b_303     deleted [tombstone]\nREMOVE b_304     deleted [tombstone]\nREMOVE b_305     deleted [tombstone]\nREMOVE b_306     deleted [tombstone]\nREMOVE b_307     deleted [tombstone]\nREMOVE b_308     deleted [tombstone]\nREMOVE b_309     deleted [tombstone]\nREMOVE b_310     deleted [tombstone]\n\npreserved: 0  updated: 0  moved: 0  created: 0  removed: 9  split: 0  merged: 0  ambiguous: 0\n",
+        "stderr": "  plan for texts/mutus-liber.md\n"
+      }
+    }
+  ]
+}

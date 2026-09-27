@@ -1,0 +1,1696 @@
+{
+  "suite": "admin",
+  "cases": [
+    {
+      "name": "init",
+      "notes": "§6: creates .omgbase/; the git note and the next-step hint on stderr",
+      "workspace": "none",
+      "argv": [
+        "init",
+        "--yes",
+        "--no-embedder"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  initialized\n  ----------------------------------------\n  ok workspace  <workspace>\n",
+        "stderr": "  not inside a git repo — no .gitignore needed for .omgbase/\n  next: omg source add . to point a repo at a directory of files\n"
+      }
+    },
+    {
+      "name": "init-json",
+      "workspace": "none",
+      "argv": [
+        "init",
+        "--yes",
+        "--no-embedder",
+        "--json"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"workspace\":\"<workspace>\"}\n",
+        "stderr": "  not inside a git repo — no .gitignore needed for .omgbase/\n"
+      }
+    },
+    {
+      "name": "init-subdir",
+      "workspace": "none",
+      "steps": [
+        {
+          "argv": [
+            "init",
+            "sub",
+            "--yes",
+            "--no-embedder"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  initialized\n  ----------------------------------------\n  ok workspace  <workspace>/sub\n",
+            "stderr": "  not inside a git repo — no .gitignore needed for .omgbase/\n  next: omg source add . to point a repo at a directory of files\n"
+          }
+        },
+        {
+          "argv": [
+            "-C",
+            "sub",
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  no repos attached\n"
+          }
+        },
+        {
+          "argv": [
+            "-C",
+            "sub",
+            "repos",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[]\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "init-twice",
+      "workspace": "empty",
+      "argv": [
+        "init",
+        "--yes",
+        "--no-embedder"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[path_taken]: workspace already initialized at <workspace>\n"
+      }
+    },
+    {
+      "name": "init-embedder-verbatim",
+      "notes": "--embedder sets the provider without a PATH check; `find` then fails embedder_failed",
+      "workspace": "none",
+      "steps": [
+        {
+          "argv": [
+            "init",
+            "--yes",
+            "--embedder",
+            "/nonexistent/embedder"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  initialized\n  ----------------------------------------\n  ok workspace  <workspace>\n",
+            "stderr": "  not inside a git repo — no .gitignore needed for .omgbase/\n  embedding.provider = /nonexistent/embedder (workspace default)\n  next: omg source add . to point a repo at a directory of files\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "list",
+            "--repo",
+            ""
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  embedding = {\"provider\":\"/nonexistent/embedder\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "embedding.provider",
+            "--repo",
+            ""
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "/nonexistent/embedder\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "init-unpinned-offers",
+      "notes": "without --yes/--no-embedder the offers depend on the TTY and on PATH (unpinned); a non-TTY run skips both",
+      "workspace": "none",
+      "argv": [
+        "init",
+        "--no-embedder"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  initialized\n  ----------------------------------------\n  ok workspace  <workspace>\n",
+        "stderr": "  not inside a git repo — no .gitignore needed for .omgbase/\n  next: omg source add . to point a repo at a directory of files\n"
+      }
+    },
+    {
+      "name": "empty-workspace-reads",
+      "notes": "§2.1: a workspace with no repo — repo_not_found with no candidates",
+      "workspace": "empty",
+      "steps": [
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  no repos attached\n"
+          }
+        },
+        {
+          "argv": [
+            "status"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "ls"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "q",
+            "from docs"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  no sources registered\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[]\n"
+          }
+        },
+        {
+          "argv": [
+            "config"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "--repo",
+            "",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "argv": [
+            "embed"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-add",
+      "notes": "§6: creates the repo (named after the directory), registers `<slug>-fs`, runs the initial sync",
+      "workspace": "empty",
+      "files": {
+        "notes/a.md": "# A\n\nAlpha.\n",
+        "notes/sub/b.md": "# B\n\nBeta [a](/a.md).\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "notes",
+            "-y"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  * notes ← <workspace>/notes  2 files\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * notes  <workspace>/notes  2 docs  4 blocks\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  notes-fs  fs  <workspace>/notes  → notes\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[{\"name\":\"notes-fs\",\"adapter\":\"fs\",\"config\":{\"root\":\"<workspace>/notes\"},\"repos\":[\"notes\"]}]\n"
+          }
+        },
+        {
+          "argv": [
+            "ls"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "a.md      2 blocks  0s ago\nsub/b.md  2 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "log"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#1 observed observed: a.md — 2 inserted\n#2 observed observed: sub/b.md — 2 inserted\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"notes\",\"root\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"commits\":2,\"openEdges\":1,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":2,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "-C",
+            "notes/sub",
+            "ls",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "a.md\nsub/b.md\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-add-json",
+      "workspace": "empty",
+      "files": {
+        "notes/a.md": "# A\n"
+      },
+      "argv": [
+        "source",
+        "add",
+        "notes",
+        "-y",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"repo\":\"notes\",\"repoId\":\"rp_0\",\"source\":\"notes-fs\",\"root\":\"<workspace>/notes\",\"ingested\":1}\n"
+      }
+    },
+    {
+      "name": "source-add-named",
+      "workspace": "empty",
+      "files": {
+        "notes/a.md": "# A\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "notes",
+            "--repo",
+            "r",
+            "--name",
+            "primary",
+            "-y"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  * r ← <workspace>/notes  1 files\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "primary\n"
+          }
+        },
+        {
+          "argv": [
+            "repos",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "r\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-add-refuses-without-yes",
+      "notes": "§9: a non-TTY without -y refuses on stderr and exits 0",
+      "workspace": "empty",
+      "files": {
+        "notes/a.md": "# A\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "notes"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  refusing without -y (would ingest files under <workspace>/notes)\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  no repos attached\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-add-missing-dir",
+      "workspace": "empty",
+      "argv": [
+        "source",
+        "add",
+        "nope",
+        "-y"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: no such directory: <workspace>/nope\n"
+      }
+    },
+    {
+      "name": "source-add-no-dir",
+      "workspace": "empty",
+      "argv": [
+        "source",
+        "add"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: source add requires a <dir>\n"
+      }
+    },
+    {
+      "name": "source-add-duplicate-name",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "add",
+        "vault",
+        "--repo",
+        "fixture",
+        "-y"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[path_taken]: a source named 'fixture-fs' already exists\n"
+      }
+    },
+    {
+      "name": "source-add-second-source-same-repo",
+      "notes": "a second source for an existing repo ingests what is new (nothing here)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "vault",
+            "--repo",
+            "fixture",
+            "--name",
+            "mirror",
+            "-y",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"repoId\":\"rp_0\",\"source\":\"mirror\",\"root\":\"<workspace>/vault\",\"ingested\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  fixture-fs  fs  <workspace>/vault  → fixture\n  mirror      fs  <workspace>/vault  → fixture\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-list",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "list"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  fixture-fs  fs  <workspace>/vault  → fixture\n"
+      }
+    },
+    {
+      "name": "source-list-json",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "list",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"name\":\"fixture-fs\",\"adapter\":\"fs\",\"config\":{\"root\":\"<workspace>/vault\"},\"repos\":[\"fixture\"]}]\n"
+      }
+    },
+    {
+      "name": "source-list-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "list",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"name\":\"fixture-fs\",\"adapter\":\"fs\",\"config\":{\"root\":\"<workspace>/vault\"},\"repos\":[\"fixture\"]}\n"
+      }
+    },
+    {
+      "name": "source-list-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "list",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "fixture-fs\n"
+      }
+    },
+    {
+      "name": "source-detach-attach",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "detach",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok detached fixture-fs ⇸ fixture\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  fixture-fs  fs  <workspace>/vault  (unattached)\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture  (no source)  18 docs  314 blocks\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "attach",
+            "fixture-fs",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"source\":\"fixture-fs\",\"repo\":\"fixture\",\"attached\":true}\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "detach",
+            "fixture-fs",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"source\":\"fixture-fs\",\"repo\":\"fixture\",\"attached\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "attach",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok attached fixture-fs → fixture\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  fixture-fs  fs  <workspace>/vault  → fixture\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-attach-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "attach",
+        "nope"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: no source named 'nope'\n"
+      }
+    },
+    {
+      "name": "source-detach-no-name",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "detach"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: source detach requires a <name>\n"
+      }
+    },
+    {
+      "name": "source-rm",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "rm",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok deleted source fixture-fs\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "list"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  no sources registered\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture  (no source)  18 docs  314 blocks\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "rm",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[target_missing]: no source named 'fixture-fs'\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "source-rm-json",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "rm",
+        "fixture-fs",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"source\":\"fixture-fs\",\"deleted\":true}\n"
+      }
+    },
+    {
+      "name": "source-unknown-sub",
+      "workspace": "alchemy",
+      "argv": [
+        "source",
+        "zap"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown source subcommand 'zap'\n"
+      }
+    },
+    {
+      "name": "rebuild-index",
+      "notes": "§6: the confirmation is on stderr",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt all\n"
+      }
+    },
+    {
+      "name": "rebuild-index-fts",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index",
+        "--fts"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt fts\n"
+      }
+    },
+    {
+      "name": "rebuild-index-sections",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index",
+        "--sections"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt sections\n"
+      }
+    },
+    {
+      "name": "rebuild-index-edges",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index",
+        "--edges"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt edges\n"
+      }
+    },
+    {
+      "name": "rebuild-index-block-changes",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index",
+        "--block-changes"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt block_changes\n"
+      }
+    },
+    {
+      "name": "rebuild-index-json-is-silent",
+      "notes": "§9: no machine output",
+      "workspace": "alchemy",
+      "argv": [
+        "rebuild-index",
+        "--json"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  ok rebuilt all\n"
+      }
+    },
+    {
+      "name": "rebuild-index-then-reads",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rebuild-index"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  ok rebuilt all\n"
+          }
+        },
+        {
+          "argv": [
+            "links",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+          }
+        },
+        {
+          "argv": [
+            "find",
+            "emerald",
+            "-n",
+            "1"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok convergence\n  ok fts rows == live blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "gc-refused",
+      "notes": "§6: refuses unless gc.enabled; §9: under the code target_missing",
+      "workspace": "alchemy",
+      "argv": [
+        "gc"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: gc is disabled; set gc.enabled=true (or use --dry-run)\n"
+      }
+    },
+    {
+      "name": "gc-refused-json",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"target_missing\",\"message\":\"gc is disabled; set gc.enabled=true (or use --dry-run)\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "gc-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--dry-run"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  swept 0 blobs, 0 tree nodes\n"
+      }
+    },
+    {
+      "name": "gc-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "gc",
+        "--dry-run",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0}\n"
+      }
+    },
+    {
+      "name": "gc-global-dry-run",
+      "notes": "the global spelling is honored too",
+      "workspace": "alchemy",
+      "argv": [
+        "--dry-run",
+        "gc"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  swept 0 blobs, 0 tree nodes\n"
+      }
+    },
+    {
+      "name": "gc-enabled",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "config",
+            "set",
+            "gc.enabled",
+            "true"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set gc.enabled (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "gc"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  swept 0 blobs, 0 tree nodes\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "gc-after-removals",
+      "notes": "removed blocks leave blobs the sweep reclaims",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "config",
+            "set",
+            "gc.enabled",
+            "true"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set gc.enabled (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok deleted texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--dry-run",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "gc",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"blobsSwept\":0,\"treeNodesSwept\":0}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "doctor",
+      "notes": "§6: every check passes → exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "doctor"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  ok convergence\n  ok fts rows == live blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
+      }
+    },
+    {
+      "name": "doctor-json",
+      "workspace": "alchemy",
+      "argv": [
+        "doctor",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live blocks\",\"ok\":true,\"detail\":\"fts=314 live=314\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+      }
+    },
+    {
+      "name": "doctor-after-observed-delete",
+      "notes": "§9: the FTS row count check fails after an observed deletion and stays failed after rebuild-index",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "sync",
+            "--json"
+          ],
+          "files": {
+            "vault/texts/mutus-liber.md": null
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":17,\"candidates\":0,\"changed\":true}\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "doctor",
+            "--json"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "{\"ok\":false,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live blocks\",\"ok\":false,\"detail\":\"fts=314 live=302\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "rebuild-index",
+            "--fts"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  ok rebuilt fts\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "doctor-after-api-delete",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_17\n",
+            "stderr": "  ok deleted texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "rm",
+            "b_1",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_1\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "doctor"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=313 live=301)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "config-list-empty",
+      "notes": "§6: repo scope shows the effective settings with an override marker",
+      "workspace": "alchemy",
+      "argv": [
+        "config"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  fixture (effective; * = overrides workspace default)\n"
+      }
+    },
+    {
+      "name": "config-list-json-empty",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "list",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{}\n"
+      }
+    },
+    {
+      "name": "config-set-get-list",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "config",
+            "set",
+            "gc.enabled",
+            "true"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set gc.enabled (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "query.timeout_ms",
+            "5000",
+            "--repo",
+            ""
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set query.timeout_ms (workspace)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "embedding.model",
+            "gte-small",
+            "--repo",
+            ""
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set embedding.model (workspace)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "embedding.model",
+            "gte-base"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set embedding.model (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "sync.quiescence_ms",
+            "null"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set sync.quiescence_ms (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "flag",
+            "false"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set flag (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "set",
+            "ratio",
+            "0.5"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set ratio (fixture)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "list"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "    query = {\"timeout_ms\":5000}\n  * embedding = {\"model\":\"gte-base\"}\n  * gc = {\"enabled\":true}\n  * sync = {\"quiescence_ms\":null}\n  * flag = false\n  * ratio = 0.5\n",
+            "stderr": "  fixture (effective; * = overrides workspace default)\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "list",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"query\":{\"timeout_ms\":5000},\"embedding\":{\"model\":\"gte-base\"},\"gc\":{\"enabled\":true},\"sync\":{\"quiescence_ms\":null},\"flag\":false,\"ratio\":0.5}\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "list",
+            "--repo",
+            ""
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  query = {\"timeout_ms\":5000}\n  embedding = {\"model\":\"gte-small\"}\n",
+            "stderr": "  workspace defaults\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "list",
+            "--repo",
+            "",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"query\":{\"timeout_ms\":5000},\"embedding\":{\"model\":\"gte-small\"}}\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "gc.enabled"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "true\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "embedding.model"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "gte-base\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "embedding.model",
+            "--repo",
+            ""
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "gte-small\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "embedding"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"model\":\"gte-base\"}\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "nope"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "\n"
+          }
+        },
+        {
+          "argv": [
+            "config",
+            "get",
+            "nope.deeper"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "config-unknown-sub",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "zap"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown config subcommand 'zap' (get|set|list)\n  hint: run 'omg config --help'\n"
+      }
+    },
+    {
+      "name": "config-get-no-key",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "get"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: config get <key>\n"
+      }
+    },
+    {
+      "name": "config-set-no-value",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "set",
+        "k"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: config set <key> <value>\n"
+      }
+    },
+    {
+      "name": "config-unknown-repo",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "list",
+        "--repo",
+        "nope"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no repo with slug 'nope'\n  {\n    \"candidates\": [\n      \"fixture\"\n    ]\n  }\n"
+      }
+    },
+    {
+      "name": "config-help-word-needs-workspace",
+      "workspace": "none",
+      "argv": [
+        "config",
+        "help"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      },
+      "notes": "§9: the `help` word is not the --help flag — the freshness sweep runs first and needs a workspace"
+    },
+    {
+      "name": "config-help-word",
+      "workspace": "alchemy",
+      "argv": [
+        "config",
+        "help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  config — Read/write settings — one schema at two layers: workspace defaults, overridable per repo\n  usage: omg config [list]\n         omg config get <key>\n         omg config set <key> <value>\n  options:\n    list               show the effective settings (default); at repo scope, overrides are marked\n    get <key>          print one effective value (dotted path, e.g. embedding.provider)\n    set <key> <value>  write a value at the selected layer (true/false/null/numbers are typed)\n    --repo <slug>      target a repo's layer\n    --repo \"\"          target the workspace layer (what every repo inherits)\n    -h, --help         show this help\n\n  e.g. omg config set embedding.provider omgbase-embedder --repo \"\"\n"
+      }
+    },
+    {
+      "name": "embed-no-provider",
+      "notes": "§6: no provider → an honest stderr note, exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "embed"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no embedding provider configured — set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)\n"
+      }
+    },
+    {
+      "name": "embed-status-no-provider",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "status"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no embedding provider configured — set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)\n"
+      }
+    },
+    {
+      "name": "embed-no-provider-json",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"provider\":null,\"queued\":0}\n"
+      }
+    },
+    {
+      "name": "embed-drain-no-provider",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "drain"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no embedding provider configured — set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)\n"
+      }
+    },
+    {
+      "name": "embed-drain-no-provider-json",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "drain",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"provider\":null,\"queued\":0}\n"
+      }
+    },
+    {
+      "name": "embed-help-word-needs-workspace",
+      "workspace": "none",
+      "argv": [
+        "embed",
+        "help"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      },
+      "notes": "§9: as config help"
+    },
+    {
+      "name": "embed-help-word",
+      "workspace": "alchemy",
+      "argv": [
+        "embed",
+        "help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  embed — The embedding queue: report the provider + what is queued, or drain it to embed now\n  usage: omg embed [status]\n         omg embed drain [--verbose] [--prune]\n  options:\n    status         (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    drain          embed the queued blocks now — status alone makes no progress\n    -v, --verbose  (drain) per-batch progress\n    --prune        (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help     show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off.\n"
+      }
+    },
+    {
+      "name": "embed-broken-provider",
+      "notes": "a provider that cannot start is embedder_failed on every semantic path (its reason text is the OS's, unpinned — §6); --no-semantic bypasses it",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "config",
+            "set",
+            "embedding.provider",
+            "/nonexistent/embedder",
+            "--repo",
+            ""
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  set embedding.provider (workspace)\n"
+          }
+        },
+        {
+          "argv": [
+            "find",
+            "emerald",
+            "-n",
+            "1",
+            "--no-semantic",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "[{\"id\":\"b_289\",\"locator\":\"texts/emerald-tablet.md#heading[0]\",\"preview\":\"The Emerald Tablet\",\"evidence\":{\"rrf\":0.016129032258064516,\"boosts\":{\"heading\":1.15,\"path\":1.1,\"layer\":1.3},\"ftsRank\":2}}]\n"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,511 @@
+{
+  "suite": "sync",
+  "cases": [
+    {
+      "name": "up-to-date",
+      "notes": "§6: the one-shot sweep report",
+      "workspace": "alchemy",
+      "argv": [
+        "sync"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   18 files\n  already up to date\n"
+      }
+    },
+    {
+      "name": "up-to-date-json",
+      "notes": "the SweepResult verbatim; every sweep mints a checkpoint id",
+      "workspace": "alchemy",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":18,\"candidates\":0,\"changed\":false}\n"
+      }
+    },
+    {
+      "name": "up-to-date-ids-is-json",
+      "workspace": "alchemy",
+      "argv": [
+        "sync",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":18,\"candidates\":0,\"changed\":false}\n"
+      }
+    },
+    {
+      "name": "out-of-band-edit",
+      "notes": "§3.7: an edited file is ingested by the next sweep; --stale shows the drift instead",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "--stale",
+            "status",
+            "--json"
+          ],
+          "files": {
+            "vault/texts/mutus-liber.md": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nEdited on disk.\n"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "sync"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   18 files\n  ok ingested  1\n      texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":304,\"commits\":19,\"openEdges\":63,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 observed observed: texts/mutus-liber.md — 11 deleted, 1 inserted\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nEdited on disk.\n"
+          }
+        },
+        {
+          "argv": [
+            "sync",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"checkpointId\":\"cp_5\",\"ingested\":[],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":18,\"candidates\":0,\"changed\":false}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "freshness-before-a-read",
+      "notes": "§3.7: a read command sweeps first, so the edit is visible without `sync`; --stale answers from the database",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "--stale",
+            "cat",
+            "b_303"
+          ],
+          "files": {
+            "vault/texts/mutus-liber.md": "# Mutus Liber\n\nEdited on disk.\n"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "# Mutus Liber\n\nEdited on disk.\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_314 p    Edited on disk.\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 observed observed: texts/mutus-liber.md — 11 deleted, 1 inserted\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "out-of-band-new-file",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "--stale",
+            "status",
+            "--json"
+          ],
+          "files": {
+            "vault/notes/added.md": "# Added\n\nA new file.\n"
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "sync",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[\"notes/added.md\"],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":19,\"candidates\":1,\"changed\":true}\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "notes/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "notes/added.md  2 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 observed observed: notes/added.md — 2 inserted\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "out-of-band-delete",
+      "notes": "a removed file is an observed deletion; the doc is tombstoned; the deletion's digest has an empty summary (§9)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "--stale",
+            "status",
+            "--json"
+          ],
+          "files": {
+            "vault/texts/mutus-liber.md": null
+          },
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "sync"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   17 files\n  x deleted   1\n      texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[doc_missing]: no node texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 observed observed: \n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "sourceless",
+      "notes": "§6: a repo without a filesystem source has nothing to sync; writes need a working tree",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "detach",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok detached fixture-fs ⇸ fixture\n"
+          }
+        },
+        {
+          "argv": [
+            "sync"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  fixture has no filesystem source — nothing to sync\n"
+          }
+        },
+        {
+          "argv": [
+            "sync",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"scanned\":0,\"ingested\":[],\"deleted\":[],\"conflicted\":[],\"changed\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":null,\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        },
+        {
+          "argv": [
+            "status"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  fixture\n  (no source — headless)\n  ----------------------------------------\n  [D] docs  18            watcher o none\n  [B] blocks  314         synced  ! disk unverified\n  * commits  18           queue   empty\n  > edges  64             commit# 18\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture  (no source)  18 docs  314 blocks\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "--ids",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "update",
+            "index.md",
+            "-m",
+            "# x\n",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: repo 'fixture' has no filesystem source; 'update' needs a working tree\n"
+          }
+        },
+        {
+          "argv": [
+            "new",
+            "z.md",
+            "-m",
+            "# z\n",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[error]: mutation requires a rootPath or an explicit docStore\n"
+          }
+        },
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- x",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[error]: mutation requires a rootPath or an explicit docStore\n"
+          }
+        },
+        {
+          "argv": [
+            "source",
+            "attach",
+            "fixture-fs"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  ok attached fixture-fs → fixture\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "watch-unpinned",
+      "notes": "§6: `sync --watch` is a long-running process (unpinned); only its help card is fixed",
+      "workspace": "none",
+      "argv": [
+        "sync",
+        "--watch",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  sync — Reconcile a repo with its filesystem source (one-shot by default; the explicit form of the freshness sweep every read runs)\n  usage: omg sync [--watch]\n         omg sync --server <cmd|url> [-H \"Name: value\"]… [--root <dir>] [--out]\n  options:\n    --watch             stay live and reconcile edits as they land\n    --server <cmd|url>  mirror a local directory into a remote engine over MCP: an http(s) url connects over Streamable HTTP; anything else is spawned as a stdio MCP server command\n    -H \"Name: value\"    (--server url only) extra HTTP header, repeatable\n    --root <dir>        (--server) the directory to mirror (default cwd)\n    --out               (--server) also export engine-authored changes back to disk\n    -h, --help          show this help\n"
+      }
+    },
+    {
+      "name": "server-help",
+      "workspace": "none",
+      "argv": [
+        "sync",
+        "--server",
+        "omg mcp",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  sync — Reconcile a repo with its filesystem source (one-shot by default; the explicit form of the freshness sweep every read runs)\n  usage: omg sync [--watch]\n         omg sync --server <cmd|url> [-H \"Name: value\"]… [--root <dir>] [--out]\n  options:\n    --watch             stay live and reconcile edits as they land\n    --server <cmd|url>  mirror a local directory into a remote engine over MCP: an http(s) url connects over Streamable HTTP; anything else is spawned as a stdio MCP server command\n    -H \"Name: value\"    (--server url only) extra HTTP header, repeatable\n    --root <dir>        (--server) the directory to mirror (default cwd)\n    --out               (--server) also export engine-authored changes back to disk\n    -h, --help          show this help\n"
+      }
+    },
+    {
+      "name": "mcp-help",
+      "notes": "§6: `mcp` serves stdio (unpinned); the help card and the no-workspace error are fixed",
+      "workspace": "alchemy",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  mcp — Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime\n  usage: omg mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]\n  options:\n    -C <dir>       the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)\n    --repo <slug>  which repo, when the workspace has several\n    --no-watch     don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)\n    -h, --help     show this help\n\n  host config: {\"command\": \"omg\", \"args\": [\"mcp\", \"-C\", \"/path/to/notes\"]}\n"
+      }
+    },
+    {
+      "name": "mcp-server-rejected",
+      "workspace": "alchemy",
+      "argv": [
+        "mcp",
+        "--server",
+        "x"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --server is not supported for 'mcp' — it needs local ref resolution or a working tree; run it against a local workspace\n"
+      }
+    },
+    {
+      "name": "empty-workspace-sync",
+      "notes": "a workspace with no repo",
+      "workspace": "empty",
+      "argv": [
+        "sync"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+      }
+    },
+    {
+      "name": "empty-workspace-sync-json",
+      "workspace": "empty",
+      "argv": [
+        "sync",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no repo contains <workspace>; select one with --repo\",\"data\":{\"candidates\":[]},\"retriable\":false}\n"
+      }
+    }
+  ]
+}

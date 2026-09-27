@@ -1,0 +1,1223 @@
+{
+  "suite": "invoke",
+  "cases": [
+    {
+      "name": "version",
+      "notes": "§2.5: the version on stdout, exit 0, no workspace needed",
+      "workspace": "none",
+      "argv": [
+        "--version"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "0.1.0\n"
+      }
+    },
+    {
+      "name": "version-short",
+      "notes": "-V is the undocumented short form (§9)",
+      "workspace": "none",
+      "argv": [
+        "-V"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "0.1.0\n"
+      }
+    },
+    {
+      "name": "version-wins-over-bad-clock",
+      "notes": "§9: --version is answered before the seams are validated",
+      "workspace": "none",
+      "env": {
+        "OMGBASE_SPEC_CLOCK": "yesterday"
+      },
+      "argv": [
+        "--version"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "0.1.0\n"
+      }
+    },
+    {
+      "name": "help-bare",
+      "notes": "no command → the grouped catalog on stdout",
+      "workspace": "none",
+      "argv": [],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  Open Markdown Graph Base\n  ----------------------------------------\n\n  usage: omg [--json|--jsonl|--ids] [-C dir] [--repo slug] <command> [args]\n\n  bootstrap\n    init                  Create a workspace (run `source add` to ingest files)\n    source                Where a repo's bytes come from (add/list/attach/detach/rm)\n    repos                 List repos in this workspace\n\n  orient & read\n    status                Where am I: repo, sync, watcher, queue\n    ls                    List live documents\n    outline, ol           Document outline (frozen wire format)\n    cat                   Content bytes of a node (default raw)\n    show                  Metadata card for a node\n    find                  Ranked hybrid search for the id of a thing\n\n  query\n    query, q              Composable query (OQX: from/where/select + collection ops)\n    run                   Evaluate an ```omg fence (OQX, inert, read-only)\n\n  history & links\n    log                   Commit digests (change feed)\n    hist                  A block's change biography\n    diff                  Unified diff of a document\n    links                 Open edges touching a node\n\n  mutate\n    apply                 Apply a raw changeset (the primitive)\n    insert                Insert blocks under a parent\n    update                Replace a block, or reconcile a whole document (identity-preserving)\n    edit                  Edit a block in $EDITOR (CAS pinned)\n    move                  Move blocks under a new parent\n    rm                    Remove blocks (or --doc a document)\n    done                  Check/uncheck task blocks\n    append                Append into a heading's section\n    retarget              Rewrite a link target (plan-by-default)\n    split                 Split a block at offsets\n    merge                 Merge adjacent blocks\n    node                  Edit a node's editable properties (surgical)\n\n  documents\n    new                   Create a document\n    mv                    Rename a document\n    meta                  Patch a document's frontmatter\n\n  session\n    shell                 Persistent session with typed bindings (@1/@_/@name)\n\n  sync & serve\n    sync                  Reconcile a repo with its filesystem source (--watch to stay live; --server for remote)\n    mcp                   Serve the MCP tool surface on stdio\n\n  admin\n    rebuild-index         Rebuild derived tables\n    gc                    Mark-and-sweep (flag-gated)\n    doctor                Invariant sweep (CI-able)\n    config                Read/write repo settings\n    embed                 Embedding queue: status, or drain to embed\n\n  run omg <command> --help for details\n"
+      }
+    },
+    {
+      "name": "help-flag",
+      "workspace": "none",
+      "argv": [
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  Open Markdown Graph Base\n  ----------------------------------------\n\n  usage: omg [--json|--jsonl|--ids] [-C dir] [--repo slug] <command> [args]\n\n  bootstrap\n    init                  Create a workspace (run `source add` to ingest files)\n    source                Where a repo's bytes come from (add/list/attach/detach/rm)\n    repos                 List repos in this workspace\n\n  orient & read\n    status                Where am I: repo, sync, watcher, queue\n    ls                    List live documents\n    outline, ol           Document outline (frozen wire format)\n    cat                   Content bytes of a node (default raw)\n    show                  Metadata card for a node\n    find                  Ranked hybrid search for the id of a thing\n\n  query\n    query, q              Composable query (OQX: from/where/select + collection ops)\n    run                   Evaluate an ```omg fence (OQX, inert, read-only)\n\n  history & links\n    log                   Commit digests (change feed)\n    hist                  A block's change biography\n    diff                  Unified diff of a document\n    links                 Open edges touching a node\n\n  mutate\n    apply                 Apply a raw changeset (the primitive)\n    insert                Insert blocks under a parent\n    update                Replace a block, or reconcile a whole document (identity-preserving)\n    edit                  Edit a block in $EDITOR (CAS pinned)\n    move                  Move blocks under a new parent\n    rm                    Remove blocks (or --doc a document)\n    done                  Check/uncheck task blocks\n    append                Append into a heading's section\n    retarget              Rewrite a link target (plan-by-default)\n    split                 Split a block at offsets\n    merge                 Merge adjacent blocks\n    node                  Edit a node's editable properties (surgical)\n\n  documents\n    new                   Create a document\n    mv                    Rename a document\n    meta                  Patch a document's frontmatter\n\n  session\n    shell                 Persistent session with typed bindings (@1/@_/@name)\n\n  sync & serve\n    sync                  Reconcile a repo with its filesystem source (--watch to stay live; --server for remote)\n    mcp                   Serve the MCP tool surface on stdio\n\n  admin\n    rebuild-index         Rebuild derived tables\n    gc                    Mark-and-sweep (flag-gated)\n    doctor                Invariant sweep (CI-able)\n    config                Read/write repo settings\n    embed                 Embedding queue: status, or drain to embed\n\n  run omg <command> --help for details\n"
+      }
+    },
+    {
+      "name": "help-command",
+      "workspace": "none",
+      "argv": [
+        "help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  omgbase  >  Open Markdown Graph Base\n  ----------------------------------------\n\n  usage: omg [--json|--jsonl|--ids] [-C dir] [--repo slug] <command> [args]\n\n  bootstrap\n    init                  Create a workspace (run `source add` to ingest files)\n    source                Where a repo's bytes come from (add/list/attach/detach/rm)\n    repos                 List repos in this workspace\n\n  orient & read\n    status                Where am I: repo, sync, watcher, queue\n    ls                    List live documents\n    outline, ol           Document outline (frozen wire format)\n    cat                   Content bytes of a node (default raw)\n    show                  Metadata card for a node\n    find                  Ranked hybrid search for the id of a thing\n\n  query\n    query, q              Composable query (OQX: from/where/select + collection ops)\n    run                   Evaluate an ```omg fence (OQX, inert, read-only)\n\n  history & links\n    log                   Commit digests (change feed)\n    hist                  A block's change biography\n    diff                  Unified diff of a document\n    links                 Open edges touching a node\n\n  mutate\n    apply                 Apply a raw changeset (the primitive)\n    insert                Insert blocks under a parent\n    update                Replace a block, or reconcile a whole document (identity-preserving)\n    edit                  Edit a block in $EDITOR (CAS pinned)\n    move                  Move blocks under a new parent\n    rm                    Remove blocks (or --doc a document)\n    done                  Check/uncheck task blocks\n    append                Append into a heading's section\n    retarget              Rewrite a link target (plan-by-default)\n    split                 Split a block at offsets\n    merge                 Merge adjacent blocks\n    node                  Edit a node's editable properties (surgical)\n\n  documents\n    new                   Create a document\n    mv                    Rename a document\n    meta                  Patch a document's frontmatter\n\n  session\n    shell                 Persistent session with typed bindings (@1/@_/@name)\n\n  sync & serve\n    sync                  Reconcile a repo with its filesystem source (--watch to stay live; --server for remote)\n    mcp                   Serve the MCP tool surface on stdio\n\n  admin\n    rebuild-index         Rebuild derived tables\n    gc                    Mark-and-sweep (flag-gated)\n    doctor                Invariant sweep (CI-able)\n    config                Read/write repo settings\n    embed                 Embedding queue: status, or drain to embed\n\n  run omg <command> --help for details\n"
+      }
+    },
+    {
+      "name": "help-h-before-command",
+      "notes": "a global -h routes to the command's card",
+      "workspace": "none",
+      "argv": [
+        "-h",
+        "cat"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path (`notes/x.md`)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
+      }
+    },
+    {
+      "name": "help-card-init",
+      "workspace": "none",
+      "argv": [
+        "init",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  init — Create an omgbase workspace (.omgbase/ + database) in <dir> (default cwd). Ingests nothing — run `omg source add .` next\n  usage: omg init [<dir>] [--yes] [--embedder <cmd|url> | --no-embedder]\n  options:\n    -y, --yes             accept the prompts (.gitignore entry, embedder offer) non-interactively\n    --embedder <cmd|url>  set the embedding provider verbatim (optional; enables semantic search)\n    --no-embedder         skip the embedder offer entirely\n    -h, --help            show this help\n"
+      }
+    },
+    {
+      "name": "help-card-source",
+      "workspace": "none",
+      "argv": [
+        "source",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  source — Where a repo's bytes come from (a filesystem directory today; git/S3/… via adapters later)\n  usage: omg source <add|list|attach|detach|rm> …\n  options:\n    add <dir> [--repo <slug>] [--name <n>] [-y]  point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt)\n    list                                         list sources and which repos they feed\n    attach <name> [--repo <slug>]                attach an existing source to a repo\n    detach <name> [--repo <slug>]                detach a source from a repo\n    rm <name>                                    delete a source (and its attachments)\n    -h, --help                                   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-source-bare",
+      "notes": "`source` with no subcommand is its help card",
+      "workspace": "none",
+      "argv": [
+        "source"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  source — Where a repo's bytes come from (a filesystem directory today; git/S3/… via adapters later)\n  usage: omg source <add|list|attach|detach|rm> …\n  options:\n    add <dir> [--repo <slug>] [--name <n>] [-y]  point a repo at a directory: creates the repo (named after the dir unless --repo) + runs the initial sync (-y skips the consent prompt)\n    list                                         list sources and which repos they feed\n    attach <name> [--repo <slug>]                attach an existing source to a repo\n    detach <name> [--repo <slug>]                detach a source from a repo\n    rm <name>                                    delete a source (and its attachments)\n    -h, --help                                   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-repos",
+      "workspace": "none",
+      "argv": [
+        "repos",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  repos — List the repos in this workspace: slug, root path (from its fs source), doc/block counts\n  usage: omg repos [--ids|--json|--jsonl]\n  options:\n    --ids       slugs only, one per line\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-status",
+      "workspace": "none",
+      "argv": [
+        "status",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  status — Where am I: the active repo, doc/block/commit counts, sync convergence, watcher, embed queue\n  usage: omg status [--repo <slug>] [--json]\n  options:\n    --json      a flat object: repo, root, docs, blocks, commits, openEdges, convergent, disk, watcher, embedQueue\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-ls",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  ls — List live documents: path, block count, last-commit time (always the complete listing)\n  usage: omg ls [<glob>] [--ids|--json|--jsonl]\n  options:\n    <glob>      path filter; `*` matches any run of characters (`notes/*.md`)\n    --ids       paths only, one per line (pipe fuel)\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-outline",
+      "workspace": "none",
+      "argv": [
+        "outline",
+        "-h"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  outline — A document's outline with block ids inline (frozen wire format) — the orientation view\n  usage: omg outline <doc|path> [--depth <n>] [--section <locator>] [--skeleton]\n  options:\n    --depth <n>          limit heading depth\n    --section <locator>  outline only the section at a locator\n    --skeleton           structure only, no text\n    -h, --help           show this help\n"
+      }
+    },
+    {
+      "name": "help-card-cat",
+      "workspace": "none",
+      "argv": [
+        "cat",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path (`notes/x.md`)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
+      }
+    },
+    {
+      "name": "help-card-show",
+      "workspace": "none",
+      "argv": [
+        "show",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  show — Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)\n  usage: omg show <node…|-> [--include history]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path\n    -                 read refs from stdin, one per line (`omg q … --ids | omg show -`)\n    --include <list>  comma-separated extras; `history` adds the block's last 5 changes\n    -h, --help        show this help\n"
+      }
+    },
+    {
+      "name": "help-card-find",
+      "workspace": "none",
+      "argv": [
+        "find",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  find — Resolve a name/title/concept to ranked hits — full-text, fused with the embedding index when a provider is configured\n  usage: omg find <text> [-n <N>] [-1] [-v] [--no-semantic]\n  options:\n    -n <N>         max hits (default 10)\n    -1             print only the top hit's id (`omg cat $(omg find \"risks\" -1)`)\n    -v, --verbose  print per-hit evidence\n    --no-semantic  full-text only; skip the embedding provider even if one is configured\n    -h, --help     show this help\n"
+      }
+    },
+    {
+      "name": "help-card-query",
+      "workspace": "none",
+      "argv": [
+        "query",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  query — Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)\n  usage: omg query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]\n         omg query -f <file|-> [-n <N>] [--cursor <c>]\n  options:\n    <source>      the OQX query text (quote it); `from` may be omitted inside blocks\n    -f <file|->   read the query from a file, or stdin with `-`\n    -n <N>        page size\n    --cursor <c>  continue a truncated result\n    --ids         bare ids, one per line — pipe fuel (`… --ids | omg cat -`)\n    -h, --help    show this help\n\n  semantic ranking: `order by semantic(\"phrase\") desc` or `where semantic(\"phrase\") > 0.6` (needs embedding.provider; see `omg embed --help`).\n  full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.\n  examples:\n  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'\n       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'\n       query 'select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }'\n       query 'select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'\n       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }\n       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)\n       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)\n       query 'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == \"x.md\"'   # a record as a collection ($key/$value); also entries(attrs), entries(inline)\n       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)\n       query 'select $path, tags: tags collect { $value values where $value != \"draft\" } from docs'   # $value = the current item (here: each tag)\n       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)\n       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune\n       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)\n       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]\n       query 'select t: text, d: $depth, s: $stop from blocks where $id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)\n       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]\n       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)\n       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk\n       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri\n"
+      }
+    },
+    {
+      "name": "help-card-run",
+      "workspace": "none",
+      "argv": [
+        "run",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  run — Evaluate the ```omg fence (an OQX query) at a locator — or the first fence in a document — and print its results\n  usage: omg run <locator|path> [--ids|--json|--jsonl]\n  options:\n    <locator|path>  a fence block's locator, or a document whose first ```omg fence is run\n    -h, --help      show this help\n\n  Strictly read-and-print: fences stay inert in the corpus; nothing is projected or written.\n"
+      }
+    },
+    {
+      "name": "help-card-log",
+      "workspace": "none",
+      "argv": [
+        "log",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  log — What changed: one digest per commit, newest first\n  usage: omg log [--since <24h|7d|ISO>] [--cursor <n>] [--origin api|observed] [-n <N>]\n  options:\n    --since <t>   only commits after a relative age (24h, 7d) or an ISO timestamp\n    --cursor <n>  continue from a commit sequence number\n    --origin <o>  api (agent/CLI writes) | observed (file edits picked up by sync)\n    -n <N>        max commits\n    -h, --help    show this help\n"
+      }
+    },
+    {
+      "name": "help-card-hist",
+      "workspace": "none",
+      "argv": [
+        "hist",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  hist — A block's change biography: every commit that touched it\n  usage: omg hist <node> [-n <N>]\n  options:\n    -n <N>      max changes\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-diff",
+      "workspace": "none",
+      "argv": [
+        "diff",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  diff — Unified diff of a document between two revisions (default: previous → current)\n  usage: omg diff <doc> [--from <rev>] [--to <rev>]\n  options:\n    --from <rev>  older revision id (default: the one before --to)\n    --to <rev>    newer revision id (default: current)\n    -h, --help    show this help\n"
+      }
+    },
+    {
+      "name": "help-card-links",
+      "workspace": "none",
+      "argv": [
+        "links",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  links — Open edges touching a node, grouped by predicate (both directions by default)\n  usage: omg links <node> [--in|--out] [--pred <p,p>] [--blocks]\n  options:\n    --in          incoming edges only (backlinks)\n    --out         outgoing edges only\n    --pred <p,p>  keep only these predicates\n    --blocks      block-grain edges (default: doc-grain)\n    -h, --help    show this help\n"
+      }
+    },
+    {
+      "name": "help-card-apply",
+      "workspace": "none",
+      "argv": [
+        "apply",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  apply — Apply a raw changeset (`{ ops: [...] }`, the six-op kernel) — the primitive every other mutator expands to\n  usage: omg apply [-f <changeset.json|->] [--reason <s>] [--actor <s>] [--dry-run]\n  options:\n    -f <file|->   changeset JSON from a file or stdin (default: stdin)\n    --reason <s>  commit reason recorded in history\n    --actor <s>   commit actor (default human:$USER)\n    --dry-run     validate + render the diff, commit nothing\n    -h, --help    show this help\n"
+      }
+    },
+    {
+      "name": "help-card-insert",
+      "workspace": "none",
+      "argv": [
+        "insert",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  insert — Insert markdown as new block(s) under a parent block or heading\n  usage: omg insert <to> (-m <markdown> | -f <file> | -) [--at end|start|before <id>|after <id>] [--expect <parent_children_hash>] [--actor <s>] [--dry-run]\n  options:\n    <to>             parent block id, or a heading block id to append into its section\n    -m <markdown>    content inline\n    -f <file>        content from a file\n    -                content from stdin\n    --at <pos>       end (default) | start | before <id> | after <id>\n    --expect <hash>  destination CAS: fail with stale_expectation unless the parent's direct child ids (joined by \",\", sha256 hex) still hash to this\n    --actor <s>      commit actor (default human:$USER)\n    -h, --help       show this help\n"
+      }
+    },
+    {
+      "name": "help-card-update",
+      "workspace": "none",
+      "argv": [
+        "update",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  update — Replace a block's markdown (b_… target), or reconcile a whole document from complete new bytes (doc id/path)\n  usage: omg update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]\n  options:\n    -m <markdown>    content inline\n    -f <file>        content from a file\n    -                content from stdin\n    --plan           (doc) print the reconciliation opset — identity effects + summary — and commit nothing\n    --expect <hash>  (block) fail with stale_expectation unless the block's hash still matches\n    --reason <s>     commit reason recorded in history\n    --actor <s>      commit actor (default human:$USER)\n    -h, --help       show this help\n"
+      }
+    },
+    {
+      "name": "help-card-edit",
+      "workspace": "none",
+      "argv": [
+        "edit",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  edit — Open a block's markdown in $EDITOR and write it back with compare-and-swap pinned to what you saw\n  usage: omg edit <block> [--actor <s>] [--dry-run]\n  options:\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-move",
+      "workspace": "none",
+      "argv": [
+        "move",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  move — Move block(s) under a new parent, identity preserved\n  usage: omg move <blocks…|-> --to <parent> [--at end|start|before <id>|after <id>] [--expect <parent_children_hash>] [--actor <s>] [--dry-run]\n  options:\n    <blocks…>        block ids; `-` reads them from stdin, one per line\n    --to <parent>    destination parent block\n    --at <pos>       end (default) | start | before <id> | after <id>\n    --expect <hash>  destination CAS: fail with stale_expectation unless the destination's direct child ids (joined by \",\", sha256 hex) still hash to this\n    --actor <s>      commit actor (default human:$USER)\n    -h, --help       show this help\n"
+      }
+    },
+    {
+      "name": "help-card-rm",
+      "workspace": "none",
+      "argv": [
+        "rm",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  rm — Remove block(s) (the resurrection pool catches regret), or delete a whole document with --doc\n  usage: omg rm <blocks…|-> [--actor <s>] [--dry-run]\n         omg rm --doc <doc> [--actor <s>] [--dry-run]\n  options:\n    <blocks…>    block ids; `-` reads them from stdin, one per line\n    --doc <doc>  delete a whole document (id or path) — always explicit\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-done",
+      "workspace": "none",
+      "argv": [
+        "done",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  done — Check (or uncheck) task blocks\n  usage: omg done <blocks…|-> [--undo] [--actor <s>] [--dry-run]\n  options:\n    <blocks…>    task block ids; `-` reads them from stdin (`omg q … --ids | omg done -`)\n    --undo       uncheck instead\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-append",
+      "workspace": "none",
+      "argv": [
+        "append",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  append — Append markdown at the end of a heading's section\n  usage: omg append <heading> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]\n  options:\n    <heading>      the heading block (id or locator) whose section receives the content\n    -m <markdown>  content inline\n    -f <file>      content from a file\n    -              content from stdin\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
+      }
+    },
+    {
+      "name": "help-card-retarget",
+      "workspace": "none",
+      "argv": [
+        "retarget",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  retarget — Rewrite every link that points at <from> to point at <to> — plan-by-default, --apply commits\n  usage: omg retarget <from> <to> [--scope <glob>] [--apply] [--actor <s>] [--dry-run]\n  options:\n    --scope <glob>  only rewrite links in documents matching the path glob\n    --apply         commit the rewrite (default: print the plan only)\n    --actor <s>     commit actor (default human:$USER)\n    -h, --help      show this help\n"
+      }
+    },
+    {
+      "name": "help-card-node",
+      "workspace": "none",
+      "argv": [
+        "node",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  node — Edit a projected node's editable properties surgically (a link's target, a task's checked, …)\n  usage: omg node set <nodeId> <prop> <value> [--actor <s>] [--dry-run]\n         omg node props <nodeId>\n  options:\n    set          rewrite one property; the adapter maps it back onto the source block\n    props        list which properties of this node's kind are editable\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "node-bare-needs-workspace",
+      "notes": "§9: a bare `node` is its help card only inside a workspace — the freshness sweep runs first (unlike `source`, which skips it)",
+      "workspace": "none",
+      "argv": [
+        "node"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "help-card-node-bare",
+      "notes": "inside a workspace a bare `node` is its help card",
+      "workspace": "alchemy",
+      "argv": [
+        "node"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  node — Edit a projected node's editable properties surgically (a link's target, a task's checked, …)\n  usage: omg node set <nodeId> <prop> <value> [--actor <s>] [--dry-run]\n         omg node props <nodeId>\n  options:\n    set          rewrite one property; the adapter maps it back onto the source block\n    props        list which properties of this node's kind are editable\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-split",
+      "workspace": "none",
+      "argv": [
+        "split",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  split — Split a block at character offset(s) into sibling blocks\n  usage: omg split <block> --at <n[,n…]> [--actor <s>] [--dry-run]\n  options:\n    --at <n[,n…]>  character offset(s) within the block's markdown\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
+      }
+    },
+    {
+      "name": "help-card-merge",
+      "workspace": "none",
+      "argv": [
+        "merge",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  merge — Merge adjacent blocks into the first (the first block's identity survives)\n  usage: omg merge <blocks…|-> [--sep <s>] [--actor <s>] [--dry-run]\n  options:\n    <blocks…>    two or more adjacent block ids; `-` reads them from stdin\n    --sep <s>    separator placed between the merged texts\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-new",
+      "workspace": "none",
+      "argv": [
+        "new",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  new — Create a document at <path> from complete file bytes (frontmatter included)\n  usage: omg new <path> (-m <markdown> | -f <file> | -) [--actor <s>] [--dry-run]\n  options:\n    -m <markdown>  content inline\n    -f <file>      content from a file\n    -              content from stdin\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
+      }
+    },
+    {
+      "name": "help-card-mv",
+      "workspace": "none",
+      "argv": [
+        "mv",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  mv — Rename/move a document to a new path; its identity and history are preserved\n  usage: omg mv <doc> <new-path> [--actor <s>] [--dry-run]\n  options:\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+      }
+    },
+    {
+      "name": "help-card-meta",
+      "workspace": "none",
+      "argv": [
+        "meta",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  meta — Surgical frontmatter patch: set/unset keys without touching the body\n  usage: omg meta <doc> [--set k=v]… [--set-json k=<json>]… [--unset k]… [--actor <s>] [--dry-run]\n  options:\n    --set k=v            set a string value (repeatable)\n    --set-json k=<json>  set a typed value from JSON (repeatable)\n    --unset k            remove a key (repeatable)\n    --actor <s>          commit actor (default human:$USER)\n    -h, --help           show this help\n"
+      }
+    },
+    {
+      "name": "help-card-shell",
+      "workspace": "none",
+      "argv": [
+        "shell",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  shell — A persistent session: one open workspace across commands, and results become typed bindings (@1/@_/@name)\n  usage: omg shell [--prompt <str>] [--server <cmd|url>]\n  options:\n    --prompt <str>      emit <str> before reading each piped line so a driver (e.g. recital) can sync on it; also $OMG_SHELL_PROMPT (--prompt wins)\n    --server <cmd|url>  run every line against a remote engine over MCP\n    -h, --help          show this help\n\n  Interactive on a TTY (type `?` for binding help, `exit` to leave); a script runner when stdin is piped (one command per line).\n"
+      }
+    },
+    {
+      "name": "help-card-sync",
+      "workspace": "none",
+      "argv": [
+        "sync",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  sync — Reconcile a repo with its filesystem source (one-shot by default; the explicit form of the freshness sweep every read runs)\n  usage: omg sync [--watch]\n         omg sync --server <cmd|url> [-H \"Name: value\"]… [--root <dir>] [--out]\n  options:\n    --watch             stay live and reconcile edits as they land\n    --server <cmd|url>  mirror a local directory into a remote engine over MCP: an http(s) url connects over Streamable HTTP; anything else is spawned as a stdio MCP server command\n    -H \"Name: value\"    (--server url only) extra HTTP header, repeatable\n    --root <dir>        (--server) the directory to mirror (default cwd)\n    --out               (--server) also export engine-authored changes back to disk\n    -h, --help          show this help\n"
+      }
+    },
+    {
+      "name": "help-card-mcp",
+      "workspace": "none",
+      "argv": [
+        "mcp",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  mcp — Serve the MCP tool surface on stdio for an MCP host (Claude Code, Cursor, …); the host owns the process lifetime\n  usage: omg mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch]\n  options:\n    -C <dir>       the workspace to serve — a directory at or below one containing .omgbase/ (the host rarely starts you inside it)\n    --repo <slug>  which repo, when the workspace has several\n    --no-watch     don't run the in-process file watcher (it is auto-off when another live watcher holds the lease)\n    -h, --help     show this help\n\n  host config: {\"command\": \"omg\", \"args\": [\"mcp\", \"-C\", \"/path/to/notes\"]}\n"
+      }
+    },
+    {
+      "name": "help-card-rebuild-index",
+      "workspace": "none",
+      "argv": [
+        "rebuild-index",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  rebuild-index — Rebuild derived tables from the authoritative docs/blocks (safe any time; never touches content or history)\n  usage: omg rebuild-index [--sections|--edges|--fts|--block-changes|--all]\n  options:\n    --sections       section spans\n    --edges          the link graph\n    --fts            the full-text index\n    --block-changes  the per-block change log\n    --all            everything (default)\n    -h, --help       show this help\n"
+      }
+    },
+    {
+      "name": "help-card-gc",
+      "workspace": "none",
+      "argv": [
+        "gc",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  gc — Mark-and-sweep unreferenced blobs and tree nodes (refuses unless gc.enabled is set in repo settings)\n  usage: omg gc [--dry-run]\n  options:\n    --dry-run   report what would be swept, sweep nothing (allowed even when gc is disabled)\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-doctor",
+      "workspace": "none",
+      "argv": [
+        "doctor",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  doctor — Invariant sweep: convergence, FTS rows vs live blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n  options:\n    --json      `{ ok, checks: [{ name, ok, detail }] }`\n    -h, --help  show this help\n"
+      }
+    },
+    {
+      "name": "help-card-config",
+      "workspace": "none",
+      "argv": [
+        "config",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  config — Read/write settings — one schema at two layers: workspace defaults, overridable per repo\n  usage: omg config [list]\n         omg config get <key>\n         omg config set <key> <value>\n  options:\n    list               show the effective settings (default); at repo scope, overrides are marked\n    get <key>          print one effective value (dotted path, e.g. embedding.provider)\n    set <key> <value>  write a value at the selected layer (true/false/null/numbers are typed)\n    --repo <slug>      target a repo's layer\n    --repo \"\"          target the workspace layer (what every repo inherits)\n    -h, --help         show this help\n\n  e.g. omg config set embedding.provider omgbase-embedder --repo \"\"\n"
+      }
+    },
+    {
+      "name": "help-card-embed",
+      "workspace": "none",
+      "argv": [
+        "embed",
+        "--help"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "  embed — The embedding queue: report the provider + what is queued, or drain it to embed now\n  usage: omg embed [status]\n         omg embed drain [--verbose] [--prune]\n  options:\n    status         (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    drain          embed the queued blocks now — status alone makes no progress\n    -v, --verbose  (drain) per-batch progress\n    --prune        (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help     show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off.\n"
+      }
+    },
+    {
+      "name": "unknown-command-did-you-mean",
+      "notes": "§2.4: two edits for a name longer than three characters",
+      "workspace": "none",
+      "argv": [
+        "statsu"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown command 'statsu'\n  hint: did you mean 'status'? run 'omg --help' for the command list\n"
+      }
+    },
+    {
+      "name": "unknown-command-short-did-you-mean",
+      "notes": "one edit for a name of three characters or fewer",
+      "workspace": "none",
+      "argv": [
+        "lz"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown command 'lz'\n  hint: did you mean 'ls'? run 'omg --help' for the command list\n"
+      }
+    },
+    {
+      "name": "unknown-command-one-char",
+      "notes": "§9: a lone `x` suggests `q` (the code comment claims otherwise)",
+      "workspace": "none",
+      "argv": [
+        "x"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown command 'x'\n  hint: did you mean 'q'? run 'omg --help' for the command list\n"
+      }
+    },
+    {
+      "name": "unknown-command-no-guess",
+      "workspace": "none",
+      "argv": [
+        "zzzzzz"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown command 'zzzzzz'\n  hint: run 'omg --help' for the command list\n"
+      }
+    },
+    {
+      "name": "unknown-command-json",
+      "notes": "the typed usage object on stderr",
+      "workspace": "none",
+      "argv": [
+        "--json",
+        "zzzzzz"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "{\"error\":\"usage\",\"message\":\"unknown command 'zzzzzz'\",\"hint\":\"run 'omg --help' for the command list\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "stray-flag-before-command",
+      "notes": "§9: no `usage:` prefix on this path",
+      "workspace": "none",
+      "argv": [
+        "-n",
+        "5",
+        "ls"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "unknown flag -n\n"
+      }
+    },
+    {
+      "name": "directory-flag-missing-value",
+      "workspace": "none",
+      "argv": [
+        "-C"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "-C requires a directory\n"
+      }
+    },
+    {
+      "name": "repo-flag-missing-value",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--repo"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "--repo requires a slug\n"
+      }
+    },
+    {
+      "name": "server-flag-missing-value",
+      "workspace": "none",
+      "argv": [
+        "--server"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "--server requires a command or url\n"
+      }
+    },
+    {
+      "name": "header-flag-missing-value",
+      "workspace": "none",
+      "argv": [
+        "-H"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "-H requires a \"Name: value\" header\n"
+      }
+    },
+    {
+      "name": "no-workspace",
+      "notes": "§2.1: repo_not_found with the two fixes",
+      "workspace": "none",
+      "argv": [
+        "ls"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "no-workspace-json",
+      "notes": "the hint is dropped from the JSON error (§9)",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no omgbase workspace found at or above <workspace>\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "no-workspace-query",
+      "workspace": "none",
+      "argv": [
+        "q",
+        "from docs"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "no-workspace-mcp",
+      "notes": "§6: mcp announces the seams, then fails with the host-config hint",
+      "workspace": "none",
+      "argv": [
+        "mcp"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "[mcp] spec seam: sequential id minter (OMGBASE_SPEC_MINTER=sequential) — conformance run, not for production\n[mcp] spec seam: clock pinned to 2026-09-27T00:00:00.000Z (OMGBASE_SPEC_CLOCK) — conformance run, not for production\nerror[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: `omg mcp` serves one workspace: point it there with -C, e.g. {\"command\": \"omg\", \"args\": [\"mcp\", \"-C\", \"/path/to/notes\"]} in the MCP host config — or create one first with `omg init <dir>` and `omg -C <dir> source add .`\n"
+      }
+    },
+    {
+      "name": "server-rejected-status",
+      "notes": "§2.3: a command outside REMOTE_OK refuses --server",
+      "workspace": "none",
+      "argv": [
+        "status",
+        "--server",
+        "omg mcp"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --server is not supported for 'status' — it needs local ref resolution or a working tree; run it against a local workspace\n"
+      }
+    },
+    {
+      "name": "server-rejected-edit",
+      "workspace": "none",
+      "argv": [
+        "edit",
+        "b_1",
+        "--server",
+        "omg mcp"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: --server is not supported for 'edit' — it needs local ref resolution or a working tree; run it against a local workspace\n"
+      }
+    },
+    {
+      "name": "server-rejected-json",
+      "workspace": "none",
+      "argv": [
+        "--json",
+        "doctor",
+        "--server",
+        "omg mcp"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "{\"error\":\"usage\",\"message\":\"--server is not supported for 'doctor' — it needs local ref resolution or a working tree; run it against a local workspace\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "server-empty-runs-locally",
+      "notes": "§9: an empty --server value falls through to the local store",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--server",
+        ""
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+      }
+    },
+    {
+      "name": "header-invalid",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--server",
+        "http://127.0.0.1:1/x",
+        "-H",
+        "nocolon"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: invalid header \"nocolon\" — expected \"Name: value\"\n"
+      }
+    },
+    {
+      "name": "header-with-stdio-server",
+      "workspace": "none",
+      "argv": [
+        "ls",
+        "--server",
+        "omg mcp",
+        "-H",
+        "X: y"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: -H/--header only applies to an http(s) --server url\n"
+      }
+    },
+    {
+      "name": "bad-minter",
+      "notes": "§2.6: any minter value but `sequential` is a usage error",
+      "workspace": "none",
+      "env": {
+        "OMGBASE_SPEC_MINTER": "random"
+      },
+      "argv": [
+        "ls"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: OMGBASE_SPEC_MINTER=\"random\": the only value is \"sequential\" (spec/surface §7.1)\n  hint: unset it, or set OMGBASE_SPEC_MINTER=sequential for a conformance run\n"
+      }
+    },
+    {
+      "name": "bad-minter-json",
+      "workspace": "none",
+      "env": {
+        "OMGBASE_SPEC_MINTER": "random"
+      },
+      "argv": [
+        "ls",
+        "--json"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "{\"error\":\"usage\",\"message\":\"OMGBASE_SPEC_MINTER=\\\"random\\\": the only value is \\\"sequential\\\" (spec/surface §7.1)\",\"hint\":\"unset it, or set OMGBASE_SPEC_MINTER=sequential for a conformance run\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "bad-clock",
+      "workspace": "none",
+      "env": {
+        "OMGBASE_SPEC_CLOCK": "yesterday"
+      },
+      "argv": [
+        "ls"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: OMGBASE_SPEC_CLOCK=\"yesterday\": not an RFC 3339 instant (spec/surface §7.1)\n  hint: e.g. OMGBASE_SPEC_CLOCK=2026-09-27T00:00:00.000Z\n"
+      }
+    },
+    {
+      "name": "bad-minter-beats-unknown-command",
+      "notes": "the seams are validated before the command is resolved",
+      "workspace": "none",
+      "env": {
+        "OMGBASE_SPEC_MINTER": "random"
+      },
+      "argv": [
+        "zzzzzz"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: OMGBASE_SPEC_MINTER=\"random\": the only value is \"sequential\" (spec/surface §7.1)\n  hint: unset it, or set OMGBASE_SPEC_MINTER=sequential for a conformance run\n"
+      }
+    },
+    {
+      "name": "global-flag-after-command",
+      "notes": "§2.2: global flags are recognized anywhere",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "texts/*",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "global-flag-before-command",
+      "workspace": "alchemy",
+      "argv": [
+        "--ids",
+        "ls",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "passthrough-ls",
+      "notes": "§2.2: everything after `--` reaches the command untouched",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "--",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n"
+      }
+    },
+    {
+      "name": "passthrough-cat",
+      "workspace": "alchemy",
+      "argv": [
+        "cat",
+        "--",
+        "b_302"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "# Mutus Liber\n"
+      }
+    },
+    {
+      "name": "passthrough-query",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "--",
+        "from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "directory-flag",
+      "notes": "-C runs as if from <dir>",
+      "workspace": "alchemy",
+      "argv": [
+        "-C",
+        "vault",
+        "ls",
+        "--ids",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "directory-flag-long",
+      "workspace": "alchemy",
+      "argv": [
+        "--directory",
+        "vault/texts",
+        "ls",
+        "--ids",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "directory-flag-subdir",
+      "notes": "-C into a plain subdirectory still finds the workspace above it; the single repo is selected regardless of cwd",
+      "workspace": "alchemy",
+      "argv": [
+        "-C",
+        "home",
+        "ls"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\n"
+      }
+    },
+    {
+      "name": "repo-flag",
+      "workspace": "alchemy",
+      "argv": [
+        "--repo",
+        "fixture",
+        "ls",
+        "--ids",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "repo-flag-unknown",
+      "notes": "§2.1: the candidates ride in `data`",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "--repo",
+        "nope"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[repo_not_found]: no repo with slug 'nope'\n  {\n    \"candidates\": [\n      \"fixture\"\n    ]\n  }\n"
+      }
+    },
+    {
+      "name": "repo-flag-unknown-json",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "--repo",
+        "nope",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no repo with slug 'nope'\",\"data\":{\"candidates\":[\"fixture\"]},\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "stale-flag",
+      "notes": "--stale skips the sweep; the listing is unchanged when nothing drifted",
+      "workspace": "alchemy",
+      "argv": [
+        "--stale",
+        "ls",
+        "--ids",
+        "texts/*"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "unknown-option-is-an-engine-error",
+      "notes": "§9: an unknown per-command option exits 1 under Node's parseArgs code, not 2",
+      "workspace": "alchemy",
+      "argv": [
+        "log",
+        "--scope",
+        "x"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--scope'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"--scope\"\n"
+      }
+    },
+    {
+      "name": "unknown-option-json",
+      "workspace": "alchemy",
+      "argv": [
+        "ls",
+        "--bogus",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"ERR_PARSE_ARGS_UNKNOWN_OPTION\",\"message\":\"Unknown option '--bogus'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \\\"--bogus\\\"\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "ambiguous-repo",
+      "notes": "§2.1: two repos, cwd inside neither → repo_not_found naming both; --repo selects; -C into a root selects by containment",
+      "workspace": "alchemy",
+      "files": {
+        "other/o.md": "# Other\n\nOne paragraph.\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "source",
+            "add",
+            "other",
+            "-y"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "  * other ← <workspace>/other  1 files\n",
+            "stderr": ""
+          }
+        },
+        {
+          "argv": [
+            "ls"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": [\n      \"fixture\",\n      \"other\"\n    ]\n  }\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "--json"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no repo contains <workspace>; select one with --repo\",\"data\":{\"candidates\":[\"fixture\",\"other\"]},\"retriable\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "--repo",
+            "other",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "o.md\n"
+          }
+        },
+        {
+          "argv": [
+            "-C",
+            "other",
+            "ls",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "o.md\n"
+          }
+        },
+        {
+          "argv": [
+            "-C",
+            "vault/lab",
+            "ls",
+            "--ids",
+            "lab/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "lab/2026-01-notes.md\nlab/2026-02-notes.md\n"
+          }
+        },
+        {
+          "argv": [
+            "repos"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  * fixture  <workspace>/vault  18 docs  314 blocks\n  * other    <workspace>/other  1 docs   2 blocks\n"
+          }
+        },
+        {
+          "argv": [
+            "status",
+            "--repo",
+            "other",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"repo\":\"other\",\"root\":\"<workspace>/other\",\"docs\":1,\"blocks\":2,\"commits\":1,\"openEdges\":0,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":1,\"watcher\":\"none\",\"embedQueue\":0}\n"
+          }
+        }
+      ]
+    }
+  ]
+}

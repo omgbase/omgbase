@@ -1,0 +1,2405 @@
+{
+  "suite": "mutate",
+  "cases": [
+    {
+      "name": "insert",
+      "notes": "§6: `committed · N document(s) touched` on stderr, the minted ids on stdout",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] Fourth task",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Fourth task\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-at-start",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] Zeroth",
+            "--at",
+            "start",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Zeroth\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-at-after",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] After the first",
+            "--at",
+            "after b_311",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] Before the first",
+            "--at",
+            "before b_311",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_316\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Before the first\n- [ ] Obtain a facsimile with plate numbering\n- [ ] After the first\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-at-invalid",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_310",
+        "-m",
+        "- x",
+        "--at",
+        "middle",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: bad --at 'middle' (use end|start|before <id>|after <id>)\n"
+      }
+    },
+    {
+      "name": "insert-dry-run",
+      "notes": "§3.6: per-file unified diff on stdout, the note on stderr, nothing committed",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] Zeroth",
+            "--at",
+            "start",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/mutus-liber.md\n@@ -30,6 +30,7 @@\n Draft. I have not worked through the plates in order against a commentary, and\n the secondary literature disagrees about even the number of stages depicted.\n \n+- [ ] Zeroth\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n\n",
+            "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no changes\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_310",
+        "-m",
+        "- [ ] Zeroth",
+        "--at",
+        "start",
+        "--dry-run",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"diffs\":{\"texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Zeroth\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"committed\":false}\n"
+      }
+    },
+    {
+      "name": "insert-json",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_310",
+        "-m",
+        "- [ ] Fourth task",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "insert-expect-stale",
+      "notes": "the destination-parent CAS; current truth in the payload",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_310",
+        "-m",
+        "- x",
+        "--expect",
+        "00",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[stale_expectation]: parent_children_hash mismatch\n  {\n    \"op_index\": 0,\n    \"current\": {\n      \"parent_children_hash\": \"4f58821e24cb0131a8a2d718abdc4e9a4530213ff390176bf41a178796a34416\"\n    },\n    \"retriable\": true\n  }\n"
+      }
+    },
+    {
+      "name": "insert-expect-stale-json",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_310",
+        "-m",
+        "- x",
+        "--expect",
+        "00",
+        "--actor",
+        "human:spec",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"stale_expectation\",\"message\":\"parent_children_hash mismatch\",\"data\":{\"op_index\":0,\"current\":{\"parent_children_hash\":\"4f58821e24cb0131a8a2d718abdc4e9a4530213ff390176bf41a178796a34416\"},\"retriable\":true},\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "insert-expect-matches",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-m",
+            "- [ ] Fourth task",
+            "--expect",
+            "4f58821e24cb0131a8a2d718abdc4e9a4530213ff390176bf41a178796a34416",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Fourth task\n"
+          }
+        }
+      ],
+      "notes": "a matching destination-parent CAS commits"
+    },
+    {
+      "name": "insert-to-heading",
+      "notes": "§9: a heading target places the block right after the heading, not at the section's end",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_305",
+            "-m",
+            "Under contents.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_314\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\nUnder contents.\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-from-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "- [ ] Piped in\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Piped in\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-from-file",
+      "workspace": "alchemy",
+      "files": {
+        "new.md": "- [ ] From a file\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "insert",
+            "b_310",
+            "-f",
+            "new.md",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] From a file\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert-missing-parent",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "b_9999",
+        "-m",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: b_9999\n"
+      }
+    },
+    {
+      "name": "insert-no-target",
+      "workspace": "alchemy",
+      "argv": [
+        "insert",
+        "-m",
+        "x"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: insert requires a <to> parent (block id, or a heading id for section append)\n"
+      }
+    },
+    {
+      "name": "update-block",
+      "notes": "§6 (block target): the CAS-pinned note on stderr, then the commit",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "Draft, revised.\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"id\":\"b_309\",\"type\":\"paragraph\",\"raw\":\"Draft, revised.\",\"content_hash\":\"9f7c649791fc8902cdda3cb2d46df67bb2b97e52fa60f74be2db1fad9687f3d1\"}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-block-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-f",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "From stdin.\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "From stdin.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-block-expect-matches",
+      "notes": "an explicit --expect skips the pinning note",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--expect",
+            "50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "Draft, revised.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-block-expect-stale",
+      "notes": "§3.5: `error[stale_expectation]` + the current-truth payload",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_309",
+        "-m",
+        "x",
+        "--expect",
+        "00",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[stale_expectation]: content hash mismatch\n  {\n    \"op_index\": 0,\n    \"block\": \"b_309\",\n    \"expected_content_hash\": \"00\",\n    \"current\": {\n      \"content_hash\": \"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\",\n      \"markdown\": \"Draft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\"\n    },\n    \"retriable\": true\n  }\n"
+      }
+    },
+    {
+      "name": "update-block-expect-stale-json",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_309",
+        "-m",
+        "x",
+        "--expect",
+        "00",
+        "--actor",
+        "human:spec",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"stale_expectation\",\"message\":\"content hash mismatch\",\"data\":{\"op_index\":0,\"block\":\"b_309\",\"expected_content_hash\":\"00\",\"current\":{\"content_hash\":\"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\",\"markdown\":\"Draft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\"},\"retriable\":true},\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "update-block-dry-run",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "update",
+            "b_309",
+            "-m",
+            "Draft, revised.",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/mutus-liber.md\n@@ -27,8 +27,7 @@\n \n ## Status of these notes\n \n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Draft, revised.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n\n",
+            "stderr": "  updating b_309 (CAS pinned from current bytes)\n  dry run — 1 file(s) would change, nothing committed\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "Draft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "update-block-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_309",
+        "-m",
+        "Draft, revised.",
+        "--dry-run",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_309\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"diffs\":{\"texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft, revised.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"committed\":false}\n",
+        "stderr": "  updating b_309 (CAS pinned from current bytes)\n"
+      }
+    },
+    {
+      "name": "update-block-json",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_309",
+        "-m",
+        "Draft, revised.",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_309\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n",
+        "stderr": "  updating b_309 (CAS pinned from current bytes)\n"
+      }
+    },
+    {
+      "name": "update-missing-block",
+      "notes": "§9: an unresolvable b_ ref that is not a valid id takes the document path (doc_missing)",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_nope",
+        "-m",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[doc_missing]: doc b_nope not found\n  {\n    \"doc\": \"b_nope\"\n  }\n"
+      }
+    },
+    {
+      "name": "update-missing-block-valid-id",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "b_9999",
+        "-m",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: b_9999\n"
+      }
+    },
+    {
+      "name": "update-no-target",
+      "workspace": "alchemy",
+      "argv": [
+        "update",
+        "-m",
+        "x"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: update requires a <doc> (id or path)\n"
+      }
+    },
+    {
+      "name": "move",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "move",
+            "b_313",
+            "--to",
+            "b_310",
+            "--at",
+            "start",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_313\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Decide whether the dew operation is literal\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n"
+          }
+        },
+        {
+          "argv": [
+            "move",
+            "b_311",
+            "b_312",
+            "--to",
+            "b_310",
+            "--at",
+            "start",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\nb_312\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "move-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "move",
+            "-",
+            "--to",
+            "b_310",
+            "--at",
+            "start",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "b_313\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_313\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Decide whether the dew operation is literal\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "move-expect-stale",
+      "workspace": "alchemy",
+      "argv": [
+        "move",
+        "b_313",
+        "--to",
+        "b_310",
+        "--expect",
+        "00",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[stale_expectation]: parent_children_hash mismatch\n  {\n    \"op_index\": 0,\n    \"current\": {\n      \"parent_children_hash\": \"4f58821e24cb0131a8a2d718abdc4e9a4530213ff390176bf41a178796a34416\"\n    },\n    \"retriable\": true\n  }\n"
+      }
+    },
+    {
+      "name": "move-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "move",
+        "b_313",
+        "--to",
+        "b_310",
+        "--at",
+        "start",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -30,7 +30,7 @@\n Draft. I have not worked through the plates in order against a commentary, and\n the secondary literature disagrees about even the number of stages depicted.\n \n+- [ ] Decide whether the dew operation is literal\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n-- [ ] Decide whether the dew operation is literal\n \n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "move-no-to",
+      "workspace": "alchemy",
+      "argv": [
+        "move",
+        "b_313"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: move requires --to <parent>\n"
+      }
+    },
+    {
+      "name": "move-no-blocks",
+      "workspace": "alchemy",
+      "argv": [
+        "move",
+        "--to",
+        "b_310"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: move requires one or more blocks (or - for stdin)\n"
+      }
+    },
+    {
+      "name": "move-missing",
+      "workspace": "alchemy",
+      "argv": [
+        "move",
+        "b_9999",
+        "--to",
+        "b_310",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: b_9999\n"
+      }
+    },
+    {
+      "name": "rm-block",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "b_304",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_304\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "rm",
+            "b_304",
+            "--actor",
+            "human:spec"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[block_missing]: not a block: b_304\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rm-many-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "b_311\nb_312\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\nb_312\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "rm-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "rm",
+        "b_304",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -12,9 +12,6 @@\n The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n text. The entire Great Work, allegedly, in pictures.\n \n-length:: fifteen plates\n-attributed_to:: altus\n-\n ## Contents\n \n The plates show a couple gathering dew in sheets stretched between poles,\n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "rm-json",
+      "workspace": "alchemy",
+      "argv": [
+        "rm",
+        "b_304",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_304\"],\"removed\":[\"b_304\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "rm-none",
+      "workspace": "alchemy",
+      "argv": [
+        "rm"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: rm requires one or more blocks (or - for stdin), or --doc\n"
+      }
+    },
+    {
+      "name": "done",
+      "notes": "§6: check, then --undo",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "done",
+            "b_311",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_311"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [x] Obtain a facsimile with plate numbering\n"
+          }
+        },
+        {
+          "argv": [
+            "done",
+            "b_311",
+            "--undo",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_311"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "done-many-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "done",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "b_311\nb_312\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\nb_312\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [x] Obtain a facsimile with plate numbering\n- [x] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "done-json",
+      "workspace": "alchemy",
+      "argv": [
+        "done",
+        "b_311",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_311\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "done-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "done",
+        "b_311",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -30,7 +30,7 @@\n Draft. I have not worked through the plates in order against a commentary, and\n the secondary literature disagrees about even the number of stages depicted.\n \n-- [ ] Obtain a facsimile with plate numbering\n+- [x] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n \n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "done-on-paragraph",
+      "notes": "§9: a non-task target records an empty commit",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "done",
+            "b_309",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "Draft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 api      api(human:spec): texts/mutus-liber.md — 12 edited\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "done-none",
+      "workspace": "alchemy",
+      "argv": [
+        "done"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: done requires one or more task blocks (or - for stdin)\n"
+      }
+    },
+    {
+      "name": "append",
+      "notes": "§6: sections_append at the end of the heading's section",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "append",
+            "b_305",
+            "-m",
+            "Appended paragraph.",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_314\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\nAppended paragraph.\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "append-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "append",
+            "b_308",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "- [ ] A fourth task\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_314\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n\n- [ ] A fourth task\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "append-heading-text-unsupported",
+      "notes": "§9: heading text is an MCP-only ref; the CLI resolves ids and paths",
+      "workspace": "alchemy",
+      "argv": [
+        "append",
+        "Contents",
+        "-m",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: Contents\n"
+      }
+    },
+    {
+      "name": "append-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "append",
+        "b_305",
+        "-m",
+        "Appended paragraph.",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -25,6 +25,8 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n \n+Appended paragraph.\n+\n ## Status of these notes\n \n Draft. I have not worked through the plates in order against a commentary, and\n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "append-none",
+      "workspace": "alchemy",
+      "argv": [
+        "append"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: append requires a <heading> block\n"
+      }
+    },
+    {
+      "name": "split",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "split",
+            "b_303",
+            "--at",
+            "10",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_303\nb_314\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silen\nb_314 p    t book,\" La Rochelle, 1677: fifteen engraved plates and essentially…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_303"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "The \"silen\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "split-two-offsets",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "split",
+            "b_303",
+            "--at",
+            "10,20",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_303\nb_314\nb_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_303"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "The \"silen\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "split-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "split",
+        "b_303",
+        "--at",
+        "10",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -9,7 +9,9 @@\n \n # Mutus Liber\n \n-The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n+The \"silen\n+\n+t book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n text. The entire Great Work, allegedly, in pictures.\n \n length:: fifteen plates\n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "split-bad-offset",
+      "notes": "a non-numeric offset reaches the kernel as NaN → type_mismatch with an empty payload (§9)",
+      "workspace": "alchemy",
+      "argv": [
+        "split",
+        "b_303",
+        "--at",
+        "x",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[type_mismatch]: split must yield ≥2 non-empty fragments\n  {}\n"
+      }
+    },
+    {
+      "name": "split-no-at",
+      "workspace": "alchemy",
+      "argv": [
+        "split",
+        "b_303"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: split requires --at n[,n…]\n"
+      }
+    },
+    {
+      "name": "split-no-block",
+      "workspace": "alchemy",
+      "argv": [
+        "split"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: split requires a <block>\n"
+      }
+    },
+    {
+      "name": "merge",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "merge",
+            "b_306",
+            "b_307",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_306\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_306"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "The plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear. The dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "merge-sep-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "merge",
+        "b_306",
+        "b_307",
+        "--sep",
+        " // ",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -19,9 +19,7 @@\n \n The plates show a couple gathering dew in sheets stretched between poles,\n processing it through vessels, and attending a furnace, framed by angels and\n-zodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n-\n-The dew-gathering is the one concretely readable operation, and it connects to a\n+zodiacal signs. A sequence is clearly intended. What it instructs is not clear. // The dew-gathering is the one concretely readable operation, and it connects to a\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n \n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "merge-stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "merge",
+            "-",
+            "--actor",
+            "human:spec"
+          ],
+          "stdin": "b_306\nb_307\n",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_306\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_306"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "The plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear. The dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "merge-one-block",
+      "workspace": "alchemy",
+      "argv": [
+        "merge",
+        "b_306"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: merge requires at least two blocks\n"
+      }
+    },
+    {
+      "name": "merge-non-adjacent",
+      "workspace": "alchemy",
+      "argv": [
+        "merge",
+        "b_303",
+        "b_307",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[not_contiguous]: merge blocks must be contiguous\n  {\n    \"op_index\": 0\n  }\n"
+      }
+    },
+    {
+      "name": "retarget",
+      "notes": "§6: plan by default (a positional line diff per hit), --apply commits",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "retarget",
+            "/texts/mutus-liber.md",
+            "/texts/silent-book.md"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_26\n- - [Mutus Liber](/texts/mutus-liber.md)\n+ - [Mutus Liber](/texts/silent-book.md)\n\n",
+            "stderr": "  plan — 1 block(s) would change; re-run with --apply to commit\n"
+          }
+        },
+        {
+          "argv": [
+            "retarget",
+            "/texts/mutus-liber.md",
+            "/texts/silent-book.md",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"from\":\"/texts/mutus-liber.md\",\"to\":\"/texts/silent-book.md\",\"hits\":[{\"block\":\"b_26\",\"path\":\"index.md\",\"oldRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/mutus-liber.md)\",\"newRaw\":\"- [The Emerald Tablet](/texts/emerald-tablet.md)\\n- [Mutus Liber](/texts/silent-book.md)\"}]}\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_26"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n"
+          }
+        },
+        {
+          "argv": [
+            "retarget",
+            "/texts/mutus-liber.md",
+            "/texts/silent-book.md",
+            "--apply",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_26\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_26"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/silent-book.md)\n"
+          }
+        },
+        {
+          "argv": [
+            "retarget",
+            "/texts/mutus-liber.md",
+            "/texts/silent-book.md"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no blocks reference /texts/mutus-liber.md\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "retarget-scope",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/texts/mutus-liber.md",
+        "/x.md",
+        "--scope",
+        "lab/*"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no blocks reference /texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "retarget-scope-hit",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/processes/calcination.md",
+        "/processes/burning.md",
+        "--scope",
+        "lab/*"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "b_32\n- Bench work on [calcination](/processes/calcination.md), chasing the weight gain.\n+ Bench work on [calcination](/processes/burning.md), chasing the weight gain.\n\n",
+        "stderr": "  plan — 1 block(s) would change; re-run with --apply to commit\n"
+      }
+    },
+    {
+      "name": "retarget-none",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/texts/nope.md",
+        "/x.md"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no blocks reference /texts/nope.md\n"
+      }
+    },
+    {
+      "name": "retarget-none-json",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/texts/nope.md",
+        "/x.md",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"from\":\"/texts/nope.md\",\"to\":\"/x.md\",\"hits\":[]}\n"
+      }
+    },
+    {
+      "name": "retarget-apply-dry-run",
+      "notes": "--apply --dry-run renders the unified diff of the would-be commit",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/texts/mutus-liber.md",
+        "/x.md",
+        "--apply",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "index.md\n@@ -46,7 +46,7 @@\n ## Texts\n \n - [The Emerald Tablet](/texts/emerald-tablet.md)\n-- [Mutus Liber](/texts/mutus-liber.md)\n+- [Mutus Liber](/x.md)\n \n ## Laboratory\n \n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "retarget-apply-json",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/texts/mutus-liber.md",
+        "/x.md",
+        "--apply",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_26\"]}],\"revisions\":[{\"doc\":\"d_0\",\"path\":\"index.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "retarget-wikilink",
+      "notes": "wikilinks are retargeted by slug",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "salt",
+        "sal",
+        "--scope",
+        "substances/mercury.md"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "b_213\n- can be driven off and recondensed. It stands opposite [[salt]], the fixed body,\n+ can be driven off and recondensed. It stands opposite [[sal]], the fixed body,\n\n",
+        "stderr": "  plan — 1 block(s) would change; re-run with --apply to commit\n"
+      }
+    },
+    {
+      "name": "retarget-one-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "retarget",
+        "/a.md"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: retarget requires <from> and <to> targets\n"
+      }
+    },
+    {
+      "name": "node",
+      "notes": "§6: props lists editable properties; set reports a commit — §9: the block does not change, and --actor is ignored (so the log is read with --ids)",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "node",
+            "props",
+            "n_5ebb7234aa44"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  md:task editable: checked\n"
+          }
+        },
+        {
+          "argv": [
+            "node",
+            "props",
+            "n_5ebb7234aa44",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"node\":\"n_5ebb7234aa44\",\"kind\":\"md:task\",\"editable\":[\"checked\"]}\n"
+          }
+        },
+        {
+          "argv": [
+            "node",
+            "set",
+            "n_5ebb7234aa44",
+            "checked",
+            "true",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_311\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_311"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "c_18\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_311"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "node-set-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "set",
+        "n_5ebb7234aa44",
+        "checked",
+        "true",
+        "--dry-run"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -30,7 +30,7 @@\n Draft. I have not worked through the plates in order against a commentary, and\n the secondary literature disagrees about even the number of stages depicted.\n \n-- [ ] Obtain a facsimile with plate numbering\n+- [x] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n \n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      },
+      "notes": "§9: the dry run shows the [ ] → [x] diff the commit never produces"
+    },
+    {
+      "name": "node-set-json",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "set",
+        "n_5ebb7234aa44",
+        "checked",
+        "true",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_311\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "node-set-unknown-prop",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "set",
+        "n_5ebb7234aa44",
+        "colour",
+        "red"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[node_not_editable]: no editor for md:task.colour\n  {\n    \"kind\": \"md:task\",\n    \"prop\": \"colour\",\n    \"editable\": [\n      \"checked\"\n    ]\n  }\n"
+      }
+    },
+    {
+      "name": "node-set-unknown-node",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "set",
+        "n_000000000000",
+        "checked",
+        "true"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: node n_000000000000 not found\n  {}\n"
+      }
+    },
+    {
+      "name": "node-set-missing-args",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "set",
+        "n_5ebb7234aa44"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: node set <nodeId> <prop> <value>\n"
+      }
+    },
+    {
+      "name": "node-props-unknown-node",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "props",
+        "n_000000000000"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: no node n_000000000000\n"
+      }
+    },
+    {
+      "name": "node-props-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "props"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: node props <nodeId>\n"
+      }
+    },
+    {
+      "name": "node-unknown-sub",
+      "workspace": "alchemy",
+      "argv": [
+        "node",
+        "zap"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: unknown node subcommand 'zap' (set|props)\n"
+      }
+    },
+    {
+      "name": "edit",
+      "notes": "§6: OMG_EDITOR (a script) rewrites the file; the update is committed with the pre-read hash",
+      "workspace": "alchemy",
+      "files": {
+        "ed.sh": "#!/bin/sh\nprintf 'Edited by script.\\n' > \"$1\"\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/ed.sh"
+      },
+      "steps": [
+        {
+          "argv": [
+            "edit",
+            "b_309",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "Edited by script.\n"
+          }
+        },
+        {
+          "argv": [
+            "hist",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "#19 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "edit-dry-run",
+      "workspace": "alchemy",
+      "files": {
+        "ed.sh": "#!/bin/sh\nprintf 'Edited by script.\\n' > \"$1\"\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/ed.sh"
+      },
+      "argv": [
+        "edit",
+        "b_309",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -27,8 +27,7 @@\n \n ## Status of these notes\n \n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Edited by script.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "edit-json",
+      "workspace": "alchemy",
+      "files": {
+        "ed.sh": "#!/bin/sh\nprintf 'Edited by script.\\n' > \"$1\"\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/ed.sh"
+      },
+      "argv": [
+        "edit",
+        "b_309",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_309\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "edit-no-change",
+      "workspace": "alchemy",
+      "files": {
+        "noop.sh": "#!/bin/sh\nexit 0\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/noop.sh"
+      },
+      "argv": [
+        "edit",
+        "b_309"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no changes\n"
+      }
+    },
+    {
+      "name": "edit-editor-fails",
+      "workspace": "alchemy",
+      "files": {
+        "fail.sh": "#!/bin/sh\nexit 3\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/fail.sh"
+      },
+      "argv": [
+        "edit",
+        "b_309"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: editor exited 3\n"
+      }
+    },
+    {
+      "name": "edit-editor-with-args",
+      "notes": "the editor value is whitespace-split",
+      "workspace": "alchemy",
+      "files": {
+        "ed.sh": "#!/bin/sh\nprintf '%s\\n' \"$1\" > \"$2\"\n"
+      },
+      "env": {
+        "OMG_EDITOR": "<workspace>/ed.sh replaced"
+      },
+      "steps": [
+        {
+          "argv": [
+            "edit",
+            "b_309",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_309\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_309"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "replaced\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "edit-no-editor",
+      "notes": "§9: target_missing",
+      "workspace": "alchemy",
+      "argv": [
+        "edit",
+        "b_309"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: no $EDITOR set (or $VISUAL/$OMG_EDITOR)\n"
+      }
+    },
+    {
+      "name": "edit-editor-needs-tty",
+      "notes": "§9: $EDITOR alone cannot drive a non-TTY edit",
+      "workspace": "alchemy",
+      "env": {
+        "EDITOR": "vi"
+      },
+      "argv": [
+        "edit",
+        "b_309"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[target_missing]: edit needs a TTY; set OMG_EDITOR to a non-interactive editor for scripts\n"
+      }
+    },
+    {
+      "name": "edit-missing-block",
+      "workspace": "alchemy",
+      "env": {
+        "OMG_EDITOR": "true"
+      },
+      "argv": [
+        "edit",
+        "b_9999"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: b_9999\n"
+      }
+    },
+    {
+      "name": "edit-doc-ref",
+      "workspace": "alchemy",
+      "env": {
+        "OMG_EDITOR": "true"
+      },
+      "argv": [
+        "edit",
+        "texts/mutus-liber.md"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: not a block: texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "edit-no-arg",
+      "workspace": "alchemy",
+      "argv": [
+        "edit"
+      ],
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: edit requires a <block>\n"
+      }
+    },
+    {
+      "name": "apply",
+      "notes": "§6: the primitive — a changeset from stdin",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "apply",
+            "--actor",
+            "human:spec",
+            "--reason",
+            "spec"
+          ],
+          "stdin": "{\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] Via apply\"}]}",
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_315\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "cat",
+            "b_310"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n- [ ] Via apply\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"digests\":[{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"95eef8f1ce839377679f504647efa5234911e873e7f32c704016029ea4734ca0\"}]}],\"cursor\":19,\"truncated\":false,\"head\":19}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "apply-file",
+      "workspace": "alchemy",
+      "files": {
+        "cs.json": "{\"ops\":[{\"op\":\"remove\",\"blocks\":[\"b_304\"]}]}\n"
+      },
+      "steps": [
+        {
+          "argv": [
+            "apply",
+            "-f",
+            "cs.json",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "b_304\n",
+            "stderr": "  ok committed · 1 document touched\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "texts/mutus-liber.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and…\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "apply-file-stdin",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "-f",
+        "-",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[{\"op\":\"remove\",\"blocks\":[\"b_304\"]}]}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_304\"],\"removed\":[\"b_304\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "apply-dry-run",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--dry-run",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[{\"op\":\"remove\",\"blocks\":[\"b_304\"]}]}",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/mutus-liber.md\n@@ -12,9 +12,6 @@\n The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n text. The entire Great Work, allegedly, in pictures.\n \n-length:: fifteen plates\n-attributed_to:: altus\n-\n ## Contents\n \n The plates show a couple gathering dew in sheets stretched between poles,\n\n",
+        "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+      }
+    },
+    {
+      "name": "apply-placeholder",
+      "notes": "$n.ids[i] placeholders resolve across ops",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] One\"},{\"op\":\"update\",\"block\":\"$0.ids[0]\",\"attrs\":{\"checked\":true}}]}",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]},{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+      }
+    },
+    {
+      "name": "apply-empty-ops",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[]}",
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  nothing to do\n"
+      }
+    },
+    {
+      "name": "apply-not-a-changeset",
+      "workspace": "alchemy",
+      "argv": [
+        "apply"
+      ],
+      "stdin": "{\"nope\":1}",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: changeset must have an `ops` array\n"
+      }
+    },
+    {
+      "name": "apply-missing-block",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[{\"op\":\"remove\",\"blocks\":[\"b_9999\"]}]}",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[block_missing]: block b_9999 not found\n  {\n    \"op_index\": 0\n  }\n"
+      }
+    },
+    {
+      "name": "apply-stale",
+      "workspace": "alchemy",
+      "argv": [
+        "apply",
+        "--actor",
+        "human:spec"
+      ],
+      "stdin": "{\"ops\":[{\"op\":\"update\",\"block\":\"b_309\",\"markdown\":\"x\",\"expect\":{\"content_hash\":\"00\"}}]}",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[stale_expectation]: content hash mismatch\n  {\n    \"op_index\": 0,\n    \"block\": \"b_309\",\n    \"expected_content_hash\": \"00\",\n    \"current\": {\n      \"content_hash\": \"50505887d336b1bbe5fa9461f9e2ef7a93e54446d4ac16b9848ceade1c0e841e\",\n      \"markdown\": \"Draft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\"\n    },\n    \"retriable\": true\n  }\n"
+      }
+    }
+  ]
+}

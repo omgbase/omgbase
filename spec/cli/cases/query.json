@@ -1,0 +1,727 @@
+{
+  "suite": "query",
+  "cases": [
+    {
+      "name": "hits",
+      "notes": "§6: no projection → `<id>  <path>` lines",
+      "workspace": "alchemy",
+      "argv": [
+        "query",
+        "from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "alias-q",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "select-table",
+      "notes": "a projection → the aligned table: id, path, then the columns in select order",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $title, era from docs where type == \"practitioner\" order by era"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id   path                                $title             era\nd_4  practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  practitioners/paracelsus.md         Paracelsus         1530\nd_5  practitioners/newton.md             Isaac Newton       1680\n"
+      }
+    },
+    {
+      "name": "select-path-drops-path-column",
+      "notes": "$path selected → the injected path column is dropped",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $path, era from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id    $path                    era\nd_16  texts/emerald-tablet.md  800\nd_17  texts/mutus-liber.md     1677\n"
+      }
+    },
+    {
+      "name": "select-cells",
+      "notes": "strings first line only, lists as compact JSON, absent → empty, long cells clipped at 60 with …",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select text, tags, nope from blocks where doc.$path == \"texts/mutus-liber.md\" && type == \"paragraph\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id     path                  text                                                          tags  nope\nb_303  texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
+      }
+    },
+    {
+      "name": "select-bool-and-number",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select type, $ordinal, $depth, attrs.checked from blocks where doc.$path == \"texts/mutus-liber.md\" && $depth == 1"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id     path                  type  $ordinal  $depth  checked\nb_311  texts/mutus-liber.md  task  0         1       false\nb_312  texts/mutus-liber.md  task  1         1       false\nb_313  texts/mutus-liber.md  task  2         1       false\n"
+      }
+    },
+    {
+      "name": "count",
+      "notes": "scalar consumers print the scalar",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "$repo.docs count { where layer == \"canon\" }"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "13\n"
+      }
+    },
+    {
+      "name": "exists",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "$repo.docs exists { where layer == \"nope\" }"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "false\n"
+      }
+    },
+    {
+      "name": "none",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "$repo.docs none { where layer == \"nope\" }"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "true\n"
+      }
+    },
+    {
+      "name": "count-json",
+      "notes": "--json is the whole OqxResult",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "$repo.docs count { where layer == \"canon\" }",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"count\",\"count\":13}\n"
+      }
+    },
+    {
+      "name": "values",
+      "notes": "a values projection → one bare value per line",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $path values from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "values-non-string",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select era values from docs where type == \"text\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "800\n1677\n"
+      }
+    },
+    {
+      "name": "values-jsonl",
+      "notes": "--jsonl encodes every value as JSON",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $path values from docs where type == \"text\"",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "\"texts/emerald-tablet.md\"\n\"texts/mutus-liber.md\"\n"
+      }
+    },
+    {
+      "name": "ids",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"text\"",
+        "--ids"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16\nd_17\n"
+      }
+    },
+    {
+      "name": "jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"text\"",
+        "--jsonl"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"d_16\",\"path\":\"texts/emerald-tablet.md\"}\n{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}\n"
+      }
+    },
+    {
+      "name": "json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"text\"",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+      }
+    },
+    {
+      "name": "no-hits",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"nope\""
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no hits\n"
+      }
+    },
+    {
+      "name": "no-hits-json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where type == \"nope\"",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+      }
+    },
+    {
+      "name": "truncated",
+      "notes": "§3.4: the footer on stderr, exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "-n",
+        "2"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_0  index.md\nd_1  lab/2026-01-notes.md\n",
+        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+      }
+    },
+    {
+      "name": "truncated-ids",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "-n",
+        "2",
+        "--ids"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_0\nd_1\n",
+        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+      }
+    },
+    {
+      "name": "truncated-jsonl",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "-n",
+        "2",
+        "--jsonl"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"id\":\"d_0\",\"path\":\"index.md\"}\n{\"id\":\"d_1\",\"path\":\"lab/2026-01-notes.md\"}\n",
+        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+      }
+    },
+    {
+      "name": "truncated-json",
+      "notes": "--json carries truncated/cursor in the envelope; no footer",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "-n",
+        "2",
+        "--json"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"hits\":[{\"id\":\"d_0\",\"path\":\"index.md\"},{\"id\":\"d_1\",\"path\":\"lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\",\"consumer\":\"collect\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "name": "cursor-continue",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "-n",
+        "2",
+        "--cursor",
+        "WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "d_2  lab/2026-02-notes.md\nd_3  practitioners/jabir-ibn-hayyan.md\n",
+        "stderr": "… truncated; continue with --cursor WyJwcmFjdGl0aW9uZXJzL2phYmlyLWlibi1oYXl5YW4ubWQiLCJkXzMiXQ\n"
+      }
+    },
+    {
+      "name": "cursor-invalid",
+      "notes": "§9: reported under the code `error`, not filter_invalid",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "--cursor",
+        "bad"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[error]: invalid cursor\n"
+      }
+    },
+    {
+      "name": "cursor-invalid-json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "--cursor",
+        "bad",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"error\",\"message\":\"invalid cursor\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "parse-error",
+      "notes": "§9: an OQX error is `error[error]`",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[error]: unexpected end of query — expected a value (at offset 15)\n"
+      }
+    },
+    {
+      "name": "parse-error-json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"error\",\"message\":\"unexpected end of query — expected a value (at offset 15)\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "unknown-root",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from nope"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  no hits\n"
+      },
+      "notes": "§9: an unknown root is silently empty",
+      "pin_stderr": true
+    },
+    {
+      "name": "semantic-unavailable",
+      "notes": "§6: no provider → semantic_unavailable with the config hint",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from blocks where semantic(\"dew\") > 0.5"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[semantic_unavailable]: semantic(...) needs an embedding provider\n  hint: omg config set embedding.provider <command|url>\n"
+      }
+    },
+    {
+      "name": "semantic-unavailable-json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from blocks where semantic(\"dew\") > 0.5",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"semantic_unavailable\",\"message\":\"semantic(...) needs an embedding provider\",\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "empty-source",
+      "notes": "§9: an empty source is a stderr usage note with exit 0",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        ""
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  usage: query <source>  (or -f file|-)\n"
+      }
+    },
+    {
+      "name": "no-source",
+      "workspace": "alchemy",
+      "argv": [
+        "q"
+      ],
+      "pin_stderr": true,
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "  usage: query <source>  (or -f file|-)\n"
+      }
+    },
+    {
+      "name": "source-from-stdin",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "-f",
+        "-"
+      ],
+      "stdin": "from docs where type == \"text\"\n",
+      "expect": {
+        "exit": 0,
+        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "source-from-file",
+      "workspace": "alchemy",
+      "files": {
+        "query.oqx": "select $path values\nfrom docs\nwhere type == \"text\"\n"
+      },
+      "argv": [
+        "q",
+        "-f",
+        "query.oqx"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "follow",
+      "notes": "a follow walk projects $depth/$stop as ordinary columns",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $path, d: $depth, s: $stop from docs where $path == \"texts/mutus-liber.md\" follow doc.out { depth 2 }"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id    $path                        d  s\nd_17  texts/mutus-liber.md         1  interior\nd_13  substances/prima-materia.md  2  depth\n"
+      }
+    },
+    {
+      "name": "edges",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select predicate, to: $dst_path from edges where $src == \"d_17\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id    path                  predicate   to\ne_63  texts/mutus-liber.md  references  substances/prima-materia.md\n"
+      }
+    },
+    {
+      "name": "nested-collect",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select $path, open: nodes collect { $id where kind == \"md:task\" && !attrs.checked } from docs where $path == \"texts/mutus-liber.md\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id    $path                 open\nd_17  texts/mutus-liber.md  [{\"$id\":\"n_5ebb7234aa44\"},{\"$id\":\"n_cb80a4290986\"},{\"$id\":\"…\n"
+      }
+    },
+    {
+      "name": "run",
+      "notes": "§6: `run` evaluates a document's first ```omg fence with the query renderer; a fence block id runs that fence",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "q.md",
+            "-m",
+            "# Q\n\nA fence:\n\n```omg\nselect $path values from docs where type == \"text\"\n```\n",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created q.md\n"
+          }
+        },
+        {
+          "argv": [
+            "outline",
+            "q.md",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"text\":\"b_314 h1   Q  §\\nb_315 p    A fence:\\nb_316 code select $path values from docs where type == \\\"text\\\"\",\"truncated\":false}\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "q.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "q.md",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"values\":[\"texts/emerald-tablet.md\",\"texts/mutus-liber.md\"]}\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "b_316"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "b_314"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[opaque_block]: block b_314 is not an omg fence\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "index.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[target_missing]: no ```omg fence in index.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "nope.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[doc_missing]: no node nope.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run"
+          ],
+          "expect": {
+            "exit": 2,
+            "stdout": "",
+            "stderr": "usage: run requires a <locator|path>\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "run-hits-and-count",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "q.md",
+            "-m",
+            "```omg\nfrom docs where type == \"text\"\n```\n\n```omg\n$repo.docs count { }\n```\n",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created q.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "q.md"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "q.md",
+            "--ids"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "d_16\nd_17\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "b_315"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "19\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "b_315",
+            "--json"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"count\",\"count\":19}\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "run-empty-fence",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "new",
+            "q.md",
+            "-m",
+            "```omg\n```\n",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "d_18\n",
+            "stderr": "  ok created q.md\n"
+          }
+        },
+        {
+          "argv": [
+            "run",
+            "q.md"
+          ],
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[target_missing]: the omg fence in q.md is empty\n"
+          }
+        }
+      ]
+    }
+  ]
+}
