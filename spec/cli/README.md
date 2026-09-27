@@ -13,7 +13,7 @@ named rather than left to chance. It is owned by neither implementation.
 | Implementation | Where | Role |
 | --- | --- | --- |
 | `omgbase` / `omg` (TypeScript, npm `omgbase`) | `packages/cli/src/{main,dispatch,context,commands,output,render,style,seams}.ts`, `packages/cli/src/cmd/*.ts`, `packages/cli/src/shell/*.ts` | **Reference.** |
-| `omgbase` (Rust binary, crates.io) | `crates/omgbase` | Conformance-first port: renders the verbs over `omgbase-surface`, `omgbase-sync`, `omgbase-store`; today serves `omgbase mcp` only. |
+| `omgbase` (Rust binary, crates.io) | `crates/omgbase/src/cli/{mod,argv,context,output,render,help,commands,seams}.rs`, `cli/cmd/*.rs`, `cli/shell/*.rs` | Conformance-first port: every verb rendered over `omgbase-surface`, `omgbase-sync`, `omgbase-store` (0.5.0, 2026-09-27; `crates/omgbase/tests/cli_spec.rs` runs every case, `tests/remote.rs` proves `--server` against the reference server both ways). |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
 and `cases/*.json`. **When prose and fixtures disagree, the fixtures win**,
@@ -1300,9 +1300,14 @@ fixture change and a version bump, or keep). None was fixed here.
   (`not a task: <ref> is a <type>`, `data { block, type }`), checked by the
   CLI before any op is built; the `tasks_complete` macro (`spec/mutate` §5)
   is unchanged (`mutate::done-on-paragraph`).
-- **Pinned — `insert` to a heading id places the block directly after the heading**,
-  not at the end of its section as the card says (`append` does the latter;
-  `mutate::insert-to-heading`).
+- **Fixed (mutate 1.2) — `insert` to a heading id destroyed the heading.**
+  The as-built rendering looked like "the block lands right after the
+  heading", but the heading's own line was gone from the file and its id
+  now labelled the inserted block: the kernel had inserted into the leaf's
+  empty `children` and re-rendered the leaf from them (`spec/mutate` §1.1,
+  §10). A leaf parent is `type_mismatch` now, and the CLI prints the
+  kernel's message with its hint (`mutate::insert-to-heading`); `append`
+  addresses the section, `insert --at after <id>` the position.
 - **Fixed — `retarget`'s plan is the unified diff**: per hit, the block id,
   then `unifiedDiff(oldRaw, newRaw)` (`spec/surface` §3, as `diff` and every
   dry run), then an empty line; the positional line diff (`- old` / `+ new`,
@@ -1468,4 +1473,6 @@ bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
   the Rust runner ships with an empty allowlist.
 - 2026-09-27, cli 1.0 also: thirty-odd as-built accidents fixed in the
   reference before any port built against them (§9, "Fixed"); the rest
-  pinned with a fixture each.
+  pinned with a fixture each. One "pinned" item turned out to be data loss
+(`insert` to a heading — see the mutate 1.2 bullet) and was fixed the same
+day.

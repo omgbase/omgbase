@@ -66,7 +66,18 @@ To   { parent: <block id> | { doc: true } | { heading: <block id>, scope: "secti
        at: "start" | "end" | { before: <block id> } | { after: <block id> } }
 ```
 
-- `parent: <id>` → the block's `children`; unknown → `parent_missing`.
+- `parent: <id>` → the block's `children`; unknown → `parent_missing`. The
+  block must be a **container** — a kind whose children the parser produces
+  (Markdown: `list`, `list_item`, `task`, `blockquote`, `table`; other
+  formats: any block with children); a leaf kind (`heading`, `paragraph`,
+  `code_fence`, `table_row`, `thematic_break`, `html_block`, `opaque`,
+  `frontmatter`) is `type_mismatch` with `{ op_index, block, type }` and
+  the message `<id> is a <type>, not a container; place relative to it with
+  at.before/at.after or append to its section` — since 1.2 (§10: before it
+  the insert landed in the leaf's empty `children`, the dirty leaf then
+  re-rendered from its children, and the heading's own text was **lost**).
+  The same resolution serves `move`, so a move into a leaf is the same
+  error.
 - `parent: { doc: true }` → the document's top level.
 - `parent: { heading, scope: "section" }` → the top level, with the section
   range of the heading (its top-level index *h*, level *L* from `attrs.level`
@@ -465,6 +476,16 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 
 ## 10. Reference oddities surfaced while specifying, and decisions
 
+- **Fixed (1.2) — an insert or move into a leaf block destroyed it.** `to.parent`
+  naming a heading (or any leaf) resolved to its empty `children`; the block
+  landed there, the leaf was marked dirty and re-rendered from its children,
+  and its own text vanished from the file — the CLI spec had even pinned the
+  visible result ("a heading target places the block right after the
+  heading") without seeing that `## Risks` was gone. §1.1 now requires a
+  container parent (`type_mismatch` otherwise: `ops::insert-into-heading-is-
+  type-mismatch`, `ops::move-into-paragraph-is-type-mismatch`); the CLI's
+  `insert <heading>` surfaces that error with its hint (`spec/cli`
+  `mutate::insert-to-heading`).
 - **Fixed — `split.at` were UTF-16 indices.** The op said "byte offsets"
   (`docs/mutation-and-concurrency.md`) and sliced a JavaScript string. §2.5
   picks bytes; the reference converts.
@@ -537,6 +558,10 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 
 ## Decisions
 
+- 2026-09-27, mutate 1.2: the destination parent of `insert`/`move` must be
+  a container; a leaf is `type_mismatch` (least surprising: an error over
+  silent data loss; `at.before`/`at.after` and `sections_append` already
+  express "next to" and "into the section").
 - 2026-09-26, mutation 1.0 specified as built (one fix: byte offsets in
   `split`). The crate is pure (tree, ops, render, lowering, opset); the store
   owns loading, the commit protocol, macros and document operations because
