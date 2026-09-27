@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 # The catalog this binary serves.
-omgbase-surface = { version = "1.2.1", path = "../omgbase-surface" }
+omgbase-surface = { version = "1.3.0", path = "../omgbase-surface" }
 # Workspace discovery and repo selection (`spec/sync` §1), the settings the
 # embedding provider is read from.
 omgbase-sync = { version = "1.2.1", path = "../omgbase-sync" }
@@ -26,8 +26,10 @@ omgbase-sync = { version = "1.2.1", path = "../omgbase-sync" }
 omgbase-store = { version = "13.5.0", path = "../omgbase-store" }
 # The external embedding provider behind `semantic()` / `resolve`.
 omgbase-search = { version = "1.2.0", path = "../omgbase-search" }
-# JSON-RPC framing.
+# JSON-RPC framing; the CLI's `--json` documents (key order as produced).
 serde_json = { version = "1", features = ["preserve_order"] }
+# The store's connection: the CLI's own row reads (`log --since`, `links`).
+rusqlite = { version = "0.40", features = ["bundled"] }
 # `signal(2)` for SIGINT/SIGTERM shutdown of the watcher and the drainer
 # (unix only, like omgbase-sync's lock liveness probe).
 libc = "0.2"

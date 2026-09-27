@@ -366,7 +366,7 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits, pairs, applied, ...apply result }` |
 | `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6 shapes |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args | its results |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move with `retarget_inbound` also previews `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
 | `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text) |
 | `docs_update` | `doc`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 | its outcomes (`observe` sweeps the pool) |
@@ -665,6 +665,9 @@ both and runs both harnesses.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key
   changed, so `VERSION` stays 1.1 and the crates take a patch.
+- 2026-09-27, surface 1.3: `docs_create`/`docs_move`/`docs_delete`/
+  `docs_set_meta` take `dry_run` (the CLI's `--dry-run` on `new`/`mv`/
+  `rm --doc`/`meta` needed it — `spec/cli` §9); an argument added, a minor.
 - 2026-09-26, surface 1.2: rows surfacing as values render `{ id, path }`;
   `docs_get_many`/`nodes_get_many` always return at least one item;
   `blocks_insert`/`blocks_move` take `expect { parent_children_hash }`. Two
