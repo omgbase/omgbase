@@ -50,20 +50,29 @@ pub struct DocInfo {
 /// A live doc by id **or** repo-relative path (`findDocByRef`): a `d_` id is
 /// looked up by id only; anything else is a path.
 pub fn find_doc_by_ref(conn: &Connection, repo_id: &str, r: &str) -> Result<Option<DocInfo>> {
-    let sql = if is_id_ref(r, "d") {
-        "SELECT doc_id, path, current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL"
-    } else {
-        "SELECT doc_id, path, current_rev FROM docs WHERE path = ?1 AND repo_id = ?2 AND deleted_commit IS NULL"
-    };
-    Ok(conn
-        .query_row(sql, params![r, repo_id], |row| {
-            Ok(DocInfo {
-                doc_id: row.get(0)?,
-                path: row.get(1)?,
-                current_rev: row.get(2)?,
-            })
+    let map = |row: &rusqlite::Row<'_>| {
+        Ok(DocInfo {
+            doc_id: row.get(0)?,
+            path: row.get(1)?,
+            current_rev: row.get(2)?,
         })
-        .optional()?)
+    };
+    // The id branch binds one parameter, the path branch two (a two-value
+    // bind against the one-placeholder query is `InvalidParameterCount`).
+    let found = if is_id_ref(r, "d") {
+        conn.query_row(
+            "SELECT doc_id, path, current_rev FROM docs WHERE doc_id = ?1 AND deleted_commit IS NULL",
+            params![r],
+            map,
+        )
+    } else {
+        conn.query_row(
+            "SELECT doc_id, path, current_rev FROM docs WHERE path = ?1 AND repo_id = ?2 AND deleted_commit IS NULL",
+            params![r, repo_id],
+            map,
+        )
+    };
+    Ok(found.optional()?)
 }
 
 // ---- loading (§1) ---------------------------------------------------------------------

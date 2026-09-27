@@ -10,13 +10,14 @@ import {
   repoOwnSettings,
   writeWorkspaceSettings,
   writeRepoSettings,
-  RepoSelectionError,
+  ftsIndexedRowCount,
+  liveLeafCount,
   type Settings,
   type RebuildTarget,
 } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, EXIT_ERROR, emitMachine, renderHelp } from "../output.js";
 import { loadEmbedding, drainEmbeddings } from "./_embed.js";
 
 // admin/maintenance (11 §5.8–5.9). The live watcher moved to `omg sync --watch`.
@@ -46,6 +47,8 @@ function runRebuild(cli: Cli, args: string[]): number {
   const target: RebuildTarget = values.sections ? "sections" : values.edges ? "edges" : values.fts ? "fts" : values["block-changes"] ? "block_changes" : "all";
   const ws = cli.workspace();
   rebuildIndex(ws.store, target);
+  // The library call returns nothing; the machine result names what was rebuilt.
+  if (cli.flags.mode !== "human") return emitMachine(cli, { rebuilt: target });
   cli.io.err(cli.style.dim(`  ${cli.style.ok(cli.render.g.ok)} rebuilt ${target}`));
   return EXIT_OK;
 }
@@ -72,8 +75,8 @@ function runGcCmd(cli: Cli, args: string[]): number {
     throw new EngineErrorLike("target_missing", "gc is disabled; set gc.enabled=true (or use --dry-run)");
   }
   const result = runGc(ws.store, { enabled: enabled || dryRun });
-  if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(result));
-  else cli.io.err(cli.style.dim(`  swept ${result.blobsSwept} blobs, ${result.treeNodesSwept} tree nodes`));
+  if (cli.flags.mode !== "human") return emitMachine(cli, result);
+  cli.io.err(cli.style.dim(`  swept ${result.blobsSwept} blobs, ${result.treeNodesSwept} tree nodes`));
   return EXIT_OK;
 }
 
@@ -84,7 +87,7 @@ function runDoctor(cli: Cli, args: string[]): number {
   if (values.help) {
     return renderHelp(cli, {
       name: "doctor",
-      summary: "Invariant sweep: convergence, FTS rows vs live blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
+      summary: "Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)",
       usage: "doctor [--json]",
       options: [["--json", "`{ ok, checks: [{ name, ok, detail }] }`"]],
     });
@@ -97,9 +100,12 @@ function runDoctor(cli: Cli, args: string[]): number {
   const status = reposStatus(ws.store, repo.repoId);
   checks.push({ name: "convergence", ok: status.unconverged === 0, detail: `${status.unconverged} unconverged` });
 
-  const ftsCount = (db.prepare("SELECT count(*) c FROM blocks_fts").get() as { c: number }).c;
-  const liveBlocks = (db.prepare("SELECT count(*) c FROM blocks WHERE deleted_commit IS NULL").get() as { c: number }).c;
-  checks.push({ name: "fts rows == live blocks", ok: ftsCount === liveBlocks, detail: `fts=${ftsCount} live=${liveBlocks}` });
+  // The index holds exactly the live LEAF blocks (spec/search §1.1): a container
+  // has no row, a tombstone none. Counted from the index's shadow table — a plain
+  // count(*) on an external-content FTS table answers from `blocks` instead.
+  const ftsCount = ftsIndexedRowCount(db);
+  const leaves = liveLeafCount(db);
+  checks.push({ name: "fts rows == live leaf blocks", ok: ftsCount === leaves, detail: `fts=${ftsCount} leaves=${leaves}` });
 
   const dangling = (db.prepare("SELECT count(*) c FROM docs d WHERE d.deleted_commit IS NULL AND d.current_rev IS NOT NULL AND NOT EXISTS (SELECT 1 FROM revisions r WHERE r.rev_id = d.current_rev)").get() as { c: number }).c;
   checks.push({ name: "no dangling current_rev", ok: dangling === 0, detail: `${dangling} dangling` });
@@ -109,7 +115,7 @@ function runDoctor(cli: Cli, args: string[]): number {
 
   const allOk = checks.every((c) => c.ok);
   if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ ok: allOk, checks }));
+    emitMachine(cli, { ok: allOk, checks });
     return allOk ? EXIT_OK : EXIT_ERROR;
   }
   const { style, io, render } = cli;
@@ -139,8 +145,9 @@ function resolveConfigScope(cli: Cli, ws: ReturnType<Cli["workspace"]>): ConfigS
     // An explicit --repo <slug> that doesn't resolve is a real error. A bare
     // (cwd-based) selection that's ambiguous or empty just means "workspace
     // layer" — the workspace is what you mean when not clearly inside a repo.
+    // (`Cli.repo` has already wrapped the RepoSelectionError as repo_not_found.)
     if (cli.flags.repo) throw err;
-    if (err instanceof RepoSelectionError) return { kind: "workspace" };
+    if (err instanceof EngineErrorLike && err.code === "repo_not_found") return { kind: "workspace" };
     throw err;
   }
 }
@@ -176,7 +183,7 @@ function runConfig(cli: Cli, args: string[]): number {
     // at workspace scope the layer is the effective view.
     if (scope.kind === "workspace") {
       const s = workspaceSettings(ws.store);
-      if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(s));
+      if (cli.flags.mode !== "human") return emitMachine(cli, s);
       else {
         cli.io.err(cli.style.dim(`  workspace defaults`));
         for (const [k, v] of Object.entries(s)) cli.io.out(`  ${cli.style.accent(k)} ${cli.style.dim("=")} ${JSON.stringify(v)}`);
@@ -185,7 +192,7 @@ function runConfig(cli: Cli, args: string[]): number {
     }
     const effective = resolveSettings(ws.store, scope.repoId);
     const own = repoOwnSettings(ws.store, scope.repoId);
-    if (cli.flags.mode !== "human") { cli.io.out(JSON.stringify(effective)); return EXIT_OK; }
+    if (cli.flags.mode !== "human") return emitMachine(cli, effective);
     cli.io.err(cli.style.dim(`  ${label} (effective; ${cli.render.g.diamond} = overrides workspace default)`));
     for (const [k, v] of Object.entries(effective)) {
       const overridden = Object.prototype.hasOwnProperty.call(own, k);
@@ -243,16 +250,16 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
   if (!loaded) {
     // No provider configured (05 §6). Honest report; not an error.
     const hint = 'set one with `omg config set embedding.provider <command|url>` (e.g. omgbase-embedder)';
-    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: null, queued: 0 }));
-    else cli.io.err(cli.style.dim(`  no embedding provider configured — ${hint}`));
+    if (cli.flags.mode !== "human") return emitMachine(cli, { provider: null, queued: 0 });
+    cli.io.err(cli.style.dim(`  no embedding provider configured — ${hint}`));
     return EXIT_OK;
   }
 
   if (sub === "drain") {
     await loaded.close(); // drainEmbeddings connects its own provider
     const result = await drainEmbeddings(cli, ws, repo.repoId, { verbose, prune });
-    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify({ provider: loaded.providerName, ...(result ?? { embedded: 0, cached: 0 }) }));
-    else if (result) cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
+    if (cli.flags.mode !== "human") return emitMachine(cli, { provider: loaded.providerName, ...(result ?? { embedded: 0, cached: 0 }) });
+    if (result) cli.io.err(`  ${cli.style.ok(cli.render.g.ok)} embedded ${result.embedded}, cached ${result.cached}`);
     return EXIT_OK;
   }
 
@@ -268,7 +275,7 @@ async function runEmbed(cli: Cli, args: string[]): Promise<number> {
 
     // status
     const payload = { provider: loaded.providerName, model: loaded.provider.model, dim: loaded.provider.dim, embeddable: tasks.length, queued: pending.length, docs: docTasks.length, docsQueued: docPending.length, foreignBlocks: foreign.blocks, foreignDocs: foreign.docs };
-    if (cli.flags.mode !== "human") cli.io.out(JSON.stringify(payload));
+    if (cli.flags.mode !== "human") return emitMachine(cli, payload);
     else {
       cli.io.out(`  provider  ${cli.style.accent(loaded.providerName)} ${cli.style.dim(`(${loaded.provider.model}, ${loaded.provider.dim}d)`)}`);
       cli.io.out(`  embeddable ${tasks.length}   ${cli.style.dim("queued")} ${payload.queued}`);

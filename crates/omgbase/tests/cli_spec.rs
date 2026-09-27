@@ -49,9 +49,10 @@ const SPEC_CLOCK: &str = "2026-09-27T00:00:00.000Z";
 const FIXTURE_SLUG: &str = "fixture";
 /// §8: the placeholder for `<tmp>` in inputs and outputs.
 const WORKSPACE_TOKEN: &str = "<workspace>";
+const VERSION_TOKEN: &str = "<version>";
 /// A wedged child fails loudly instead of hanging the test.
 const SPAWN_TIMEOUT: Duration = Duration::from_secs(60);
-const MAX_REPORT_LINES: usize = 60;
+const MAX_REPORT_LINES: usize = 400;
 
 // ---- the fixture shape (README §8) ---------------------------------------------------
 
@@ -202,6 +203,23 @@ fn binary() -> PathBuf {
     std::env::var_os("OMGBASE_RUST_BIN")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_omgbase")))
+}
+
+/// §2.4: the CLI quotes itself as `basename(argv[0])`, and the fixtures were
+/// recorded through the reference's `omg` bin, so the binary is spawned
+/// through a symlink named `omg` (a copy on a platform without symlinks).
+fn omg_link(bin: &Path, dir: &Path) -> PathBuf {
+    let link = dir.join("omg");
+    #[cfg(unix)]
+    {
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(bin, &link).expect("symlink the binary as omg");
+    }
+    #[cfg(not(unix))]
+    {
+        fs::copy(bin, &link).expect("copy the binary as omg");
+    }
+    link
 }
 
 /// Every `*.md` under the alchemy corpus as `(relative posix path, bytes)`, bytewise order.
@@ -472,7 +490,11 @@ fn spawn_omg(
     };
     let stdout = String::from_utf8_lossy(&out_thread.join().expect("stdout thread")).into_owned();
     let stderr = String::from_utf8_lossy(&err_thread.join().expect("stderr thread")).into_owned();
-    let rewrite = |s: String| s.replace(&tmp_str, WORKSPACE_TOKEN);
+    // §8: `<tmp>` → `<workspace>`, and the binary's own version → `<version>`.
+    let rewrite = |s: String| {
+        s.replace(&tmp_str, WORKSPACE_TOKEN)
+            .replace(env!("CARGO_PKG_VERSION"), VERSION_TOKEN)
+    };
     Ok(Outcome {
         exit: status.code().map_or(-1, i64::from),
         stdout: rewrite(stdout),
@@ -614,6 +636,7 @@ fn cli_spec() {
         bin.display()
     );
     let mut ws = Workspaces::new();
+    let bin = omg_link(&bin, ws.root.path());
 
     let mut all_ids = BTreeSet::new();
     let mut passing = BTreeSet::new();

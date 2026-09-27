@@ -183,7 +183,7 @@ export class ShellSession {
     line(`${style.accent("@1 @2 …")}   ${style.dim("rows of the last displayed collection")}`);
     line(`${style.accent("@_")}         ${style.dim("the previous command's result")}`);
     line(`${style.accent("@name")}      ${style.dim("a named binding (also @name[i], @name.field)")}`);
-    line("");
+    io.out("");
     line(`${style.accent("@x = <cmd|@ref>")}      ${style.dim("bind a snapshot of a result")}`);
     line(`${style.accent("unset x")}              ${style.dim("drop a binding")}`);
     line(`${style.accent("bindings")}             ${style.dim("list bindings")}`);
@@ -206,7 +206,8 @@ export class ShellSession {
    * (used by `let`, which snapshots rather than displays).
    */
   private async dispatch(tokens: string[], sink: (v: unknown) => void, quiet: boolean): Promise<number> {
-    const { flags, command, rest } = parseGlobals(tokens);
+    const { flags, command, rest, error } = parseGlobals(tokens);
+    if (error) throw error;
     if (!command) return EXIT_OK;
     // In a remote session, thread the server address into every line (unless the
     // line names its own) so each command runs against the shared remote engine.

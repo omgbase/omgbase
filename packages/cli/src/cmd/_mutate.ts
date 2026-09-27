@@ -164,19 +164,34 @@ function renderApply(cli: Cli, result: ApplyResult): number {
 }
 
 function renderDryRun(cli: Cli, result: ApplyResult): number {
-  const { render, style, io } = cli;
-  io.err(style.dim(`  dry run — ${Object.keys(result.diffs ?? {}).length} file(s) would change, nothing committed`));
-  for (const [path, { before, after }] of Object.entries(result.diffs ?? {})) {
+  renderDiffs(cli, result.diffs ?? {});
+  return EXIT_OK;
+}
+
+/**
+ * The dry-run rendering every write verb shares (spec/cli §3.6): the note on
+ * stderr, then per changed file the path, the unified diff of before → after
+ * (`spec/surface` §3) and an empty line. Document verbs hand their
+ * `DocOpResult.diffs` here; block verbs their `ApplyResult.diffs`.
+ */
+export function renderDiffs(cli: Cli, diffs: Record<string, { before: string; after: string }>): void {
+  const { style, io } = cli;
+  io.err(style.dim(`  dry run — ${Object.keys(diffs).length} file(s) would change, nothing committed`));
+  for (const [path, { before, after }] of Object.entries(diffs)) {
     io.out(`${style.bold(path)}`);
-    for (const line of unifiedDiff(before, after).split("\n")) {
-      if (line.startsWith("+")) io.out(style.ok(line));
-      else if (line.startsWith("-")) io.out(style.err(line));
-      else io.out(style.dim(line));
-    }
+    for (const line of unifiedDiffLines(cli, before, after)) io.out(line);
     io.out("");
   }
-  void render;
-  return EXIT_OK;
+}
+
+/** The unified diff of before → after (`spec/surface` §3), one styled line per entry. */
+export function unifiedDiffLines(cli: Cli, before: string, after: string): string[] {
+  const { style } = cli;
+  return unifiedDiff(before, after).split("\n").map((line) => {
+    if (line.startsWith("+")) return style.ok(line);
+    if (line.startsWith("-")) return style.err(line);
+    return style.dim(line);
+  });
 }
 
 function renderCommitted(cli: Cli, result: ApplyResult): number {

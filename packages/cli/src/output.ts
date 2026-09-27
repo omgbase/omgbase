@@ -1,5 +1,7 @@
+import { errorBody } from "@omgbase/core";
 import { columns, visibleWidth, type IO } from "./render.js";
 import type { Style } from "./style.js";
+import type { OutputMode } from "./context.js";
 
 // Output contract + error rendering (11 §2.4, §4).
 //
@@ -21,6 +23,32 @@ export class CliUsageError extends Error {
     super(message);
     this.name = "CliUsageError";
   }
+}
+
+/**
+ * Node's `parseArgs` failures are the user's mistake, not the engine's (spec/cli
+ * §2.2): an option the command does not declare, a value-taking option without
+ * its value, a boolean given one. Each becomes a usage error with a portable
+ * message — the wording is ours, so a port need not reproduce Node's — and the
+ * hint points at the command's card. Anything else is returned untouched.
+ */
+export function usageFromParseArgs(err: unknown, prog: string, command: string): unknown {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  if (!e || typeof e !== "object" || typeof e.code !== "string" || !e.code.startsWith("ERR_PARSE_ARGS_") || typeof e.message !== "string") return err;
+  const hint = `run '${prog} ${command} --help' for the options`;
+  const unknown = /^Unknown option '([^']+)'/.exec(e.message);
+  if (unknown) return new CliUsageError(`unknown option '${unknown[1]}'`, hint);
+  const missing = /^Option '([^']+?)(?: <value>)?' argument missing/.exec(e.message);
+  if (missing) return new CliUsageError(`option '${lastSpelling(missing[1]!)}' requires a value`, hint);
+  const extra = /^Option '([^']+)' does not take an argument/.exec(e.message);
+  if (extra) return new CliUsageError(`option '${lastSpelling(extra[1]!)}' does not take a value`, hint);
+  return new CliUsageError(e.message, hint);
+}
+
+/** Node names an option with a short alias as `-n, --name`; quote the long form. */
+function lastSpelling(spellings: string): string {
+  const parts = spellings.split(",").map((p) => p.trim()).filter(Boolean);
+  return parts[parts.length - 1] ?? spellings;
 }
 
 // Per-command `--help` (11 §2.2). One shape for every command so the reader
@@ -86,16 +114,14 @@ export class EngineErrorLike extends Error {
   }
 }
 
-interface ErrorBodyLike {
-  error?: string;
-  code?: string;
-  message?: string;
-  data?: unknown;
-  retriable?: boolean;
-  hint?: string;
-}
-
-/** Coerce any thrown value into a typed error body for rendering. */
+/**
+ * Coerce any thrown value into a typed error body for rendering. The CLI's own
+ * `EngineErrorLike` carries its code and hint; everything else goes through the
+ * engine's one mapping (`errorBody`, the same the MCP server renders — spec/cli
+ * §3.5): typed errors keep their code, OQX errors and a bad cursor are
+ * `filter_invalid`, an unknown revision `target_missing`, and anything else the
+ * catch-all `repo_not_found`.
+ */
 function toBody(err: unknown): { code: string; message: string; data?: unknown; hint?: string } {
   if (err instanceof EngineErrorLike) {
     const b = err.body();
@@ -106,28 +132,22 @@ function toBody(err: unknown): { code: string; message: string; data?: unknown; 
       ...(err.extra.hint ? { hint: err.extra.hint } : {}),
     };
   }
-  // core EngineError / MutationError / FilterInvalid all carry a code + message
-  // (and often a body()); duck-type them.
-  const anyErr = err as { code?: string; message?: string; data?: unknown; body?: () => ErrorBodyLike; reason?: string; hint?: string };
-  if (typeof anyErr?.body === "function") {
-    const b = anyErr.body();
-    return { code: b.error ?? b.code ?? "error", message: b.message ?? String(err), data: b.data };
-  }
-  if (anyErr?.code) {
-    return {
-      code: anyErr.code,
-      message: anyErr.message ?? String(err),
-      ...(anyErr.data !== undefined ? { data: anyErr.data } : {}),
-      ...(anyErr.hint ? { hint: anyErr.hint } : {}),
-    };
-  }
-  return { code: "error", message: anyErr?.message ?? String(err) };
+  const b = errorBody(err);
+  return { code: b.error, message: b.message, ...(b.data !== undefined ? { data: b.data } : {}) };
+}
+
+/** A payload worth printing: anything but `undefined`, `null` and an empty record. */
+function hasPayload(data: unknown): boolean {
+  if (data === undefined || data === null) return false;
+  if (typeof data === "object" && !Array.isArray(data) && Object.keys(data as object).length === 0) return false;
+  return true;
 }
 
 /**
  * Render a thrown error to stderr and return the process exit code. `json`
  * selects machine output (typed object); otherwise the human form with any
- * current-truth payload pretty-printed.
+ * current-truth payload pretty-printed. Both forms carry the hint; an empty
+ * payload (`{}`) prints nothing.
  */
 export function renderError(err: unknown, io: IO, style: Style, json: boolean): number {
   if (err instanceof CliUsageError) {
@@ -141,7 +161,7 @@ export function renderError(err: unknown, io: IO, style: Style, json: boolean): 
 
   const body = toBody(err);
   if (json) {
-    io.err(JSON.stringify({ error: body.code, message: body.message, ...(body.data !== undefined ? { data: body.data } : {}), retriable: false }));
+    io.err(JSON.stringify({ error: body.code, message: body.message, ...(hasPayload(body.data) ? { data: body.data } : {}), ...(body.hint ? { hint: body.hint } : {}), retriable: false }));
     return EXIT_ERROR;
   }
 
@@ -149,10 +169,43 @@ export function renderError(err: unknown, io: IO, style: Style, json: boolean): 
   if (body.hint) io.err(style.dim(`  hint: ${body.hint}`));
   // Conflict objects carry current truth (04 §4) — print all of it; the retry
   // is built from it.
-  if (body.data !== undefined && body.data !== null) {
+  if (hasPayload(body.data)) {
     io.err(style.dim(indent(JSON.stringify(body.data, null, 2), "  ")));
   }
   return EXIT_ERROR;
+}
+
+// ---- machine modes (spec/cli §3.2) --------------------------------------------
+//
+// One rule for every verb: `--json` prints the result document; `--jsonl` prints
+// one line per item when the result has a list, else the `--json` document;
+// `--ids` prints one id per line when the result has an id list, else the
+// `--json` document. The truncation footer (§3.4) prints in every mode but
+// `--json`, whose envelope carries `truncated`/`cursor` itself.
+
+export interface MachineShape {
+  /** the list `--jsonl` streams (absent: the result is not list-shaped) */
+  items?: unknown[];
+  /** the ids `--ids` prints (absent: the result carries no id list) */
+  ids?: string[];
+  /** the cursor of a truncated result, for the footer */
+  cursor?: string | number | null;
+}
+
+interface MachineIO {
+  io: IO;
+  style: Style;
+  flags: { mode: OutputMode };
+}
+
+/** Print `doc` in the current machine mode (`--json`/`--jsonl`/`--ids`); returns EXIT_OK. */
+export function emitMachine(cli: MachineIO, doc: unknown, shape: MachineShape = {}): number {
+  const { io, style, flags } = cli;
+  if (flags.mode === "jsonl" && shape.items) for (const item of shape.items) io.out(JSON.stringify(item));
+  else if (flags.mode === "ids" && shape.ids) for (const id of shape.ids) io.out(id);
+  else io.out(JSON.stringify(doc));
+  if (flags.mode !== "json" && shape.cursor !== undefined && shape.cursor !== null) truncationFooter(io, style, shape.cursor);
+  return EXIT_OK;
 }
 
 function indent(s: string, pad: string): string {

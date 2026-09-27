@@ -2,7 +2,7 @@ import type { Store } from "../core/store/store.js";
 import { reconstructContent } from "../core/read/document.js";
 import { docPropertiesMerged } from "../core/store/properties.js";
 import { LIVE_LEAF_SQL } from "../core/store/fts.js";
-import { contextPrefix, shouldEmbed, estimateTokens, type EmbedTask, type DocEmbedTask, type DocEmbedBlockRef } from "./embeddings.js";
+import { contextPrefix, ctxHashHex, shouldEmbed, estimateTokens, type EmbedTask, type DocEmbedTask, type DocEmbedBlockRef } from "./embeddings.js";
 
 // Build the embedding task list for a repo (05 §6). Walks every live block,
 // keeps those worth embedding on their own (shouldEmbed), and attaches the
@@ -142,6 +142,28 @@ export function buildEmbedTasks(store: Store, repoId: string): EmbedTask[] {
     tasks.push({ blockId: b.block_id, contentHashHex: b.raw_hash.toString("hex"), ctx: contexts.ctx(b), text: b.text });
   }
   return tasks;
+}
+
+/**
+ * The embedding queue depth without a provider process (spec/search §2.3): the
+ * embeddable blocks (`buildEmbedTasks`) whose current `(content_hash, ctx_hash)`
+ * has no cached vector — for `model` when one is named (the `embedding.model`
+ * setting), else for any model. `omg status` reports it as `embedQueue`;
+ * `EmbeddingWorker.staleBlocks` is the same test keyed by the connected
+ * provider's model.
+ */
+export function staleEmbedCount(store: Store, repoId: string, model?: string): number {
+  const tasks = buildEmbedTasks(store, repoId);
+  const cached = model
+    ? store.db.prepare("SELECT 1 FROM embeddings WHERE content_hash = ? AND ctx_hash = ? AND model = ?")
+    : store.db.prepare("SELECT 1 FROM embeddings WHERE content_hash = ? AND ctx_hash = ?");
+  let stale = 0;
+  for (const t of tasks) {
+    const key = [Buffer.from(t.contentHashHex, "hex"), Buffer.from(ctxHashHex(t.ctx), "hex")];
+    const hit = model ? cached.get(...key, model) : cached.get(...key);
+    if (!hit) stale++;
+  }
+  return stale;
 }
 
 // The doc-embedding header: a lightweight identifying line prepended to the

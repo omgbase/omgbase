@@ -104,3 +104,22 @@ export function syncStatus(store: Store, repoId: string, rootPath?: string): Syn
     disk: status.disk,
   };
 }
+
+/** The `repos` tool's result: every repo of the workspace and whether an `fs` source feeds it. */
+export interface ReposList {
+  repos: { slug: string; hasSource: boolean }[];
+}
+
+/**
+ * `repos` (spec/surface §4): the workspace's repos by slug, `hasSource` when an
+ * `fs` source is attached. Shared by the MCP tool and `omg repos --json` so the
+ * shape cannot drift; per-repo counts are `reposStatus`.
+ */
+export function reposList(store: Store): ReposList {
+  const rows = store.db
+    .prepare(
+      "SELECT r.slug AS slug, MAX(CASE WHEN s.adapter = 'fs' THEN 1 ELSE 0 END) AS has_fs FROM repos r LEFT JOIN attachments a ON a.repo_id = r.repo_id LEFT JOIN sources s ON s.source_id = a.source_id GROUP BY r.repo_id, r.slug ORDER BY r.slug",
+    )
+    .all() as { slug: string; has_fs: number }[];
+  return { repos: rows.map((r) => ({ slug: r.slug, hasSource: r.has_fs === 1 })) };
+}

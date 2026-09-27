@@ -81,8 +81,10 @@ $ omg repos
 
 `omg status` is the "where am I" command: the same counts plus sync/watch state.
 Here 64 edges were extracted from the links between documents, everything is
-converged (the files match the database), and no watcher is running (reads still
-stay fresh — see below).
+converged (the files match the database), no watcher is running (reads still
+stay fresh — see below), and 58 blocks are long enough to embed but have no
+vector yet — the embedding queue, which stays queued until a provider is
+configured and `omg embed drain` runs (semantic search is optional).
 
 ```console
 $ omg status
@@ -91,7 +93,7 @@ $ omg status
   ----------------------------------------
   [D] docs  18            watcher o none
   [B] blocks  314         synced  ok converged
-  * commits  18           queue   empty
+  * commits  18           queue   58 queued
   > edges  64             commit# 18
 ```
 

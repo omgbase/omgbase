@@ -59,7 +59,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  no repos attached\n"
+            "stdout": ""
           }
         },
         {
@@ -71,7 +71,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "[]\n"
+            "stdout": "{\"repos\":[]}\n"
           }
         },
         {
@@ -172,7 +172,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  no repos attached\n"
+            "stdout": ""
           }
         },
         {
@@ -223,7 +223,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  no sources registered\n"
+            "stdout": ""
           }
         },
         {
@@ -242,9 +242,8 @@
             "config"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "",
-            "stderr": "error[repo_not_found]: no repo contains <workspace>; select one with --repo\n  {\n    \"candidates\": []\n  }\n"
+            "exit": 0,
+            "stdout": ""
           }
         },
         {
@@ -349,7 +348,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"notes\",\"root\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"commits\":2,\"openEdges\":1,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":2,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"notes\",\"rootPath\":\"<workspace>/notes\",\"docs\":2,\"blocks\":4,\"commits\":2,\"openEdges\":1,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":2,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":0}\n"
           }
         },
         {
@@ -434,7 +433,7 @@
     },
     {
       "name": "source-add-refuses-without-yes",
-      "notes": "§9: a non-TTY without -y refuses on stderr and exits 0",
+      "notes": "§6: a non-TTY without -y is a usage error (exit 2, with a hint); nothing is created",
       "workspace": "empty",
       "files": {
         "notes/a.md": "# A\n"
@@ -448,9 +447,9 @@
           ],
           "pin_stderr": true,
           "expect": {
-            "exit": 0,
+            "exit": 2,
             "stdout": "",
-            "stderr": "  refusing without -y (would ingest files under <workspace>/notes)\n"
+            "stderr": "usage: refusing without -y (would ingest files under <workspace>/notes)\n  hint: there is no TTY to confirm on; pass -y to consent to the ingest\n"
           }
         },
         {
@@ -459,7 +458,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  no repos attached\n"
+            "stdout": ""
           }
         }
       ]
@@ -724,7 +723,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  no sources registered\n"
+            "stdout": ""
           }
         },
         {
@@ -849,7 +848,7 @@
     },
     {
       "name": "rebuild-index-json-is-silent",
-      "notes": "§9: no machine output",
+      "notes": "§6: a machine mode prints `{\"rebuilt\":\"<target>\"}`; the human note stays on stderr",
       "workspace": "alchemy",
       "argv": [
         "rebuild-index",
@@ -858,8 +857,8 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "",
-        "stderr": "  ok rebuilt all\n"
+        "stdout": "{\"rebuilt\":\"all\"}\n",
+        "stderr": ""
       }
     },
     {
@@ -905,7 +904,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  ok convergence\n  ok fts rows == live blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
+            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1095,7 +1094,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  ok convergence\n  ok fts rows == live blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
+        "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
       }
     },
     {
@@ -1107,12 +1106,12 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live blocks\",\"ok\":true,\"detail\":\"fts=314 live=314\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
       }
     },
     {
       "name": "doctor-after-observed-delete",
-      "notes": "§9: the FTS row count check fails after an observed deletion and stays failed after rebuild-index",
+      "notes": "§6: the FTS check compares the index's rows to the live leaf blocks (spec/search §1.1), so it holds after an observed deletion and after rebuild-index --fts",
       "workspace": "alchemy",
       "steps": [
         {
@@ -1133,9 +1132,8 @@
             "doctor"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
-            "stderr": ""
+            "exit": 0,
+            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1144,9 +1142,8 @@
             "--json"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "{\"ok\":false,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live blocks\",\"ok\":false,\"detail\":\"fts=314 live=302\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n",
-            "stderr": ""
+            "exit": 0,
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=270 leaves=270\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {
@@ -1166,9 +1163,8 @@
             "doctor"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
-            "stderr": ""
+            "exit": 0,
+            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1197,9 +1193,8 @@
             "doctor"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=314 live=302)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
-            "stderr": ""
+            "exit": 0,
+            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
           }
         },
         {
@@ -1221,9 +1216,8 @@
             "doctor"
           ],
           "expect": {
-            "exit": 1,
-            "stdout": "  ok convergence\n  x fts rows == live blocks  (fts=313 live=301)\n  ok no dangling current_rev\n  ok sqlite integrity\n",
-            "stderr": ""
+            "exit": 0,
+            "stdout": "  ok convergence\n  ok fts rows == live leaf blocks\n  ok no dangling current_rev\n  ok sqlite integrity\n"
           }
         }
       ]
@@ -1544,11 +1538,10 @@
         "help"
       ],
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+        "exit": 0,
+        "stdout": "  config — Read/write settings — one schema at two layers: workspace defaults, overridable per repo\n  usage: omg config [list]\n         omg config get <key>\n         omg config set <key> <value>\n  options:\n    list               show the effective settings (default); at repo scope, overrides are marked\n    get <key>          print one effective value (dotted path, e.g. embedding.provider)\n    set <key> <value>  write a value at the selected layer (true/false/null/numbers are typed)\n    --repo <slug>      target a repo's layer\n    --repo \"\"          target the workspace layer (what every repo inherits)\n    -h, --help         show this help\n\n  e.g. omg config set embedding.provider omgbase-embedder --repo \"\"\n"
       },
-      "notes": "§9: the `help` word is not the --help flag — the freshness sweep runs first and needs a workspace"
+      "notes": "§5: the `help` word is the --help flag spelled differently — routed to the card before any workspace is opened"
     },
     {
       "name": "config-help-word",
@@ -1637,11 +1630,10 @@
         "help"
       ],
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+        "exit": 0,
+        "stdout": "  embed — The embedding queue: report the provider + what is queued, or drain it to embed now\n  usage: omg embed [status]\n         omg embed drain [--verbose] [--prune]\n  options:\n    status         (default) provider, model, and how many blocks/docs are embeddable but not yet embedded\n    drain          embed the queued blocks now — status alone makes no progress\n    -v, --verbose  (drain) per-batch progress\n    --prune        (drain) afterwards delete vectors left by other models (e.g. after switching models)\n    -h, --help     show this help\n\n  needs embedding.provider (`omg config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off.\n"
       },
-      "notes": "§9: as config help"
+      "notes": "§5: as config help"
     },
     {
       "name": "embed-help-word",

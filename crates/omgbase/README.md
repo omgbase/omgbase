@@ -1,18 +1,35 @@
 # omgbase
 
 The `omgbase` binary: a versioned, addressable graph layer over authored
-Markdown, served to agents as an MCP tool catalog. Rust, over
-[`omgbase-surface`](../omgbase-surface/README.md).
+Markdown — the `omg` CLI of `spec/cli` rendered in Rust over
+[`omgbase-surface`](../omgbase-surface/README.md), and the MCP tool catalog
+served to agents by `omgbase mcp`.
 
 ```text
-omgbase mcp [--workspace DIR] [--repo SLUG] [--no-watch]   serve the tool catalog over MCP stdio
+omgbase [--json|--jsonl|--ids] [-C dir] [--repo slug] <command> [args]
+omgbase <command> --help                                     the command's card
+omgbase mcp [-C <workspace-dir>] [--repo <slug>] [--no-watch] serve the tool catalog over MCP stdio
 omgbase --version
 ```
 
-`omgbase mcp` locates the workspace (`--workspace`, `$OMGBASE_WORKSPACE`, or
-the nearest `.omgbase/` walking up from the current directory —
-`spec/sync` §1), selects the default repo (`--repo`, the only repo, or the
-one whose root contains the current directory), wires the embedding
+The verbs are the reference `omg`'s (`spec/cli/README.md` §6: `init`,
+`source`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`,
+`query`/`q`, `run`, `log`, `hist`, `diff`, `links`, `sync`, `mcp`; the
+mutators, `shell` and the admin verbs are pending and print their cards),
+with the same argv grammar, bytes and exit codes — the harness
+`tests/cli_spec.rs` runs every case of `spec/cli/cases` against this binary
+behind the allowlist `tests/cli-spec-passing.txt`. The code lives in
+`src/cli/`: `argv` (global flags anywhere in argv, `--` passthrough,
+per-command options with `parseArgs` semantics), `context` (workspace
+discovery, repo selection, the surface, the freshness sweep every read
+runs), `output` (errors, JSON as `JSON.stringify` prints it, the hit table),
+`render` (the plain tier: columns, wordmark, relative time), `help`, and one
+module per verb group under `cmd/`.
+
+`omgbase mcp` locates the workspace (`-C` / `--workspace`,
+`$OMGBASE_WORKSPACE`, or the nearest `.omgbase/` walking up from the current
+directory — `spec/sync` §1), selects the default repo (`--repo`, the only
+repo, or the one whose root contains the current directory), wires the embedding
 provider named by the repo's `embedding.*` settings when it can be spawned
 (otherwise `semantic()` fails `semantic_unavailable`), and speaks
 newline-delimited JSON-RPC 2.0 on stdin/stdout: `initialize`, `tools/list`,
@@ -80,18 +97,19 @@ kills its provider process), exit 0.
 
 ## Conformance seams and the interop harness
 
-Two environment variables are the test seams of `spec/surface` §7.1, for
-cross-engine conformance runs only (never set them in production):
+Two environment variables are the test seams of `spec/surface` §7.1 /
+`spec/cli` §2.6, honored by every verb, for conformance runs only (never
+set them in production):
 
 - `OMGBASE_SPEC_MINTER=sequential` installs the fixture id minter
   (`d_0, d_1, …`, each prefix counting from 0, fresh at process start and
   shared by every thread of the process) for the workspace and the store;
-  any other value is a startup error.
+  any other value is a usage error (exit 2).
 - `OMGBASE_SPEC_CLOCK=<RFC 3339>` makes that instant "now" for every commit
   a tool or the watcher stamps (stored as UTC milliseconds, `…Z`; a `±HH:MM`
   offset is converted).
 
-Both are announced on stderr. `tests/interop.rs` is the §7 harness: every
+`mcp` announces both on stderr. `tests/interop.rs` is the §7 harness: every
 case of `spec/surface/cases/interop.json` for every `(writer, reader)` in
 `{typescript, rust}²`, both engines as child processes over MCP stdio, both
 with `--no-watch` (the seed is the harness's `observe_many`, not a priming

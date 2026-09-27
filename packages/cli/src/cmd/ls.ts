@@ -3,7 +3,7 @@ import { docsList, type DocListRow, type DocListPage } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns } from "../render.js";
-import { EXIT_OK, renderHelp } from "../output.js";
+import { EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg ls [glob]` (11 §5.2) — live documents: path, block count, last-commit
@@ -44,18 +44,7 @@ async function runLs(cli: Cli, args: string[]): Promise<number> {
   } while (cursor);
   cli.capture?.(rows); // shell: docs become the addressable frame (ref = path)
 
-  if (cli.flags.mode === "ids") {
-    for (const r of rows) cli.io.out(r.path);
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(rows));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const r of rows) cli.io.out(JSON.stringify(r));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, rows, { items: rows, ids: rows.map((r) => r.path) });
 
   const { style, io } = cli;
   if (rows.length === 0) {

@@ -4,7 +4,7 @@ import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, awaitReady, WATCH_RE
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteSpec } from "./_remote.js";
 import { openRepoSource } from "./_source.js";
@@ -69,16 +69,15 @@ async function runSync(cli: Cli, args: string[]): Promise<number> {
 
 function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
   if (!repo.rootPath) {
-    if (cli.flags.mode === "human") cli.io.out(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
-    else cli.io.out(JSON.stringify({ scanned: 0, ingested: [], deleted: [], conflicted: [], changed: false }));
+    // Nothing to sweep: an empty-result note (stderr, §3.1), or the empty sweep shape.
+    if (cli.flags.mode !== "human") return emitMachine(cli, { scanned: 0, ingested: [], deleted: [], conflicted: [], changed: false });
+    cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
     return EXIT_OK;
   }
   const result = freshnessSweep(ws.store, repo.repoId, repo.rootPath);
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
+  // A `SweepResult` is a record (its lists are per-kind): every machine mode is the document.
+  if (cli.flags.mode !== "human") return emitMachine(cli, result);
   const { render, style, io } = cli;
   const g = render.g;
   io.out(render.wordmark("sync"));

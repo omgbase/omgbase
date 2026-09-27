@@ -1,6 +1,7 @@
 import type { Store } from "../core/store/store.js";
 import { findDocByRef } from "../core/read/reader.js";
 import { isValidId } from "../core/ids.js";
+import { EngineError } from "../mcp/errors.js";
 
 // History surface (06 §3, 07 task 4.4): history_node (block/doc biography),
 // diff (block-grain + Myers unified), changes_since (commit digests / change feed).
@@ -94,6 +95,34 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
 export function diffUnified(store: Store, docId: string, fromRev: string, toRev: string): string {
   const rendered = (rev: string): string => [...blocksAtRevision(store, docId, rev).values()].join("\n");
   return unifiedDiff(rendered(fromRev), rendered(toRev));
+}
+
+/** The `diff_unified` tool's result (spec/surface §3): the resolved revision pair and the diff. */
+export interface DocDiffUnified {
+  doc: string;
+  path: string;
+  from: string;
+  to: string;
+  diff: string;
+}
+
+/**
+ * `diff_unified` over a resolved document: `to` defaults to the current revision,
+ * `from` to the one before it (or the current one again when there is only one:
+ * an empty diff). Shared by the MCP tool and `omg diff` so the shape cannot
+ * drift. `label` is how the caller named the document, for the error message.
+ * A document with no revision at all is `target_missing`; an unknown `rev` is
+ * `RevisionNotFound` (→ `target_missing` through `errorBody`).
+ */
+export function docDiffUnified(store: Store, docId: string, opts: { fromRev?: string; toRev?: string; label?: string } = {}): DocDiffUnified {
+  const revs = store.db
+    .prepare("SELECT rev_id FROM revisions WHERE doc_id = ? ORDER BY seq DESC LIMIT 2")
+    .all(docId) as { rev_id: string }[];
+  const to = opts.toRev ?? revs[0]?.rev_id;
+  const from = opts.fromRev ?? revs[1]?.rev_id ?? revs[0]?.rev_id;
+  if (!to || !from) throw new EngineError("target_missing", `no revisions to diff for ${opts.label ?? docId}`);
+  const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path ?? "";
+  return { doc: docId, path, from, to, diff: diffUnified(store, docId, from, to) };
 }
 
 // ---- unified diff (spec/surface §3) ------------------------------------------
@@ -267,8 +296,8 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   params.push(limit + 1);
 
   const commits = store.db
-    .prepare(`SELECT commit_id, seq, ts, origin, actor FROM commits WHERE repo_id = ? AND seq > ? ${originClause} ORDER BY seq LIMIT ?`)
-    .all(...params) as { commit_id: string; seq: number; ts: string; origin: string; actor: string | null }[];
+    .prepare(`SELECT commit_id, seq, ts, origin, actor, reason FROM commits WHERE repo_id = ? AND seq > ? ${originClause} ORDER BY seq LIMIT ?`)
+    .all(...params) as { commit_id: string; seq: number; ts: string; origin: string; actor: string | null; reason: string | null }[];
 
   const truncated = commits.length > limit;
   const page = commits.slice(0, limit);
@@ -276,7 +305,12 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   const digests: CommitDigest[] = page.map((c) => {
     const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ doc: r.doc, path: r.path, contentHash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
-    const summary = renderSummary(c.origin, c.actor, revs, dispCounts);
+    // A deletion or a move writes no revision: the tombstone names the commit
+    // (`docs.deleted_commit`), a move only its reason (`move <from> -> <to>`).
+    const deleted = revs.length === 0
+      ? (store.db.prepare("SELECT path FROM docs WHERE deleted_commit = ? ORDER BY path").all(c.commit_id) as { path: string }[]).map((r) => r.path)
+      : [];
+    const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: revs.length === 0 ? parseMove(c.reason) : null });
     return { commit: c.commit_id, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, summary, revisions: revs };
   });
 
@@ -420,10 +454,32 @@ function resolveDocRow(store: Store, repoId: string, ref: string, includeDeleted
   return (asId ? stmt.get(ref) : stmt.get(repoId, ref)) as DocRow | undefined;
 }
 
-function renderSummary(origin: string, actor: string | null, revs: { path: string }[], disp: { kind: string; n: number }[]): string {
-  const paths = revs.map((r) => r.path).join(", ");
+/** The `reason` a document move records (`mutate/docs.ts`): `move <from> -> <to>`. */
+function parseMove(reason: string | null): { from: string; to: string } | null {
+  const m = reason === null ? null : /^move (.+) -> (.+)$/.exec(reason);
+  return m ? { from: m[1]!, to: m[2]! } : null;
+}
+
+/**
+ * One line per commit: `<origin>[(<actor>)]: <paths> — <n> <kind>, …`. A
+ * commit that touched no revision — a document deletion (observed or api) or a
+ * move — says so instead: `deleted <path>` / `moved <from> → <to>`
+ * (spec/cli §6 `log`; the summary is unpinned by spec/surface).
+ */
+function renderSummary(
+  origin: string,
+  actor: string | null,
+  revs: { path: string }[],
+  disp: { kind: string; n: number }[],
+  extra: { deleted: string[]; moved: { from: string; to: string } | null } = { deleted: [], moved: null },
+): string {
+  let subject = revs.map((r) => r.path).join(", ");
+  if (revs.length === 0) {
+    if (extra.deleted.length > 0) subject = `deleted ${extra.deleted.join(", ")}`;
+    else if (extra.moved) subject = `moved ${extra.moved.from} → ${extra.moved.to}`;
+  }
   const parts = disp.filter((d) => d.kind !== "same").map((d) => `${d.n} ${d.kind}`);
   const detail = parts.length > 0 ? ` — ${parts.join(", ")}` : "";
-  if (origin === "api" || origin === "import") return `${origin}(${actor ?? "?"}): ${paths}${detail}`;
-  return `observed: ${paths}${detail}`;
+  if (origin === "api" || origin === "import") return `${origin}(${actor ?? "?"}): ${subject}${detail}`;
+  return `observed: ${subject}${detail}`;
 }

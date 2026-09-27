@@ -1648,3 +1648,169 @@ fn evicting_a_lists_only_child_reindexes_the_parent() {
         [("a.md".to_owned(), "list_item".to_owned())]
     );
 }
+
+// ---- find_doc_by_ref binds one parameter for a `d_` id (regression) --------------------
+
+#[test]
+fn find_doc_by_ref_accepts_a_doc_id_and_a_path() {
+    let (mut store, repo) = fixture_store();
+    let mut ds = MemDocStore::new();
+    let ctx = DocOpContext {
+        repo_id: repo.clone(),
+        actor: None,
+        ts: T0.to_owned(),
+    };
+    let created = store
+        .docs_create(&ctx, &mut ds, "notes/x.md", "# X\n", None)
+        .unwrap();
+    let by_id = crate::mutate::find_doc_by_ref(store.conn(), &repo, &created.doc_id)
+        .unwrap()
+        .expect("found by id");
+    let by_path = crate::mutate::find_doc_by_ref(store.conn(), &repo, "notes/x.md")
+        .unwrap()
+        .expect("found by path");
+    assert_eq!(by_id.doc_id, by_path.doc_id);
+    assert!(
+        crate::mutate::find_doc_by_ref(store.conn(), &repo, "d_zzzzzzz")
+            .unwrap()
+            .is_none()
+    );
+}
+
+// ---- document operations: dry runs (spec/surface §4, 1.3) -----------------------------
+
+#[test]
+fn doc_op_dry_runs_preview_diffs_and_commit_nothing() {
+    let (mut store, repo) = fixture_store();
+    let mut ds = MemDocStore::new();
+    let ctx = DocOpContext {
+        repo_id: repo,
+        actor: Some("agent:mcp".to_owned()),
+        ts: T0.to_owned(),
+    };
+    let b_src = "# B\n\nTarget.\n";
+    let a_src = "# A\n\nSee [b](b.md).\n";
+    assert_eq!(
+        store
+            .docs_create(&ctx, &mut ds, "b.md", b_src, None)
+            .unwrap()
+            .doc_id,
+        "d_0"
+    );
+    assert_eq!(
+        store
+            .docs_create(&ctx, &mut ds, "a.md", a_src, None)
+            .unwrap()
+            .doc_id,
+        "d_1"
+    );
+    let snapshot = |store: &Store| {
+        (
+            count(store, "docs"),
+            count(store, "commits"),
+            count(store, "revisions"),
+            count(store, "blocks"),
+        )
+    };
+    let before = snapshot(&store);
+    let files = ds.files().clone();
+    let diff = |b: &str, a: &str| Diff {
+        before: b.to_owned(),
+        after: a.to_owned(),
+    };
+
+    // create: `"" → bytes`, the id minted (and consumed) as the real run would.
+    let fm: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(r#"{"title":"C"}"#).unwrap();
+    let c = store
+        .dry_run()
+        .docs_create(&ctx, &mut ds, "c.md", "# C", Some(&fm))
+        .unwrap();
+    assert_eq!(
+        (c.doc_id.as_str(), c.path.as_str(), c.committed),
+        ("d_2", "c.md", false)
+    );
+    assert_eq!(
+        c.diffs,
+        Some(vec![(
+            "c.md".to_owned(),
+            diff("", "---\ntitle: C\n---\n\n# C\n")
+        )])
+    );
+    assert!(
+        store
+            .dry_run()
+            .docs_create(&ctx, &mut ds, "a.md", "x", None)
+            .is_err(),
+        "path_taken is still checked"
+    );
+
+    // move with retarget_inbound: old path emptied, new path filled, then the
+    // rewritten source; `dangling`/`retargeted` as the real run reports them.
+    let m = store
+        .dry_run()
+        .docs_move(&ctx, &mut ds, "b.md", "notes/b.md", true)
+        .unwrap();
+    assert_eq!(
+        (m.doc_id.as_str(), m.path.as_str(), m.committed),
+        ("d_0", "notes/b.md", false)
+    );
+    let diffs = m.diffs.clone().unwrap();
+    let keys: Vec<&str> = diffs.iter().map(|(p, _)| p.as_str()).collect();
+    assert_eq!(keys, ["b.md", "notes/b.md", "a.md"]);
+    assert_eq!(diffs[0].1, diff(b_src, ""));
+    assert_eq!(diffs[1].1, diff("", b_src));
+    assert_eq!(diffs[2].1, diff(a_src, "# A\n\nSee [b](notes/b.md).\n"));
+    assert!(m.dangling.is_empty(), "{:?}", m.dangling);
+    let r = m.retargeted.unwrap();
+    assert_eq!(r.blocks.len(), 1);
+    assert_eq!(r.docs, ["d_1"]);
+    // … and without it: the inbound link dangles, two diff entries.
+    let m = store
+        .dry_run()
+        .docs_move(&ctx, &mut ds, "b.md", "notes/b.md", false)
+        .unwrap();
+    assert_eq!(m.diffs.unwrap().len(), 2);
+    assert_eq!(m.dangling.len(), 1);
+    assert!(m.retargeted.is_none());
+
+    // delete: `bytes → ""`.
+    let d = store.dry_run().docs_delete(&ctx, &mut ds, "a.md").unwrap();
+    assert_eq!(
+        (d.doc_id.as_str(), d.path.as_str(), d.committed),
+        ("d_1", "a.md", false)
+    );
+    assert_eq!(d.diffs, Some(vec![("a.md".to_owned(), diff(a_src, ""))]));
+
+    // set_meta: before → after.
+    let set: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(r#"{"status":"open"}"#).unwrap();
+    let s = store
+        .dry_run()
+        .docs_set_meta(&ctx, &mut ds, "a.md", Some(&set), &[])
+        .unwrap();
+    assert_eq!(
+        (s.doc_id.as_str(), s.path.as_str(), s.committed),
+        ("d_1", "a.md", false)
+    );
+    assert_eq!(
+        s.diffs,
+        Some(vec![(
+            "a.md".to_owned(),
+            diff(a_src, "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n")
+        )])
+    );
+
+    // Nothing was written or committed; the dry-run create's id is spent.
+    assert_eq!(snapshot(&store), before);
+    assert_eq!(ds.files(), &files);
+    let real = store
+        .docs_create(&ctx, &mut ds, "c.md", "# C\n", None)
+        .unwrap();
+    assert_eq!((real.doc_id.as_str(), real.committed), ("d_3", true));
+    assert!(real.diffs.is_none());
+    assert_eq!(
+        real.to_json(),
+        serde_json::json!({ "doc": "d_3", "path": "c.md", "committed": true })
+    );
+}

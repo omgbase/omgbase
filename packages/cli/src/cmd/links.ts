@@ -2,11 +2,11 @@ import { parseArgs } from "node:util";
 import { resolveRef, docLinks } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 
 // `omg links <node>` (11 §5.4) — open edges touching the node; default both
-// directions, grouped; doc-grain by default, --blocks for block-grain.
-// Backlinks = --in.
+// directions, grouped; doc-grain by default, --blocks for block-grain (one row
+// per edge, naming the source block). Backlinks = --in.
 
 function runLinks(cli: Cli, args: string[]): number {
   const { values, positionals } = parseArgs({
@@ -48,14 +48,8 @@ function runLinks(cli: Cli, args: string[]): number {
   const result = docLinks(ws.store, resolved.docId, opts);
   cli.capture?.(result); // shell: edges (out+in) become the addressable frame
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "ids") {
-    for (const e of [...result.out, ...result.in]) cli.io.out(e.node);
-    return EXIT_OK;
-  }
+  // `{ out, in }` is not a list: `--jsonl` prints the document; `--ids` the far nodes.
+  if (cli.flags.mode !== "human") return emitMachine(cli, result, { ids: [...result.out, ...result.in].map((e) => e.node) });
 
   const { render, style, io } = cli;
   const g = render.g;
@@ -63,13 +57,22 @@ function runLinks(cli: Cli, args: string[]): number {
     io.err(style.dim("  no links"));
     return EXIT_OK;
   }
+  // Doc-grain: one row per (predicate, node) with its rollup count. Block-grain:
+  // one row per edge, the source block beside the far node.
+  const src = (e: { block?: string | null }): string => style.dim(`(${e.block ?? "frontmatter"})`);
   if (result.out.length > 0) {
     io.out(style.dim("  out"));
-    for (const e of result.out) io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.node)} ${style.dim(`×${e.count}`)}`);
+    for (const e of result.out) {
+      if (values.blocks) io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.node)} ${src(e)}`);
+      else io.out(`    ${style.accent(e.predicate)} ${style.dim(g.arrow)} ${style.id(e.node)} ${style.dim(`×${e.count}`)}`);
+    }
   }
   if (result.in.length > 0) {
     io.out(style.dim("  in (backlinks)"));
-    for (const e of result.in) io.out(`    ${style.id(e.node)} ${style.dim(g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
+    for (const e of result.in) {
+      if (values.blocks) io.out(`    ${style.id(e.node)} ${src(e)} ${style.dim(g.arrow)} ${style.accent(e.predicate)}`);
+      else io.out(`    ${style.id(e.node)} ${style.dim(g.arrow)} ${style.accent(e.predicate)} ${style.dim(`×${e.count}`)}`);
+    }
   }
   return EXIT_OK;
 }

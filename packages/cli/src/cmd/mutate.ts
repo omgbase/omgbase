@@ -24,6 +24,20 @@ function block(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, ref: 
   return r.blockId!;
 }
 
+// `done` addresses task blocks only (spec/cli §6): any other live block type is
+// a type_mismatch before an op is built — the macro itself would record a no-op
+// `edited` commit (its `attrs.checked` only rewrites a task's marker).
+function taskBlock(ws: ReturnType<Cli["workspace"]>, ref: string, blockId: string): string {
+  const row = ws.store.db
+    .prepare("SELECT type FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
+    .get(blockId) as { type: string } | undefined;
+  if (!row) throw new EngineErrorLike("block_missing", `not a block: ${ref}`);
+  if (row.type !== "task") {
+    throw new EngineErrorLike("type_mismatch", `not a task: ${ref} is a ${row.type}`, { data: { block: blockId, type: row.type } });
+  }
+  return blockId;
+}
+
 function rawHashOf(ws: ReturnType<Cli["workspace"]>, blockId: string): string | null {
   const row = ws.store.db
     .prepare("SELECT lower(hex(raw_hash)) h FROM blocks WHERE block_id = ? AND deleted_commit IS NULL")
@@ -246,7 +260,7 @@ async function runDone(cli: Cli, args: string[]): Promise<number> {
   if (cli.flags.server) return runOpsRemote(cli, "tasks_complete", { blocks: refs, ...(values.undo ? { checked: false } : {}) });
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const blocks = refs.map((r) => block(cli, ws, repo.repoId, r));
+  const blocks = refs.map((r) => taskBlock(ws, r, block(cli, ws, repo.repoId, r)));
   const ops: Op[] = values.undo
     ? blocks.map((b) => ({ op: "update", block: b, attrs: { checked: false }, expect: pinned(ws, b) }) as Op)
     : tasksComplete(ws.store, blocks);
@@ -309,7 +323,13 @@ async function runSplit(cli: Cli, args: string[]): Promise<number> {
   const ref = positionals[0];
   if (!ref) throw new CliUsageError("split requires a <block>");
   if (!values.at) throw new CliUsageError("split requires --at n[,n…]");
-  const at = values.at.split(",").map((s) => Number(s.trim()));
+  // Offsets are integers (spec/mutate §2.5); anything else is a usage error
+  // here, not a NaN that reaches the kernel.
+  const at = values.at.split(",").map((s) => {
+    const n = Number(s.trim());
+    if (s.trim() === "" || !Number.isInteger(n)) throw new CliUsageError(`bad --at '${values.at}' (offsets must be integers: n[,n…])`);
+    return n;
+  });
   if (cli.flags.server) return runOpsRemote(cli, "blocks_split", { block: ref, at });
   const ws = cli.workspace();
   const repo = cli.repo(ws);

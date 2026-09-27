@@ -5,7 +5,6 @@ import { docsOutline } from "../core/read/outline.js";
 import { docsRead, docsReadMany, MANY_DOCS_CAP, readDocumentAtRevision } from "../core/read/document.js";
 import { nodesGet, nodesGetMany } from "../core/read/nodes.js";
 import { findDoc, findDocByRef, docsList, docsTree, DOCS_LIST_DEFAULT_LIMIT, DOCS_TREE_DEFAULT_LIMIT } from "../core/read/reader.js";
-import { CursorInvalid } from "../core/cursor.js";
 import { resolveRef } from "../core/read/refs.js";
 import { isValidId } from "../core/ids.js";
 import { VERSION } from "../core/index.js";
@@ -13,18 +12,16 @@ import { normalizeText, normalizeVisibleText } from "../core/hash.js";
 import { oqxRunAsync, collectSemanticPhrases } from "../oqx/run.js";
 import { graphNeighborhood } from "./graph.js";
 import { textSearch } from "../search/text.js";
-import { FilterInvalid } from "../search/cel/parser.js";
-import { EngineError } from "./errors.js";
+import { EngineError, errorBody } from "./errors.js";
 import { apply, type Op } from "../mutate/apply.js";
-import { MutationError } from "../mutate/tree.js";
 import { tasksComplete, sectionsAppend, docsAppend, linksRetarget, linksRepair, nodeSet } from "../mutate/macros.js";
 import { docsCreate, docsMove, docsDelete, docsSetMeta } from "../mutate/docs.js";
 import { planUpdate, docsUpdate } from "../mutate/plan-update.js";
 import { renderOpsetPlan } from "../mutate/opset.js";
-import { historyNode, diffBlocks, diffUnified, changesSince, docHistory, RevisionNotFound } from "../graph/history.js";
+import { historyNode, diffBlocks, docDiffUnified, changesSince, docHistory } from "../graph/history.js";
 import { linksStale, linksStaleSummary } from "../graph/link-health.js";
 import { resolve as resolveThing } from "../search/resolve.js";
-import { reposStatus, syncStatus } from "../sync/admin.js";
+import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 
@@ -105,14 +102,9 @@ function ok(payload: unknown): { content: { type: "text"; text: string }[] } {
 }
 
 function fail(err: unknown): { content: { type: "text"; text: string }[]; isError: true } {
-  let body: unknown;
-  if (err instanceof EngineError) body = err.body();
-  else if (err instanceof FilterInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false };
-  else if (err instanceof CursorInvalid) body = { error: "filter_invalid", message: err.message, data: { reason: `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
-  else if (err instanceof MutationError) body = { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
-  else if (err instanceof RevisionNotFound) body = { error: "target_missing", message: err.message, data: { doc: err.docId, rev: err.rev }, retriable: false };
-  else body = { error: "repo_not_found", message: String(err), retriable: false };
-  return { content: [{ type: "text", text: JSON.stringify(body) }], isError: true };
+  // One mapping for every client (errors.ts `errorBody`): the CLI renders the
+  // same body, so a code can never differ between `omg` and `omg mcp`.
+  return { content: [{ type: "text", text: JSON.stringify(errorBody(err)) }], isError: true };
 }
 
 export function buildServer(ctx: ServerContext): McpServer {
@@ -942,20 +934,23 @@ export function buildServer(ctx: ServerContext): McpServer {
   // Doc-level operations (06 §API). The MCP server serializes writes in-process,
   // so these pass no omgbaseDir (the flock is for cross-process CLI writers);
   // MCP-originated writes are actor agent:mcp.
-  const docCtx = (scope: { repoId: string; rootPath: string | undefined }) => {
+  // `dry_run` validates and returns the per-file `diffs` without writing
+  // (`DocOpContext.dryRun`), the docs-verb peer of `apply`'s preview.
+  const docCtx = (scope: { repoId: string; rootPath: string | undefined }, dryRun?: boolean) => {
     if (!scope.rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp" };
+    return { repoId: scope.repoId, rootPath: scope.rootPath, actor: "agent:mcp", ...(dryRun ? { dryRun: true } : {}) };
   };
+  const docResult = <T,>(res: T, dryRun?: boolean) => (dryRun ? ok(res) : okMutated(res));
 
   server.registerTool(
     "docs_create",
     {
-      description: "Create a new document at `path` from complete file bytes (`markdown`), with optional structured `frontmatter`. Fails path_taken if it already exists.",
-      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...REPO_ARG },
+      description: "Create a new document at `path` from complete file bytes (`markdown`), with optional structured `frontmatter`. Fails path_taken if it already exists. dry_run:true validates and returns the would-be file under `diffs` (committed:false) without writing.",
+      inputSchema: { path: z.string(), markdown: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsCreate(store, docCtx(repoScope(args.repo)), args.path, args.markdown, args.frontmatter));
+        return docResult(docsCreate(store, docCtx(repoScope(args.repo), args.dry_run), args.path, args.markdown, args.frontmatter), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -966,12 +961,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_move",
     {
       description:
-        "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists. Links follow the PATH, not the identity: inbound links written against the old path now dangle (their edges become `phantom:<old path>`, so links_stale reports them), and links already written against the new path start resolving to this doc. The result lists those `dangling` inbound links ({doc, path, block, target, anchor, field?} per occurrence; block null = a frontmatter relation). Pass `retarget_inbound:true` to rewrite them in the same call — a destination-aware rewrite (anchors/link text/code spans preserved, absolute vs relative style kept) applied as one CAS-checked changeset, after which `dangling` holds only what could not be rewritten (frontmatter relations) and `retargeted` lists the touched blocks/docs.",
-      inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), ...REPO_ARG },
+        "Rename a document to a new repo-relative path; block identity and history are preserved. Fails path_taken if the destination exists. Links follow the PATH, not the identity: inbound links written against the old path now dangle (their edges become `phantom:<old path>`, so links_stale reports them), and links already written against the new path start resolving to this doc. The result lists those `dangling` inbound links ({doc, path, block, target, anchor, field?} per occurrence; block null = a frontmatter relation). Pass `retarget_inbound:true` to rewrite them in the same call — a destination-aware rewrite (anchors/link text/code spans preserved, absolute vs relative style kept) applied as one CAS-checked changeset, after which `dangling` holds only what could not be rewritten (frontmatter relations) and `retargeted` lists the touched blocks/docs. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus any rewritten sources) — without renaming or committing.",
+      inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsMove(store, docCtx(repoScope(args.repo)), args.doc, args.to_path, { retargetInbound: args.retarget_inbound === true }));
+        return docResult(docsMove(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, args.to_path, { retargetInbound: args.retarget_inbound === true }), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -981,12 +976,12 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "docs_delete",
     {
-      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Requires the explicit doc id/path.",
-      inputSchema: { doc: z.string(), ...REPO_ARG },
+      description: "Delete a document: tombstone it and its live blocks (resurrection-poolable) and remove the file. Requires the explicit doc id/path. dry_run:true validates and returns the file's removal under `diffs` without deleting.",
+      inputSchema: { doc: z.string(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsDelete(store, docCtx(repoScope(args.repo)), args.doc));
+        return docResult(docsDelete(store, docCtx(repoScope(args.repo), args.dry_run), args.doc), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -996,15 +991,15 @@ export function buildServer(ctx: ServerContext): McpServer {
   server.registerTool(
     "docs_set_meta",
     {
-      description: "Surgical frontmatter patch: set the given keys and/or unset named keys, re-ingesting the document. Other frontmatter is preserved.",
-      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), ...REPO_ARG },
+      description: "Surgical frontmatter patch: set the given keys and/or unset named keys, re-ingesting the document. Other frontmatter is preserved. dry_run:true validates and returns the rewritten file under `diffs` without writing.",
+      inputSchema: { doc: z.string(), set: z.record(z.string(), z.unknown()).optional(), unset: z.array(z.string()).optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return okMutated(docsSetMeta(store, docCtx(repoScope(args.repo)), args.doc, {
+        return docResult(docsSetMeta(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
-        }));
+        }), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1149,14 +1144,11 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId } = repoScope(args.repo);
         const docId = resolveDocId(repoId, { doc: args.doc });
-        const revs = store.db
-          .prepare("SELECT rev_id FROM revisions WHERE doc_id = ? ORDER BY seq DESC LIMIT 2")
-          .all(docId) as { rev_id: string }[];
-        const toRev = args.to_rev ?? revs[0]?.rev_id;
-        const fromRev = args.from_rev ?? revs[1]?.rev_id ?? revs[0]?.rev_id;
-        if (!toRev || !fromRev) throw new EngineError("target_missing", `no revisions to diff for ${JSON.stringify(args.doc)}`);
-        const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path ?? "";
-        return ok({ doc: docId, path, from: fromRev, to: toRev, diff: diffUnified(store, docId, fromRev, toRev) });
+        return ok(docDiffUnified(store, docId, {
+          ...(args.from_rev !== undefined ? { fromRev: args.from_rev } : {}),
+          ...(args.to_rev !== undefined ? { toRev: args.to_rev } : {}),
+          label: JSON.stringify(args.doc),
+        }));
       } catch (e) {
         return fail(e);
       }
@@ -1287,12 +1279,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async () => {
       try {
-        const rows = store.db
-          .prepare(
-            "SELECT r.slug AS slug, MAX(CASE WHEN s.adapter = 'fs' THEN 1 ELSE 0 END) AS has_fs FROM repos r LEFT JOIN attachments a ON a.repo_id = r.repo_id LEFT JOIN sources s ON s.source_id = a.source_id GROUP BY r.repo_id, r.slug ORDER BY r.slug",
-          )
-          .all() as { slug: string; has_fs: number }[];
-        return ok({ repos: rows.map((r) => ({ slug: r.slug, hasSource: r.has_fs === 1 })) });
+        return ok(reposList(store));
       } catch (e) {
         return fail(e);
       }

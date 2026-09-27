@@ -13,6 +13,8 @@ export interface LinkEdge {
   count: number;
   /** sample source block ids (out-edges only) */
   samples?: string[];
+  /** block-grain (`blocks: true`): the source block of this edge (null for a frontmatter edge) */
+  block?: string | null;
 }
 
 export interface LinksResult {
@@ -40,11 +42,11 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
     if (opts.blocks) {
       const rows = store.db
         .prepare(
-          `SELECT predicate, dst_node, dst_kind FROM edges
-           WHERE src_doc = ? AND to_commit IS NULL ORDER BY predicate, dst_node`,
+          `SELECT predicate, dst_node, dst_kind, src_block FROM edges
+           WHERE src_doc = ? AND to_commit IS NULL ORDER BY predicate, dst_node, src_block`,
         )
-        .all(docId) as { predicate: string; dst_node: string; dst_kind: string }[];
-      for (const r of rows) if (inPred(r.predicate)) out.push({ predicate: r.predicate, node: r.dst_node, kind: r.dst_kind, count: 1 });
+        .all(docId) as { predicate: string; dst_node: string; dst_kind: string; src_block: string | null }[];
+      for (const r of rows) if (inPred(r.predicate)) out.push({ predicate: r.predicate, node: r.dst_node, kind: r.dst_kind, count: 1, block: r.src_block });
     } else {
       const rows = store.db
         .prepare(
@@ -60,14 +62,24 @@ export function docLinks(store: Store, docId: string, opts: LinksOptions = {}): 
   }
 
   if (dir === "in" || dir === "both") {
-    const rows = store.db
-      .prepare(
-        `SELECT predicate, src_doc, count(*) AS cnt FROM edges
-         WHERE dst_node = ? AND to_commit IS NULL
-         GROUP BY predicate, src_doc ORDER BY predicate, src_doc`,
-      )
-      .all(docId) as { predicate: string; src_doc: string; cnt: number }[];
-    for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, node: r.src_doc, kind: "document", count: r.cnt });
+    if (opts.blocks) {
+      const rows = store.db
+        .prepare(
+          `SELECT predicate, src_doc, src_block FROM edges
+           WHERE dst_node = ? AND to_commit IS NULL ORDER BY predicate, src_doc, src_block`,
+        )
+        .all(docId) as { predicate: string; src_doc: string; src_block: string | null }[];
+      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, node: r.src_doc, kind: "document", count: 1, block: r.src_block });
+    } else {
+      const rows = store.db
+        .prepare(
+          `SELECT predicate, src_doc, count(*) AS cnt FROM edges
+           WHERE dst_node = ? AND to_commit IS NULL
+           GROUP BY predicate, src_doc ORDER BY predicate, src_doc`,
+        )
+        .all(docId) as { predicate: string; src_doc: string; cnt: number }[];
+      for (const r of rows) if (inPred(r.predicate)) inbound.push({ predicate: r.predicate, node: r.src_doc, kind: "document", count: r.cnt });
+    }
   }
 
   return { out, in: inbound };

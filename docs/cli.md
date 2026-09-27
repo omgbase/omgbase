@@ -26,8 +26,9 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 - Repo selection within a workspace: the repo whose `root_path` contains the cwd; when none or several match, require `--repo <slug>` (error message lists the candidates).
 - `-C <dir>` runs as if invoked from `<dir>` (git/make convention).
 - No workspace found ⇒ every command except `init`, `help`/`--version` (and `omg sync --server`, which runs against a remote engine) fails with `repo_not_found` and a hint naming both fixes: `omg init` to create one here, or `-C <dir>` to run inside an existing one. `omg mcp` tailors the hint for the MCP-host-config reader (the host launches it from its own cwd, so the usual fix is `"args": ["mcp", "-C", "/path/to/notes"]`).
-- `<command> --help` (or `-h`) is documentation, not work: it never opens the workspace, so it works from any directory for every command. The freshness sweep is skipped on the help path.
+- `<command> --help` (or `-h`) is documentation, not work: it never opens the workspace, so it works from any directory for every command. The freshness sweep is skipped on the help path. The help *words* are the same request (`config help`, `embed help`, `node help`, `source help`, a bare `node`/`source`): `asksForHelp` in `context.ts` routes them to the card before any workspace is opened.
 - An unknown command exits 2 with `usage: unknown command '<name>'`, a `run '<prog> --help' for the command list` hint, and — when one command or alias is within two edits — a `did you mean '<cmd>'?`.
+- An option a command does not declare, a value-taking option without its value, or a boolean given one, is a usage error too (exit 2): `usage: unknown option '--scope'` / `option '--depth' requires a value` / `option '--json' does not take a value`, with `run 'omg <command> --help' for the options` as the hint. Node's `parseArgs` failures are caught once in `dispatch.ts` (`usageFromParseArgs`) — no command handles them itself, and the wording is the CLI's, not Node's.
 
 ### 2.2 Global flags
 
@@ -35,14 +36,16 @@ Like git: walk up from the current directory looking for `.omgbase/`. The direct
 |---|---|
 | `-C <dir>` | Run as if cwd were `<dir>` |
 | `--repo <slug>` | Select repo within the workspace |
-| `--server <cmd\|url>` | Run against a **remote engine over MCP** instead of the embedded local store (ADR-014). An `http(s)://…` value connects over Streamable HTTP (the full URL, including any secret base path, is used verbatim); anything else is a command spawned and talked to over stdio. Global by design; commands adopt it one at a time — the `REMOTE_OK` set in `packages/cli/src/context.ts`: reads (`query`, `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`), doc-level mutators (`new`, `mv`, `meta`, `rm`, `update`, `retarget`), block-level sugar (`apply`, `insert`, `move`, `split`, `merge`, `done`, `append`, `node`), `sync`, and `shell` (which threads it into every line it runs). The rest (`edit`'s `$EDITOR` round-trip, `status`'s watcher state, `init`/`source`/admin) reject it rather than silently running locally. |
+| `--server <cmd\|url>` | Run against a **remote engine over MCP** instead of the embedded local store (ADR-014). An empty value is the missing-value usage error (the flag was given; it never falls through to the local store). An `http(s)://…` value connects over Streamable HTTP (the full URL, including any secret base path, is used verbatim); anything else is a command spawned and talked to over stdio. Global by design; commands adopt it one at a time — the `REMOTE_OK` set in `packages/cli/src/context.ts`: reads (`query`, `outline`, `hist`, `cat`, `ls`, `diff`, `find`, `log`), doc-level mutators (`new`, `mv`, `meta`, `rm`, `update`, `retarget`), block-level sugar (`apply`, `insert`, `move`, `split`, `merge`, `done`, `append`, `node`), `sync`, and `shell` (which threads it into every line it runs). The rest (`edit`'s `$EDITOR` round-trip, `status`'s watcher state, `init`/`source`/admin) reject it rather than silently running locally. |
 | `-H "Name: value"` | Extra HTTP header, repeatable; sent on every request when `--server` is an `http(s)` URL (errors for a stdio `--server`). |
-| `--json` | Machine output: the library result object, verbatim, one JSON document on stdout |
-| `--jsonl` | List-shaped results as one JSON object per line (streaming-friendly) |
-| `--ids` | List-shaped results as bare IDs, one per line (pipe fuel) |
+| `--json` | Machine output: the result of the MCP tool the verb maps to (§5.10), verbatim, one JSON document on stdout — produced by the same `@omgbase/core` function the server calls |
+| `--jsonl` | One JSON object per line when the result has a list; otherwise the `--json` document |
+| `--ids` | Bare IDs one per line when the result has an id list (hit ids, paths, commit ids, slugs, source names, the far nodes of `links`); otherwise the `--json` document |
 | `--stale` | Skip the freshness sweep (§3.3) |
 | `--no-color` | Disable ANSI styling (also honors `NO_COLOR` and non-TTY stdout) |
-| `--version`, `--help` / `-h` | The usual. Bare `omg --help` is the grouped command catalog; `omg <command> --help` is one uniform card per command — `name — summary`, a `usage:` line (or several), an aligned `options:` block ending in `-h, --help`, and optional notes/examples — on **stdout**, exit 0, no workspace required. |
+| `--version`, `--help` / `-h` | `--version` prints the CLI package's version (`packages/cli/package.json`, read at run time — not `@omgbase/core`'s `VERSION`). Bare `omg --help` is the grouped command catalog; `omg <command> --help` is one uniform card per command — `name — summary`, a `usage:` line (or several), an aligned `options:` block ending in `-h, --help`, and optional notes/examples — on **stdout**, exit 0, no workspace required. |
+
+A global flag whose value is missing (`-C`, `--repo`, `--server`, `-H`) and a stray flag before the command are usage errors like any other: `usage: -C requires a directory`, `usage: unknown flag -n`, exit 2 (`parseGlobals` records the first malformed flag and keeps parsing, so a `--json` anywhere still selects the mode the error is rendered in).
 
 `--dry-run` is global across every mutating command and means exactly what `apply.dry_run` means: full validation + render, per-file unified diffs printed, nothing committed.
 
@@ -60,7 +63,7 @@ Commands that take a list of nodes — the mutators (`move`, `rm`, `done`, `merg
 | `1` | Typed engine error (06 §5 codes) or conflict |
 | `2` | CLI usage error (unknown flag, missing argument) |
 
-Errors go to **stderr**, always: human form `error[stale_expectation]: <message>` followed by the current-truth payload pretty-printed; with `--json`, the typed error object from 06 §5 as JSON on stderr and nothing on stdout. Conflict objects carry current truth (04 §4) — the CLI prints all of it, because the retry is built from it.
+Errors go to **stderr**, always: human form `error[stale_expectation]: <message>`, a `  hint: …` line when the error carries one, then the current-truth payload pretty-printed (an empty `{}` payload prints nothing); with `--json`, the typed error object from 06 §5 — `{ error, message, data?, hint?, retriable }` — as JSON on stderr and nothing on stdout. Conflict objects carry current truth (04 §4) — the CLI prints all of it, because the retry is built from it. The code is whatever the MCP server would report for the same failure: every non-CLI error goes through `errorBody` in `@omgbase/core/mcp/errors.ts`, the one mapping the server's `fail` also uses — typed errors keep their code, OQX errors and an invalid cursor are `filter_invalid`, an unknown diff revision is `target_missing`, and anything else (a write on a repo without a working tree, an unexpected exception) is the catalog's catch-all `repo_not_found`. Usage errors (`CliUsageError`) are the CLI's own: `usage: <message>` + hint, exit 2, `{"error":"usage",…}` in a machine mode.
 
 ## 3. Process and concurrency model
 
@@ -107,14 +110,14 @@ CREATE TABLE file_stats (
 
 ### 3.5 Semantic staleness
 
-Semantic search from a one-shot process serves whatever vectors exist; hits backed by stale embeddings are flagged (`~` suffix in human output, `stale: true` in JSON) per 05 §6. `omg embed drain` processes the queue on demand; `omg status` shows queue depth.
+Semantic search from a one-shot process serves whatever vectors exist; hits backed by stale embeddings are flagged (`~` suffix in human output, `stale: true` in JSON) per 05 §6. `omg embed drain` processes the queue on demand; `omg status` shows the queue depth (`embedQueue`: the embeddable blocks whose current `(content_hash, ctx_hash)` has no cached vector — for the `embedding.model` setting when one is named, else for any model — counted from the cache by `staleEmbedCount` without spawning a provider).
 
 ## 4. Output contract
 
 1. **stdout is data; stderr is everything else.** Diagnostics, progress, truncation footers, errors — stderr. A piped `omg` never mixes prose into data.
 2. **Human format by default**, when stdout is a TTY: aligned columns, `$id` always paired with `$locator` (06 §2 — locators are for eyes, IDs are for follow-ups), checkbox glyphs for tasks, **projected columns for query hits** (a `select` turns the `<id>  <path>` list into an aligned table — dim header, id first, then the path unless the projection itself selects `$path`, then the projected fields in `select` order; strings/numbers verbatim, absent → empty, lists/records as compact JSON clipped at 60 chars with `…`; a query that projects nothing keeps the bare `<id>  <path>` lines), the outline wire format (06 §6) for outlines — the CLI renders the same inline-`b_`-id text the MCP tool returns.
-3. **`--json` is the library's result object, verbatim.** The CLI MUST NOT invent shapes: `QueryResult`, `ApplyResult`, `CommitDigest`, conflict objects — same fields as the MCP surface. `--jsonl` flattens list results to one object per line; `--ids` to bare IDs.
-4. **Truncation is loud.** Any truncated result prints a stderr footer: `… truncated; continue with --cursor <c>`. Exit code stays 0.
+3. **`--json` is the mapped MCP tool's result, verbatim.** The CLI MUST NOT invent shapes: `QueryResult`, `ApplyResult`, `CommitDigest`, conflict objects — same fields as the MCP surface, produced by the same core function (`cat` of a document → `docsRead`; `show` of a document → the `read_ref` shape `{ kind: "document", ...docsRead }`; `diff` → `docDiffUnified`; `repos` → `reposList`; `status` → `{ ...reposStatus, sync: syncStatus, watcher, embedQueue }`). One machine-mode rule for every verb (`emitMachine` in `output.ts`): `--jsonl` streams the result's list when it has one, else prints the `--json` document; `--ids` prints the result's id list when it has one, else the `--json` document. No verb falls back to the human rendering in a machine mode. Where a verb has no tool (`init`, `source`, `gc`, `rebuild-index` → `{"rebuilt":"<target>"}`, `doctor`, `config`, `embed`) the CLI shape is documented on its row.
+4. **Truncation is loud.** Any truncated result prints a stderr footer: `… truncated; continue with --cursor <c>` — in every mode but `--json`, whose document carries `truncated`/`cursor` itself. Exit code stays 0.
 5. **List paging.** List commands accept `-n` (limit) and `--cursor`; a truncated result stays exit 0 and prints the continuation footer (item 4).
 
 ## 5. Command catalog
@@ -126,18 +129,18 @@ Everything maps onto the 06 tool surface; the correspondence table in §5.10 is 
 | Command | Does |
 |---|---|
 | `omg init [dir]` | Create the workspace (`.omgbase/` + DB) in `dir` (default cwd). Does **not** ingest files — that's a separate consent-gated `omg source add` step, so `init` never absorbs whatever happens to live under cwd (home dir, desktop, …). If inside a git working tree, offers to ignore the DB via the closest `.gitignore` at/above the workspace (creating one at the git root if none), written relative to that file — prompt on TTY, `--yes` for scripts, **never silent** (02 §2). Outside git, nothing to ignore. Also offers to set the embedding provider: if `omgbase-embedder` is installed it offers it (`--yes` accepts); `--embedder <cmd\|url>` sets any provider verbatim; `--no-embedder` skips. If none ends up set, prints install+config guidance. |
-| `omg source add <dir> [--repo <slug>] [--name <n>] [-y]` | Point a repo at a filesystem directory (ADR-014): create the repo if needed, register + attach an `<slug>-fs` source, and run the initial sync (`freshnessSweep`). There is no separate `attach`/`ingest`/`load` verb — the initial ingest is the source's first sync. Prompts before ingesting, showing a live file count that grows as the tree is scanned (`248+` while scanning, `248` when done) beside `[y/N]`; Enter = No. `-y` skips the prompt; a non-TTY without `-y` refuses rather than absorbing the tree silently. Other subcommands: `list`, `attach <name>` (bind an existing source), `detach`, `rm`. |
-| `omg repos` | List repos: slug, root path (derived from the fs source), doc/block counts. |
+| `omg source add <dir> [--repo <slug>] [--name <n>] [-y]` | Point a repo at a filesystem directory (ADR-014): create the repo if needed, register + attach an `<slug>-fs` source, and run the initial sync (`freshnessSweep`). There is no separate `attach`/`ingest`/`load` verb — the initial ingest is the source's first sync. Prompts before ingesting, showing a live file count that grows as the tree is scanned (`248+` while scanning, `248` when done) beside `[y/N]`; Enter = No. `-y` skips the prompt; a non-TTY without `-y` is a usage error (exit 2, `usage: refusing without -y (would ingest files under <abs>)` with a hint) rather than a silent absorption of the tree — or a silent success for a script that forgot the flag. Other subcommands: `list`, `attach <name>` (bind an existing source), `detach`, `rm`. |
+| `omg repos` | List repos: slug, root path (derived from the fs source), doc/block counts. `--json` is the `repos` tool's result `{ repos: [{ slug, hasSource }] }` (`reposList`); the counts are `status --json`. An empty workspace prints `no repos attached` on stderr. |
 
 ### 5.2 Orient & read
 
 | Command | Does |
 |---|---|
-| `omg status` | `repos_status` + `sync_status` + watch-lease probe + embedding queue depth. The "where am I" command. |
+| `omg status` | `repos_status` + `sync_status` + watch-lease probe + embedding queue depth. The "where am I" command. `--json` is `{ ...repos_status, sync: sync_status, watcher: "live"\|"none", embedQueue }` — the two tools' results as they are on the wire. |
 | `omg ls [glob]` | Live documents: path, block count, last-commit time. The engine pages `docs_list`; `ls` walks every page (local and `--server`) so the terminal listing is always complete. |
-| `omg outline <doc\|path> [--depth n] [--section <loc>] [--annotate tasks,edges,updated,confidence]` | `docs_outline`, frozen wire format. Alias: `omg ol`. |
-| `omg cat <node…\|-> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. Several refs (or `-` = refs from stdin) are cat'ed in order like unix `cat`; `--json` is the single object for one ref, an array for many (`--jsonl` one per line). |
-| `omg show <node…\|-> [--include history]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. Several refs (or `-`) print one card each — the hydrate step of `q … --ids \| show -`. |
+| `omg outline <doc\|path> [--depth n] [--skeleton]` | `docs_outline`, frozen wire format. Alias: `omg ol`. (The once-documented `--section`/`--annotate` do not exist; an unknown option is a usage error.) |
+| `omg cat <node…\|-> [--resolution raw\|text\|outline\|skeleton\|full]` | Content only, default `raw` — exact bytes, pipe-clean. Several refs (or `-` = refs from stdin) are cat'ed in order like unix `cat`; `--json` is the single object for one ref, an array for many (`--jsonl` one per line): a block's `nodes_get` at the resolution, a document's the `docs_read` result. |
+| `omg show <node…\|-> [--include history]` | `nodes_get` at `full`: attrs, placement, open edges, last change. The metadata card; `cat` is the bytes. A document's card renders its merged properties and open edges; its `--json` is the `read_ref` result (`kind: "document"` + `docs_read`). Several refs (or `-`) print one card each — the hydrate step of `q … --ids \| show -`. |
 | `omg find <text> [-n N] [-1] [-v] [--no-semantic]` | `resolve` — ranked `{id, locator, preview, evidence}`. Hybrid (FTS + vector) by default when an embedding provider is configured; `--no-semantic` forces FTS-only; `-v` prints per-hit evidence. `-1` prints the top hit's ID alone: `omg cat $(omg find "risks" -1)`. |
 
 ### 5.3 Query
@@ -155,7 +158,7 @@ Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|
 
 | Command | Does |
 |---|---|
-| `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open edges touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain. Backlinks = `omg links <node> --in`. |
+| `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open edges touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain — one row per open edge with its source block (`references > d_13 (b_307)`; `block` in `--json`). Backlinks = `omg links <node> --in`. `--jsonl` prints the `{ out, in }` object (it is not a list). |
 
 Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
 
@@ -165,9 +168,9 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 
 | Command | Does |
 |---|---|
-| `omg log [--since ts\|24h\|7d] [--cursor n] [--origin api\|observed] [--scope glob] [--min-confidence x] [-n N]` | `changes_since`, one digest summary per line (the 06 §3 summary strings were designed for exactly this). Relative `--since` values are resolved to **literal** ISO timestamps client-side before entering the envelope — the query language stays clock-free (10 §3.1). |
-| `omg hist <node> [-n N] [--cursor c]` | `history_node` — the biography. |
-| `omg diff <doc> [--from r_x] [--to r_y] [--blocks]` | `diff`; unified by default. With no revisions: current vs previous (the "what did the last commit do here" default). |
+| `omg log [--since ts\|24h\|7d] [--cursor n] [--origin api\|observed] [-n N]` | `changes_since`, one digest summary per line (the 06 §3 summary strings were designed for exactly this; a commit that wrote no revision reads `deleted <path>` or `moved <from> → <to>`). Relative `--since` values are resolved to **literal** ISO timestamps client-side before entering the envelope — the query language stays clock-free (10 §3.1); an unparsable `--since` is a usage error. `--ids` prints the commit ids and, when truncated, the footer. |
+| `omg hist <node> [-n N]` | `history_node` — the biography. |
+| `omg diff <doc> [--from r_x] [--to r_y] [--blocks]` | `diff_unified` (`docDiffUnified`, shared with the tool: `--json` is `{ doc, path, from, to, diff }`); with `--blocks` the block-grain `diff` tool's entries. With no revisions: current vs previous (the "what did the last commit do here" default). An unknown revision is `target_missing`. |
 
 ### 5.6 Mutate
 
@@ -178,17 +181,19 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 | `omg insert <to> [--at end\|start\|before X\|after X] [--expect parent_children_hash] (-m md \| -f file \| -)` | `insert` (`--expect` is the destination-parent CAS: the parent's direct child ids joined by `,`, sha256 hex) |
 | `omg update <block> (-m md \| -f file \| -) [--expect hash]` | `update` (CAS: §5.7) |
 | `omg edit <block>` | read → `$EDITOR` on the raw markdown → `update` with the pre-read hash as CAS. The human structural-edit loop for when opening the whole file is the slower path. |
-| `omg node set <nodeId> <prop> <value>` / `omg node props <nodeId>` | Surgically set one editable property of a projected node (e.g. a link's target/text, a task's `checked`) via the adapter's registered editor — expands to a single `update` op. `node props` lists a node's editable properties (`editablePropsFor`). |
-| `omg move <blocks…\|-> --to <parent> [--at …] [--expect parent_children_hash]` / `omg move --section <heading> --to …` | `move` (same destination CAS as `insert`) / `sections_move` |
+| `omg node set <nodeId> <prop> <value> [--actor s]` / `omg node props <nodeId>` | Surgically set one editable property of a projected node (e.g. a link's target/text, a task's `checked`) via the adapter's registered editor — expands to a single `update` op. The value is every positional after `<prop>` (joined by a space); `--actor` is an option like everywhere else. `node props` lists a node's editable properties (`editablePropsFor`). |
+| `omg move <blocks…\|-> --to <parent> [--at …] [--expect parent_children_hash]` | `move` (same destination CAS as `insert`); there is no `--section` form — `sections_move` has no CLI sugar yet |
 | `omg rm <blocks…\|->` | `remove` (resurrection pool catches regret) |
-| `omg done <blocks…\|-> [--undo]` | `tasks_complete` (`--undo` ⇒ `update attrs.checked=false`) |
+| `omg done <blocks…\|-> [--undo]` | `tasks_complete` (`--undo` ⇒ `update attrs.checked=false`). Every target must be a task block; anything else is `type_mismatch` before any op is built. |
 | `omg append <heading-loc> (-m md \| -f \| -)` | `sections_append` |
-| `omg retarget <from> <to> [--scope glob] [--apply]` | `links_retarget` — **plan-by-default**: without `--apply` it runs the dry-run and prints the per-file diffs (the 06 §4 "always dry-run first" contract, encoded as the default). |
-| `omg split <block> --at n[,n…]` / `omg merge <blocks…>` | `split` / `merge` |
+| `omg retarget <from> <to> [--scope glob] [--apply]` | `links_retarget` — **plan-by-default**: without `--apply` it runs the dry-run and prints, per hit block, the unified diff of the block's raw (the same `unifiedDiff` every preview prints — the 06 §4 "always dry-run first" contract, encoded as the default). |
+| `omg split <block> --at n[,n…]` / `omg merge <blocks…>` | `split` / `merge` (`--at` offsets must be integers — a usage error otherwise) |
 | `omg new <path> (-f file \| -)` | `docs_create` — content is complete file bytes, frontmatter included. |
-| `omg mv <doc> <new-path>` | `docs_move` |
+| `omg mv <doc> <new-path>` | `docs_move` — inbound links are **not** rewritten; the ones left dangling are reported (stderr in human mode, `dangling` in `--json`) together with the `omg retarget … --apply` that fixes them. |
 | `omg rm --doc <doc>` | `docs_delete` (doc deletion always requires the explicit `--doc`) |
 | `omg meta <doc> --set k=v … [--unset k …]` | `docs_set_meta` — surgical frontmatter patch. Values parse as YAML scalars; `--set-json k='…'` for structures. |
+
+The four document verbs honor `--dry-run` like the block verbs: the operation validates (`doc_missing`, `path_taken`, …) and returns `committed: false` with the per-file `diffs` it would make (a create `""` → bytes, a delete bytes → `""`, a rename two entries, a meta patch before → after), rendered as unified diffs; nothing is written. The library ops take `dryRun` in their `DocOpContext`; the MCP tools `docs_create`/`docs_move`/`docs_delete`/`docs_set_meta` take `dry_run`.
 
 ### 5.7 CAS ergonomics
 
@@ -252,10 +257,10 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 
 | Command | Does |
 |---|---|
-| `omg rebuild-index [--sections\|--edges\|--fts\|--block-changes\|--all]` | 02 §6, spelling kept verbatim; `--all` is the default. (02's `--vec`/`--projections` are not implemented — `omg embed drain` re-embeds; projections rebuild with the rest.) `--block-changes` is an as-built addition to 02's list. |
+| `omg rebuild-index [--sections\|--edges\|--fts\|--block-changes\|--all]` | 02 §6, spelling kept verbatim; `--all` is the default; a machine mode prints `{"rebuilt":"<target>"}`. (02's `--vec`/`--projections` are not implemented — `omg embed drain` re-embeds; projections rebuild with the rest.) `--block-changes` is an as-built addition to 02's list. |
 | `omg gc [--dry-run]` | Mark-and-sweep; **refuses** unless `gc.enabled` is set in repo settings (02 §7 ships it dark). Dry-run reports what would be swept; the global `--dry-run` spelling is honored too. |
-| `omg doctor` | Cheap invariant sweep: per-doc convergence, FTS row count vs live blocks, dangling `current_rev`, orphaned blobs sample, `PRAGMA integrity_check`, lock/lease sanity. Non-zero exit on any violation — CI-able. |
-| `omg config [get k \| set k v \| list]` | Read/write `repos.settings` JSON paths (`sync.quiescence_ms`, `embedding.provider`, `query.timeout_ms`, `gc.enabled`, …). `--repo ""` targets the workspace layer; an unknown sub-command exits 2 and points at `config --help`. |
+| `omg doctor` | Cheap invariant sweep, four checks: per-doc convergence; FTS rows vs live **leaf** blocks (the index holds exactly the live leaves, spec/search §1.1 — counted from the `blocks_fts_docsize` shadow table, since `count(*)` on an external-content FTS5 table answers from `blocks`); dangling `current_rev`; `PRAGMA integrity_check`. Non-zero exit on any violation — CI-able. |
+| `omg config [get k \| set k v \| list]` | Read/write `repos.settings` JSON paths (`sync.quiescence_ms`, `embedding.provider`, `query.timeout_ms`, `gc.enabled`, …). `--repo ""` targets the workspace layer, and so does a bare `config` when no repo is selectable (a workspace with none, an ambiguous cwd); an explicit `--repo <unknown>` is `repo_not_found`. An unknown sub-command exits 2 and points at `config --help`. |
 | `omg embed [status\|drain]` | Embedding queue depth / process the queue now (requires a configured provider; egress note printed — 05 §6). |
 
 ### 5.10 MCP ↔ CLI correspondence (completeness audit)
@@ -273,7 +278,8 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 | `apply` | `apply` |
 | `tasks_complete` / `sections_append` / `sections_rename` / `sections_move` / `lists_insert_item` / `links_retarget` | `done` / `append` / `update` (heading) / `move --section` / `insert` (list parent) / `retarget` |
 | `docs_create` / `docs_delete` / `docs_move` / `docs_set_meta` | `new` / `rm --doc` / `mv` / `meta` |
-| `repos_list` / `repos_create` / `repos_status` / `sync_status` | `repos` / `attach` / `status` / `status` |
+| `repos` / `repos_status` / `sync_status` | `repos` / `status` / `status` |
+| `read_ref` / `docs_read` / `diff_unified` | `show` (document) / `cat` (document) / `diff` |
 | `sync_flush` | `sync` |
 
 ## 6. Acceptance traces (CLI analogues of 06 §7; executable, keystroke-budgeted)

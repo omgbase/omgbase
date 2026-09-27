@@ -646,6 +646,12 @@ both and runs both harnesses.
 - **Fixed (1.1, with search 1.1) — `semantic()` on blocks read the first
   cache row for the block's content hash**, whatever its context; now the
   current-context row only (`spec/search` §8).
+- **Pinned — a `docs_move` dry run over a self-linking document overwrites
+  the old path's diff entry.** The preview is the two rename entries
+  (`old → ""`, `new ← bytes`) with the inbound-retarget preview assigned over
+  them; when the moved document links to its own path, the retarget preview
+  carries an entry for the *old* path (the doc has not moved yet in a dry
+  run) and replaces the emptied one. Both engines mirror it (1.3).
 - **Pinned — `blocks_split` sends an empty `content_hash`** when the block
   has no live row, so the kernel raises `stale_expectation` with the current
   hash rather than `block_missing`.

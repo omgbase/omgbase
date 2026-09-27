@@ -40,14 +40,16 @@ impl SurfaceError {
         }
     }
 
-    /// The reference's `FilterInvalid`: `filter_invalid` with `{ reason, hint }`.
+    /// The reference's `FilterInvalid(reason, hint)`: `filter_invalid` with
+    /// `{ reason, hint }` — the `reason` is the message itself, the `hint`
+    /// the caller's pointer (`"OQX"` for an engine error).
     #[must_use]
-    pub fn filter_invalid(message: impl Into<String>, reason: &str) -> Self {
+    pub fn filter_invalid(message: impl Into<String>, hint: &str) -> Self {
         let message = message.into();
         Self::with_data(
             "filter_invalid",
-            message,
-            json!({ "reason": reason, "hint": "see query_syntax" }),
+            message.clone(),
+            json!({ "reason": message, "hint": hint }),
         )
     }
 
@@ -161,7 +163,8 @@ mod tests {
         let j = e.to_json();
         assert_eq!(j["error"], "filter_invalid");
         assert_eq!(j["message"], "bad");
-        assert_eq!(j["data"]["reason"], "OQX");
+        assert_eq!(j["data"]["reason"], "bad");
+        assert_eq!(j["data"]["hint"], "OQX");
         assert_eq!(j["retriable"], false);
         let plain = SurfaceError::other("boom").to_json();
         assert!(plain.get("data").is_none());

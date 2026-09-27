@@ -218,7 +218,18 @@ export function substituteWorkspace(s: string, tmp: string): string {
 
 /** §8: every occurrence of <tmp> in an output becomes `<workspace>`. */
 export function rewriteWorkspace(s: string, tmp: string): string {
-  return s.split(tmp).join(WORKSPACE_TOKEN);
+  return s.split(tmp).join(WORKSPACE_TOKEN).split(cliVersion()).join(VERSION_TOKEN);
+}
+
+/** §8: the binary's own version string becomes `<version>` (the two binaries are versioned apart). */
+export const VERSION_TOKEN = "<version>";
+let cachedVersion: string | null = null;
+function cliVersion(): string {
+  if (cachedVersion === null) {
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version: string };
+    cachedVersion = pkg.version;
+  }
+  return cachedVersion;
 }
 
 export function spawnOmg(tmp: string, argv: string[], opts: { stdin?: string; env?: Record<string, string> } = {}): Outcome {

@@ -4,6 +4,7 @@ import { ingestFile } from "../core/ingest.js";
 import { findDoc, findDocByRef } from "../core/read/reader.js";
 import { makeReconcilingResolver } from "../sync/reconciling-ingest.js";
 import { newCommit } from "../core/store/writers.js";
+import { mintId } from "../core/ids.js";
 import { ftsDeleteDoc } from "../core/store/fts.js";
 import { adoptPhantoms, rebuildDocEdges } from "../core/store/edges.js";
 import { withWriterLock } from "../sync/writer-lock.js";
@@ -31,6 +32,14 @@ export interface DocOpContext {
   actor?: string;
   /** Commit timestamp (RFC 3339 UTC) for every commit the operation records; defaults to now (see `ApplyRequest.ts`). */
   ts?: string;
+  /**
+   * Validate and plan only: every check the real operation makes (`doc_missing`,
+   * `path_taken`, …) runs, nothing is written or committed, and the result
+   * carries `committed: false` plus the per-file `diffs` the operation would
+   * produce — the same shape `apply`'s `dryRun` returns. A create's `docId` is
+   * the id the real run would mint next (a dry run consumes it, as `apply`'s does).
+   */
+  dryRun?: boolean;
 }
 
 function nowOr(ctx: DocOpContext): string {
@@ -41,6 +50,14 @@ export interface DocOpResult {
   docId: string;
   path: string;
   committed: boolean;
+  /**
+   * With `dryRun`: the file changes the operation would make, keyed by
+   * repo-relative path — `before` the current bytes (`""` for a file that
+   * would be created), `after` the bytes the operation would leave (`""` for a
+   * file that would be removed). A rename is two entries: the old path
+   * emptied, the new path filled. Absent on a committed result.
+   */
+  diffs?: Record<string, { before: string; after: string }>;
 }
 
 export interface DocMoveOptions {
@@ -93,6 +110,10 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
   const content = composeFile(markdown, frontmatter);
 
   const docStore = resolveDocStore(ctx);
+  if (ctx.dryRun) {
+    if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
+    return { docId: mintId("d"), path: rel, committed: false, diffs: { [rel]: { before: "", after: content } } };
+  }
   return underLock(ctx, () => {
     if (docStore.exists(rel)) throw new MutationError("path_taken", `file already exists on disk at ${rel}`);
     docStore.write(rel, content);
@@ -121,6 +142,19 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
   const inbound = inboundLinksTo(store, ctx.repoId, info.docId, info.path);
 
   const docStore = resolveDocStore(ctx);
+  if (ctx.dryRun) {
+    if (docStore.exists(toRel)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
+    const content = docStore.read(info.path) ?? "";
+    const diffs: Record<string, { before: string; after: string }> = { [info.path]: { before: content, after: "" }, [toRel]: { before: "", after: content } };
+    const planned = { docId: info.docId, path: toRel, committed: false, diffs };
+    if (!opts.retargetInbound || inbound.length === 0) return { ...planned, dangling: inbound, retargeted: null };
+    const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
+    if (plan.ops.length > 0) {
+      const preview = apply(store, { ...applyCtx(ctx), ops: plan.ops, dryRun: true, origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` } });
+      Object.assign(diffs, preview.diffs ?? {});
+    }
+    return { ...planned, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
+  }
   const moved = underLock(ctx, () => {
     if (docStore.exists(toRel)) throw new MutationError("path_taken", `file already exists on disk at ${toRel}`);
     const content = docStore.read(info.path) ?? "";
@@ -169,6 +203,36 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
   // Rewrite the dangling links block by block (one coalesced update per block,
   // CAS on the block's current hash) and apply as one changeset; the re-ingest
   // re-extracts each source doc, whose links now resolve to the moved doc.
+  const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
+  if (plan.ops.length > 0) {
+    apply(store, {
+      ...applyCtx(ctx),
+      ops: plan.ops,
+      origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
+    });
+  }
+  return { ...moved, dangling: plan.dangling, retargeted: { blocks: plan.blocks, docs: plan.docs } };
+}
+
+/** The `ApplyRequest` fields a document operation's context supplies to a follow-up changeset. */
+function applyCtx(ctx: DocOpContext): { repoId: string; rootPath?: string; docStore?: DocStore; omgbaseDir?: string; ts?: string } {
+  return {
+    repoId: ctx.repoId,
+    ...(ctx.rootPath ? { rootPath: ctx.rootPath } : {}),
+    ...(ctx.docStore ? { docStore: ctx.docStore } : {}),
+    ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}),
+    ...(ctx.ts ? { ts: ctx.ts } : {}),
+  };
+}
+
+/**
+ * The `retarget_inbound` plan of a move `fromPath → toRel`: one coalesced,
+ * CAS-pinned `update` per deepest hit block, the blocks and docs it touches,
+ * and the inbound links it leaves dangling. Pure over the store's current
+ * blocks — the move itself changes no block — so the real move and its dry run
+ * plan identically.
+ */
+function planInboundRetarget(store: Store, docId: string, fromPath: string, toRel: string, inbound: InboundLink[]): { ops: Op[]; blocks: string[]; docs: string[]; dangling: InboundLink[] } {
   const byBlock = new Map<string, InboundLink>();
   for (const l of inbound) if (l.block !== null && !byBlock.has(l.block)) byBlock.set(l.block, l);
   // A container's raw includes its children's raw, so a link inside a list item
@@ -196,28 +260,17 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     // Match against the directory the link was RESOLVED in (the source's path at
     // extraction time); write relative forms against the source's CURRENT
     // directory — they differ only for links inside the moved doc itself.
-    const writeDir = src.doc === info.docId ? dirOf(toRel) : dirOf(src.path);
-    const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src.path), writeDir, info.path, toRel);
+    const writeDir = src.doc === docId ? dirOf(toRel) : dirOf(src.path);
+    const newRaw = retargetLinksInRaw(row.bytes.toString("utf8"), dirOf(src.path), writeDir, fromPath, toRel);
     if (newRaw === null) continue;
     ops.push({ op: "update", block: blockId, markdown: newRaw, expect: { content_hash: row.raw_hash.toString("hex") } });
     blocks.push(blockId);
     docs.add(src.doc);
   }
-  if (ops.length > 0) {
-    apply(store, {
-      repoId: ctx.repoId,
-      ...(ctx.rootPath ? { rootPath: ctx.rootPath } : {}),
-      ...(ctx.docStore ? { docStore: ctx.docStore } : {}),
-      ...(ctx.omgbaseDir ? { omgbaseDir: ctx.omgbaseDir } : {}),
-      ...(ctx.ts ? { ts: ctx.ts } : {}),
-      ops,
-      origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` },
-    });
-  }
   // Containers whose rewritten child covered them count as rewritten too.
   const rewritten = new Set([...blocks, ...containers]);
   const dangling = inbound.filter((l) => l.block === null || !rewritten.has(l.block));
-  return { ...moved, dangling, retargeted: { blocks, docs: [...docs] } };
+  return { ops, blocks, docs: [...docs], dangling };
 }
 
 /** docs_delete: mark a document deleted and remove its file (resurrection-poolable). */
@@ -226,6 +279,9 @@ export function docsDelete(store: Store, ctx: DocOpContext, docRef: string): Doc
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
   const docStore = resolveDocStore(ctx);
+  if (ctx.dryRun) {
+    return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: docStore.read(info.path) ?? "", after: "" } } };
+  }
   return underLock(ctx, () => {
     const ts = nowOr(ctx);
     store.write((db) => {
@@ -252,13 +308,19 @@ export function docsSetMeta(
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
 
   const docStore = resolveDocStore(ctx);
-  return underLock(ctx, () => {
+  const patched = (): { original: string; content: string } => {
     const original = docStore.read(info.path) ?? "";
     const { frontmatter, body } = splitFrontmatter(original);
     const merged: Record<string, unknown> = { ...frontmatter, ...(patch.set ?? {}) };
     for (const k of patch.unset ?? []) delete merged[k];
-    const content = composeFile(body, merged);
-
+    return { original, content: composeFile(body, merged) };
+  };
+  if (ctx.dryRun) {
+    const { original, content } = patched();
+    return { docId: info.docId, path: info.path, committed: false, diffs: { [info.path]: { before: original, after: content } } };
+  }
+  return underLock(ctx, () => {
+    const { content } = patched();
     docStore.write(info.path, content);
     const ts = nowOr(ctx);
     const res = ingestFile(store, ctx.repoId, info.path, content, { ts, origin: "api", actor: ctx.actor ?? null, reason: `set_meta ${info.path}`, resolveIds: makeReconcilingResolver(store, ctx.repoId, { ts, path: info.path }) });

@@ -68,11 +68,14 @@ afterAll(() => {
 
 describe("bootstrap", () => {
   it("repos lists the attached vault", () => {
+    // `--json` is the `repos` tool's result; the counts are `status --json`.
     const { stdout } = omg(["repos", "--json"]);
-    const repos = JSON.parse(stdout) as { slug: string; docs: number }[];
+    const { repos } = JSON.parse(stdout) as { repos: { slug: string; hasSource: boolean }[] };
     expect(repos).toHaveLength(1);
     expect(repos[0]!.slug).toBe("vault");
-    expect(repos[0]!.docs).toBe(2);
+    expect(repos[0]!.hasSource).toBe(true);
+    const status = JSON.parse(omg(["status", "--json"]).stdout) as { docs: number };
+    expect(status.docs).toBe(2);
   });
 });
 
@@ -426,11 +429,12 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
 });
 
 describe("--json parity", () => {
-  it("status --json is a flat object with the documented fields", () => {
+  it("status --json is repos_status plus sync (sync_status), watcher and embedQueue", () => {
     const res = JSON.parse(omg(["status", "--json"]).stdout) as Record<string, unknown>;
-    for (const k of ["repo", "docs", "blocks", "commits", "watcher", "convergent"]) {
+    for (const k of ["slug", "rootPath", "docs", "blocks", "commits", "openEdges", "unconverged", "disk", "sync", "watcher", "embedQueue"]) {
       expect(res).toHaveProperty(k);
     }
+    expect(res.sync).toHaveProperty("convergent");
   });
 });
 
@@ -446,12 +450,12 @@ describe("init / attach split (consent-gated ingest)", () => {
       writeFileSync(join(root, "note.md"), "# Note\n\nbody\n");
       run(root, ["init", "--yes", "--no-embedder"]);
       // Before attach: workspace exists but no repo ingested yet.
-      expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
+      expect((JSON.parse(run(root, ["repos", "--json"]).stdout) as { repos: unknown[] }).repos).toHaveLength(0);
       // -y ingests the tree; attach --json reports the file count.
       const attached = JSON.parse(run(root, ["source", "add", ".", "-y", "--json"]).stdout) as { ingested: number };
       expect(attached.ingested).toBe(1);
       // Now a repo exists and is queryable.
-      const after = JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[];
+      const after = (JSON.parse(run(root, ["repos", "--json"]).stdout) as { repos: unknown[] }).repos;
       expect(after).toHaveLength(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -464,9 +468,10 @@ describe("init / attach split (consent-gated ingest)", () => {
       writeFileSync(join(root, "note.md"), "# Note\n\nbody\n");
       run(root, ["init", "--yes", "--no-embedder"]);
       const res = run(root, ["source", "add", "."]);
-      expect(res.stderr).toMatch(/refusing without -y/);
+      expect(res.code).toBe(2); // a usage error: the script forgot -y
+      expect(res.stderr).toMatch(/usage: refusing without -y/);
       // Declined ⇒ still no repo ingested.
-      expect(JSON.parse(run(root, ["repos", "--json"]).stdout) as unknown[]).toHaveLength(0);
+      expect((JSON.parse(run(root, ["repos", "--json"]).stdout) as { repos: unknown[] }).repos).toHaveLength(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

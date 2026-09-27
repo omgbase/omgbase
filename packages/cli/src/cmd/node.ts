@@ -35,8 +35,12 @@ async function runNode(cli: Cli, args: string[]): Promise<number> {
   }
 
   if (sub === "set") {
-    parseArgs({ args: rest, allowPositionals: true, options: { actor: { type: "string" } } });
-    const [nodeId, prop, ...valueParts] = rest.filter((a) => !a.startsWith("--"));
+    // The value is every positional after <prop>, joined by a space; --actor
+    // (an option WITH a value) is taken out by the parser, never by a prefix
+    // filter — that filter used to leave the actor's value inside the property
+    // value (`checked "true human:spec"`), which the task editor read as false.
+    const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { actor: { type: "string" } } });
+    const [nodeId, prop, ...valueParts] = positionals;
     if (!nodeId || !prop || valueParts.length === 0) throw new CliUsageError("node set <nodeId> <prop> <value>");
     const value = valueParts.join(" ");
     // Remote: node_set resolves node → block + rewrites the span server-side.
@@ -44,7 +48,7 @@ async function runNode(cli: Cli, args: string[]): Promise<number> {
     const ws = cli.workspace();
     const repo = cli.repo(ws);
     const ops = nodeSet(ws.store, nodeId, prop, value);
-    return runOps(cli, ws, repo, ops, { reason: `node_set ${prop}` });
+    return runOps(cli, ws, repo, ops, { reason: `node_set ${prop}`, ...(values.actor ? { actor: values.actor } : {}) });
   }
 
   if (sub === "props") {

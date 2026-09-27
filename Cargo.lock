@@ -585,6 +585,8 @@ dependencies = [
  "omgbase-store",
  "omgbase-surface",
  "omgbase-sync",
+ "oqx",
+ "rusqlite",
  "serde_json",
 ]
 
@@ -683,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-surface"
-version = "1.2.1"
+version = "1.3.0"
 dependencies = [
  "omgbase-format",
  "omgbase-properties",

@@ -28,6 +28,21 @@ interface FtsRow {
 export const LIVE_LEAF_SQL =
   "b.deleted_commit IS NULL AND NOT EXISTS (SELECT 1 FROM blocks c WHERE c.doc_id = b.doc_id AND c.parent_block = b.block_id AND c.deleted_commit IS NULL)";
 
+/**
+ * How many rows the FTS index actually holds. `SELECT count(*) FROM blocks_fts`
+ * is answered from the external-content table (`blocks`, tombstones included),
+ * so the count comes from the index's own `_docsize` shadow table — one row per
+ * indexed row. `doctor` compares it to the live leaf count (spec/search §1.1).
+ */
+export function ftsIndexedRowCount(db: Database): number {
+  return (db.prepare("SELECT count(*) c FROM blocks_fts_docsize").get() as { c: number }).c;
+}
+
+/** The number of live leaf blocks — the rows the FTS index must hold (spec/search §1.1). */
+export function liveLeafCount(db: Database): number {
+  return (db.prepare(`SELECT count(*) c FROM blocks b WHERE ${LIVE_LEAF_SQL}`).get() as { c: number }).c;
+}
+
 /** Remove a document's live leaf rows from the FTS index (call before deleting
  * or tombstoning blocks). Only live leaves are indexed (see ftsIndexDoc), so the
  * delete must target the SAME set: an already-tombstoned block or a container has

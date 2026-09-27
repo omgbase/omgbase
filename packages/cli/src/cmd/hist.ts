@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, historyNode, type NodeChange } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg hist <node>` (11 §5.5) — history_node: a block's biography.
@@ -37,14 +37,8 @@ async function runHist(cli: Cli, args: string[]): Promise<number> {
     changes = historyNode(ws.store, resolved.blockId!, values.n ? { limit: Number(values.n) } : {});
   }
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(changes));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const c of changes) cli.io.out(JSON.stringify(c));
-    return EXIT_OK;
-  }
+  // A change carries no id of its own, so `--ids` is the `--json` document.
+  if (cli.flags.mode !== "human") return emitMachine(cli, changes, { items: changes });
 
   const { style, io } = cli;
   if (changes.length === 0) {

@@ -3,14 +3,15 @@ import { linksRetarget } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
-import { runOps } from "./_mutate.js";
+import { runOps, unifiedDiffLines } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
 interface RetargetHit { block: string; oldRaw: string; newRaw: string; }
 
 // `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6) — plan-by-default.
-// Without --apply it runs the dry-run and prints the per-block diffs (the 06 §4
-// "always dry-run first" contract, encoded as the default). --apply commits.
+// Without --apply it runs the dry-run and prints, per hit block, the unified
+// diff of its raw (the same diff every other preview prints — the 06 §4 "always
+// dry-run first" contract, encoded as the default). --apply commits.
 
 async function runRetarget(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -72,25 +73,10 @@ function renderPlan(cli: Cli, from: string, to: string, hits: RetargetHit[]): nu
   io.err(style.dim(`  plan — ${hits.length} block(s) would change; re-run with --apply to commit`));
   for (const h of hits) {
     io.out(style.id(h.block));
-    for (const line of lineDiff(h.oldRaw, h.newRaw)) {
-      io.out(line.startsWith("+") ? style.ok(line) : line.startsWith("-") ? style.err(line) : style.dim(line));
-    }
+    for (const line of unifiedDiffLines(cli, h.oldRaw, h.newRaw)) io.out(line);
     io.out("");
   }
   return EXIT_OK;
-}
-
-function lineDiff(before: string, after: string): string[] {
-  const a = before.split("\n");
-  const b = after.split("\n");
-  const out: string[] = [];
-  const max = Math.max(a.length, b.length);
-  for (let i = 0; i < max; i++) {
-    if (a[i] === b[i]) continue;
-    if (a[i] !== undefined) out.push(`- ${a[i]}`);
-    if (b[i] !== undefined) out.push(`+ ${b[i]}`);
-  }
-  return out;
 }
 
 export const cmdRetarget: Command = { name: "retarget", summary: "Rewrite a link target (plan-by-default)", run: (c, a) => runRetarget(c, a) };

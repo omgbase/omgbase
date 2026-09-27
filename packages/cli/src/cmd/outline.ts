@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { findDoc, docsOutline, type OutlineResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 // `omg outline <doc|path>` (alias ol) — the wire format (06 §6). Human output
@@ -15,7 +15,6 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
     allowPositionals: true,
     options: {
       depth: { type: "string" },
-      section: { type: "string" },
       skeleton: { type: "boolean" },
       help: { type: "boolean" },
     },
@@ -24,10 +23,9 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
     return renderHelp(cli, {
       name: "outline",
       summary: "A document's outline with block ids inline (frozen wire format) — the orientation view",
-      usage: "outline <doc|path> [--depth <n>] [--section <locator>] [--skeleton]",
+      usage: "outline <doc|path> [--depth <n>] [--skeleton]",
       options: [
         ["--depth <n>", "limit heading depth"],
-        ["--section <locator>", "outline only the section at a locator"],
         ["--skeleton", "structure only, no text"],
       ],
     });
@@ -58,10 +56,8 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
     header = info.path;
   }
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
+  // `{ text, truncated }` carries neither a list nor ids: every machine mode is the document.
+  if (cli.flags.mode !== "human") return emitMachine(cli, result, { cursor: result.truncated ? "budget" : null });
 
   const { render, style, io } = cli;
   io.out(render.wordmark(header));

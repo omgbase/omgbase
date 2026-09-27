@@ -151,7 +151,7 @@
     },
     {
       "name": "new-duplicate",
-      "notes": "path_taken; the MutationError payload prints as `{}` (§9)",
+      "notes": "path_taken; an empty MutationError payload prints nothing under the message (§3.5)",
       "workspace": "alchemy",
       "argv": [
         "new",
@@ -164,7 +164,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[path_taken]: document already exists at index.md\n  {}\n"
+        "stderr": "error[path_taken]: document already exists at index.md\n"
       }
     },
     {
@@ -182,12 +182,12 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"path_taken\",\"message\":\"document already exists at index.md\",\"data\":{},\"retriable\":false}\n"
+        "stderr": "{\"error\":\"path_taken\",\"message\":\"document already exists at index.md\",\"retriable\":false}\n"
       }
     },
     {
       "name": "new-dry-run-commits",
-      "notes": "§9: --dry-run is not honored by the document verbs — the document is created",
+      "notes": "§3.6: --dry-run on a document verb renders the would-be file and commits nothing — the document is not created (the name records the accident it replaced, §9)",
       "workspace": "alchemy",
       "steps": [
         {
@@ -203,8 +203,8 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "d_18\n",
-            "stderr": "  ok created notes/dry.md\n"
+            "stdout": "notes/dry.md\n@@ -0,0 +1,2 @@\n+# Dry\n+\n\n",
+            "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
           }
         },
         {
@@ -214,10 +214,28 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "notes/dry.md  1 blocks  0s ago\n"
+            "stdout": ""
           }
         }
       ]
+    },
+    {
+      "name": "new-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "new",
+        "notes/dry.md",
+        "-m",
+        "# Dry\n",
+        "--dry-run",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_18\",\"path\":\"notes/dry.md\",\"committed\":false,\"diffs\":{\"notes/dry.md\":{\"before\":\"\",\"after\":\"# Dry\\n\"}}}\n"
+      }
     },
     {
       "name": "new-no-path",
@@ -235,7 +253,7 @@
     },
     {
       "name": "mv",
-      "notes": "§6: identity preserved across the rename; inbound links are not rewritten (the human output does not say so — §9); the move's digest has an empty summary (§9)",
+      "notes": "§6: identity preserved across the rename; inbound links are not rewritten and the human output says so on stderr (the dangling links and the retarget that fixes them); the move's digest renders `moved <from> → <to>`",
       "workspace": "alchemy",
       "steps": [
         {
@@ -250,7 +268,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_17\n",
-            "stderr": "  ok moved to texts/silent-book.md\n"
+            "stderr": "  ok moved to texts/silent-book.md\n  ! 1 inbound link still names the old path: index.md b_28\n  fix: omg retarget /texts/mutus-liber.md /texts/silent-book.md --apply\n"
           }
         },
         {
@@ -292,7 +310,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#19 api      api(human:spec): \n"
+            "stdout": "#19 api      api(human:spec): moved texts/mutus-liber.md → texts/silent-book.md\n"
           }
         }
       ]
@@ -314,6 +332,69 @@
       }
     },
     {
+      "name": "mv-dry-run",
+      "notes": "§3.6: a rename is two file diffs (the old path emptied, the new path filled) plus the dangling-links note; nothing moves",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "mv",
+            "texts/mutus-liber.md",
+            "texts/silent-book.md",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/mutus-liber.md\n@@ -1,36 +0,0 @@\n----\n-type: text\n-layer: draft\n-tradition: western\n-era: 1677\n-tags: [text, images]\n-verified: false\n----\n-\n-# Mutus Liber\n-\n-The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n-text. The entire Great Work, allegedly, in pictures.\n-\n-length:: fifteen plates\n-attributed_to:: altus\n-\n-## Contents\n-\n-The plates show a couple gathering dew in sheets stretched between poles,\n-processing it through vessels, and attending a furnace, framed by angels and\n-zodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n-\n-The dew-gathering is the one concretely readable operation, and it connects to a\n-real strand of practice: dew was held to be a celestial condensate and a candidate\n-[prima materia](/substances/prima-materia.md).\n-\n-## Status of these notes\n-\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n-\n-- [ ] Obtain a facsimile with plate numbering\n-- [ ] Compare the 1677 and 1702 plate sequences\n-- [ ] Decide whether the dew operation is literal\n-\n\ntexts/silent-book.md\n@@ -0,0 +1,36 @@\n+---\n+type: text\n+layer: draft\n+tradition: western\n+era: 1677\n+tags: [text, images]\n+verified: false\n+---\n+\n+# Mutus Liber\n+\n+The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n+text. The entire Great Work, allegedly, in pictures.\n+\n+length:: fifteen plates\n+attributed_to:: altus\n+\n+## Contents\n+\n+The plates show a couple gathering dew in sheets stretched between poles,\n+processing it through vessels, and attending a furnace, framed by angels and\n+zodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n+\n+The dew-gathering is the one concretely readable operation, and it connects to a\n+real strand of practice: dew was held to be a celestial condensate and a candidate\n+[prima materia](/substances/prima-materia.md).\n+\n+## Status of these notes\n+\n+Draft. I have not worked through the plates in order against a commentary, and\n+the secondary literature disagrees about even the number of stages depicted.\n+\n+- [ ] Obtain a facsimile with plate numbering\n+- [ ] Compare the 1677 and 1702 plate sequences\n+- [ ] Decide whether the dew operation is literal\n+\n\n",
+            "stderr": "  dry run — 2 file(s) would change, nothing committed\n  ! 1 inbound link still names the old path: index.md b_28\n  fix: omg retarget /texts/mutus-liber.md /texts/silent-book.md --apply\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no changes\n"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mv-dry-run-json",
+      "workspace": "alchemy",
+      "argv": [
+        "mv",
+        "d_17",
+        "texts/silent-book.md",
+        "--dry-run",
+        "--json",
+        "--actor",
+        "human:spec"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"docId\":\"d_17\",\"path\":\"texts/silent-book.md\",\"committed\":false,\"diffs\":{\"texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"\"},\"texts/silent-book.md\":{\"before\":\"\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"dangling\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"block\":\"b_28\",\"target\":\"/texts/mutus-liber.md\",\"anchor\":null}],\"retargeted\":null}\n"
+      }
+    },
+    {
       "name": "mv-missing",
       "workspace": "alchemy",
       "argv": [
@@ -326,7 +407,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document notes/nope.md\n  {}\n"
+        "stderr": "error[doc_missing]: no document notes/nope.md\n"
       }
     },
     {
@@ -342,7 +423,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[path_taken]: a document already exists at index.md\n  {}\n"
+        "stderr": "error[path_taken]: a document already exists at index.md\n"
       }
     },
     {
@@ -427,6 +508,44 @@
       }
     },
     {
+      "name": "meta-dry-run",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "meta",
+            "texts/mutus-liber.md",
+            "--set",
+            "era=1702",
+            "--unset",
+            "verified",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/mutus-liber.md\n@@ -2,9 +2,10 @@\n type: text\n layer: draft\n tradition: western\n-era: 1677\n-tags: [text, images]\n-verified: false\n+era: 1702\n+tags:\n+  - text\n+  - images\n ---\n \n # Mutus Liber\n\n",
+            "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+          }
+        },
+        {
+          "argv": [
+            "log",
+            "--cursor",
+            "18"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "",
+            "stderr": "  no changes\n"
+          }
+        }
+      ]
+    },
+    {
       "name": "meta-nothing",
       "workspace": "alchemy",
       "argv": [
@@ -483,7 +602,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document nope.md\n  {}\n"
+        "stderr": "error[doc_missing]: no document nope.md\n"
       }
     },
     {
@@ -552,7 +671,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[doc_missing]: no document texts/mutus-liber.md\n  {}\n"
+            "stderr": "error[doc_missing]: no document texts/mutus-liber.md\n"
           }
         },
         {
@@ -562,7 +681,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":19,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":55}\n"
           }
         }
       ]
@@ -584,6 +703,38 @@
       }
     },
     {
+      "name": "rm-doc-dry-run",
+      "workspace": "alchemy",
+      "steps": [
+        {
+          "argv": [
+            "rm",
+            "--doc",
+            "texts/mutus-liber.md",
+            "--dry-run",
+            "--actor",
+            "human:spec"
+          ],
+          "pin_stderr": true,
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/mutus-liber.md\n@@ -1,36 +0,0 @@\n----\n-type: text\n-layer: draft\n-tradition: western\n-era: 1677\n-tags: [text, images]\n-verified: false\n----\n-\n-# Mutus Liber\n-\n-The \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\n-text. The entire Great Work, allegedly, in pictures.\n-\n-length:: fifteen plates\n-attributed_to:: altus\n-\n-## Contents\n-\n-The plates show a couple gathering dew in sheets stretched between poles,\n-processing it through vessels, and attending a furnace, framed by angels and\n-zodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n-\n-The dew-gathering is the one concretely readable operation, and it connects to a\n-real strand of practice: dew was held to be a celestial condensate and a candidate\n-[prima materia](/substances/prima-materia.md).\n-\n-## Status of these notes\n-\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n-\n-- [ ] Obtain a facsimile with plate numbering\n-- [ ] Compare the 1677 and 1702 plate sequences\n-- [ ] Decide whether the dew operation is literal\n-\n\n",
+            "stderr": "  dry run — 1 file(s) would change, nothing committed\n"
+          }
+        },
+        {
+          "argv": [
+            "ls",
+            "texts/*"
+          ],
+          "expect": {
+            "exit": 0,
+            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n"
+          }
+        }
+      ]
+    },
+    {
       "name": "rm-doc-missing",
       "workspace": "alchemy",
       "argv": [
@@ -596,12 +747,12 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[doc_missing]: no document nope.md\n  {}\n"
+        "stderr": "error[doc_missing]: no document nope.md\n"
       }
     },
     {
       "name": "update-doc",
-      "notes": "§6 (document target): --plan prints the opset, a commit reports the summary and the ids",
+      "notes": "§6 (document target): --plan prints the opset, a commit reports the summary and each touched id once",
       "workspace": "alchemy",
       "steps": [
         {
@@ -633,7 +784,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_307\nb_309\nb_310\nb_322\nb_308\nb_322\n",
+            "stdout": "b_307\nb_309\nb_310\nb_322\nb_308\n",
             "stderr": "  ok updated texts/mutus-liber.md · 6 preserved, 1 updated, 0 moved, 1 created, 2 removed\n"
           }
         },

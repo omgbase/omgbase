@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { docsUpdate, renderOpsetPlan, isValidId, type DocsUpdateContext } from "@omgbase/core";
+import { docsUpdate, renderOpsetPlan, type DocsUpdateContext } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
@@ -17,11 +17,13 @@ import { remoteCall } from "./_remote.js";
 // nothing.
 
 function runUpdate(cli: Cli, args: string[]): number | Promise<number> {
-  // Peek at the target to dispatch: a b_ id is a block replace; anything else
-  // (d_ id or path) is a whole-document update. The block path re-parses args.
+  // Peek at the target to dispatch: a `b_` token is a block replace — a token
+  // that names no live block fails there as block_missing (spec/cli §6), never
+  // as a document path; anything else (d_ id or path) is a whole-document
+  // update. The block path re-parses args.
   const peek = extractContentOpts(args);
   const target = peek.rest.find((a) => !a.startsWith("-"));
-  if (target && isValidId(target, "b")) return cmdUpdateBlock.run(cli, args);
+  if (target && target.startsWith("b_")) return cmdUpdateBlock.run(cli, args);
   return runDocUpdate(cli, args);
 }
 
@@ -97,7 +99,10 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
 
   const g = cli.render.g;
   cli.io.err(cli.style.dim(`  ${cli.style.ok(g.ok)} updated ${cli.style.accent(opset.target.path)} · ${opset.summary.preserved} preserved, ${opset.summary.updated} updated, ${opset.summary.moved} moved, ${opset.summary.created} created, ${opset.summary.removed} removed`));
-  for (const id of result.results.flatMap((r) => r.ids)) cli.io.out(id);
+  // Every id the opset touched, once each: a block appears in several ops'
+  // results (an update then a retile of the same block), the confirmation
+  // lists it a single time.
+  for (const id of new Set(result.results.flatMap((r) => r.ids))) cli.io.out(id);
   return EXIT_OK;
 }
 

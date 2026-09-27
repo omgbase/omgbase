@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolveRef, nodesGet, docsRead } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 import { expandBlockArgs } from "./_mutate.js";
 
@@ -10,7 +10,8 @@ import { expandBlockArgs } from "./_mutate.js";
 // For a document ref, cats the whole rendered document; for a block, the block
 // (subtree at raw). No decoration on stdout: cat is the bytes. Several refs (or
 // `-` = refs from stdin, one per line — the counterpart of `--ids`, same
-// convention as the mutators) are cat'ed in order, like unix cat.
+// convention as the mutators) are cat'ed in order, like unix cat. `--json` is
+// the mapped tool's result: `docs_read` for a document, `nodes_get` for a block.
 //
 // Refs are what `resolveRef` accepts: a block/doc/node id or a repo-relative
 // document path. `--resolution` is a block-level notion (nodes_get); a document
@@ -39,7 +40,10 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
     const r = await remoteCall<Record<string, unknown> & { kind: string }>(cli, "read_ref", { ref, ...(resolution !== "raw" ? { resolution } : {}) });
     if (r.kind === "document") {
       warnDocResolution(cli, ref, resolution);
-      return { text: String(r.content ?? ""), json: { doc: r.docId, path: r.path, content: r.content }, capture: r.content };
+      // The `docs_read` result is the `read_ref` document result without `kind`.
+      const { kind: _kind, ...doc } = r;
+      void _kind;
+      return { text: String(r.content ?? ""), json: doc, capture: r.content };
     }
     return { text: String(r.raw ?? r.text ?? r.label ?? ""), json: r, capture: r };
   }
@@ -58,8 +62,8 @@ async function catOne(cli: Cli, ref: string, resolution: Resolution): Promise<Ca
     const res = docsRead(ws.store, resolved.docId);
     if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     warnDocResolution(cli, ref, resolution);
-    // shell: the bytes (a string; @_ only)
-    return { text: res.content, json: { doc: res.docId, path: res.path, content: res.content }, capture: res.content };
+    // shell: the bytes (a string; @_ only). `--json` is the `docs_read` result.
+    return { text: res.content, json: res, capture: res.content };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution });
@@ -97,13 +101,9 @@ async function runCat(cli: Cli, args: string[]): Promise<number> {
   const single = results.length === 1 ? results[0]! : null;
   cli.capture?.(single ? single.capture : results.map((r) => r.capture));
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(single ? single.json : results.map((r) => r.json)));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const r of results) cli.io.out(JSON.stringify(r.json));
-    return EXIT_OK;
+  if (cli.flags.mode !== "human") {
+    const docs = results.map((r) => r.json);
+    return single ? emitMachine(cli, single.json) : emitMachine(cli, docs, { items: docs });
   }
   for (const r of results) cli.io.out(r.text);
   return EXIT_OK;

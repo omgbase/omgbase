@@ -31,7 +31,7 @@
     },
     {
       "name": "log-ids",
-      "notes": "§9: --ids prints commit ids and no footer",
+      "notes": "§3.4: --ids prints the commit ids and the truncation footer, like every mode but --json",
       "workspace": "alchemy",
       "argv": [
         "log",
@@ -43,7 +43,7 @@
       "expect": {
         "exit": 0,
         "stdout": "c_0\nc_1\n",
-        "stderr": ""
+        "stderr": "… truncated; continue with --cursor 2\n"
       }
     },
     {
@@ -156,7 +156,7 @@
     },
     {
       "name": "log-since-garbage",
-      "notes": "§9: an unparsable --since means the epoch",
+      "notes": "§6: an unparsable --since is a usage error (exit 2)",
       "workspace": "alchemy",
       "argv": [
         "log",
@@ -167,9 +167,9 @@
       ],
       "pin_stderr": true,
       "expect": {
-        "exit": 0,
-        "stdout": "#1 observed observed: index.md — 31 inserted\n",
-        "stderr": "… truncated; continue with --cursor 1\n"
+        "exit": 2,
+        "stdout": "",
+        "stderr": "usage: bad --since 'garbage' (use a relative age like 24h or 7d, or an ISO timestamp)\n"
       }
     },
     {
@@ -330,7 +330,7 @@
     },
     {
       "name": "hist-ids-is-human",
-      "notes": "§9: --ids falls back to the human rendering",
+      "notes": "§3.2: a change carries no id, so --ids prints the --json document",
       "workspace": "alchemy",
       "argv": [
         "hist",
@@ -339,7 +339,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+        "stdout": "[{\"commitId\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"kind\":\"inserted\",\"confidence\":null,\"reason\":null}]\n"
       }
     },
     {
@@ -519,7 +519,7 @@
     },
     {
       "name": "diff-after-writes",
-      "notes": "default previous → current; --from/--to pick revisions; --jsonl falls back to human (§9)",
+      "notes": "default previous → current; --from/--to pick revisions; an unknown revision is target_missing; --jsonl prints the --json document (§3.2)",
       "workspace": "alchemy",
       "steps": [
         {
@@ -611,7 +611,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[error]: no revision \"r_9999\" for document d_17\n"
+            "stderr": "error[target_missing]: no revision \"r_9999\" for document d_17\n  {\n    \"doc\": \"d_17\",\n    \"rev\": \"r_9999\"\n  }\n"
           }
         },
         {
@@ -622,7 +622,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "@@ -11,7 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft, revised.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -11,7 +11,7 @@\\n real strand of practice: dew was held to be a celestial condensate and a candidate\\n [prima materia](/substances/prima-materia.md).\\n ## Status of these notes\\n-Draft, revised.\\n+From the second write.\\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\\n - [ ] Decide whether the dew operation is literal\"}\n"
           }
         }
       ]
@@ -760,7 +760,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
+        "stdout": "{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1,\"block\":\"b_307\"}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1,\"block\":\"b_28\"}]}\n"
       }
     },
     {
@@ -773,12 +773,12 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+        "stdout": "  out\n    references > d_13 (b_307)\n  in (backlinks)\n    d_0 (b_28) > references\n"
       }
     },
     {
       "name": "links-jsonl-is-human",
-      "notes": "§9",
+      "notes": "§3.2: `{ out, in }` is not a list, so --jsonl prints the --json document",
       "workspace": "alchemy",
       "argv": [
         "links",
@@ -787,7 +787,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n"
+        "stdout": "{\"out\":[{\"predicate\":\"references\",\"node\":\"d_13\",\"kind\":\"document\",\"count\":1,\"samples\":[\"b_307\"]}],\"in\":[{\"predicate\":\"references\",\"node\":\"d_0\",\"kind\":\"document\",\"count\":1}]}\n"
       }
     },
     {

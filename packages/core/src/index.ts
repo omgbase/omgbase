@@ -69,7 +69,7 @@ export { observeFile, observeMany, observeOne, observeDelete, observeBatch, type
 export { buildServer, type ServerContext } from "./mcp/server.js";
 export { serveStdio, type ServeStdioHandle } from "./mcp/stdio.js";
 export { processCheckpoint, type CheckpointResult } from "./sync/checkpoint.js";
-export { reposStatus, syncStatus, type RepoStatus, type SyncStatus, type DiskStatus } from "./sync/admin.js";
+export { reposStatus, syncStatus, reposList, type RepoStatus, type SyncStatus, type DiskStatus, type ReposList } from "./sync/admin.js";
 
 // Read surface consumed by CLI read commands (11 §5.2–5.5).
 export { docsOutline, type OutlineResult, type OutlineOptions } from "./core/read/outline.js";
@@ -102,16 +102,16 @@ export {
   type DocEmbedMethod,
   type DocVectorRow,
 } from "./search/embeddings.js";
-export { buildEmbedTasks, buildDocEmbedTasks } from "./search/tasks.js";
+export { buildEmbedTasks, buildDocEmbedTasks, staleEmbedCount } from "./search/tasks.js";
 export { EmbedDrainer, type DrainerOptions } from "./search/drain.js";
 export { embeddingSettings, type EmbeddingSettings } from "./search/provider.js";
 export { createExternalProvider, type ExternalProvider } from "./search/external.js";
 export { hybridSearch, type HybridHit, type HybridInput } from "./search/rrf.js";
 export { vectorSearch, docVectorSearch, type VectorHit, type DocVectorHit } from "./search/vector.js";
-export { historyNode, diffUnified, unifiedDiff, changesSince, type NodeChange, type CommitDigest } from "./graph/history.js";
+export { historyNode, diffUnified, docDiffUnified, diffBlocks, unifiedDiff, changesSince, RevisionNotFound, type NodeChange, type CommitDigest, type DocDiffUnified, type DiffEntry } from "./graph/history.js";
 export { docLinks, type LinksResult, type LinkEdge, type LinksOptions } from "./graph/links.js";
 export { FilterInvalid } from "./search/cel/parser.js";
-export { EngineError, type ErrorCode } from "./mcp/errors.js";
+export { EngineError, errorBody, type ErrorCode, type ErrorBody } from "./mcp/errors.js";
 export { MutationError } from "./mutate/tree.js";
 export { isValidId, prefixOf, mintId, setIdMinter, withIdMinter, sequentialMinter, repeatingMinter, registerIdOracle, type IdMinter, type IdOracle, type IdPrefix } from "./core/ids.js";
 // The clock seam (spec/surface §7.1): `omg mcp` pins the process clock under OMGBASE_SPEC_CLOCK.
@@ -171,3 +171,4 @@ export {
 } from "./mutate/opset.js";
 export { rebuildIndex, type RebuildTarget } from "./core/store/rebuild.js";
 export { runGc, type GcResult } from "./core/store/gc.js";
+export { LIVE_LEAF_SQL, ftsIndexedRowCount, liveLeafCount } from "./core/store/fts.js";

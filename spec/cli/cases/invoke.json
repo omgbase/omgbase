@@ -3,14 +3,14 @@
   "cases": [
     {
       "name": "version",
-      "notes": "§2.5: the version on stdout, exit 0, no workspace needed",
+      "notes": "§2.5: the CLI package's version on stdout, exit 0, no workspace needed",
       "workspace": "none",
       "argv": [
         "--version"
       ],
       "expect": {
         "exit": 0,
-        "stdout": "0.1.0\n"
+        "stdout": "<version>\n"
       }
     },
     {
@@ -22,7 +22,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "0.1.0\n"
+        "stdout": "<version>\n"
       }
     },
     {
@@ -37,7 +37,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "0.1.0\n"
+        "stdout": "<version>\n"
       }
     },
     {
@@ -130,7 +130,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  repos — List the repos in this workspace: slug, root path (from its fs source), doc/block counts\n  usage: omg repos [--ids|--json|--jsonl]\n  options:\n    --ids       slugs only, one per line\n    -h, --help  show this help\n"
+        "stdout": "  repos — List the repos in this workspace: slug, root path (from its fs source), doc/block counts\n  usage: omg repos [--ids|--json|--jsonl]\n  options:\n    --ids       slugs only, one per line\n    --json      the `repos` tool's result: `{ repos: [{ slug, hasSource }] }` (counts are `status --json`)\n    -h, --help  show this help\n"
       }
     },
     {
@@ -142,7 +142,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  status — Where am I: the active repo, doc/block/commit counts, sync convergence, watcher, embed queue\n  usage: omg status [--repo <slug>] [--json]\n  options:\n    --json      a flat object: repo, root, docs, blocks, commits, openEdges, convergent, disk, watcher, embedQueue\n    -h, --help  show this help\n"
+        "stdout": "  status — Where am I: the active repo, doc/block/commit counts, sync convergence, watcher, embed queue\n  usage: omg status [--repo <slug>] [--json]\n  options:\n    --json      the repos_status result, plus `sync` (the sync_status result), `watcher` (live|none) and `embedQueue` (stale embeddable blocks)\n    -h, --help  show this help\n"
       }
     },
     {
@@ -166,7 +166,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  outline — A document's outline with block ids inline (frozen wire format) — the orientation view\n  usage: omg outline <doc|path> [--depth <n>] [--section <locator>] [--skeleton]\n  options:\n    --depth <n>          limit heading depth\n    --section <locator>  outline only the section at a locator\n    --skeleton           structure only, no text\n    -h, --help           show this help\n"
+        "stdout": "  outline — A document's outline with block ids inline (frozen wire format) — the orientation view\n  usage: omg outline <doc|path> [--depth <n>] [--skeleton]\n  options:\n    --depth <n>  limit heading depth\n    --skeleton   structure only, no text\n    -h, --help   show this help\n"
       }
     },
     {
@@ -262,7 +262,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  diff — Unified diff of a document between two revisions (default: previous → current)\n  usage: omg diff <doc> [--from <rev>] [--to <rev>]\n  options:\n    --from <rev>  older revision id (default: the one before --to)\n    --to <rev>    newer revision id (default: current)\n    -h, --help    show this help\n"
+        "stdout": "  diff — Unified diff of a document between two revisions (default: previous → current)\n  usage: omg diff <doc> [--from <rev>] [--to <rev>] [--blocks]\n  options:\n    --from <rev>  older revision id (default: the one before --to)\n    --to <rev>    newer revision id (default: current)\n    --blocks      block-grain: which blocks were added, removed or changed (the `diff` tool)\n    -h, --help    show this help\n"
       }
     },
     {
@@ -399,15 +399,14 @@
     },
     {
       "name": "node-bare-needs-workspace",
-      "notes": "§9: a bare `node` is its help card only inside a workspace — the freshness sweep runs first (unlike `source`, which skips it)",
+      "notes": "§5: a bare `node` is its help card from any directory — help is routed before the workspace is opened",
       "workspace": "none",
       "argv": [
         "node"
       ],
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+        "exit": 0,
+        "stdout": "  node — Edit a projected node's editable properties surgically (a link's target, a task's checked, …)\n  usage: omg node set <nodeId> <prop> <value> [--actor <s>] [--dry-run]\n         omg node props <nodeId>\n  options:\n    set          rewrite one property; the adapter maps it back onto the source block\n    props        list which properties of this node's kind are editable\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
       }
     },
     {
@@ -551,7 +550,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  doctor — Invariant sweep: convergence, FTS rows vs live blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n  options:\n    --json      `{ ok, checks: [{ name, ok, detail }] }`\n    -h, --help  show this help\n"
+        "stdout": "  doctor — Invariant sweep: convergence, FTS rows vs live leaf blocks, dangling revisions, SQLite integrity — exit 1 on any failure (CI-able)\n  usage: omg doctor [--json]\n  options:\n    --json      `{ ok, checks: [{ name, ok, detail }] }`\n    -h, --help  show this help\n"
       }
     },
     {
@@ -645,7 +644,7 @@
     },
     {
       "name": "stray-flag-before-command",
-      "notes": "§9: no `usage:` prefix on this path",
+      "notes": "§2.2: a usage error like every other (`usage:` prefix, exit 2)",
       "workspace": "none",
       "argv": [
         "-n",
@@ -655,7 +654,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "unknown flag -n\n"
+        "stderr": "usage: unknown flag -n\n"
       }
     },
     {
@@ -667,7 +666,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "-C requires a directory\n"
+        "stderr": "usage: -C requires a directory\n"
       }
     },
     {
@@ -680,7 +679,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "--repo requires a slug\n"
+        "stderr": "usage: --repo requires a slug\n"
       }
     },
     {
@@ -692,7 +691,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "--server requires a command or url\n"
+        "stderr": "usage: --server requires a command or url\n"
       }
     },
     {
@@ -704,7 +703,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "-H requires a \"Name: value\" header\n"
+        "stderr": "usage: -H requires a \"Name: value\" header\n"
       }
     },
     {
@@ -722,7 +721,7 @@
     },
     {
       "name": "no-workspace-json",
-      "notes": "the hint is dropped from the JSON error (§9)",
+      "notes": "§3.5: the JSON error carries the hint",
       "workspace": "none",
       "argv": [
         "ls",
@@ -731,7 +730,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no omgbase workspace found at or above <workspace>\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"repo_not_found\",\"message\":\"no omgbase workspace found at or above <workspace>\",\"hint\":\"run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\",\"retriable\":false}\n"
       }
     },
     {
@@ -807,7 +806,7 @@
     },
     {
       "name": "server-empty-runs-locally",
-      "notes": "§9: an empty --server value falls through to the local store",
+      "notes": "§2.2: an empty --server value is the missing-value usage error; it never falls through to the local store",
       "workspace": "none",
       "argv": [
         "ls",
@@ -815,9 +814,9 @@
         ""
       ],
       "expect": {
-        "exit": 1,
+        "exit": 2,
         "stdout": "",
-        "stderr": "error[repo_not_found]: no omgbase workspace found at or above <workspace>\n  hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace\n"
+        "stderr": "usage: --server requires a command or url\n"
       }
     },
     {
@@ -1089,7 +1088,7 @@
     },
     {
       "name": "unknown-option-is-an-engine-error",
-      "notes": "§9: an unknown per-command option exits 1 under Node's parseArgs code, not 2",
+      "notes": "§2.2: an unknown per-command option is a usage error (exit 2) with the command's card as the hint",
       "workspace": "alchemy",
       "argv": [
         "log",
@@ -1097,9 +1096,9 @@
         "x"
       ],
       "expect": {
-        "exit": 1,
+        "exit": 2,
         "stdout": "",
-        "stderr": "error[ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--scope'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"--scope\"\n"
+        "stderr": "usage: unknown option '--scope'\n  hint: run 'omg log --help' for the options\n"
       }
     },
     {
@@ -1111,9 +1110,9 @@
         "--json"
       ],
       "expect": {
-        "exit": 1,
+        "exit": 2,
         "stdout": "",
-        "stderr": "{\"error\":\"ERR_PARSE_ARGS_UNKNOWN_OPTION\",\"message\":\"Unknown option '--bogus'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \\\"--bogus\\\"\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"usage\",\"message\":\"unknown option '--bogus'\",\"hint\":\"run 'omg ls --help' for the options\",\"retriable\":false}\n"
       }
     },
     {
@@ -1214,7 +1213,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"other\",\"root\":\"<workspace>/other\",\"docs\":1,\"blocks\":2,\"commits\":1,\"openEdges\":0,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":1,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_1\",\"slug\":\"other\",\"rootPath\":\"<workspace>/other\",\"docs\":1,\"blocks\":2,\"commits\":1,\"openEdges\":0,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":1,\"lastCheckpoint\":\"cp_1\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":0}\n"
           }
         }
       ]

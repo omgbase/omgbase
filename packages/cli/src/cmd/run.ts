@@ -2,8 +2,9 @@ import { parseArgs } from "node:util";
 import { resolveRef, findDoc, loadDocBlocks, blockRaw, oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type BlockNode } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, renderHelp, renderHits } from "../output.js";
+import { CliUsageError, EngineErrorLike, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
+import { renderOqxResult } from "./oqx.js";
 
 // `omg run <locator|path>` (11 §5.3) — evaluate the first ```omg fence in a doc
 // (or the fence at a block locator) and print its results. The fence body is an
@@ -95,33 +96,9 @@ async function runRun(cli: Cli, args: string[]): Promise<number> {
     result = oqxRun(ws.store, repo.repoId, source);
   }
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
-  if (result.consumer === "count" || result.consumer === "exists" || result.consumer === "none") {
-    cli.io.out(result.consumer === "count" ? String(result.count) : result.consumer === "exists" ? String(result.exists) : String(result.none));
-    return EXIT_OK;
-  }
-  if (result.values) {
-    for (const v of result.values) cli.io.out(typeof v === "string" ? v : JSON.stringify(v));
-    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "ids") {
-    for (const h of result.hits) cli.io.out(h.id);
-    return EXIT_OK;
-  }
-  const { style, io } = cli;
-  if (result.hits.length === 0) {
-    io.err(style.dim("  no hits"));
-    return EXIT_OK;
-  }
-  // Same renderer as `omg query`: `<id>  <path>` lines, or a column table when
-  // the fence projects (a selected `text` shows as its first line).
-  renderHits(cli, result.hits);
-  if (result.truncated) truncationFooter(io, style, result.cursor ?? "");
-  return EXIT_OK;
+  // Same renderer as `omg query`, in every mode: `<id>  <path>` lines, or a
+  // column table when the fence projects (a selected `text` shows as its first line).
+  return renderOqxResult(cli, result);
 }
 
 export const cmdRun: Command = { name: "run", summary: "Evaluate an ```omg fence (OQX, inert, read-only)", run: (c, a) => runRun(c, a) };

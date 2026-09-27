@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { resolve as resolveThing, type ResolveInput } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 
@@ -73,18 +73,7 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
     if (hits[0]) cli.io.out(hits[0].id);
     return EXIT_OK;
   }
-  if (cli.flags.mode === "ids") {
-    for (const h of hits) cli.io.out(h.id);
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(hits));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const h of hits) cli.io.out(JSON.stringify(h));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, hits, { items: hits, ids: hits.map((h) => h.id) });
 
   const { style, io } = cli;
   if (hits.length === 0) {

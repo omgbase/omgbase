@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { oqxRun, oqxRunAsync, collectSemanticPhrases, type EmbedQuery, type OqxResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { truncationFooter, EngineErrorLike, EXIT_OK, renderHelp, renderHits } from "../output.js";
+import { truncationFooter, CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp, renderHits } from "../output.js";
 import { loadEmbedding } from "./_embed.js";
 import { remoteCall } from "./_remote.js";
 import { readStdin } from "./_mutate.js";
@@ -90,10 +90,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   const source = values.file
     ? (values.file === "-" ? readStdin() : readFileSync(values.file, "utf8"))
     : positionals.join(" ").trim();
-  if (!source) {
-    cli.io.err(cli.style.dim("  usage: query <source>  (or -f file|-)"));
-    return EXIT_OK;
-  }
+  if (!source) throw new CliUsageError("query requires a <source> (or -f file|-)");
 
   const opts: { limit?: number; cursor?: string } = {};
   if (values.n) opts.limit = Number(values.n);
@@ -141,11 +138,25 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
       : result.values ?? result,
   );
 
-  // JSON emits the whole result verbatim (incl. consumer + any scalar), so
-  // count/exists round-trip without special-casing.
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
+  return renderOqxResult(cli, result);
+}
+
+/**
+ * Render an `OqxResult` in the current mode (shared with `run`). `--json` is the
+ * whole result verbatim (incl. consumer + any scalar), so count/exists round-trip
+ * without special-casing; `--jsonl` streams the hits (or the values, as JSON);
+ * `--ids` the hit ids — a scalar result has neither, so those modes print the
+ * document. The truncation footer prints in every mode but `--json`.
+ */
+export function renderOqxResult(cli: Cli, result: OqxResult): number {
+  const cursor = result.truncated ? result.cursor ?? "" : null;
+  if (cli.flags.mode !== "human") {
+    const list = result.values ?? (result.consumer === "collect" || result.consumer === "first" || result.consumer === "single" ? result.hits : undefined);
+    return emitMachine(cli, result, {
+      ...(list ? { items: list } : {}),
+      ...(list && !result.values ? { ids: result.hits.map((h) => h.id) } : {}),
+      cursor,
+    });
   }
 
   // Scalar consumers (count/exists/none) have no hits — render the reduction itself.
@@ -156,21 +167,10 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
   }
 
   // A `values` projection has no hits — one bare value per line (strings
-  // verbatim, anything else as JSON; `--jsonl` is JSON throughout).
+  // verbatim, anything else as JSON).
   if (result.values) {
-    for (const v of result.values) cli.io.out(typeof v === "string" && cli.flags.mode !== "jsonl" ? v : JSON.stringify(v));
-    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
-    return EXIT_OK;
-  }
-
-  if (cli.flags.mode === "ids") {
-    for (const h of result.hits) cli.io.out(h.id);
-    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const h of result.hits) cli.io.out(JSON.stringify(h));
-    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor ?? "");
+    for (const v of result.values) cli.io.out(typeof v === "string" ? v : JSON.stringify(v));
+    if (cursor !== null) truncationFooter(cli.io, cli.style, cursor);
     return EXIT_OK;
   }
 

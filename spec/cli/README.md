@@ -72,8 +72,8 @@ error[repo_not_found]: no omgbase workspace found at or above <cwd>
   hint: run `omg init` to create one here, or `omg -C <dir> …` to run inside an existing workspace
 ```
 
-(exit 1; `--json` prints `{"error":"repo_not_found","message":…,"retriable":false}` — the
-hint is dropped, §9). `<cwd>` is the resolved absolute path (macOS's `/var`
+(exit 1; `--json` prints `{"error":"repo_not_found","message":…,"hint":…,"retriable":false}`
+— the same hint, as a field). `<cwd>` is the resolved absolute path (macOS's `/var`
 is printed as `/private/var`). `mcp` tailors the hint (§6 `mcp`).
 
 **Repo selection** is `spec/sync` §1: `--repo <slug>` names one (an unknown
@@ -107,23 +107,30 @@ command sees its arguments:
 
 Everything after a literal `--` is passed to the command untouched (the `--`
 itself is passed too and dropped by the command's own parser). A global flag
-whose value is missing is a usage error whose message is bare — no `usage:`
-prefix (§9): `-C requires a directory`, `--repo requires a slug`,
-`--server requires a command or url`, `-H requires a "Name: value" header`,
-exit 2. An unrecognized flag **before** the command is `unknown flag <flag>`
-(bare, exit 2); after the command it belongs to the command.
+whose value is missing is a usage error (§3.5: `usage: ` prefix, exit 2):
+`-C requires a directory`, `--repo requires a slug`,
+`--server requires a command or url` (also for an **empty** `--server ""`),
+`-H requires a "Name: value" header`. An unrecognized flag **before** the
+command is `usage: unknown flag <flag>` (exit 2); after the command it
+belongs to the command. The rest of argv is still parsed, so a `--json`
+anywhere selects the mode the error is rendered in.
 
 **Per-command options** are parsed by the command with `node:util`'s
 `parseArgs` semantics: `--name value`, `--name=value`, short `-n value`,
 booleans without a value, positionals anywhere. An option the command does
-not declare is **not** a usage error: it surfaces as an engine-style error
-under Node's code, exit 1 (§9):
+not declare, a value-taking option without its value, or a boolean given
+one, is a usage error (exit 2) with the hint
+`run '<prog> <command> --help' for the options`:
 
 ```
-error[ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--scope'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "--scope"
+usage: unknown option '--scope'
+usage: option '--depth' requires a value
+usage: option '--json' does not take a value
+  hint: run 'omg outline --help' for the options
 ```
 
-The content-bearing options `-m/--message` and `-f/--file` (and their `=`
+(the option is quoted as written — `--depth`, `-x`; an option with a short
+alias by its long spelling). The content-bearing options `-m/--message` and `-f/--file` (and their `=`
 forms) are extracted before `parseArgs` so a value beginning with `-`
 (`-m '- [ ] task'`) is taken verbatim.
 
@@ -142,7 +149,8 @@ usage: --server is not supported for '<name>' — it needs local ref resolution 
 
 `-H` with a non-`http(s)` server is `usage: -H/--header only applies to an http(s) --server url`;
 a header without a colon is `usage: invalid header "<h>" — expected "Name: value"`.
-An **empty** `--server ""` is accepted and the command runs locally (§9).
+An **empty** `--server ""` is the missing-value usage error of §2.2 — the
+flag was given, so the command never falls through to the local store.
 The remote path itself (spawning or connecting, the tool calls, their
 rendering) is **unpinned** here: it is the catalog of `spec/surface` §4 called
 from a client, and it needs a second process.
@@ -169,8 +177,9 @@ the binary was invoked as (`omg` or `omgbase`; a bare `node main.js` run says
 
 `--version`/`-V` with no command prints the version and exits 0 before
 anything else is looked at — before the seams are validated (§9) and
-without a workspace. The reference prints `0.1.0`: the `VERSION` constant of
-`@omgbase/core`, not the CLI package's version (§9). No command, or `--help`
+without a workspace. The version is the **CLI package's** (`omgbase` on
+npm: `0.4.0` for this fixture set), not the engine library's — an
+implementation prints its own release. No command, or `--help`
 with no command, or the command `help`, prints the **catalog** (§5) on
 stdout, exit 0. `<command> --help` / `-h`, or `-h <command>`, prints the
 command's **card** (§5) on stdout, exit 0, without a workspace and without
@@ -206,31 +215,34 @@ must honor them when it accepts them.
 stdout is data; stderr is everything else: diagnostics (`committed · 1
 document touched`, `updating b_309 (CAS pinned from current bytes)`),
 progress, the truncation footer, empty-result notes (`no hits`,
-`no documents`, `no changes`, `no matches`, `no links`, `no history`), and
-errors. Every line ends in `\n`; a command that prints a string not ending
-in `\n` gets one appended. Exceptions, pinned as built (§9): `repos` with no
-repo prints `no repos attached` on **stdout**; `source list` with none prints
-`no sources registered` on stdout; `sync` on a sourceless repo prints its
-note on stdout.
+`no documents`, `no changes`, `no matches`, `no links`, `no history`,
+`no repos attached`, `no sources registered`, `<slug> has no filesystem
+source — nothing to sync`), and errors. Every line ends in `\n`; a command
+that prints a string not ending in `\n` gets one appended. There are no
+exceptions: an empty result leaves stdout empty in every verb.
 
 ### 3.2 Modes
 
 Four modes, chosen by the global flags; `human` is the default.
 
 - **human** — the renderings of §4 and §6.
-- **`--json`** — the library result object, verbatim, as one
-  `JSON.stringify` document (no spaces, key order as produced) followed by
-  `\n`. Where the CLI has no library object it prints a CLI-shaped one; §6
-  names each and §9 lists them.
-- **`--jsonl`** — list-shaped results as one JSON object per line.
-- **`--ids`** — list-shaped results as bare ids (or paths, or slugs) one per
-  line.
+- **`--json`** — the result of the MCP tool the verb maps to (§6 names
+  it; `docs/surface-map.md`), verbatim, as one `JSON.stringify` document
+  (no spaces, key order as produced) followed by `\n`. Where a verb has no
+  tool (`init`, `source`, `gc`, `rebuild-index`, `doctor`, `config`,
+  `embed`) §6 gives the CLI shape.
+- **`--jsonl`** — when the result has a list (hits, rows, digests, changes,
+  entries, repos, sources), one JSON object per line; otherwise the `--json`
+  document.
+- **`--ids`** — when the result has an id list (hit ids, paths, commit
+  ids, slugs, source names, the far nodes of `links`), one per line;
+  otherwise the `--json` document.
 
-Where a verb does not implement a mode, what it falls back to is pinned per
-verb in §6: some print the JSON object for every non-human mode
-(`status --ids`, `outline --ids`, `sync --ids`, `doctor --ids`, `gc`,
-`init`, `show` per card), some fall back to the human rendering
-(`diff --jsonl`, `hist --ids`, `links --jsonl`) — §9.
+One rule for every verb: a machine mode never falls back to the human
+rendering. So `status --ids`, `outline --jsonl`, `sync --ids`,
+`doctor --ids`, `diff --jsonl`, `links --jsonl`, `hist --ids` (a change
+carries no id) all print the `--json` document; `cat`/`show` with several
+refs stream one object per ref under `--jsonl`.
 
 ### 3.3 The plain tier
 
@@ -268,8 +280,9 @@ A truncated list result prints, on stderr, after the data, exit 0:
 
 `<cursor>` is the result's cursor verbatim (`query`: the opaque page cursor;
 `log`: the commit sequence number; `outline`: the literal word `budget`).
-`--json` never prints the footer (the envelope carries `truncated`/`cursor`);
-`--jsonl` and human do; `--ids` does for `query` but not for `log` (§9).
+The footer prints in every mode but `--json`, whose document carries
+`truncated`/`cursor` itself: human, `--jsonl` and `--ids`, for every verb
+(`query --ids`, `log --ids`, `outline --jsonl`, …).
 
 ### 3.5 Errors
 
@@ -294,13 +307,18 @@ error[<code>]: <message>
 ```
 
 exit 1; with a machine mode
-`{"error":<code>,"message":…,"data":<data>,"retriable":false}` (`data`
-omitted when absent; the hint is dropped, §9; `retriable` is always `false`
-at the top level — a conflict's own `retriable: true` rides inside `data`).
-`<code>` is the error's `code`/`error` field; an error without one is
-`error` — OQX parse errors, an invalid `--cursor`, an unknown diff revision
-and a write on a sourceless repo all print `error[error]` (§9). An
-engine error whose `data` is `{}` prints the two lines `  {` / `  }` (§9).
+`{"error":<code>,"message":…,"data":<data>,"hint":<hint>,"retriable":false}`
+(`data` and `hint` omitted when absent; `retriable` is always `false` at the
+top level — a conflict's own `retriable: true` rides inside `data`).
+`<code>` is what the MCP catalog reports for the same failure
+(`spec/surface` §4's envelope; the reference renders both through one
+mapping): a typed error keeps its code; an OQX error and an invalid
+`--cursor` are `filter_invalid` (with `data { reason, hint }`); a diff
+against an unknown revision is `target_missing` (`data { doc, rev }`); and
+anything else — a write on a repo without a working tree
+(`mutation requires a rootPath or an explicit docStore`), an unexpected
+exception — is the catalog's catch-all `repo_not_found`. An empty payload
+(`data: {}`) prints nothing: the message line stands alone.
 A conflict (`stale_expectation`) prints its whole current-truth payload so the
 retry can be built from it:
 
@@ -332,8 +350,16 @@ dry run **does** consume minted ids (`spec/surface` §9) — the ids in its
 result are the ones the real run would have taken next.
 
 For a whole-document `update`, `--dry-run` (or `--plan`) prints the plan
-(§6 `update`). For the document verbs `new`, `mv`, `rm --doc` and `meta`
-the flag is **accepted and ignored: the write commits** (§9).
+(§6 `update`). The document verbs `new`, `mv`, `rm --doc` and `meta` run
+their operation with `dryRun`: it validates exactly as the real run would
+(`doc_missing`, `path_taken`, …) and returns `committed: false` with the
+per-file `diffs` it would make — a create is `""` → the bytes, a delete the
+bytes → `""`, a rename two entries (the old path emptied, the new path
+filled), a `meta` patch the one file before → after — rendered with the same
+note, path, unified diff and empty line as above; `--json` prints the
+operation's result with `diffs`. Nothing is written or committed. A
+`new --dry-run`'s `docId` is the id the real run would mint next (the dry
+run consumes it, as a block dry run consumes block ids).
 
 ### 3.7 Freshness and locks
 
@@ -359,7 +385,7 @@ observable in a fixture beyond `status`'s `none`.
 
 The commit **actor** of every CLI write defaults to `human:<os username>`
 (`--actor` overrides it) — unpinnable, so every fixture passes
-`--actor human:spec`; `node set` ignores the flag (§9).
+`--actor human:spec`.
 
 ## 4. Shared renderers
 
@@ -430,10 +456,10 @@ The **card** (`<command> --help`), on stdout:
 
 `omg` is the invoked name. Every card's bytes are pinned by
 `invoke::help-card-*`; the `query` card is followed by its example lines.
-`source` with no subcommand prints its card; `config help`, `embed help`,
-`node` (no subcommand) and `node help` print theirs — but only inside a
-workspace, because they are words, not the `--help` flag, and the freshness
-sweep runs first (§9).
+`source` and `node` with no subcommand print their card; `config help`,
+`embed help`, `node help` and `source help` print theirs. The help words are
+the `--help` flag spelled differently: they are routed before any workspace
+is opened or swept, so every card prints from any directory.
 
 ## 6. The verbs
 
@@ -475,18 +501,20 @@ field `raw ?? text ?? label`. `--resolution` other than `raw` on a document
 ref warns on stderr
 `  --resolution <r> ignored for <ref>: a document is always its exact bytes (resolutions apply to block refs)`
 and prints the bytes. `--json`: one ref → the object, several → an array;
-`--jsonl` one object per line; a block's object is `nodes_get` at the
-resolution (`{ id, type, raw, content_hash }` at raw), a document's is the
-CLI shape `{ doc, path, content }` (§9). Unknown ref →
-`doc_missing: no node <ref>` (a `b_` id too, §9).
+`--jsonl` one object per line (`--ids`: the same document — a read has no
+id list); a block's object is `nodes_get` at the resolution
+(`{ id, type, raw, content_hash }` at raw), a document's is the `docs_read`
+result `{ path, docId, rev, properties: { frontmatter, inline, computed },
+content }`. Unknown ref → `doc_missing: no node <ref>` (a `b_` id too, §9).
 
 ### `config`
 
 `config [list]` · `config get <key>` · `config set <key> <value>` — the
 settings of `spec/sync` §3 at two layers. The layer is the selected repo's
-(§2.1); `--repo ""` is the workspace layer. With no resolvable repo (a
-workspace with none, or an ambiguous cwd) `config` fails `repo_not_found` —
-the documented fallback to the workspace layer never fires (§9).
+(§2.1); `--repo ""` is the workspace layer; with no resolvable repo (a
+workspace with none, or an ambiguous cwd) the layer is the workspace's —
+the workspace is what you mean when you are not clearly inside a repo. An
+explicit `--repo <unknown>` is still `repo_not_found`.
 `list` (default): repo scope prints the **effective** settings,
 `  <mark> <key> = <JSON value>` per top-level key with `*` marking a key the
 repo's own layer sets (else a space), under the stderr header
@@ -503,31 +531,44 @@ string verbatim, anything else as JSON, an absent key as an empty line
 
 ### `diff`
 
-`diff <doc> [--from <rev>] [--to <rev>]` — `diff_unified`. `--to` defaults
-to the document's current revision, `--from` to the one before it (or the
-current one again when there is only one → an empty diff, stderr
-`  no changes`). Human: the unified diff's lines (`spec/surface` §3, no
-header); `--json` the CLI shape `{ doc, path, from, to, diff }` (§9);
-`--jsonl`/`--ids` fall back to human (§9). Unknown doc →
-`doc_missing: no document <ref>`; unknown revision →
-`error[error]: no revision "<rev>" for document <id>` (§9).
+`diff <doc> [--from <rev>] [--to <rev>] [--blocks]` — `diff_unified`.
+`--to` defaults to the document's current revision, `--from` to the one
+before it (or the current one again when there is only one → an empty
+diff, stderr `  no changes`). Human: the unified diff's lines
+(`spec/surface` §3, no header); `--json` the tool's result
+`{ doc, path, from, to, diff }` (the reference and the tool share one
+function); `--jsonl`/`--ids` the same document. `--blocks` is the
+block-grain `diff` tool over the same resolved pair: human one line per
+entry, `+ <id>  <first line of after>` (added), `- <id>  <first line of
+before>` (removed), `~ <id>  <first line of after>` (changed), none → stderr
+`  no changes`; `--json` the entry array
+`[{ kind, blockId, before?, after? }]`, `--jsonl` one per line, `--ids` the
+block ids. Unknown doc → `doc_missing: no document <ref>`; unknown revision
+→ `target_missing: no revision "<rev>" for document <id>` with
+`data { doc, rev }`.
 
 ### `doctor`
 
 `doctor [--json]` — four checks on the selected repo: `convergence`
-(`unconverged === 0`), `fts rows == live blocks`, `no dangling current_rev`,
+(`unconverged === 0`), `fts rows == live leaf blocks` (the rows the index
+holds — counted from FTS5's `blocks_fts_docsize` shadow table, since a
+`count(*)` on an external-content table answers from `blocks` — against the
+live leaf blocks of `spec/search` §1.1: live rows no live row names as
+`parent_block`; detail `fts=<n> leaves=<n>`), `no dangling current_rev`,
 `sqlite integrity`. Human: `  ok <name>` per passing check,
 `  x <name>  (<detail>)` per failing one; exit 1 when any fails. `--json`
 (and every non-human mode) `{ ok, checks: [{ name, ok, detail }] }`. The
-FTS check fails after any document deletion — observed or `rm --doc` — and
-`rebuild-index --fts` does not cure it (§9).
+FTS check holds after a deletion (observed or `rm --doc`) and after
+`rebuild-index --fts`.
 
 ### `done`
 
 `done <blocks…|-> [--undo] [--actor <s>] [--dry-run]` — `tasks_complete`
 (`--undo`: an `update` with `attrs.checked = false`, CAS pinned from the
-live row). Confirmation (§4). A non-task block is accepted: the commit
-records an `edited` change and the block is unchanged (§9).
+live row). Every block must be a live `task` block, checked before any op
+is built: another type →
+`type_mismatch: not a task: <ref> is a <type>` with `data { block, type }`,
+nothing committed. Confirmation (§4).
 
 ### `edit`
 
@@ -588,7 +629,7 @@ See §5.
 unknown id, is `block_missing: hist needs a block id; got <ref>`). Human,
 newest first: `#<seq> <kind>[ (<confidence to 2 decimals>)] <origin> <ts>`;
 none → stderr `  no history`. `--json` the change array; `--jsonl` one per
-line; `--ids` falls back to human (§9).
+line; `--ids` the same array (a change carries no id).
 
 ### `init`
 
@@ -631,10 +672,14 @@ node's document (a block ref reports its document). Human: `  out` then
 then `    <node> > <predicate> ×<count>` per incoming group; `--in`/`--out`
 alone select a direction (both together mean both); `--pred` keeps the
 listed predicates; groups are ordered by node id as text; none → stderr
-`  no links`. `--ids` the far node ids (out, then in); `--json` the
+`  no links`. `--blocks` is block-grain: one row per open edge, ordered by
+(predicate, node, block), the source block beside the far node —
+`    <predicate> > <node> (<block>)` out, `    <node> (<block>) > <predicate>`
+in (`(frontmatter)` for a block-less relation), no count. `--ids` the far
+node ids (out, then in); `--json` the
 `{ out: [{ predicate, node, kind, count, samples? }], in: [...] }` object
-(`--blocks` drops `samples`); `--jsonl` falls back to human (§9). Unknown
-ref → `doc_missing: no node <ref>`.
+(`--blocks`: `count` is 1, no `samples`, plus `block`); `--jsonl` the same
+object (it is not a list). Unknown ref → `doc_missing: no node <ref>`.
 
 ### `log`
 
@@ -644,13 +689,18 @@ ref → `doc_missing: no node <ref>`.
 days, weeks, 30-day months) or an absolute timestamp becomes an instant
 (against the pinned clock), and the cursor is the highest `seq` whose `ts`
 is strictly before it (so `--since` equal to every commit's `ts` returns
-them all); an unparsable value is the epoch (§9). Human, oldest first:
-`#<seq> <origin padded to 8> <summary>` (`observed: <path> — 31 inserted`,
-`api(<actor>): <path> — 12 edited, 1 inserted`; a commit whose revisions
-were all deleted or moved has an empty summary after `: `, §9); none →
-stderr `  no changes`; truncated → the footer with the next seq. `--json`
-the `{ digests, cursor, truncated, head }` result; `--jsonl` one digest per
-line plus the footer; `--ids` the commit ids without a footer (§9).
+them all); anything else is
+`usage: bad --since '<v>' (use a relative age like 24h or 7d, or an ISO timestamp)`,
+exit 2. Human, oldest first: `#<seq> <origin padded to 8> <summary>`
+(`observed: <path> — 31 inserted`, `api(<actor>): <path> — 12 edited, 1
+inserted`); a commit that wrote no revision names what it did instead: an
+observed or api deletion `observed: deleted <path>` /
+`api(<actor>): deleted <path>` (the documents whose `deleted_commit` is the
+commit, by path), a move `api(<actor>): moved <from> → <to>` (from the
+commit's `reason`, `move <from> -> <to>`). None → stderr `  no changes`;
+truncated → the footer with the next seq. `--json` the
+`{ digests, cursor, truncated, head }` result; `--jsonl` one digest per
+line plus the footer; `--ids` the commit ids plus the footer.
 
 ### `ls`
 
@@ -691,7 +741,7 @@ block sequence). Document-op confirmation (§4); `--json`
 `{ docId, path, committed }`. Neither `--set` nor `--unset` →
 `usage: meta requires --set or --unset`; a value without `=` →
 `usage: --set expects k=v, got '<v>'` / `usage: --set-json expects k=json, got '<v>'`.
-`--dry-run` is ignored (§9).
+`--dry-run`: the patched file's diff (§3.6).
 
 ### `move`
 
@@ -705,11 +755,15 @@ ids. Missing `--to` → `usage: move requires --to <parent>`; no blocks →
 `mv <doc> <new-path> [--actor <s>] [--dry-run]` — `docs_move`: the file is
 renamed, identity and history preserved. Confirmation (§4) `moved to
 <new-path>`; `--json` the `DocMoveResult`
-`{ docId, path, committed, dangling: [...], retargeted }` — inbound links
-that named the old path are **not** rewritten and are listed only there
-(§9). Unknown → `doc_missing: no document <ref>`; taken →
-`path_taken: a document already exists at <path>`. `--dry-run` is ignored
-(§9).
+`{ docId, path, committed, dangling: [...], retargeted }`. Inbound links
+that named the old path are **not** rewritten; they are listed in
+`dangling` and, in human mode, reported on stderr after the confirmation:
+`  ! <n> inbound link(s) still name(s) the old path: <path> <block>, …`
+(`<path> (frontmatter)` for a block-less relation) then
+`  fix: omg retarget /<old path> /<new path> --apply`; nothing when none
+dangle. Unknown → `doc_missing: no document <ref>`; taken →
+`path_taken: a document already exists at <path>`. `--dry-run`: the rename
+as two file diffs (§3.6), then the same dangling note.
 
 ### `new`
 
@@ -718,7 +772,7 @@ that named the old path are **not** rewritten and are listed only there
 verbatim). Confirmation (§4) `created <path>`; `--json`
 `{ docId, path, committed }`. Existing →
 `path_taken: document already exists at <path>` (with the `{}` payload,
-§9). `--dry-run` is ignored: the document is created (§9).
+§9). `--dry-run`: the would-be file's diff (§3.6), nothing created.
 
 ### `node`
 
@@ -730,21 +784,21 @@ verbatim). Confirmation (§4) `created <path>`; `--json`
 joined by a space; an inedible property →
 `node_not_editable: no editor for <kind>.<prop>` with
 `data { kind, prop, editable }`; unknown node →
-`block_missing: node <id> not found` (`{}` payload). As built, `node set
-<task> checked true` **reports a commit but changes nothing** — the
-`--dry-run` diff shows `- [ ]` → `- [x]`, the commit does not — and
-`--actor` is parsed and ignored (§9). No subcommand → the card; `zap` →
+`block_missing: node <id> not found` (`{}` payload). `--actor` is an
+option with a value and is parsed as one (it never leaks into the property
+value); the commit carries it. No subcommand → the card; `zap` →
 `usage: unknown node subcommand 'zap' (set|props)`.
 
 ### `outline`
 
-`outline <doc|path> [--depth <n>] [--section <locator>] [--skeleton]`
-(alias `ol`) — `docs_outline`. Human: the wordmark with the document's path,
-the rule, then the wire format lines; `--depth` limits heading depth,
-`--skeleton` is `resolution: skeleton`; `--section` is accepted and ignored
-(§9). `--json` (and every non-human mode, §9) the `OutlineResult`
-`{ text, truncated }`; a truncated outline prints the footer with the word
-`budget`. Unknown → `doc_missing: no document <ref>`.
+`outline <doc|path> [--depth <n>] [--skeleton]` (alias `ol`) —
+`docs_outline`. Human: the wordmark with the document's path, the rule, then
+the wire format lines; `--depth` limits heading depth, `--skeleton` is
+`resolution: skeleton` (there is no `--section`: an unknown option, §2.2).
+`--json` (and every machine mode: the result has neither a list nor ids)
+the `OutlineResult` `{ text, truncated }`; a truncated outline prints the
+footer with the word `budget` (every mode but `--json`). Unknown →
+`doc_missing: no document <ref>`.
 
 ### `query` (alias `q`)
 
@@ -757,9 +811,12 @@ others as JSON; `--jsonl` all as JSON); otherwise the hit table (§4); no
 hits → stderr `  no hits`; truncated → the footer with the cursor. `--ids`
 the hit ids; `--jsonl` one hit per line; `--json` the whole `OqxResult`
 (`{ hits, truncated, cursor, consumer, count? | exists? | none? | values? }`).
-An empty or missing source prints `  usage: query <source>  (or -f file|-)`
-on stderr and exits **0** (§9). An OQX error and an invalid cursor are
-`error[error]: <message>` (§9); an unknown root is silently empty (§9).
+An empty or missing source is
+`usage: query requires a <source> (or -f file|-)`, exit 2. An OQX error
+(lex, parse, eval) and an invalid `--cursor` are `filter_invalid` — the
+OQX message, `data { reason: <message>, hint: "OQX" }`; `invalid cursor`,
+`data { reason: "cursor was not issued by query", hint: … }` — as the
+`query` tool reports them; an unknown root is silently empty (§9).
 `semantic(...)` without a provider →
 `error[semantic_unavailable]: semantic(...) needs an embedding provider`
 with the hint `omg config set embedding.provider <command|url>`.
@@ -767,26 +824,27 @@ with the hint `omg config set embedding.provider <command|url>`.
 ### `rebuild-index`
 
 `rebuild-index [--sections|--edges|--fts|--block-changes|--all]` — rebuilds
-one derived family or all (default); stderr
-`  ok rebuilt <sections|edges|fts|block_changes|all>`; no stdout in any mode
-(§9).
+one derived family or all (default); human: stderr
+`  ok rebuilt <sections|edges|fts|block_changes|all>`, nothing on stdout;
+every machine mode `{"rebuilt":"<target>"}` on stdout (the library call
+returns nothing; the CLI names what it rebuilt).
 
 ### `repos`
 
-`repos [--ids|--json|--jsonl]` — the workspace's repos with `repos_status`
-counts. Human: a column table of `  * <slug>`, the root (or `(no source)`),
-`<n> docs`, `<n> blocks`; none → **stdout** `  no repos attached`. `--ids`
-the slugs; `--json` the CLI array `[{ slug, root, docs, blocks }]` (§9);
-`--jsonl` one per line. Needs a workspace, not a repo.
+`repos [--ids|--json|--jsonl]` — the `repos` tool. Human: a column table
+of `  * <slug>`, the root (or `(no source)`), and the `repos_status` counts
+`<n> docs`, `<n> blocks`; none → stderr `  no repos attached`. `--json` the
+tool's result `{ repos: [{ slug, hasSource }] }` (the counts are
+`status --json`); `--jsonl` one repo per line; `--ids` the slugs. Needs a
+workspace, not a repo.
 
 ### `retarget`
 
 `retarget <from> <to> [--scope <glob>] [--apply] [--actor <s>] [--dry-run]`
 — `links_retarget`, **plan by default**: without `--apply` it prints, per
-hit, the block id then a *positional* line diff of the block's old and new
-raw (`- <old line>` / `+ <new line>` with a space after the sign, lines
-compared at equal indices; §9 — not a unified diff), then an empty line,
-under the stderr note
+hit, the block id then the unified diff of the block's old and new raw
+(`spec/surface` §3's diff, the one every preview prints), then an empty
+line, under the stderr note
 `  plan — <n> block(s) would change; re-run with --apply to commit`; no hits →
 stderr `  no blocks reference <from>`. `--json` the plan
 `{ from, to, hits: [{ block, path, oldRaw, newRaw }] }`. `--apply` commits
@@ -801,7 +859,7 @@ searched.
 — a `remove` op (confirmation lists the removed ids; `--json`'s result
 carries `removed`), or with `--doc` `docs_delete` (document-op confirmation
 `deleted <path>`; `--json` `{ docId, path, committed }`; the file leaves the
-tree; `--dry-run` ignored, §9). Neither →
+tree; `--dry-run` renders the file's removal, §3.6). Neither →
 `usage: rm requires one or more blocks (or - for stdin), or --doc`.
 
 ### `run`
@@ -831,8 +889,10 @@ including the computed `$title`, then `  out edges` / `  backlinks` as
 `--include history` `  history` then `    #<seq> <kind> <origin> <ts>` for the
 last five changes. Several refs print one card after another. `--json`: a
 block's `nodes_get` at `full` (+ `history` when included); a document's the
-CLI card `{ kind: "document", id, path, properties, edges }` (§9); one ref →
-the object, several → an array; `--jsonl`/`--ids` one object per line.
+`read_ref` result `{ kind: "document", path, docId, rev, properties:
+{ frontmatter, inline, computed }, content }` (the card's merged properties
+and edges are the human rendering only); one ref → the object, several →
+an array; `--jsonl` one object per line; `--ids` the same as `--json`.
 
 ### `source`
 
@@ -844,10 +904,11 @@ directory's basename, the source `--name` or `<slug>-fs` (an existing name is
 registers and attaches the source, runs the initial freshness sweep and
 rebuilds the stat cache; stdout `  * <slug> ← <abs> <n> files`; `--json`
 `{ repo, repoId, source, root, ingested }`. Without `-y` a TTY prompts (with
-a live file count — unpinned); a non-TTY refuses with stderr
-`  refusing without -y (would ingest files under <abs>)` and **exit 0**
-(§9). `list`: a column table of `  <name>`, `<adapter>`, `<root>`,
-`→ <slugs>` or `(unattached)`; none → stdout `  no sources registered`;
+a live file count — unpinned); a non-TTY is the usage error
+`usage: refusing without -y (would ingest files under <abs>)` with the hint
+`there is no TTY to confirm on; pass -y to consent to the ingest`, exit 2,
+nothing created. `list`: a column table of `  <name>`, `<adapter>`, `<root>`,
+`→ <slugs>` or `(unattached)`; none → stderr `  no sources registered`;
 `--json` `[{ name, adapter, config, repos }]`, `--ids` the names. `attach
 <name>` / `detach <name>` (the selected repo): stdout
 `  ok attached <name> → <slug>` / `  ok detached <name> ⇸ <slug>`; `--json`
@@ -860,9 +921,9 @@ a live file count — unpinned); a non-TTY refuses with stderr
 
 `split <block> --at <n[,n…]> [--actor <s>] [--dry-run]` — a `split` op at
 character offsets (comma-separated), CAS pinned from the live row; the
-confirmation lists the original id then the new ones. Missing → 
-`usage: split requires --at n[,n…]`; a non-numeric offset reaches the kernel
-as `NaN` → `type_mismatch: split must yield ≥2 non-empty fragments` (§9).
+confirmation lists the original id then the new ones. Missing →
+`usage: split requires --at n[,n…]`; an offset that is not an integer →
+`usage: bad --at '<value>' (offsets must be integers: n[,n…])` (exit 2).
 
 ### `status`
 
@@ -881,10 +942,17 @@ the right cell `<label padded to 8><value>`:
 
 `synced` is `ok converged`, or `! <reasons>` joined by `, ` from
 `<n> behind`, `<n> deleted`, `<n> drifted`, `<n> untracked`,
-`disk unverified` (a sourceless repo), or `unconverged`. `--json` (every
-non-human mode) the flat object
-`{ repo, root, docs, blocks, commits, openEdges, unconverged, convergent, disk: { changed, deleted, untracked, checked }, lastCommitSeq, watcher, embedQueue }`
-(`embedQueue` is always 0 — a stub, §9).
+`disk unverified` (a sourceless repo), or `unconverged`; `queue` is
+`empty` or `<n> queued`. `--json` (every machine mode) the two tools'
+results as they are on the wire:
+`{ ...repos_status, sync: sync_status, watcher, embedQueue }` =
+`{ repoId, slug, rootPath, docs, blocks, commits, openEdges, unconverged, disk: { changed, deleted, untracked, checked }, sync: { lastCommitSeq, lastCheckpoint, convergent, diskChecked, disk }, watcher: "live"|"none", embedQueue }`
+(`rootPath` is `""` for a sourceless repo, as `repos_status` reports it).
+`embedQueue` is the embedding queue depth of `spec/search` §2.3 — the
+embeddable blocks (live leaves of ≥ 24 tokens, §2.1) whose current
+`(content_hash, ctx_hash)` has no cached vector for the `embedding.model`
+setting when one is named, else for any model — counted from the cache
+without a provider (58 for the alchemy fixture with no vectors).
 
 ### `sync`
 
@@ -894,8 +962,9 @@ non-human mode) the flat object
 file, `  x deleted   <n>` with paths, `  ! conflicts <n>` with paths, or
 `  already up to date` when nothing changed; `--json` (every non-human mode)
 the `SweepResult` `{ checkpointId, ingested, suppressed, deleted, conflicted, scanned, candidates, changed }`.
-A sourceless repo: stdout `  <slug> has no filesystem source — nothing to sync`,
-`--json` `{"scanned":0,"ingested":[],"deleted":[],"conflicted":[],"changed":false}`.
+A sourceless repo: stderr `  <slug> has no filesystem source — nothing to sync`
+(an empty-result note, §3.1), `--json`
+`{"scanned":0,"ingested":[],"deleted":[],"conflicted":[],"changed":false}`.
 `--watch` (a long-running process: lease, adapter, checkpoints, signals) and
 `--server` (the remote coordinator) are **unpinned** — their output depends
 on timing and on a second process; only the card is fixed.
@@ -903,13 +972,15 @@ on timing and on a second process; only the card is fixed.
 ### `update`
 
 `update <block|doc> (-m <markdown> | -f <file> | -) [--plan] [--expect <hash>] [--reason <s>] [--actor <s>] [--dry-run]`
-— polymorphic on the target. A **valid block id** (`b_` + a well-formed id)
-is an `update` op replacing the block's markdown; without `--expect` the
+— polymorphic on the target. A **`b_`-prefixed token** is the block path:
+an `update` op replacing the block's markdown (a token that names no live
+block is `block_missing: not a block: <ref>`, never a document lookup);
+without `--expect` the
 CAS is pinned from the live row and stderr says
 `  updating <ref> (CAS pinned from current bytes)`; with it, a mismatch is
 `stale_expectation: content hash mismatch` with the current hash and
-markdown; confirmation (§4). **Anything else** — a document id, a path, or
-a `b_` token that is not a valid id (§9) — is the whole-document update of
+markdown; confirmation (§4). **Anything else** — a document id or a path —
+is the whole-document update of
 `docs/update-opsets.md`: the bytes are reconciled against the current tree
 and the derived opset committed. `--plan` or `--dry-run`: stderr
 `  plan for <path>` (`— DOES NOT CONVERGE (will not apply)` appended when it
@@ -917,7 +988,8 @@ would not), stdout the rendered opset (`renderOpsetPlan`: one
 `<OP> <target>     <disposition> [<reason>]` line per op, an empty line, the
 `preserved: n  updated: n  …` summary line). A commit: stderr
 `  ok updated <path> · <n> preserved, <n> updated, <n> moved, <n> created, <n> removed`,
-stdout every `results[*].ids` (duplicates included, §9). `--json`
+stdout every id in `results[*].ids` once, in order of first appearance.
+`--json`
 `{ opset, result }`. A sourceless repo →
 `usage: repo '<slug>' has no filesystem source; 'update' needs a working tree`
 (exit 2, §9); unknown doc → `doc_missing: doc <ref> not found` with
@@ -996,8 +1068,8 @@ Errors: `usage: no displayed collection to index with @N`,
 - `unset <name>` — stderr `  unset @<name>` or `  no binding @<name>`.
 - `bindings` — stdout `@<name>  <summary>` per binding, or stderr
   `  no bindings`.
-- `?` — the session help (exact bytes: `shell::help-line`; one line is two
-  spaces).
+- `?` — the session help (exact bytes: `shell::help-line`; the blank line
+  between the reference and builtin groups is empty).
 
 ### 7.1 `--prompt`
 
@@ -1067,7 +1139,10 @@ step's before that step) are written under `<tmp>`, a `null` value deletes,
 a `*.sh` file is made executable. The token `<workspace>` in argv, env
 values, stdin and file contents is replaced by `<tmp>` before use; in
 stdout and stderr every occurrence of `<tmp>` is replaced by `<workspace>`
-after. The first step of a sequence runs on the fresh workspace, every
+after, and every occurrence of the binary's own version string (what
+`--version` prints: the npm package version for `omg`, the crate version for
+`omgbase`) by `<version>` — the two binaries are versioned apart, so the
+fixtures pin the shape of `--version`, not the number. The first step of a sequence runs on the fresh workspace, every
 following step on the workspace the previous one left.
 
 **Comparing.** `expect.exit` and `expect.stdout` always, byte for byte;
@@ -1115,7 +1190,8 @@ mode too; an invalid `b_` token is `block_missing`; `split --at` with a
 non-integer is a usage error; machine modes follow one rule — `--jsonl` on a
 non-list result prints the `--json` document, `--ids` on a result without an
 id list prints the `--json` document, and the truncation footer is printed in
-every mode; `--json` is the mapped tool's result shape for `cat` (doc →
+every mode but `--json` (whose document carries `truncated`/`cursor`);
+`--json` is the mapped tool's result shape for `cat` (doc →
 `docs_read`), `show` (doc → `read_ref`), `diff` (→ `diff_unified`), `repos`
 (→ `repos`), `retarget`'s plan (→ `links_retarget` dry run) and `status`
 (`{ ...repos_status, sync: sync_status, watcher, embedQueue }`);
@@ -1141,135 +1217,228 @@ fixture change and a version bump, or keep). None was fixed here.
 
 **Exit codes and error codes**
 
-- **An unknown per-command option exits 1**, not 2, under Node's own code:
-  `error[ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--scope'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- "--scope"`
-  (`invoke::unknown-option-is-an-engine-error`). `docs/cli.md` documents
+- **Fixed — an unknown per-command option, a value-taking option without
+  its value and a boolean given one are usage errors** (exit 2,
+  `usage: unknown option '--scope'` / `option '--depth' requires a value` /
+  `option '--json' does not take a value`, hint
+  `run '<prog> <command> --help' for the options`). The reference catches
+  Node's `parseArgs` failures once, in dispatch, and renders them as every
+  other usage error — the wording is the CLI's, not Node's, so a port need
+  not reproduce `ERR_PARSE_ARGS_UNKNOWN_OPTION`'s text
+  (`invoke::unknown-option-is-an-engine-error` keeps its name and now shows
+  exit 2; `invoke::unknown-option-json`). `docs/cli.md`'s
   `--scope`/`--min-confidence` on `log`, `--annotate` on `outline`,
-  `--section` on `move`: none exists.
-- **A global flag with a missing value, and a stray flag before the
-  command, print a bare message** (`-C requires a directory`,
-  `unknown flag -n`) without the `usage:` prefix every other usage error has.
-- **`query` with an empty or missing source exits 0** with a stderr usage
-  note (`query::empty-source`).
-- **OQX errors and an invalid cursor print `error[error]`**, not
-  `filter_invalid` as the MCP tool reports them; **`diff --to <unknown
-  revision>`** is `error[error]: no revision …` where the tool is
-  `target_missing`; a **write on a sourceless repo** is
-  `error[error]: mutation requires a rootPath or an explicit docStore`
-  (`new`, `insert`) while `update <doc>` on the same repo is a `usage:`
+  `--section` on `move` are removed from the doc: none exists.
+- **Fixed — a global flag with a missing value and a stray flag before the
+  command are `usage:` errors** like every other (`usage: -C requires a
+  directory`, `usage: unknown flag -n`, exit 2, JSON form under a machine
+  flag). The global parser records the first malformed flag and finishes
+  parsing, so the mode is known when the error is rendered
+  (`invoke::stray-flag-before-command`, `directory-flag-missing-value`,
+  `repo-flag-missing-value`, `server-flag-missing-value`,
+  `header-flag-missing-value`).
+- **Fixed — `query` with an empty or missing source is a usage error**:
+  `usage: query requires a <source> (or -f file|-)`, exit 2
+  (`query::empty-source`, `query::no-source`).
+- **Fixed — engine errors keep the code the MCP catalog gives them.** The
+  CLI rendered any error without a `code` field as `error[error]`; it now
+  renders every non-CLI error through the engine's one mapping
+  (`errorBody` in `@omgbase/core`, which the MCP server's `fail` also
+  calls): an OQX error and an invalid cursor are `filter_invalid`
+  (`query::parse-error`, `parse-error-json`, `cursor-invalid`,
+  `cursor-invalid-json`), `diff --to <unknown revision>` is
+  `target_missing` with `data { doc, rev }`, and a write on a sourceless
+  repo (`new`, `insert`: `mutation requires a rootPath or an explicit
+  docStore`) is the catalog's catch-all `repo_not_found`
+  (`sync::sourceless`); `update <doc>` on the same repo stays the `usage:`
   error, exit 2.
-- **`gc`'s refusal, `edit`'s missing editor / missing TTY / editor failure,
+- **Pinned — `gc`'s refusal, `edit`'s missing editor / missing TTY / editor failure,
   `sync --watch`'s lease conflict and `source`'s missing directory or name
   all use the code `target_missing`.**
-- **`source add` without `-y` on a non-TTY refuses and exits 0**
+- **Fixed — `source add` without `-y` on a non-TTY is a usage error**:
+  `usage: refusing without -y (would ingest files under <abs>)`, hint
+  `there is no TTY to confirm on; pass -y to consent to the ingest`, exit 2
+  (a script that forgot the flag must not see a success)
   (`admin::source-add-refuses-without-yes`).
-- **`--version` reports `0.1.0`** — `@omgbase/core`'s `VERSION`, while the
-  CLI package is 0.4.0 — and is answered before the seams are validated
-  (`invoke::version-wins-over-bad-clock`). `-V` is an undocumented alias;
-  so is `--directory` for `-C`.
-- **The JSON error drops the hint** (`repo_not_found`'s two fixes,
-  `semantic_unavailable`'s config command); the human form shows it.
-- **A `MutationError` with an empty payload prints `{}`** on two lines
-  (`new-duplicate`, `mv-missing`, `split-bad-offset`).
+- **Fixed — `--version` prints the CLI package's version** (`0.4.0`; the
+  reference reads the nearest `package.json` named `omgbase` above the
+  running module), not `@omgbase/core`'s `0.1.0`
+  (`invoke::version`, `version-short`). Pinned: it is answered before the
+  seams are validated (`invoke::version-wins-over-bad-clock`); `-V` is an
+  alias, so is `--directory` for `-C`.
+- **Fixed — the JSON error keeps the hint** as a `hint` field
+  (`repo_not_found`'s two fixes: `invoke::no-workspace-json`;
+  `semantic_unavailable`'s config command: `query::semantic-unavailable-json`).
+- **Fixed — an empty error payload prints nothing**: a `data` of `{}` (a
+  `MutationError` raised without a payload) no longer prints the two lines
+  `  {` / `  }` under the message, and is omitted from the JSON error
+  (`docs::new-duplicate`, `mv-missing`, `mutate::node-set-unknown-node`).
 
 **`--dry-run` and writes**
 
-- **`new`, `mv`, `rm --doc` and `meta` ignore `--dry-run` and commit**
-  (`docs::new-dry-run-commits`); `docs/cli.md` says the flag is global.
-- **`node set <task> checked true` records an `edited` commit but changes
-  neither the block nor the file**; its `--dry-run` shows the `[ ]` → `[x]`
-  diff the commit never produces; a raw `apply` with `attrs.checked: true`
-  does change it (`mutate::node`, `mutate::node-set-dry-run`). Likely the
-  positional value reaching the editor as the string `"true"`. **`node set`
-  also ignores `--actor`** (it is parsed; the actor is the OS username) —
-  the fixture reads the log with `--ids`.
-- **`done` on a non-task block commits a no-op** `edited` change
-  (`mutate::done-on-paragraph`).
-- **`insert` to a heading id places the block directly after the heading**,
+- **Fixed — `new`, `mv`, `rm --doc` and `meta` honor `--dry-run`** (they
+  used to accept the flag and commit). The document operations take
+  `dryRun` in their context (`docsCreate`/`docsMove`/`docsDelete`/
+  `docsSetMeta`), validate exactly as the real run, and return
+  `committed: false` with the per-file `diffs` of §3.6; the CLI renders them
+  with the block verbs' renderer. The MCP tools `docs_create`, `docs_move`,
+  `docs_delete`, `docs_set_meta` accept `dry_run` for the same result (a
+  `spec/surface` catalog addition; the default is unchanged).
+  `docs::new-dry-run-commits` keeps its name and now shows the document
+  *not* created; `new-dry-run-json`, `mv-dry-run`, `mv-dry-run-json`,
+  `meta-dry-run`, `rm-doc-dry-run`.
+- **Fixed — `node set <task> checked true` checks the task and honors
+  `--actor`.** One bug behind both symptoms: the CLI dropped the tokens that
+  *start* with `--` from the positionals but kept `--actor`'s value, so the
+  property value reached the editor as `"true human:spec"` (→ `checked:
+  false`, a no-op `edited` commit) while the parsed actor was discarded; the
+  dry-run fixture passed no `--actor`, which is why it showed the right
+  diff. The value is now every positional after `<prop>` as the option
+  parser leaves them, joined by a space; the commit's actor is `--actor`
+  (`mutate::node`, `mutate::node-set-dry-run`).
+- **Fixed — `done` on a non-task block is `type_mismatch`**
+  (`not a task: <ref> is a <type>`, `data { block, type }`), checked by the
+  CLI before any op is built; the `tasks_complete` macro (`spec/mutate` §5)
+  is unchanged (`mutate::done-on-paragraph`).
+- **Pinned — `insert` to a heading id places the block directly after the heading**,
   not at the end of its section as the card says (`append` does the latter;
   `mutate::insert-to-heading`).
-- **`retarget`'s plan is a positional line diff** (`- old` / `+ new` with a
-  space after the sign, lines compared at equal indices), not the unified
-  diff every other preview prints; `docs/cli.md` says "per-file diffs".
-- **A whole-document `update` prints duplicate ids** (`results[*].ids`
-  flattened: `b_322` twice in `docs::update-doc`).
-- **`mv` does not rewrite inbound links** and says so only in `--json`
-  (`dangling`); the human confirmation is silent.
-- **`update b_nope`** (a `b_` token that is not a valid id) is routed to the
-  whole-document path and fails `doc_missing: doc b_nope not found`.
-- **`split --at x`** reaches the kernel as `NaN` →
-  `type_mismatch: split must yield ≥2 non-empty fragments`.
+- **Fixed — `retarget`'s plan is the unified diff**: per hit, the block id,
+  then `unifiedDiff(oldRaw, newRaw)` (`spec/surface` §3, as `diff` and every
+  dry run), then an empty line; the positional line diff (`- old` / `+ new`,
+  lines compared at equal indices) is gone (`mutate::retarget`,
+  `retarget-scope-hit`, `retarget-wikilink`).
+- **Fixed — a whole-document `update` prints each id once**: the flattened
+  `results[*].ids` de-duplicated in order of first appearance (a block an
+  update and a retile both touched appeared twice; `docs::update-doc`).
+- **Fixed — `mv` reports dangling inbound links on stderr in human mode
+  too**: `! <n> inbound link(s) still name(s) the old path: <path> <block>, …`
+  and `fix: omg retarget /<old> /<new> --apply`, after the confirmation
+  (and after a dry run's diffs); `--json`'s `dangling` is as before. `mv`
+  still does not rewrite them (`docs::mv`, `mv-dry-run`).
+- **Fixed — a `b_`-prefixed `update` target is always the block path**:
+  `update b_nope` is `block_missing: not a block: b_nope`; it no longer
+  falls through to the document path (`doc_missing: doc b_nope not found`)
+  (`mutate::update-missing-block`).
+- **Fixed — `split --at` with a non-integer offset is a usage error**:
+  `usage: bad --at '<value>' (offsets must be integers: n[,n…])`, exit 2;
+  it no longer reaches the kernel as `NaN` (`mutate::split-bad-offset`).
 
 **Renderings**
 
-- **Machine-mode fallbacks are inconsistent**: `status`, `outline`, `sync`,
-  `doctor`, `gc`, `init`, `source add/attach/detach/rm`, `node props`,
-  `rebuild-index` treat every non-human mode as `--json` (`outline --ids`
-  prints the object); `diff --jsonl`, `hist --ids`, `links --jsonl` fall back
-  to the human rendering; `log --ids` prints ids without the truncation
-  footer `--jsonl` prints; `rebuild-index --json` prints nothing on stdout.
-- **CLI-shaped `--json` objects** where the docs promise the library result
-  verbatim: `cat` on a document `{ doc, path, content }` (`docs_read` says
-  `docId`, `metadata`, `rev`), `show` on a document
-  `{ kind, id, path, properties, edges }`, `repos`
-  `[{ slug, root, docs, blocks }]`, `diff` `{ doc, path, from, to, diff }`,
-  `retarget`'s plan `{ from, to, hits }`, `source add`
-  `{ repo, repoId, source, root, ingested }`, `status`'s flat object.
-- **Empty-result notes go to stdout for `repos` and `source list`** and to
-  stderr everywhere else; `sync` on a sourceless repo prints its note on
-  stdout.
-- **A commit whose revisions were all deleted or moved renders an empty
-  summary** — `#19 observed observed: ` after an observed deletion,
-  `#19 api      api(human:spec): ` after `mv` (`sync::out-of-band-delete`,
-  `docs::mv`).
-- **`--since garbage` means the epoch** (an unparsable `--since` becomes
-  `new Date(0)`), `history::log-since-garbage`.
-- **`outline --section` is accepted and does nothing.**
-- **`--server ""` runs locally**: the flag is defined, so the sweep is
-  skipped, but the empty string is falsy for the remote check
-  (`invoke::server-empty-runs-locally`).
-- **`did you mean` guesses `q` for `x`** — the code comment says a lone
+- **Fixed — one machine-mode rule for every verb** (§3.2, §3.4), applied
+  by one renderer (`emitMachine` in the reference's `output.ts`): `--jsonl`
+  streams the result's list when it has one, else prints the `--json`
+  document; `--ids` prints the result's id list when it has one, else the
+  `--json` document; the truncation footer prints in every mode but
+  `--json`. No verb falls back to the human rendering. So `diff --jsonl`,
+  `hist --ids`, `links --jsonl` print the document
+  (`history::diff-single-revision-json`, `hist-ids-is-human`,
+  `links-jsonl-is-human` — the two keep their names and now show the
+  document); `log --ids` prints the footer (`history::log-ids`);
+  `rebuild-index --json` prints `{"rebuilt":"<target>"}`
+  (`admin::rebuild-index-json-is-silent`); `status`, `outline`, `sync`,
+  `doctor`, `gc`, `init`, `source add/attach/detach/rm`, `node props` are
+  unchanged (their results have no list) (`read::status-ids-is-json`,
+  `outline-ids-is-json`, `sync::up-to-date-ids-is-json`).
+- **Fixed — `--json` is the mapped tool's result**, produced by the same
+  library function the MCP server calls so the shapes cannot drift: `cat`
+  on a document → `docs_read` (`read::cat-doc-json`, `cat-many-json`,
+  `cat-many-jsonl`, the shell's `cat @1 --json`); `show` on a document →
+  `read_ref` (`{ kind: "document", ...docs_read }`; `read::show-doc-json`,
+  `shell::previous-result`); `diff` → `diff_unified`'s
+  `{ doc, path, from, to, diff }` (`docDiffUnified`; `diff --blocks` → the
+  `diff` tool's entries); `repos` → the `repos` tool's
+  `{ repos: [{ slug, hasSource }] }` (`reposList`; the human table keeps the
+  root and counts it always showed; `read::repos-json`, `repos-jsonl`,
+  `admin::empty-workspace-reads`); `status` →
+  `{ ...repos_status, sync: sync_status, watcher, embedQueue }`
+  (`read::status-json`, `status-ids-is-json`, `sync::*`). `retarget`'s plan
+  is the writes half (`links_retarget` dry run). `source add`'s
+  `{ repo, repoId, source, root, ingested }` has no tool and stays.
+- **Fixed — every empty-result note goes to stderr** (§3.1): `repos`
+  (`  no repos attached`), `source list` (`  no sources registered`) and
+  `sync` on a sourceless repo (`  <slug> has no filesystem source — nothing
+  to sync`) join the others (`admin::empty-workspace-reads`,
+  `source-add-refuses-without-yes`, `sync::sourceless`).
+- **Fixed — a commit that wrote no revision names what it did**:
+  `observed: deleted texts/mutus-liber.md` after an observed deletion,
+  `api(human:spec): moved texts/mutus-liber.md → texts/silent-book.md`
+  after `mv` (a deletion is the documents whose `deleted_commit` is the
+  commit; a move is read from the commit's `reason`, `move <from> -> <to>`).
+  `changesSince`'s summary is in `@omgbase/core`, so the `changes_since`
+  tool says the same (its `summary` is unpinned by `spec/surface`)
+  (`sync::out-of-band-delete`, `docs::mv`).
+- **Fixed — an unparsable `--since` is a usage error**:
+  `usage: bad --since '<v>' (use a relative age like 24h or 7d, or an ISO timestamp)`,
+  exit 2 (`history::log-since-garbage`).
+- **Fixed — `outline --section` is removed**: an unknown option, so the
+  usage error above (`read::outline-section-is-ignored`; the card
+  `invoke::help-card-outline` no longer lists it).
+- **Fixed — `--server ""` is a usage error** (`usage: --server requires a
+  command or url`, exit 2): the flag was given, so the command must not fall
+  through to the local store (`invoke::server-empty-runs-locally`).
+- **Pinned — `did you mean` guesses `q` for `x`** — the code comment says a lone
   `x` should suggest nothing; the rule as written (one edit for ≤ 3
   characters) does suggest it.
-- **`status`'s `embedQueue` is always 0** (a stub; the card says "embed
-  queue").
-- **`links --blocks` prints the same doc-grain rendering** as without it;
-  only `--json` differs (no `samples`).
-- **The `?` help of the shell prints a line of two spaces.**
+- **Fixed — `status.embedQueue` is the embedding queue depth** of
+  `spec/search` §2.3: the embeddable blocks whose current
+  `(content_hash, ctx_hash)` has no cached vector for the `embedding.model`
+  setting when one is named, else for any model — counted from the cache
+  alone (`staleEmbedCount` in `@omgbase/core`), so it needs no provider and
+  is 58 for the alchemy fixture (`read::status`, `status-json`, every
+  `status` step). The human `queue` cell reads `<n> queued`.
+- **Fixed — `links --blocks` renders block-grain rows**: one per open edge
+  with the source block beside the far node (`references > d_13 (b_307)`,
+  `d_0 (b_28) > references`), no count; `docLinks(blocks: true)` gains
+  `block` on both directions and the inbound side is per edge too
+  (`history::links-blocks`, `links-blocks-json`).
+- **Fixed — the shell's `?` help prints an empty line** between the
+  reference and builtin groups, not two spaces (`shell::help-line`).
 
 **Workspace and help**
 
-- **`config list` never falls back to the workspace layer**: the fallback
-  catches `RepoSelectionError`, but `Cli.repo()` has already wrapped it in
-  `EngineErrorLike`, so an unresolvable repo is `repo_not_found`
-  (`admin::empty-workspace-reads`); only `--repo ""` reaches the workspace
-  layer.
-- **The help *words* need a workspace**: `config help`, `embed help`, a bare
-  `node` print their cards only inside a workspace, because they are not
-  the `--help` flag and the freshness sweep runs first; `source` alone works
-  anywhere because `source` skips the sweep
-  (`invoke::node-bare-needs-workspace`, `admin::config-help-word-needs-workspace`).
-- **`edit` needs `OMG_EDITOR` for a scripted edit**: `$EDITOR`/`$VISUAL`
+- **Fixed — `config` falls back to the workspace layer** when no repo is
+  selectable (a workspace with none, an ambiguous cwd); the fallback tested
+  for the library's `RepoSelectionError` after `Cli.repo()` had already
+  wrapped it as `repo_not_found`, so it never fired. An explicit
+  `--repo <unknown>` is still `repo_not_found`
+  (`admin::empty-workspace-reads`: `config` in the empty workspace prints
+  `  workspace defaults`, exit 0).
+- **Fixed — the help words need no workspace**: `config help`,
+  `embed help`, `node help`, `source help`, a bare `node` and a bare
+  `source` are routed to their card before the workspace is opened or
+  swept, exactly like the `--help` flag
+  (`invoke::node-bare-needs-workspace`,
+  `admin::config-help-word-needs-workspace`,
+  `embed-help-word-needs-workspace` — the three keep their names and now
+  print the card, exit 0).
+- **Pinned — `edit` needs `OMG_EDITOR` for a scripted edit**: `$EDITOR`/`$VISUAL`
   are refused without a TTY (`mutate::edit-editor-needs-tty`).
-- **Heading text is not a CLI ref**: `append Contents` is
+- **Pinned — heading text is not a CLI ref**: `append Contents` is
   `block_missing: not a block: Contents`; the MCP tools' `heading` text
   resolution (and therefore `ambiguous_heading`) is unreachable from the CLI.
-- **An unknown OQX root is silently empty** (`q 'from nope'` prints
+- **Pinned — an unknown OQX root is silently empty** (`q 'from nope'` prints
   `  no hits`, exit 0; `query::unknown-root`).
 
 **Engine behavior surfaced through the CLI**
 
-- **`doctor`'s `fts rows == live blocks` check fails after any document
-  deletion** — an observed one (`rm <file>; omg sync`) or `rm --doc` — and
-  stays failed after `rebuild-index --fts` and `rebuild-index`
-  (`admin::doctor-after-observed-delete`, `admin::doctor-after-api-delete`):
-  either the FTS index keeps rows for the tombstoned document's blocks or the
-  check counts them. Not a CLI defect; recorded because the CLI is where it
-  shows.
-- **Every freshness sweep mints a checkpoint id**, even an empty one, so
+- **Fixed — `doctor`'s FTS check compares index rows to live leaf
+  blocks.** The old check compared `SELECT count(*) FROM blocks_fts` — which
+  an external-content FTS5 table answers from `blocks`, tombstones and
+  containers included (314 for alchemy, before and after a deletion) — to
+  every live block, so it "held" only while nothing had been deleted and
+  "failed" after a deletion no rebuild could cure. It now compares the
+  index's own row count (`blocks_fts_docsize`) to the live leaf count of
+  `spec/search` §1.1 (`fts rows == live leaf blocks`, detail
+  `fts=<n> leaves=<n>`), and holds after a deletion and after
+  `rebuild-index --fts` (`admin::doctor`, `doctor-json`,
+  `doctor-after-observed-delete`, `doctor-after-api-delete`). The index was
+  right all along; the check was wrong.
+- **Pinned — every freshness sweep mints a checkpoint id**, even an empty one, so
   `sync --json`'s `checkpointId` depends on how many sweeping commands ran
   before it (`cp_5` after four reads).
-- **`gc` sweeps nothing after `rm --doc`** (`admin::gc-after-removals`):
+- **Pinned — `gc` sweeps nothing after `rm --doc`** (`admin::gc-after-removals`):
   the tombstoned document's blobs stay referenced by its revisions.
 
 **Port notes.** The Rust binary today renders `mcp` only; its `--help` and

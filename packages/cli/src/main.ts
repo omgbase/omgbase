@@ -1,10 +1,13 @@
 #!/usr/bin/env node
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { VERSION } from "@omgbase/core";
 import { processIO, type IO } from "./render.js";
 import { makeCli, progName, type Cli } from "./context.js";
-import { renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
+import { renderError, EXIT_OK } from "./output.js";
 import { resolveCommand, unknownCommandError } from "./commands.js";
-import { runCommand, parseGlobals, type Parsed } from "./dispatch.js";
+import { runCommand, parseGlobals } from "./dispatch.js";
 import { closeRemote } from "./cmd/_remote.js";
 import { installSpecSeams } from "./seams.js";
 
@@ -13,28 +16,47 @@ import { installSpecSeams } from "./seams.js";
 // command (with aliases), then delegates to runCommand for the freshness sweep +
 // dispatch + error mapping — the same path the shell reuses per line.
 
-export async function run(argv: string[], io: IO = processIO, prog = "omg"): Promise<number> {
-  let parsed: Parsed;
-  try {
-    parsed = parseGlobals(argv);
-  } catch (err) {
-    // No Cli/style yet — render minimally.
-    io.err(String((err as Error).message ?? err));
-    return EXIT_USAGE;
+/**
+ * `--version` prints THIS package's version (spec/cli §2.5), read from the
+ * nearest `package.json` named `omgbase` above the running module (the source
+ * tree and the built `dist/src/` sit at different depths). The engine's own
+ * `VERSION` is the fallback only if the package file cannot be found.
+ */
+export function cliVersion(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (;;) {
+    const candidate = join(dir, "package.json");
+    if (existsSync(candidate)) {
+      try {
+        const pkg = JSON.parse(readFileSync(candidate, "utf8")) as { name?: unknown; version?: unknown };
+        if (pkg.name === "omgbase" && typeof pkg.version === "string") return pkg.version;
+      } catch {
+        /* keep walking */
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return VERSION;
+    dir = parent;
   }
+}
 
+export async function run(argv: string[], io: IO = processIO, prog = "omg"): Promise<number> {
+  const parsed = parseGlobals(argv);
   const { flags } = parsed;
   let command = parsed.command;
 
   // --version / --help without a command.
-  if (flags.version && !command) {
-    io.out(VERSION);
+  if (flags.version && !command && !parsed.error) {
+    io.out(cliVersion());
     return EXIT_OK;
   }
   if (flags.help && !command) command = "help";
   if (!command) command = "help";
 
   const cli: Cli = makeCli(flags, io, { prog });
+  // A malformed global flag is a usage error like any other (spec/cli §2.2):
+  // rendered with the `usage:` prefix, in the mode the argv selected.
+  if (parsed.error) return renderError(parsed.error, io, cli.style, flags.mode !== "human");
   // The conformance seams (spec/cli §2.6) apply to every verb: install them
   // before any command can open the workspace, mint an id or read the clock.
   try {

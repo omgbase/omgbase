@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../core/store/store.js";
@@ -430,6 +430,36 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const staleEnd = (await call("links_stale", {})) as { payload: { stale: { srcPath: string; target: string }[] } };
     // b's link was dangling at notes.md (not the moved-from path), so it stays stale — only what pointed at the moved doc is retargeted.
     expect(staleEnd.payload.stale.map((s) => `${s.srcPath}→${s.target}`)).toEqual(["b.md→notes.md"]);
+  });
+
+  it("dry_run on the document tools validates and returns diffs without writing", async () => {
+    const created = (await call("docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n", dry_run: true })) as { payload: { docId: string; committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+    expect(created.isError).toBe(false);
+    expect(created.payload.committed).toBe(false);
+    expect(created.payload.diffs).toEqual({ "sub/fresh.md": { before: "", after: "# Fresh\n" } });
+    expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
+
+    const meta = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active" }, dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
+    expect(meta.isError).toBe(false);
+    expect(meta.payload.committed).toBe(false);
+    expect(meta.payload.diffs["notes.md"]!.after).toContain("status: active");
+    expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
+
+    const moved = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", dry_run: true })) as { payload: { committed: boolean; path: string; diffs: Record<string, unknown> }; isError: boolean };
+    expect(moved.isError).toBe(false);
+    expect(moved.payload.committed).toBe(false);
+    expect(Object.keys(moved.payload.diffs).sort()).toEqual(["moved/notes.md", "notes.md"]);
+    expect(existsSync(join(root, "notes.md"))).toBe(true);
+
+    const deleted = (await call("docs_delete", { doc: "notes.md", dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { after: string }> }; isError: boolean };
+    expect(deleted.isError).toBe(false);
+    expect(deleted.payload.committed).toBe(false);
+    expect(deleted.payload.diffs["notes.md"]!.after).toBe("");
+    expect(existsSync(join(root, "notes.md"))).toBe(true);
+    // A dry run is still validated.
+    const taken = (await call("docs_create", { path: "notes.md", markdown: "# x\n", dry_run: true })) as { payload: { error: string }; isError: boolean };
+    expect(taken.isError).toBe(true);
+    expect(taken.payload.error).toBe("path_taken");
   });
 
   it("docs_delete tombstones the document", async () => {

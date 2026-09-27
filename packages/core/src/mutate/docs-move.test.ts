@@ -7,7 +7,7 @@ import { ensureRepo } from "../core/attach.js";
 import { processCheckpoint } from "../sync/checkpoint.js";
 import { linksStale } from "../graph/link-health.js";
 import { inboundLinksTo, retargetLinksInRaw } from "../graph/inbound-links.js";
-import { docsMove } from "./docs.js";
+import { docsCreate, docsDelete, docsMove, docsSetMeta } from "./docs.js";
 
 // docs_move and the edge index. Links follow the PATH: after a move, inbound
 // links written against the old path dangle (links_stale must see them), and
@@ -151,6 +151,74 @@ describe("docsMove — edge index follows the path", () => {
     const res = docsMove(store, ctx(), "old.md", "new.md", { retargetInbound: true });
     expect(res.dangling).toEqual([{ doc: docId("fm.md"), path: "fm.md", block: null, target: "old.md", anchor: null, field: "depends_on" }]);
     expect(linksStale(store, repoId).stale.map((s) => s.srcPath)).toEqual(["fm.md"]);
+  });
+});
+
+describe("document operations — dryRun validates, plans, commits nothing", () => {
+  const commits = (): number => (store.db.prepare("SELECT count(*) n FROM commits").get() as { n: number }).n;
+  const dry = () => ({ ...ctx(), dryRun: true });
+
+  it("docsCreate returns the would-be file and the id the real run would mint; the file is not written", () => {
+    save("a.md", "# A\n");
+    const n = commits();
+    const res = docsCreate(store, dry(), "/new/b.md", "# B\n\nbody", { title: "B" });
+    expect(res.committed).toBe(false);
+    expect(res.path).toBe("new/b.md");
+    expect(res.docId).toMatch(/^d_/);
+    expect(res.diffs).toEqual({ "new/b.md": { before: "", after: "---\ntitle: B\n---\n\n# B\n\nbody\n" } });
+    expect(existsSync(join(dir, "new/b.md"))).toBe(false);
+    expect(store.db.prepare("SELECT 1 FROM docs WHERE path = 'new/b.md'").get()).toBeUndefined();
+    expect(commits()).toBe(n);
+    // Validation still runs.
+    expect(() => docsCreate(store, dry(), "a.md", "x")).toThrow(/path_taken|already exists/);
+  });
+
+  it("docsMove plans a rename as two file diffs, reports the dangling links, and leaves the tree alone", () => {
+    save("a.md", "# A\n\nSee [old](/old.md).\n");
+    save("old.md", "# Old\n");
+    const n = commits();
+    const res = docsMove(store, dry(), "old.md", "moved/new.md");
+    expect(res.committed).toBe(false);
+    expect(res.path).toBe("moved/new.md");
+    expect(res.diffs).toEqual({ "old.md": { before: "# Old\n", after: "" }, "moved/new.md": { before: "", after: "# Old\n" } });
+    expect(res.dangling.map((l) => l.path)).toEqual(["a.md"]);
+    expect(res.retargeted).toBeNull();
+    expect(existsSync(join(dir, "old.md"))).toBe(true);
+    expect(existsSync(join(dir, "moved/new.md"))).toBe(false);
+    expect(docId("old.md")).toBeDefined();
+    expect(commits()).toBe(n);
+    expect(() => docsMove(store, dry(), "old.md", "a.md")).toThrow(/path_taken|already exists/);
+    expect(() => docsMove(store, dry(), "nope.md", "x.md")).toThrow(/doc_missing|no document/);
+  });
+
+  it("docsMove dryRun with retargetInbound previews the rewritten sources too", () => {
+    save("a.md", "# A\n\nSee [old](/old.md).\n");
+    save("old.md", "# Old\n");
+    const res = docsMove(store, dry(), "old.md", "moved/new.md", { retargetInbound: true });
+    expect(res.committed).toBe(false);
+    expect(res.dangling).toEqual([]);
+    expect(res.retargeted?.blocks).toHaveLength(1);
+    expect(res.diffs?.["a.md"]).toEqual({ before: "# A\n\nSee [old](/old.md).\n", after: "# A\n\nSee [old](/moved/new.md).\n" });
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("# A\n\nSee [old](/old.md).\n");
+  });
+
+  it("docsDelete returns the file's removal and keeps the document live", () => {
+    save("a.md", "# A\n");
+    const n = commits();
+    const res = docsDelete(store, dry(), "a.md");
+    expect(res).toEqual({ docId: docId("a.md"), path: "a.md", committed: false, diffs: { "a.md": { before: "# A\n", after: "" } } });
+    expect(existsSync(join(dir, "a.md"))).toBe(true);
+    expect(commits()).toBe(n);
+  });
+
+  it("docsSetMeta returns the patched file without writing it", () => {
+    save("a.md", "---\nlayer: draft\nera: 1677\n---\n\n# A\n");
+    const n = commits();
+    const res = docsSetMeta(store, dry(), "a.md", { set: { era: 1702 }, unset: ["layer"] });
+    expect(res.committed).toBe(false);
+    expect(res.diffs).toEqual({ "a.md": { before: "---\nlayer: draft\nera: 1677\n---\n\n# A\n", after: "---\nera: 1702\n---\n\n# A\n" } });
+    expect(readFileSync(join(dir, "a.md"), "utf8")).toBe("---\nlayer: draft\nera: 1677\n---\n\n# A\n");
+    expect(commits()).toBe(n);
   });
 });
 

@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { changesSince } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, truncationFooter, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, truncationFooter, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { remoteCall } from "./_remote.js";
 
 type ChangesResult = ReturnType<typeof changesSince>;
@@ -29,9 +29,11 @@ function relativeToIso(since: string): string {
     const ms = unit === "h" ? 3600e3 : unit === "d" ? 86400e3 : unit === "w" ? 7 * 86400e3 : 30 * 86400e3;
     return new Date(Date.now() - n * ms).toISOString();
   }
-  // Absolute timestamp: pass through (Date normalizes).
+  // Absolute timestamp: pass through (Date normalizes). Anything else is the
+  // user's mistake, not "the epoch" (spec/cli §6 `log`).
   const t = Date.parse(since);
-  return Number.isNaN(t) ? new Date(0).toISOString() : new Date(t).toISOString();
+  if (Number.isNaN(t)) throw new CliUsageError(`bad --since '${since}' (use a relative age like 24h or 7d, or an ISO timestamp)`);
+  return new Date(t).toISOString();
 }
 
 async function runLog(cli: Cli, args: string[]): Promise<number> {
@@ -81,18 +83,8 @@ async function runLog(cli: Cli, args: string[]): Promise<number> {
     result = changesSince(ws.store, repo.repoId, opts);
   }
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(result));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const d of result.digests) cli.io.out(JSON.stringify(d));
-    if (result.truncated) truncationFooter(cli.io, cli.style, result.cursor);
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "ids") {
-    for (const d of result.digests) cli.io.out(d.commit);
-    return EXIT_OK;
+  if (cli.flags.mode !== "human") {
+    return emitMachine(cli, result, { items: result.digests, ids: result.digests.map((d) => d.commit), cursor: result.truncated ? result.cursor : null });
   }
 
   const { style, io } = cli;

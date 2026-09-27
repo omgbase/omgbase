@@ -11,6 +11,7 @@ use omgbase_format::BlockKind;
 use omgbase_format::text::{normalize_text, normalize_visible_text};
 use omgbase_reconcile::Config;
 use omgbase_search::EmbeddingProvider;
+use omgbase_store::docs_ops::diffs_json;
 use omgbase_store::mutate_kernel::{At, Op, Parent, To};
 use omgbase_store::{
     ApplyOrigin, ApplyRequest, ApplyResult, DocOpContext, DocStore, Expect, FsDocStore, Opset,
@@ -552,32 +553,47 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_create",
-            description: "Create a document at `path` from `markdown` with optional `frontmatter`.",
+            description: "Create a document at `path` from `markdown` with optional `frontmatter`; `dry_run` returns the would-be file under `diffs` without writing.",
             input_schema: schema(
-                &[("path", s()), ("markdown", s()), ("frontmatter", obj())],
+                &[
+                    ("path", s()),
+                    ("markdown", s()),
+                    ("frontmatter", obj()),
+                    ("dry_run", b()),
+                ],
                 &["path", "markdown"],
                 true,
             ),
         },
         ToolSpec {
             name: "docs_move",
-            description: "Rename a document to `to_path`, identity preserved; `retarget_inbound` rewrites inbound links.",
+            description: "Rename a document to `to_path`, identity preserved; `retarget_inbound` rewrites inbound links; `dry_run` returns the plan (`dangling`, `retargeted`, per-file `diffs`) without renaming.",
             input_schema: schema(
-                &[("doc", s()), ("to_path", s()), ("retarget_inbound", b())],
+                &[
+                    ("doc", s()),
+                    ("to_path", s()),
+                    ("retarget_inbound", b()),
+                    ("dry_run", b()),
+                ],
                 &["doc", "to_path"],
                 true,
             ),
         },
         ToolSpec {
             name: "docs_delete",
-            description: "Delete a document: tombstone it and remove the file.",
-            input_schema: schema(&[("doc", s())], &["doc"], true),
+            description: "Delete a document: tombstone it and remove the file; `dry_run` returns the removal under `diffs` without deleting.",
+            input_schema: schema(&[("doc", s()), ("dry_run", b())], &["doc"], true),
         },
         ToolSpec {
             name: "docs_set_meta",
-            description: "Set and/or unset frontmatter keys, re-ingesting the document.",
+            description: "Set and/or unset frontmatter keys, re-ingesting the document; `dry_run` returns the rewritten file under `diffs` without writing.",
             input_schema: schema(
-                &[("doc", s()), ("set", obj()), ("unset", strings())],
+                &[
+                    ("doc", s()),
+                    ("set", obj()),
+                    ("unset", strings()),
+                    ("dry_run", b()),
+                ],
                 &["doc"],
                 true,
             ),
@@ -1705,10 +1721,19 @@ impl Surface {
                 let path = arg_string(args, "path")?;
                 let markdown = arg_string(args, "markdown")?;
                 let fm = arg_object(args, "frontmatter")?.cloned();
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?)
+                    Ok(if dry {
+                        store
+                            .dry_run()
+                            .docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
+                    } else {
+                        store.docs_create(&ctx, ds, &path, &markdown, fm.as_ref())?
+                    })
                 })?;
-                self.notify();
+                if !dry {
+                    self.notify();
+                }
                 Ok(doc_op_json(&res))
             }
             "docs_move" => {
@@ -1717,26 +1742,60 @@ impl Surface {
                 let doc = arg_string(args, "doc")?;
                 let to = arg_string(args, "to_path")?;
                 let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(false);
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.docs_move(&ctx, ds, &doc, &to, retarget)?)
+                    Ok(if dry {
+                        store.dry_run().docs_move(&ctx, ds, &doc, &to, retarget)?
+                    } else {
+                        store.docs_move(&ctx, ds, &doc, &to, retarget)?
+                    })
                 })?;
-                self.notify();
-                Ok(json!({
-                    "docId": res.doc_id,
-                    "path": res.path,
-                    "committed": res.committed,
-                    "dangling": res.dangling.iter().map(omgbase_store::InboundLink::to_json).collect::<Vec<_>>(),
-                    "retargeted": res.retargeted.as_ref().map(|r| json!({ "blocks": r.blocks, "docs": r.docs })),
-                }))
+                if !dry {
+                    self.notify();
+                }
+                // `{ docId, path, committed, diffs?, dangling, retargeted }` — the
+                // reference spreads the planned/moved record before the link report.
+                let mut m = Map::new();
+                m.insert("docId".to_owned(), json!(res.doc_id));
+                m.insert("path".to_owned(), json!(res.path));
+                m.insert("committed".to_owned(), json!(res.committed));
+                if let Some(diffs) = &res.diffs {
+                    m.insert("diffs".to_owned(), diffs_json(diffs));
+                }
+                m.insert(
+                    "dangling".to_owned(),
+                    Json::Array(
+                        res.dangling
+                            .iter()
+                            .map(omgbase_store::InboundLink::to_json)
+                            .collect(),
+                    ),
+                );
+                m.insert(
+                    "retargeted".to_owned(),
+                    json!(
+                        res.retargeted
+                            .as_ref()
+                            .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
+                    ),
+                );
+                Ok(Json::Object(m))
             }
             "docs_delete" => {
                 let (repo, root) = self.scope(args)?;
                 let ctx = self.doc_ctx(&repo);
                 let doc = arg_string(args, "doc")?;
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.docs_delete(&ctx, ds, &doc)?)
+                    Ok(if dry {
+                        store.dry_run().docs_delete(&ctx, ds, &doc)?
+                    } else {
+                        store.docs_delete(&ctx, ds, &doc)?
+                    })
                 })?;
-                self.notify();
+                if !dry {
+                    self.notify();
+                }
                 Ok(doc_op_json(&res))
             }
             "docs_set_meta" => {
@@ -1749,10 +1808,19 @@ impl Surface {
                 } else {
                     Vec::new()
                 };
+                let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
-                    Ok(store.docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?)
+                    Ok(if dry {
+                        store
+                            .dry_run()
+                            .docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
+                    } else {
+                        store.docs_set_meta(&ctx, ds, &doc, set.as_ref(), &unset)?
+                    })
                 })?;
-                self.notify();
+                if !dry {
+                    self.notify();
+                }
                 Ok(doc_op_json(&res))
             }
             "docs_plan_update" => {
@@ -2019,8 +2087,16 @@ pub fn apply_json(res: &ApplyResult) -> Json {
 }
 
 /// A document operation's result: `{ docId, path, committed }`.
+/// `{ docId, path, committed, diffs? }` — `diffs` only on a dry run (1.3).
 fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
-    json!({ "docId": res.doc_id, "path": res.path, "committed": res.committed })
+    let mut m = Map::new();
+    m.insert("docId".to_owned(), json!(res.doc_id));
+    m.insert("path".to_owned(), json!(res.path));
+    m.insert("committed".to_owned(), json!(res.committed));
+    if let Some(diffs) = &res.diffs {
+        m.insert("diffs".to_owned(), diffs_json(diffs));
+    }
+    Json::Object(m)
 }
 
 /// `spec/mutate` §7's opset on the wire (camelCase precondition keys and
@@ -2432,5 +2508,138 @@ mod tests {
         let du = s.call("diff_unified", json!({ "doc": "a.md" }));
         assert!(!du.is_error, "{}", du.body);
         assert!(du.body["diff"].as_str().unwrap().contains("+Three."));
+    }
+
+    #[test]
+    fn doc_tools_dry_run_preview_diffs_and_commit_nothing() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let fired = Rc::new(Cell::new(0));
+        let f2 = Rc::clone(&fired);
+        let mut s = surface().with_mutation_hook(move || f2.set(f2.get() + 1));
+        let b_src = "# B\n\nTarget.\n";
+        let a_src = "# A\n\nSee [b](b.md).\n";
+        let b = s.call("docs_create", json!({ "path": "b.md", "markdown": b_src }));
+        assert_eq!(b.body["docId"], "d_0", "{}", b.body);
+        let a = s.call("docs_create", json!({ "path": "a.md", "markdown": a_src }));
+        assert_eq!(a.body["docId"], "d_1", "{}", a.body);
+        assert_eq!(fired.get(), 2);
+        let count = |s: &Surface, table: &str| -> i64 {
+            s.store
+                .conn()
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        let snapshot = |s: &Surface| {
+            (
+                count(s, "docs"),
+                count(s, "commits"),
+                count(s, "revisions"),
+                count(s, "blocks"),
+            )
+        };
+        let before = snapshot(&s);
+        let keys = |v: &Json| -> Vec<String> { v.as_object().unwrap().keys().cloned().collect() };
+
+        // docs_create: `""` → the composed file; the `d_` id minted as the real run would.
+        let c = s.call(
+            "docs_create",
+            json!({ "path": "c.md", "markdown": "# C", "frontmatter": { "title": "C" }, "dry_run": true }),
+        );
+        assert!(!c.is_error, "{}", c.body);
+        assert_eq!(
+            serde_json::to_string(&c.body).unwrap(),
+            r#"{"docId":"d_2","path":"c.md","committed":false,"diffs":{"c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
+            "the reference's key order, byte for byte"
+        );
+
+        // docs_move with retarget_inbound: old path emptied, new path filled,
+        // the rewritten source appended; `dangling`/`retargeted` previewed.
+        let m = s.call(
+            "docs_move",
+            json!({ "doc": "b.md", "to_path": "notes/b.md", "retarget_inbound": true, "dry_run": true }),
+        );
+        assert!(!m.is_error, "{}", m.body);
+        // Byte for byte what the reference prints for
+        // `docsMove(store, { ...ctx, dryRun: true }, "b.md", "notes/b.md", { retargetInbound: true })`
+        // over the same two documents under the sequential minter.
+        assert_eq!(
+            serde_json::to_string(&m.body).unwrap(),
+            r##"{"docId":"d_0","path":"notes/b.md","committed":false,"diffs":{"b.md":{"before":"# B\n\nTarget.\n","after":""},"notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
+        );
+        assert_eq!(
+            keys(&m.body),
+            [
+                "docId",
+                "path",
+                "committed",
+                "diffs",
+                "dangling",
+                "retargeted"
+            ]
+        );
+        assert_eq!(keys(&m.body["diffs"]), ["b.md", "notes/b.md", "a.md"]);
+        assert_eq!(
+            m.body["diffs"]["a.md"],
+            json!({ "before": a_src, "after": "# A\n\nSee [b](notes/b.md).\n" })
+        );
+        // … and without `retarget_inbound`: two entries, the inbound link dangles.
+        let plain = s.call(
+            "docs_move",
+            json!({ "doc": "b.md", "to_path": "notes/b.md", "dry_run": true }),
+        );
+        assert_eq!(
+            serde_json::to_string(&plain.body).unwrap(),
+            r##"{"docId":"d_0","path":"notes/b.md","committed":false,"diffs":{"b.md":{"before":"# B\n\nTarget.\n","after":""},"notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc":"d_1","path":"a.md","block":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
+        );
+
+        // docs_delete: the file → `""`.
+        let d = s.call("docs_delete", json!({ "doc": "a.md", "dry_run": true }));
+        assert!(!d.is_error, "{}", d.body);
+        assert_eq!(
+            d.body,
+            json!({ "docId": "d_1", "path": "a.md", "committed": false, "diffs": { "a.md": { "before": a_src, "after": "" } } })
+        );
+        assert_eq!(keys(&d.body), ["docId", "path", "committed", "diffs"]);
+
+        // docs_set_meta: before → after.
+        let sm = s.call(
+            "docs_set_meta",
+            json!({ "doc": "a.md", "set": { "status": "open" }, "dry_run": true }),
+        );
+        assert!(!sm.is_error, "{}", sm.body);
+        assert_eq!(
+            sm.body,
+            json!({ "docId": "d_1", "path": "a.md", "committed": false, "diffs": { "a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
+        );
+
+        // Nothing committed, no hook, no row changed; the checks still run.
+        assert_eq!(fired.get(), 2, "dry runs never fire the mutation hook");
+        assert_eq!(snapshot(&s), before);
+        assert_eq!(
+            s.call("docs_read", json!({ "doc": "d_0" })).body["path"],
+            "b.md"
+        );
+        assert_eq!(
+            s.call("docs_read", json!({ "doc": "d_1" })).body["content"],
+            a_src
+        );
+        let taken = s.call(
+            "docs_create",
+            json!({ "path": "a.md", "markdown": "x", "dry_run": true }),
+        );
+        assert_eq!(taken.body["error"], "path_taken");
+        let missing = s.call("docs_delete", json!({ "doc": "nope.md", "dry_run": true }));
+        assert_eq!(missing.body["error"], "doc_missing");
+        // The dry-run create spent `d_2`: the next real create is `d_3` and carries no `diffs`.
+        let real = s.call(
+            "docs_create",
+            json!({ "path": "c.md", "markdown": "# C\n" }),
+        );
+        assert_eq!(
+            real.body,
+            json!({ "docId": "d_3", "path": "c.md", "committed": true })
+        );
+        assert_eq!(fired.get(), 3);
     }
 }

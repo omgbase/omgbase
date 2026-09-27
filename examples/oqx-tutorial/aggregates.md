@@ -43,7 +43,11 @@ how many matched:
 
 ```console
 $ omg query '$repo.docs single { where layer == "canon" }'
-error[error]: single { … } matched 13 rows; use first { … } for zero-or-one
+error[filter_invalid]: single { … } matched 13 rows; use first { … } for zero-or-one
+  {
+    "reason": "single { … } matched 13 rows; use first { … } for zero-or-one",
+    "hint": "OQX"
+  }
 ```
 
 ## Full-text with `text()`

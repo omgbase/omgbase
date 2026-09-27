@@ -3,11 +3,11 @@ import { join, resolve, dirname, relative, sep } from "node:path";
 import { parseArgs } from "node:util";
 import { createInterface } from "node:readline";
 import { spawnSync } from "node:child_process";
-import { Workspace, reposStatus, workspaceSettings, writeWorkspaceSettings } from "@omgbase/core";
+import { Workspace, reposStatus, reposList, workspaceSettings, writeWorkspaceSettings } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { columns as columnsLocal } from "../render.js";
-import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 
 // Bootstrap: init / repos (11 §5.1). Pointing a repo at a directory is
 // `omg source add <dir>` (ADR-014) — a repo owns identity; sources bring bytes.
@@ -189,10 +189,7 @@ async function runInit(cli: Cli, args: string[]): Promise<number> {
     ws.close();
   }
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ workspace: dir }));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, { workspace: dir });
 
   const { render, style, io } = cli;
   io.out(render.wordmark("initialized"));
@@ -217,25 +214,19 @@ function runRepos(cli: Cli, args: string[]): number {
       name: "repos",
       summary: "List the repos in this workspace: slug, root path (from its fs source), doc/block counts",
       usage: "repos [--ids|--json|--jsonl]",
-      options: [["--ids", "slugs only, one per line"]],
+      options: [
+        ["--ids", "slugs only, one per line"],
+        ["--json", "the `repos` tool's result: `{ repos: [{ slug, hasSource }] }` (counts are `status --json`)"],
+      ],
     });
   }
   const ws = cli.workspace();
+  // `--json` is the `repos` tool's result; the human table adds each repo's root
+  // and its `repos_status` counts, which the reader wants at a glance.
+  const list = reposList(ws.store);
+  if (cli.flags.mode !== "human") return emitMachine(cli, list, { items: list.repos, ids: list.repos.map((r) => r.slug) });
+
   const repos = ws.repos().map((r) => ({ ...r, status: reposStatus(ws.store, r.repoId) }));
-
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(repos.map((r) => ({ slug: r.slug, root: r.rootPath, docs: r.status.docs, blocks: r.status.blocks }))));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const r of repos) cli.io.out(JSON.stringify({ slug: r.slug, root: r.rootPath, docs: r.status.docs, blocks: r.status.blocks }));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "ids") {
-    for (const r of repos) cli.io.out(r.slug);
-    return EXIT_OK;
-  }
-
   const { render, style, io } = cli;
   const rows = repos.map((r) => [
     `  ${render.g.diamond} ${style.accent(r.slug)}`,
@@ -243,7 +234,7 @@ function runRepos(cli: Cli, args: string[]): number {
     style.dim(`${r.status.docs} docs`),
     style.dim(`${r.status.blocks} blocks`),
   ]);
-  if (rows.length === 0) io.out(style.dim("  no repos attached"));
+  if (rows.length === 0) io.err(style.dim("  no repos attached"));
   else for (const line of columnsLocal(rows)) io.out(line);
   return EXIT_OK;
 }

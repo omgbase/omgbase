@@ -128,6 +128,18 @@ function resolveDir(dir: string): string {
 
 // Which commands may run without a workspace (11 §2.1).
 export const NO_WORKSPACE_OK = new Set(["init", "help", "version"]);
+// Commands whose first argument may be the word `help` (their card), and those
+// whose card is also their bare invocation (spec/cli §5): help is documentation,
+// not work, so these route to the card before any workspace is opened or swept —
+// exactly like the `--help` flag.
+export const HELP_WORD_OK = new Set(["config", "embed", "node", "source"]);
+export const BARE_IS_HELP = new Set(["node", "source"]);
+/** Does this invocation ask for a command's help card? (the flag, the word, or a bare card-only command) */
+export function asksForHelp(flags: GlobalFlags, name: string, args: string[]): boolean {
+  if (flags.help) return true;
+  if (HELP_WORD_OK.has(name) && args[0] === "help") return true;
+  return BARE_IS_HELP.has(name) && args.length === 0;
+}
 // Commands that manage sync themselves — skip the freshness sweep (11 §3.3).
 // `shell` is exempt because each line it runs sweeps on its own. `source`
 // creates/binds sources and runs its own initial sync, so it skips the pre-sweep.

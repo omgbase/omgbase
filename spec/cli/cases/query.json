@@ -322,7 +322,7 @@
     },
     {
       "name": "cursor-invalid",
-      "notes": "§9: reported under the code `error`, not filter_invalid",
+      "notes": "§3.5: filter_invalid, as the query tool reports it",
       "workspace": "alchemy",
       "argv": [
         "q",
@@ -333,7 +333,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[error]: invalid cursor\n"
+        "stderr": "error[filter_invalid]: invalid cursor\n  {\n    \"reason\": \"cursor was not issued by query\",\n    \"hint\": \"resume only with a `cursor` returned by a truncated page of the same tool\"\n  }\n"
       }
     },
     {
@@ -349,12 +349,12 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"error\",\"message\":\"invalid cursor\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"filter_invalid\",\"message\":\"invalid cursor\",\"data\":{\"reason\":\"cursor was not issued by query\",\"hint\":\"resume only with a `cursor` returned by a truncated page of the same tool\"},\"retriable\":false}\n"
       }
     },
     {
       "name": "parse-error",
-      "notes": "§9: an OQX error is `error[error]`",
+      "notes": "§3.5: an OQX error is filter_invalid with the OQX message as data.reason",
       "workspace": "alchemy",
       "argv": [
         "q",
@@ -363,7 +363,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "error[error]: unexpected end of query — expected a value (at offset 15)\n"
+        "stderr": "error[filter_invalid]: unexpected end of query — expected a value (at offset 15)\n  {\n    \"reason\": \"unexpected end of query — expected a value (at offset 15)\",\n    \"hint\": \"OQX\"\n  }\n"
       }
     },
     {
@@ -377,7 +377,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"error\",\"message\":\"unexpected end of query — expected a value (at offset 15)\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"filter_invalid\",\"message\":\"unexpected end of query — expected a value (at offset 15)\",\"data\":{\"reason\":\"unexpected end of query — expected a value (at offset 15)\",\"hint\":\"OQX\"},\"retriable\":false}\n"
       }
     },
     {
@@ -420,12 +420,12 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "{\"error\":\"semantic_unavailable\",\"message\":\"semantic(...) needs an embedding provider\",\"retriable\":false}\n"
+        "stderr": "{\"error\":\"semantic_unavailable\",\"message\":\"semantic(...) needs an embedding provider\",\"hint\":\"omg config set embedding.provider <command|url>\",\"retriable\":false}\n"
       }
     },
     {
       "name": "empty-source",
-      "notes": "§9: an empty source is a stderr usage note with exit 0",
+      "notes": "§6: an empty source is a usage error (exit 2)",
       "workspace": "alchemy",
       "argv": [
         "q",
@@ -433,9 +433,9 @@
       ],
       "pin_stderr": true,
       "expect": {
-        "exit": 0,
+        "exit": 2,
         "stdout": "",
-        "stderr": "  usage: query <source>  (or -f file|-)\n"
+        "stderr": "usage: query requires a <source> (or -f file|-)\n"
       }
     },
     {
@@ -446,9 +446,9 @@
       ],
       "pin_stderr": true,
       "expect": {
-        "exit": 0,
+        "exit": 2,
         "stdout": "",
-        "stderr": "  usage: query <source>  (or -f file|-)\n"
+        "stderr": "usage: query requires a <source> (or -f file|-)\n"
       }
     },
     {

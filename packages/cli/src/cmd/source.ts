@@ -20,7 +20,7 @@ import type { Cli } from "../context.js";
 import { columns } from "../render.js";
 import { drainEmbeddings } from "./_embed.js";
 import { ensureFsAdapter, FS_ADAPTER } from "./_source.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 
 // `omg source` (ADR-014) — the source registry: where a repo's bytes come from
 // (a filesystem directory today; git/S3/etc. via adapters later). A repo owns
@@ -120,13 +120,16 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
   if (getSourceByName(ws.store, sourceName)) throw new EngineErrorLike("path_taken", `a source named '${sourceName}' already exists`);
 
   // Consent gate: -y proceeds; a TTY prompts with a live file count; a non-TTY
-  // without -y refuses rather than absorbing the tree silently.
+  // without -y is a usage error (the script forgot the flag; exit 2) rather
+  // than a silent absorption of the tree — or a silent success.
   if (!values.yes) {
+    if (!process.stdin.isTTY || !cli.io.stdoutTTY) {
+      throw new CliUsageError(`refusing without -y (would ingest files under ${shortenHome(abs)})`, "there is no TTY to confirm on; pass -y to consent to the ingest");
+    }
     const { ok } = await confirmIngestWithCount(cli, abs, slug);
-    if (cli.io.stdoutTTY) process.stderr.write("\n");
+    process.stderr.write("\n");
     if (!ok) {
-      const why = !process.stdin.isTTY || !cli.io.stdoutTTY ? `refusing without -y (would ingest files under ${shortenHome(abs)})` : "cancelled";
-      cli.io.err(cli.style.dim(`  ${why}`));
+      cli.io.err(cli.style.dim("  cancelled"));
       return EXIT_OK;
     }
   }
@@ -152,10 +155,7 @@ async function runAdd(cli: Cli, args: string[]): Promise<number> {
     },
   });
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ repo: slug, repoId, source: sourceName, root: abs, ingested: swept.ingested.length, ...(drained ? { embedded: drained.embedded } : {}) }));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, { repo: slug, repoId, source: sourceName, root: abs, ingested: swept.ingested.length, ...(drained ? { embedded: drained.embedded } : {}) });
   const { render, style, io } = cli;
   io.out(`  ${render.g.diamond} ${style.accent(slug)} ← ${style.path(shortenHome(abs))}  ${style.dim(`${swept.ingested.length} files`)}`);
   if (drained) io.err(`  ${style.ok(render.g.ok)} embedded ${drained.embedded}, cached ${drained.cached}`);
@@ -166,22 +166,14 @@ function runList(cli: Cli): number {
   const ws = cli.workspace();
   const sources = listSources(ws.store).map((s) => ({ ...s, repos: attachedRepoSlugs(cli, ws, s.sourceId) }));
 
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(sources.map((s) => ({ name: s.name, adapter: s.adapter, config: s.config, repos: s.repos }))));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "jsonl") {
-    for (const s of sources) cli.io.out(JSON.stringify({ name: s.name, adapter: s.adapter, config: s.config, repos: s.repos }));
-    return EXIT_OK;
-  }
-  if (cli.flags.mode === "ids") {
-    for (const s of sources) cli.io.out(s.name);
-    return EXIT_OK;
+  if (cli.flags.mode !== "human") {
+    const rows = sources.map((s) => ({ name: s.name, adapter: s.adapter, config: s.config, repos: s.repos }));
+    return emitMachine(cli, rows, { items: rows, ids: rows.map((r) => r.name) });
   }
 
   const { style, io } = cli;
   if (sources.length === 0) {
-    io.out(style.dim("  no sources registered"));
+    io.err(style.dim("  no sources registered"));
     return EXIT_OK;
   }
   const rows = sources.map((s) => [
@@ -206,10 +198,7 @@ function runAttachDetach(cli: Cli, args: string[], verb: "attach" | "detach"): n
   if (verb === "attach") attachSourceToRepo(ws.store, repo.repoId, source.sourceId);
   else detachSourceFromRepo(ws.store, repo.repoId, source.sourceId);
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ source: name, repo: repo.slug, attached: verb === "attach" }));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, { source: name, repo: repo.slug, attached: verb === "attach" });
   cli.io.out(`  ${cli.render.g.ok} ${verb === "attach" ? "attached" : "detached"} ${cli.style.accent(name)} ${verb === "attach" ? "→" : "⇸"} ${cli.style.accent(repo.slug)}`);
   return EXIT_OK;
 }
@@ -223,10 +212,7 @@ function runRm(cli: Cli, args: string[]): number {
   if (!source) throw new EngineErrorLike("target_missing", `no source named '${name}'`);
   deleteSource(ws.store, source.sourceId);
 
-  if (cli.flags.mode !== "human") {
-    cli.io.out(JSON.stringify({ source: name, deleted: true }));
-    return EXIT_OK;
-  }
+  if (cli.flags.mode !== "human") return emitMachine(cli, { source: name, deleted: true });
   cli.io.out(`  ${cli.render.g.ok} deleted source ${cli.style.accent(name)}`);
   return EXIT_OK;
 }

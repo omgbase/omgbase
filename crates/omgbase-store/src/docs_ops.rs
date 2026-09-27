@@ -1,6 +1,9 @@
 //! Document operations (`spec/mutate/README.md` §6): create, move, delete,
 //! set-meta — `api` commits with generated reasons, each following the
-//! file-first protocol against a [`DocStore`].
+//! file-first protocol against a [`DocStore`]. Each has a dry run
+//! (`spec/surface` §4, 1.3) behind [`Store::dry_run`]: every check the real
+//! operation makes runs, nothing is written or committed, and the result
+//! carries the per-file [`Diff`]s the operation would produce.
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
@@ -19,7 +22,7 @@ use crate::doc_store::DocStore;
 use crate::error::Result;
 use crate::graph::{adopt_phantoms, rebuild_doc_edges};
 use crate::links::{InboundLink, doc_dir_of, inbound_links_to, retarget_links_in_raw};
-use crate::mutate::{ApplyOrigin, ApplyRequest, find_doc_by_ref};
+use crate::mutate::{ApplyOrigin, ApplyRequest, Diff, find_doc_by_ref};
 use crate::read::blob_text;
 use crate::writers::{NewCommit, Origin, new_commit};
 use crate::yaml_emit::stringify;
@@ -34,18 +37,60 @@ pub struct DocOpContext {
     pub ts: String,
 }
 
-/// `{ doc, path, committed }`.
+/// The file changes a dry run would make, keyed by repo-relative path in the
+/// order the reference builds them (`spec/surface` §4, 1.3): `before` the
+/// current bytes (`""` for a file that would be created), `after` the bytes
+/// the operation would leave (`""` for a file that would be removed).
+pub type Diffs = Vec<(String, Diff)>;
+
+/// `Diffs` on the wire: `{ "<path>": { "before", "after" } }`.
+#[must_use]
+pub fn diffs_json(diffs: &[(String, Diff)]) -> Value {
+    let mut m = Map::new();
+    for (path, d) in diffs {
+        m.insert(
+            path.clone(),
+            json!({ "before": d.before, "after": d.after }),
+        );
+    }
+    Value::Object(m)
+}
+
+/// The reference's `Object.assign(diffs, more)`: a path already present keeps
+/// its position and takes the new diff; a new path is appended.
+fn assign_diffs(diffs: &mut Diffs, more: Diffs) {
+    for (path, d) in more {
+        if let Some(slot) = diffs.iter_mut().find(|(p, _)| *p == path) {
+            slot.1 = d;
+        } else {
+            diffs.push((path, d));
+        }
+    }
+}
+
+/// `{ doc, path, committed, diffs? }`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DocOpResult {
     pub doc_id: String,
     pub path: String,
     pub committed: bool,
+    /// With a dry run, the changes the operation would make (a create: `""`
+    /// → the composed file; a delete: the file → `""`; a set-meta: before →
+    /// after). `None` on a committed result.
+    pub diffs: Option<Diffs>,
 }
 
 impl DocOpResult {
     #[must_use]
     pub fn to_json(&self) -> Value {
-        json!({ "doc": self.doc_id, "path": self.path, "committed": self.committed })
+        let mut m = Map::new();
+        m.insert("doc".to_owned(), json!(self.doc_id));
+        m.insert("path".to_owned(), json!(self.path));
+        m.insert("committed".to_owned(), json!(self.committed));
+        if let Some(diffs) = &self.diffs {
+            m.insert("diffs".to_owned(), diffs_json(diffs));
+        }
+        Value::Object(m)
     }
 }
 
@@ -62,23 +107,50 @@ pub struct DocMoveResult {
     pub doc_id: String,
     pub path: String,
     pub committed: bool,
+    /// With a dry run: the old path emptied, the new path filled, then any
+    /// source the `retarget_inbound` rewrite would touch. `None` when committed.
+    pub diffs: Option<Diffs>,
     /// Inbound links still naming the old path after the call.
     pub dangling: Vec<InboundLink>,
     pub retargeted: Option<Retargeted>,
 }
 
 impl DocMoveResult {
-    /// `{ doc, path, committed, dangling, retargeted }`.
+    /// `{ doc, path, committed, diffs?, dangling, retargeted }`.
     #[must_use]
     pub fn to_json(&self) -> Value {
-        json!({
-            "doc": self.doc_id,
-            "path": self.path,
-            "committed": self.committed,
-            "dangling": self.dangling.iter().map(InboundLink::to_json).collect::<Vec<_>>(),
-            "retargeted": self.retargeted.as_ref().map(|r| json!({ "blocks": r.blocks, "docs": r.docs })),
-        })
+        let mut m = Map::new();
+        m.insert("doc".to_owned(), json!(self.doc_id));
+        m.insert("path".to_owned(), json!(self.path));
+        m.insert("committed".to_owned(), json!(self.committed));
+        if let Some(diffs) = &self.diffs {
+            m.insert("diffs".to_owned(), diffs_json(diffs));
+        }
+        m.insert(
+            "dangling".to_owned(),
+            Value::Array(self.dangling.iter().map(InboundLink::to_json).collect()),
+        );
+        m.insert(
+            "retargeted".to_owned(),
+            json!(
+                self.retargeted
+                    .as_ref()
+                    .map(|r| json!({ "blocks": r.blocks, "docs": r.docs }))
+            ),
+        );
+        Value::Object(m)
     }
+}
+
+/// The `retarget_inbound` plan of a move: one coalesced, CAS-pinned `update`
+/// per deepest hit block, the blocks and docs it touches, and the inbound
+/// links it leaves dangling. Pure over the store's current blocks — the move
+/// itself changes no block — so the real move and its dry run plan identically.
+struct RetargetPlan {
+    ops: Vec<Op>,
+    blocks: Vec<String>,
+    docs: Vec<String>,
+    dangling: Vec<InboundLink>,
 }
 
 /// §6: strip leading `/`s, `\` → `/`.
@@ -132,6 +204,24 @@ pub fn split_frontmatter(content: &str) -> (Map<String, Value>, String) {
     (fm, content[whole.end()..].to_owned())
 }
 
+/// §6 `docs_set_meta`'s rewrite: `set` merged over the file's frontmatter,
+/// `unset` removed, recomposed over the same body.
+fn patch_frontmatter(original: &str, set: Option<&Map<String, Value>>, unset: &[String]) -> String {
+    let (mut merged, body) = split_frontmatter(original);
+    if let Some(set) = set {
+        for (k, v) in set {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    if !unset.is_empty() {
+        merged = merged
+            .into_iter()
+            .filter(|(k, _)| !unset.contains(k))
+            .collect();
+    }
+    compose_file(&body, Some(&merged))
+}
+
 fn doc_missing(r: &str) -> crate::error::Error {
     MutationError::new(ErrorCode::DocMissing, format!("no document {r}")).into()
 }
@@ -140,7 +230,80 @@ fn path_taken(msg: String) -> crate::error::Error {
     MutationError::new(ErrorCode::PathTaken, msg).into()
 }
 
+/// The dry-run view of the document operations (`spec/surface` §4, 1.3; the
+/// reference's `DocOpContext.dryRun`): the same four calls as on [`Store`],
+/// each validating exactly as the real run does (`doc_missing`,
+/// `path_taken`, …), writing and committing nothing, and returning
+/// `committed: false` with the per-file `diffs`. A create still mints its
+/// `d_` id (`apply`'s rule: a dry run consumes the id the real run would
+/// take next). Obtained from [`Store::dry_run`].
+pub struct DryRun<'s>(&'s mut Store);
+
+impl std::fmt::Debug for DryRun<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("DryRun(Store)")
+    }
+}
+
+impl DryRun<'_> {
+    /// `docs_create` without writing: `{ "<path>": { before: "", after: bytes } }`.
+    pub fn docs_create(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        path: &str,
+        markdown: &str,
+        frontmatter: Option<&Map<String, Value>>,
+    ) -> Result<DocOpResult> {
+        self.0
+            .create_doc(ctx, doc_store, path, markdown, frontmatter, true)
+    }
+
+    /// `docs_move` without renaming: the old path → `""`, the new path ←
+    /// bytes; with `retarget_inbound`, `dangling`/`retargeted` as the real
+    /// run would report them and the rewritten sources' diffs.
+    pub fn docs_move(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+        to_path: &str,
+        retarget_inbound: bool,
+    ) -> Result<DocMoveResult> {
+        self.0
+            .move_doc(ctx, doc_store, doc_ref, to_path, retarget_inbound, true)
+    }
+
+    /// `docs_delete` without deleting: `{ "<path>": { before: bytes, after: "" } }`.
+    pub fn docs_delete(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+    ) -> Result<DocOpResult> {
+        self.0.delete_doc(ctx, doc_store, doc_ref, true)
+    }
+
+    /// `docs_set_meta` without writing: the file before → after the patch.
+    pub fn docs_set_meta(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+        set: Option<&Map<String, Value>>,
+        unset: &[String],
+    ) -> Result<DocOpResult> {
+        self.0
+            .set_meta_doc(ctx, doc_store, doc_ref, set, unset, true)
+    }
+}
+
 impl Store {
+    /// The document operations as previews: see [`DryRun`].
+    pub fn dry_run(&mut self) -> DryRun<'_> {
+        DryRun(self)
+    }
+
     fn live_doc_at(&self, repo_id: &str, path: &str) -> Result<bool> {
         Ok(self
             .conn
@@ -164,6 +327,18 @@ impl Store {
         markdown: &str,
         frontmatter: Option<&Map<String, Value>>,
     ) -> Result<DocOpResult> {
+        self.create_doc(ctx, doc_store, path, markdown, frontmatter, false)
+    }
+
+    fn create_doc(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        path: &str,
+        markdown: &str,
+        frontmatter: Option<&Map<String, Value>>,
+        dry_run: bool,
+    ) -> Result<DocOpResult> {
         let rel = canonical(path);
         if self.live_doc_at(&ctx.repo_id, &rel)? {
             return Err(path_taken(format!("document already exists at {rel}")));
@@ -171,6 +346,22 @@ impl Store {
         let content = compose_file(markdown, frontmatter);
         if doc_store.exists(&rel) {
             return Err(path_taken(format!("file already exists on disk at {rel}")));
+        }
+        if dry_run {
+            let doc_id = self.ids.at(&self.conn).mint("d")?;
+            let diffs = vec![(
+                rel.clone(),
+                Diff {
+                    before: String::new(),
+                    after: content,
+                },
+            )];
+            return Ok(DocOpResult {
+                doc_id,
+                path: rel,
+                committed: false,
+                diffs: Some(diffs),
+            });
         }
         doc_store.write(&rel, &content)?;
         let reason = format!("create {rel}");
@@ -188,6 +379,7 @@ impl Store {
             doc_id: c.doc_id,
             path: rel,
             committed: true,
+            diffs: None,
         })
     }
 
@@ -204,6 +396,18 @@ impl Store {
         to_path: &str,
         retarget_inbound: bool,
     ) -> Result<DocMoveResult> {
+        self.move_doc(ctx, doc_store, doc_ref, to_path, retarget_inbound, false)
+    }
+
+    fn move_doc(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+        to_path: &str,
+        retarget_inbound: bool,
+        dry_run: bool,
+    ) -> Result<DocMoveResult> {
         let info = find_doc_by_ref(&self.conn, &ctx.repo_id, doc_ref)?
             .ok_or_else(|| doc_missing(doc_ref))?;
         let to_rel = canonical(to_path);
@@ -217,6 +421,51 @@ impl Store {
             )));
         }
         let content = doc_store.read(&info.path)?.unwrap_or_default();
+        if dry_run {
+            let mut diffs: Diffs = vec![
+                (
+                    info.path.clone(),
+                    Diff {
+                        before: content.clone(),
+                        after: String::new(),
+                    },
+                ),
+                (
+                    to_rel.clone(),
+                    Diff {
+                        before: String::new(),
+                        after: content,
+                    },
+                ),
+            ];
+            if !retarget_inbound || inbound.is_empty() {
+                return Ok(DocMoveResult {
+                    doc_id: info.doc_id,
+                    path: to_rel,
+                    committed: false,
+                    diffs: Some(diffs),
+                    dangling: inbound,
+                    retargeted: None,
+                });
+            }
+            let plan = self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?;
+            if !plan.ops.is_empty() {
+                let req = retarget_request(ctx, plan.ops, &info.path, &to_rel, true);
+                let preview = self.apply(&req, doc_store, &ctx.ts)?;
+                assign_diffs(&mut diffs, preview.diffs.unwrap_or_default());
+            }
+            return Ok(DocMoveResult {
+                doc_id: info.doc_id,
+                path: to_rel,
+                committed: false,
+                diffs: Some(diffs),
+                dangling: plan.dangling,
+                retargeted: Some(Retargeted {
+                    blocks: plan.blocks,
+                    docs: plan.docs,
+                }),
+            });
+        }
         if doc_store.exists(&info.path) {
             doc_store.rename(&info.path, &to_rel)?;
         } else {
@@ -289,17 +538,46 @@ impl Store {
             doc_id: info.doc_id.clone(),
             path: to_rel.clone(),
             committed: true,
+            diffs: None,
             dangling: inbound.clone(),
             retargeted: None,
         };
         if !retarget_inbound || inbound.is_empty() {
             return Ok(moved);
         }
+        // Rewrite the dangling links block by block (one coalesced update per
+        // block, CAS on the block's current hash) and apply as one changeset;
+        // the re-ingest re-extracts each source doc, whose links now resolve
+        // to the moved doc.
+        let plan = self.plan_inbound_retarget(&info.doc_id, &info.path, &to_rel, &inbound)?;
+        if !plan.ops.is_empty() {
+            let req = retarget_request(ctx, plan.ops, &info.path, &to_rel, false);
+            self.apply(&req, doc_store, &ctx.ts)?;
+        }
+        Ok(DocMoveResult {
+            dangling: plan.dangling,
+            retargeted: Some(Retargeted {
+                blocks: plan.blocks,
+                docs: plan.docs,
+            }),
+            ..moved
+        })
+    }
 
-        // Rewrite the dangling links, deepest block per inbound link.
+    /// The `retarget_inbound` plan of a move `from_path → to_rel` over the
+    /// store's current blocks: deepest hit block per inbound link (a
+    /// container whose raw includes a hit child's raw is covered by the
+    /// child), each rewritten against the source's *current* directory.
+    fn plan_inbound_retarget(
+        &self,
+        doc_id: &str,
+        from_path: &str,
+        to_rel: &str,
+        inbound: &[InboundLink],
+    ) -> Result<RetargetPlan> {
         let mut by_block_order: Vec<String> = Vec::new();
         let mut by_block: HashMap<String, &InboundLink> = HashMap::new();
-        for l in &inbound {
+        for l in inbound {
             if let Some(b) = &l.block {
                 if !by_block.contains_key(b) {
                     by_block_order.push(b.clone());
@@ -350,13 +628,17 @@ impl Store {
                 continue;
             };
             let raw = blob_text(&self.conn, &raw_hash)?;
-            let write_dir = if src.doc == info.doc_id {
-                doc_dir_of(&to_rel)
+            // Match against the directory the link was RESOLVED in (the
+            // source's path at extraction time); write relative forms against
+            // the source's CURRENT directory — they differ only for links
+            // inside the moved doc itself.
+            let write_dir = if src.doc == doc_id {
+                doc_dir_of(to_rel)
             } else {
                 doc_dir_of(&src.path)
             };
             let Some(new_raw) =
-                retarget_links_in_raw(&raw, doc_dir_of(&src.path), write_dir, &info.path, &to_rel)
+                retarget_links_in_raw(&raw, doc_dir_of(&src.path), write_dir, from_path, to_rel)
             else {
                 continue;
             };
@@ -373,19 +655,7 @@ impl Store {
                 docs.push(src.doc.clone());
             }
         }
-        if !ops.is_empty() {
-            let req = ApplyRequest {
-                repo_id: ctx.repo_id.clone(),
-                ops,
-                origin: ApplyOrigin {
-                    actor: ctx.actor.clone().unwrap_or_else(|| "api".to_owned()),
-                    reason: Some(format!("retarget inbound links {} -> {to_rel}", info.path)),
-                },
-                dry_run: false,
-                set_frontmatter: Vec::new(),
-            };
-            self.apply(&req, doc_store, &ctx.ts)?;
-        }
+        // Containers whose rewritten child covered them count as rewritten too.
         let rewritten: BTreeSet<&str> = blocks
             .iter()
             .map(String::as_str)
@@ -396,10 +666,11 @@ impl Store {
             .filter(|l| l.block.as_deref().is_none_or(|b| !rewritten.contains(b)))
             .cloned()
             .collect();
-        Ok(DocMoveResult {
+        Ok(RetargetPlan {
+            ops,
+            blocks,
+            docs,
             dangling,
-            retargeted: Some(Retargeted { blocks, docs }),
-            ..moved
         })
     }
 
@@ -412,8 +683,34 @@ impl Store {
         doc_store: &mut dyn DocStore,
         doc_ref: &str,
     ) -> Result<DocOpResult> {
+        self.delete_doc(ctx, doc_store, doc_ref, false)
+    }
+
+    fn delete_doc(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+        dry_run: bool,
+    ) -> Result<DocOpResult> {
         let info = find_doc_by_ref(&self.conn, &ctx.repo_id, doc_ref)?
             .ok_or_else(|| doc_missing(doc_ref))?;
+        if dry_run {
+            let before = doc_store.read(&info.path)?.unwrap_or_default();
+            let diffs = vec![(
+                info.path.clone(),
+                Diff {
+                    before,
+                    after: String::new(),
+                },
+            )];
+            return Ok(DocOpResult {
+                doc_id: info.doc_id,
+                path: info.path,
+                committed: false,
+                diffs: Some(diffs),
+            });
+        }
         {
             let tx = self.conn.unchecked_transaction()?;
             let reason = format!("delete {}", info.path);
@@ -446,6 +743,7 @@ impl Store {
             doc_id: info.doc_id,
             path: info.path,
             committed: true,
+            diffs: None,
         })
     }
 
@@ -460,22 +758,37 @@ impl Store {
         set: Option<&Map<String, Value>>,
         unset: &[String],
     ) -> Result<DocOpResult> {
+        self.set_meta_doc(ctx, doc_store, doc_ref, set, unset, false)
+    }
+
+    fn set_meta_doc(
+        &mut self,
+        ctx: &DocOpContext,
+        doc_store: &mut dyn DocStore,
+        doc_ref: &str,
+        set: Option<&Map<String, Value>>,
+        unset: &[String],
+        dry_run: bool,
+    ) -> Result<DocOpResult> {
         let info = find_doc_by_ref(&self.conn, &ctx.repo_id, doc_ref)?
             .ok_or_else(|| doc_missing(doc_ref))?;
         let original = doc_store.read(&info.path)?.unwrap_or_default();
-        let (mut merged, body) = split_frontmatter(&original);
-        if let Some(set) = set {
-            for (k, v) in set {
-                merged.insert(k.clone(), v.clone());
-            }
+        let content = patch_frontmatter(&original, set, unset);
+        if dry_run {
+            let diffs = vec![(
+                info.path.clone(),
+                Diff {
+                    before: original,
+                    after: content,
+                },
+            )];
+            return Ok(DocOpResult {
+                doc_id: info.doc_id,
+                path: info.path,
+                committed: false,
+                diffs: Some(diffs),
+            });
         }
-        if !unset.is_empty() {
-            merged = merged
-                .into_iter()
-                .filter(|(k, _)| !unset.contains(k))
-                .collect();
-        }
-        let content = compose_file(&body, Some(&merged));
         doc_store.write(&info.path, &content)?;
         let reason = format!("set_meta {}", info.path);
         let c = self.reconciling_ingest(
@@ -492,7 +805,29 @@ impl Store {
             doc_id: c.doc_id,
             path: info.path,
             committed: true,
+            diffs: None,
         })
+    }
+}
+
+/// The follow-up changeset of a `retarget_inbound` move: the context's repo,
+/// actor (`api` when absent) and a generated reason.
+fn retarget_request(
+    ctx: &DocOpContext,
+    ops: Vec<Op>,
+    from_path: &str,
+    to_rel: &str,
+    dry_run: bool,
+) -> ApplyRequest {
+    ApplyRequest {
+        repo_id: ctx.repo_id.clone(),
+        ops,
+        origin: ApplyOrigin {
+            actor: ctx.actor.clone().unwrap_or_else(|| "api".to_owned()),
+            reason: Some(format!("retarget inbound links {from_path} -> {to_rel}")),
+        },
+        dry_run,
+        set_frontmatter: Vec::new(),
     }
 }
 
@@ -538,5 +873,43 @@ mod tests {
         assert_eq!(canonical("/dir\\sub\\x.md"), "dir/sub/x.md");
         assert_eq!(canonical("//a.md"), "a.md");
         assert_eq!(canonical("a.md"), "a.md");
+    }
+
+    #[test]
+    fn diffs_assign_like_object_assign_and_render_in_order() {
+        let d = |b: &str, a: &str| Diff {
+            before: b.to_owned(),
+            after: a.to_owned(),
+        };
+        let mut diffs: Diffs = vec![
+            ("b.md".to_owned(), d("x", "")),
+            ("n/b.md".to_owned(), d("", "x")),
+        ];
+        assign_diffs(
+            &mut diffs,
+            vec![
+                ("a.md".to_owned(), d("[b](b.md)", "[b](n/b.md)")),
+                ("b.md".to_owned(), d("x", "y")),
+            ],
+        );
+        let keys: Vec<&str> = diffs.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(keys, ["b.md", "n/b.md", "a.md"]);
+        assert_eq!(diffs[0].1, d("x", "y"));
+        assert_eq!(
+            serde_json::to_string(&diffs_json(&diffs)).unwrap(),
+            r#"{"b.md":{"before":"x","after":"y"},"n/b.md":{"before":"","after":"x"},"a.md":{"before":"[b](b.md)","after":"[b](n/b.md)"}}"#
+        );
+    }
+
+    #[test]
+    fn set_meta_patch_merges_sets_and_drops_unsets() {
+        let set: Map<String, Value> = serde_json::from_str(r#"{"status":"done","n":2}"#).unwrap();
+        let out = patch_frontmatter(
+            "---\ntitle: T\nstatus: open\nold: 1\n---\n\n# Body\n",
+            Some(&set),
+            &["old".to_owned()],
+        );
+        assert_eq!(out, "---\ntitle: T\nstatus: done\nn: 2\n---\n\n# Body\n");
+        assert_eq!(patch_frontmatter("# Plain\n", None, &[]), "# Plain\n");
     }
 }

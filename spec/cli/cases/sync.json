@@ -54,7 +54,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":1,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
           }
         },
         {
@@ -73,7 +73,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":304,\"commits\":19,\"openEdges\":63,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":304,\"commits\":19,\"openEdges\":63,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":19,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":55}\n"
           }
         },
         {
@@ -176,7 +176,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":1,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
           }
         },
         {
@@ -214,7 +214,7 @@
     },
     {
       "name": "out-of-band-delete",
-      "notes": "a removed file is an observed deletion; the doc is tombstoned; the deletion's digest has an empty summary (§9)",
+      "notes": "a removed file is an observed deletion; the doc is tombstoned; the deletion's digest reads `deleted <path>` (§6 log)",
       "workspace": "alchemy",
       "steps": [
         {
@@ -228,7 +228,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":1,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
           }
         },
         {
@@ -268,7 +268,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":19,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":17,\"blocks\":302,\"commits\":19,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":19,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":55}\n"
           }
         },
         {
@@ -279,7 +279,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#19 observed observed: \n"
+            "stdout": "#19 observed observed: deleted texts/mutus-liber.md\n"
           }
         }
       ]
@@ -306,7 +306,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  fixture has no filesystem source — nothing to sync\n"
+            "stdout": ""
           }
         },
         {
@@ -326,7 +326,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":null,\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":false,\"diskChecked\":false,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":false}},\"watcher\":\"none\",\"embedQueue\":58}\n"
           }
         },
         {
@@ -335,7 +335,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  fixture\n  (no source — headless)\n  ----------------------------------------\n  [D] docs  18            watcher o none\n  [B] blocks  314         synced  ! disk unverified\n  * commits  18           queue   empty\n  > edges  64             commit# 18\n"
+            "stdout": "  omgbase  >  fixture\n  (no source — headless)\n  ----------------------------------------\n  [D] docs  18            watcher o none\n  [B] blocks  314         synced  ! disk unverified\n  * commits  18           queue   58 queued\n  > edges  64             commit# 18\n"
           }
         },
         {
@@ -385,7 +385,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[error]: mutation requires a rootPath or an explicit docStore\n"
+            "stderr": "error[repo_not_found]: Error: mutation requires a rootPath or an explicit docStore\n"
           }
         },
         {
@@ -400,7 +400,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[error]: mutation requires a rootPath or an explicit docStore\n"
+            "stderr": "error[repo_not_found]: Error: mutation requires a rootPath or an explicit docStore\n"
           }
         },
         {
@@ -421,7 +421,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"repo\":\"fixture\",\"root\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"convergent\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"lastCommitSeq\":18,\"watcher\":\"none\",\"embedQueue\":0}\n"
+            "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
           }
         }
       ]

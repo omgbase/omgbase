@@ -1,8 +1,8 @@
 import { parseArgs } from "node:util";
-import { resolveRef, nodesGet, findDoc, docLinks, historyNode, docPropertiesMerged } from "@omgbase/core";
+import { resolveRef, nodesGet, docsRead, docLinks, historyNode, docPropertiesMerged } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { CliUsageError, EngineErrorLike, EXIT_OK, emitMachine, renderHelp } from "../output.js";
 import { expandBlockArgs } from "./_mutate.js";
 
 // `omg show <node…|->` (11 §5.2) — the metadata card: attrs, placement, open
@@ -23,11 +23,14 @@ function showOne(cli: Cli, ref: string, include: string[]): ShowOne {
   if (!resolved) throw new EngineErrorLike("doc_missing", `no node ${ref}`);
 
   if (resolved.kind === "document") {
-    const info = findDoc(ws.store, { docId: resolved.docId })!;
+    // The card reads the merged properties + open edges; `--json` is the
+    // `read_ref` result for a document (`{ kind: "document", ...docs_read }`).
+    const res = docsRead(ws.store, resolved.docId);
+    if (!res) throw new EngineErrorLike("doc_missing", `no document ${ref}`);
     const links = docLinks(ws.store, resolved.docId, { direction: "both" });
     const properties = docPropertiesMerged(ws.store.db, resolved.docId);
-    const payload = { kind: "document", id: info.docId, path: info.path, properties, edges: links };
-    return { payload, render: () => renderDocCard(cli, info.path, properties, links) };
+    const payload = { kind: "document", ...res };
+    return { payload, render: () => renderDocCard(cli, res.path, properties, links) };
   }
 
   const node = nodesGet(ws.store, resolved.docId, resolved.blockId!, { resolution: "full" });
@@ -62,13 +65,9 @@ function runShow(cli: Cli, args: string[]): number {
   // One ref keeps the single-entity shape (→ @_, frame intact); several become a list.
   const single = cards.length === 1 ? cards[0]! : null;
   cli.capture?.(single ? single.payload : cards.map((c) => c.payload));
-  if (cli.flags.mode === "json") {
-    cli.io.out(JSON.stringify(single ? single.payload : cards.map((c) => c.payload)));
-    return EXIT_OK;
-  }
   if (cli.flags.mode !== "human") {
-    for (const c of cards) cli.io.out(JSON.stringify(c.payload));
-    return EXIT_OK;
+    const docs = cards.map((c) => c.payload);
+    return single ? emitMachine(cli, single.payload) : emitMachine(cli, docs, { items: docs });
   }
   for (const c of cards) c.render();
   return EXIT_OK;
