@@ -57,6 +57,8 @@ pnpm lint      # pnpm -r lint
 
 Always run `pnpm build && pnpm test` before considering a change done.
 
+Releases: crates are published by the session with `cargo publish -p <crate>` in dependency order; npm is published by Brendan with `pnpm publish:npm` at the root (`scripts/publish-npm.mjs`: every public package whose `package.json` version is not on the registry, dependency order, OTP prompt per package; `--dry-run` previews). Bump a package's version whenever its code changed after the published version — the script compares versions, not contents.
+
 `pnpm --filter omgbase test` includes the **CLI spec runner** (`spec/cli`, 470 cases spawning the built `omg`; ~3 min). `pnpm test` includes the **cross-engine interop suite** (`spec/surface` §7, `packages/core/corpus/surface/interop.test.ts`): it spawns both `omg mcp` and the Rust `omgbase mcp` as MCP stdio servers over one workspace, so it needs `cargo build -p omgbase` first (a missing binary fails the cross pairs; `OMGBASE_INTEROP=skip` skips them on a host without cargo — CI does this). Symmetrically, `cargo test` runs `crates/omgbase/tests/interop.rs`, which needs `pnpm build` first. `pnpm interop` at the root builds both and runs both harnesses.
 
 Rust (when touching `crates/` or `spec/`):
