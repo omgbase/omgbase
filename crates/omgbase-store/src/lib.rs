@@ -49,7 +49,9 @@
 //!
 //! Minted ids are opaque; the store asks its [`IdMinter`] for each one. The
 //! default is the CSPRNG-backed [`RandomMinter`]; a fixture runner installs a
-//! [`SequentialMinter`] through [`Store::open_in_memory_with_minter`].
+//! [`SequentialMinter`] through [`Store::open_in_memory_with_minter`]. Every
+//! draw passes through the checking [`Mint`] (§2.1, 13.5): an id already
+//! issued in this process or naming a row of its prefix's table is redrawn.
 
 #![forbid(unsafe_code)]
 
@@ -62,6 +64,7 @@ pub mod history;
 pub mod ids;
 pub mod links;
 pub mod macros;
+pub mod mint;
 pub mod mutate;
 pub mod observe;
 pub mod order_key;
@@ -87,9 +90,10 @@ pub use docs_ops::{DocMoveResult, DocOpContext, DocOpResult, Retargeted};
 pub use error::{Error, Result};
 pub use graph::ResolvedEdge;
 pub use history::{ChangesPage, CommitDigest, DigestRevision};
-pub use ids::{IdMinter, RandomMinter, SequentialMinter, is_valid_id, prefix_of};
+pub use ids::{IdMinter, RandomMinter, RepeatingMinter, SequentialMinter, is_valid_id, prefix_of};
 pub use links::InboundLink;
 pub use macros::{LinkRepair, LinkRepairCount, LinkRepairPlan, RetargetHit};
+pub use mint::{Deferred, MINT_GIVE_UP_AFTER, Mint, id_in_use};
 pub use mutate::{
     ApplyOrigin, ApplyRequest, ApplyResult, Diff, DocInfo, Revision, SetFrontmatter,
     find_doc_by_ref, is_id_ref, load_mut_doc,
@@ -119,15 +123,16 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 
 /// The `spec/store/VERSION` this crate implements (`major.minor`); the major
 /// is [`SCHEMA_VERSION`].
-pub const SPEC_VERSION: &str = "13.4";
+pub const SPEC_VERSION: &str = "13.5";
 
 /// The one format this crate ingests (`docs.format`).
 pub const FORMAT_MARKDOWN: &str = "markdown";
 
-/// An open store: one connection, one id minter. All writes go through it.
+/// An open store: one connection, one id minter (behind the in-use check of
+/// [`mint`]). All writes go through it.
 pub struct Store {
     conn: Connection,
-    minter: Box<dyn IdMinter>,
+    ids: mint::IdSource,
 }
 
 impl std::fmt::Debug for Store {
@@ -194,7 +199,7 @@ impl Store {
     /// Adopt an existing connection: apply the §1 pragmas, register
     /// `cosine`, run the opener (fresh → `schema.sql`; older → migrations;
     /// newer → [`Error::SchemaTooNew`]).
-    pub fn from_connection(conn: Connection, mut minter: Box<dyn IdMinter>) -> Result<Self> {
+    pub fn from_connection(conn: Connection, minter: Box<dyn IdMinter>) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
@@ -204,8 +209,9 @@ impl Store {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             cosine_udf,
         )?;
-        schema::migrate(&conn, &mut *minter)?;
-        Ok(Self { conn, minter })
+        let mut ids = mint::IdSource::new(minter);
+        schema::migrate(&conn, &mut ids)?;
+        Ok(Self { conn, ids })
     }
 
     /// The underlying connection.
@@ -214,14 +220,14 @@ impl Store {
         &self.conn
     }
 
-    /// The store's minter.
-    pub fn minter_mut(&mut self) -> &mut dyn IdMinter {
-        &mut *self.minter
+    /// The store's checking minter (§2.1) over its connection.
+    pub fn minter(&mut self) -> Mint<'_> {
+        self.ids.at(&self.conn)
     }
 
-    /// Mint an id with `prefix` (§2.1).
-    pub fn mint(&mut self, prefix: &str) -> String {
-        self.minter.mint(prefix)
+    /// Mint an id with `prefix` (§2.1): never one in use.
+    pub fn mint(&mut self, prefix: &str) -> Result<String> {
+        self.minter().mint(prefix)
     }
 
     /// Begin a write transaction (one per commit, §1); rolls back on drop.
@@ -231,7 +237,7 @@ impl Store {
 
     /// Create a repo with `slug` (**mints `rp`**); returns its id.
     pub fn create_repo(&mut self, slug: &str) -> Result<String> {
-        let repo_id = self.minter.mint("rp");
+        let repo_id = self.mint("rp")?;
         self.conn.execute(
             "INSERT INTO repos (repo_id, slug) VALUES (?1, ?2)",
             params![repo_id, slug],
@@ -276,12 +282,12 @@ impl Store {
 
     /// [`writers::new_commit`]; returns `(commit_id, seq)`.
     pub fn new_commit(&mut self, input: &NewCommit<'_>) -> Result<(String, i64)> {
-        writers::new_commit(&self.conn, &mut *self.minter, input)
+        writers::new_commit(&self.conn, &mut self.ids.at(&self.conn), input)
     }
 
     /// [`writers::write_revision`]; returns `(rev_id, seq)`.
     pub fn write_revision(&mut self, input: &NewRevision<'_>) -> Result<(String, i64)> {
-        writers::write_revision(&self.conn, &mut *self.minter, input)
+        writers::write_revision(&self.conn, &mut self.ids.at(&self.conn), input)
     }
 
     // ---- reads --------------------------------------------------------------------

@@ -22,7 +22,7 @@
 | Repo | `rp_` | same | `rp_a30f9kd` |
 | Projection (reserved) | `v_` | same | `v_1c8bb0p` |
 
-- IDs are repo-scoped, never reused, never re-assigned. As built, minting is not collision-checked (the 32⁷ space and the primary keys are relied on — `spec/store` §10); the store exposes a minter seam so conformance runners can install a sequential one.
+- IDs are repo-scoped, never reused, never re-assigned. Minting is collision-checked at the seam (`core/ids.ts` `mintId`, `spec/store` §2.1, 13.5): a candidate is redrawn while it is in use — already issued in this process, or present in the prefix's table(s) per an oracle every open `Store` registers (`d` docs; `b` blocks ∪ block_changes ∪ resurrection_pool; `c` commits; `r` revisions; `x` external_nodes; `e` edges; `cp` checkpoints; `rp` repos; `src` sources; `col`/`v` unchecked). The birthday bound made this real: a 3,000-document ingest collided at 360,338 blocks (`spec/store` §10). The same seam lets conformance runners install a sequential minter (and the repeating one that pins the redraw).
 - Content hashes are **sha256** stored as 32-byte BLOBs; displayed truncated to 16 hex chars. Two hash flavors per block:
   - `raw_hash` — sha256 of exact raw source bytes (blob key, splice identity).
   - `norm_hash` — sha256 of the block's visible text (`text`: block-level syntax stripped, whitespace collapsed — §5.2, `spec/format` §4.1) used by reconciliation phase 2. Stored on `blocks`, not on blobs.

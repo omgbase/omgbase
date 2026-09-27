@@ -227,7 +227,7 @@ impl Store {
             let reason = format!("move {} -> {to_rel}", info.path);
             new_commit(
                 &tx,
-                &mut *self.minter,
+                &mut self.ids.at(&tx),
                 &NewCommit {
                     repo_id: &ctx.repo_id,
                     ts: &ctx.ts,
@@ -419,7 +419,7 @@ impl Store {
             let reason = format!("delete {}", info.path);
             let (commit_id, _) = new_commit(
                 &tx,
-                &mut *self.minter,
+                &mut self.ids.at(&tx),
                 &NewCommit {
                     repo_id: &ctx.repo_id,
                     ts: &ctx.ts,

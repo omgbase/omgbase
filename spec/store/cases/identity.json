@@ -3116,6 +3116,343 @@
           }
         ]
       }
+    },
+    {
+      "name": "repeat-minter-redraws-on-collision",
+      "notes": "13.5 (§2.1, §9.4): the steps of `edited-moved-and-inserted` under the repeating fixture minter, whose every id is offered twice. The store rejects each second offering as in use and asks again, so the projection equals the sibling case's exactly; a store that does not check fails on the primary key.",
+      "minter": "repeat",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Log\n\nThe quick brown fox jumps over the lazy dog while the cat watches from the fence. Later that evening the fox returns to the den and the cat goes home.\n"
+              }
+            ]
+          }
+        },
+        {
+          "observe": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# Log\n\nA brand new note inserted first.\n\nThe quick brown fox jumps over the lazy dog while the cat watches from the fence.\n\nLater that evening the fox returns to the den and the cat goes home.\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "edited_moved": 1,
+                "inserted": 2,
+                "same": 1
+              }
+            }
+          ]
+        ],
+        "docs": [
+          {
+            "doc_id": "d_0",
+            "path": "a.md",
+            "format": "markdown",
+            "current_rev": "r_1",
+            "file_hash": "e0faae45848273183110022d6c9c12e967bfe428fe55c908cc530535c87cdfdb",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "2aba416707f9d046824aa15a0de3709ad06bb9c42f1197c6cecbab03b9e6b783",
+            "frontmatter_blob": null,
+            "rendered_hash": "7f77c981d9473747c5183105e4c4465b174dc16023e86cfa62927e945f563f7b",
+            "path": "a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_0",
+            "seq": 2,
+            "root_tree": "5cd966481afd19c971dd76f8be675f219c15be36ef1ed910a95b95bf724b4431",
+            "frontmatter_blob": null,
+            "rendered_hash": "e0faae45848273183110022d6c9c12e967bfe428fe55c908cc530535c87cdfdb",
+            "path": "a.md",
+            "commit_id": "c_1"
+          }
+        ],
+        "blobs": [
+          {
+            "hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "size": 1,
+            "bytes": "\n"
+          },
+          {
+            "hash": "251c22573c08165d9401906b7aa669d54a8b25aa752509d105445d1c33962743",
+            "size": 68,
+            "bytes": "Later that evening the fox returns to the den and the cat goes home."
+          },
+          {
+            "hash": "43a7d115b5cb1c51f03d4228dfd8abeb011313f29b0f18f47dc9211cb2c917da",
+            "size": 150,
+            "bytes": "The quick brown fox jumps over the lazy dog while the cat watches from the fence. Later that evening the fox returns to the den and the cat goes home."
+          },
+          {
+            "hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "size": 2,
+            "bytes": "\n\n"
+          },
+          {
+            "hash": "8d05f0c5011fd8810591356393df93e5ce95fde53736ef5362d7d4f543231212",
+            "size": 81,
+            "bytes": "The quick brown fox jumps over the lazy dog while the cat watches from the fence."
+          },
+          {
+            "hash": "d92b6f58e6ce298267202e148cedb2a48c2b73afd0134e1ac5acab957a5f1195",
+            "size": 5,
+            "bytes": "# Log"
+          },
+          {
+            "hash": "f1d5458ab559326149e84f34d491983b4e79d9781f044a71df0caa467689b5eb",
+            "size": 32,
+            "bytes": "A brand new note inserted first."
+          }
+        ],
+        "tree_nodes": [
+          {
+            "hash": "2aba416707f9d046824aa15a0de3709ad06bb9c42f1197c6cecbab03b9e6b783",
+            "entries": "[[\"b_0\",\"d92b6f58e6ce298267202e148cedb2a48c2b73afd0134e1ac5acab957a5f1195\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"43a7d115b5cb1c51f03d4228dfd8abeb011313f29b0f18f47dc9211cb2c917da\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          },
+          {
+            "hash": "5cd966481afd19c971dd76f8be675f219c15be36ef1ed910a95b95bf724b4431",
+            "entries": "[[\"b_0\",\"d92b6f58e6ce298267202e148cedb2a48c2b73afd0134e1ac5acab957a5f1195\",null,\"heading\",{\"level\":1},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_2\",\"f1d5458ab559326149e84f34d491983b4e79d9781f044a71df0caa467689b5eb\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_1\",\"8d05f0c5011fd8810591356393df93e5ce95fde53736ef5362d7d4f543231212\",null,\"paragraph\",{},\"75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070\"],[\"b_3\",\"251c22573c08165d9401906b7aa669d54a8b25aa752509d105445d1c33962743\",null,\"paragraph\",{},\"01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b\"]]"
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "Log",
+            "raw_hash": "d92b6f58e6ce298267202e148cedb2a48c2b73afd0134e1ac5acab957a5f1195",
+            "norm_hash": "21e49eb2b299c9f7503a1236ecc80e1c51dd9e07989a3c12283df174067cc1aa",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_2",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "A brand new note inserted first.",
+            "raw_hash": "f1d5458ab559326149e84f34d491983b4e79d9781f044a71df0caa467689b5eb",
+            "norm_hash": "f1d5458ab559326149e84f34d491983b4e79d9781f044a71df0caa467689b5eb",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "X",
+            "ordinal": 2,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "The quick brown fox jumps over the lazy dog while the cat watches from the fence.",
+            "raw_hash": "8d05f0c5011fd8810591356393df93e5ce95fde53736ef5362d7d4f543231212",
+            "norm_hash": "8d05f0c5011fd8810591356393df93e5ce95fde53736ef5362d7d4f543231212",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "Y",
+            "ordinal": 3,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Later that evening the fox returns to the den and the cat goes home.",
+            "raw_hash": "251c22573c08165d9401906b7aa669d54a8b25aa752509d105445d1c33962743",
+            "norm_hash": "251c22573c08165d9401906b7aa669d54a8b25aa752509d105445d1c33962743",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_1",
+            "deleted_commit": null
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_0",
+            "kind": "same",
+            "confidence": 1,
+            "reason": "exact_hash",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_1",
+            "kind": "edited_moved",
+            "confidence": 0.8833333333333333,
+            "reason": "context_unique",
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          }
+        ],
+        "block_changes": [
+          {
+            "block_id": "b_0",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_0",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_0",
+            "commit_id": "c_1",
+            "kind": "same"
+          },
+          {
+            "block_id": "b_1",
+            "commit_id": "c_1",
+            "kind": "edited_moved"
+          },
+          {
+            "block_id": "b_2",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          },
+          {
+            "block_id": "b_3",
+            "commit_id": "c_1",
+            "kind": "inserted"
+          }
+        ],
+        "resurrection_pool": [],
+        "sections": [
+          {
+            "doc_id": "d_0",
+            "heading_block": "b_0",
+            "level": 1,
+            "first_ordinal": 0,
+            "last_ordinal": 3
+          }
+        ]
+      }
     }
   ]
 }

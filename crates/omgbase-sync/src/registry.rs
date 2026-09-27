@@ -82,7 +82,7 @@ pub struct NewSource<'a> {
 /// Create a named source over an adapter: **mints `src`**; a taken name or
 /// an unknown adapter fails (UNIQUE / FK). Returns the id.
 pub fn create_source(store: &mut Store, spec: &NewSource<'_>) -> Result<String> {
-    let source_id = store.mint("src");
+    let source_id = store.mint("src")?;
     let config = spec
         .config
         .map_or_else(|| "{}".to_owned(), |c| Value::Object(c.clone()).to_string());
@@ -260,7 +260,7 @@ pub fn register_fs_source(
     let source_id = match existing {
         Some(id) => id,
         None => {
-            let id = store.mint("src");
+            let id = store.mint("src")?;
             let config = serde_json::json!({ "root": root }).to_string();
             store.conn().execute(
                 "INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?1, ?2, ?3, ?4, '{}')",

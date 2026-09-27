@@ -105,7 +105,8 @@ impl Store {
         };
         let old_match = load_old_match_blocks(&self.conn, &info.doc_id)?;
         let new_match = flatten(&FlatSource::from_blocks(rest, None));
-        let mut mint = || self.minter.mint("b");
+        let mut minter = self.ids.at(&self.conn);
+        let mut mint = minter.deferred("b");
         let result = reconcile_document(
             &old_match,
             &new_match,
@@ -115,6 +116,7 @@ impl Store {
                 minter: &mut mint,
             },
         );
+        mint.finish()?;
 
         let target_fm: Option<String> = fm_block.map(|b| format!("{}{}", b.raw, b.trivia));
         let fm_changed = target_fm != old_doc.frontmatter_raw;

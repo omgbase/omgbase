@@ -68,12 +68,55 @@ describe("planner — decline (c): a residual that could raise sends the whole q
   });
 
   it("no pushable conjunct at all → unplanned (as before)", () => {
-    expect(planned('from docs where era == 800')).toBe(false);
-    expect(planned('from blocks where checked == 1')).toBe(false);
+    expect(planned('from docs where era == stages')).toBe(false); // prop × prop
+    expect(planned('from blocks where $ordinal == checked')).toBe(false); // int × json
     expect(planned('from docs')).toBe(false);
   });
 
   it("residualMayRaise on a null residual is false", () => {
     expect(residualMayRaise(null, "docs")).toBe(false);
+  });
+});
+
+// spec/surface 1.2 patch: bool/num literals against json/prop reads are TYPED
+// pushes, so the queries the `planned-typed-*` fixtures run plan on their own
+// (before the patch every one of these was residual → unplanned).
+describe("planner — typed pushes (1.2): a bool or num literal against a json or prop read plans", () => {
+  it("the query-blocks::planned-typed-* fixtures", () => {
+    expect(planned('select $path, checked from blocks where checked == true')).toBe(true);
+    expect(planned('$repo.blocks count { where checked != true }')).toBe(true);
+    expect(planned('select $path, level from blocks where level >= 2')).toBe(true);
+    expect(planned('$repo.blocks count { where level != 2 }')).toBe(true);
+  });
+
+  it("the query-docs::planned-typed-* fixtures", () => {
+    expect(planned('select $path, verified from docs where verified == true')).toBe(true);
+    expect(planned('select $path, era from docs where era >= 800')).toBe(true);
+    expect(planned('$repo.docs count { where era != 800 }')).toBe(true);
+  });
+
+  it("the same cells against a binding, and through `doc.<k>` / `attrs.<k>`", () => {
+    // `parse` has no template form; swap the literal for a `{kind:"binding"}` leaf as the tagged template would.
+    const bound = (q: string, value: unknown): boolean => {
+      const query = parse(q);
+      const w = query.where;
+      if (w?.kind !== "scalar" || w.expr.kind !== "binary") throw new Error("expected one comparison");
+      w.expr.right = { kind: "binding", index: 0 };
+      return planner.plan(query, [value]) !== null;
+    };
+    expect(bound("from blocks where checked == false", false)).toBe(true);
+    expect(bound("from docs where era < 1000", 1000)).toBe(true);
+    expect(bound("from docs where era == 1000", "1000")).toBe(true); // a text binding pushes plainly (IS-typed)
+    expect(bound("from docs where era < 1000", "1000")).toBe(false); // text × prop relational stays declined
+    expect(bound("from blocks where checked == false", [1])).toBe(false); // a non-scalar binding declines
+    expect(planned('from blocks where doc.verified == true && attrs.level > 1')).toBe(true);
+  });
+
+  it("the still-declined cells stay unplanned", () => {
+    expect(planned('from blocks where checked == $ordinal')).toBe(false);
+    expect(planned('from blocks where attrs.level == attrs.checked')).toBe(false);
+    expect(planned('from docs where true == 1')).toBe(false);
+    expect(planned('from docs where tags != null')).toBe(false);
+    expect(planned('from blocks where level < "x"')).toBe(false);
   });
 });

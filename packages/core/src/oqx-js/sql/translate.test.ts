@@ -166,7 +166,8 @@ describe("translate — conjunction and bindings via constructed AST", () => {
   });
 });
 
-// ---- spec/surface 1.1 patch: the declines that keep the planned path invisible ----
+// ---- spec/surface 1.1 patch: the declines that keep the planned path invisible
+// ---- (+ the 1.2 patch: the typed pushes that took four cells back) ----
 
 
 const BLOCKS: TranslateCtx = { target: "blocks", self: "b", doc: "d", params: [] };
@@ -204,12 +205,15 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(lit("null")).toBe("null");
   });
 
-  it("the positive rule: equality pushes iff one side is text, or null vs non-prop, or both numeric; relational iff both text or both numeric", () => {
+  it("the positive rule: equality pushes iff one side is text, or null vs non-prop, or both numeric, or (typed) a bool/num constant vs a json/prop read; relational iff both text, both numeric, or (typed) num vs json/prop", () => {
     const K: OperandKind[] = ["text", "int", "num", "bool", "null", "json", "prop"];
     const numeric = (k: OperandKind) => k === "int" || k === "num";
+    const read = (k: OperandKind) => k === "json" || k === "prop";
     for (const a of K) for (const b of K) {
-      const eq = a === "text" || b === "text" || (a === "null" && b !== "prop") || (b === "null" && a !== "prop") || (numeric(a) && numeric(b));
-      const rel = (a === "text" && b === "text") || (numeric(a) && numeric(b));
+      const typedEq = ((a === "bool" || a === "num") && read(b)) || ((b === "bool" || b === "num") && read(a));
+      const typedRel = (a === "num" && read(b)) || (b === "num" && read(a));
+      const eq = a === "text" || b === "text" || (a === "null" && b !== "prop") || (b === "null" && a !== "prop") || (numeric(a) && numeric(b)) || typedEq;
+      const rel = (a === "text" && b === "text") || (numeric(a) && numeric(b)) || typedRel;
       for (const op of ["==", "!="]) {
         expect(comparable(op, a, b), `${a} ${op} ${b}`).toBe(eq);
         expect(declinedPair(a, b, op), `${a} ${op} ${b} (declinedPair)`).toBe(!eq);
@@ -218,10 +222,19 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
       expect(comparable("==", a, b), `symmetry ${a}/${b}`).toBe(comparable("==", b, a));
       expect(comparable("<", a, b), `symmetry ${a}/${b}`).toBe(comparable("<", b, a));
     }
-    // the grid's declined equality cells, spelled out
-    const D = ["int|bool", "int|json", "int|prop", "num|bool", "num|json", "num|prop", "bool|bool", "bool|json", "bool|prop", "null|prop", "json|json", "json|prop", "prop|prop"];
+    // the grid's declined equality cells, spelled out (the 1.2 patch flipped num|json, num|prop, bool|json, bool|prop to typed pushes)
+    const D = ["int|bool", "int|json", "int|prop", "num|bool", "bool|bool", "null|prop", "json|json", "json|prop", "prop|prop"];
     for (const cell of D) { const [a, b] = cell.split("|") as [OperandKind, OperandKind]; expect(comparable("==", a, b), cell).toBe(false); }
-    expect(K.flatMap((a) => K.map((b) => comparable("==", a, b))).filter(Boolean).length).toBe(49 - 2 * 10 - 3); // 13 distinct declined cells, 10 off-diagonal
+    expect(K.flatMap((a) => K.map((b) => comparable("==", a, b))).filter(Boolean).length).toBe(49 - 2 * 6 - 3); // 9 distinct declined cells, 6 off-diagonal
+    // the typed cells, spelled out
+    const T = ["num|json", "num|prop", "bool|json", "bool|prop"];
+    for (const cell of T) {
+      const [a, b] = cell.split("|") as [OperandKind, OperandKind];
+      expect(comparable("==", a, b), cell).toBe(true);
+      expect(comparable("<", a, b), `${cell} relational`).toBe(a === "num"); // booleans never order
+    }
+    // relational: the typed cells are the only ones beyond text×text and numeric×numeric
+    expect(K.flatMap((a) => K.map((b) => comparable("<", a, b))).filter(Boolean).length).toBe(1 + 4 + 4);
   });
 
   it("declines: an integer intrinsic against a JSON read, two JSON reads, two property reads, bool against bool/num", () => {
@@ -251,23 +264,72 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(translatePredicate(predOn("blocks", "$ordinal <= 1.5"), BLOCKS)).toEqual({ sql: "(b.ordinal <= ?)", params: [1.5] }); // int × num relational pushes
   });
 
-  it("declines: a number or boolean literal against a JSON read (either side)", () => {
-    expect(translatePredicate(predOn("blocks", "checked == 1"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "1 == checked"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "checked == true"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "checked != false"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "attrs.level > 1"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("nodes", "level == 1"), NODES)).toBeNull();
-    expect(translatePredicate(predOn("nodes", "attrs.checked == true"), NODES)).toBeNull();
+  // ---- spec/surface 1.2 patch: the typed pushes ----
+
+  const JT = "json_type(b.attrs, '$.checked')";
+  const JL = "json_type(b.attrs, '$.level')";
+  const XL = "json_extract(b.attrs, '$.level')";
+
+  it("typed push, json × bool: json_type against the type string, no bind; == → IS 1, != → IS NOT 1", () => {
+    expect(translatePredicate(predOn("blocks", "checked == true"), BLOCKS)).toEqual({ sql: `((${JT} = 'true') IS 1)`, params: [] });
+    expect(translatePredicate(predOn("blocks", "checked == false"), BLOCKS)).toEqual({ sql: `((${JT} = 'false') IS 1)`, params: [] });
+    expect(translatePredicate(predOn("blocks", "checked != true"), BLOCKS)).toEqual({ sql: `((${JT} = 'true') IS NOT 1)`, params: [] });
+    expect(translatePredicate(predOn("blocks", "false != checked"), BLOCKS)).toEqual({ sql: `((${JT} = 'false') IS NOT 1)`, params: [] });
+    expect(translatePredicate(predOn("blocks", "attrs.checked == true"), BLOCKS)).toEqual({ sql: `((${JT} = 'true') IS 1)`, params: [] });
+    expect(translatePredicate(predOn("nodes", "attrs.checked == true"), NODES)).toEqual({ sql: "((json_type(n.attrs, '$.checked') = 'true') IS 1)", params: [] });
+    // booleans never order: relational json × bool stays declined
+    expect(translatePredicate(predOn("blocks", "checked < true"), BLOCKS)).toBeNull();
+    expect(translatePredicate(predOn("blocks", "true >= checked"), BLOCKS)).toBeNull();
   });
 
-  it("declines: a number or boolean literal against a property read (bare key, doc.<k>)", () => {
-    expect(translatePredicate(predOn("docs", "era == 800"), DOCS)).toBeNull();
-    expect(translatePredicate(predOn("docs", "era < 1000"), DOCS)).toBeNull();
-    expect(translatePredicate(predOn("docs", "verified == true"), DOCS)).toBeNull();
-    expect(translatePredicate(predOn("docs", "verified == 1"), DOCS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "doc.era == 800"), BLOCKS)).toBeNull();
-    expect(translatePredicate(predOn("blocks", "doc.verified == true"), BLOCKS)).toBeNull();
+  it("typed push, json × num: json_type IN ('integer','real') AND json_extract <op> ?; == → `=` IS 1, != → `=` IS NOT 1, relational → IS 1", () => {
+    const typed = (cmp: string, wrap: string, v: number) => ({ sql: `((${JL} IN ('integer', 'real') AND ${XL} ${cmp} ?) ${wrap})`, params: [v] });
+    expect(translatePredicate(predOn("blocks", "level == 2"), BLOCKS)).toEqual(typed("=", "IS 1", 2));
+    expect(translatePredicate(predOn("blocks", "level != 2"), BLOCKS)).toEqual(typed("=", "IS NOT 1", 2)); // != is the equality test, negated by the wrap
+    expect(translatePredicate(predOn("blocks", "level >= 2"), BLOCKS)).toEqual(typed(">=", "IS 1", 2));
+    expect(translatePredicate(predOn("blocks", "level > 1"), BLOCKS)).toEqual(typed(">", "IS 1", 1));
+    expect(translatePredicate(predOn("blocks", "attrs.level < 3"), BLOCKS)).toEqual(typed("<", "IS 1", 3));
+    expect(translatePredicate(predOn("blocks", "level <= 1.5"), BLOCKS)).toEqual(typed("<=", "IS 1", 1.5));
+    // the constant on the left flips the relational op (`2 < level` ⇔ `level > 2`); equality is symmetric
+    expect(translatePredicate(predOn("blocks", "2 < level"), BLOCKS)).toEqual(typed(">", "IS 1", 2));
+    expect(translatePredicate(predOn("blocks", "2 >= level"), BLOCKS)).toEqual(typed("<=", "IS 1", 2));
+    expect(translatePredicate(predOn("blocks", "1 == checked"), BLOCKS)).toEqual({ sql: `((${JT} IN ('integer', 'real') AND json_extract(b.attrs, '$.checked') = ?) IS 1)`, params: [1] });
+    expect(translatePredicate(predOn("nodes", "level == 1"), NODES)).toEqual({ sql: "((json_type(n.attrs, '$.level') IN ('integer', 'real') AND json_extract(n.attrs, '$.level') = ?) IS 1)", params: [1] });
+  });
+
+  // The single-scalar-row scope every property read keeps (`propScalar` and the typed forms alike).
+  const scope = (key: string) => `FROM properties p
+           WHERE p.doc_id = d.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL) = 1
+           LIMIT 1)`;
+
+  it("typed push, prop × bool: the scalar-row subquery projects `p.type = 'bool' AND p.val_bool = ?` (bound 1/0); == → IS 1, != → IS NOT 1", () => {
+    expect(translatePredicate(predOn("docs", "verified == true"), DOCS)).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS 1)`, params: [1] });
+    expect(translatePredicate(predOn("docs", "verified == false"), DOCS)).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS 1)`, params: [0] });
+    expect(translatePredicate(predOn("docs", "verified != true"), DOCS)).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS NOT 1)`, params: [1] });
+    expect(translatePredicate(predOn("docs", "true == verified"), DOCS)).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS 1)`, params: [1] });
+    // `doc.<k>` from another target reads the owning doc (alias d)
+    expect(translatePredicate(predOn("blocks", "doc.verified == true"), BLOCKS)).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS 1)`, params: [1] });
+    expect(translatePredicate(predOn("docs", "verified < true"), DOCS)).toBeNull(); // booleans never order
+  });
+
+  it("typed push, prop × num: the scalar-row subquery projects `p.type = 'number' AND p.val_num <op> ?`", () => {
+    const typed = (cmp: string, wrap: string, v: number, key = "era") => ({ sql: `((SELECT p.type = 'number' AND p.val_num ${cmp} ? ${scope(key)} ${wrap})`, params: [v] });
+    expect(translatePredicate(predOn("docs", "era == 800"), DOCS)).toEqual(typed("=", "IS 1", 800));
+    expect(translatePredicate(predOn("docs", "era != 800"), DOCS)).toEqual(typed("=", "IS NOT 1", 800));
+    expect(translatePredicate(predOn("docs", "era < 1000"), DOCS)).toEqual(typed("<", "IS 1", 1000));
+    expect(translatePredicate(predOn("docs", "era >= 800"), DOCS)).toEqual(typed(">=", "IS 1", 800));
+    expect(translatePredicate(predOn("docs", "1000 > era"), DOCS)).toEqual(typed("<", "IS 1", 1000)); // flipped
+    expect(translatePredicate(predOn("docs", "verified == 1"), DOCS)).toEqual(typed("=", "IS 1", 1, "verified")); // finds nothing: type 'bool' ≠ 'number'
+    expect(translatePredicate(predOn("blocks", "doc.era == 800"), BLOCKS)).toEqual(typed("=", "IS 1", 800));
+  });
+
+  it("the typed forms compose under && like any other conjunct", () => {
+    // (a top-level `&&` is a `Where.and` the planner splits; a nested one is a `logical` Expr — build that here)
+    const e: Expr = { kind: "logical", op: "&&", left: predOn("blocks", 'type == "task"'), right: predOn("blocks", "checked == false") };
+    const f = translatePredicate(e, BLOCKS)!;
+    expect(f.sql).toBe(`((b.type IS ?) AND ((${JT} = 'false') IS 1))`);
+    expect(f.params).toEqual(["task"]);
   });
 
   it("declines: a boolean literal against an integer intrinsic", () => {
@@ -281,13 +343,18 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(translatePredicate(predOn("blocks", "doc.tags != null"), BLOCKS)).toBeNull();
   });
 
-  it("declines: a boolean or number binding behaves like the literal", () => {
+  it("a boolean or number binding behaves like the literal (typed push); text/null bindings push plainly; a non-scalar binding declines", () => {
     const e: Expr = { kind: "binary", op: "==", left: { kind: "ident", name: "checked" }, right: { kind: "binding", index: 0 } };
-    expect(translatePredicate(e, { ...BLOCKS, params: [true] })).toBeNull();
-    expect(translatePredicate(e, { ...BLOCKS, params: [1] })).toBeNull();
+    expect(translatePredicate(e, { ...BLOCKS, params: [true] })).toEqual({ sql: `((${JT} = 'true') IS 1)`, params: [] });
+    expect(translatePredicate(e, { ...BLOCKS, params: [false] })).toEqual({ sql: `((${JT} = 'false') IS 1)`, params: [] });
+    expect(translatePredicate(e, { ...BLOCKS, params: [1] })).toEqual({ sql: `((${JT} IN ('integer', 'real') AND json_extract(b.attrs, '$.checked') = ?) IS 1)`, params: [1] });
     expect(translatePredicate(e, { ...BLOCKS, params: ["x"] })).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: ["x"] });
     expect(translatePredicate(e, { ...BLOCKS, params: [null] })).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: [null] });
     expect(translatePredicate(e, { ...BLOCKS, params: [["not", "scalar"]] })).toBeNull();
+    const p: Expr = { kind: "binary", op: ">=", left: { kind: "ident", name: "era" }, right: { kind: "binding", index: 0 } };
+    expect(translatePredicate(p, { ...DOCS, params: [800] })).toEqual({ sql: `((SELECT p.type = 'number' AND p.val_num >= ? ${scope("era")} IS 1)`, params: [800] });
+    const b: Expr = { kind: "binary", op: "!=", left: { kind: "ident", name: "verified" }, right: { kind: "binding", index: 0 } };
+    expect(translatePredicate(b, { ...DOCS, params: [false] })).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS NOT 1)`, params: [0] });
   });
 
   it("pushes: a number against an integer intrinsic", () => {

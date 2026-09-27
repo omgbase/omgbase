@@ -4,7 +4,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::{Error, Result};
-use crate::ids::IdMinter;
+use crate::mint::{IdSource, Mint};
 
 /// `spec/store/schema.sql`, verbatim (§3.3). Executed on a fresh database.
 pub const SCHEMA_SQL: &str = include_str!("../schema.sql");
@@ -137,7 +137,7 @@ pub(crate) fn quote_ident(name: &str) -> String {
 
 /// Open per §1: `0` → `schema.sql`; equal → done; greater → refuse; less →
 /// migrate step by step, each in its own transaction.
-pub(crate) fn migrate(conn: &Connection, minter: &mut dyn IdMinter) -> Result<()> {
+pub(crate) fn migrate(conn: &Connection, ids: &mut IdSource) -> Result<()> {
     let current = user_version(conn)?;
     if current == 0 {
         let tx = conn.unchecked_transaction()?;
@@ -157,7 +157,7 @@ pub(crate) fn migrate(conn: &Connection, minter: &mut dyn IdMinter) -> Result<()
     }
     for v in current + 1..=SCHEMA_VERSION {
         let tx = conn.unchecked_transaction()?;
-        migrate_step(&tx, v, minter)?;
+        migrate_step(&tx, v, &mut ids.at(&tx))?;
         tx.commit()?;
     }
     set_user_version(conn, SCHEMA_VERSION)?;
@@ -165,7 +165,7 @@ pub(crate) fn migrate(conn: &Connection, minter: &mut dyn IdMinter) -> Result<()
 }
 
 /// One step of §3.4, idempotent.
-fn migrate_step(conn: &Connection, to: i64, minter: &mut dyn IdMinter) -> Result<()> {
+fn migrate_step(conn: &Connection, to: i64, minter: &mut Mint<'_>) -> Result<()> {
     match to {
         2 => conn.execute_batch(&ddl_for(&["file_stats"]))?,
         3 => {
@@ -221,7 +221,7 @@ fn migrate_step(conn: &Connection, to: i64, minter: &mut dyn IdMinter) -> Result
 }
 
 /// v13 (ADR-014): `repos.root_path` becomes an `fs` source + attachment.
-fn migrate_v13(conn: &Connection, minter: &mut dyn IdMinter) -> Result<()> {
+fn migrate_v13(conn: &Connection, minter: &mut Mint<'_>) -> Result<()> {
     if has_column(conn, "repos", "root_path")? != Some(true) {
         return Ok(());
     }
@@ -247,7 +247,7 @@ fn migrate_v13(conn: &Connection, minter: &mut dyn IdMinter) -> Result<()> {
         let source_id = match existing {
             Some(id) => id,
             None => {
-                let id = minter.mint("src");
+                let id = minter.mint("src")?;
                 let config = serde_json::json!({ "root": root }).to_string();
                 conn.execute(
                     "INSERT INTO sources (source_id, name, adapter, config, env) VALUES (?1, ?2, 'fs', ?3, '{}')",

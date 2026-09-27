@@ -22,6 +22,14 @@ pub enum Error {
     Search(omgbase_search::Error),
     /// A mutation was refused (`spec/mutate` §8): the code and its data.
     Mutation(omgbase_mutate::MutationError),
+    /// A mint was rejected [`crate::MINT_GIVE_UP_AFTER`] times in a row
+    /// (spec §2.1): the minter cannot produce an id that is not in use.
+    MintExhausted {
+        /// The prefix being minted.
+        prefix: String,
+        /// How many consecutive candidates were in use.
+        rejected: usize,
+    },
     /// Anything else, with a message.
     Other(String),
 }
@@ -38,6 +46,10 @@ impl fmt::Display for Error {
             Error::Json(e) => write!(f, "json: {e}"),
             Error::Search(e) => write!(f, "search: {e}"),
             Error::Mutation(e) => write!(f, "mutation: {e}"),
+            Error::MintExhausted { prefix, rejected } => write!(
+                f,
+                "mint({prefix}): {rejected} consecutive candidates were already in use; the minter cannot produce a fresh id"
+            ),
             Error::Other(msg) => f.write_str(msg),
         }
     }

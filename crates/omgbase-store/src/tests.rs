@@ -449,10 +449,9 @@ fn structural_sharing_editing_one_of_500_blocks_adds_one_node_and_one_blob() {
 
 #[test]
 fn rewriting_an_unchanged_tree_adds_zero_rows() {
-    let store = Store::open_in_memory().unwrap();
+    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
     let tree = parse_markdown("# A\n\n- x\n  - y\n\nC\n");
-    let mut minter = SequentialMinter::new();
-    let blocks = assign_fresh_ids(&tree.children, &mut minter);
+    let blocks = assign_fresh_ids(&tree.children, &mut store.minter()).unwrap();
     assert_eq!(
         blocks[1].children[0].children[0].block_id, "b_3",
         "pre-order mint"
@@ -478,7 +477,7 @@ fn assigns_per_repo_commit_seq_and_per_doc_revision_seq() {
     let (c1, s1) = store.new_commit(&NewCommit::observed(&repo, "t1")).unwrap();
     assert_eq!((c1.as_str(), s1), ("c_0", 1));
     let tree = parse_markdown("# A\n");
-    let blocks = assign_fresh_ids(&tree.children, store.minter_mut());
+    let blocks = assign_fresh_ids(&tree.children, &mut store.minter()).unwrap();
     let root = store.write_block_tree(&blocks).unwrap();
     let rev = |store: &mut Store, commit: &str| {
         store
@@ -583,8 +582,8 @@ fn echo_writes_nothing_and_mints_nothing() {
         before
     );
     // The next mint is still b_1 / c_1: nothing was minted by the echo.
-    assert_eq!(store.mint("c"), "c_1");
-    assert_eq!(store.mint("b"), "b_1");
+    assert_eq!(store.mint("c").unwrap(), "c_1");
+    assert_eq!(store.mint("b").unwrap(), "b_1");
 }
 
 #[test]
@@ -864,7 +863,7 @@ fn cross_document_move_in_one_batch_carries_the_id() {
         "a moved block is never pooled"
     );
     // The replaced minted id was simply never used.
-    assert_eq!(store.mint("b"), "b_4");
+    assert_eq!(store.mint("b").unwrap(), "b_4");
 }
 
 #[test]

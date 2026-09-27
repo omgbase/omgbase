@@ -14,7 +14,7 @@ use omgbase_graph::{
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::error::Result;
-use crate::ids::IdMinter;
+use crate::mint::Mint;
 
 // ---- nodes (§2) -----------------------------------------------------------------
 
@@ -152,7 +152,7 @@ fn edge_key(
 /// `(node_id, repo_id, uri, title = null)` when absent.
 pub fn resolve_external(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     repo_id: &str,
     uri: &str,
 ) -> Result<String> {
@@ -166,7 +166,7 @@ pub fn resolve_external(
     if let Some(id) = existing {
         return Ok(id);
     }
-    let id = minter.mint("x");
+    let id = minter.mint("x")?;
     conn.execute(
         "INSERT INTO external_nodes (node_id, repo_id, uri) VALUES (?1, ?2, ?3)",
         params![id, repo_id, uri],
@@ -194,7 +194,7 @@ pub fn resolve_doc_path(conn: &Connection, repo_id: &str, path: &str) -> Result<
 /// directory to a live doc or a phantom, `dst_kind` forced to `document`.
 pub fn resolve_edges(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     repo_id: &str,
     src_doc: &str,
     doc_path: &str,
@@ -238,7 +238,7 @@ pub fn resolve_edges(
 /// `rowid` order. Then rebuild the rollup (§3.4).
 pub fn maintain_edges(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     repo_id: &str,
     src_doc: &str,
     commit_id: &str,
@@ -285,7 +285,7 @@ pub fn maintain_edges(
                 continue;
             }
             insert.execute(params![
-                minter.mint("e"),
+                minter.mint("e")?,
                 repo_id,
                 src_doc,
                 e.src_block,

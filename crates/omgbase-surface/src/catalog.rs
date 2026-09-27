@@ -712,6 +712,19 @@ impl Surface {
         default_repo: &str,
         provider: Option<Box<dyn EmbeddingProvider>>,
     ) -> Self {
+        // Read-path tuning of the surface's own connection; neither pragma
+        // changes a result. The reference runs on better-sqlite3, whose
+        // bundled SQLite is compiled with a 16 MB default page cache
+        // (`SQLITE_DEFAULT_CACHE_SIZE=-16000`); rusqlite's bundled build
+        // keeps the stock 2 MB, so the same root scans and pushed
+        // predicates over a database of tens of MB miss the cache and
+        // `pread` page by page. `temp_store=MEMORY` keeps the sorter of a
+        // `… ORDER BY d.path, b.block_id` scan (tens of thousands of rows)
+        // from spilling its runs to temp files. A failure here only leaves
+        // the connection untuned.
+        let _ = store
+            .conn()
+            .execute_batch("PRAGMA cache_size = -16000; PRAGMA temp_store = MEMORY;");
         Self {
             store,
             default_repo: default_repo.to_owned(),

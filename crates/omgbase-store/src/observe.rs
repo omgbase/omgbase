@@ -23,7 +23,7 @@ use crate::error::{Error, Result};
 use crate::graph::{
     adopt_phantoms, maintain_edges, project_section_nodes, resolve_edges, write_doc_nodes,
 };
-use crate::ids::IdMinter;
+use crate::mint::Mint;
 use crate::order_key::key_between;
 use crate::properties::{doc_blocks, write_doc_properties};
 use crate::read::{load_old_match_blocks, load_pool, reconstruct};
@@ -191,7 +191,7 @@ fn split_frontmatter(tree: &BlockTree) -> (Option<&Block>, &[Block]) {
 #[allow(clippy::too_many_arguments)]
 fn prepare_reconcile(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     repo_id: &str,
     path: &str,
     source: &str,
@@ -220,7 +220,7 @@ fn prepare_reconcile(
     } else {
         Vec::new()
     };
-    let mut mint = || minter.mint("b");
+    let mut mint = minter.deferred("b");
     let result = reconcile_document(
         &old_blocks,
         &new_blocks,
@@ -230,6 +230,7 @@ fn prepare_reconcile(
             minter: &mut mint,
         },
     );
+    mint.finish()?;
     consumed.extend(result.consumed_pool.iter().cloned());
     Ok(Prepared {
         path: path.to_owned(),
@@ -551,7 +552,7 @@ impl Store {
             }
             let prepared = prepare_reconcile(
                 &self.conn,
-                &mut *self.minter,
+                &mut self.ids.at(&self.conn),
                 repo_id,
                 &it.path,
                 source,
@@ -640,7 +641,11 @@ impl Store {
     ) -> Result<Committed> {
         let (_, rest) = split_frontmatter(&prepared.tree);
         // 3. Assign ids (nothing mints: the matcher assigned every key).
-        let assigned = assign_from_map(rest, &prepared.result.assignment, &mut *self.minter);
+        let assigned = assign_from_map(
+            rest,
+            &prepared.result.assignment,
+            &mut self.ids.at(&self.conn),
+        )?;
         let plan = IngestPlan {
             path: &prepared.path,
             source: &prepared.source,
@@ -682,7 +687,7 @@ impl Store {
         let mut consumed = HashSet::new();
         let prepared = prepare_reconcile(
             &self.conn,
-            &mut *self.minter,
+            &mut self.ids.at(&self.conn),
             repo_id,
             path,
             source,
@@ -691,7 +696,11 @@ impl Store {
             &mut consumed,
         )?;
         let (_, rest) = split_frontmatter(&prepared.tree);
-        let assigned = assign_from_map(rest, &prepared.result.assignment, &mut *self.minter);
+        let assigned = assign_from_map(
+            rest,
+            &prepared.result.assignment,
+            &mut self.ids.at(&self.conn),
+        )?;
         let plan = IngestPlan {
             path,
             source,
@@ -723,7 +732,7 @@ impl Store {
         let expires = pool_expiry(ts)?;
         let tree = parse_markdown(source);
         let (_, rest) = split_frontmatter(&tree);
-        let assigned = assign_fresh_ids(rest, &mut *self.minter);
+        let assigned = assign_fresh_ids(rest, &mut self.ids.at(&self.conn))?;
         let plan = IngestPlan {
             path,
             source,
@@ -749,7 +758,8 @@ impl Store {
         expires: &str,
     ) -> Result<Committed> {
         let tx = self.conn.unchecked_transaction()?;
-        let minter: &mut dyn IdMinter = &mut *self.minter;
+        let mut mint = self.ids.at(&tx);
+        let minter = &mut mint;
         let tree = plan.tree;
         let source = plan.source;
         let (fm_block, _) = split_frontmatter(tree);
@@ -783,7 +793,7 @@ impl Store {
                 id
             }
             None => {
-                let id = minter.mint("d");
+                let id = minter.mint("d")?;
                 tx.execute(
                     "INSERT INTO docs (doc_id, repo_id, path, format, leading_trivia, frontmatter_trivia) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![id, repo_id, plan.path, FORMAT_MARKDOWN, tree.leading_trivia, fm_trivia],
@@ -970,10 +980,10 @@ impl Store {
         expires: &str,
     ) -> Result<String> {
         let tx = self.conn.unchecked_transaction()?;
-        let minter: &mut dyn IdMinter = &mut *self.minter;
+        let mut mint = self.ids.at(&tx);
         let (commit_id, _) = new_commit(
             &tx,
-            minter,
+            &mut mint,
             &NewCommit {
                 reason: Some("observed deletion"),
                 ..NewCommit::observed(repo_id, ts)

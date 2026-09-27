@@ -40,8 +40,8 @@ use std::collections::HashMap;
 
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
-use oqx::semantics::{builtin_function, builtin_method_with, make_range};
-use oqx::{DataContext, Object, OqxError, RegexDialect, Value};
+use oqx::semantics::{builtin_function, builtin_method_with, make_range, string_form};
+use oqx::{CompiledRegex, DataContext, Object, OqxError, RegexDialect, Value, compile_regex};
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
@@ -104,7 +104,19 @@ pub struct StoreContext<'a> {
     /// engine's seam cannot fail through (see the module doc).
     root_failure: RefCell<Option<OqxError>>,
     /// The rows a tier-3 plan produced, served as [`oqx::ROWS_ROOT`].
-    rows_root: Option<Vec<Value>>,
+    rows_root: Option<RowsRoot>,
+    /// `matches()` patterns compiled during this run, by `(String(pattern),
+    /// flags)`; see [`Self::matches_memoized`].
+    regexes: RefCell<HashMap<(String, Option<String>), CompiledRegex>>,
+}
+
+/// The planned rows behind [`oqx::ROWS_ROOT`]: cloned out on every read, or
+/// — when the runner has proven the residual reads the root exactly once —
+/// moved out on the first read (`once`), which spares one deep copy and one
+/// drop of every produced row.
+struct RowsRoot {
+    rows: RefCell<Option<Vec<Value>>>,
+    once: bool,
 }
 
 fn sql_value(v: ValueRef<'_>) -> Value {
@@ -257,6 +269,7 @@ impl<'a> StoreContext<'a> {
             semantic,
             root_failure: RefCell::new(None),
             rows_root: None,
+            regexes: RefCell::new(HashMap::new()),
         }
     }
 
@@ -266,7 +279,26 @@ impl<'a> StoreContext<'a> {
     /// store, so the residual sees exactly what a full scan would.
     #[must_use]
     pub fn with_rows_root(mut self, rows: Vec<Value>) -> Self {
-        self.rows_root = Some(rows);
+        self.rows_root = Some(RowsRoot {
+            rows: RefCell::new(Some(rows)),
+            once: false,
+        });
+        self
+    }
+
+    /// [`Self::with_rows_root`] for a residual whose ONLY read of
+    /// [`oqx::ROWS_ROOT`] is its source scan (the runner checks the AST: the
+    /// name appears nowhere else — no `^`-reach, no `limit`/`offset`, no
+    /// nested mention): the rows are moved out on that first read instead
+    /// of deep-copied, and a second read — which cannot happen — would see
+    /// an empty scan. Same results as [`Self::with_rows_root`], one row copy
+    /// and one drop fewer.
+    #[must_use]
+    pub fn with_rows_root_once(mut self, rows: Vec<Value>) -> Self {
+        self.rows_root = Some(RowsRoot {
+            rows: RefCell::new(Some(rows)),
+            once: true,
+        });
         self
     }
 
@@ -317,6 +349,16 @@ impl<'a> StoreContext<'a> {
 
     // ---- roots (ordered for a stable (path, id) default) ------------------------------
 
+    /// The joined roots drive from `docs` in `(repo_id, path)` index order
+    /// (`CROSS JOIN` fixes the loop order) and reach the rows of each doc
+    /// through their `doc_id` index, so the `ORDER BY d.path, <id>` sorts one
+    /// document's rows at a time instead of every full row of the repo in a
+    /// temp b-tree. The `+` on the inner `repo_id` term keeps it a filter
+    /// (SQLite's unary-plus idiom: the term is not used for index selection,
+    /// which — without `ANALYZE` stats — would otherwise pick the
+    /// `(repo_id, type)` index and rescan the repo per document). Same rows,
+    /// same order: the key `(path, id)` is total (`UNIQUE (repo_id, path)`;
+    /// the id is a primary key), so no plan can order them differently.
     fn root_scan(&self, t: Target) -> oqx::Result<Value> {
         let repo = [SqlValue::Text(self.repo_id.clone())];
         let sql = match t {
@@ -324,17 +366,17 @@ impl<'a> StoreContext<'a> {
                 "SELECT * FROM docs WHERE repo_id = ?1 AND deleted_commit IS NULL ORDER BY path, doc_id"
             }
             Target::Blocks => {
-                "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-                 WHERE b.repo_id = ?1 AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
+                "SELECT b.*, d.path AS __path FROM docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id
+                 WHERE d.repo_id = ?1 AND +b.repo_id = ?1 AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
                  ORDER BY d.path, b.block_id"
             }
             Target::Nodes => {
-                "SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
-                 WHERE n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id"
+                "SELECT n.*, d.path AS __path FROM docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id
+                 WHERE d.repo_id = ?1 AND +n.repo_id = ?1 AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id"
             }
             Target::Edges => {
-                "SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-                 WHERE e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
+                "SELECT e.*, d.path AS __path FROM docs d CROSS JOIN edges e ON e.src_doc = d.doc_id
+                 WHERE d.repo_id = ?1 AND +e.repo_id = ?1 AND e.to_commit IS NULL AND d.deleted_commit IS NULL
                  ORDER BY d.path, e.edge_id"
             }
         };
@@ -973,6 +1015,39 @@ impl<'a> StoreContext<'a> {
         Self::sql_result(r)
     }
 
+    /// `recv.matches(pattern[, flags])` exactly as the builtin computes it —
+    /// an absent receiver is `false` before the pattern is looked at, the
+    /// pattern is `String(args[0])`, the flags are `args[1]`, then
+    /// [`CompiledRegex::is_match`] on the receiver's string form — with the
+    /// compiled pattern held for the run. The builtin's own cache hands out
+    /// clones of the `regex::Regex`, and a clone starts with an empty
+    /// search-cache pool, so a scan paid a lazy-DFA cache allocation (and its
+    /// drop) per row. Flags that are not a string, and patterns that do not
+    /// compile, are left to the builtin so its errors are reported verbatim.
+    fn matches_memoized(&self, recv: &Value, args: &[Value]) -> Option<oqx::Result<Value>> {
+        let flags = match args.get(1) {
+            None | Some(Value::Undefined) | Some(Value::Null) => None,
+            Some(Value::Str(s)) => Some(s.clone()),
+            Some(_) => return None,
+        };
+        let Some(subject) = string_form(recv) else {
+            return Some(Ok(Value::Bool(false)));
+        };
+        let pattern = args.first().unwrap_or(&Value::Undefined).to_string();
+        let key = (pattern, flags);
+        let mut memo = self.regexes.borrow_mut();
+        if !memo.contains_key(&key) {
+            let flags_value = args.get(1).cloned().unwrap_or(Value::Undefined);
+            match compile_regex(&key.0, &flags_value, RegexDialect::Oqx) {
+                Ok(re) => {
+                    memo.insert(key.clone(), re);
+                }
+                Err(_) => return None,
+            }
+        }
+        Some(Ok(Value::Bool(memo[&key].is_match(&subject))))
+    }
+
     fn semantic_score(&self, t: Target, row: &Value, phrase: &str) -> oqx::Result<Value> {
         if matches!(t, Target::Nodes | Target::Edges) {
             return Err(OqxError::eval(
@@ -1021,7 +1096,9 @@ pub(crate) fn fetch_rows(
         .map(|s| (*s).to_owned())
         .collect();
     let rows = stmt.query_map(params_from_iter(params.iter()), |r| {
-        let mut o = Object::with_capacity(names.len());
+        // One slot beyond the columns: every row read here is tagged next
+        // ([`tag_row`]), and the tag must not regrow the entries per row.
+        let mut o = Object::with_capacity(names.len() + 1);
         for (i, name) in names.iter().enumerate() {
             o.insert(name.as_str(), sql_value(r.get_ref(i)?));
         }
@@ -1081,8 +1158,10 @@ pub fn glob_to_like(glob: &str, escape_backslash: bool) -> String {
 
 impl DataContext for StoreContext<'_> {
     fn root(&self, name: &str) -> Value {
-        if let Some(rows) = self.rows_root.as_ref().filter(|_| name == oqx::ROWS_ROOT) {
-            return Value::Array(rows.clone());
+        if let Some(rr) = self.rows_root.as_ref().filter(|_| name == oqx::ROWS_ROOT) {
+            let mut slot = rr.rows.borrow_mut();
+            let rows = if rr.once { slot.take() } else { slot.clone() };
+            return Value::Array(rows.unwrap_or_default());
         }
         if name == "$repo" {
             return self.repo_root();
@@ -1242,6 +1321,11 @@ impl DataContext for StoreContext<'_> {
                 | "parent_type"
         ) {
             return Self::filter_invalid(format!("{name}() needs a docs/blocks/nodes/edges row"));
+        }
+        if name == "matches" {
+            if let Some(r) = self.matches_memoized(recv, args) {
+                return Some(r);
+            }
         }
         builtin_method_with(RegexDialect::Oqx, name, recv, args)
     }

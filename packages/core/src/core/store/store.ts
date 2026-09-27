@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DDL, SCHEMA_VERSION, MIGRATIONS, SYNC_DDL } from "./schema.js";
 import { cosineBytes } from "../vec.js";
-import { mintId } from "../ids.js";
+import { mintId, registerIdOracle, type IdPrefix } from "../ids.js";
 
 // SQLite store (02 §2). One database per workspace at
 // <workspace>/.omgbase/omgbase.db, WAL mode, synchronous=NORMAL, FK on. All
@@ -15,8 +15,28 @@ export interface StoreOptions {
   path: string;
 }
 
+// spec/store §2.1 "Uniqueness at mint": the table(s) and id column a minted
+// id of each prefix must not already name a row of. A block id lives on in
+// history after its `blocks` row is gone, hence `block_changes` and
+// `resurrection_pool`. `col` and `v` have no table and no check.
+const ID_TABLES: Partial<Record<IdPrefix, readonly (readonly [table: string, column: string])[]>> = {
+  d: [["docs", "doc_id"]],
+  b: [["blocks", "block_id"], ["block_changes", "block_id"], ["resurrection_pool", "block_id"]],
+  c: [["commits", "commit_id"]],
+  r: [["revisions", "rev_id"]],
+  x: [["external_nodes", "node_id"]],
+  e: [["edges", "edge_id"]],
+  cp: [["checkpoints", "id"]],
+  rp: [["repos", "repo_id"]],
+  src: [["sources", "source_id"]],
+};
+
 export class Store {
   readonly db: Database.Database;
+  // The in-use oracle this store registered with `mintId` (spec/store §2.1);
+  // `close()` calls it to unregister. Prepared statements cached per prefix.
+  private readonly unregisterOracle: () => void;
+  private readonly inUseStmts = new Map<IdPrefix, Database.Statement[]>();
 
   constructor(opts: StoreOptions) {
     if (opts.path !== ":memory:") mkdirSync(dirname(opts.path), { recursive: true });
@@ -30,6 +50,24 @@ export class Store {
       cosineBytes(a as Uint8Array | null, b as Uint8Array | null),
     );
     this.migrate();
+    // Registered after the migration so every table the oracle reads exists.
+    // (A migration's own mints — v13's `src_` per repo — are checked only
+    // against the process's issued set; they land in tables that were empty.)
+    this.unregisterOracle = registerIdOracle((prefix, id) => this.idInUse(prefix, id));
+  }
+
+  /** spec/store §2.1: does `id` name a row of the prefix's table(s)? */
+  private idInUse(prefix: IdPrefix, id: string): boolean {
+    if (!this.db.open) return false;
+    let stmts = this.inUseStmts.get(prefix);
+    if (!stmts) {
+      stmts = (ID_TABLES[prefix] ?? []).map(([table, column]) =>
+        this.db.prepare(`SELECT 1 FROM ${table} WHERE ${column} = ? LIMIT 1`),
+      );
+      this.inUseStmts.set(prefix, stmts);
+    }
+    for (const stmt of stmts) if (stmt.get(id) !== undefined) return true;
+    return false;
   }
 
   private migrate(): void {
@@ -163,6 +201,8 @@ export class Store {
   }
 
   close(): void {
+    this.unregisterOracle();
+    this.inUseStmts.clear();
     this.db.close();
   }
 }

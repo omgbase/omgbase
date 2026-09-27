@@ -311,18 +311,32 @@ nested/correlated scopes:
   single SQL statement; now it is pushdown + residual.]** Invisibility is kept
   by declining (spec/surface §1, the 1.1 patch): a comparison is pushed only
   when its operand kinds (text, int, num, bool, null, json = an `attrs` read,
-  prop = a document property) are provably compared the same way — equality
-  only when one side is text, or one side is null and the other is not a
-  property, or both are numeric; `<`/`<=`/`>`/`>=` only when both are text or
-  both numeric (`sql/translate.ts`, `comparable`). Everything else — `checked
-  == 1`, `$ordinal == checked`, `tags != null`, `$ordinal < "3"`, `level <
-  "x"` — stays residual. A name that is a relation, reach-through or source
-  handle or the `attrs` bag (`nodes`, `blocks`, `out`, `children`, `section`,
-  `doc`, `frontmatter`, `attrs`, …) is never read as a property
-  (`NON_PROPERTY_NAMES`). When a residual conjunct could raise an OQX eval error
-  (any function/method call, a `single` block, a `^` name, a bare reserved docs
-  basename), the whole query runs unplanned so an emptying pushed conjunct
-  cannot hide the error (`planner.ts`, `residualMayRaise`).
+  prop = a document property) are provably compared the same way — plainly
+  (`IS`/`IS NOT`, or the bare relational operator) when one side is text, or
+  one side is null and the other is not a property, or both are numeric;
+  `<`/`<=`/`>`/`>=` plainly only when both are text or both numeric
+  (`sql/translate.ts`, `comparable`). A bool or num literal/binding against a
+  json or prop read is a **typed push** (spec/surface §1, the 1.2 patch;
+  `typedComparison`): the stored type is tested in SQL before the value and the
+  whole test is wrapped `(…) IS 1` (`==` and the relational ops) or `(…) IS NOT
+  1` (`!=`, the negated equality test), so an absent or differently typed value
+  is unequal and never ordered, as in memory —
+  `checked == true` → `(json_type(b.attrs, '$.checked') = 'true') IS 1` (no
+  bind; `'false'` for false); `level >= 2` → `(json_type(b.attrs, '$.level')
+  IN ('integer', 'real') AND json_extract(b.attrs, '$.level') >= ?) IS 1`;
+  `verified == true` → `(SELECT p.type = 'bool' AND p.val_bool = ? FROM
+  properties p WHERE …single scalar row… LIMIT 1) IS 1` (bound 1/0); `era !=
+  800` → `(SELECT p.type = 'number' AND p.val_num = ? … LIMIT 1) IS NOT 1`. A
+  constant on the left flips a relational op (`800 < era` ⇔ `era > 800`).
+  Everything else — `$ordinal == checked`, `true == 1`, `tags != null`,
+  `$ordinal < "3"`, `level < "x"`, `era == stages` — stays residual. A name that
+  is a relation, reach-through or source handle or the `attrs` bag (`nodes`,
+  `blocks`, `out`, `children`, `section`, `doc`, `frontmatter`, `attrs`, …) is
+  never read as a property (`NON_PROPERTY_NAMES`). When a residual conjunct
+  could raise an OQX eval error (any function/method call, a `single` block, a
+  `^` name, a bare reserved docs basename), the whole query runs unplanned so
+  an emptying pushed conjunct cannot hide the error (`planner.ts`,
+  `residualMayRaise`).
 - **Correctness is guaranteed** by the residual fallback and verified by the
   differential conformance suite (`corpus/oqx/conformance.test.ts`): every query
   returns identical results planned vs. pure in-memory.

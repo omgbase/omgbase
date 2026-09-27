@@ -28,7 +28,12 @@
 //     KINDS of its two operands are provably compared the same way — see
 //     `comparable` (the spec/surface §1 decline (a)) — and a name that is a relation, reach-through
 //     or source handle is never read as a property (decline (b),
-//     `NON_PROPERTY_NAMES`).
+//     `NON_PROPERTY_NAMES`). A bool or num literal against a JSON or property
+//     read is a TYPED push (the 1.2 patch): the stored type is tested in SQL
+//     before the value (`json_type(x) = 'true'`, `p.type = 'number' AND
+//     p.val_num >= ?`) and the whole test is wrapped `(…) IS 1` / `IS NOT 1`,
+//     so an absent or differently typed value compares as in memory —
+//     unequal, never ordered. See `typedComparison`.
 //
 // Only forms that are faithful in a POSITIVE, AND-composed context are
 // translated (that is the only context `partitionPushable` pushes into). `||`,
@@ -75,9 +80,16 @@ export interface Frag {
  */
 export type OperandKind = "text" | "int" | "num" | "bool" | "null" | "json" | "prop";
 
-/** A value-position fragment with the kind of value it denotes. */
+/** A value-position fragment with the kind of value it denotes, plus what the
+ * typed comparison (`typedComparison`) needs to re-shape it: the JSON column +
+ * path behind a `json` read, the document alias + key behind a `prop` read, and
+ * the constant behind a literal/binding (`value`; `bool`/`num`/`null`/text
+ * constants only — a column operand has none). */
 export interface Operand extends Frag {
   kind: OperandKind;
+  json?: { col: string; path: string };
+  prop?: { docAlias: string; key: string };
+  value?: unknown;
 }
 
 // ---- names that are never property reads ------------------------------------
@@ -149,38 +161,47 @@ function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
 export const RESERVED_DOC_BASENAMES: ReadonlySet<string> = new Set(["id", "path", "updated_at", "content_hash", "body"]);
 const SEG = /^[A-Za-z_][A-Za-z0-9_]*$/; // injection-safe inlined identifier
 
-// A single-valued document property (the CEL scalar-in-scope rule): the scalar
-// value only when the key has exactly one row in scope and it is card='scalar',
+// The single-scalar-row scope of a document property (the CEL scalar-in-scope
+// rule): the row for `key` on the document only when the key has exactly one
+// row in scope and it is card='scalar' — a list-valued or nested key has none.
+// `select` is the projected expression over the alias `p`.
+function propSubquery(docAlias: string, key: string, select: string): string {
+  return `(SELECT ${select} FROM properties p
+           WHERE p.doc_id = ${docAlias}.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL
+             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docAlias}.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL) = 1
+           LIMIT 1)`;
+}
+
+// A single-valued document property: the scalar value of its one row in scope,
 // else NULL — matching the store context's `docProp` for a scalar read.
 function propScalar(docAlias: string, key: string): Operand | null {
   if (!SEG.test(key)) return null;
   return {
-    sql: `(SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p
-           WHERE p.doc_id = ${docAlias}.doc_id AND p.key = '${key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL
-             AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = ${docAlias}.doc_id AND p2.key = '${key}' AND p2.deleted_commit IS NULL) = 1
-           LIMIT 1)`,
+    sql: propSubquery(docAlias, key, "COALESCE(p.val_text, p.val_num, p.val_bool)"),
     params: [],
     kind: "prop",
+    prop: { docAlias, key },
   };
 }
 
 // json_extract path from validated segments, or null if any segment is unsafe.
 function jsonExtract(col: string, segs: string[]): Operand | null {
   if (segs.some((s) => !SEG.test(s))) return null;
-  return { sql: `json_extract(${col}, '$.${segs.join(".")}')`, params: [], kind: "json" };
+  const path = `'$.${segs.join(".")}'`;
+  return { sql: `json_extract(${col}, ${path})`, params: [], kind: "json", json: { col, path } };
 }
 
 // A literal or binding value as a bound `?` with its kind. better-sqlite3 binds
 // only number/string/bigint/buffer/null — booleans are coerced to 1/0 (how
-// json_extract surfaces JSON booleans); anything else (an array binding, say) is
-// not a scalar and declines.
+// json_extract and `val_bool` surface booleans); anything else (an array
+// binding, say) is not a scalar and declines.
 function constOperand(v: unknown): Operand | null {
   switch (typeof v) {
-    case "string": return { sql: "?", params: [v], kind: "text" };
-    case "number": return { sql: "?", params: [v], kind: "num" };
-    case "boolean": return { sql: "?", params: [v ? 1 : 0], kind: "bool" };
-    case "undefined": return { sql: "?", params: [null], kind: "null" };
-    default: return v === null ? { sql: "?", params: [null], kind: "null" } : null;
+    case "string": return { sql: "?", params: [v], kind: "text", value: v };
+    case "number": return { sql: "?", params: [v], kind: "num", value: v };
+    case "boolean": return { sql: "?", params: [v ? 1 : 0], kind: "bool", value: v };
+    case "undefined": return { sql: "?", params: [null], kind: "null", value: null };
+    default: return v === null ? { sql: "?", params: [null], kind: "null", value: null } : null;
   }
 }
 
@@ -299,35 +320,50 @@ const IS_OP: Record<string, string> = {
  * comparison is pushed only when its two operand kinds are provably compared
  * the same way by SQLite and by the in-memory `equals`/`compare`.
  *
- *   Equality (`==`, `!=`) pushes iff
+ *   Equality (`==`, `!=`) pushes PLAINLY (`IS` / `IS NOT`) iff
  *     • one operand is text — SQLite's typed `IS` and strict `===` agree that a
  *       string equals nothing but an equal string (`5 IS '5'` is false);
  *     • or one operand is null and the other is NOT a property read — the same
  *       absence both ways, except that a list-valued or nested property has no
  *       scalar row (SQL NULL) where in memory the value is an array or object;
  *     • or both operands are numeric (int or num) — an exact integer comparison.
- *   Relational (`<`, `<=`, `>`, `>=`) pushes iff both operands are text or both
- *     are numeric.
+ *   Relational (`<`, `<=`, `>`, `>=`) pushes plainly iff both operands are text
+ *     or both are numeric.
+ *   TYPED pushes (the 1.2 patch, `typedComparison`): a bool literal/binding
+ *     against a json or prop read (`==`, `!=` only) and a num literal/binding
+ *     against a json or prop read (every op) push with the stored type tested
+ *     first — `json_type(x) = 'true'`, `json_type(x) IN ('integer','real') AND
+ *     json_extract(x) <op> ?`, `p.type = 'bool' AND p.val_bool = ?`, `p.type =
+ *     'number' AND p.val_num <op> ?` — wrapped `(…) IS 1` (or `IS NOT 1` for
+ *     `!=`), so an absent or differently typed value is unequal and never
+ *     ordered, exactly as in memory.
  *   Every other pair declines: SQLite sees JSON `true` and `1`, `val_bool` and
- *     `val_num` alike (`checked == 1`, `$ordinal == checked`, `verified == 1`),
- *     orders every integer before every text (`$ordinal < "3"`, `level < "x"`,
- *     `$path > 5`), and two JSON or property reads carry no type at plan time
+ *     `val_num` alike (`$ordinal == checked`, `true == 1`), orders every
+ *     integer before every text (`$ordinal < "3"`, `level < "x"`, `$path > 5`),
+ *     and two JSON or property reads carry no type at plan time
  *     (`attrs.a == attrs.b`, `era == stages`).
  *
- * The resulting grid (P = pushed, D = declined; symmetric) for `==` / `!=`:
+ * The resulting grid (P = pushed plainly, T = typed push, D = declined;
+ * symmetric) for `==` / `!=`:
  *
  *            text  int   num   bool  null  json  prop
  *   text      P     P     P     P     P     P     P
  *   int       P     P     P     D     P     D     D
- *   num       P     P     P     D     P     D     D
- *   bool      P     D     D     D     P     D     D
+ *   num       P     P     P     D     P     T     T
+ *   bool      P     D     D     D     P     T     T
  *   null      P     P     P     P     P     P     D
- *   json      P     D     D     D     P     D     D
- *   prop      P     D     D     D     D     D     D
+ *   json      P     D     T     T     P     D     D
+ *   prop      P     D     T     T     D     D     D
  *
- * and for `<` `<=` `>` `>=` only text×text, int×int, int×num, num×num push.
+ * and for `<` `<=` `>` `>=` text×text, int×int, int×num, num×num push plainly
+ * and num×json, num×prop push typed.
  */
 export function comparable(op: string, a: OperandKind, b: OperandKind): boolean {
+  return plainComparable(op, a, b) || typedPair(op, a, b) !== null;
+}
+
+// The plain cells of the grid (P): the two operands compare the same way as-is.
+function plainComparable(op: string, a: OperandKind, b: OperandKind): boolean {
   const numeric = (k: OperandKind): boolean => k === "int" || k === "num";
   const bothNumeric = numeric(a) && numeric(b);
   if (op === "==" || op === "!=") {
@@ -336,6 +372,17 @@ export function comparable(op: string, a: OperandKind, b: OperandKind): boolean 
     return bothNumeric;
   }
   return (a === "text" && b === "text") || bothNumeric;
+}
+
+// The typed cells of the grid (T): which side is the constant (`"left"` /
+// `"right"`), or null when the pair is not a typed push. A bool constant pushes
+// typed only under `==` / `!=` (booleans never order); a num constant under any op.
+function typedPair(op: string, a: OperandKind, b: OperandKind): "left" | "right" | null {
+  const read = (k: OperandKind): boolean => k === "json" || k === "prop";
+  const constant = (k: OperandKind): boolean => k === "num" || (k === "bool" && (op === "==" || op === "!="));
+  if (constant(a) && read(b)) return "left";
+  if (constant(b) && read(a)) return "right";
+  return null;
 }
 
 /** The complement of `comparable` — kept for readers of the earlier decline-list form. */
@@ -368,12 +415,64 @@ function translateComparison(e: Extract<Expr, { kind: "binary" }>, ctx: Translat
   const l = translateOperand(e.left, ctx);
   const r = translateOperand(e.right, ctx);
   if (!l || !r) return null;
-  if (!comparable(e.op, l.kind, r.kind)) return null; // decline (a): the positive comparison rule
-  // `==`/`!=` → null-safe IS / IS NOT (absence-normalized equality, faithful in
-  // any context). Relational ops → plain SQL: a NULL operand yields NULL, which
-  // is excluded in the positive AND context these fragments are pushed into,
-  // matching `relate`'s absent-operand ⇒ false rule.
-  return { sql: `(${l.sql} ${op} ${r.sql})`, params: [...l.params, ...r.params] };
+  if (plainComparable(e.op, l.kind, r.kind)) {
+    // `==`/`!=` → null-safe IS / IS NOT (absence-normalized equality, faithful in
+    // any context). Relational ops → plain SQL: a NULL operand yields NULL, which
+    // is excluded in the positive AND context these fragments are pushed into,
+    // matching `relate`'s absent-operand ⇒ false rule.
+    return { sql: `(${l.sql} ${op} ${r.sql})`, params: [...l.params, ...r.params] };
+  }
+  const side = typedPair(e.op, l.kind, r.kind);
+  if (side === null) return null; // decline (a): the positive comparison rule
+  // Normalize to <read> <op> <constant>, flipping a relational op when the
+  // constant is on the left (`800 < era` ⇔ `era > 800`).
+  return side === "right" ? typedComparison(e.op, l, r) : typedComparison(FLIP[e.op] ?? e.op, r, l);
+}
+
+const FLIP: Record<string, string> = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+
+/**
+ * The typed push (spec/surface §1, 1.2 patch): `read <op> constant` where the
+ * read is a JSON or property read and the constant a bool or num literal/binding.
+ * The stored type is tested before the value, and the whole test is wrapped
+ * `(…) IS 1` for `==` and the relational ops, `(…) IS NOT 1` for `!=` — so a
+ * NULL (absent path, no scalar row) or a `0` (other type, unequal value) reads
+ * as "not equal" / "not ordered", which is the in-memory answer: `checked == 1`
+ * finds nothing, `checked != 1` everything, `level >= 2` only numeric levels.
+ *
+ *   json × bool   (json_type(col, path) = 'true'|'false') IS [NOT] 1        no bind: the type string IS the value
+ *   json × num    (json_type(col, path) IN ('integer','real') AND json_extract(col, path) <op> ?) IS [NOT] 1
+ *   prop × bool   (SELECT p.type = 'bool' AND p.val_bool = ? FROM properties p WHERE <scope> LIMIT 1) IS [NOT] 1   ? = 1|0
+ *   prop × num    (SELECT p.type = 'number' AND p.val_num <op> ? FROM properties p WHERE <scope> LIMIT 1) IS [NOT] 1
+ *
+ * where <op> is `=` for both `==` and `!=` (the `!=` case negates the equality
+ * by its `IS NOT 1` wrap) and the relational operator itself otherwise.
+ *
+ * `<scope>` is `propSubquery`'s single-scalar-row condition, so a list-valued or
+ * nested key yields NULL → unequal/unordered, as in memory.
+ */
+function typedComparison(op: string, read: Operand, constant: Operand): Frag | null {
+  // `!=` is `!equals`: the EQUALITY test, wrapped IS NOT 1 (never `<>` inside —
+  // `(type AND val <> ?) IS NOT 1` would drop every row of the right type with a
+  // different value, the differential caught it).
+  const wrap = op === "!=" ? "IS NOT 1" : "IS 1";
+  const cmp = op === "==" || op === "!=" ? "=" : op;
+  if (read.json) {
+    const { col, path } = read.json;
+    if (constant.kind === "bool") {
+      return { sql: `((json_type(${col}, ${path}) = '${constant.value ? "true" : "false"}') ${wrap})`, params: [] };
+    }
+    return {
+      sql: `((json_type(${col}, ${path}) IN ('integer', 'real') AND json_extract(${col}, ${path}) ${cmp} ?) ${wrap})`,
+      params: [...constant.params],
+    };
+  }
+  if (read.prop) {
+    const { docAlias, key } = read.prop;
+    const test = constant.kind === "bool" ? `p.type = 'bool' AND p.val_bool = ?` : `p.type = 'number' AND p.val_num ${cmp} ?`;
+    return { sql: `(${propSubquery(docAlias, key, test)} ${wrap})`, params: [...constant.params] };
+  }
+  return null;
 }
 
 // startsWith / contains / endsWith — CASE-SENSITIVE, via substr/instr (never

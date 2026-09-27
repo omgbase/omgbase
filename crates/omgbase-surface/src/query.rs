@@ -403,6 +403,88 @@ pub fn collect_semantic_phrases(source: &str) -> Vec<String> {
     out
 }
 
+// ---- name mentions --------------------------------------------------------------------
+
+fn expr_mentions(e: &Expr, name: &str) -> bool {
+    match e {
+        Expr::Ident { name: n } | Expr::Outer { name: n, .. } => n == name,
+        Expr::Member { recv, .. } => expr_mentions(recv, name),
+        Expr::Index { recv, index } => expr_mentions(recv, name) || expr_mentions(index, name),
+        Expr::Unary { expr, .. } => expr_mentions(expr, name),
+        Expr::Binary { left, right, .. }
+        | Expr::Logical { left, right, .. }
+        | Expr::In { left, right } => expr_mentions(left, name) || expr_mentions(right, name),
+        Expr::Range { lo, hi, .. } => [lo, hi]
+            .into_iter()
+            .flatten()
+            .any(|x| expr_mentions(x, name)),
+        Expr::Call { recv, args, .. } => {
+            recv.as_deref().is_some_and(|r| expr_mentions(r, name))
+                || args.iter().any(|a| expr_mentions(a, name))
+        }
+        Expr::Lit(_) | Expr::Binding { .. } => false,
+    }
+}
+
+fn where_mentions(w: &Where, name: &str) -> bool {
+    match w {
+        Where::And { parts } | Where::Or { parts } => parts.iter().any(|p| where_mentions(p, name)),
+        Where::Not { expr } => where_mentions(expr, name),
+        Where::Scalar { expr } => expr_mentions(expr, name),
+        Where::Op(op) => op_mentions(op, name),
+    }
+}
+
+fn op_mentions(op: &OpNode, name: &str) -> bool {
+    expr_mentions(&op.receiver, name) || sub_mentions(&op.sub, name)
+}
+
+fn select_mentions(items: &[SelectItem], name: &str) -> bool {
+    items.iter().any(|it| match it {
+        SelectItem::Field { expr, .. } => expr_mentions(expr, name),
+        SelectItem::Collect { op, .. } => op_mentions(op, name),
+    })
+}
+
+fn follow_mentions(f: &Follow, name: &str) -> bool {
+    expr_mentions(&f.receiver, name)
+        || [&f.r#where, &f.frontier, &f.by]
+            .into_iter()
+            .flatten()
+            .any(|x| expr_mentions(x, name))
+}
+
+fn order_mentions(o: Option<&Vec<OrderSpec>>, name: &str) -> bool {
+    o.is_some_and(|specs| specs.iter().any(|s| expr_mentions(&s.expr, name)))
+}
+
+fn sub_mentions(s: &Subquery, name: &str) -> bool {
+    s.from.iter().any(|e| expr_mentions(e, name))
+        || s.r#where.as_ref().is_some_and(|w| where_mentions(w, name))
+        || select_mentions(&s.select, name)
+        || order_mentions(s.order_by.as_ref(), name)
+        || s.follow.as_ref().is_some_and(|f| follow_mentions(f, name))
+        || [&s.limit, &s.offset]
+            .into_iter()
+            .flatten()
+            .any(|x| expr_mentions(x, name))
+}
+
+/// Whether `name` is read anywhere in `q` other than as its source: a bare
+/// identifier or a `^`-escaped one in the `from` steps, `where`, `select`,
+/// `order by`, `follow`, `limit`/`offset`, or any nested block.
+fn mentions_outside_source(q: &Query, name: &str) -> bool {
+    q.from.iter().any(|e| expr_mentions(e, name))
+        || q.r#where.as_ref().is_some_and(|w| where_mentions(w, name))
+        || select_mentions(&q.select, name)
+        || order_mentions(q.order_by.as_ref(), name)
+        || q.follow.as_ref().is_some_and(|f| follow_mentions(f, name))
+        || [&q.limit, &q.offset]
+            .into_iter()
+            .flatten()
+            .any(|x| expr_mentions(x, name))
+}
+
 // ---- hits ----------------------------------------------------------------------------
 
 /// A projected row as a hit: `{ id, path, ...rest }` with the injected
@@ -575,7 +657,19 @@ impl Runner<'_> {
             None
         };
         let (ctx, residual) = match plan {
-            Some(plan) => (ctx.with_rows_root(plan.rows), Some(plan.residual)),
+            // The residual's source is its one read of the rows root unless
+            // the query text itself names `__oqx_rows__` somewhere else (a
+            // `^`-reach, a `limit`, a nested block…): then every read must
+            // see the rows, so they are cloned out instead of moved.
+            Some(plan) => {
+                let once = !mentions_outside_source(&plan.residual, oqx::ROWS_ROOT);
+                let ctx = if once {
+                    ctx.with_rows_root_once(plan.rows)
+                } else {
+                    ctx.with_rows_root(plan.rows)
+                };
+                (ctx, Some(plan.residual))
+            }
             None => (ctx, None),
         };
         let engine = InMemoryEngine::new(ctx);
@@ -712,9 +806,19 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
 
     // collect: keyset pagination on (path, id) when the order is the default.
     let mut rows: Vec<Value> = match res {
-        oqx::OqxResult::Collect(rows) => rows.into_iter().map(to_hit).collect(),
+        oqx::OqxResult::Collect(rows) => rows,
         _ => Vec::new(),
     };
+    let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty());
+    let cursor = opts.cursor.filter(|c| !c.is_empty() && !custom);
+    // Rows become hits ({ id, path, … }) before anything inspects them — the
+    // distinct key and the cursor's (path, id) read the HIT — else only the
+    // page does (the offset/limit slice and the cap see plain rows), so a
+    // scan that projects thousands of rows shapes fifty.
+    let eager = top_distinct || cursor.is_some();
+    if eager {
+        rows = rows.into_iter().map(to_hit).collect();
+    }
     if top_distinct {
         rows = dedup_hits_by_projection(rows);
     }
@@ -722,28 +826,29 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     let limit = const_bound(top_limit.as_ref(), "limit")?;
     if offset > 0 || limit.is_some() {
         let end = limit.map_or(rows.len(), |l| (offset + l).min(rows.len()));
-        rows = if offset >= rows.len() {
-            Vec::new()
+        if offset >= rows.len() {
+            rows.clear();
         } else {
-            rows[offset..end].to_vec()
-        };
+            rows.truncate(end);
+            rows.drain(..offset);
+        }
     }
-    let custom = parsed.order_by.as_ref().is_some_and(|o| !o.is_empty());
     let cap = opts.limit.unwrap_or(DEFAULT_LIMIT);
     let mut page = rows;
-    if !custom {
-        if let Some(cursor) = opts.cursor.filter(|c| !c.is_empty()) {
-            let parts = decode_cursor(cursor, "query", 2)?;
-            let (path, id) = (&parts[0], &parts[1]);
-            page.retain(|h| {
-                let hp = hit_str(h, "path");
-                let hi = hit_str(h, "id");
-                hp > *path || (hp == *path && hi > *id)
-            });
-        }
+    if let Some(cursor) = cursor {
+        let parts = decode_cursor(cursor, "query", 2)?;
+        let (path, id) = (&parts[0], &parts[1]);
+        page.retain(|h| {
+            let hp = hit_str(h, "path");
+            let hi = hit_str(h, "id");
+            hp > *path || (hp == *path && hi > *id)
+        });
     }
     let truncated = page.len() > cap;
     page.truncate(cap);
+    if !eager {
+        page = page.into_iter().map(to_hit).collect();
+    }
     let cursor = if truncated && !custom {
         page.last()
             .map(|last| encode_cursor(&[&hit_str(last, "path"), &hit_str(last, "id")]))

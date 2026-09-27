@@ -146,7 +146,10 @@ pub fn serve(surface: &mut Surface, version: &str, opts: &ServeOptions) -> std::
             )),
         };
         if let Some(r) = reply {
-            writeln!(out, "{r}")?;
+            // Straight to the locked stdout (no intermediate `String` of the
+            // whole frame); the compact form `Display` would print.
+            serde_json::to_writer(&mut out, &r)?;
+            out.write_all(b"\n")?;
             out.flush()?;
         }
     }

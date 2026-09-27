@@ -1503,6 +1503,500 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "planned-typed-bool-attr",
+      "notes": "§1 typed pushes (1.2): a boolean literal against a bare attribute pushes as `(json_type(attrs,'$.checked') = 'true') IS 1` — the type string is the value, no bind — so the conjunct plans on its own (before 1.2 it was residual and the query ran unplanned). Every checked task in the corpus, with its `checked` projected true.",
+      "query": "select $path, checked from blocks where checked == true",
+      "limit": 100,
+      "expect": {
+        "hits": [
+          {
+            "id": "b_52",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_53",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_54",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_55",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_78",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_79",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "checked": true
+          },
+          {
+            "id": "b_137",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "checked": true
+          },
+          {
+            "id": "b_155",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "checked": true
+          },
+          {
+            "id": "b_170",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md",
+            "checked": true
+          },
+          {
+            "id": "b_184",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "checked": true
+          },
+          {
+            "id": "b_185",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "checked": true
+          },
+          {
+            "id": "b_279",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "checked": true
+          },
+          {
+            "id": "b_280",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "checked": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-typed-bool-attr-negated",
+      "notes": "§1 typed pushes (1.2): `checked != true` pushes as `(json_type(attrs,'$.checked') = 'true') IS NOT 1` — json_type is NULL for an absent path, so every non-task block and every open task count, exactly as the in-memory `absent != true`. The complement of planned-typed-bool-attr over every block.",
+      "query": "$repo.blocks count { where checked != true }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 301
+      }
+    },
+    {
+      "name": "planned-typed-number-attr",
+      "notes": "§1 typed pushes (1.2): a number literal against a bare attribute pushes as `(json_type(attrs,'$.level') IN ('integer','real') AND json_extract(attrs,'$.level') >= ?) IS 1` — only headings of level 2 and deeper; a `true`-valued attribute (JSON true reads as 1 to a bare `>=`) and every block without `level` are excluded by the type test, as in memory.",
+      "query": "select $path, level from blocks where level >= 2",
+      "limit": 100,
+      "expect": {
+        "hits": [
+          {
+            "id": "b_12",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_18",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_2",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_25",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_29",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_8",
+            "path": "index.md",
+            "$path": "index.md",
+            "level": 2
+          },
+          {
+            "id": "b_34",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_37",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_45",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_48",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_50",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_62",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_65",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_74",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_76",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "level": 2
+          },
+          {
+            "id": "b_85",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md",
+            "level": 2
+          },
+          {
+            "id": "b_88",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md",
+            "level": 2
+          },
+          {
+            "id": "b_91",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md",
+            "level": 2
+          },
+          {
+            "id": "b_102",
+            "path": "practitioners/maria-prophetissa.md",
+            "$path": "practitioners/maria-prophetissa.md",
+            "level": 2
+          },
+          {
+            "id": "b_106",
+            "path": "practitioners/maria-prophetissa.md",
+            "$path": "practitioners/maria-prophetissa.md",
+            "level": 2
+          },
+          {
+            "id": "b_98",
+            "path": "practitioners/maria-prophetissa.md",
+            "$path": "practitioners/maria-prophetissa.md",
+            "level": 2
+          },
+          {
+            "id": "b_111",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md",
+            "level": 2
+          },
+          {
+            "id": "b_114",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md",
+            "level": 2
+          },
+          {
+            "id": "b_117",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md",
+            "level": 2
+          },
+          {
+            "id": "b_125",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "level": 2
+          },
+          {
+            "id": "b_128",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "level": 2
+          },
+          {
+            "id": "b_133",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "level": 2
+          },
+          {
+            "id": "b_141",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "level": 2
+          },
+          {
+            "id": "b_145",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "level": 2
+          },
+          {
+            "id": "b_148",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "level": 2
+          },
+          {
+            "id": "b_153",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "level": 2
+          },
+          {
+            "id": "b_161",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md",
+            "level": 2
+          },
+          {
+            "id": "b_164",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md",
+            "level": 2
+          },
+          {
+            "id": "b_168",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md",
+            "level": 2
+          },
+          {
+            "id": "b_175",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "level": 2
+          },
+          {
+            "id": "b_179",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "level": 2
+          },
+          {
+            "id": "b_182",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "level": 2
+          },
+          {
+            "id": "b_189",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md",
+            "level": 2
+          },
+          {
+            "id": "b_197",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md",
+            "level": 2
+          },
+          {
+            "id": "b_199",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md",
+            "level": 2
+          },
+          {
+            "id": "b_205",
+            "path": "processes/magnum-opus.md",
+            "$path": "processes/magnum-opus.md",
+            "level": 2
+          },
+          {
+            "id": "b_212",
+            "path": "substances/mercury.md",
+            "$path": "substances/mercury.md",
+            "level": 2
+          },
+          {
+            "id": "b_219",
+            "path": "substances/mercury.md",
+            "$path": "substances/mercury.md",
+            "level": 2
+          },
+          {
+            "id": "b_222",
+            "path": "substances/mercury.md",
+            "$path": "substances/mercury.md",
+            "level": 2
+          },
+          {
+            "id": "b_229",
+            "path": "substances/philosophers-stone.md",
+            "$path": "substances/philosophers-stone.md",
+            "level": 2
+          },
+          {
+            "id": "b_236",
+            "path": "substances/philosophers-stone.md",
+            "$path": "substances/philosophers-stone.md",
+            "level": 2
+          },
+          {
+            "id": "b_243",
+            "path": "substances/philosophers-stone.md",
+            "$path": "substances/philosophers-stone.md",
+            "level": 2
+          },
+          {
+            "id": "b_250",
+            "path": "substances/prima-materia.md",
+            "$path": "substances/prima-materia.md",
+            "level": 2
+          },
+          {
+            "id": "b_255",
+            "path": "substances/prima-materia.md",
+            "$path": "substances/prima-materia.md",
+            "level": 2
+          },
+          {
+            "id": "b_257",
+            "path": "substances/prima-materia.md",
+            "$path": "substances/prima-materia.md",
+            "level": 2
+          },
+          {
+            "id": "b_264",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "level": 2
+          },
+          {
+            "id": "b_267",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "level": 2
+          },
+          {
+            "id": "b_274",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "level": 2
+          },
+          {
+            "id": "b_276",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "level": 2
+          },
+          {
+            "id": "b_284",
+            "path": "substances/sulphur.md",
+            "$path": "substances/sulphur.md",
+            "level": 2
+          },
+          {
+            "id": "b_287",
+            "path": "substances/sulphur.md",
+            "$path": "substances/sulphur.md",
+            "level": 2
+          },
+          {
+            "id": "b_292",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md",
+            "level": 2
+          },
+          {
+            "id": "b_297",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md",
+            "level": 2
+          },
+          {
+            "id": "b_300",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md",
+            "level": 2
+          },
+          {
+            "id": "b_305",
+            "path": "texts/mutus-liber.md",
+            "$path": "texts/mutus-liber.md",
+            "level": 2
+          },
+          {
+            "id": "b_308",
+            "path": "texts/mutus-liber.md",
+            "$path": "texts/mutus-liber.md",
+            "level": 2
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-typed-number-attr-not-equal",
+      "notes": "§1 typed pushes (1.2): `level != 2` pushes as `(json_type(attrs,'$.level') IN ('integer','real') AND json_extract(attrs,'$.level') = ?) IS NOT 1` — the equality test, negated by the wrap (an inner `<>` would drop the level-1 and level-3 headings; the differential caught it) — so every block that is not a level-2 heading counts, an absent `level` reading NULL → IS NOT 1 → true, matching `absent != 2`.",
+      "query": "$repo.blocks count { where level != 2 }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 253
+      }
     }
   ]
 }

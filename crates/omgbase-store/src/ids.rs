@@ -1,6 +1,8 @@
 //! Identifiers (`spec/store/README.md` §2.1–§2.2): `<prefix>_<7 chars>` of
 //! lowercase Crockford base32 from a CSPRNG, and the minter seam that lets a
-//! fixture runner replace the CSPRNG with per-prefix counters.
+//! fixture runner replace the CSPRNG with per-prefix counters. A minter only
+//! *draws* candidates; the store checks each against what is in use
+//! ([`crate::mint`], §2.1) before handing it out.
 
 use std::collections::BTreeMap;
 
@@ -60,6 +62,34 @@ impl IdMinter for SequentialMinter {
         let n = self.counters.entry(prefix.to_owned()).or_insert(0);
         let id = format!("{prefix}_{n}");
         *n += 1;
+        id
+    }
+}
+
+/// The repeating fixture minter (§9.4, `"minter": "repeat"`): the sequential
+/// counter whose every id is offered twice — `rp_0, rp_0, b_0, b_0, b_1, b_1,
+/// …`. The store rejects the second offering as in use (§2.1) and asks again,
+/// so a case run under it projects exactly as under [`SequentialMinter`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct RepeatingMinter {
+    next: SequentialMinter,
+    pending: BTreeMap<String, String>,
+}
+
+impl RepeatingMinter {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl IdMinter for RepeatingMinter {
+    fn mint(&mut self, prefix: &str) -> String {
+        if let Some(again) = self.pending.remove(prefix) {
+            return again;
+        }
+        let id = self.next.mint(prefix);
+        self.pending.insert(prefix.to_owned(), id.clone());
         id
     }
 }
@@ -161,5 +191,19 @@ mod tests {
         let mut closure = |p: &str| format!("{p}_x");
         let dynamic: &mut dyn IdMinter = &mut closure;
         assert_eq!(dynamic.mint("q"), "q_x");
+    }
+
+    #[test]
+    fn repeating_minter_offers_every_id_twice_per_prefix() {
+        let mut m = RepeatingMinter::new();
+        assert_eq!(m.mint("rp"), "rp_0");
+        assert_eq!(m.mint("rp"), "rp_0");
+        assert_eq!(m.mint("b"), "b_0");
+        assert_eq!(m.mint("d"), "d_0", "pending is per prefix");
+        assert_eq!(m.mint("b"), "b_0");
+        assert_eq!(m.mint("b"), "b_1");
+        assert_eq!(m.mint("d"), "d_0");
+        assert_eq!(m.mint("b"), "b_1");
+        assert_eq!(m.mint("b"), "b_2");
     }
 }

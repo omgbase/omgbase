@@ -1943,6 +1943,158 @@
         "cursor": null,
         "consumer": "collect"
       }
+    },
+    {
+      "name": "planned-typed-bool-property",
+      "notes": "§1 typed pushes (1.2): a boolean literal against a property read pushes as `(SELECT p.type = 'bool' AND p.val_bool = ? … LIMIT 1) IS 1` over the same single-scalar-row subquery (bound 1) — the 14 `verified: true` documents; the 4 `verified: false` and any doc without the key read 0/NULL → not 1.",
+      "query": "select $path, verified from docs where verified == true",
+      "limit": 100,
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "index.md",
+            "$path": "index.md",
+            "verified": true
+          },
+          {
+            "id": "d_1",
+            "path": "lab/2026-01-notes.md",
+            "$path": "lab/2026-01-notes.md",
+            "verified": true
+          },
+          {
+            "id": "d_2",
+            "path": "lab/2026-02-notes.md",
+            "$path": "lab/2026-02-notes.md",
+            "verified": true
+          },
+          {
+            "id": "d_3",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md",
+            "verified": true
+          },
+          {
+            "id": "d_4",
+            "path": "practitioners/maria-prophetissa.md",
+            "$path": "practitioners/maria-prophetissa.md",
+            "verified": true
+          },
+          {
+            "id": "d_5",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md",
+            "verified": true
+          },
+          {
+            "id": "d_6",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "verified": true
+          },
+          {
+            "id": "d_7",
+            "path": "processes/calcination.md",
+            "$path": "processes/calcination.md",
+            "verified": true
+          },
+          {
+            "id": "d_8",
+            "path": "processes/coagulation.md",
+            "$path": "processes/coagulation.md",
+            "verified": true
+          },
+          {
+            "id": "d_9",
+            "path": "processes/dissolution.md",
+            "$path": "processes/dissolution.md",
+            "verified": true
+          },
+          {
+            "id": "d_11",
+            "path": "substances/mercury.md",
+            "$path": "substances/mercury.md",
+            "verified": true
+          },
+          {
+            "id": "d_14",
+            "path": "substances/salt.md",
+            "$path": "substances/salt.md",
+            "verified": true
+          },
+          {
+            "id": "d_15",
+            "path": "substances/sulphur.md",
+            "$path": "substances/sulphur.md",
+            "verified": true
+          },
+          {
+            "id": "d_16",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md",
+            "verified": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-typed-number-property",
+      "notes": "§1 typed pushes (1.2): a number literal against a property read pushes as `(SELECT p.type = 'number' AND p.val_num >= ? … LIMIT 1) IS 1` — the five documents whose `era` is 800 or later (maria-prophetissa at 250 and the 12 documents without `era` are out; a non-number `era` would fail the type test rather than order).",
+      "query": "select $path, era from docs where era >= 800",
+      "limit": 100,
+      "expect": {
+        "hits": [
+          {
+            "id": "d_3",
+            "path": "practitioners/jabir-ibn-hayyan.md",
+            "$path": "practitioners/jabir-ibn-hayyan.md",
+            "era": 800
+          },
+          {
+            "id": "d_5",
+            "path": "practitioners/newton.md",
+            "$path": "practitioners/newton.md",
+            "era": 1680
+          },
+          {
+            "id": "d_6",
+            "path": "practitioners/paracelsus.md",
+            "$path": "practitioners/paracelsus.md",
+            "era": 1530
+          },
+          {
+            "id": "d_16",
+            "path": "texts/emerald-tablet.md",
+            "$path": "texts/emerald-tablet.md",
+            "era": 800
+          },
+          {
+            "id": "d_17",
+            "path": "texts/mutus-liber.md",
+            "$path": "texts/mutus-liber.md",
+            "era": 1677
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "planned-typed-number-property-not-equal",
+      "notes": "§1 typed pushes (1.2): `era != 800` pushes as `(SELECT p.type = 'number' AND p.val_num = ? … LIMIT 1) IS NOT 1` — the equality test, negated by the wrap — every document but the two at 800 (a doc without `era` reads NULL → IS NOT 1 → true, as `absent != 800` in memory; an inner `<>` would have dropped the other four dated documents).",
+      "query": "$repo.docs count { where era != 800 }",
+      "expect": {
+        "hits": [],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "count",
+        "count": 16
+      }
     }
   ]
 }

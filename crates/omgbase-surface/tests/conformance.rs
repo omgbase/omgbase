@@ -64,11 +64,12 @@ const QUERIES: &[(&str, Push)] = &[
         "from docs where $path.startsWith(\"processes/\") && nodes exists { where kind == \"md:task\" }",
         Planned,
     ),
-    // bare document properties push via the properties table — text only: a
-    // number against a property read declines (surface 1.1 patch)
+    // bare document properties push via the properties table; a number
+    // against a property read pushes typed (`p.type = 'number'` tested
+    // first, surface 1.2 patch)
     ("from docs where type == \"substance\"", Planned),
     ("from docs where layer == \"canon\"", Planned),
-    ("from docs where era < 1000", Declined),
+    ("from docs where era < 1000", Planned),
     // range membership (declined → in-memory both ways, must agree)
     ("from docs where era in 800..1680", Declined),
     ("from docs where era in 800...1680", Declined),

@@ -32,11 +32,18 @@
 //!
 //! * **Operand typing** ([`Ty`], [`comparable`]): JSON `true` and `1` are
 //!   both `1` after `json_extract`, and a property's `val_bool` / `val_num`
-//!   coalesce into one column, so a boolean or number literal against a JSON
-//!   or property read cannot be compared faithfully; `null` against a
-//!   property read cannot either (a list-valued or nested key has no scalar
-//!   row, so SQL reads `NULL` where the in-memory value is an array or an
-//!   object). See the matrix at [`comparable`].
+//!   coalesce into one column, so two reads, or an integer intrinsic against
+//!   a read, cannot be compared faithfully; `null` against a property read
+//!   cannot either (a list-valued or nested key has no scalar row, so SQL
+//!   reads `NULL` where the in-memory value is an array or an object). See
+//!   the matrix at [`comparable`]. The 1.2 patch turned the bool/num literal
+//!   (or binding) against a JSON or property read cells into **typed
+//!   pushes** ([`typed_compare`]): the stored type is tested in SQL before
+//!   the value (`json_type(x) = 'true'`, `json_type(x) IN ('integer',
+//!   'real') AND json_extract(x) <op> ?`, `p.type = 'bool' AND p.val_bool =
+//!   ?`, `p.type = 'number' AND p.val_num <op> ?`), the whole wrapped `(…)
+//!   IS 1` (`IS NOT 1` for `!=`) so an absent or differently typed value
+//!   compares as in memory — unequal, never ordered.
 //! * **Handles are not properties** ([`non_property_handles`]): a bare
 //!   identifier or `doc.<k>` head that names a relation, reach-through
 //!   handle, source handle or bag (`nodes`, `doc`, `frontmatter`, `attrs`, …)
@@ -93,11 +100,13 @@ pub enum Ty {
     /// A boolean literal or binding.
     Bool,
     /// A `json_extract` read (an `attrs` path or a bare attribute name):
-    /// JSON `true` and `1` both surface as `1`.
+    /// JSON `true` and `1` both surface as `1`, so a bool or num against it
+    /// tests `json_type` first ([`typed_compare`]).
     Json,
     /// A document property scalar (bare key on docs, `doc.<k>`): `val_bool`,
     /// `val_num` and `val_text` coalesce into one column, and a list-valued or
-    /// nested key has no scalar row (`NULL`).
+    /// nested key has no scalar row (`NULL`); a bool or num against it tests
+    /// `p.type` first ([`typed_compare`]).
     Prop,
     /// `null` (or an absent binding).
     Null,
@@ -110,52 +119,58 @@ pub enum Ty {
 /// comparison and strict equality agree that a string equals nothing but an
 /// equal string), or one is `Null` and the other is not `Prop` (a list-valued
 /// or nested key has no scalar row, so SQL reads `NULL` where memory has an
-/// array or an object), or both are numeric (`Int` / `Num`):
+/// array or an object), or both are numeric (`Int` / `Num`), or — the 1.2
+/// **typed** cells — one is a `Bool` / `Num` constant and the other a `Json` /
+/// `Prop` read, pushed with the stored type tested first ([`typed_compare`]):
 ///
 /// ```text
 ///          Text   Int    Num    Bool   Null   Json   Prop
 ///   Text   push   push   push   push   push   push   push
 ///   Int    push   push   push   decl   push   decl   decl
-///   Num    push   push   push   decl   push   decl   decl
-///   Bool   push   decl   decl   decl   push   decl   decl
+///   Num    push   push   push   decl   push   typed  typed
+///   Bool   push   decl   decl   decl   push   typed  typed
 ///   Null   push   push   push   push   push   push   decl
-///   Json   push   decl   decl   decl   push   decl   decl
-///   Prop   push   decl   decl   decl   decl   decl   decl
+///   Json   push   decl   typed  typed  push   decl   decl
+///   Prop   push   decl   typed  typed  decl   decl   decl
 /// ```
 ///
-/// **Relational** (`<`, `<=`, `>`, `>=`) pushes iff both operands are `Text`
-/// or both are numeric; every other cell declines (SQLite orders every
-/// integer before every text, `NULL` compares to nothing):
+/// **Relational** (`<`, `<=`, `>`, `>=`) pushes iff both operands are `Text`,
+/// both are numeric, or one is a `Num` constant against a `Json` / `Prop` read
+/// (typed); every other cell declines (SQLite orders every integer before
+/// every text, `NULL` compares to nothing, booleans are not ordered):
 ///
 /// ```text
 ///          Text   Int    Num    Bool   Null   Json   Prop
 ///   Text   push   decl   decl   decl   decl   decl   decl
 ///   Int    decl   push   push   decl   decl   decl   decl
-///   Num    decl   push   push   decl   decl   decl   decl
+///   Num    decl   push   push   decl   decl   typed  typed
 ///   Bool   decl   decl   decl   decl   decl   decl   decl
 ///   Null   decl   decl   decl   decl   decl   decl   decl
-///   Json   decl   decl   decl   decl   decl   decl   decl
-///   Prop   decl   decl   decl   decl   decl   decl   decl
+///   Json   decl   decl   typed  decl   decl   decl   decl
+///   Prop   decl   decl   typed  decl   decl   decl   decl
 /// ```
 ///
 /// Why the declines: SQLite sees JSON `true` and `1`, `val_bool` and
-/// `val_num` alike (`checked == 1`, `$ordinal == checked`, `true == 1`
-/// binds as `1 IS 1`), orders every integer before every text
-/// (`$ordinal < "3"`, `level < "x"`), and two JSON or property reads carry
-/// no type at plan time.
+/// `val_num` alike (`$ordinal == checked`, `true == 1` binds as `1 IS 1`),
+/// orders every integer before every text (`$ordinal < "3"`, `level <
+/// "x"`), and two JSON or property reads carry no type at plan time.
 #[must_use]
 pub fn comparable(op: BinaryOp, a: Ty, b: Ty) -> bool {
-    use Ty::{Int, Null, Num, Prop, Text};
+    use Ty::{Bool, Int, Json, Null, Num, Prop, Text};
     let numeric = |t: Ty| matches!(t, Int | Num);
+    let read = |t: Ty| matches!(t, Json | Prop);
     let both_numeric = numeric(a) && numeric(b);
+    // The typed cells: a constant of the given kinds against a stored read.
+    let typed = |konst: fn(Ty) -> bool| (read(a) && konst(b)) || (read(b) && konst(a));
     if matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
         a == Text
             || b == Text
             || (a == Null && b != Prop)
             || (b == Null && a != Prop)
             || both_numeric
+            || typed(|t| matches!(t, Bool | Num))
     } else {
-        (a == Text && b == Text) || both_numeric
+        (a == Text && b == Text) || both_numeric || typed(|t| t == Num)
     }
 }
 
@@ -277,29 +292,111 @@ fn is_seg(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// A single-valued document property (the scalar-in-scope rule): the scalar
-/// value only when the key has exactly one row in scope and it is
-/// `card = 'scalar'`, else NULL — matching the context's `doc_prop` for a
-/// scalar read.
-fn prop_scalar(doc_alias: &str, key: &str) -> Option<String> {
+/// The single-scalar-row property subquery (the scalar-in-scope rule):
+/// `select` evaluated over the property row `p` only when the key has exactly
+/// one row in scope and it is `card = 'scalar'`, else NULL — matching the
+/// context's `doc_prop` for a scalar read. [`prop_scalar`] selects the value;
+/// the typed pushes select a type test ([`typed_compare`]).
+fn prop_row(doc_alias: &str, key: &str, select: &str) -> Option<String> {
     if !is_seg(key) {
         return None;
     }
     Some(format!(
-        "(SELECT COALESCE(p.val_text, p.val_num, p.val_bool) FROM properties p \
+        "(SELECT {select} FROM properties p \
          WHERE p.doc_id = {doc_alias}.doc_id AND p.key = '{key}' AND p.card = 'scalar' AND p.deleted_commit IS NULL \
          AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = {doc_alias}.doc_id AND p2.key = '{key}' AND p2.deleted_commit IS NULL) = 1 \
          LIMIT 1)"
     ))
 }
 
-/// `json_extract(col, '$.a.b')` from validated segments; `None` if any
-/// segment is unsafe.
-fn json_extract(col: &str, segs: &[&str]) -> Option<String> {
+/// A single-valued document property's scalar value (`val_text`, `val_num`
+/// and `val_bool` coalesced), or NULL.
+fn prop_scalar(doc_alias: &str, key: &str) -> Option<String> {
+    prop_row(
+        doc_alias,
+        key,
+        "COALESCE(p.val_text, p.val_num, p.val_bool)",
+    )
+}
+
+/// The JSON path `$.a.b` from validated segments; `None` if any segment is
+/// unsafe.
+fn json_path(segs: &[&str]) -> Option<String> {
     if segs.iter().any(|s| !is_seg(s)) {
         return None;
     }
-    Some(format!("json_extract({col}, '$.{}')", segs.join(".")))
+    Some(format!("$.{}", segs.join(".")))
+}
+
+/// What an operand IS, beyond the SQL it renders to — the typed pushes
+/// ([`typed_compare`]) rebuild a stored read as a type test and inline a
+/// constant's value, which a finished [`Frag`] no longer exposes.
+#[derive(Clone, Debug, PartialEq)]
+enum Shape {
+    /// A plain SQL scalar: a column, an intrinsic, `lower()` / `upper()`.
+    Plain,
+    /// A literal or binding, bound as `?`.
+    Const(Value),
+    /// `json_extract(col, 'path')`.
+    Json { col: String, path: String },
+    /// A document property read: the owning document's alias and the key.
+    Prop { doc_alias: String, key: String },
+}
+
+/// A translated value-position operand: its fragment, its [`Ty`] for the
+/// gate, and its [`Shape`] for the typed pushes.
+#[derive(Clone, Debug, PartialEq)]
+struct Operand {
+    frag: Frag,
+    ty: Ty,
+    shape: Shape,
+}
+
+impl Operand {
+    fn plain(sql: String, ty: Ty) -> Self {
+        Self {
+            frag: Frag::bare(sql),
+            ty,
+            shape: Shape::Plain,
+        }
+    }
+
+    fn text(sql: String) -> Option<Self> {
+        Some(Self::plain(sql, Ty::Text))
+    }
+
+    /// `None` for a non-scalar (an array, an object, a range), which has no
+    /// faithful SQL binding.
+    fn constant(v: &Value) -> Option<Self> {
+        Some(Self {
+            frag: Frag {
+                sql: "?".to_owned(),
+                params: vec![to_sql(v)],
+            },
+            ty: const_ty(v)?,
+            shape: Shape::Const(v.clone()),
+        })
+    }
+
+    fn json(col: String, segs: &[&str]) -> Option<Self> {
+        let path = json_path(segs)?;
+        Some(Self {
+            frag: Frag::bare(format!("json_extract({col}, '{path}')")),
+            ty: Ty::Json,
+            shape: Shape::Json { col, path },
+        })
+    }
+
+    fn prop(doc_alias: &str, key: &str) -> Option<Self> {
+        Some(Self {
+            frag: Frag::bare(prop_scalar(doc_alias, key)?),
+            ty: Ty::Prop,
+            shape: Shape::Prop {
+                doc_alias: doc_alias.to_owned(),
+                key: key.to_owned(),
+            },
+        })
+    }
 }
 
 /// The dotted `attrs.a.b` / `doc.x` receiver chain as segments, or `None` if
@@ -327,23 +424,20 @@ pub fn translate_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
 
 /// [`translate_value`] plus the operand's [`Ty`], for the comparison gate.
 pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
+    operand(e, ctx).map(|o| (o.frag, o.ty))
+}
+
+/// The full [`Operand`] of a value-position expression.
+fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
     let (s, d, target) = (ctx.self_alias, ctx.doc_alias, ctx.target);
-    let text = |sql: String| Some((Frag::bare(sql), Ty::Text));
-    let constant = |v: &Value| {
-        Some((
-            Frag {
-                sql: "?".to_owned(),
-                params: vec![to_sql(v)],
-            },
-            const_ty(v)?,
-        ))
-    };
     match e {
-        Expr::Lit(v) => constant(v),
-        Expr::Binding { index } => constant(ctx.params.get(*index).unwrap_or(&Value::Undefined)),
+        Expr::Lit(v) => Operand::constant(v),
+        Expr::Binding { index } => {
+            Operand::constant(ctx.params.get(*index).unwrap_or(&Value::Undefined))
+        }
         Expr::Ident { name } => {
             if name.starts_with('$') {
-                return intrinsic_sql(name, ctx).map(|(sql, ty)| (Frag::bare(sql), ty));
+                return intrinsic_sql(name, ctx).map(|(sql, ty)| Operand::plain(sql, ty));
             }
             let name = name.as_str();
             // A relation, reach-through handle, source handle or bag is not a
@@ -355,36 +449,34 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
                 Target::Docs => {
                     // `format` is a column, not a property.
                     if name == "format" {
-                        return text(format!("{s}.format"));
+                        return Operand::text(format!("{s}.format"));
                     }
                     // A reserved basename stays residual so the guard fires.
                     if RESERVED_DOC_BASENAMES.contains(&name) {
                         return None;
                     }
-                    prop_scalar(d, name).map(|sql| (Frag::bare(sql), Ty::Prop))
+                    Operand::prop(d, name)
                 }
                 Target::Blocks => {
                     if name == "type" || name == "text" {
-                        return text(format!("{s}.{name}"));
+                        return Operand::text(format!("{s}.{name}"));
                     }
                     // A bare non-structural identifier flattens into attrs —
                     // the same pushdown as the `attrs.<k>` member form.
-                    json_extract(&format!("{s}.attrs"), &[name])
-                        .map(|sql| (Frag::bare(sql), Ty::Json))
+                    Operand::json(format!("{s}.attrs"), &[name])
                 }
                 Target::Nodes => {
                     if matches!(name, "kind" | "name" | "value") {
-                        return text(format!("{s}.{name}"));
+                        return Operand::text(format!("{s}.{name}"));
                     }
-                    json_extract(&format!("{s}.attrs"), &[name])
-                        .map(|sql| (Frag::bare(sql), Ty::Json))
+                    Operand::json(format!("{s}.attrs"), &[name])
                 }
                 Target::Edges => {
                     if matches!(
                         name,
                         "predicate" | "provenance" | "dst_kind" | "anchor" | "src_field"
                     ) {
-                        return text(format!("{s}.{name}"));
+                        return Operand::text(format!("{s}.{name}"));
                     }
                     None
                 }
@@ -398,8 +490,7 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
             }
             // attrs.<path> → json_extract on the row's attrs (blocks/nodes).
             if *head == "attrs" && matches!(target, Target::Blocks | Target::Nodes) {
-                return json_extract(&format!("{s}.attrs"), rest)
-                    .map(|sql| (Frag::bare(sql), Ty::Json));
+                return Operand::json(format!("{s}.attrs"), rest);
             }
             // doc.<x> reach-through — the owning doc (alias `doc`). On the docs
             // target `doc` is the row itself; either way it resolves against `d`.
@@ -409,10 +500,10 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
                 }
                 let k = rest[0];
                 if k == "$path" {
-                    return text(format!("{d}.path"));
+                    return Operand::text(format!("{d}.path"));
                 }
                 if k == "format" {
-                    return text(format!("{d}.format"));
+                    return Operand::text(format!("{d}.format"));
                 }
                 // `doc.nodes`, `doc.frontmatter`, `doc.doc`… are the doc's
                 // handles, not its properties.
@@ -422,7 +513,7 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
                 {
                     return None;
                 }
-                return prop_scalar(d, k).map(|sql| (Frag::bare(sql), Ty::Prop));
+                return Operand::prop(d, k);
             }
             // block.type / block.text reach-through from a node.
             if *head == "block"
@@ -430,7 +521,7 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
                 && rest.len() == 1
                 && matches!(rest[0], "type" | "text")
             {
-                return text(format!(
+                return Operand::text(format!(
                     "(SELECT bb.{} FROM blocks bb WHERE bb.block_id = {s}.block_id)",
                     rest[0]
                 ));
@@ -444,13 +535,14 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
             args,
         } if args.is_empty() && (name == "lower" || name == "upper") => {
             let recv = translate_value(recv, ctx)?;
-            Some((
-                Frag {
+            Some(Operand {
+                frag: Frag {
                     sql: format!("{name}({})", recv.sql),
                     params: recv.params,
                 },
-                Ty::Text,
-            ))
+                ty: Ty::Text,
+                shape: Shape::Plain,
+            })
         }
         _ => None,
     }
@@ -470,6 +562,96 @@ fn is_op(op: BinaryOp) -> Option<&'static str> {
         BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
             return None;
         }
+    })
+}
+
+/// The typed pushes (`spec/surface` §1, 1.2 patch): a bool or num constant
+/// against a JSON or property read, with the stored type tested in SQL
+/// before the value so SQLite cannot conflate JSON `true` with `1` or
+/// `val_bool` with `val_num`. `None` when the pair is not a typed cell (the
+/// plain `IS` / relational form applies) — the gate ([`comparable`]) has
+/// already declined the cells neither form can push.
+///
+/// * json × bool (`==`/`!=`): `(json_type(x) = 'true' | 'false') IS 1`;
+/// * json × num (all six): `(json_type(x) IN ('integer', 'real') AND
+///   json_extract(x) <op> ?) IS 1`;
+/// * prop × bool (`==`/`!=`): the single-scalar-row subquery selecting
+///   `p.type = 'bool' AND p.val_bool = ?` (`spec/properties` §2.1 type
+///   names; booleans bind as 1/0), `(…) IS 1`;
+/// * prop × num (all six): the same subquery selecting `p.type = 'number'
+///   AND p.val_num <op> ?`, `(…) IS 1`.
+///
+/// `!=` wraps `IS NOT 1` around the equality test. `json_type` is NULL for
+/// an absent path and the subquery is NULL for an absent, list-valued or
+/// nested key, so `IS 1` is false and `IS NOT 1` true — the in-memory
+/// absence semantics (unequal, never ordered). The test is normalized to
+/// `read <op> ?`, a relational op flipping when the constant is on the left
+/// (`800 < era` ⇔ `era > 800`), as the reference does.
+fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option<Frag> {
+    let (read, konst, read_left) = match (&l.shape, &r.shape) {
+        (Shape::Json { .. } | Shape::Prop { .. }, Shape::Const(v)) => (&l.shape, v, true),
+        (Shape::Const(v), Shape::Json { .. } | Shape::Prop { .. }) => (&r.shape, v, false),
+        _ => return None,
+    };
+    let equality = matches!(op, BinaryOp::Eq | BinaryOp::Ne);
+    let wrap = if op == BinaryOp::Ne {
+        "IS NOT 1"
+    } else {
+        "IS 1"
+    };
+    // Normalized to `read <op> ?`: a relational op flips when the constant is
+    // on the left (`800 < era` ⇔ `era > 800`), as in the reference.
+    let inner_op = match (equality, read_left, sql_op) {
+        (true, _, _) => "=",
+        (false, true, _) => sql_op,
+        (false, false, "<") => ">",
+        (false, false, "<=") => ">=",
+        (false, false, ">") => "<",
+        (false, false, ">=") => "<=",
+        (false, false, _) => return None,
+    };
+    let sides = |read_sql: &str| format!("{read_sql} {inner_op} ?");
+    let (sql, params) = match (read, konst) {
+        // Booleans are only ever equal; the gate declines them relational.
+        (_, Value::Bool(_)) if !equality => return None,
+        (Shape::Json { col, path }, Value::Bool(b)) => (
+            format!("(json_type({col}, '{path}') = '{b}') {wrap}"),
+            Vec::new(),
+        ),
+        (Shape::Json { col, path }, Value::Number(_)) => (
+            format!(
+                "(json_type({col}, '{path}') IN ('integer', 'real') AND {}) {wrap}",
+                sides(&format!("json_extract({col}, '{path}')"))
+            ),
+            vec![to_sql(konst)],
+        ),
+        (Shape::Prop { doc_alias, key }, Value::Bool(_)) => (
+            format!(
+                "{} {wrap}",
+                prop_row(
+                    doc_alias,
+                    key,
+                    &format!("p.type = 'bool' AND {}", sides("p.val_bool"))
+                )?
+            ),
+            vec![to_sql(konst)],
+        ),
+        (Shape::Prop { doc_alias, key }, Value::Number(_)) => (
+            format!(
+                "{} {wrap}",
+                prop_row(
+                    doc_alias,
+                    key,
+                    &format!("p.type = 'number' AND {}", sides("p.val_num"))
+                )?
+            ),
+            vec![to_sql(konst)],
+        ),
+        _ => return None,
+    };
+    Some(Frag {
+        sql: format!("({sql})"),
+        params,
     })
 }
 
@@ -493,22 +675,27 @@ pub fn translate_predicate(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
         Expr::Binary { op, left, right } => {
             // An arithmetic operator in predicate position → residual.
             let sql_op = is_op(*op)?;
-            let (l, lt) = typed_value(left, ctx)?;
-            let (r, rt) = typed_value(right, ctx)?;
+            let l = operand(left, ctx)?;
+            let r = operand(right, ctx)?;
             // The operand-typing gate (§1): the pairs SQLite would compare
             // with less type than the engine has stay residual.
-            if !comparable(*op, lt, rt) {
+            if !comparable(*op, l.ty, r.ty) {
                 return None;
+            }
+            // A bool/num constant against a JSON or property read pushes with
+            // the stored type tested first (the 1.2 typed cells).
+            if let Some(typed) = typed_compare(*op, sql_op, &l, &r) {
+                return Some(typed);
             }
             let op = sql_op;
             // `==`/`!=` → IS / IS NOT (absence-normalized equality, faithful in
             // any context). Relational ops → plain SQL: a NULL operand yields
             // NULL, which is excluded in the positive AND context these
             // fragments are pushed into, matching the absent-operand ⇒ false rule.
-            let mut params = l.params;
-            params.extend(r.params);
+            let mut params = l.frag.params;
+            params.extend(r.frag.params);
             Some(Frag {
-                sql: format!("({} {op} {})", l.sql, r.sql),
+                sql: format!("({} {op} {})", l.frag.sql, r.frag.sql),
                 params,
             })
         }
@@ -746,8 +933,8 @@ mod tests {
             self_alias: "b",
             ..DOCS
         };
-        // (against a text column — a boolean against a JSON or property read
-        // is declined, see the matrix tests)
+        // (against a text column — against a JSON or property read the
+        // boolean pushes typed, see the typed-shape tests)
         assert_eq!(
             translate_predicate(&pred("type == true"), &blocks).map(|f| f.params),
             Some(vec![SqlValue::Integer(1)])
@@ -822,27 +1009,31 @@ mod tests {
         // Row/column order: Text Int Num Bool Null Json Prop.
         const P: bool = true;
         const D: bool = false;
-        // Equality: one side text, or null against a non-property, or both numeric.
+        // Typed (1.2): a bool/num constant against a JSON or property read.
+        const T: bool = true;
+        // Equality: one side text, or null against a non-property, or both
+        // numeric, or a typed cell.
         #[rustfmt::skip]
         const EQUALITY: [[bool; 7]; 7] = [
             /* Text */ [P, P, P, P, P, P, P],
             /* Int  */ [P, P, P, D, P, D, D],
-            /* Num  */ [P, P, P, D, P, D, D],
-            /* Bool */ [P, D, D, D, P, D, D],
+            /* Num  */ [P, P, P, D, P, T, T],
+            /* Bool */ [P, D, D, D, P, T, T],
             /* Null */ [P, P, P, P, P, P, D],
-            /* Json */ [P, D, D, D, P, D, D],
-            /* Prop */ [P, D, D, D, D, D, D],
+            /* Json */ [P, D, T, T, P, D, D],
+            /* Prop */ [P, D, T, T, D, D, D],
         ];
-        // Relational: both text or both numeric, nothing else.
+        // Relational: both text, both numeric, or a num constant against a
+        // read (typed); nothing else.
         #[rustfmt::skip]
         const RELATIONAL: [[bool; 7]; 7] = [
             /* Text */ [P, D, D, D, D, D, D],
             /* Int  */ [D, P, P, D, D, D, D],
-            /* Num  */ [D, P, P, D, D, D, D],
+            /* Num  */ [D, P, P, D, D, T, T],
             /* Bool */ [D, D, D, D, D, D, D],
             /* Null */ [D, D, D, D, D, D, D],
-            /* Json */ [D, D, D, D, D, D, D],
-            /* Prop */ [D, D, D, D, D, D, D],
+            /* Json */ [D, D, T, D, D, D, D],
+            /* Prop */ [D, D, T, D, D, D, D],
         ];
         let blocks = TranslateCtx {
             target: Target::Blocks,
@@ -885,18 +1076,29 @@ mod tests {
             self_alias: "b",
             ..DOCS
         };
-        // a boolean or number against a JSON read
-        assert_eq!(translate_predicate(&pred("checked == 1"), &blocks), None);
-        assert_eq!(translate_predicate(&pred("checked == true"), &blocks), None);
-        assert_eq!(
-            translate_predicate(&pred("attrs.checked == true"), &blocks),
-            None
-        );
+        // a boolean or number against a JSON read pushes TYPED (1.2): the
+        // json_type is tested first, so the SQL cannot read JSON `true` as 1
+        let typed = |src: &str, ctx: &TranslateCtx<'_>| {
+            let f = translate_predicate(&pred(src), ctx).expect(src);
+            assert!(
+                f.sql.contains("json_type(") || f.sql.contains("p.type = "),
+                "{src}: {}",
+                f.sql
+            );
+            assert!(
+                f.sql.ends_with(" IS 1)") || f.sql.ends_with(" IS NOT 1)"),
+                "{src}: {}",
+                f.sql
+            );
+        };
+        typed("checked == 1", &blocks);
+        typed("checked == true", &blocks);
+        typed("attrs.checked == true", &blocks);
         // … or a property read (bare on docs, `doc.<k>` elsewhere)
-        assert_eq!(translate_predicate(&pred("verified == 1"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("verified == true"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("era < 1000"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("doc.era < 1000"), &blocks), None);
+        typed("verified == 1", &DOCS);
+        typed("verified == true", &DOCS);
+        typed("era < 1000", &DOCS);
+        typed("doc.era < 1000", &blocks);
         // a boolean against an integer intrinsic; a number stays pushable
         assert_eq!(
             translate_predicate(&pred("$ordinal == true"), &blocks),
@@ -966,12 +1168,248 @@ mod tests {
             None
         );
         assert_eq!(translate_predicate(&pred("level < \"x\""), &blocks), None);
-        assert_eq!(translate_predicate(&pred("level < 3"), &blocks), None);
+        typed("level < 3", &blocks);
         assert_eq!(translate_predicate(&pred("true == false"), &blocks), None);
+        assert_eq!(translate_predicate(&pred("checked < true"), &blocks), None);
+        assert_eq!(
+            translate_predicate(&pred("doc.verified >= false"), &blocks),
+            None
+        );
         assert_eq!(translate_predicate(&pred("$ordinal > null"), &blocks), None);
         assert!(translate_predicate(&pred("$ordinal == $depth"), &blocks).is_some());
         assert!(translate_predicate(&pred("$ordinal <= $depth"), &blocks).is_some());
         assert!(translate_predicate(&pred("type == null"), &blocks).is_some());
+    }
+
+    // -- the typed pushes (spec/surface §1, 1.2 patch) --
+
+    /// The properties subquery's scope: the same single-scalar-row conditions
+    /// as the scalar read, so a list-valued or nested key yields NULL.
+    const PROP_SCOPE: &str = "FROM properties p WHERE p.doc_id = d.doc_id AND p.key = 'K' AND p.card = 'scalar' AND p.deleted_commit IS NULL AND (SELECT COUNT(*) FROM properties p2 WHERE p2.doc_id = d.doc_id AND p2.key = 'K' AND p2.deleted_commit IS NULL) = 1 LIMIT 1";
+
+    fn prop_sql(key: &str, select: &str, wrap: &str) -> String {
+        format!(
+            "((SELECT {select} {}) {wrap})",
+            PROP_SCOPE.replace('K', key)
+        )
+    }
+
+    #[test]
+    fn json_against_a_boolean_tests_json_type_for_the_literal() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        // The boolean is inlined as the JSON type name; nothing binds.
+        assert_eq!(
+            translate_predicate(&pred("checked == true"), &blocks),
+            frag("((json_type(b.attrs, '$.checked') = 'true') IS 1)", &[])
+        );
+        assert_eq!(
+            translate_predicate(&pred("checked == false"), &blocks),
+            frag("((json_type(b.attrs, '$.checked') = 'false') IS 1)", &[])
+        );
+        assert_eq!(
+            translate_predicate(&pred("checked != true"), &blocks),
+            frag("((json_type(b.attrs, '$.checked') = 'true') IS NOT 1)", &[])
+        );
+        assert_eq!(
+            translate_predicate(&pred("false == attrs.checked"), &blocks),
+            frag("((json_type(b.attrs, '$.checked') = 'false') IS 1)", &[])
+        );
+        // a bound boolean is the same shape
+        let params = [Value::Bool(true)];
+        let e = Expr::Binary {
+            op: BinaryOp::Ne,
+            left: ident("checked"),
+            right: Box::new(Expr::Binding { index: 0 }),
+        };
+        assert_eq!(
+            translate_predicate(
+                &e,
+                &TranslateCtx {
+                    params: &params,
+                    ..blocks
+                }
+            ),
+            frag("((json_type(b.attrs, '$.checked') = 'true') IS NOT 1)", &[])
+        );
+    }
+
+    #[test]
+    fn json_against_a_number_tests_the_numeric_types_then_compares() {
+        let nodes = TranslateCtx {
+            target: Target::Nodes,
+            self_alias: "n",
+            ..DOCS
+        };
+        let shape = |op: &str, wrap: &str| {
+            format!(
+                "((json_type(n.attrs, '$.level') IN ('integer', 'real') AND json_extract(n.attrs, '$.level') {op} ?) {wrap})"
+            )
+        };
+        let two = [SqlValue::Real(2.0)];
+        for (src, op, wrap) in [
+            ("level == 2", "=", "IS 1"),
+            ("level != 2", "=", "IS NOT 1"),
+            ("level < 2", "<", "IS 1"),
+            ("level <= 2", "<=", "IS 1"),
+            ("level > 2", ">", "IS 1"),
+            ("level >= 2", ">=", "IS 1"),
+        ] {
+            assert_eq!(
+                translate_predicate(&pred(src), &nodes),
+                frag(&shape(op, wrap), &two),
+                "{src}"
+            );
+        }
+        // a constant on the left is normalized to the right, the op flipped
+        assert_eq!(
+            translate_predicate(&pred("2 <= attrs.level"), &nodes),
+            frag(&shape(">=", "IS 1"), &two)
+        );
+        assert_eq!(
+            translate_predicate(&pred("2 > level"), &nodes),
+            frag(&shape("<", "IS 1"), &two)
+        );
+        assert_eq!(
+            translate_predicate(&pred("2 != level"), &nodes),
+            frag(&shape("=", "IS NOT 1"), &two)
+        );
+    }
+
+    #[test]
+    fn property_against_a_boolean_tests_p_type_bool_in_the_scalar_row_subquery() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        assert_eq!(
+            translate_predicate(&pred("verified == true"), &DOCS),
+            frag(
+                &prop_sql("verified", "p.type = 'bool' AND p.val_bool = ?", "IS 1"),
+                &[SqlValue::Integer(1)]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("verified != false"), &DOCS),
+            frag(
+                &prop_sql("verified", "p.type = 'bool' AND p.val_bool = ?", "IS NOT 1"),
+                &[SqlValue::Integer(0)]
+            )
+        );
+        // `doc.<k>` from a block reads the owning document's row
+        assert_eq!(
+            translate_predicate(&pred("doc.verified == false"), &blocks),
+            frag(
+                &prop_sql("verified", "p.type = 'bool' AND p.val_bool = ?", "IS 1"),
+                &[SqlValue::Integer(0)]
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("true == verified"), &DOCS),
+            frag(
+                &prop_sql("verified", "p.type = 'bool' AND p.val_bool = ?", "IS 1"),
+                &[SqlValue::Integer(1)]
+            )
+        );
+    }
+
+    #[test]
+    fn property_against_a_number_tests_p_type_number_in_the_scalar_row_subquery() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        let thousand = [SqlValue::Real(1000.0)];
+        for (src, op, wrap) in [
+            ("era == 1000", "=", "IS 1"),
+            ("era != 1000", "=", "IS NOT 1"),
+            ("era < 1000", "<", "IS 1"),
+            ("era <= 1000", "<=", "IS 1"),
+            ("era > 1000", ">", "IS 1"),
+            ("era >= 1000", ">=", "IS 1"),
+        ] {
+            assert_eq!(
+                translate_predicate(&pred(src), &DOCS),
+                frag(
+                    &prop_sql(
+                        "era",
+                        &format!("p.type = 'number' AND p.val_num {op} ?"),
+                        wrap
+                    ),
+                    &thousand
+                ),
+                "{src}"
+            );
+        }
+        assert_eq!(
+            translate_predicate(&pred("doc.era >= 1000"), &blocks),
+            frag(
+                &prop_sql("era", "p.type = 'number' AND p.val_num >= ?", "IS 1"),
+                &thousand
+            )
+        );
+        // a constant on the left is normalized to the right, the op flipped
+        assert_eq!(
+            translate_predicate(&pred("1000 > era"), &DOCS),
+            frag(
+                &prop_sql("era", "p.type = 'number' AND p.val_num < ?", "IS 1"),
+                &thousand
+            )
+        );
+        assert_eq!(
+            translate_predicate(&pred("1000 <= era"), &DOCS),
+            frag(
+                &prop_sql("era", "p.type = 'number' AND p.val_num >= ?", "IS 1"),
+                &thousand
+            )
+        );
+    }
+
+    #[test]
+    fn typed_pushes_compose_under_and_and_keep_the_untyped_forms() {
+        let blocks = TranslateCtx {
+            target: Target::Blocks,
+            self_alias: "b",
+            ..DOCS
+        };
+        let e = Expr::Logical {
+            op: LogicalOp::And,
+            left: eq(ident("type"), lit("task")),
+            right: Box::new(Expr::Binary {
+                op: BinaryOp::Eq,
+                left: ident("checked"),
+                right: Box::new(Expr::Lit(Value::Bool(false))),
+            }),
+        };
+        assert_eq!(
+            translate_predicate(&e, &blocks),
+            frag(
+                "((b.type IS ?) AND ((json_type(b.attrs, '$.checked') = 'false') IS 1))",
+                &[text("task")]
+            )
+        );
+        // text and null against a read stay the plain IS form
+        assert_eq!(
+            translate_predicate(&pred("checked == \"x\""), &blocks),
+            frag("(json_extract(b.attrs, '$.checked') IS ?)", &[text("x")])
+        );
+        assert_eq!(
+            translate_predicate(&pred("checked != null"), &blocks),
+            frag(
+                "(json_extract(b.attrs, '$.checked') IS NOT ?)",
+                &[SqlValue::Null]
+            )
+        );
+        // an unsafe key never inlines, typed or not
+        assert_eq!(
+            prop_row("d", "x'y", "p.type = 'number' AND p.val_num = ?"),
+            None
+        );
     }
 
     #[test]
@@ -1000,10 +1438,11 @@ mod tests {
             };
             translate_predicate(&e, &ctx).is_some()
         };
-        // text binding pushes against anything; number/boolean not against JSON
+        // text binding pushes against anything; number/boolean push typed
+        // against JSON (1.2), a boolean not against an integer intrinsic
         assert!(against(0, "checked"));
-        assert!(!against(1, "checked"));
-        assert!(!against(2, "checked"));
+        assert!(against(1, "checked"));
+        assert!(against(2, "checked"));
         assert!(!against(2, "$ordinal"));
         assert!(against(1, "$ordinal"));
         // a null binding pushes against JSON, not against a property
@@ -1332,10 +1771,11 @@ mod tests {
             translate_predicate(&pred("attrs.marker == \"x\""), &blocks),
             frag("(json_extract(b.attrs, '$.marker') IS ?)", &[text("x")])
         );
-        // (a boolean or number against a JSON read is declined — the matrix)
+        // (a boolean or number against a JSON read pushes typed — see the
+        // typed-shape tests)
         assert_eq!(
             translate_predicate(&pred("attrs.checked == true"), &blocks),
-            None
+            frag("((json_type(b.attrs, '$.checked') = 'true') IS 1)", &[])
         );
         let nodes = TranslateCtx {
             target: Target::Nodes,
@@ -1350,7 +1790,13 @@ mod tests {
             translate_predicate(&pred("level == \"1\""), &nodes),
             frag("(json_extract(n.attrs, '$.level') IS ?)", &[text("1")])
         );
-        assert_eq!(translate_predicate(&pred("level == 1"), &nodes), None);
+        assert_eq!(
+            translate_predicate(&pred("level == 1"), &nodes),
+            frag(
+                "((json_type(n.attrs, '$.level') IN ('integer', 'real') AND json_extract(n.attrs, '$.level') = ?) IS 1)",
+                &[SqlValue::Real(1.0)]
+            )
+        );
         assert_eq!(
             translate_predicate(&pred("attrs.a.b == \"c\""), &nodes),
             frag("(json_extract(n.attrs, '$.a.b') IS ?)", &[text("c")])
@@ -1435,7 +1881,8 @@ mod tests {
     fn unsafe_identifier_segments_are_never_inlined() {
         assert!(is_seg("layer") && is_seg("_x9"));
         assert!(!is_seg("") && !is_seg("9a") && !is_seg("a-b") && !is_seg("a'b"));
-        assert_eq!(json_extract("n.attrs", &["ok", "no-pe"]), None);
+        assert_eq!(json_path(&["ok", "no-pe"]), None);
+        assert_eq!(json_path(&["ok", "a_1"]).as_deref(), Some("$.ok.a_1"));
         assert_eq!(prop_scalar("d", "x'y"), None);
     }
 }

@@ -714,7 +714,9 @@ fn live_doc_rows(
             i64::try_from(l).unwrap_or(i64::MAX),
         ));
     }
-    let mut stmt = conn.prepare(&sql)?;
+    // Four shapes at most (`after` × `limit`): every list/tree call reuses a
+    // compiled statement.
+    let mut stmt = conn.prepare_cached(&sql)?;
     let rows = stmt.query_map(rusqlite::params_from_iter(p.iter()), |r| {
         Ok(DocListRow {
             path: r.get(0)?,

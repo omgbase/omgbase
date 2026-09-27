@@ -12,7 +12,7 @@ use omgbase_mutate::{
     cross_doc_move, op_insert, op_merge, op_move, op_remove, op_split, op_update, render,
     resolve_op,
 };
-use omgbase_reconcile::{Config, Minter};
+use omgbase_reconcile::Config;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value, json};
 
@@ -309,15 +309,6 @@ fn merr_data(code: ErrorCode, msg: impl Into<String>, data: Value) -> MutationEr
     MutationError::with_data(code, msg, data)
 }
 
-/// The store's `b` minter as the kernel's [`Minter`].
-struct BlockMinter<'a>(&'a mut dyn crate::ids::IdMinter);
-
-impl Minter for BlockMinter<'_> {
-    fn mint(&mut self) -> String {
-        self.0.mint("b")
-    }
-}
-
 /// The ops applied to the loaded documents, before the commit phase.
 struct Applied {
     loaded: Vec<LoadedDoc>,
@@ -448,15 +439,18 @@ impl Store {
                         None => parent_doc!(to),
                     };
                     let d = ensure_doc!(&doc_id);
-                    let mut minter = BlockMinter(&mut *self.minter);
-                    results.push(op_insert(
+                    let mut mint = self.ids.at(&self.conn);
+                    let mut minter = mint.deferred("b");
+                    let result = op_insert(
                         &mut loaded[d].doc,
                         to,
                         markdown,
                         i,
                         expect.as_ref(),
                         &mut minter,
-                    )?);
+                    );
+                    minter.finish()?;
+                    results.push(result?);
                 }
                 Op::Update {
                     block,
@@ -482,8 +476,11 @@ impl Store {
                         trivia: trivia.clone(),
                         child_ids: child_ids.clone(),
                     };
-                    let mut minter = BlockMinter(&mut *self.minter);
-                    results.push(op_update(&mut loaded[d].doc, block, i, &args, &mut minter)?);
+                    let mut mint = self.ids.at(&self.conn);
+                    let mut minter = mint.deferred("b");
+                    let result = op_update(&mut loaded[d].doc, block, i, &args, &mut minter);
+                    minter.finish()?;
+                    results.push(result?);
                 }
                 Op::Move { blocks, to, expect } => {
                     let first = blocks.first().map(String::as_str).unwrap_or("");
@@ -542,15 +539,18 @@ impl Store {
                         .into());
                     };
                     let d = ensure_doc!(&doc_id);
-                    let mut minter = BlockMinter(&mut *self.minter);
-                    results.push(op_split(
+                    let mut mint = self.ids.at(&self.conn);
+                    let mut minter = mint.deferred("b");
+                    let result = op_split(
                         &mut loaded[d].doc,
                         block,
                         at,
                         i,
                         expect.as_ref(),
                         &mut minter,
-                    )?);
+                    );
+                    minter.finish()?;
+                    results.push(result?);
                 }
                 Op::Merge {
                     blocks,
@@ -681,7 +681,7 @@ impl Store {
                 _ => &tree.children[..],
             };
             let by_key = positional_ids(&d.doc.children);
-            let assigned = assign_known(body, &by_key, None, &mut *self.minter);
+            let assigned = assign_known(body, &by_key, None, &mut self.ids.at(&self.conn))?;
             let mut now_ids = Vec::new();
             collect_ids(&assigned, &mut now_ids);
             let prior: HashSet<&str> = d.prior_ids.iter().map(String::as_str).collect();
@@ -774,18 +774,18 @@ fn assign_known(
     blocks: &[Block],
     by_key: &BTreeMap<String, String>,
     parent_key: Option<&str>,
-    minter: &mut dyn crate::ids::IdMinter,
-) -> Vec<TreeInputBlock> {
+    minter: &mut crate::mint::Mint<'_>,
+) -> Result<Vec<TreeInputBlock>> {
     blocks
         .iter()
         .enumerate()
         .map(|(index, b)| {
             let key = format!("{}/{index}", parent_key.unwrap_or(""));
-            let block_id = by_key
-                .get(&key)
-                .cloned()
-                .unwrap_or_else(|| minter.mint("b"));
-            TreeInputBlock {
+            let block_id = match by_key.get(&key) {
+                Some(id) => id.clone(),
+                None => minter.mint("b")?,
+            };
+            Ok(TreeInputBlock {
                 block_id,
                 kind: b.kind.as_str().to_owned(),
                 raw: b.raw.clone(),
@@ -793,8 +793,8 @@ fn assign_known(
                 trivia: b.trivia.clone(),
                 attrs: b.attrs.clone(),
                 span: b.span,
-                children: assign_known(&b.children, by_key, Some(&key), minter),
-            }
+                children: assign_known(&b.children, by_key, Some(&key), minter)?,
+            })
         })
         .collect()
 }

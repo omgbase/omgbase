@@ -24,7 +24,8 @@ use omgbase_format::hash::{hex, sha256};
 use omgbase_reconcile::Config;
 use omgbase_store::tree::parse_tree_entries;
 use omgbase_store::{
-    BatchItem, BatchOutcome, SCHEMA_SQL, SCHEMA_VERSION, SequentialMinter, Store, TreeEntry,
+    BatchItem, BatchOutcome, IdMinter, RepeatingMinter, SCHEMA_SQL, SCHEMA_VERSION,
+    SequentialMinter, Store, TreeEntry,
 };
 use rusqlite::types::Value as Sql;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -102,7 +103,7 @@ fn case_keys(kind: Kind) -> &'static [&'static str] {
     match kind {
         Kind::Schema => &["name", "notes", "expect"],
         Kind::Migration => &["name", "notes", "setup", "user_version", "rows", "expect"],
-        Kind::Observe => &["name", "notes", "config", "steps", "expect"],
+        Kind::Observe => &["name", "notes", "config", "minter", "steps", "expect"],
     }
 }
 
@@ -727,8 +728,19 @@ struct ObserveEvaluation {
 
 fn run_observe_case(c: &Json) -> Result<ObserveEvaluation, String> {
     let config = config_from(c.get("config"))?;
-    let mut store = Store::open_in_memory_with_minter(Box::new(SequentialMinter::new()))
-        .map_err(|e| e.to_string())?;
+    // §9.4: the sequential fixture minter, or the repeating one for
+    // `"minter": "repeat"` (13.5) — installed before the repo is created.
+    let minter: Box<dyn IdMinter> = match c.get("minter") {
+        None => Box::new(SequentialMinter::new()),
+        Some(Json::String(k)) if k == "sequential" => Box::new(SequentialMinter::new()),
+        Some(Json::String(k)) if k == "repeat" => Box::new(RepeatingMinter::new()),
+        Some(other) => {
+            return Err(format!(
+                "minter: expected \"sequential\" or \"repeat\", got {other}"
+            ));
+        }
+    };
+    let mut store = Store::open_in_memory_with_minter(minter).map_err(|e| e.to_string())?;
     let repo_id = store
         .create_repo(FIXTURE_REPO_SLUG)
         .map_err(|e| e.to_string())?;

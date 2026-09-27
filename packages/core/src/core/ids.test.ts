@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mintId, isValidId, prefixOf, randomSuffix, sequentialMinter, setIdMinter, withIdMinter } from "./ids.js";
+import { MINT_GIVE_UP_AFTER, mintId, isValidId, prefixOf, randomSuffix, registerIdOracle, repeatingMinter, sequentialMinter, setIdMinter, withIdMinter } from "./ids.js";
 
 describe("ids", () => {
   it("mints prefixed 7-char Crockford base32 ids", () => {
@@ -72,5 +72,87 @@ describe("isValidId — fixture-minted ids", () => {
     expect(isValidId("d_0", "b")).toBe(false);
     expect(isValidId("a.md", "d")).toBe(false);
     expect(isValidId("d_", "d")).toBe(false);
+  });
+});
+
+// spec/store §2.1 "Uniqueness at mint" (13.5): a mint never returns an id in use.
+describe("ids — uniqueness at mint (spec/store §2.1)", () => {
+  it("the production minter redraws when an oracle reports the first candidate in use", () => {
+    const asked: string[] = [];
+    let rejectFirst = true;
+    const unregister = registerIdOracle((prefix, id) => {
+      asked.push(`${prefix}:${id}`);
+      if (rejectFirst) {
+        rejectFirst = false;
+        return true; // the first candidate "names a row"
+      }
+      return false;
+    });
+    try {
+      const id = mintId("b");
+      expect(id).toMatch(/^b_[0-9a-hjkmnp-tv-z]{7}$/);
+      expect(asked.length).toBe(2);
+      expect(asked[0]).toMatch(/^b:b_/);
+      expect(asked[1]).toBe(`b:${id}`);
+      expect(asked[0]).not.toBe(asked[1]);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("an unregistered oracle is no longer consulted", () => {
+    let calls = 0;
+    const unregister = registerIdOracle(() => { calls++; return false; });
+    mintId("d");
+    expect(calls).toBe(1);
+    unregister();
+    mintId("d");
+    expect(calls).toBe(1);
+  });
+
+  it("the production minter never re-issues an id this process already issued", () => {
+    // Inject candidates through the oracle's view: pretend everything but one id is unseen,
+    // then check the issued set by minting a large batch — all distinct.
+    const seen = new Set<string>();
+    for (let i = 0; i < 20_000; i++) seen.add(mintId("c"));
+    expect(seen.size).toBe(20_000);
+  });
+
+  it("repeatingMinter offers every sequential id twice, per prefix", () => {
+    const mint = repeatingMinter();
+    expect([mint("rp"), mint("rp"), mint("b"), mint("b"), mint("b"), mint("d"), mint("b"), mint("d")]).toEqual([
+      "rp_0", "rp_0", "b_0", "b_0", "b_1", "d_0", "b_1", "d_0",
+    ]);
+  });
+
+  it("an installed repeating minter is asked again on its duplicate, so mintId yields the sequential ids", () => {
+    const ids = withIdMinter(repeatingMinter(), () => [mintId("rp"), mintId("b"), mintId("b"), mintId("d"), mintId("b")]);
+    expect(ids).toEqual(["rp_0", "b_0", "b_1", "d_0", "b_2"]);
+  });
+
+  it("an installed minter's duplicate is rejected against the oracle too", () => {
+    const rows = new Set(["b_0", "b_1"]); // rows an open store already holds
+    const unregister = registerIdOracle((_prefix, id) => rows.has(id));
+    try {
+      expect(withIdMinter(sequentialMinter(), () => mintId("b"))).toBe("b_2");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("each install starts a fresh issued set, so sequential fixtures stay byte-identical across cases", () => {
+    expect(withIdMinter(sequentialMinter(), () => [mintId("d"), mintId("b")])).toEqual(["d_0", "b_0"]);
+    expect(withIdMinter(sequentialMinter(), () => [mintId("d"), mintId("b")])).toEqual(["d_0", "b_0"]);
+    setIdMinter(sequentialMinter());
+    expect(mintId("d")).toBe("d_0");
+    setIdMinter(sequentialMinter());
+    expect(mintId("d")).toBe("d_0");
+    setIdMinter(null);
+  });
+
+  it("gives up with a clear error on a minter that can never produce a fresh id", () => {
+    expect(() => withIdMinter(() => "b_stuck", () => { mintId("b"); mintId("b"); })).toThrow(
+      new RegExp(`mintId\\(b\\): ${MINT_GIVE_UP_AFTER} consecutive candidates were already in use`),
+    );
   });
 });

@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../../src/core/store/store.js";
 import { ensureRepo } from "../../src/core/attach.js";
-import { sequentialMinter, setIdMinter } from "../../src/core/ids.js";
+import { repeatingMinter, sequentialMinter, setIdMinter } from "../../src/core/ids.js";
 import { sha256 } from "../../src/core/hash.js";
 import { reconstructContent, readDocumentAtRevision } from "../../src/core/read/document.js";
 import { sweepResurrectionPool } from "../../src/core/store/gc.js";
@@ -133,10 +133,15 @@ export const PROJECTED_TABLES = [
   "dispositions", "block_changes", "resurrection_pool", "sections",
 ] as const;
 
+/** README §9.4: which fixture minter a case installs — the sequential counter (default) or the repeating one (13.5). */
+export type MinterKind = "sequential" | "repeat";
+export const MINTER_KINDS: readonly MinterKind[] = ["sequential", "repeat"];
+
 export interface ObserveCase {
   name: string;
   notes?: string;
   config?: FixtureConfig;
+  minter?: MinterKind;
   steps: Step[];
   expect: Projection;
 }
@@ -160,7 +165,7 @@ export function suiteKind(suite: string): CaseKind {
 export const CASE_KEYS: Record<CaseKind, readonly string[]> = {
   schema: ["name", "notes", "expect"],
   migration: ["name", "notes", "setup", "user_version", "rows", "expect"],
-  observe: ["name", "notes", "config", "steps", "expect"],
+  observe: ["name", "notes", "config", "minter", "steps", "expect"],
 };
 
 /** The repo every observation case runs in (README §9.4 "Inputs"). */
@@ -204,9 +209,9 @@ export function expiresAfter(ts: string): string {
   return new Date(Date.parse(ts) + THIRTY_DAYS_MS).toISOString();
 }
 
-/** Run `body` with the fixture minter installed (README §2.2), restoring production afterwards. */
-function withFixtureMinter<T>(body: () => T): T {
-  setIdMinter(sequentialMinter());
+/** Run `body` with the fixture minter installed (README §2.2; the repeating one of §9.4 for `"minter": "repeat"`), restoring production afterwards. */
+function withFixtureMinter<T>(body: () => T, kind: MinterKind = "sequential"): T {
+  setIdMinter(kind === "repeat" ? repeatingMinter() : sequentialMinter());
   try {
     return body();
   } finally {
@@ -362,7 +367,7 @@ export function runObserveCase(c: ObserveCaseInput): ObserveEvaluation {
     } finally {
       store.close();
     }
-  });
+  }, c.minter);
 }
 
 // ---- projection (README §9.4 "Expect") ------------------------------------------------
@@ -898,6 +903,9 @@ export function validateFixtureFile(file: string, doc: unknown, opts: ValidateOp
       if (!Array.isArray(c.rows) || !c.rows.every((s) => typeof s === "string")) problems.push(`${at}: \`rows\` must be an array of table names`);
     } else if (kind === "observe") {
       if (c.config !== undefined) validateConfig(at, c.config, problems);
+      if (c.minter !== undefined && !(MINTER_KINDS as readonly unknown[]).includes(c.minter)) {
+        problems.push(`${at}: \`minter\` must be one of ${MINTER_KINDS.map((k) => JSON.stringify(k)).join(", ")} (got ${JSON.stringify(c.minter)})`);
+      }
       stepCount = validateSteps(at, c.steps, problems);
     }
 

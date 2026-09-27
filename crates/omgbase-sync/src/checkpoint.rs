@@ -68,7 +68,7 @@ pub fn finish_checkpoint(
     ts: &str,
     git_head: Option<&str>,
 ) -> Result<CheckpointResult> {
-    let checkpoint_id = store.mint("cp");
+    let checkpoint_id = store.mint("cp")?;
     let mut result = CheckpointResult {
         checkpoint_id: checkpoint_id.clone(),
         ..CheckpointResult::default()

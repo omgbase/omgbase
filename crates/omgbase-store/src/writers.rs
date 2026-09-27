@@ -11,7 +11,7 @@ use omgbase_format::{Attrs, Block, Span};
 use rusqlite::{Connection, params};
 
 use crate::error::Result;
-use crate::ids::IdMinter;
+use crate::mint::Mint;
 use crate::tree::{TreeEntry, from_hex, serialize_tree_entries};
 
 /// A block with its id, ready to encode into the tree and the `blocks` rows.
@@ -36,27 +36,26 @@ pub struct TreeInputBlock {
 /// Assign ids from a reconcile assignment (new positional key → id) onto a
 /// parsed body tree; a key the assignment misses mints `b` (the reference's
 /// `assignFromMap`; spec §5.4 step 3 says every key is assigned).
-#[must_use]
 pub fn assign_from_map(
     blocks: &[Block],
     assignment: &BTreeMap<String, String>,
-    minter: &mut dyn IdMinter,
-) -> Vec<TreeInputBlock> {
+    minter: &mut Mint<'_>,
+) -> Result<Vec<TreeInputBlock>> {
     fn walk(
         list: &[Block],
         parent_key: Option<&str>,
         assignment: &BTreeMap<String, String>,
-        minter: &mut dyn IdMinter,
-    ) -> Vec<TreeInputBlock> {
+        minter: &mut Mint<'_>,
+    ) -> Result<Vec<TreeInputBlock>> {
         list.iter()
             .enumerate()
             .map(|(index, b)| {
                 let key = format!("{}/{index}", parent_key.unwrap_or(""));
-                let block_id = assignment
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_else(|| minter.mint("b"));
-                TreeInputBlock {
+                let block_id = match assignment.get(&key) {
+                    Some(id) => id.clone(),
+                    None => minter.mint("b")?,
+                };
+                Ok(TreeInputBlock {
                     block_id,
                     kind: b.kind.as_str().to_owned(),
                     raw: b.raw.clone(),
@@ -64,8 +63,8 @@ pub fn assign_from_map(
                     trivia: b.trivia.clone(),
                     attrs: b.attrs.clone(),
                     span: b.span,
-                    children: walk(&b.children, Some(&key), assignment, minter),
-                }
+                    children: walk(&b.children, Some(&key), assignment, minter)?,
+                })
             })
             .collect()
     }
@@ -73,8 +72,7 @@ pub fn assign_from_map(
 }
 
 /// Mint a fresh `b` id for every block (the re-mint path).
-#[must_use]
-pub fn assign_fresh_ids(blocks: &[Block], minter: &mut dyn IdMinter) -> Vec<TreeInputBlock> {
+pub fn assign_fresh_ids(blocks: &[Block], minter: &mut Mint<'_>) -> Result<Vec<TreeInputBlock>> {
     assign_from_map(blocks, &BTreeMap::new(), minter)
 }
 
@@ -182,10 +180,10 @@ impl<'a> NewCommit<'a> {
 /// the repo. Returns `(commit_id, seq)`.
 pub fn new_commit(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     input: &NewCommit<'_>,
 ) -> Result<(String, i64)> {
-    let commit_id = minter.mint("c");
+    let commit_id = minter.mint("c")?;
     let seq: i64 = conn.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM commits WHERE repo_id = ?1",
         params![input.repo_id],
@@ -224,10 +222,10 @@ pub struct NewRevision<'a> {
 /// the document. Returns `(rev_id, seq)`.
 pub fn write_revision(
     conn: &Connection,
-    minter: &mut dyn IdMinter,
+    minter: &mut Mint<'_>,
     input: &NewRevision<'_>,
 ) -> Result<(String, i64)> {
-    let rev_id = minter.mint("r");
+    let rev_id = minter.mint("r")?;
     let seq: i64 = conn.query_row(
         "SELECT COALESCE(MAX(seq), 0) + 1 FROM revisions WHERE doc_id = ?1",
         params![input.doc_id],
