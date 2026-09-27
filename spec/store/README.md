@@ -126,8 +126,21 @@ node, `col` collection, `cp` checkpoint, `e` edge, `rp` repo, `v` projection
 re-assigned. An id is opaque: nothing may parse anything but its prefix out
 of it, and `isValidId` accepts exactly `^[a-z]+_[alphabet]{7}$`.
 
-Collision checking is nominally the store's job at mint; the reference relies
-on the 32⁷ space and the primary keys (§10).
+**Uniqueness at mint (13.5).** 32⁷ ≈ 3.4 × 10¹⁰ is small enough for the
+birthday bound to matter: two random draws among *n* collide with
+probability about n² / (2 · 32⁷) — 5 % at 60,000 blocks, near-certain at
+360,000 (§10: a 3,000-document corpus failed its first ingest on a
+duplicate `block_id`). The store therefore never lets a production mint
+return an id that is **in use**: one it has already issued in this process,
+or one that names a row of the prefix's table — `d` in `docs`, `b` in
+`blocks`, `block_changes` or `resurrection_pool` (a block id lives on in
+history after its row is gone), `c` in `commits`, `r` in `revisions`, `x`
+in `external_nodes`, `e` in `edges`, `cp` in `checkpoints`, `rp` in
+`repos`, `src` in `sources` — and redraws until it finds one that is not
+(`col` and `v` have no table and no check). A redraw is unobservable
+except through the fixture device of §9.4 (`"minter": "repeat"`). The
+fixture minter itself (§2.2) is sequential over a fresh database and never
+collides; the check runs for it too, at no cost to the ids.
 
 ### 2.2 The fixture minter
 
@@ -697,6 +710,13 @@ pins `database schema (v14) is newer than this build (v13); upgrade omgbase`.
   created before the first step; `repo_id` is therefore omitted from every
   projected row. The fixture minter (§2.2) is installed before the repo is
   created (the repo id is its first `rp` mint).
+- `"minter": "repeat"` (optional, 13.5) installs the **repeating** fixture
+  minter instead: the sequential counter whose every id is offered twice
+  (`rp_0, rp_0, b_0, b_0, b_1, b_1, …`). Because the store rejects an id in
+  use (§2.1), the case's projection must equal the same case run with the
+  plain sequential minter — the fixture pins the redraw, and a store that
+  does not check would fail on the primary key (`identity::repeat-minter-
+  redraws-on-collision`). Ids issued and rejected are not counted anywhere.
 - `steps` is a non-empty list. `observe` carries `ts` (§2.4 format, checked
   by the validator) and `items` in batch order; an item is `{ path, source }`
   with `source` a string (the exact file content) or `null` (the path is
@@ -750,6 +770,15 @@ Each is **pinned** (a fixture asserts it; changing it is a store change under
 "Versioning") or **fixed** (the prose above is the fix and the reference is
 brought to it).
 
+- **Fixed (13.5) — a random block id collided at 360,338 blocks.** The
+  reference's `mintId` and the port's `RandomMinter` drew 7 Crockford
+  characters and trusted the primary key; the first ingest of a synthetic
+  3,000-document corpus (about 120 blocks each) failed with `UNIQUE
+  constraint failed: blocks.block_id` after 149 s, exactly where the
+  birthday bound predicts (§2.1). Neither engine retried. The store now
+  redraws an id in use (§2.1); the fixture device `"minter": "repeat"` pins
+  it (§9.4). Lengthening ids would have been a major (the id shape is
+  pinned) and would not have removed the need to check.
 - **Fixed — a re-created path stayed tombstoned.** `ingestFile` reused the
   tombstoned `docs` row for a path (identity kept, correctly) but never
   cleared `deleted_commit`, so a file deleted and re-created on disk was
@@ -809,6 +838,9 @@ brought to it).
 
 ## Decisions
 
+- 2026-09-26, store 13.5: a production mint never returns an id in use
+  (issued in this process, or present in the prefix's table); the repeating
+  fixture minter pins the redraw. No DDL change; a procedure minor.
 - 2026-09-26, store 13.4: the store applies `spec/mutate` changesets —
   loading the working tree, the commit protocol with the known-id `api`
   ingest, macros, document operations, the update planner. `api` commits
