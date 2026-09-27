@@ -59,11 +59,21 @@ finishes in memory over the produced rows). Invisibility is kept by
   nested key has no scalar row, so SQL reads `NULL` where the in-memory value
   is an array or an object), or when both operands are numeric (int or
   num). **Relational** (`<`, `<=`, `>`, `>=`) pushes only when both operands
-  are text or both are numeric. Every other pair is declined: SQLite sees
-  JSON `true` and `1`, `val_bool` and `val_num` alike (`checked == 1`,
-  `$ordinal == checked`), orders every integer before every text
-  (`$ordinal < "3"`, `level < "x"`), and two JSON or property reads carry no
-  type at plan time;- a bare identifier or member head that names a **relation, reach-through
+  are text or both are numeric. **Typed pushes (1.2 patch, 2026-09-26):** a
+  bool or num literal/binding against a json or prop read is pushed with the
+  stored type tested first, so the SQL cannot conflate: for json, `json_type(x)
+  = 'true'` / `'false'` against a boolean, and `json_type(x) IN ('integer',
+  'real') AND json_extract(x) <op> ?` against a number; for prop, `p.type =
+  'bool' AND p.val_bool = ?` and `p.type = 'number' AND p.val_num <op> ?`
+  (`spec/properties` §2.1 type names) over the same single-scalar-row
+  subquery; the whole test is wrapped `(…) IS 1` for `==` and the relational
+  ops and `(…) IS NOT 1` for `!=`, so an absent or differently typed value
+  compares as in memory — unequal, never ordered (`checked == 1` finds
+  nothing, `checked != 1` everything, `level >= 2` only numeric levels).
+  Every other pair is declined: SQLite would otherwise see JSON `true` and
+  `1`, `val_bool` and `val_num` alike (`$ordinal == checked`), orders every
+  integer before every text (`$ordinal < "3"`, `level < "x"`), and two JSON
+  or property reads carry no type at plan time;- a bare identifier or member head that names a **relation, reach-through
   handle, source handle or the `attrs` bag** of the target (§1.2: `blocks`,
   `nodes`, `out`, `in`, `out_edges`, `in_edges`, `frontmatter`, `inline`,
   `doc`, `children`, `section`, `block`, `subsections`, `attrs`, …) — it is
@@ -615,10 +625,13 @@ both and runs both harnesses.
   bare `attrs` bag reading as `attrs.attrs` — at which point the rule was
   restated positively (§1: push only pairs provably comparable the same
   way) instead of growing a list of declined cells. Each is a query-suite
-  fixture proven by the differential. Declining costs the push on
-  `checked == false`-style queries (residual, correct); a typed translation
-  (`json_type`, `properties.type`) could restore it later without a spec
-  change, since the spec describes in-memory semantics only.
+  fixture proven by the differential. Declining cost the push on
+  `checked == false`-style queries: measured at ~180 ms over 60,000 blocks
+  in both engines against ~25 ms when another conjunct narrowed the scan,
+  so the same day the bool/num-against-json/prop cells came back as
+  **typed pushes** (§1) — the stored type is tested in SQL before the value
+  — with the same `planned-*` fixtures proving fidelity and
+  `query-blocks::planned-typed-*` pinning the positive hits.
 - **Fixed (1.1) — `diff_unified` was positional.** It compared the two
   revisions' raws line by line at equal indices, so one inserted line made
   every following line a `-`/`+` pair, and the text was not a unified diff
