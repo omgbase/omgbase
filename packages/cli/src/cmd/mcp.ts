@@ -1,8 +1,9 @@
 import { parseArgs } from "node:util";
-import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, pinClock, sequentialMinter, setIdMinter, type SyncSource } from "@omgbase/core";
+import { serveStdio, Watcher, WatchLease, watchLeaseLive, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EmbedDrainer, EngineError, type SyncSource } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
-import { CliUsageError, EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
+import { installSpecSeams } from "../seams.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
 
@@ -15,37 +16,18 @@ import { openRepoSource } from "./_source.js";
 // stdout here — every diagnostic goes to stderr (cli.io.err).
 
 /**
- * The two conformance seams of spec/surface §7.1, read from the environment
- * BEFORE the workspace opens (so no id is minted and no timestamp read without
- * them). For conformance runs only — never set in production:
- *
- *   OMGBASE_SPEC_MINTER=sequential   the fixture minter of spec/store §2.2 for
- *                                    the whole process (`d_0, d_1, …`, each
- *                                    prefix from 0); any other value is a
- *                                    startup error
- *   OMGBASE_SPEC_CLOCK=<RFC 3339>    "now" is that instant for the whole
- *                                    process: every commit a tool stamps, every
- *                                    `ts` reported as current
- *
- * Both are announced on stderr (stdout is the protocol channel).
+ * Announce the two conformance seams of spec/surface §7.1 on stderr (stdout is
+ * the protocol channel). They are installed for every verb at the entry point
+ * (`seams.ts`, spec/cli §2.6) — `mcp` only reports them, so a conformance run
+ * is visibly not a production one.
  */
-function installSpecSeams(cli: Cli): void {
-  const minter = process.env.OMGBASE_SPEC_MINTER;
-  if (minter !== undefined && minter !== "") {
-    if (minter !== "sequential") {
-      throw new CliUsageError(`OMGBASE_SPEC_MINTER=${JSON.stringify(minter)}: the only value is "sequential" (spec/surface §7.1)`, "unset it, or set OMGBASE_SPEC_MINTER=sequential for a conformance run");
-    }
-    setIdMinter(sequentialMinter());
+function announceSpecSeams(cli: Cli): void {
+  const seams = installSpecSeams();
+  if (seams.minter) {
     cli.io.err(cli.style.dim("[mcp] spec seam: sequential id minter (OMGBASE_SPEC_MINTER=sequential) — conformance run, not for production"));
   }
-  const clock = process.env.OMGBASE_SPEC_CLOCK;
-  if (clock !== undefined && clock !== "") {
-    try {
-      pinClock(clock);
-    } catch {
-      throw new CliUsageError(`OMGBASE_SPEC_CLOCK=${JSON.stringify(clock)}: not an RFC 3339 instant (spec/surface §7.1)`, "e.g. OMGBASE_SPEC_CLOCK=2026-09-27T00:00:00.000Z");
-    }
-    cli.io.err(cli.style.dim(`[mcp] spec seam: clock pinned to ${new Date().toISOString()} (OMGBASE_SPEC_CLOCK) — conformance run, not for production`));
+  if (seams.clock !== null) {
+    cli.io.err(cli.style.dim(`[mcp] spec seam: clock pinned to ${seams.clock} (OMGBASE_SPEC_CLOCK) — conformance run, not for production`));
   }
 }
 
@@ -69,7 +51,7 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     });
   }
 
-  installSpecSeams(cli);
+  announceSpecSeams(cli);
 
   // The host launches us from its own cwd, so a missing workspace here almost
   // always means the host config lacks `-C <dir>` — say so, rather than the

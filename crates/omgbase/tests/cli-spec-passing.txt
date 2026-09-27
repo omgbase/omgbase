@@ -1,0 +1,9 @@
+# spec/cli cases the Rust `omgbase` binary passes, one `<suite>::<name>` per
+# line (README §8). A listed case that fails fails `cargo test -p omgbase
+# --test cli_spec`; an unlisted case is reported as "not yet" without failing.
+# Regenerate from the currently passing set with
+#
+#     CLI_SPEC_UPDATE=1 cargo test -p omgbase --test cli_spec
+#
+# Empty at 1.0: the binary renders `mcp` only (its `--help`/`--version` are its
+# own, not the reference's), so no case passes yet.

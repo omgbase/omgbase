@@ -30,16 +30,18 @@ reference `omg mcp`.
 Unless `--no-watch` is given, the server tries to take the workspace's
 watch lease (`.omgbase/watch.lock`, `spec/sync` §7). When another live
 watcher holds it (`omg watch`, another `mcp`) it serves without one and says
-so (`watcher elsewhere`). Otherwise, for a repo with an `fs` root, it runs
-one priming freshness sweep (§4.3) so the session starts fresh, spawns the
-repo's registered adapter (the `fs` source's `omgbase-fs-adapter --root
-<dir>`, §5), and reconciles every batch of the adapter's watch stream into a
-checkpoint (§6 `reconcile_changes`), logging `[watch] checkpoint: +N -M`.
+so (`watcher elsewhere`). Otherwise, for a repo with an `fs` root, it
+launches the `fs` adapter (`omgbase-fs-adapter --root <dir>`, §5), sends
+`watch`, waits for the adapter's `ready` (up to 30 s), then runs one priming
+freshness sweep (§4.3) so the session starts fresh, and reconciles every
+batch of the adapter's watch stream into a checkpoint (§6
+`reconcile_changes`), logging `[watch] checkpoint: +N -M`.
 
-**The adapter must be installed.** The registry's command is the
-`omgbase-fs-adapter` bin of `@omgbase/fs-adapter` (`npm i -g
-@omgbase/fs-adapter`, or any way that puts it on `PATH`). `OMGBASE_FS_ADAPTER`
-overrides the command line — e.g. `node
+**The adapter must be installed.** The launcher is `omgbase-fs-adapter` on
+`PATH`: the Rust one (`cargo install omgbase-fs-adapter`, the
+`crates/omgbase-fs-adapter` crate — a node-free install) or the node one
+(`npm i -g @omgbase/fs-adapter`); both speak the same §5 protocol byte for
+byte. `OMGBASE_FS_ADAPTER` overrides the command line — e.g. `node
 /path/to/omgbase/packages/fs-adapter/dist/src/bin.js` from a checkout after
 `pnpm build`. When the adapter cannot be started (not found, bad handshake,
 no `watch` capability) the server degrades to `no watch (adapter

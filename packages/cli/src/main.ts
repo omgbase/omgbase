@@ -6,6 +6,7 @@ import { renderError, EXIT_OK, EXIT_USAGE } from "./output.js";
 import { resolveCommand, unknownCommandError } from "./commands.js";
 import { runCommand, parseGlobals, type Parsed } from "./dispatch.js";
 import { closeRemote } from "./cmd/_remote.js";
+import { installSpecSeams } from "./seams.js";
 
 // Hand-rolled router (11 §8: no commander). Splits global flags from the
 // command + its residual argv (parseGlobals, in dispatch.ts), resolves the
@@ -34,6 +35,13 @@ export async function run(argv: string[], io: IO = processIO, prog = "omg"): Pro
   if (!command) command = "help";
 
   const cli: Cli = makeCli(flags, io, { prog });
+  // The conformance seams (spec/cli §2.6) apply to every verb: install them
+  // before any command can open the workspace, mint an id or read the clock.
+  try {
+    installSpecSeams();
+  } catch (err) {
+    return renderError(err, io, cli.style, flags.mode !== "human");
+  }
   if (!resolveCommand(command)) {
     return renderError(unknownCommandError(prog, command), io, cli.style, flags.mode !== "human");
   }

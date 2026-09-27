@@ -282,8 +282,16 @@ fn node_available() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// `node <repo>/packages/fs-adapter/dist/src/bin.js`, when both exist.
+/// The adapter the watched test runs: `$OMGBASE_FS_ADAPTER` when set and
+/// non-empty (a command line — e.g. the Rust `omgbase-fs-adapter` binary),
+/// else `node <repo>/packages/fs-adapter/dist/src/bin.js` when both exist.
 fn adapter_command() -> Option<String> {
+    if let Some(cmd) = std::env::var("OMGBASE_FS_ADAPTER")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+    {
+        return Some(cmd);
+    }
     let bin: PathBuf = Path::new(REPO_ROOT).join(ADAPTER_BIN);
     if !bin.is_file() {
         return None;

@@ -15,6 +15,7 @@ implementation.
 | --- | --- | --- |
 | `@omgbase/core` (TypeScript, npm) + `@omgbase/sync` | `packages/core/src/sync/{workspace,sources,settings,attach,checkpoint,freshness,driver,external-source,plugin,recovery,admin,writer-lock,watch-lease,fs-util}.ts`, `core/attach.ts`, `packages/sync/src/{coordinator,engine-client}.ts` | **Reference.** |
 | `omgbase-sync` (Rust, crates.io) | `crates/omgbase-sync` | Conformance-first port over `omgbase-store`: registry, settings, workspace, checkpoints, the sweep, the adapter client, the coordinator, the locks. |
+| `omgbase-fs-adapter` (Rust, crates.io) | `crates/omgbase-fs-adapter` | A second implementation of the `fs` adapter of §5 (the reference is `@omgbase/fs-adapter`, `packages/fs-adapter`): the `omgbase-fs-adapter` binary over `notify`, wire-compatible, so a host needs no Node. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
 and `cases/*.json`. **When prose and fixtures disagree, the fixtures win**,

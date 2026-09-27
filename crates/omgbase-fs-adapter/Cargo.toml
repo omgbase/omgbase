@@ -1,0 +1,28 @@
+[package]
+name = "omgbase-fs-adapter"
+version = "0.1.0"
+description = "omgbase filesystem sync adapter: walk, watch, read and write a directory tree over the stdio adapter protocol of spec/sync §5 — Rust implementation of @omgbase/fs-adapter, the `omgbase-fs-adapter` binary"
+keywords = ["markdown", "sync", "filesystem", "watch", "omgbase"]
+categories = ["command-line-utilities", "filesystem"]
+readme = "README.md"
+homepage = "https://github.com/omgbase/omgbase/tree/main/crates/omgbase-fs-adapter#readme"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "omgbase-fs-adapter"
+path = "src/main.rs"
+
+[dependencies]
+# The filesystem watcher (FSEvents on macOS, inotify on Linux) behind `watch`;
+# the quiescence debouncing is hand-rolled to match the reference's batching.
+notify = "8.2"
+# The NDJSON protocol. `preserve_order`: the lines are compared byte for byte
+# against the reference (`{"id":n,"result":…}`, `{"protocol":1,"capabilities":…}`).
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true
