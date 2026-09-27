@@ -44,6 +44,7 @@ pub fn ls(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
     }
     let doc = Json::Array(rows.clone());
+    cli.capture(&doc); // shell: docs become the addressable frame (ref = path)
     let paths: Vec<String> = rows.iter().map(|r| str_of(r, "path")).collect();
     if let Some(code) = machine_out(cli, &doc, Some(&rows), Some(&paths)) {
         return code;

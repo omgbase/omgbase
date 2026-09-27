@@ -38,6 +38,7 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .surface(semantic)?
         .call_result("resolve", &json!({ "query": text, "limit": limit }))?;
     let items: Vec<Json> = hits.as_array().cloned().unwrap_or_default();
+    cli.capture(&hits); // shell: the ranked hits become the addressable frame
     if a.flag("one") {
         if let Some(h) = items.first() {
             cli.io.out(&str_of(h, "id"));

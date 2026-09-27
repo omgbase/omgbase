@@ -3,6 +3,7 @@ import { join, dirname } from "node:path";
 import type { Store } from "../core/store/store.js";
 import { sha256 } from "../core/hash.js";
 import { recordFileStat } from "../sync/freshness.js";
+import { EngineError } from "../mcp/errors.js";
 
 // DocStore seam (ADR-014 §5). The mutation write path (apply / docs ops) is
 // "write-through to the file" (ADR-004): render → write bytes → re-ingest. That
@@ -95,5 +96,7 @@ export class NullDocStore implements DocStore {
 export function resolveDocStore(req: { docStore?: DocStore; rootPath?: string }): DocStore {
   if (req.docStore) return req.docStore;
   if (req.rootPath != null) return new FsDocStore(req.rootPath);
-  throw new Error("mutation requires a rootPath or an explicit docStore");
+  // Typed, so every client renders the same `repo_not_found` the MCP server's
+  // pre-checks emit (spec/surface §4; spec/cli §9 "sourceless writes").
+  throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
 }

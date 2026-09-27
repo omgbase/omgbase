@@ -581,6 +581,7 @@ name = "omgbase"
 version = "0.4.1"
 dependencies = [
  "libc",
+ "omgbase-properties",
  "omgbase-search",
  "omgbase-store",
  "omgbase-surface",
@@ -708,6 +709,7 @@ dependencies = [
  "omgbase-store",
  "rusqlite",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]

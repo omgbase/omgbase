@@ -56,6 +56,24 @@ fn projected_columns(source: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Shell capture (the typed result before formatting): a scalar for
+/// count/exists/none, the bare `values`, else the whole result (its `hits`
+/// become the addressable frame).
+fn capture_result(cli: &mut Cli, result: &Json) {
+    if !cli.capturing {
+        return;
+    }
+    let consumer = str_of(result, "consumer");
+    let captured = match consumer.as_str() {
+        "count" | "exists" | "none" => result.get(&consumer).cloned().unwrap_or(Json::Null),
+        _ => result
+            .get("values")
+            .cloned()
+            .unwrap_or_else(|| result.clone()),
+    };
+    cli.capture(&captured);
+}
+
 /// Render an `OqxResult` per the mode and the consumer.
 pub fn render_result(cli: &Cli, result: &Json, source: &str) -> Result<i32> {
     let style = cli.style;
@@ -140,6 +158,7 @@ pub fn query(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let limit = number(&a, "n")?;
     let result = run_source(cli, &source, limit, a.value("cursor"))?;
+    capture_result(cli, &result);
     render_result(cli, &result, &source)
 }
 
@@ -233,5 +252,6 @@ pub fn run(cli: &mut Cli, args: &[String]) -> Result<i32> {
         ));
     }
     let result = run_source(cli, &source, None, None)?;
+    capture_result(cli, &result);
     render_result(cli, &result, &source)
 }

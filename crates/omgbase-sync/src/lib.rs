@@ -7,8 +7,9 @@
 //! [`settings`] layers, the [`checkpoint`] rows and the filesystem fast path
 //! ([`freshness`] sweep, disk drift, [`recovery`]) over a [`fs::FileSystem`]
 //! seam, the adapter stdio protocol client ([`external`]), the [`driver`] and
-//! the [`coordinator`] over an [`engine::EngineClient`], and the advisory
-//! [`lock`]s. [`pipe`] is an in-memory pipe with a scripted adapter, for
+//! the [`coordinator`] over an [`engine::EngineClient`] — in-process, or the
+//! [`mcp_client`] that reaches a remote engine over MCP (stdio, or Streamable
+//! HTTP behind the `http` feature) — and the advisory [`lock`]s. [`pipe`] is an in-memory pipe with a scripted adapter, for
 //! driving the protocol client without a process. The reconciliation itself is the store's (`spec/store` §5).
 //!
 //! ```no_run
@@ -38,6 +39,7 @@ pub mod external;
 pub mod freshness;
 pub mod fs;
 pub mod lock;
+pub mod mcp_client;
 pub mod pipe;
 pub mod recovery;
 pub mod registry;
@@ -58,6 +60,7 @@ pub use freshness::{
 };
 pub use fs::{FileStat, FileSystem, MemFileSystem, RealFileSystem, is_ignored_dir};
 pub use lock::{WatchLease, WriterLock, WriterLockOptions, pid_alive, with_writer_lock};
+pub use mcp_client::{EngineSpec, McpEngineClient, ToolResult, parse_engine_spec};
 pub use omgbase_store::{ChangesPage, CommitDigest, DeleteOutcome, DigestRevision, ObserveOutcome};
 pub use recovery::{RecoveryResult, recover_repo};
 pub use registry::{

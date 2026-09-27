@@ -11,7 +11,10 @@ use omgbase_search::{EmbeddingProvider, EmbeddingSettings, create_external_provi
 use omgbase_store::Store;
 use omgbase_surface::Surface;
 use omgbase_sync::workspace::{OMGBASE_DIR, find_root};
-use omgbase_sync::{RealFileSystem, RepoRow, WatchLease, freshness_sweep};
+use omgbase_sync::{
+    EngineSpec, McpEngineClient, RealFileSystem, RepoRow, WatchLease, freshness_sweep,
+    parse_engine_spec,
+};
 use serde_json::{Value as Json, json};
 
 use super::argv::Globals;
@@ -61,6 +64,14 @@ pub struct Cli {
     ws: Option<WsInfo>,
     engine: Engine,
     repo: Option<RepoRow>,
+    /// The `--server` engine, connected on first use (§2.3).
+    remote: Option<McpEngineClient>,
+    /// The shell's typed-result sink is armed (`spec/cli` §7). See [`Cli::capture`].
+    pub capturing: bool,
+    /// The shell wants the `N rows — address with @1..@N` hint printed at
+    /// capture time (a displayed line; off for the quiet `@name = …` runs).
+    pub announce_frame: bool,
+    captured: Option<Json>,
 }
 
 /// Node's `path.resolve` for one segment against `base`.
@@ -108,7 +119,80 @@ impl Cli {
             ws: None,
             engine: Engine::Closed,
             repo: None,
+            remote: None,
+            capturing: false,
+            announce_frame: false,
+            captured: None,
         }
+    }
+
+    // ---- the shell's capture hook (`spec/cli` §7) -----------------------------------
+    //
+    // The reference's `cli.capture?.(value)`: a verb hands the shell its
+    // *typed* result — the same document `--json` prints, before any
+    // rendering — so it can become `@_`, the numbered frame, or a binding.
+    // Contract for every verb that produces a result the shell can address:
+    //
+    //   * call `cli.capture(&value)` exactly once, with the `--json` document
+    //     (`query`: the scalar for count/exists/none, the `values` list, else
+    //     the whole result; `cat`: the content string for a document, the
+    //     `nodes_get` object for a block, a list of those for several refs;
+    //     `show`: the card payload or a list of them; `ls`: the rows; `find`:
+    //     the hits; `links`: `{ out, in }`; the block mutators: the
+    //     `ApplyResult` — its `results[*].ids` become the frame);
+    //   * call it *before* rendering and only on the success path — a failing
+    //     command must bind nothing;
+    //   * verbs the spec lists as **not captured** (`log`, `hist`, `outline`,
+    //     `diff`, `status`, `repos`, `sync`, the admin verbs) never call it.
+    //
+    // In a one-shot run `capturing` is false and the call is a no-op (the
+    // value is not even cloned); the shell arms it for the session and takes
+    // the value after each line with [`Cli::take_captured`]. The frame hint
+    // (`  N rows — address with @1..@N`, stderr) prints *here*, at capture
+    // time, so it lands before the verb's own notices exactly as the
+    // reference's sink does (`1 row …` precedes `ok committed …`).
+
+    /// Record a verb's typed result for the shell (a no-op unless the shell
+    /// armed `capturing`).
+    pub fn capture(&mut self, value: &Json) {
+        if !self.capturing {
+            return;
+        }
+        if self.announce_frame {
+            if let Some(rows) = super::shell::refs::derive_rows(value) {
+                let n = rows.len();
+                if n > 0 {
+                    let noun = if n == 1 { "row" } else { "rows" };
+                    self.io.err(
+                        &self
+                            .style
+                            .dim(&format!("  {n} {noun} — address with @1..@{n}")),
+                    );
+                }
+            }
+        }
+        self.captured = Some(value.clone());
+    }
+
+    /// The result captured since the last take, if any (the shell calls this
+    /// once per line).
+    pub fn take_captured(&mut self) -> Option<Json> {
+        self.captured.take()
+    }
+
+    /// Forget the selected repo so the next `repo()` re-runs the selection
+    /// (the shell, when a line names a different `--repo`). A surface already
+    /// bound to the old repo is dropped and the store re-opened at the same
+    /// database (the process-wide minter keeps its counters).
+    pub fn reselect_repo(&mut self) -> Result<()> {
+        self.repo = None;
+        if matches!(self.engine, Engine::Surface(_)) {
+            if let Some(ws) = self.ws.clone() {
+                self.engine = Engine::Closed;
+                self.open_at(ws.root)?;
+            }
+        }
+        Ok(())
     }
 
     /// Not the human mode.
@@ -211,7 +295,7 @@ impl Cli {
     }
 
     /// The repo's `embedding.*` settings when a provider is named.
-    fn embedding_settings(&mut self, repo_id: &str) -> Result<Option<EmbeddingSettings>> {
+    pub fn embedding_settings(&mut self, repo_id: &str) -> Result<Option<EmbeddingSettings>> {
         let settings = omgbase_sync::resolve_settings(self.store()?, Some(repo_id))?;
         let Some(emb) = settings.get("embedding").and_then(Json::as_object) else {
             return Ok(None);
@@ -282,9 +366,101 @@ impl Cli {
         }
     }
 
-    /// Call one catalog tool on the selected repo.
+    /// Call one catalog tool on the selected repo — locally on the surface,
+    /// or, with `--server`, on the remote engine (§2.3): the same tool, the
+    /// identically shaped result, so a verb renders either without knowing.
     pub fn call(&mut self, tool: &str, args: Json) -> Result<Json> {
+        if self.flags.server.is_some() {
+            return self.remote_call(tool, args);
+        }
         Ok(self.surface(false)?.call_result(tool, &args)?)
+    }
+
+    // ---- remote mode (`spec/cli` §2.3; the reference's `_remote.ts`) --------------------
+
+    /// The `--server` value (+ `-H` headers) as an engine spec: an http(s)
+    /// URL is reached over Streamable HTTP with the headers attached;
+    /// anything else is whitespace-split and spawned over stdio. Usage
+    /// errors (exit 2): `-H` with a command, a header without a colon.
+    /// Pure — nothing is connected here.
+    pub fn remote_spec(&self) -> Result<EngineSpec> {
+        let raw = self.flags.server.as_deref().unwrap_or("").trim();
+        let mut headers: Vec<(String, String)> = Vec::new();
+        for h in &self.flags.headers {
+            let Some((name, value)) = h.split_once(':').filter(|(n, _)| !n.trim().is_empty())
+            else {
+                return Err(CliError::usage(format!(
+                    "invalid header {} — expected \"Name: value\"",
+                    super::output::js_string(h)
+                )));
+            };
+            headers.push((name.trim().to_owned(), value.trim().to_owned()));
+        }
+        if !headers.is_empty() && !omgbase_sync::mcp_client::is_http_url(raw) {
+            return Err(CliError::usage(
+                "-H/--header only applies to an http(s) --server url",
+            ));
+        }
+        if raw.is_empty() {
+            return Err(CliError::usage(
+                "--server requires a command to spawn (e.g. --server \"omg mcp -C /vault\") or an http(s) URL",
+            ));
+        }
+        parse_engine_spec(raw, &headers).map_err(|e| CliError::usage(e.to_string()))
+    }
+
+    /// The process's remote engine, connected on first use (spawning the
+    /// command or opening the HTTP session) and reused across a `shell`
+    /// session. A connection that cannot be made is `remote_unavailable`.
+    pub fn remote(&mut self) -> Result<&mut McpEngineClient> {
+        if self.remote.is_none() {
+            let spec = self.remote_spec()?;
+            let client = McpEngineClient::connect(&spec).map_err(|e| {
+                CliError::engine_hint(
+                    "remote_unavailable",
+                    format!("cannot reach the --server engine: {e}"),
+                    "an http(s) url is connected over Streamable HTTP; anything else is spawned as a stdio MCP server command (e.g. --server \"omg mcp -C /vault\")",
+                )
+            })?;
+            self.remote = Some(client);
+        }
+        Ok(self.remote.as_mut().expect("connected above"))
+    }
+
+    /// Call a tool on the remote engine, threading the global `--repo`
+    /// slug. A tool error comes back as the engine error its envelope
+    /// spells (`{ error, message, data? }`), rendered like a local one.
+    pub fn remote_call(&mut self, tool: &str, args: Json) -> Result<Json> {
+        let mut args = match args {
+            Json::Object(m) => m,
+            _ => serde_json::Map::new(),
+        };
+        if let Some(repo) = &self.flags.repo {
+            args.insert("repo".to_owned(), json!(repo));
+        }
+        let res = self
+            .remote()?
+            .call_tool(tool, Json::Object(args))
+            .map_err(|e| CliError::engine("remote_unavailable", e.to_string()))?;
+        if !res.is_error {
+            return Ok(res.body);
+        }
+        let body = res.body;
+        let code = body
+            .get("error")
+            .and_then(Json::as_str)
+            .unwrap_or("error")
+            .to_owned();
+        let message = body
+            .get("message")
+            .and_then(Json::as_str)
+            .map_or_else(|| body.to_string(), str::to_owned);
+        Err(CliError::Engine {
+            code,
+            message,
+            hint: None,
+            data: body.get("data").cloned(),
+        })
     }
 
     /// §3.7: the freshness sweep before a command — the workspace opened, the
@@ -316,8 +492,12 @@ impl Cli {
         Ok(())
     }
 
-    /// Close the engine (drops the connection and any provider child).
+    /// Close the engine (drops the connection and any provider child) and
+    /// the remote session, if one was opened.
     pub fn close(&mut self) {
         self.engine = Engine::Closed;
+        if let Some(mut remote) = self.remote.take() {
+            let _ = remote.close();
+        }
     }
 }

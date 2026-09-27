@@ -121,8 +121,20 @@ pub type Result<T> = std::result::Result<T, CliError>;
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Io;
 
+/// The shell's quiet mode (§7 `@name = <command>`): data is dropped while a
+/// command runs for its typed result only; diagnostics still reach stderr.
+static STDOUT_MUTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Io {
+    /// Drop (or restore) everything written through [`Io::out`].
+    pub fn mute_stdout(muted: bool) {
+        STDOUT_MUTED.store(muted, std::sync::atomic::Ordering::SeqCst);
+    }
+
     pub fn out(&self, s: &str) {
+        if STDOUT_MUTED.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         let mut h = std::io::stdout().lock();
         let _ = h.write_all(s.as_bytes());
         if !s.ends_with('\n') {
@@ -305,7 +317,7 @@ pub fn render_error(err: &CliError, io: Io, style: &Style, machine: bool) -> i32
                 if let Some(h) = hint {
                     m.insert("hint".into(), Json::String(h.clone()));
                 }
-                if let Some(d) = data {
+                if let Some(d) = data.as_ref().filter(|d| !payload_is_empty(d)) {
                     m.insert("data".into(), d.clone());
                 }
                 m.insert("retriable".into(), Json::Bool(false));
@@ -320,10 +332,7 @@ pub fn render_error(err: &CliError, io: Io, style: &Style, machine: bool) -> i32
                 io.err(&style.dim(&format!("  hint: {h}")));
             }
             if let Some(d) = data {
-                let empty = d.is_null()
-                    || d.as_object().is_some_and(|m| m.is_empty())
-                    || d.as_array().is_some_and(|a| a.is_empty());
-                if !empty {
+                if !payload_is_empty(d) {
                     let text = js_json_pretty(d)
                         .split('\n')
                         .map(|l| format!("  {l}"))
@@ -335,6 +344,14 @@ pub fn render_error(err: &CliError, io: Io, style: &Style, machine: bool) -> i32
             EXIT_ERROR
         }
     }
+}
+
+/// §9 Fixed: an empty payload (`{}`, `[]`, `null`) prints nothing under the
+/// message and is omitted from the JSON error.
+fn payload_is_empty(d: &Json) -> bool {
+    d.is_null()
+        || d.as_object().is_some_and(|m| m.is_empty())
+        || d.as_array().is_some_and(|a| a.is_empty())
 }
 
 /// §3.4: the footer, on stderr, exit 0.

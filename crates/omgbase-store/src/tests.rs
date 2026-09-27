@@ -1152,6 +1152,16 @@ fn rebuild_reproduces_sections_block_changes_and_fts() {
     store.conn().execute_batch("DELETE FROM sections").unwrap();
     store.rebuild_index(RebuildTarget::Sections).unwrap();
     assert_eq!(snapshot(&store, "sections"), secs);
+    // `doc_edges` is the rollup of the open edges: emptied, `Edges` (and
+    // `All`) restore the same rows.
+    let edges = snapshot(&store, "doc_edges");
+    assert!(!edges.is_empty(), "the fixture links a.md → b.md");
+    store.conn().execute_batch("DELETE FROM doc_edges").unwrap();
+    store.rebuild_index(RebuildTarget::Edges).unwrap();
+    assert_eq!(snapshot(&store, "doc_edges"), edges);
+    store.conn().execute_batch("DELETE FROM doc_edges").unwrap();
+    store.rebuild_index(RebuildTarget::All).unwrap();
+    assert_eq!(snapshot(&store, "doc_edges"), edges);
 }
 
 #[test]

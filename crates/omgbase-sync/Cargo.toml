@@ -12,6 +12,12 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+# The Streamable HTTP transport of the MCP engine client (`--server https://…`).
+# Off by default: it brings a TLS stack; the stdio transport needs nothing.
+http = ["dep:ureq"]
+
 [dependencies]
 # The store: the database this layer's registry, settings, checkpoints and
 # file_stats live in; `observe_batch`/`observe_delete` (spec/store §5), the
@@ -30,6 +36,9 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 # `kill(pid, 0)` for lock-holder liveness (spec/sync §7).
 libc = "0.2"
+# The Streamable HTTP transport of `mcp_client` (feature `http`), the same
+# crate and gate as omgbase-search's http embedding provider.
+ureq = { version = "3", optional = true }
 
 [lints]
 workspace = true

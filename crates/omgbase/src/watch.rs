@@ -68,7 +68,14 @@ pub struct WatchOptions {
     pub ready_patience: Duration,
     /// Scheduled after every checkpoint that ingested or deleted something.
     pub drain: Option<DrainHandle>,
+    /// Called with every batch checkpoint (and the priming sweep's) instead
+    /// of the `[watch] …` stderr lines — a host with its own rendering
+    /// (`omgbase sync --watch`). `None` keeps the default lines.
+    pub on_checkpoint: Option<CheckpointHook>,
 }
+
+/// A host's checkpoint renderer (runs on the watcher thread).
+pub type CheckpointHook = Arc<dyn Fn(&CheckpointResult) + Send + Sync>;
 
 /// How `start` ended.
 pub enum Outcome {
@@ -188,12 +195,15 @@ fn prime(store: &mut Store, opts: &WatchOptions, config: &Config) {
         )
     });
     match swept {
-        Ok(s) if s.changed => eprintln!(
-            "[watch] primed: +{} -{}",
-            s.checkpoint.ingested.len(),
-            s.checkpoint.deleted.len()
-        ),
-        Ok(_) => {}
+        Ok(s) => match &opts.on_checkpoint {
+            Some(hook) => hook(&s.checkpoint),
+            None if s.changed => eprintln!(
+                "[watch] primed: +{} -{}",
+                s.checkpoint.ingested.len(),
+                s.checkpoint.deleted.len()
+            ),
+            None => {}
+        },
         Err(e) => eprintln!("[watch] priming sweep failed: {e}"),
     }
 }
@@ -325,7 +335,10 @@ fn run(
             reconcile_changes(store, &opts.repo.repo_id, source, paths, &ts, None, config)
         });
         match result {
-            Ok(r) => on_checkpoint(&r, opts.drain.as_ref()),
+            Ok(r) => match &opts.on_checkpoint {
+                Some(hook) => hook(&r),
+                None => on_checkpoint(&r, opts.drain.as_ref()),
+            },
             Err(e) => eprintln!("[watch] error: {e}"),
         }
     };
@@ -388,6 +401,7 @@ mod tests {
             adapter_override: argv.map(|a| a.iter().map(|s| (*s).to_owned()).collect()),
             ready_patience: Duration::from_millis(300),
             drain: None,
+            on_checkpoint: None,
         }
     }
 

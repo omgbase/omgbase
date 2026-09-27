@@ -68,6 +68,8 @@ pub struct Surface {
     clock: Box<dyn FnMut() -> String>,
     writes: WriteTarget,
     config: Config,
+    /// The actor every write records (`ACTOR` unless a client names one).
+    actor: String,
 }
 
 // ---- argument helpers ----------------------------------------------------------------
@@ -749,7 +751,21 @@ impl Surface {
             clock: Box::new(omgbase_sync::now_ts),
             writes: WriteTarget::Derived,
             config: Config::default(),
+            actor: ACTOR.to_owned(),
         }
+    }
+
+    /// Record `actor` on every write instead of [`ACTOR`] (the CLI's
+    /// `human:<user>` / `--actor`; the MCP server keeps the default).
+    #[must_use]
+    pub fn with_actor(mut self, actor: &str) -> Self {
+        self.set_actor(actor);
+        self
+    }
+
+    /// Change the actor of the writes that follow.
+    pub fn set_actor(&mut self, actor: &str) {
+        self.actor = actor.to_owned();
     }
 
     /// Route every mutation's file writes through `doc_store` regardless of
@@ -1131,7 +1147,7 @@ impl Surface {
         let req = ApplyRequest {
             repo_id: repo_id.to_owned(),
             ops,
-            origin: ApplyOrigin::new(ACTOR, Some(reason)),
+            origin: ApplyOrigin::new(&self.actor, Some(reason)),
             dry_run,
             set_frontmatter: Vec::new(),
         };
@@ -1145,7 +1161,7 @@ impl Surface {
     fn doc_ctx(&mut self, repo_id: &str) -> DocOpContext {
         DocOpContext {
             repo_id: repo_id.to_owned(),
-            actor: Some(ACTOR.to_owned()),
+            actor: Some(self.actor.clone()),
             ts: self.now(),
         }
     }
@@ -1388,7 +1404,7 @@ impl Surface {
                 let req = ApplyRequest {
                     repo_id: repo.clone(),
                     ops,
-                    origin: ApplyOrigin::new(ACTOR, reason.as_deref()),
+                    origin: ApplyOrigin::new(&self.actor, reason.as_deref()),
                     dry_run: dry,
                     set_frontmatter: Vec::new(),
                 };
@@ -1839,7 +1855,7 @@ impl Surface {
                 let content = arg_string(args, "content")?;
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let reason = arg_str(args, "reason").map(str::to_owned);
-                let origin = ApplyOrigin::new(ACTOR, reason.as_deref());
+                let origin = ApplyOrigin::new(&self.actor, reason.as_deref());
                 let config = self.config.clone();
                 let ts = self.now();
                 let (opset, result) = self.with_writes(root.as_deref(), |store, ds| {

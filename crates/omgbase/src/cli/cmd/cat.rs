@@ -11,10 +11,11 @@ use crate::cli::output::{CliError, EXIT_OK, Result};
 
 use super::machine_out;
 
-/// One ref → its text and its `--json` object.
+/// One ref → its text, its `--json` object, and what the shell captures.
 struct CatOne {
     text: String,
     json: Json,
+    capture: Json,
 }
 
 /// `raw ?? text ?? label` of a `nodes_get` object.
@@ -45,7 +46,13 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
                 .and_then(Json::as_str)
                 .unwrap_or("")
                 .to_owned();
-            Ok(CatOne { text, json: res })
+            // shell: the bytes (a string; `@_` only). `--json` is the `docs_read` result.
+            let capture = Json::String(text.clone());
+            Ok(CatOne {
+                text,
+                json: res,
+                capture,
+            })
         }
         ResolvedRef::Block { doc_id, block_id } => {
             let node = cli.call(
@@ -54,6 +61,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
             )?;
             Ok(CatOne {
                 text: node_text(&node),
+                capture: node.clone(), // shell: the block (a single entity)
                 json: node,
             })
         }
@@ -75,6 +83,14 @@ pub fn cat(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let mut results: Vec<CatOne> = Vec::with_capacity(refs.len());
     for r in &refs {
         results.push(cat_one(cli, r, &resolution)?);
+    }
+    // One ref keeps the single-entity shape (a string/object); several become a list.
+    if cli.capturing {
+        let captured = match results.as_slice() {
+            [one] => one.capture.clone(),
+            many => Json::Array(many.iter().map(|r| r.capture.clone()).collect()),
+        };
+        cli.capture(&captured);
     }
     let items: Vec<Json> = results.iter().map(|r| r.json.clone()).collect();
     let doc = if items.len() == 1 {

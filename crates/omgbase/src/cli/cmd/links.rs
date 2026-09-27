@@ -242,6 +242,7 @@ pub fn links(cli: &mut Cli, args: &[String]) -> Result<i32> {
         blocks: a.flag("blocks"),
     };
     let result = doc_links(cli.store()?.conn(), resolved.doc_id(), &q)?;
+    cli.capture(&result); // shell: edges (out+in) become the addressable frame
     let far: Vec<String> = ["out", "in"]
         .iter()
         .flat_map(|k| {

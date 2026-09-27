@@ -276,6 +276,7 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
             adapter_override: watch::adapter_override_from_env(),
             ready_patience: watch::READY_PATIENCE,
             drain: drain_handle.clone(),
+            on_checkpoint: None,
         })
         .map_err(|e| CliError::engine("error", e))?
         {

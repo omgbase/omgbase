@@ -1450,6 +1450,13 @@ redraw of `spec/store` 13.5 for the ids in `mutate.json` to agree (the
 bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
 `b_314`).
 
+- **Fixed — a write on a sourceless repo printed the library's untyped
+  message** (`error[repo_not_found]: Error: mutation requires a rootPath or
+  an explicit docStore`, the catch-all code with `String(err)`), while the
+  MCP server pre-checks and says `repo has no filesystem source; mutation
+  disabled` (`spec/surface` §4). The library now throws that typed error, so
+  both clients render the same bytes (`sync::sourceless`).
+
 ## 10. Decisions
 
 - 2026-09-27, cli 1.0 specified as built: every verb, every output mode it

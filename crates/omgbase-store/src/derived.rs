@@ -180,25 +180,32 @@ pub(crate) fn fts_before_evict_rows(conn: &Connection, rows: &[EvictRow]) -> Res
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RebuildTarget {
     Sections,
+    /// The `doc_edges` rollup of the open `edges` rows (`spec/graph` §3.4).
+    Edges,
     Fts,
     BlockChanges,
     All,
 }
 
 /// Recompute derived tables from the durable ones: `sections` per live doc,
-/// the FTS index (`'delete-all'` + every live leaf, `spec/search` §1.1),
-/// `block_changes` from `dispositions`.
-/// `doc_edges` belongs to the graph component and is not touched.
+/// `doc_edges` per live doc (the rollup of its open edges), the FTS index
+/// (`'delete-all'` + every live leaf, `spec/search` §1.1), `block_changes`
+/// from `dispositions`.
 pub fn rebuild_index(conn: &Connection, target: RebuildTarget) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
+    let live_docs = |tx: &Connection| -> Result<Vec<String>> {
+        let mut stmt = tx.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL")?;
+        let it = stmt.query_map([], |r| r.get(0))?;
+        Ok(it.collect::<std::result::Result<Vec<_>, _>>()?)
+    };
     if matches!(target, RebuildTarget::Sections | RebuildTarget::All) {
-        let doc_ids: Vec<String> = {
-            let mut stmt = tx.prepare("SELECT doc_id FROM docs WHERE deleted_commit IS NULL")?;
-            let it = stmt.query_map([], |r| r.get(0))?;
-            it.collect::<std::result::Result<Vec<_>, _>>()?
-        };
-        for id in &doc_ids {
+        for id in &live_docs(&tx)? {
             rebuild_sections(&tx, id)?;
+        }
+    }
+    if matches!(target, RebuildTarget::Edges | RebuildTarget::All) {
+        for id in &live_docs(&tx)? {
+            crate::graph::rebuild_doc_edges(&tx, id)?;
         }
     }
     if matches!(target, RebuildTarget::Fts | RebuildTarget::All) {

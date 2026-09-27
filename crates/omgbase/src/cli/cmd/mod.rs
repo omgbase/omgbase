@@ -3,9 +3,11 @@
 //! the first argument is `--help`, parses its options with
 //! [`super::argv::parse_args`], calls the surface, and prints per the mode.
 
+pub mod admin;
 pub mod bootstrap;
 pub mod cat;
 pub mod diff;
+pub mod docs;
 pub mod find;
 pub mod help;
 pub mod hist;
@@ -13,9 +15,12 @@ pub mod links;
 pub mod log;
 pub mod ls;
 pub mod mcp;
+pub mod mutate;
+pub mod node;
 pub mod outline;
-pub mod pending;
 pub mod query;
+pub mod retarget;
+pub mod shell;
 pub mod show;
 pub mod source;
 pub mod status;

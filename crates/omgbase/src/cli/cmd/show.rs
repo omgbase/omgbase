@@ -182,6 +182,7 @@ pub fn show(cli: &mut Cli, args: &[String]) -> Result<i32> {
     } else {
         Json::Array(items.clone())
     };
+    cli.capture(&doc); // shell: the card (a single entity) or the list of cards
     if let Some(code) = machine_out(cli, &doc, Some(&items), None) {
         return code;
     }

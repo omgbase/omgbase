@@ -385,7 +385,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[repo_not_found]: Error: mutation requires a rootPath or an explicit docStore\n"
+            "stderr": "error[repo_not_found]: repo has no filesystem source; mutation disabled\n"
           }
         },
         {
@@ -400,7 +400,7 @@
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[repo_not_found]: Error: mutation requires a rootPath or an explicit docStore\n"
+            "stderr": "error[repo_not_found]: repo has no filesystem source; mutation disabled\n"
           }
         },
         {

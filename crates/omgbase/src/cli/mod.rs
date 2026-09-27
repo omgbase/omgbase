@@ -16,6 +16,7 @@ pub mod help;
 pub mod output;
 pub mod render;
 pub mod seams;
+pub mod shell;
 
 use std::ffi::OsStr;
 use std::path::Path;
@@ -138,7 +139,8 @@ pub fn run_command(cli: &mut Cli, command: &str, rest: &[String]) -> Result<i32>
         return Err(unknown_command_error(&cli.prog, command));
     };
     let help = asks_for_help(cli.flags.help, resolved.name, rest);
-    if cli.flags.server.is_some() && !help {
+    let remote = cli.flags.server.is_some() && !help;
+    if remote {
         if !REMOTE_OK.contains(&resolved.name) {
             return Err(CliError::usage(format!(
                 "--server is not supported for '{}' — it needs local ref resolution or a working tree; run it against a local workspace",
@@ -146,12 +148,8 @@ pub fn run_command(cli: &mut Cli, command: &str, rest: &[String]) -> Result<i32>
             )));
         }
         check_headers(&cli.flags)?;
-        // The remote client (the catalog of spec/surface §4 called from an
-        // MCP client) is a later wave of this binary.
-        return Err(CliError::engine(
-            "remote_unavailable",
-            "--server is not yet implemented in this binary; run against a local workspace",
-        ));
+        // The verb runs unchanged: `Cli::call` reaches the remote engine
+        // (connected on first use) instead of the local surface (§2.3).
     }
     let mut args: Vec<String> = Vec::with_capacity(rest.len() + 1);
     if cli.flags.help {
@@ -159,7 +157,9 @@ pub fn run_command(cli: &mut Cli, command: &str, rest: &[String]) -> Result<i32>
     }
     args.extend(rest.iter().cloned());
 
+    // No sweep in remote mode: there is no local workspace to keep fresh.
     if !help
+        && !remote
         && !cli.flags.stale
         && !SKIP_FRESHNESS.contains(&resolved.name)
         && !NO_WORKSPACE_OK.contains(&resolved.name)
