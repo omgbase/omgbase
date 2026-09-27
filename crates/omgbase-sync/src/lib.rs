@@ -79,7 +79,7 @@ pub use source::{
 pub use workspace::{RepoRow, RepoSelection, Workspace, select_repo};
 
 /// The `spec/sync/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.2";
+pub const SPEC_VERSION: &str = "1.3";
 
 /// The adapter protocol number the handshake must carry (`spec/sync` §5).
 pub const PROTOCOL_VERSION: u64 = 1;

@@ -2,7 +2,7 @@
   "name": "omgbase-workspace",
   "version": "0.0.0",
   "private": true,
-  "description": "Open Markdown Graph Base \u2014 workspace root",
+  "description": "Open Markdown Graph Base — workspace root",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -12,11 +12,13 @@
   "scripts": {
     "build": "pnpm --filter @omgbase/oqx build && tsc -b",
     "typecheck": "pnpm --filter @omgbase/oqx build && tsc -b",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && node --test scripts/*.test.mjs",
+    "test:scripts": "node --test scripts/*.test.mjs",
     "lint": "pnpm -r lint",
     "lint:fix": "pnpm -r lint:fix",
     "interop": "cargo build -p omgbase && pnpm build && pnpm --filter @omgbase/core exec vitest run corpus/surface/interop.test.ts && cargo test -p omgbase --test interop",
-    "publish:npm": "node scripts/publish-npm.mjs",
+    "release": "node scripts/release.mjs",
+    "publish:npm": "node scripts/release.mjs publish --npm-only",
     "rlink": "pnpm -r build && for pkg in packages/*/; do grep -q '\"bin\"' \"$pkg/package.json\" && (cd \"$pkg\" && pnpm add -g .); done"
   },
   "devDependencies": {

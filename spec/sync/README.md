@@ -14,7 +14,7 @@ implementation.
 | Implementation | Where | Role |
 | --- | --- | --- |
 | `@omgbase/core` (TypeScript, npm) + `@omgbase/sync` | `packages/core/src/sync/{workspace,sources,settings,attach,checkpoint,freshness,driver,external-source,plugin,recovery,admin,writer-lock,watch-lease,fs-util}.ts`, `core/attach.ts`, `packages/sync/src/{coordinator,engine-client}.ts` | **Reference.** |
-| `omgbase-sync` (Rust, crates.io) | `crates/omgbase-sync` | Conformance-first port over `omgbase-store`: registry, settings, workspace, checkpoints, the sweep, the adapter client, the coordinator, the locks. |
+| `omgbase-sync` (Rust, crates.io) | `crates/omgbase-sync` | Conformance-first port over `omgbase-store`: registry, settings, workspace, checkpoints, the sweep, the adapter client, the coordinator, the locks, and (1.3) `McpEngineClient` — the §6 engine client over MCP stdio / Streamable HTTP. |
 | `omgbase-fs-adapter` (Rust, crates.io) | `crates/omgbase-fs-adapter` | A second implementation of the `fs` adapter of §5 (the reference is `@omgbase/fs-adapter`, `packages/fs-adapter`): the `omgbase-fs-adapter` binary over `notify`, wire-compatible, so a host needs no Node. |
 
 The spec is two artifacts, versioned together by `VERSION`: this `README.md`
@@ -472,6 +472,11 @@ also rewrites `out` lines from the engine's actual requests. **Allowlist
 - 2026-09-26, sync 1.1: a `file_stats` rebuild records only files whose bytes
   match their live doc (least surprising: a cache rebuild must not change
   what the next sweep does).
+- 2026-09-27, sync 1.3: no protocol or procedure change — the crate line
+  moved to 1.3 with the Rust `McpEngineClient` (JSON-RPC over stdio and
+  Streamable HTTP, the second implementation of the §6 engine client, listed
+  in the table above), and a crate's `major.minor` tracks this file, so the
+  spec moves with it. Recorded by the release tool's spec-tracking check.
 - 2026-09-26, sync 1.2: a readiness event on the adapter wire, hosts wait
   for it before the priming sweep and the "live" report; the built-in `fs`
   adapter is launched by the host (`$OMGBASE_FS_ADAPTER` override in both),
