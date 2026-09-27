@@ -45,7 +45,7 @@ pub use render::{render, render_block};
 pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw_hash_hex};
 
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "1.2";
 
 #[cfg(test)]
 mod tests {

@@ -3841,9 +3841,13 @@
             "committed": false
           },
           {
-            "error": "target_missing",
+            "error": "type_mismatch",
             "retriable": false,
-            "data": {}
+            "data": {
+              "op_index": 0,
+              "block": "b_17",
+              "type": "heading"
+            }
           },
           {
             "results": [

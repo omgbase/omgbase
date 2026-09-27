@@ -1,6 +1,6 @@
 import { mintId } from "../core/ids.js";
 import { parseTree } from "../core/parse/tree.js";
-import { adapterForFormat } from "../format/index.js";
+import { adapterForFormat, isContainerBlock } from "../format/index.js";
 import { codeUnitIndexOf } from "../core/utf8.js";
 import { MutationError, locate, rawHashHex, parentChildrenHash, markContainerDirty, ownerOf, type MutBlock, type MutDoc } from "./tree.js";
 
@@ -49,8 +49,10 @@ function parseContentToBlocks(content: string, format: string): MutBlock[] {
   return tree.children.filter((b) => b.type !== "frontmatter").map(toMut as never);
 }
 
-// Resolve a To into a target sibling list + insertion index.
-function resolveTarget(doc: MutDoc, to: To): { siblings: MutBlock[]; index: number } {
+// Resolve a To into a target sibling list + insertion index (spec/mutate §1.1).
+// Shared by insert, move and the destination `parent_children_hash` CAS, so the
+// container rule below is seen by all three.
+function resolveTarget(doc: MutDoc, to: To, opIndex: number): { siblings: MutBlock[]; index: number } {
   let siblings: MutBlock[];
   if (to.parent === null || (typeof to.parent === "object" && "doc" in to.parent)) {
     siblings = doc.children;
@@ -59,8 +61,21 @@ function resolveTarget(doc: MutDoc, to: To): { siblings: MutBlock[]; index: numb
     // the next peer/higher heading (04 §1.1). Section blocks live at top level.
     return resolveSection(doc, to.parent.heading, to.at);
   } else {
-    const found = locate(doc, to.parent as string);
-    if (!found) throw new MutationError("parent_missing", `parent ${String(to.parent)} not found`);
+    const parentId = to.parent as string;
+    const found = locate(doc, parentId);
+    if (!found) throw new MutationError("parent_missing", `parent ${parentId} not found`);
+    // §1.1 (since 1.2): `parent: <id>` must name a CONTAINER. A leaf's `children`
+    // is empty by construction, not by content — placing a block there marked
+    // the leaf dirty, renderBlock rebuilt it from its children, and the leaf's
+    // own text (a heading's line) vanished from the file. The error carries the
+    // two ways to say what the caller meant: next to it, or into its section.
+    if (!isContainerBlock(doc.format, found.block)) {
+      throw new MutationError(
+        "type_mismatch",
+        `${parentId} is a ${found.block.type}, not a container; place relative to it with at.before/at.after or append to its section`,
+        { op_index: opIndex, block: parentId, type: found.block.type },
+      );
+    }
     siblings = found.block.children;
   }
   return { siblings, index: resolveIndex(siblings, to.at) };
@@ -162,7 +177,7 @@ function markSubtreeClean(b: MutBlock): void {
 // ---- the six ops ------------------------------------------------------------
 
 export function opInsert(doc: MutDoc, to: To, markdown: string, expect?: Expect, opIndex = 0): { ids: string[] } {
-  const { siblings, index } = resolveTarget(doc, to);
+  const { siblings, index } = resolveTarget(doc, to, opIndex);
   // §1.2: the destination parent's order CAS — `siblings` IS the resolved parent
   // list (a section scope or a `{ doc: true }` anchor both name the top level).
   checkParentChildrenHash(siblings, expect, opIndex);
@@ -345,11 +360,13 @@ export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number,
   if (typeof to.parent === "string" && movedIds.has(to.parent)) {
     throw new MutationError("cycle_move", "target is inside the moved subtree", { op_index: opIndex });
   }
-  // §1.2: the DESTINATION parent's order CAS, resolved on the pre-removal tree
-  // (before the op mutates anything) and checked once for the whole run. When
-  // source and destination are one list this is the "same siblings reordered
-  // under me" guard: the hash covers the moved blocks' current positions too.
-  if (expect?.parent_children_hash !== undefined) checkParentChildrenHash(resolveTarget(doc, to).siblings, expect, opIndex);
+  // Resolve the destination on the PRE-removal tree first: §1.1's container rule
+  // and a missing parent/anchor fail before anything moves, and §1.2's
+  // DESTINATION-parent order CAS is checked once for the whole run against the
+  // children as they stand. When source and destination are one list this is the
+  // "same siblings reordered under me" guard: the hash covers the moved blocks'
+  // current positions too. The index is re-resolved after extraction below.
+  checkParentChildrenHash(resolveTarget(doc, to, opIndex).siblings, expect, opIndex);
 
   // Extract (preserve order) then re-insert at the target.
   const moving = located.map((l) => l.block);
@@ -357,7 +374,7 @@ export function opMove(doc: MutDoc, blockIds: string[], to: To, opIndex: number,
     const idx = siblings.indexOf(m);
     if (idx >= 0) siblings.splice(idx, 1);
   }
-  const { siblings: dstSiblings, index } = resolveTarget(doc, to);
+  const { siblings: dstSiblings, index } = resolveTarget(doc, to, opIndex);
   dstSiblings.splice(index, 0, ...moving);
   // A move within/into a nested container invalidates that container's cached
   // raw (and the source's) — mark them so they re-render from children. No-op

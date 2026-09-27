@@ -17,10 +17,10 @@ repository.workspace = true
 # seam (`spec/surface` §1). `json` for the `Value` ↔ `serde_json` bridge.
 oqx = { version = "0.13.0", path = "../oqx", features = ["json"] }
 # The store every read, query and mutation runs against.
-omgbase-store = { version = "13.5.0", path = "../omgbase-store" }
+omgbase-store = { version = "13.5.1", path = "../omgbase-store" }
 # Workspace discovery, repo listing with derived roots, `repos_status` /
 # `sync_status` (§4 repo scoping).
-omgbase-sync = { version = "1.2.1", path = "../omgbase-sync" }
+omgbase-sync = { version = "1.3.0", path = "../omgbase-sync" }
 # `sha256`/`hex`, the heading text normalizers of the `heading` resolver.
 omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
 # `detect_range` for `range(x)` (§1.3).

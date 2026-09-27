@@ -32,11 +32,14 @@ pub fn find(cli: &mut Cli, args: &[String]) -> Result<i32> {
         number(&a, "n")?.unwrap_or(10)
     };
     // Hybrid by default: the configured provider fuses the query vector into
-    // the ranking; `--no-semantic` keeps it FTS-only.
+    // the ranking; `--no-semantic` keeps it FTS-only. Remotely (§2.3) the
+    // server ranks with its own provider, if any — the flag has no effect.
     let semantic = !a.flag("no-semantic");
-    let hits = cli
-        .surface(semantic)?
-        .call_result("resolve", &json!({ "query": text, "limit": limit }))?;
+    let hits = cli.call_with(
+        "resolve",
+        json!({ "query": text, "limit": limit }),
+        semantic,
+    )?;
     let items: Vec<Json> = hits.as_array().cloned().unwrap_or_default();
     cli.capture(&hits); // shell: the ranked hits become the addressable frame
     if a.flag("one") {

@@ -49,11 +49,18 @@ pub fn log(cli: &mut Cli, args: &[String]) -> Result<i32> {
             Opt::value_short("n", 'n'),
         ],
     )?;
-    let repo = cli.repo()?;
     let cursor = match (number(&a, "cursor")?, a.value("since")) {
         (Some(c), _) => c,
+        // §2.3: `--since` resolves a timestamp against the local commits
+        // table, which a remote client lacks — `--cursor` is the remote form.
+        (None, Some(_)) if cli.remote_mode() => {
+            return Err(CliError::usage(
+                "--since is not supported with --server; use --cursor <seq>",
+            ));
+        }
         (None, Some(since)) => {
             let iso = since_instant(since, cli.now_ms())?;
+            let repo = cli.repo()?;
             let seq: Option<i64> = cli
                 .store()?
                 .conn()

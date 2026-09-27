@@ -10,6 +10,7 @@ import { renderDoc, markContainerDirty, MutationError, type MutDoc, type MutBloc
 import { opInsert, opUpdate, opMove, opRemove, opSplit, opMerge, healTopLevelSeams, checkParentChildrenHash, type To, type Expect } from "./ops.js";
 import { withWriterLock } from "../sync/writer-lock.js";
 import { resolveDocStore, type DocStore } from "./doc-store.js";
+import { isContainerBlock } from "../format/index.js";
 
 // Changeset application (04 §2, §6). Ops apply in order across documents; later
 // ops see earlier effects; minted ids are referenceable via "$n.ids[i]"
@@ -308,8 +309,10 @@ function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIn
     if (!found) throw new MutationError("block_missing", `block ${id} not found in source doc`, { op_index: opIndex });
     moving.push(found.block);
   }
-  // §1.2: the destination parent's order CAS (in `dst`), before either tree moves.
-  if (expect?.parent_children_hash !== undefined) checkParentChildrenHash(resolveDstTarget(dst, to).siblings, expect, opIndex);
+  // §1.1 container rule + §1.2 destination CAS (in `dst`), resolved once before
+  // either tree moves so a leaf destination errors with both trees untouched.
+  const pre = resolveDstTarget(dst, to, opIndex);
+  if (expect?.parent_children_hash !== undefined) checkParentChildrenHash(pre.siblings, expect, opIndex);
   // remove from their source lists (marking each emptied owner dirty)
   for (const id of blockIds) {
     const f = locateMut(src, id);
@@ -319,7 +322,7 @@ function crossDocMove(src: MutDoc, dst: MutDoc, blockIds: string[], to: To, opIn
     }
   }
   // Insert into dst at the resolved target; the destination owner re-renders.
-  const target = resolveDstTarget(dst, to);
+  const target = resolveDstTarget(dst, to, opIndex);
   target.siblings.splice(target.index, 0, ...moving);
   markContainerDirty(dst, target.siblings);
   // Heal both documents' top-level seams (spec/mutate §2.3): a block that was
@@ -342,13 +345,22 @@ function locateMut(doc: MutDoc, blockId: string): { block: MutBlock; siblings: M
   return search(doc.children);
 }
 
-function resolveDstTarget(dst: MutDoc, to: To): { siblings: MutBlock[]; index: number } {
+function resolveDstTarget(dst: MutDoc, to: To, opIndex = 0): { siblings: MutBlock[]; index: number } {
   if (typeof to.parent === "object" && "doc" in to.parent) {
     return { siblings: dst.children, index: resolveAt(dst.children, to.at) };
   }
   if (typeof to.parent === "string") {
     const f = locateMut(dst, to.parent);
     if (!f) throw new MutationError("parent_missing", `parent ${to.parent} not found in dest`);
+    // spec/mutate §1.1 (1.2): a leaf destination would be re-rendered from its
+    // children and lose its own text — the same rule as the in-document ops.
+    if (!isContainerBlock(dst.format, f.block)) {
+      throw new MutationError(
+        "type_mismatch",
+        `${to.parent} is a ${f.block.type}, not a container; place relative to it with at.before/at.after or append to its section`,
+        { op_index: opIndex, block: to.parent, type: f.block.type },
+      );
+    }
     return { siblings: f.block.children, index: resolveAt(f.block.children, to.at) };
   }
   // heading/section: insert into top-level list at the anchor.

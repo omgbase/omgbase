@@ -18,13 +18,20 @@ pub fn hist(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let Some(r) = a.pos(0) else {
         return Err(CliError::usage("hist requires a <node>"));
     };
-    let repo = cli.repo()?;
-    let resolved = resolve_ref(cli.store()?.conn(), &repo.repo_id, r)?;
-    let Some(ResolvedRef::Block { block_id, .. }) = resolved else {
-        return Err(CliError::engine(
-            "block_missing",
-            format!("hist needs a block id; got {r}"),
-        ));
+    // §2.3: `history_node` keys on a block id (globally unique) — the ref
+    // goes through as given; a locator would need a local resolve.
+    let block_id = if cli.remote_mode() {
+        r.to_owned()
+    } else {
+        let repo = cli.repo()?;
+        let resolved = resolve_ref(cli.store()?.conn(), &repo.repo_id, r)?;
+        let Some(ResolvedRef::Block { block_id, .. }) = resolved else {
+            return Err(CliError::engine(
+                "block_missing",
+                format!("hist needs a block id; got {r}"),
+            ));
+        };
+        block_id
     };
     let mut req = serde_json::Map::new();
     req.insert("id".to_owned(), json!(block_id));

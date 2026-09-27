@@ -13,7 +13,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::mutate::{extract_content_opts, read_content, render_diffs, require_root, set_actor};
+use super::mutate::{extract_content_opts, read_content, render_diffs, set_actor};
 use super::{machine_out, str_of};
 
 const ACTOR: Opt = Opt::value("actor");
@@ -25,7 +25,6 @@ fn call_doc_tool(
     mut args: Map<String, Json>,
     actor: Option<&str>,
 ) -> Result<Json> {
-    require_root(cli)?;
     set_actor(cli, actor)?;
     if cli.flags.dry_run {
         args.insert("dry_run".to_owned(), json!(true));

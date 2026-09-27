@@ -5,6 +5,8 @@
 
 The binary is canonically `omgbase`, with `omg` installed as a convenience alias (both `bin` entries point at the same script). Examples below use `omg` for brevity; every one is equally valid as `omgbase`. Help text and hints quote whichever name you invoked (`basename(argv[1])`, falling back to `omg` for a direct `node main.js` run).
 
+**Two renderings, one contract.** Since 2026-09-27 the same CLI exists twice: this TypeScript reference (`npm i -g omgbase`) and the Rust `omgbase` binary (`cargo install omgbase omgbase-fs-adapter`, node-free — the second crate is the filesystem watcher's adapter). `spec/cli` pins argv, output bytes and exit codes; both binaries run its 475 cases, and `--server` is proven in both directions (`crates/omgbase/tests/remote.rs`). Everything below applies to both unless a line says otherwise; the only visible difference is `--version`.
+
 ---
 
 ## 1. Purpose and audiences

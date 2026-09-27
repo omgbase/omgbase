@@ -34,6 +34,15 @@ npm install -g @omgbase/embedder    # optional: local semantic search (`omgbase-
 
 `omgbase` pulls in the engine (`@omgbase/core`), the filesystem source adapter (`@omgbase/fs-adapter`), and the sync coordinator (`@omgbase/sync`). The optional `@omgbase/embedder` runs sentence embeddings locally with transformers.js (default model `Xenova/gte-base`, 768-dim; weights download to the transformers.js cache on first run, then work offline) and is spoken to over stdio, so the engine and CLI carry no ML dependency. `omg init` offers to configure it as the workspace's `embedding.provider` when `omgbase-embedder` is on `PATH`. Note: under allow-scripts policies (npm `ignore-scripts`, pnpm `allowBuilds`) the `onnxruntime-node` postinstall may be skipped; if the embedder then fails to start (`embedder_failed`), allow that package's build script and reinstall.
 
+### From crates.io (Rust, node-free)
+
+```
+cargo install omgbase             # the `omgbase` binary: every `omg` verb + `omgbase mcp`
+cargo install omgbase-fs-adapter  # the filesystem watcher's adapter (spoken to over stdio)
+```
+
+The Rust binary is a conformance-tested rendering of the same CLI and MCP catalog (`spec/cli`, `spec/surface` §7): it opens the same `.omgbase/` workspace a node install created, and the two can be mixed — `omgbase --server "omg mcp -C /vault" ls` and `omg --server "omgbase mcp -C /vault" ls` print the same bytes. Semantic search still needs an embedding provider (`@omgbase/embedder` over stdio, or any http(s) endpoint).
+
 ### From source
 
 Needs **pnpm 12** (the workspace `packageManager`).

@@ -29,6 +29,7 @@ type To = {
   at: "start" | "end" | { before: BlockId } | { after: BlockId }
 }
 ```
+- `parent: <BlockId>` means that block's `children` — and the block must be a **container** (spec/mutate §1.1, since 1.2): for Markdown the kinds whose children the parser produces, `list`, `list_item`, `task`, `blockquote`, `table` (`packages/core/src/format/index.ts` `isContainerBlock`, backed by `MARKDOWN_CONTAINER_KINDS`); for other formats any block that has children. A leaf (`heading`, `paragraph`, `code_fence`, `table_row`, `thematic_break`, `html_block`, `opaque`) is `type_mismatch` with `{ op_index, block, type }` and the message `<id> is a <type>, not a container; place relative to it with at.before/at.after or append to its section`. Before 1.2 the kernel put the block into the leaf's empty `children`, marked the leaf dirty and re-rendered it from those children — the heading's own line vanished from the file. `insert` and `move` resolve `to` through the same function, so a move into a leaf is the same error, raised before anything is extracted. To place next to a leaf use `at: { before | after: <id> }`; to add to a heading's section use `{ heading, scope: "section" }` (`sections_append`).
 - `parent: { doc: true }` means top level of the document.
 - `scope:"section"` resolves against the derived section range: `at:"end"` = before the next peer/higher heading.
 - Ordering uses fractional keys internally (`data-model.md` §5.3); the API never exposes keys, only ordinals.

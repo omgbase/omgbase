@@ -121,6 +121,66 @@ describe("kernel ops", () => {
     try { opMove(d, [list.id], { parent: item.id, at: "end" }, 0); } catch (e) { expect((e as MutationError).code).toBe("cycle_move"); }
   });
 
+  it("insert into a leaf (heading) is type_mismatch and leaves the document untouched (spec/mutate §1.1, 1.2)", () => {
+    const d = doc("# Title\n\nFirst.\n\n## Risks\n\nSecond.\n");
+    const before = renderDoc(d);
+    const heading = idAt(d, 2);
+    let err: MutationError | undefined;
+    try { opInsert(d, { parent: heading, at: "end" }, "Under risks.", undefined, 3); } catch (e) { err = e as MutationError; }
+    expect(err).toBeInstanceOf(MutationError);
+    expect(err!.code).toBe("type_mismatch");
+    expect(err!.data).toEqual({ op_index: 3, block: heading, type: "heading" });
+    expect(err!.message).toBe(`${heading} is a heading, not a container; place relative to it with at.before/at.after or append to its section`);
+    // The bug this rule fixes: the heading's own text used to vanish.
+    expect(renderDoc(d)).toBe(before);
+    expect(d.children.map((b) => b.type)).toEqual(["heading", "paragraph", "heading", "paragraph"]);
+  });
+
+  it("insert into a Markdown container by kind still works (list item, blockquote)", () => {
+    const d = doc("- item\n\n> quoted\n");
+    const item = d.children[0]!.children[0]!;
+    opInsert(d, { parent: item.id, at: "end" }, "nested");
+    expect(item.children.map((b) => b.raw)).toEqual(["nested"]);
+    const quote = d.children[1]!;
+    opInsert(d, { parent: quote.id, at: "end" }, "more");
+    expect(quote.children).toHaveLength(2);
+  });
+
+  it("move into a leaf (paragraph) is type_mismatch before anything moves", () => {
+    const d = doc("# Title\n\nFirst.\n\nSecond.\n");
+    const before = renderDoc(d);
+    const para = idAt(d, 2);
+    let err: MutationError | undefined;
+    try { opMove(d, [idAt(d, 1)], { parent: para, at: "end" }, 1); } catch (e) { err = e as MutationError; }
+    expect(err!.code).toBe("type_mismatch");
+    expect(err!.data).toEqual({ op_index: 1, block: para, type: "paragraph" });
+    expect(renderDoc(d)).toBe(before);
+  });
+
+  it("move with a parent_children_hash into a leaf is type_mismatch, not stale_expectation (the CAS resolves the same parent)", () => {
+    const d = doc("# Title\n\nFirst.\n\nSecond.\n");
+    let err: MutationError | undefined;
+    try { opMove(d, [idAt(d, 1)], { parent: idAt(d, 2), at: "end" }, 0, { parent_children_hash: "00" }); } catch (e) { err = e as MutationError; }
+    expect(err!.code).toBe("type_mismatch");
+  });
+
+  it("non-Markdown formats: a block with children is a container, a childless one a leaf", () => {
+    const leaf = (id: string, type: string): MutBlock => ({ id, type, raw: `${id}: 1`, trivia: "\n", attrs: {}, children: [] });
+    const d: MutDoc = {
+      docId: "d_1", path: "a.yaml", format: "yaml", leadingTrivia: "", frontmatterRaw: null,
+      children: [
+        { id: "b_map", type: "yaml:mapping_entry", raw: "m:\n  k: 1", trivia: "\n", attrs: {}, children: [leaf("b_k", "yaml:mapping_entry")] },
+        leaf("b_s", "yaml:mapping_entry"),
+      ],
+    };
+    const { ids } = opInsert(d, { parent: "b_map", at: "end" }, "j: 2");
+    expect(ids).toHaveLength(1);
+    let err: MutationError | undefined;
+    try { opInsert(d, { parent: "b_s", at: "end" }, "j: 2", undefined, 2); } catch (e) { err = e as MutationError; }
+    expect(err!.code).toBe("type_mismatch");
+    expect(err!.data).toEqual({ op_index: 2, block: "b_s", type: "yaml:mapping_entry" });
+  });
+
   it("remove deletes a subtree and reports removed ids", () => {
     const d = doc("# A\n\ndoomed\n\ntail\n");
     const before = d.children.length;

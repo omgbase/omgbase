@@ -15,9 +15,23 @@ export {
   registeredFormats,
   detectFormat,
 } from "./registry.js";
-export { markdownAdapter, MARKDOWN_FORMAT } from "./markdown.js";
+export { markdownAdapter, MARKDOWN_FORMAT, MARKDOWN_CONTAINER_KINDS } from "./markdown.js";
 export { yamlAdapter, YAML_FORMAT } from "./yaml.js";
 export { jsonAdapter, JSON_FORMAT } from "./json.js";
+
+import { MARKDOWN_FORMAT, MARKDOWN_CONTAINER_KINDS } from "./markdown.js";
+
+/**
+ * May this block take children (spec/mutate §1.1)? Markdown decides by kind —
+ * the parser only ever nests under `list`, `list_item`, `task`, `blockquote`
+ * and `table`, so an empty `children` on a heading or paragraph is structural,
+ * not "an empty container". The other formats have no kind table for this yet:
+ * a block that has children is a container, a childless one a leaf.
+ */
+export function isContainerBlock(format: string, block: { type: string; children: readonly unknown[] }): boolean {
+  if (format === MARKDOWN_FORMAT) return MARKDOWN_CONTAINER_KINDS.has(block.type);
+  return block.children.length > 0;
+}
 
 // Register built-in adapters.
 import { registerAdapter } from "./registry.js";

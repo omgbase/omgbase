@@ -121,23 +121,15 @@ fn passwd_name() -> Option<String> {
     }
 }
 
-/// Stamp the writes that follow with `--actor`, else the default.
+/// Stamp the writes that follow with `--actor`, else the default. Remotely
+/// (§2.3) the write tools take no actor — the engine stamps its own
+/// (`agent:mcp`), so `--actor` has no effect, as in the reference.
 pub fn set_actor(cli: &mut Cli, actor: Option<&str>) -> Result<()> {
+    if cli.remote_mode() {
+        return Ok(());
+    }
     let actor = actor.map_or_else(default_actor, str::to_owned);
     cli.surface(false)?.set_actor(&actor);
-    Ok(())
-}
-
-/// A write needs a working tree: on a sourceless repo the reference's library
-/// throws before any op runs, and the CLI renders it through its catch-all
-/// (`sync::sourceless`); the same bytes here.
-pub fn require_root(cli: &mut Cli) -> Result<()> {
-    if cli.repo()?.root_path.is_none() {
-        return Err(CliError::engine(
-            "repo_not_found",
-            "Error: mutation requires a rootPath or an explicit docStore",
-        ));
-    }
     Ok(())
 }
 
@@ -151,6 +143,16 @@ pub fn block_id(cli: &mut Cli, r: &str) -> Result<String> {
             format!("not a block: {r}"),
         )),
     }
+}
+
+/// A block argument for a ref-accepting tool: remotely (§2.3) the ref as
+/// given — the `blocks_*` / `tasks_complete` / `sections_append` tools
+/// resolve refs and pin CAS server-side; locally its resolved block id.
+pub fn block_arg(cli: &mut Cli, r: &str) -> Result<String> {
+    if cli.remote_mode() {
+        return Ok(r.to_owned());
+    }
+    block_id(cli, r)
 }
 
 /// A block ref resolved to (doc id, block id).
@@ -278,19 +280,27 @@ fn result_ids(result: &Json) -> Vec<String> {
 }
 
 /// Run one changeset-producing tool with the actor, `dry_run` threaded from
-/// the global flag, and render its `ApplyResult`.
+/// the global flag, and render its `ApplyResult`. A sourceless repo is the
+/// tool's `repo_not_found` (`repo has no filesystem source; mutation
+/// disabled`, `sync::sourceless`), locally and remotely alike. Remotely
+/// (§2.3) the tool's result is rendered as it came — the reference's
+/// `runOpsRemote` prints the decorated document (`id`/`ids` on
+/// `blocks_update`) verbatim in `--json`, where the local path prints the
+/// bare `ApplyResult`.
 pub fn run_tool(
     cli: &mut Cli,
     tool: &str,
     mut args: Map<String, Json>,
     actor: Option<&str>,
 ) -> Result<i32> {
-    require_root(cli)?;
     set_actor(cli, actor)?;
     if cli.flags.dry_run {
         args.insert("dry_run".to_owned(), json!(true));
     }
     let result = cli.call(tool, Json::Object(args))?;
+    if cli.remote_mode() {
+        return render_apply(cli, result);
+    }
     render_apply(cli, apply_result_of(result))
 }
 
@@ -340,13 +350,13 @@ pub fn insert(cli: &mut Cli, args: &[String]) -> Result<i32> {
     )?;
     let Some(to) = a.pos(0) else {
         return Err(CliError::usage(
-            "insert requires a <to> parent (block id, or a heading id for section append)",
+            "insert requires a <to> parent (a container block id, or a doc id/path for the top level)",
         ));
     };
     let to = to.to_owned();
     let markdown = read_content(&content)?;
     let at = parse_at(a.value("at"))?;
-    let parent = block_id(cli, &to)?;
+    let parent = block_arg(cli, &to)?;
     let mut m = Map::new();
     m.insert("to".to_owned(), json!(parent));
     m.insert("markdown".to_owned(), json!(markdown));
@@ -382,7 +392,7 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let r = r.to_owned();
     let markdown = read_content(&content)?;
-    let block = block_id(cli, &r)?;
+    let block = block_arg(cli, &r)?;
     let mut m = Map::new();
     m.insert("block".to_owned(), json!(block));
     m.insert("markdown".to_owned(), json!(markdown));
@@ -390,8 +400,11 @@ fn update_block(cli: &mut Cli, args: &[String]) -> Result<i32> {
         Some(e) => {
             m.insert("expect".to_owned(), json!({ "content_hash": e }));
         }
+        // §5.7: the tool pins the CAS from the live row when `expect` is
+        // absent. The notice is the local path's: the reference's remote
+        // branch returns before it (the server pins silently).
+        None if cli.remote_mode() => {}
         None => {
-            // §5.7: the tool pins the CAS from the live row when `expect` is absent.
             cli.io.err(
                 &cli.style
                     .dim(&format!("  updating {r} (CAS pinned from current bytes)")),
@@ -413,12 +426,17 @@ fn update_doc(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let doc = doc.to_owned();
     let bytes = read_content(&content)?;
     let dry_run = a.flag("plan") || cli.flags.dry_run;
-    let repo = cli.repo()?;
-    if repo.root_path.is_none() {
-        return Err(CliError::usage(format!(
-            "repo '{}' has no filesystem source; 'update' needs a working tree",
-            repo.slug
-        )));
+    // §2.3: remotely `docs_update` reconciles and commits server-side and
+    // returns the same `{ opset, plan, result }`; the working-tree check is
+    // the engine's.
+    if !cli.remote_mode() {
+        let repo = cli.repo()?;
+        if repo.root_path.is_none() {
+            return Err(CliError::usage(format!(
+                "repo '{}' has no filesystem source; 'update' needs a working tree",
+                repo.slug
+            )));
+        }
     }
     set_actor(cli, a.value("actor"))?;
     let mut m = Map::new();
@@ -611,7 +629,7 @@ pub fn r#move(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     let at = parse_at(a.value("at"))?;
     let blocks = resolve_blocks(cli, &refs)?;
-    let parent = block_id(cli, &to)?;
+    let parent = block_arg(cli, &to)?;
     let mut m = Map::new();
     m.insert("blocks".to_owned(), json!(blocks));
     m.insert("to".to_owned(), json!(parent));
@@ -622,8 +640,9 @@ pub fn r#move(cli: &mut Cli, args: &[String]) -> Result<i32> {
     run_tool(cli, "blocks_move", m, a.value("actor"))
 }
 
+/// Every ref as the tool's `blocks[]` argument (see [`block_arg`]).
 fn resolve_blocks(cli: &mut Cli, refs: &[String]) -> Result<Vec<String>> {
-    refs.iter().map(|r| block_id(cli, r)).collect()
+    refs.iter().map(|r| block_arg(cli, r)).collect()
 }
 
 // ---- rm -------------------------------------------------------------------------------
@@ -650,7 +669,6 @@ pub fn rm(cli: &mut Cli, args: &[String]) -> Result<i32> {
 
 /// `rm --doc` — `docs_delete`, rendered as a document operation (§4).
 fn rm_doc(cli: &mut Cli, doc: &str, actor: Option<&str>) -> Result<i32> {
-    require_root(cli)?;
     set_actor(cli, actor)?;
     let mut m = Map::new();
     m.insert("doc".to_owned(), json!(doc));
@@ -688,8 +706,14 @@ pub fn done(cli: &mut Cli, args: &[String]) -> Result<i32> {
             "done requires one or more task blocks (or - for stdin)",
         ));
     }
+    // §2.3: remotely `tasks_complete` resolves the refs; the task-type check
+    // below is the local path's (the reference's remote branch skips it).
     let mut blocks = Vec::with_capacity(refs.len());
     for r in &refs {
+        if cli.remote_mode() {
+            blocks.push(r.clone());
+            continue;
+        }
         let id = block_id(cli, r)?;
         blocks.push(task_block(cli, r, id)?);
     }
@@ -740,7 +764,7 @@ pub fn append(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let heading = heading.to_owned();
     let markdown = read_content(&content)?;
-    let heading_id = block_id(cli, &heading)?;
+    let heading_id = block_arg(cli, &heading)?;
     let mut m = Map::new();
     m.insert("heading".to_owned(), json!(heading_id));
     m.insert("markdown".to_owned(), json!(markdown));
@@ -771,7 +795,7 @@ pub fn split(cli: &mut Cli, args: &[String]) -> Result<i32> {
                 "bad --at '{at}' (offsets must be integers: n[,n…])"
             ))
         })?;
-    let block = block_id(cli, &r)?;
+    let block = block_arg(cli, &r)?;
     let mut m = Map::new();
     m.insert("block".to_owned(), json!(block));
     m.insert("at".to_owned(), json!(offsets));

@@ -22,11 +22,17 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let Some(r) = a.pos(0) else {
         return Err(CliError::usage("diff requires a <doc>"));
     };
-    let repo = cli.repo()?;
-    let info = find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)?
-        .ok_or_else(|| CliError::engine("doc_missing", format!("no document {r}")))?;
+    // §2.3: remotely the ref goes to the tool, which resolves it.
+    let doc = if cli.remote_mode() {
+        r.to_owned()
+    } else {
+        let repo = cli.repo()?;
+        find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)?
+            .ok_or_else(|| CliError::engine("doc_missing", format!("no document {r}")))?
+            .doc_id
+    };
     let mut req = serde_json::Map::new();
-    req.insert("doc".to_owned(), json!(info.doc_id));
+    req.insert("doc".to_owned(), json!(doc));
     if let Some(f) = a.value("from") {
         req.insert("from_rev".to_owned(), json!(f));
     }
@@ -39,7 +45,7 @@ pub fn diff(cli: &mut Cli, args: &[String]) -> Result<i32> {
         // Block-grain over the same resolved revision pair.
         let entries = cli.call(
             "diff",
-            json!({ "doc": info.doc_id, "from_rev": str_of(&result, "from"), "to_rev": str_of(&result, "to") }),
+            json!({ "doc": doc, "from_rev": str_of(&result, "from"), "to_rev": str_of(&result, "to") }),
         )?;
         let items: Vec<Json> = entries.as_array().cloned().unwrap_or_default();
         let ids: Vec<String> = items.iter().map(|e| str_of(e, "blockId")).collect();

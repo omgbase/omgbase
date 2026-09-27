@@ -370,10 +370,24 @@ impl Cli {
     /// or, with `--server`, on the remote engine (§2.3): the same tool, the
     /// identically shaped result, so a verb renders either without knowing.
     pub fn call(&mut self, tool: &str, args: Json) -> Result<Json> {
-        if self.flags.server.is_some() {
+        self.call_with(tool, args, false)
+    }
+
+    /// [`Cli::call`] with the local surface loading the embedding provider
+    /// when `semantic` (`find`, a `semantic(...)` query). Remotely the
+    /// server's own provider decides, as the reference's `resolve`/`query`
+    /// remote branches leave it to the engine.
+    pub fn call_with(&mut self, tool: &str, args: Json, semantic: bool) -> Result<Json> {
+        if self.remote_mode() {
             return self.remote_call(tool, args);
         }
-        Ok(self.surface(false)?.call_result(tool, &args)?)
+        Ok(self.surface(semantic)?.call_result(tool, &args)?)
+    }
+
+    /// `--server` was given: the verb must never open the local workspace —
+    /// refs go to the tool unresolved and the engine resolves them (§2.3).
+    pub fn remote_mode(&self) -> bool {
+        self.flags.server.is_some()
     }
 
     // ---- remote mode (`spec/cli` §2.3; the reference's `_remote.ts`) --------------------

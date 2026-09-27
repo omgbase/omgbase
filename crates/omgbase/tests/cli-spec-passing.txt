@@ -475,6 +475,7 @@ sync::out-of-band-delete
 sync::out-of-band-edit
 sync::out-of-band-new-file
 sync::server-help
+sync::sourceless
 sync::up-to-date
 sync::up-to-date-ids-is-json
 sync::up-to-date-json

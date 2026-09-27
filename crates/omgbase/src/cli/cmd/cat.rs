@@ -28,7 +28,55 @@ pub fn node_text(node: &Json) -> String {
     String::new()
 }
 
+/// §2.3: the polymorphic `read_ref` classifies and reads the ref server-side
+/// — `{ kind: "document", ...docs_read }` or `{ kind: "block", ...nodes_get }`.
+/// The document's `--json` is the `docs_read` result (`kind` dropped, the
+/// other keys in their order); a block's is the `read_ref` result as it came
+/// (with `kind`), as the reference renders it.
+fn cat_one_remote(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
+    let mut req = serde_json::Map::new();
+    req.insert("ref".to_owned(), json!(r));
+    if resolution != "raw" {
+        req.insert("resolution".to_owned(), json!(resolution));
+    }
+    let res = cli.call("read_ref", Json::Object(req))?;
+    if res.get("kind").and_then(Json::as_str) == Some("document") {
+        if resolution != "raw" {
+            warn_doc_resolution(cli, r, resolution);
+        }
+        let text = res
+            .get("content")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let doc = match res {
+            Json::Object(m) => Json::Object(m.into_iter().filter(|(k, _)| k != "kind").collect()),
+            other => other,
+        };
+        return Ok(CatOne {
+            capture: Json::String(text.clone()),
+            text,
+            json: doc,
+        });
+    }
+    Ok(CatOne {
+        text: node_text(&res),
+        capture: res.clone(),
+        json: res,
+    })
+}
+
+/// `--resolution` only means something for a block; say so (stderr).
+fn warn_doc_resolution(cli: &Cli, r: &str, resolution: &str) {
+    cli.io.err(&cli.style.warn(&format!(
+        "  --resolution {resolution} ignored for {r}: a document is always its exact bytes (resolutions apply to block refs)"
+    )));
+}
+
 fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
+    if cli.remote_mode() {
+        return cat_one_remote(cli, r, resolution);
+    }
     let repo = cli.repo()?;
     let resolved = resolve_ref(cli.store()?.conn(), &repo.repo_id, r)?
         .ok_or_else(|| CliError::engine("doc_missing", format!("no node {r}")))?;
@@ -37,9 +85,7 @@ fn cat_one(cli: &mut Cli, r: &str, resolution: &str) -> Result<CatOne> {
             // §9 Fixed: `--json` is the `docs_read` result.
             let res = cli.call("docs_read", json!({ "doc": doc_id }))?;
             if resolution != "raw" {
-                cli.io.err(&cli.style.warn(&format!(
-                    "  --resolution {resolution} ignored for {r}: a document is always its exact bytes (resolutions apply to block refs)"
-                )));
+                warn_doc_resolution(cli, r, resolution);
             }
             let text = res
                 .get("content")

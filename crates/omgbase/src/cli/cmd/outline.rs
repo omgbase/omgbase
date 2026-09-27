@@ -21,11 +21,18 @@ pub fn outline(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let depth = number(&a, "depth")?;
     let skeleton = a.flag("skeleton");
-    let repo = cli.repo()?;
-    let info = find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)?
-        .ok_or_else(|| CliError::engine("doc_missing", format!("no document {r}")))?;
+    // §2.3: the tool resolves the ref; the header shows the ref as passed
+    // (no local path lookup), as the reference's remote branch does.
+    let (doc, header) = if cli.remote_mode() {
+        (r.to_owned(), r.to_owned())
+    } else {
+        let repo = cli.repo()?;
+        let info = find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)?
+            .ok_or_else(|| CliError::engine("doc_missing", format!("no document {r}")))?;
+        (info.doc_id, info.path)
+    };
     let mut req = serde_json::Map::new();
-    req.insert("doc".to_owned(), json!(info.doc_id));
+    req.insert("doc".to_owned(), json!(doc));
     if let Some(d) = depth {
         req.insert("depth".to_owned(), json!(d));
     }
@@ -44,7 +51,7 @@ pub fn outline(cli: &mut Cli, args: &[String]) -> Result<i32> {
         }
         return code;
     }
-    cli.io.out(&style.wordmark(&info.path));
+    cli.io.out(&style.wordmark(&header));
     cli.io.out(&style.rule());
     let text = result.get("text").and_then(Json::as_str).unwrap_or("");
     for line in text.split('\n') {

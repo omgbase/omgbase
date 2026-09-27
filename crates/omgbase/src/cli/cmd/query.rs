@@ -20,8 +20,10 @@ pub fn run_source(
     limit: Option<i64>,
     cursor: Option<&str>,
 ) -> Result<Json> {
+    // §2.3: remotely the engine's own provider (or its `semantic_unavailable`)
+    // answers; the local provider check would open the workspace.
     let semantic = !collect_semantic_phrases(source).is_empty();
-    if semantic && !cli.has_provider()? {
+    if semantic && !cli.remote_mode() && !cli.has_provider()? {
         return Err(CliError::engine_hint(
             "semantic_unavailable",
             "semantic(...) needs an embedding provider",
@@ -36,9 +38,7 @@ pub fn run_source(
     if let Some(c) = cursor {
         req.insert("cursor".to_owned(), json!(c));
     }
-    Ok(cli
-        .surface(semantic)?
-        .call_result("query", &Json::Object(req))?)
+    cli.call_with("query", Json::Object(req), semantic)
 }
 
 /// The projected column names of `source`'s top-level `select`, in order —

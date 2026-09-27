@@ -313,7 +313,7 @@
     },
     {
       "name": "insert-to-heading",
-      "notes": "§9: a heading target places the block right after the heading, not at the section's end",
+      "notes": "§9 (mutate 1.2): `<to>` must be a container — a heading is a leaf, so the kernel refuses with type_mismatch and the CLI prints `error[type_mismatch]: <id> is a heading, not a container; …` plus the `{ op_index, block, type }` payload (exit 1); `cat` proves the file untouched (`## Contents` still there — before 1.2 the insert landed in the heading's empty children and its line vanished). `append <heading>` addresses the section, `insert --at after <id>` the position.",
       "workspace": "alchemy",
       "steps": [
         {
@@ -327,9 +327,9 @@
           ],
           "pin_stderr": true,
           "expect": {
-            "exit": 0,
-            "stdout": "b_314\n",
-            "stderr": "  ok committed · 1 document touched\n"
+            "exit": 1,
+            "stdout": "",
+            "stderr": "error[type_mismatch]: b_305 is a heading, not a container; place relative to it with at.before/at.after or append to its section\n  {\n    \"op_index\": 0,\n    \"block\": \"b_305\",\n    \"type\": \"heading\"\n  }\n"
           }
         },
         {
@@ -339,7 +339,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\nUnder contents.\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+            "stdout": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
           }
         }
       ]
@@ -439,7 +439,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "usage: insert requires a <to> parent (block id, or a heading id for section append)\n"
+        "stderr": "usage: insert requires a <to> parent (a container block id, or a doc id/path for the top level)\n"
       }
     },
     {

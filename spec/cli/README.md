@@ -659,9 +659,9 @@ parses `end` (default), `start`, `before <id>`, `after <id>`; anything else
 is `usage: bad --at '<v>' (use end|start|before <id>|after <id>)`);
 `--expect` is the destination-parent CAS of `spec/mutate` §1.2 (a mismatch
 is `stale_expectation: parent_children_hash mismatch` with the current hash).
-A heading as `<to>` places the block directly after the heading (§9).
+`<to>` must be a container (`list`, `list_item`, `task`, `blockquote`, `table`) or a document; a leaf such as a heading is the kernel's `type_mismatch` with its hint (`spec/mutate` §1.1, 1.2 — §9).
 Confirmation (§4); `--json` the `ApplyResult`. Missing parent →
-`usage: insert requires a <to> parent (block id, or a heading id for section append)`;
+`usage: insert requires a <to> parent (a container block id, or a doc id/path for the top level)`;
 unknown → `block_missing: not a block: <ref>`.
 
 ### `links`
@@ -1461,6 +1461,19 @@ bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
   MCP server pre-checks and says `repo has no filesystem source; mutation
   disabled` (`spec/surface` §4). The library now throws that typed error, so
   both clients render the same bytes (`sync::sourceless`).
+
+- **Open — remote mode drops `--actor`.** No writing tool takes an actor, so
+  a `--server` write commits as `api(agent:mcp)` where the local run records
+  `api(human:<user>)`; giving the writing tools an optional `actor` would be a
+  `spec/surface` minor. Also unpinned, observed while proving `--server` both
+  ways: the reference client spawns its stdio engine with the MCP SDK's
+  safelisted environment, so `OMGBASE_SPEC_*` never reach an `omg --server`
+  child (the Rust client inherits the whole environment); `cat --json <block>`
+  remotely carries `read_ref`'s `kind`; `outline <d_id>` remotely heads with
+  the id; block sugar `--json` remotely prints the tool's decorated result;
+  `retarget --apply` remotely prints `ok retargeted N block(s)`; the Rust
+  client keeps `--dry-run` on `retarget --apply` a preview and still says
+  `nothing to do` for an empty `apply`, where the reference posts the call.
 
 ## 10. Decisions
 

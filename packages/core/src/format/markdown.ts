@@ -8,6 +8,14 @@ import { extractFromBlock, extractFromFrontmatter, ownText, scanText, INLINE_FIE
 
 export const MARKDOWN_FORMAT = "markdown";
 
+/**
+ * The Markdown block kinds whose `children` the parser produces (spec/format;
+ * `core/parse/parse.ts` CONTAINER_TYPES on the mdast side: list → list_item /
+ * task, blockquote, table → table_row). Every other kind is a leaf: its raw IS
+ * its whole content, so nothing may be placed inside it (spec/mutate §1.1).
+ */
+export const MARKDOWN_CONTAINER_KINDS: ReadonlySet<string> = new Set(["list", "list_item", "task", "blockquote", "table"]);
+
 function toAdapterEdge(e: ExtractedEdge): AdapterEdge {
   return {
     srcBlock: e.srcBlock,

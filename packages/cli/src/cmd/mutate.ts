@@ -111,7 +111,7 @@ async function runInsert(cli: Cli, args: string[]): Promise<number> {
     });
   }
   const to = positionals[0];
-  if (!to) throw new CliUsageError("insert requires a <to> parent (block id, or a heading id for section append)");
+  if (!to) throw new CliUsageError("insert requires a <to> parent (a container block id, or a doc id/path for the top level)");
   const markdown = readContent(content);
   // The destination-parent CAS (spec/mutate §1.2) rides as the op-level expect.
   const expect = values.expect ? { expect: { parent_children_hash: values.expect } } : {};

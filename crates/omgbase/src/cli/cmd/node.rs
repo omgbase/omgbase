@@ -54,6 +54,12 @@ fn props(cli: &mut Cli, rest: &[String]) -> Result<i32> {
         return Err(CliError::usage("node props <nodeId>"));
     };
     let node_id = node_id.to_owned();
+    // §2.3: an editability lookup with no tool behind it — local only.
+    if cli.remote_mode() {
+        return Err(CliError::usage(
+            "node props is local-only; run it against a local workspace",
+        ));
+    }
     let row: Option<(String, String)> = cli
         .store()?
         .conn()

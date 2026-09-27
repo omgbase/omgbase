@@ -10,7 +10,7 @@ use crate::cli::context::Cli;
 use crate::cli::help::{render_help_for, wants_help};
 use crate::cli::output::{CliError, EXIT_OK, Result};
 
-use super::mutate::{apply_result_of, render_apply, require_root, set_actor, unified_diff_lines};
+use super::mutate::{apply_result_of, render_apply, render_diffs, set_actor, unified_diff_lines};
 use super::{machine_out, str_of};
 
 pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
@@ -26,7 +26,6 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
     };
     let (from, to) = (from.to_owned(), to.to_owned());
     let apply = a.flag("apply");
-    require_root(cli)?;
     if apply {
         set_actor(cli, a.value("actor"))?;
     }
@@ -38,6 +37,27 @@ pub fn retarget(cli: &mut Cli, args: &[String]) -> Result<i32> {
     }
     m.insert("dry_run".to_owned(), json!(!apply || cli.flags.dry_run));
     let res = cli.call("links_retarget", Json::Object(m))?;
+    if apply && cli.remote_mode() {
+        // §2.3: the reference's remote `--apply` renders the tool's whole
+        // result (`{ hits, pairs, applied, ...apply result }`) in `--json`
+        // and `ok retargeted N block(s)` for humans — not the block
+        // confirmation the local path prints. A dry run previews as every
+        // write does (§3.6).
+        cli.capture(&res);
+        if let Some(code) = machine_out(cli, &res, None, None) {
+            return code;
+        }
+        if cli.flags.dry_run {
+            render_diffs(cli, res.get("diffs"));
+            return Ok(EXIT_OK);
+        }
+        let n = res.get("hits").and_then(Json::as_array).map_or(0, Vec::len);
+        cli.io.err(&cli.style.dim(&format!(
+            "  {} retargeted {n} block(s)",
+            cli.style.ok(cli.style.glyphs().ok)
+        )));
+        return Ok(EXIT_OK);
+    }
     if apply {
         return render_apply(cli, apply_result_of(res));
     }

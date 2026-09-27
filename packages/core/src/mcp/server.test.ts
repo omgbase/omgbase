@@ -799,12 +799,23 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("blocks_insert accepts a block ref for its parent and inserts through the kernel", async () => {
+  it("blocks_insert accepts a block ref as an anchor and inserts through the kernel", async () => {
     const alpha = await idOf("Alpha para.");
-    const { isError } = (await call("blocks_insert", { to: alpha, markdown: "Inserted child.", at: "end" })) as { isError: boolean };
+    const { isError } = (await call("blocks_insert", { to: "notes.md", markdown: "Inserted child.", at: { after: alpha } })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
-    expect(payload.content).toContain("Inserted child.");
+    expect(payload.content).toContain("Alpha para.\n\nInserted child.");
+  });
+
+  it("blocks_insert into a leaf block is type_mismatch (spec/mutate 1.2) and touches nothing", async () => {
+    const alpha = await idOf("Alpha para.");
+    const r = (await call("blocks_insert", { to: alpha, markdown: "Inserted child.", at: "end" })) as { isError: boolean; payload: { error?: string; data?: { type?: string } } };
+    expect(r.isError).toBe(true);
+    expect(r.payload.error).toBe("type_mismatch");
+    expect(r.payload.data?.type).toBe("paragraph");
+    const { payload } = (await call("docs_read", { path: "notes.md" })) as { payload: { content: string } };
+    expect(payload.content).toContain("Alpha para.");
+    expect(payload.content).not.toContain("Inserted child.");
   });
 
   it("blocks_update resolves a ref and pins CAS from current bytes server-side", async () => {
@@ -896,7 +907,7 @@ describe("block-level MCP tools (blocks_* — ref resolution + CAS server-side)"
 
   it("dry_run previews without committing", async () => {
     const alpha = await idOf("Alpha para.");
-    const { payload, isError } = (await call("blocks_insert", { to: alpha, markdown: "PREVIEW ONLY", dry_run: true })) as {
+    const { payload, isError } = (await call("blocks_insert", { to: "notes.md", at: { after: alpha }, markdown: "PREVIEW ONLY", dry_run: true })) as {
       payload: { diffs?: Record<string, unknown> }; isError: boolean;
     };
     expect(isError).toBe(false);

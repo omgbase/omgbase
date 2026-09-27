@@ -256,8 +256,43 @@ fn resolve_section(doc: &MutDoc, heading: &str, at: &At) -> Result<Target> {
     })
 }
 
-/// §1.1: resolve a placement to a sibling list and an index.
-pub fn resolve_target(doc: &MutDoc, to: &To) -> Result<Target> {
+/// §1.1 (1.2): whether `block` can own children placed by `insert`/`move` —
+/// a kind whose children the parser produces. Markdown asks the format
+/// layer's kind table (`list`, `list_item`, `task`, `blockquote`, `table`);
+/// any other format has no kind table, so a block with children is a
+/// container and a childless one is a leaf.
+fn is_container(format: &str, block: &MutBlock) -> bool {
+    if format == "markdown" {
+        block
+            .kind
+            .parse::<BlockKind>()
+            .is_ok_and(|k| k.is_container())
+    } else {
+        !block.children.is_empty()
+    }
+}
+
+/// §1.1 (1.2): `to.parent` naming a leaf is `type_mismatch` — before 1.2 the
+/// blocks landed in the leaf's empty `children`, the dirty leaf re-rendered
+/// from them and its own text was lost (§10).
+fn require_container(doc: &MutDoc, path: &[usize], op_index: usize) -> Result<()> {
+    let block = doc.block(path);
+    if is_container(&doc.format, block) {
+        return Ok(());
+    }
+    let (id, kind) = (&block.id, &block.kind);
+    Err(err_data(
+        ErrorCode::TypeMismatch,
+        format!(
+            "{id} is a {kind}, not a container; place relative to it with at.before/at.after or append to its section"
+        ),
+        json!({ "op_index": op_index, "block": id, "type": kind }),
+    ))
+}
+
+/// §1.1: resolve a placement to a sibling list and an index. A `parent` id
+/// must name a container (1.2); `op_index` rides on that error.
+pub fn resolve_target(doc: &MutDoc, to: &To, op_index: usize) -> Result<Target> {
     match &to.parent {
         Parent::Doc => Ok(Target {
             parent: Vec::new(),
@@ -268,6 +303,7 @@ pub fn resolve_target(doc: &MutDoc, to: &To) -> Result<Target> {
             let path = doc
                 .locate(id)
                 .ok_or_else(|| err(ErrorCode::ParentMissing, format!("parent {id} not found")))?;
+            require_container(doc, &path, op_index)?;
             let index = resolve_index(&doc.block(&path).children, &to.at)?;
             Ok(Target {
                 parent: path,
@@ -398,7 +434,7 @@ pub fn op_insert(
     expect: Option<&Expect>,
     minter: &mut dyn Minter,
 ) -> Result<OpResult> {
-    let Target { parent, index } = resolve_target(doc, to)?;
+    let Target { parent, index } = resolve_target(doc, to, op_index)?;
     // §1.2: the destination parent's order CAS — `parent` IS the resolved
     // sibling list (a section scope or a `{ doc: true }` anchor name the top level).
     check_children_hash(doc.siblings(&parent), expect, op_index)?;
@@ -710,14 +746,14 @@ pub fn op_move(
             ));
         }
     }
-    // §1.2: the DESTINATION parent's order CAS, resolved on the pre-removal
-    // tree (before the op mutates anything) and checked once for the whole
+    // The destination resolves on the pre-removal tree first so a leaf parent
+    // (§1.1 `type_mismatch`) or a missing one fails before the op mutates
+    // anything; the index is re-resolved after the removal below.
+    let Target { parent: dst, .. } = resolve_target(doc, to, op_index)?;
+    // §1.2: the DESTINATION parent's order CAS, checked once for the whole
     // run. When source and destination are one list this is the "same
     // siblings reordered under me" guard: the hash covers the moved blocks too.
-    if expect.is_some_and(|e| e.parent_children_hash.is_some()) {
-        let Target { parent: dst, .. } = resolve_target(doc, to)?;
-        check_children_hash(doc.siblings(&dst), expect, op_index)?;
-    }
+    check_children_hash(doc.siblings(&dst), expect, op_index)?;
     // Extract in argument order.
     let mut moving = Vec::with_capacity(block_ids.len());
     {
@@ -731,7 +767,7 @@ pub fn op_move(
     // The source owner's path is unaffected by removals inside its list; mark
     // it before the destination splice can shift top-level indices.
     doc.mark_container_dirty(&parent);
-    let Target { parent: dst, index } = resolve_target(doc, to)?;
+    let Target { parent: dst, index } = resolve_target(doc, to, op_index)?;
     {
         let siblings = doc.siblings_mut(&dst);
         let tail = siblings.split_off(index);
@@ -988,7 +1024,7 @@ pub fn op_merge(
 
 // ---- cross-document move (§2.3) ------------------------------------------------------
 
-fn resolve_dst_target(dst: &MutDoc, to: &To) -> Result<Target> {
+fn resolve_dst_target(dst: &MutDoc, to: &To, op_index: usize) -> Result<Target> {
     match &to.parent {
         Parent::Doc | Parent::Section { .. } => Ok(Target {
             parent: Vec::new(),
@@ -1001,6 +1037,7 @@ fn resolve_dst_target(dst: &MutDoc, to: &To) -> Result<Target> {
                     format!("parent {id} not found in dest"),
                 )
             })?;
+            require_container(dst, &path, op_index)?;
             let index = resolve_index(&dst.block(&path).children, &to.at)?;
             Ok(Target {
                 parent: path,
@@ -1030,11 +1067,10 @@ pub fn cross_doc_move(
             ));
         }
     }
-    // §1.2: the destination parent's order CAS (in `dst`), before either tree moves.
-    if expect.is_some_and(|e| e.parent_children_hash.is_some()) {
-        let Target { parent, .. } = resolve_dst_target(dst, to)?;
-        check_children_hash(dst.siblings(&parent), expect, op_index)?;
-    }
+    // The destination resolves before either tree moves (a leaf parent is
+    // §1.1 `type_mismatch`), then §1.2: its order CAS.
+    let Target { parent, .. } = resolve_dst_target(dst, to, op_index)?;
+    check_children_hash(dst.siblings(&parent), expect, op_index)?;
     let mut moving = Vec::with_capacity(block_ids.len());
     for id in block_ids {
         if let Some(path) = src.locate(id) {
@@ -1043,7 +1079,7 @@ pub fn cross_doc_move(
             src.mark_container_dirty(parent);
         }
     }
-    let Target { parent, index } = resolve_dst_target(dst, to)?;
+    let Target { parent, index } = resolve_dst_target(dst, to, op_index)?;
     {
         let siblings = dst.siblings_mut(&parent);
         let tail = siblings.split_off(index);
@@ -1637,6 +1673,156 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(e.code, ErrorCode::CycleMove);
+    }
+
+    #[test]
+    fn insert_into_a_leaf_is_type_mismatch() {
+        // §1.1 (1.2): before, the block landed in the heading's empty
+        // children and the heading's own text was lost on re-render.
+        let (mut d, mut m) = doc("## Risks\n\nBody.\n");
+        let heading = id_at(&d, 0);
+        let e = d
+            .insert(
+                &To {
+                    parent: Parent::Block(heading.clone()),
+                    at: At::End,
+                },
+                "Under risks.",
+                &mut m,
+            )
+            .unwrap_err();
+        assert_eq!(e.code, ErrorCode::TypeMismatch);
+        assert_eq!(
+            e.message,
+            format!(
+                "{heading} is a heading, not a container; place relative to it with at.before/at.after or append to its section"
+            )
+        );
+        assert_eq!(
+            Value::Object(e.data),
+            json!({ "op_index": 0, "block": heading, "type": "heading" })
+        );
+        assert_eq!(render(&d), "## Risks\n\nBody.\n");
+        // A container parent still takes the insert.
+        let (mut d, mut m) = doc("> quoted\n");
+        let quote = id_at(&d, 0);
+        d.insert(
+            &To {
+                parent: Parent::Block(quote),
+                at: At::End,
+            },
+            "more",
+            &mut m,
+        )
+        .unwrap();
+        assert_eq!(d.children[0].children.len(), 2);
+    }
+
+    #[test]
+    fn move_into_a_leaf_is_type_mismatch_before_the_tree_moves() {
+        let (mut d, _) = doc("Para.\n\n- item\n");
+        let para = id_at(&d, 0);
+        let item = d.children[1].children[0].id.clone();
+        let e = d
+            .move_blocks(
+                &[item],
+                &To {
+                    parent: Parent::Block(para.clone()),
+                    at: At::Start,
+                },
+                3,
+            )
+            .unwrap_err();
+        assert_eq!(e.code, ErrorCode::TypeMismatch);
+        assert_eq!(
+            Value::Object(e.data),
+            json!({ "op_index": 3, "block": para, "type": "paragraph" })
+        );
+        // Nothing was extracted: the source list still has its item.
+        assert_eq!(render(&d), "Para.\n\n- item\n");
+    }
+
+    #[test]
+    fn cross_doc_move_into_a_leaf_is_type_mismatch() {
+        let (mut src, _) = doc("- item\n");
+        let (mut dst, _) = doc("# Title\n\n- other\n");
+        let item = src.children[0].children[0].id.clone();
+        let title = id_at(&dst, 0);
+        let e = cross_doc_move(
+            &mut src,
+            &mut dst,
+            std::slice::from_ref(&item),
+            &To {
+                parent: Parent::Block(title.clone()),
+                at: At::End,
+            },
+            1,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(e.code, ErrorCode::TypeMismatch);
+        assert_eq!(
+            Value::Object(e.data),
+            json!({ "op_index": 1, "block": title, "type": "heading" })
+        );
+        assert_eq!(render(&src), "- item\n");
+        assert_eq!(render(&dst), "# Title\n\n- other\n");
+        // The list in `dst` is a container: the same move lands.
+        let list = id_at(&dst, 1);
+        cross_doc_move(
+            &mut src,
+            &mut dst,
+            &[item],
+            &To {
+                parent: Parent::Block(list),
+                at: At::End,
+            },
+            1,
+            None,
+        )
+        .unwrap();
+        assert_eq!(render(&dst), "# Title\n\n- other\n- item\n");
+    }
+
+    #[test]
+    fn container_kinds_by_format() {
+        // Markdown: the format layer's kind table decides, children or not.
+        let (d, _) = doc(
+            "# H\n\npara\n\n- [ ] task\n\n> quote\n\n| a |\n| - |\n| 1 |\n\n```\ncode\n```\n\n---\n\n<div></div>\n",
+        );
+        let verdicts: Vec<(&str, bool)> = d
+            .children
+            .iter()
+            .map(|b| (b.kind.as_str(), is_container("markdown", b)))
+            .collect();
+        assert_eq!(
+            verdicts,
+            [
+                ("heading", false),
+                ("paragraph", false),
+                ("list", true),
+                ("blockquote", true),
+                ("table", true),
+                ("code_fence", false),
+                ("thematic_break", false),
+                ("html_block", false),
+            ]
+        );
+        let list = &d.children[2];
+        assert!(is_container("markdown", &list.children[0])); // task
+        assert!(!is_container("markdown", &d.children[4].children[0])); // table_row
+        let empty_quote = MutBlock::new("b_q", "blockquote", ">", "\n\n");
+        assert!(is_container("markdown", &empty_quote));
+        // Other formats have no kind table: a block with children is a
+        // container, a childless one is a leaf — whatever its kind says.
+        let leaf = MutBlock::new("b_1", "opaque", "k: v", "\n");
+        assert!(!is_container("yaml", &leaf));
+        let mut node = MutBlock::new("b_2", "opaque", "k:", "\n");
+        node.children
+            .push(MutBlock::new("b_3", "opaque", "  a: 1", "\n"));
+        assert!(is_container("yaml", &node));
+        assert!(is_container("json", &node));
+        assert!(!is_container("markdown", &node));
     }
 
     #[test]
