@@ -13,13 +13,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // npm's read replicas can lag a publish by a minute or more (2026-09-27:
 // @omgbase/core@0.4.1 took over 30 s to appear); poll for up to five minutes.
-async function waitForRegistry(p, deadlineMs = 5 * 60_000) {
+// While polling, a TTY shows a spinner with the elapsed time on one line
+// (rewritten in place); a pipe gets one dot per poll so a log still shows life.
+async function waitForRegistry(p, label, deadlineMs = 5 * 60_000) {
   const start = Date.now();
-  while (Date.now() - start < deadlineMs) {
-    if ((await versionsOf(p)).includes(p.version)) return true;
-    await sleep(5000);
+  const tty = process.stderr.isTTY;
+  const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let tick = 0;
+  const show = () => {
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    if (tty) process.stderr.write(`\r   ${frames[tick++ % frames.length]} waiting for the registry to show ${label}… ${elapsed}s (up to ${Math.round(deadlineMs / 60_000)} min)`);
+    else if (tick++ % 6 === 0) process.stderr.write(".");
+  };
+  const clear = () => {
+    if (tty) process.stderr.write("\r" + " ".repeat(90) + "\r");
+    else process.stderr.write("\n");
+  };
+  show();
+  const spinner = tty ? setInterval(show, 120) : null;
+  try {
+    while (Date.now() - start < deadlineMs) {
+      if ((await versionsOf(p)).includes(p.version)) return true;
+      for (let i = 0; i < 10; i++) {
+        await sleep(500);
+        if (!tty) show();
+      }
+    }
+    return false;
+  } finally {
+    if (spinner) clearInterval(spinner);
+    clear();
   }
-  return false;
 }
 
 /**
@@ -85,7 +109,7 @@ export async function runPublish(ws, { npmOnly = false, cratesOnly = false, otp,
     // The publish command exited 0, so the version is published; the registry
     // read is advisory (replication lag) — warn and go on rather than stop.
     // A rerun is safe either way: a published version is skipped as current.
-    if (await waitForRegistry(p)) log(`   ${describe(p)} is on the registry.`);
+    if (await waitForRegistry(p, describe(p))) log(`   ${describe(p)} is on the registry.`);
     else log(`   warning: ${describe(p)} published (exit 0) but is not yet visible on the registry after 5 min of polling; continuing — verify later with \`release plan\`.`);
   }
   log("\ndone — every version is on its registry.");
