@@ -4,12 +4,28 @@
 // --no-git-checks` with stdio inherited so the OTP prompt reaches the terminal).
 // Verifies each publish on the registry and stops at the first failure so a
 // dependent is never published against a missing dependency.
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { relative } from "node:path";
 import { topoSort } from "./workspace.mjs";
-import { npmWhoami, registryStatus, versionsOf } from "./registry.mjs";
+import { isAlreadyPublished, npmWhoami, registryStatus, versionsOf } from "./registry.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Run the publish command with stdin inherited (the OTP prompt), stdout and
+ * stderr forwarded live to the terminal AND captured, so the registry's
+ * "already published" answer can be recognized after a non-zero exit.
+ */
+function runPublishCommand(cmd, args, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { cwd, stdio: ["inherit", "pipe", "pipe"] });
+    let output = "";
+    child.stdout.on("data", (d) => { output += d; process.stdout.write(d); });
+    child.stderr.on("data", (d) => { output += d; process.stderr.write(d); });
+    child.on("error", (e) => resolve({ status: 1, output: output + String(e) }));
+    child.on("close", (status) => resolve({ status: status ?? 1, output }));
+  });
+}
 
 // npm's read replicas can lag a publish by a minute or more (2026-09-27:
 // @omgbase/core@0.4.1 took over 30 s to appear); poll for up to five minutes.
@@ -100,9 +116,19 @@ export async function runPublish(ws, { npmOnly = false, cratesOnly = false, otp,
       cmd = "pnpm";
       args = ["publish", "--access", "public", "--no-git-checks", ...(otp ? ["--otp", otp] : [])];
     }
+    // A fresh, uncached read right before publishing: an earlier run may have
+    // published this one after the plan was printed.
+    if ((await versionsOf(p)).includes(p.version)) {
+      log(`\n== ${describe(p)} is already on the registry — skipping.`);
+      continue;
+    }
     log(`\n== ${describe(p)}  (cd ${relative(ws.root, p.dir)} && ${cmd} ${args.join(" ")})`);
-    const r = spawnSync(cmd, args, { cwd: p.dir, stdio: "inherit" });
+    const r = await runPublishCommand(cmd, args, p.dir);
     if (r.status !== 0) {
+      if (isAlreadyPublished(r.output, p.version)) {
+        log(`\n   the registry says ${describe(p)} is already published (an earlier run landed it) — continuing.`);
+        continue;
+      }
       log(`\n${describe(p)} did not publish (exit ${r.status}); stopping so dependents are not published against a missing dependency.`);
       return 1;
     }

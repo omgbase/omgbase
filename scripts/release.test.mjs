@@ -338,3 +338,12 @@ test("parseNpmJson tolerates a wrapper banner before the JSON", () => {
   assert.deepEqual(parseNpmJson('"0.1.0"\n'), ["0.1.0"]);
   assert.deepEqual(parseNpmJson(""), []);
 });
+
+test("isAlreadyPublished recognizes npm's and crates.io's republish refusals", async () => {
+  const { isAlreadyPublished } = await import("./lib/registry.mjs");
+  const npm = 'Failed to publish package @omgbase/sync@0.4.1 (status 403 Forbidden):\n{"success":false,"error":"You cannot publish over the previously published versions: 0.4.1."}';
+  assert.equal(isAlreadyPublished(npm, "0.4.1"), true);
+  assert.equal(isAlreadyPublished(npm, "0.4.10"), false);
+  assert.equal(isAlreadyPublished("error: crate version `1.3.0` is already uploaded", "1.3.0"), true);
+  assert.equal(isAlreadyPublished("ERR_PNPM_FAILED_TO_PUBLISH 401 Unauthorized", "0.4.1"), false);
+});

@@ -22,14 +22,45 @@ export function parseNpmJson(stdout) {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-/** Published versions of an npm package (empty when never published). */
+/**
+ * Published versions of an npm package (empty when never published). Read
+ * straight from the registry with caching disabled: `npm view` answers from
+ * npm's local cache and a CDN replica, and on 2026-09-27 that lag made the
+ * publisher try to republish @omgbase/sync@0.4.1 (a 403 from the registry).
+ * Falls back to `npm view` only when the registry is unreachable.
+ */
 export async function npmVersions(name) {
-  const r = await run("npm", ["view", name, "versions", "--json"]);
+  try {
+    const res = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2F")}`, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/vnd.npm.install-v1+json", "Cache-Control": "no-cache", Pragma: "no-cache" },
+      cache: "no-store",
+    });
+    if (res.status === 404) return [];
+    if (res.ok) {
+      const body = await res.json();
+      return Object.keys(body.versions ?? {});
+    }
+  } catch {
+    // fall through to the CLI
+  }
+  const r = await run("npm", ["view", name, "versions", "--json", "--prefer-online"]);
   if (r.status !== 0) {
     if (/E404|Not Found/i.test(r.stderr + r.stdout)) return [];
     throw new Error(`npm view ${name} failed:\n${(r.stderr || r.stdout).trim()}`);
   }
   return parseNpmJson(r.stdout);
+}
+
+/**
+ * The registry's own verdict that a version already exists: npm answers a
+ * republish with 403 "You cannot publish over the previously published
+ * versions: x.y.z"; crates.io with "crate version `x.y.z` is already
+ * uploaded". Either means the earlier run's publish landed — idempotent.
+ */
+export function isAlreadyPublished(output, version) {
+  const v = version.replace(/[.+]/g, "\\$&");
+  return new RegExp(`cannot publish over the previously published versions?:[^\\n]*\\b${v}\\b`, "i").test(output)
+    || new RegExp(`crate version \\x60?${v}\\x60? is already uploaded`, "i").test(output);
 }
 
 /** Published (non-yanked) versions of a crate (empty when never published). */
