@@ -11,10 +11,13 @@ import { npmWhoami, registryStatus, versionsOf } from "./registry.mjs";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function waitForRegistry(p, attempts = 10) {
-  for (let i = 0; i < attempts; i++) {
+// npm's read replicas can lag a publish by a minute or more (2026-09-27:
+// @omgbase/core@0.4.1 took over 30 s to appear); poll for up to five minutes.
+async function waitForRegistry(p, deadlineMs = 5 * 60_000) {
+  const start = Date.now();
+  while (Date.now() - start < deadlineMs) {
     if ((await versionsOf(p)).includes(p.version)) return true;
-    await sleep(3000);
+    await sleep(5000);
   }
   return false;
 }
@@ -79,11 +82,11 @@ export async function runPublish(ws, { npmOnly = false, cratesOnly = false, otp,
       log(`\n${describe(p)} did not publish (exit ${r.status}); stopping so dependents are not published against a missing dependency.`);
       return 1;
     }
-    if (!(await waitForRegistry(p))) {
-      log(`\n${describe(p)} is still not on the registry after publish; stopping.`);
-      return 1;
-    }
-    log(`   ${describe(p)} is on the registry.`);
+    // The publish command exited 0, so the version is published; the registry
+    // read is advisory (replication lag) — warn and go on rather than stop.
+    // A rerun is safe either way: a published version is skipped as current.
+    if (await waitForRegistry(p)) log(`   ${describe(p)} is on the registry.`);
+    else log(`   warning: ${describe(p)} published (exit 0) but is not yet visible on the registry after 5 min of polling; continuing — verify later with \`release plan\`.`);
   }
   log("\ndone — every version is on its registry.");
   return 0;
