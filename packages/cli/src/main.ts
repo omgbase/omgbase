@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { VERSION } from "@omgbase/core";
 import { processIO, type IO } from "./render.js";
 import { makeCli, progName, type Cli } from "./context.js";
 import { renderError, EXIT_OK } from "./output.js";
@@ -10,35 +6,14 @@ import { resolveCommand, unknownCommandError } from "./commands.js";
 import { runCommand, parseGlobals } from "./dispatch.js";
 import { closeRemote } from "./cmd/_remote.js";
 import { installSpecSeams } from "./seams.js";
+import { cliVersion } from "./build.js";
 
 // Hand-rolled router (11 §8: no commander). Splits global flags from the
 // command + its residual argv (parseGlobals, in dispatch.ts), resolves the
 // command (with aliases), then delegates to runCommand for the freshness sweep +
 // dispatch + error mapping — the same path the shell reuses per line.
 
-/**
- * `--version` prints THIS package's version (spec/cli §2.5), read from the
- * nearest `package.json` named `omgbase` above the running module (the source
- * tree and the built `dist/src/` sit at different depths). The engine's own
- * `VERSION` is the fallback only if the package file cannot be found.
- */
-export function cliVersion(): string {
-  let dir = dirname(fileURLToPath(import.meta.url));
-  for (;;) {
-    const candidate = join(dir, "package.json");
-    if (existsSync(candidate)) {
-      try {
-        const pkg = JSON.parse(readFileSync(candidate, "utf8")) as { name?: unknown; version?: unknown };
-        if (pkg.name === "omgbase" && typeof pkg.version === "string") return pkg.version;
-      } catch {
-        /* keep walking */
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return VERSION;
-    dir = parent;
-  }
-}
+export { cliVersion };
 
 export async function run(argv: string[], io: IO = processIO, prog = "omg"): Promise<number> {
   const parsed = parseGlobals(argv);

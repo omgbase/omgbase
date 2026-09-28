@@ -310,7 +310,8 @@ pub fn mcp(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let store = open_store(&db, &minters).map_err(|e| CliError::engine("error", e))?;
     let query_provider: Option<Box<dyn EmbeddingProvider>> =
         provider.map(|p| Box::new(p) as Box<dyn EmbeddingProvider>);
-    let mut surface = Surface::new(store, &repo.repo_id, query_provider);
+    let mut surface = Surface::new(store, &repo.repo_id, query_provider)
+        .with_build_info(crate::cli::build_info());
     if let Some(ts) = clock {
         surface = surface.with_clock(move || ts.clone());
     }

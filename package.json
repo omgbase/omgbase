@@ -10,7 +10,7 @@
   },
   "packageManager": "pnpm@12.4.0",
   "scripts": {
-    "build": "pnpm --filter @omgbase/oqx build && tsc -b",
+    "build": "pnpm --filter @omgbase/oqx build && tsc -b && node packages/cli/scripts/build-info.mjs",
     "typecheck": "pnpm --filter @omgbase/oqx build && tsc -b",
     "test": "pnpm -r test && node --test scripts/*.test.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",

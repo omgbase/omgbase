@@ -689,6 +689,8 @@ name = "omgbase-surface"
 version = "1.3.0"
 dependencies = [
  "omgbase-format",
+ "omgbase-graph",
+ "omgbase-mutate",
  "omgbase-properties",
  "omgbase-reconcile",
  "omgbase-search",

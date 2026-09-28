@@ -232,6 +232,100 @@ function cliVersion(): string {
   return cachedVersion;
 }
 
+// ---- §8: the `version` verb's outputs are recorded by shape --------------------------
+//
+// `omg version` prints release-specific values (the engine, its versions, the
+// runtime, the build), so the fixture pins the SHAPE: every leaf becomes its type
+// name — `<string>`, `<number>`, `<null>`, `<boolean>`. Both binaries' runners apply
+// the same rule (spec/cli §6 `version`, spec/surface §6):
+//
+//   JSON (`--json`): objects keep their keys with values normalized recursively,
+//   arrays keep their length; the two engine-specific parts are the exceptions —
+//   `components` (keyed by the engine's own packages) is recorded as `"<object>"`
+//   and the optional `mcp.sdk` (present only when an SDK is used) is dropped —
+//   and `commit`/`built`, null or not by BUILD ENVIRONMENT (a git checkout or
+//   not), are one token either way: `"<string|null>"`.
+//
+//   Human: each `key  value` line keeps its key cell and its spacing; the value
+//   cell becomes the type name of the tool's leaf, decided by the KEY (a type
+//   read off the text would misfire on an all-digit commit sha): `<null>` when
+//   it prints `—`, `<string|null>` for `commit`/`built`, `<number>` for `schema`,
+//   else `<string>`; the indented `components` lines (`  <name>  <version>`)
+//   collapse into one line `  <object>`.
+//
+// Applied only to a successful `version` invocation (exit 0, not its help card).
+
+/** Does this argv invoke the `version` verb (not `--version`, not its card)? Returns the output mode or null. */
+export function versionVerbMode(argv: string[]): "human" | "json" | null {
+  const takesValue = new Set(["-C", "--directory", "--repo", "--server", "-H", "--header"]);
+  let command: string | null = null;
+  let json = false;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--") break;
+    if (takesValue.has(a)) { i++; continue; }
+    if (a === "--help" || a === "-h") return null;
+    if (a === "--json" || a === "--jsonl" || a === "--ids") { json = true; continue; }
+    if (a.startsWith("-")) continue;
+    if (command === null) command = a;
+  }
+  if (command !== "version") return null;
+  return json ? "json" : "human";
+}
+
+/** JSON: leaves → type names; keys kept; `components` → `"<object>"`; `mcp.sdk` dropped. */
+export function typeShape(v: unknown, path: string[] = []): unknown {
+  if (v === null) return "<null>";
+  if (Array.isArray(v)) return v.map((x, i) => typeShape(x, [...path, String(i)]));
+  if (typeof v === "object") {
+    if (path.length === 1 && path[0] === "components") return "<object>";
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (path.length === 1 && path[0] === "mcp" && k === "sdk") continue;
+      // `commit`/`built` are null or not by BUILD ENVIRONMENT (a git checkout or
+      // not), which no fixture can pin: one token for either.
+      out[k] = path.length === 0 && (k === "commit" || k === "built") ? "<string|null>" : typeShape(x, [...path, k]);
+    }
+    return out;
+  }
+  return `<${typeof v}>`;
+}
+
+const HUMAN_LINE = /^(\S+)(\s{2,})(.*)$/;
+
+/** Human: value cells → the leaf's type name, by key; the indented component lines → one `  <object>` line. */
+export function typeShapeHuman(stdout: string): string {
+  const out: string[] = [];
+  let inComponents = false;
+  for (const line of stdout.split("\n")) {
+    if (line.startsWith("  ")) {
+      if (!inComponents) out.push("  <object>");
+      inComponents = true;
+      continue;
+    }
+    inComponents = false;
+    const m = HUMAN_LINE.exec(line);
+    if (!m) { out.push(line); continue; }
+    const [, key, gap, value] = m as unknown as [string, string, string, string];
+    const cell = key === "commit" || key === "built" ? "<string|null>" : value === "\u2014" ? "<null>" : key === "schema" ? "<number>" : "<string>";
+    out.push(key + gap + cell);
+  }
+  return out.join("\n");
+}
+
+/** The §8 rewrite of a successful `version` step's stdout; anything else is returned as is. */
+export function normalizeVersionOutput(argv: string[], o: Outcome): Outcome {
+  if (o.exit !== 0) return o;
+  const mode = versionVerbMode(argv);
+  if (mode === null) return o;
+  if (mode === "json") {
+    const lines = o.stdout.split("\n");
+    const doc = lines.map((l) => (l === "" ? l : JSON.stringify(typeShape(JSON.parse(l))))).join("\n");
+    return { ...o, stdout: doc };
+  }
+  return { ...o, stdout: typeShapeHuman(o.stdout) };
+}
+
 export function spawnOmg(tmp: string, argv: string[], opts: { stdin?: string; env?: Record<string, string> } = {}): Outcome {
   const env = { ...baseEnv(tmp) };
   for (const [k, v] of Object.entries(opts.env ?? {})) env[k] = substituteWorkspace(v, tmp);
@@ -246,7 +340,7 @@ export function spawnOmg(tmp: string, argv: string[], opts: { stdin?: string; en
   });
   if (r.error) throw new Error(`spawn omg ${argv.join(" ")}: ${r.error.message}`);
   if (r.status === null) throw new Error(`omg ${argv.join(" ")} was killed (${r.signal ?? "timeout"})\n${r.stderr}`);
-  return { exit: r.status, stdout: rewriteWorkspace(r.stdout, tmp), stderr: rewriteWorkspace(r.stderr, tmp) };
+  return normalizeVersionOutput(argv, { exit: r.status, stdout: rewriteWorkspace(r.stdout, tmp), stderr: rewriteWorkspace(r.stderr, tmp) });
 }
 
 // ---- workspaces -------------------------------------------------------------------

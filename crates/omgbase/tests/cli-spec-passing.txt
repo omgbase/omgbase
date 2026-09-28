@@ -226,6 +226,7 @@ invoke::unknown-option-is-an-engine-error
 invoke::unknown-option-json
 invoke::version
 invoke::version-short
+invoke::version-verb-no-workspace
 invoke::version-wins-over-bad-clock
 mutate::append
 mutate::append-dry-run
@@ -429,6 +430,8 @@ read::show-task
 read::status
 read::status-ids-is-json
 read::status-json
+read::version
+read::version-json
 shell::bad-reference
 shell::bindings
 shell::bindings-bad-targets

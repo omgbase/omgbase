@@ -67,7 +67,12 @@ export function computePlan(ws, notes) {
     }
   }
 
-  // 2. pins: a dependent crate whose pinned dependency moves needs at least a patch
+  // 2. pins: a dependent whose workspace dependency moves needs at least a
+  // patch — crates because their `version = "x.y.z"` pin is rewritten, npm
+  // packages because pnpm rewrites `workspace:^` to `^<current>` at publish,
+  // and a pre-1.0 caret does not span a minor: leaving `@omgbase/sync@0.4.1`
+  // (`^0.4.1` on core) beside a new `omgbase@0.5.0` (`^0.5.0`) would install
+  // two cores. So a dependent republishes whenever a dependency does.
   let changed = true;
   while (changed) {
     changed = false;
@@ -75,6 +80,16 @@ export function computePlan(ws, notes) {
       const e = entries.get(c.key);
       if (e.level && e.level !== "none") continue;
       const moved = c.pins.filter((pin) => !pin.dev && ["patch", "minor", "major"].includes(entries.get(pin.key)?.level));
+      if (moved.length) {
+        e.level = "patch";
+        e.pin = true;
+        changed = true;
+      }
+    }
+    for (const p of ws.npm) {
+      const e = entries.get(p.key);
+      if (e.level && e.level !== "none") continue;
+      const moved = p.deps.filter((d) => ["patch", "minor", "major"].includes(entries.get(d)?.level));
       if (moved.length) {
         e.level = "patch";
         e.pin = true;

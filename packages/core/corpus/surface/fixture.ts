@@ -353,6 +353,33 @@ export interface ToolResult {
  * reference-doc hint); `changes_since` digests lose `summary` (README §3:
  * unpinned).
  */
+/**
+ * README §6: a `version` read is recorded by SHAPE — its values name the engine
+ * and the release. Every leaf becomes its type name (`"<string>"`, `"<number>"`,
+ * `"<null>"`, `"<boolean>"`); objects keep their keys with values normalized
+ * recursively; arrays keep their length. The two engine-specific parts are the
+ * exceptions: `components` (keyed by the engine's own packages) is recorded as
+ * `"<object>"`, and the optional `mcp.sdk` (present only when an SDK is used) is
+ * dropped; `commit` and `built`, null or not by build environment, are recorded
+ * as `"<string|null>"`. The CLI runner applies the same rule to `omg version --json`.
+ */
+export function typeShape(v: unknown, path: string[] = []): unknown {
+  if (v === null) return "<null>";
+  if (Array.isArray(v)) return v.map((x, i) => typeShape(x, [...path, String(i)]));
+  if (typeof v === "object") {
+    if (path.length === 1 && path[0] === "components") return "<object>";
+    const out: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (path.length === 1 && path[0] === "mcp" && k === "sdk") continue;
+      // `commit`/`built` are null or not by BUILD ENVIRONMENT (a git checkout or
+      // not), which no fixture can pin: one token for either.
+      out[k] = path.length === 0 && (k === "commit" || k === "built") ? "<string|null>" : typeShape(x, [...path, k]);
+    }
+    return out;
+  }
+  return `<${typeof v}>`;
+}
+
 export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
   const text = r.content[0]?.text ?? "";
   let payload: unknown;
@@ -367,6 +394,7 @@ export function toReadOutcome(tool: string, r: ToolResult): ReadOutcome {
     if (env.data !== undefined && env.error !== "filter_invalid") out.data = env.data;
     return canonical(out);
   }
+  if (tool === "version") return canonical(typeShape(payload)) as ReadOutcome;
   if (tool === "changes_since" && isRecord(payload) && Array.isArray(payload.digests)) {
     payload = { ...payload, digests: payload.digests.map((d: unknown) => (isRecord(d) ? Object.fromEntries(Object.entries(d).filter(([k]) => k !== "summary")) : d)) };
   }
@@ -488,6 +516,7 @@ function validateCalls(at: string, calls: unknown, problems: string[]): number {
     if (extra.length > 0) problems.push(`${here}: a call takes \`tool\`, \`args\` (got ${extra.join(", ")})`);
     if (typeof c.tool !== "string" || c.tool === "") problems.push(`${here}: \`tool\` must be a tool name`);
     else if (c.tool === "query_syntax") problems.push(`${here}: query_syntax is not compared (README §7.3)`);
+    else if (c.tool === "version") problems.push(`${here}: version is engine-specific by nature and never interop-compared (README §6)`);
     if (!isRecord(c.args)) problems.push(`${here}: \`args\` must be an object`);
   });
   return calls.length;

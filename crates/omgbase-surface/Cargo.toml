@@ -29,6 +29,10 @@ omgbase-properties = { version = "1.1.0", path = "../omgbase-properties" }
 omgbase-search = { version = "1.2.0", path = "../omgbase-search" }
 # The matcher thresholds the observe tools take.
 omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile" }
+# The graph and mutation kernels: their versions for the `version` tool (the
+# store binds them; the surface only reports them).
+omgbase-graph = { version = "1.1.0", path = "../omgbase-graph" }
+omgbase-mutate = { version = "1.2.0", path = "../omgbase-mutate" }
 # The store's connection; row reads.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Results and arguments are JSON at the wire.

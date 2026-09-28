@@ -35,6 +35,9 @@ pub use ast::{
 /// also this crate's `major.minor`: the patch digit is the crate's own.
 pub const LANGUAGE_VERSION: &str = "0.13";
 
+/// This crate's own version (`Cargo.toml`).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub use context::{DataContext, DefaultContext};
 pub use engine::{Engine, InMemoryEngine, OqxResult, run_query};
 pub use errors::{OqxError, Result, Stage};

@@ -60,6 +60,9 @@ pub use uri::normalize_uri;
 /// The `spec/graph/VERSION` this crate implements (`major.minor`).
 pub const SPEC_VERSION: &str = "1.1";
 
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(test)]
 mod tests {
     use super::*;

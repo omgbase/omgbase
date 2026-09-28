@@ -206,6 +206,12 @@ pub static COMMANDS: &[Command] = &[
         "Embedding queue: status, or drain to embed",
         cmd::admin::embed,
     ),
+    cmd(
+        "version",
+        &[],
+        "Which engine and which versions (binary, components, specs, schema, MCP, runtime, build)",
+        cmd::version::version,
+    ),
     cmd("help", &[], "Show this help", cmd::help::help),
 ];
 

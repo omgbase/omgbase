@@ -495,11 +495,191 @@ fn spawn_omg(
         s.replace(&tmp_str, WORKSPACE_TOKEN)
             .replace(env!("CARGO_PKG_VERSION"), VERSION_TOKEN)
     };
-    Ok(Outcome {
-        exit: status.code().map_or(-1, i64::from),
-        stdout: rewrite(stdout),
-        stderr: rewrite(stderr),
+    Ok(normalize_version_output(
+        argv,
+        Outcome {
+            exit: status.code().map_or(-1, i64::from),
+            stdout: rewrite(stdout),
+            stderr: rewrite(stderr),
+        },
+    ))
+}
+
+// ---- §8: the `version` verb's outputs are recorded by shape --------------------------
+//
+// `omg version` prints release-specific values (the engine, its versions, the
+// runtime, the build), so the fixture pins the shape: every leaf becomes its
+// type name — `<string>`, `<number>`, `<null>`, `<boolean>`. Both runners apply
+// the same rule (spec/cli §6 `version`, spec/surface §6): in JSON, objects keep
+// their keys with values normalized recursively and arrays their length, except
+// `components` (recorded as `"<object>"`) and the optional `mcp.sdk` (dropped),
+// and `commit`/`built` — null or not by build environment (a git checkout or
+// not) — are one token either way, `"<string|null>"`; in human output each
+// `key  value` line keeps its key cell and spacing and the value cell becomes
+// the type name of the tool's leaf, decided by the key (a type read off the
+// text would misfire on an all-digit commit sha): `<null>` when it prints `—`,
+// `<string|null>` for `commit`/`built`, `<number>` for `schema`, else
+// `<string>`; the indented `components` lines collapse into one `  <object>`.
+// Applied only to a successful `version` invocation (exit 0, not its card).
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VersionMode {
+    Human,
+    Json,
+}
+
+/// Does this argv invoke the `version` verb (not `--version`, not its card)?
+fn version_verb_mode(argv: &[String]) -> Option<VersionMode> {
+    const TAKES_VALUE: [&str; 6] = ["-C", "--directory", "--repo", "--server", "-H", "--header"];
+    let mut command: Option<&str> = None;
+    let mut json = false;
+    let mut i = 0;
+    while i < argv.len() {
+        let a = argv[i].as_str();
+        i += 1;
+        if a == "--" {
+            break;
+        }
+        if TAKES_VALUE.contains(&a) {
+            i += 1;
+            continue;
+        }
+        if a == "--help" || a == "-h" {
+            return None;
+        }
+        if a == "--json" || a == "--jsonl" || a == "--ids" {
+            json = true;
+            continue;
+        }
+        if a.starts_with('-') {
+            continue;
+        }
+        if command.is_none() {
+            command = Some(a);
+        }
+    }
+    if command != Some("version") {
+        return None;
+    }
+    Some(if json {
+        VersionMode::Json
+    } else {
+        VersionMode::Human
     })
+}
+
+/// JSON: leaves → type names; keys kept; `components` → `"<object>"`; `mcp.sdk` dropped.
+fn type_shape(v: &Json, path: &[String]) -> Json {
+    let child = |k: &str| {
+        let mut p = path.to_vec();
+        p.push(k.to_owned());
+        p
+    };
+    match v {
+        Json::Null => Json::from("<null>"),
+        Json::Bool(_) => Json::from("<boolean>"),
+        Json::Number(_) => Json::from("<number>"),
+        Json::String(_) => Json::from("<string>"),
+        Json::Array(items) => Json::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, x)| type_shape(x, &child(&i.to_string())))
+                .collect(),
+        ),
+        Json::Object(_) if path == ["components"] => Json::from("<object>"),
+        Json::Object(m) => Json::Object(
+            m.iter()
+                .filter(|(k, _)| !(path == ["mcp"] && *k == "sdk"))
+                .map(|(k, x)| {
+                    let shape = if path.is_empty() && (k == "commit" || k == "built") {
+                        Json::from("<string|null>")
+                    } else {
+                        type_shape(x, &child(k))
+                    };
+                    (k.clone(), shape)
+                })
+                .collect(),
+        ),
+    }
+}
+
+/// The reference's `^(\S+)(\s{2,})(.*)$`: the key, its padding of two or
+/// more blanks, and the value cell.
+fn split_key_value(line: &str) -> Option<(&str, &str, &str)> {
+    let key_end = line.find(char::is_whitespace)?;
+    if key_end == 0 {
+        return None;
+    }
+    let pad = line[key_end..].len() - line[key_end..].trim_start().len();
+    if pad < 2 {
+        return None;
+    }
+    let (key, rest) = line.split_at(key_end);
+    let (gap, value) = rest.split_at(pad);
+    Some((key, gap, value))
+}
+
+/// Human: value cells → the leaf's type name, by key; the indented component
+/// lines → one `  <object>` line.
+fn type_shape_human(stdout: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_components = false;
+    for line in stdout.split('\n') {
+        if line.starts_with("  ") {
+            if !in_components {
+                out.push("  <object>".to_owned());
+            }
+            in_components = true;
+            continue;
+        }
+        in_components = false;
+        match split_key_value(line) {
+            Some((key, gap, value)) => {
+                let cell = if key == "commit" || key == "built" {
+                    "<string|null>"
+                } else if value == "\u{2014}" {
+                    "<null>"
+                } else if key == "schema" {
+                    "<number>"
+                } else {
+                    "<string>"
+                };
+                out.push(format!("{key}{gap}{cell}"));
+            }
+            None => out.push(line.to_owned()),
+        }
+    }
+    out.join("\n")
+}
+
+/// The §8 rewrite of a successful `version` step's stdout; anything else as is.
+fn normalize_version_output(argv: &[String], o: Outcome) -> Outcome {
+    if o.exit != 0 {
+        return o;
+    }
+    match version_verb_mode(argv) {
+        None => o,
+        Some(VersionMode::Json) => {
+            let stdout = o
+                .stdout
+                .split('\n')
+                .map(|l| {
+                    if l.is_empty() {
+                        return String::new();
+                    }
+                    serde_json::from_str::<Json>(l)
+                        .map_or_else(|_| l.to_owned(), |v| type_shape(&v, &[]).to_string())
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Outcome { stdout, ..o }
+        }
+        Some(VersionMode::Human) => Outcome {
+            stdout: type_shape_human(&o.stdout),
+            ..o
+        },
+    }
 }
 
 // ---- comparing -----------------------------------------------------------------------

@@ -66,6 +66,9 @@ pub use yaml::{parse_document, parse_frontmatter, resolve_plain};
 /// The `spec/properties/VERSION` this crate implements (`major.minor`).
 pub const SPEC_VERSION: &str = "1.1";
 
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// A body block with its id: the crate's input (§1). Borrowed from whatever
 /// the caller holds — a parsed `spec/format` tree with ids assigned, or a
 /// store's own block rows.

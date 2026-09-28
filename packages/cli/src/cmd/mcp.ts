@@ -6,6 +6,7 @@ import { EngineErrorLike, EXIT_OK, renderHelp } from "../output.js";
 import { installSpecSeams } from "../seams.js";
 import { loadEmbedding } from "./_embed.js";
 import { openRepoSource } from "./_source.js";
+import { hostInfo } from "../build.js";
 
 // `omg mcp [--no-watch]` (11 §5.8) — MCP server on stdio; the host owns the
 // process lifetime. Runs an in-process watcher by default so a lone session is
@@ -172,6 +173,8 @@ async function runMcp(cli: Cli, args: string[]): Promise<number> {
     ...(repo.rootPath ? { rootPath: repo.rootPath } : {}),
     ...(drainer ? { onMutation: () => drainer.schedule() } : {}),
     ...(embedQuery ? { embedQuery } : {}),
+    // The `version` tool's view of this binary (spec/surface §4).
+    host: hostInfo(),
   });
 
   let shuttingDown = false;

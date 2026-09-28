@@ -25,6 +25,7 @@ pub mod show;
 pub mod source;
 pub mod status;
 pub mod sync;
+pub mod version;
 
 use serde_json::Value as Json;
 

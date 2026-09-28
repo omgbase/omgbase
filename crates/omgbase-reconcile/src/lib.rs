@@ -88,6 +88,9 @@ pub use types::{
 /// The `spec/reconcile/VERSION` this crate implements (`major.minor`).
 pub const SPEC_VERSION: &str = "2.3";
 
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The matcher version stamped on every disposition: `"m" + SPEC_VERSION`.
 pub const MATCHER_V: &str = "m2.3";
 

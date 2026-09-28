@@ -28,6 +28,7 @@ use crate::links;
 use crate::query::{QueryOptions, query};
 use crate::read::{self, Resolution, ResolvedRef};
 use crate::reference::QUERY_SYNTAX;
+use crate::version::{BuildInfo, version_info};
 
 /// The actor every write from this surface records.
 pub const ACTOR: &str = "agent:mcp";
@@ -70,6 +71,8 @@ pub struct Surface {
     config: Config,
     /// The actor every write records (`ACTOR` unless a client names one).
     actor: String,
+    /// What the serving binary knows about itself (the `version` tool).
+    build_info: BuildInfo,
 }
 
 // ---- argument helpers ----------------------------------------------------------------
@@ -718,6 +721,11 @@ pub fn tools() -> Vec<ToolSpec> {
             description: "The repos in this workspace: `{ repos: [{ slug, hasSource }] }`.",
             input_schema: schema(&[], &[], false),
         },
+        ToolSpec {
+            name: "version",
+            description: "Which engine and which versions you are talking to: `{ engine: \"typescript\"|\"rust\", version, components: { <package>: <version> }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }`. `version` is the serving binary's own; `components` every omgbase package it is built from; `specs` the spec versions it implements (compile-time constants); `schema` the database's `PRAGMA user_version`; `commit`/`built` the build's git revision and RFC 3339 time (null when unknown). No arguments, no repo scope.",
+            input_schema: schema(&[], &[], false),
+        },
     ]
 }
 
@@ -752,6 +760,7 @@ impl Surface {
             writes: WriteTarget::Derived,
             config: Config::default(),
             actor: ACTOR.to_owned(),
+            build_info: BuildInfo::default(),
         }
     }
 
@@ -794,6 +803,15 @@ impl Surface {
     #[must_use]
     pub fn with_config(mut self, config: Config) -> Self {
         self.config = config;
+        self
+    }
+
+    /// The serving binary's identity for the `version` tool (§4, 1.4): its
+    /// own version, `spec/cli` version, build commit and time, compiler. A
+    /// library embedding keeps the default (this crate's version, nulls).
+    #[must_use]
+    pub fn with_build_info(mut self, build_info: BuildInfo) -> Self {
+        self.build_info = build_info;
         self
     }
 
@@ -2049,6 +2067,7 @@ impl Surface {
                     "repos": rows.iter().map(|r| json!({ "slug": r.slug, "hasSource": r.root_path.is_some() })).collect::<Vec<_>>(),
                 }))
             }
+            "version" => version_info(Some(&self.store), &self.build_info),
             other => Err(SurfaceError::other(format!("unknown tool {other}"))),
         }
     }
@@ -2326,10 +2345,11 @@ mod tests {
             "repos_status",
             "sync_status",
             "repos",
+            "version",
         ] {
             assert!(names.contains(&want), "missing {want}");
         }
-        assert_eq!(names.len(), 45);
+        assert_eq!(names.len(), 46);
         for t in tools() {
             assert_eq!(t.input_schema["type"], "object");
         }

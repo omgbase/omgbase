@@ -14,9 +14,10 @@ omgbase --version
 
 The verbs are the reference `omg`'s (`spec/cli/README.md` §6: `init`,
 `source`, `repos`, `status`, `ls`, `outline`, `cat`, `show`, `find`,
-`query`/`q`, `run`, `log`, `hist`, `diff`, `links`, `sync`, `mcp`; the
-mutators, `shell` and the admin verbs are pending and print their cards),
-with the same argv grammar, bytes and exit codes — the harness
+`query`/`q`, `run`, `log`, `hist`, `diff`, `links`, the mutators, `shell`,
+`sync`, `mcp`, the admin verbs and `version` — which engine and which
+versions a host is talking to, remotely with `--server`), with the same
+argv grammar, bytes and exit codes — the harness
 `tests/cli_spec.rs` runs every case of `spec/cli/cases` against this binary
 behind the allowlist `tests/cli-spec-passing.txt`. The code lives in
 `src/cli/`: `argv` (global flags anywhere in argv, `--` passthrough,

@@ -43,6 +43,7 @@ pub mod query;
 pub mod read;
 pub mod reference;
 pub mod translate;
+pub mod version;
 
 pub use catalog::{Surface, ToolOutcome, ToolSpec};
 pub use context::{StoreContext, Target, glob_to_like};
@@ -50,6 +51,10 @@ pub use cursor::{decode_cursor, encode_cursor};
 pub use error::{Result, SurfaceError};
 pub use planner::SqlitePlanner;
 pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query, rewrite_query};
+pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.3";
+pub const SPEC_VERSION: &str = "1.4";
+
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

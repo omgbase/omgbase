@@ -20,8 +20,10 @@ use omgbase_surface::{Surface, SurfaceError};
 use omgbase_sync::{WriterLock, WriterLockOptions};
 use serde_json::{Value as Json, json};
 
-/// The MCP protocol revision this server speaks.
-pub const PROTOCOL_VERSION: &str = "2024-11-05";
+/// The MCP protocol revision this server speaks by default (a client's own is
+/// echoed at `initialize`): the one the catalog is written against, which is
+/// what the reference's SDK serves and its `version` tool reports.
+pub const PROTOCOL_VERSION: &str = omgbase_surface::MCP_PROTOCOL_VERSION;
 
 const PARSE_ERROR: i64 = -32700;
 const INVALID_REQUEST: i64 = -32600;

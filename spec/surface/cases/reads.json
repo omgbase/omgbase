@@ -3,7 +3,7 @@
   "cases": [
     {
       "name": "orientation",
-      "notes": "§2 / §4: the enumerators, the outline, whole-document reads, repo scoping and the admin tools on a sourceless repo. guide.md is d_0 (b_0 … b_16), notes/one.md is d_1 (b_17 … b_20).",
+      "notes": "§2 / §4: the enumerators, the outline, whole-document reads, repo scoping and the admin tools on a sourceless repo. guide.md is d_0 (b_0 … b_16), notes/one.md is d_1 (b_17 … b_20). The closing `version` read (1.4) is recorded by shape (§6).",
       "steps": [
         {
           "observe": {
@@ -236,6 +236,12 @@
               "path": "guide.md",
               "repo": "nope"
             }
+          }
+        },
+        {
+          "read": {
+            "tool": "version",
+            "args": {}
           }
         }
       ],
@@ -737,6 +743,31 @@
             "data": {
               "repo": "nope"
             }
+          },
+          {
+            "engine": "<string>",
+            "version": "<string>",
+            "components": "<object>",
+            "specs": {
+              "oqx": "<string>",
+              "format": "<string>",
+              "reconcile": "<string>",
+              "store": "<string>",
+              "properties": "<string>",
+              "graph": "<string>",
+              "search": "<string>",
+              "mutate": "<string>",
+              "sync": "<string>",
+              "surface": "<string>",
+              "cli": "<string>"
+            },
+            "schema": "<number>",
+            "mcp": {
+              "protocol": "<string>"
+            },
+            "runtime": "<string>",
+            "commit": "<string|null>",
+            "built": "<string|null>"
           }
         ]
       }

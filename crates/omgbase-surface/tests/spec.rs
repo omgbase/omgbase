@@ -494,9 +494,61 @@ impl Drop for TempDir {
     }
 }
 
+/// README §6: a `version` read is recorded by shape — leaves → `"<string>"` /
+/// `"<number>"` / `"<null>"` / `"<boolean>"`; objects keep their keys, arrays
+/// their length; the top-level `components` is one `"<object>"`, `mcp.sdk` is
+/// dropped, and the top-level `commit`/`built` — null or not by build
+/// environment (a git checkout or not), which no fixture can pin — are one
+/// token either way, `"<string|null>"` (the reference runner's `typeShape`).
+fn type_shape(v: &Json, path: &[String]) -> Json {
+    let child = |k: &str| {
+        let mut p = path.to_vec();
+        p.push(k.to_owned());
+        p
+    };
+    match v {
+        Json::Null => json!("<null>"),
+        Json::Bool(_) => json!("<boolean>"),
+        Json::Number(_) => json!("<number>"),
+        Json::String(_) => json!("<string>"),
+        Json::Array(items) => Json::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(i, x)| type_shape(x, &child(&i.to_string())))
+                .collect(),
+        ),
+        Json::Object(_) if path == ["components"] => json!("<object>"),
+        Json::Object(m) => Json::Object(
+            m.iter()
+                .filter(|(k, _)| !(path == ["mcp"] && *k == "sdk"))
+                .map(|(k, x)| {
+                    let shape = if path.is_empty() && (k == "commit" || k == "built") {
+                        json!("<string|null>")
+                    } else {
+                        type_shape(x, &child(k))
+                    };
+                    (k.clone(), shape)
+                })
+                .collect(),
+        ),
+    }
+}
+
+/// `spec/cli/VERSION`: the CLI spec the workspace's binary renders.
+fn cli_spec_version() -> String {
+    fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../spec/cli/VERSION"
+    ))
+    .expect("spec/cli/VERSION")
+    .trim()
+    .to_owned()
+}
+
 /// The fixture's view of an outcome: an error envelope without its
 /// `message` (and without `data` for `filter_invalid`); `changes_since`
-/// digests without `summary`.
+/// digests without `summary`; a `version` result by shape (§6).
 fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
     let mut body = out.body.clone();
     if out.is_error {
@@ -506,6 +558,8 @@ fn normalize_outcome(tool: &str, out: &omgbase_surface::ToolOutcome) -> Json {
                 o.remove("data");
             }
         }
+    } else if tool == "version" {
+        return type_shape(&body, &[]);
     } else if tool == "changes_since" {
         if let Some(digests) = body.get_mut("digests").and_then(Json::as_array_mut) {
             for d in digests {
@@ -538,9 +592,17 @@ fn run_reads_case(c: &Json) -> Result<Json, String> {
     }
     let clock: Rc<RefCell<String>> = Rc::new(RefCell::new(CORPUS_TS.to_owned()));
     let tick = Rc::clone(&clock);
+    // The runner is this surface's host: like the reference's library
+    // embedding it has no build (commit/built null) but does render a CLI
+    // spec, so `specs.cli` is a string in both engines' recordings.
+    let build = omgbase_surface::BuildInfo {
+        cli_spec: Some(cli_spec_version()),
+        ..omgbase_surface::BuildInfo::default()
+    };
     let mut surface = Surface::new(store, &repo_id, None)
         .with_config(config.clone())
-        .with_clock(move || tick.borrow().clone());
+        .with_clock(move || tick.borrow().clone())
+        .with_build_info(build);
 
     let mut steps = Vec::new();
     for (i, step) in c["steps"].as_array().ok_or("steps")?.iter().enumerate() {

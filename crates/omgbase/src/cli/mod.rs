@@ -30,6 +30,28 @@ use render::Style;
 /// The CLI's own version (`spec/cli` §2.5, §9 Fixed: the package's version).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The `spec/cli/VERSION` this binary renders (`major.minor`; the `version`
+/// tool's `specs.cli`). A compile-time constant, not a file read — an
+/// installed binary has no `spec/` beside it; the test below pins it.
+pub const SPEC_VERSION: &str = "1.1";
+
+/// What this binary knows about itself, for the surface's `version` tool
+/// (`spec/surface` §4): its version, the CLI spec it renders, and the build
+/// script's findings — the git revision (`OMGBASE_COMMIT`: a checkout's
+/// `HEAD`, else the packaged `.cargo_vcs_info.json`, else unknown), the build
+/// time (`OMGBASE_BUILT`, RFC 3339; `SOURCE_DATE_EPOCH` honored) and the
+/// compiler (`OMGBASE_RUSTC`).
+#[must_use]
+pub fn build_info() -> omgbase_surface::BuildInfo {
+    omgbase_surface::BuildInfo {
+        version: VERSION.to_owned(),
+        cli_spec: Some(SPEC_VERSION.to_owned()),
+        commit: option_env!("OMGBASE_COMMIT").map(str::to_owned),
+        built: option_env!("OMGBASE_BUILT").map(str::to_owned),
+        rustc: option_env!("OMGBASE_RUSTC").map(str::to_owned),
+    }
+}
+
 /// §2.4: the name to quote the binary as — `basename(argv[0])`; `omg` for a
 /// bare script run or nothing.
 pub fn prog_name(argv0: Option<&OsStr>) -> String {
@@ -185,6 +207,17 @@ pub fn run_command(cli: &mut Cli, command: &str, rest: &[String]) -> Result<i32>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `spec/cli/VERSION` is the version this binary renders.
+    #[test]
+    fn spec_version_matches_the_spec() {
+        let version = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../spec/cli/VERSION"
+        ))
+        .expect("spec/cli/VERSION");
+        assert_eq!(SPEC_VERSION, version.trim());
+    }
 
     #[test]
     fn program_name() {

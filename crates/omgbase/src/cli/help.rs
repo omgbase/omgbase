@@ -26,7 +26,14 @@ const GROUPS: &[(&str, &[&str])] = &[
     ("sync & serve", &["sync", "mcp"]),
     (
         "admin",
-        &["rebuild-index", "gc", "doctor", "config", "embed"],
+        &[
+            "rebuild-index",
+            "gc",
+            "doctor",
+            "config",
+            "embed",
+            "version",
+        ],
     ),
 ];
 
@@ -860,6 +867,16 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             ]),
             vec![format!(
                 "needs embedding.provider (`{prog} config set embedding.provider omgbase-embedder --repo \"\"`); without one, semantic search is simply off."
+            )],
+        ),
+        "version" => spec(
+            s(
+                "Which engine and which versions: the binary, its components, the specs it implements, the schema, MCP protocol, runtime, build",
+            ),
+            vec![s("version [--json]")],
+            opts(&[("--json", "the `version` tool result verbatim")]),
+            vec![s(
+                "with --server, the remote engine's answer (typescript or rust)",
             )],
         ),
         _ => return None,

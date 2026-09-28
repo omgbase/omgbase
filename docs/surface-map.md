@@ -109,6 +109,7 @@ Legend: `--server` = is this CLI command remote-capable? ✅ wired · ▫️ pla
 | List repos | `Workspace.repos` | `repos` | `repos` | ▫️ |
 | Repo counts + drift | `reposStatus` | `status` | `repos_status` | ▫️ |
 | Watcher/sync state | `syncStatus` | `status` | `sync_status` | 🔒 local |
+| Which engine + versions | `versionInfo` | `version` | `version` | ✅ |
 
 ### Sync ingest primitives (the file↔DB direction)
 
@@ -131,7 +132,8 @@ vernacular and `--server` does not apply.
   `omg embed`, `omg config`. Server-operator ops; no MCP tools.
 - **Surface-intrinsic:** `omg shell` (a CLI session; `shell --server` runs each
   *line* remotely, but the session construct itself is CLI-only), `omg help`,
-  `omg --version`.
+  `omg --version` (the one-line form; the full `omg version` verb IS in the
+  catalog above — it renders the `version` tool, remotely with `--server`).
 
 ## `--server` coverage (state)
 

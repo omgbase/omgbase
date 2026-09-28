@@ -125,6 +125,9 @@ pub use writers::{NewCommit, NewRevision, Origin, TreeInputBlock};
 /// is [`SCHEMA_VERSION`].
 pub const SPEC_VERSION: &str = "13.5";
 
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// The one format this crate ingests (`docs.format`).
 pub const FORMAT_MARKDOWN: &str = "markdown";
 

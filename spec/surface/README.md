@@ -404,7 +404,12 @@ verbs later.
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
-  values name the engine and the release; `interop.json` never calls it) — `{ "read": { "tool": "<name>", "args": {...}, "ts"? } }` — invoked
+  values name the engine and the release; objects keep their keys and arrays
+  their length, except the two engine-specific parts: `components`, keyed by
+  the engine's own packages, is recorded as `"<object>"`, and the optional
+  `mcp.sdk` is dropped; `commit` and `built`, null or not by build
+  environment, are recorded as `"<string|null>"`; `interop.json` never calls
+  it) — `{ "read": { "tool": "<name>", "args": {...}, "ts"? } }` — invoked
   through the MCP server itself (the reference connects an SDK client over an
   in-memory transport and calls the tool); the outcome is the tool's JSON
   result, or `{ error, retriable, data? }` for an error result (`message`

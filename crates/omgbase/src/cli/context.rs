@@ -30,7 +30,7 @@ pub const SKIP_FRESHNESS: &[&str] = &["sync", "mcp", "init", "source", "help", "
 pub const REMOTE_OK: &[&str] = &[
     "sync", "query", "outline", "hist", "cat", "ls", "diff", "find", "log", "new", "mv", "meta",
     "rm", "update", "retarget", "apply", "insert", "move", "split", "merge", "done", "append",
-    "node", "shell",
+    "node", "shell", "version",
 ];
 
 /// An open workspace's paths.

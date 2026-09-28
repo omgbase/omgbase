@@ -158,6 +158,8 @@ export const REMOTE_OK = new Set([
   "apply", "insert", "move", "split", "merge", "done", "append", "node",
   // shell accepts --server itself, then threads it into every line it runs.
   "shell",
+  // version asks the REMOTE engine which engine/versions it is (spec/cli §6).
+  "version",
 ]);
 
 export { CliUsageError };

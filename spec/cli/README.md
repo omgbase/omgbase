@@ -437,7 +437,7 @@ ls, outline, cat, show, find), `query` (query, run), `history & links` (log,
 hist, diff, links), `mutate` (apply, insert, update, edit, move, rm, done,
 append, retarget, split, merge, node), `documents` (new, mv, meta), `session`
 (shell), `sync & serve` (sync, mcp), `admin` (rebuild-index, gc, doctor,
-config, embed). `help` is unlisted. The exact bytes are
+config, embed, version). `help` is unlisted. The exact bytes are
 `invoke::help-bare`.
 
 The **card** (`<command> --help`), on stdout:
@@ -936,8 +936,17 @@ per `components` entry (`  <name>  <version>`), then `specs` as one line
 (`—` when there is none, exit 0). `--json` is the tool result verbatim.
 Fixtures record every leaf value as its type name (`<string>`, `<number>`,
 `<null>`), in human output too (each value cell becomes its type name), so
-both binaries pin the same shape while printing their own numbers. The
-`--version` flag (§2.5) stays the one-line form.
+both binaries pin the same shape while printing their own numbers. The two
+engine-specific parts are recorded as one token: in JSON `components` becomes
+`"<object>"` and the optional `mcp.sdk` is dropped (`spec/surface` §6); in
+human output the indented `components` lines collapse into one `  <object>`
+line and the whole `mcp` cell — protocol and any `(sdk …)` suffix — is one
+`<string>`. `commit` and `built` are null or not by build environment (a git
+checkout or not), so both modes record them as `<string|null>`. A human
+value cell's type is the tool leaf's, decided by its key (`—` → `<null>`,
+`schema` → `<number>`, else `<string>`), not read off the text. The keys are
+aligned to the widest (`version`/`runtime`, 7). The `--version` flag (§2.5)
+stays the one-line form.
 
 ### `status`
 

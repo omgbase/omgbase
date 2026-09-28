@@ -39,6 +39,7 @@ import { cmdRebuild, cmdGc, cmdDoctor, cmdConfig, cmdEmbed } from "./cmd/admin.j
 import { cmdShell } from "./cmd/shell.js";
 import { cmdSource } from "./cmd/source.js";
 import { cmdHelp } from "./cmd/help.js";
+import { cmdVersion } from "./cmd/version.js";
 
 export const COMMANDS: Command[] = [
   cmdInit,
@@ -79,6 +80,7 @@ export const COMMANDS: Command[] = [
   cmdDoctor,
   cmdConfig,
   cmdEmbed,
+  cmdVersion,
   cmdHelp,
 ];
 

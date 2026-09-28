@@ -24,6 +24,7 @@ import { resolve as resolveThing } from "../search/resolve.js";
 import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
+import { versionInfo, type HostInfo } from "../version.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
 // (docs_tree, docs_list, docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
@@ -54,6 +55,13 @@ export interface ServerContext {
    * embedding happens off it. Absent ⇒ mutations don't auto-drain.
    */
   onMutation?: () => void;
+  /**
+   * The serving binary's identity for the `version` tool (spec/surface §4): its
+   * own version, build info and the module its component packages resolve from.
+   * Set by `omg mcp`; absent for a library embedding (the tool then reports the
+   * engine's own version and whatever components resolve from core).
+   */
+  host?: HostInfo;
 }
 
 // Kernel-op schemas (04 §1) published as the `apply` tool's op grammar. Giving
@@ -1280,6 +1288,25 @@ export function buildServer(ctx: ServerContext): McpServer {
     async () => {
       try {
         return ok(reposList(store));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  // Which engine and which versions (spec/surface §4, 1.4). No repo scope: the
+  // answer is about the binary and its database, not a repo.
+  server.registerTool(
+    "version",
+    {
+      description:
+        "Which engine and which versions you are talking to: `{ engine: \"typescript\"|\"rust\", version, components: { <package>: <version> }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }`. " +
+        "`version` is the serving binary's own; `components` every omgbase package it is built from; `specs` the spec versions it implements (compile-time constants); `schema` the database's `PRAGMA user_version`; `commit`/`built` the build's git revision and RFC 3339 time (null when unknown). No arguments, no repo scope.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return ok(versionInfo(store, ctx.host));
       } catch (e) {
         return fail(e);
       }

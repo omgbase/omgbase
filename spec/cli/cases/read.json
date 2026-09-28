@@ -857,6 +857,31 @@
         "stdout": "",
         "stderr": "usage: find requires <text>\n"
       }
+    },
+    {
+      "name": "version",
+      "notes": "§6 version (cli 1.1): aligned key/value lines, the components indented; every value cell is recorded as its type name (the components as one `<object>` line), schema is the workspace database's user_version",
+      "workspace": "alchemy",
+      "argv": [
+        "version"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "engine   <string>\nversion  <string>\n  <object>\nspecs    <string>\nschema   <number>\nmcp      <string>\nruntime  <string>\ncommit   <string|null>\nbuilt    <string|null>\n"
+      }
+    },
+    {
+      "name": "version-json",
+      "notes": "§6 version --json: the surface's `version` tool result verbatim, recorded by shape (leaves → type names, `components` → `<object>`, `mcp.sdk` dropped)",
+      "workspace": "alchemy",
+      "argv": [
+        "version",
+        "--json"
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"engine\":\"<string>\",\"version\":\"<string>\",\"components\":\"<object>\",\"specs\":{\"oqx\":\"<string>\",\"format\":\"<string>\",\"reconcile\":\"<string>\",\"store\":\"<string>\",\"properties\":\"<string>\",\"graph\":\"<string>\",\"search\":\"<string>\",\"mutate\":\"<string>\",\"sync\":\"<string>\",\"surface\":\"<string>\",\"cli\":\"<string>\"},\"schema\":\"<number>\",\"mcp\":{\"protocol\":\"<string>\"},\"runtime\":\"<string>\",\"commit\":\"<string|null>\",\"built\":\"<string|null>\"}\n"
+      }
     }
   ]
 }

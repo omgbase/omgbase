@@ -1,4 +1,6 @@
 export { VERSION } from "./core/index.js";
+export { versionInfo, coreVersion, nearestPackageVersion, COMPONENT_PACKAGES, type VersionInfo, type HostInfo } from "./version.js";
+export { SPEC_VERSIONS, type SpecName } from "./spec-versions.js";
 
 // Format adapter system (format-adapter-architecture §Phase 0).
 export type { FormatAdapter, AdapterEdge, ProjectedNode, EmbeddingChunk, ReconcileHints } from "./format/adapter.js";

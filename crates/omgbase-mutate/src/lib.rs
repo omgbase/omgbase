@@ -47,6 +47,9 @@ pub use tree::{BlockPath, MutBlock, MutDoc, child_ids, parent_children_hash, raw
 /// The `spec/mutate/VERSION` this crate implements (`major.minor`).
 pub const SPEC_VERSION: &str = "1.2";
 
+/// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[cfg(test)]
 mod tests {
     use super::*;
