@@ -6,7 +6,8 @@
 //   pnpm release version [--no-commit] [--allow-dirty] [--dry-run]
 //                                              apply the plan: bump, rewrite pins, changelogs, commit
 //   pnpm release publish [--npm-only|--crates-only] [--otp <code>] [--dry-run]
-//                                              publish every version missing from its registry
+//                                              publish every version missing from its registry;
+//                                              asks for a fresh OTP before each npm package
 //
 // Change notes live in changes/<slug>.md (see changes/README.md). Usage errors exit 2.
 import { spawnSync } from "node:child_process";
@@ -27,7 +28,9 @@ const USAGE = `usage: release <command> [options]
   version [--no-commit] [--allow-dirty] [--dry-run]
                                              apply the plan and commit "release: …"
   publish [--npm-only|--crates-only] [--otp <code>] [--dry-run]
-                                             cargo publish, then pnpm publish (OTP prompt inherited)
+                                             cargo publish, then pnpm publish — a fresh one-time
+                                             password is asked for before each npm package (a code
+                                             does not outlive the registry wait); --otp covers the first
 
 Change notes: changes/<slug>.md — see changes/README.md.`;
 

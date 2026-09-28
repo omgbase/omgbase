@@ -9,6 +9,7 @@ import { parseFrontmatter, parseNote, loadNotes } from "./lib/notes.mjs";
 import { foldLevel, bumpVersion, computePlan, renderPlan } from "./lib/plan.mjs";
 import { bumpPackageJson, bumpCargoToml, rewriteCargoPins, renderChangelogSection, prependChangelogSection, bodyAsBullet, applyPlan, changelogHeader } from "./lib/apply.mjs";
 import { parseNpmJson } from "./lib/registry.mjs";
+import { otpRejected } from "./lib/publish.mjs";
 
 // ---------------------------------------------------------------- fixture workspace
 
@@ -364,4 +365,11 @@ test("computePlan: an npm dependent republishes as a (pin) patch when a workspac
   assert.equal(by["npm:@omgbase/oqx"].level, null, "a dependency of core, not a dependent — untouched");
   assert.match(renderPlan(plan, ws, null), /omgbase \(npm\)\s+0\.4\.0 → 0\.4\.1\s+patch\s+\(pin\)/);
   rmSync(root, { recursive: true, force: true });
+});
+
+test("otpRejected recognizes npm's one-time-password refusals and nothing else", () => {
+  assert.equal(otpRejected("npm error code EOTP\nnpm error This operation requires a one-time password from your authenticator."), true);
+  assert.equal(otpRejected("npm ERR! 401 Unauthorized - PUT https://registry.npmjs.org/@omgbase%2fcore - You must provide a one-time pass. Upgrade your client to npm@latest in order to use 2FA."), true);
+  assert.equal(otpRejected('Failed to publish package @omgbase/sync@0.4.1 (status 403 Forbidden):\n{"success":false,"error":"You cannot publish over the previously published versions: 0.4.1."}'), false);
+  assert.equal(otpRejected("npm error code E404"), false);
 });
