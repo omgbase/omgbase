@@ -925,6 +925,20 @@ confirmation lists the original id then the new ones. Missing →
 `usage: split requires --at n[,n…]`; an offset that is not an integer →
 `usage: bad --at '<value>' (offsets must be integers: n[,n…])` (exit 2).
 
+### `version`
+
+`version [--json]` — (cli 1.1) the `version` tool of `spec/surface` §4,
+rendered as aligned `key  value` lines: `engine`, `version`, then one line
+per `components` entry (`  <name>  <version>`), then `specs` as one line
+(`oqx 0.13 · store 13.5 · …`, in the tool's key order), `schema`, `mcp`
+(`<protocol>` + ` (sdk <version>)` when present), `runtime`, `commit`,
+`built` (`—` for null). Needs no repo; opens the workspace only for `schema`
+(`—` when there is none, exit 0). `--json` is the tool result verbatim.
+Fixtures record every leaf value as its type name (`<string>`, `<number>`,
+`<null>`), in human output too (each value cell becomes its type name), so
+both binaries pin the same shape while printing their own numbers. The
+`--version` flag (§2.5) stays the one-line form.
+
 ### `status`
 
 `status [--repo <slug>] [--json]` — `repos_status` + `sync_status` + the
@@ -1477,6 +1491,9 @@ bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
 
 ## 10. Decisions
 
+- 2026-09-27, cli 1.1: a `version` verb rendering the surface's `version`
+  tool (Brendan: one place that says which engine and which component
+  versions an MCP host or a shell is talking to). A verb added: a minor.
 - 2026-09-27, cli 1.0 specified as built: every verb, every output mode it
   implements, the script-mode shell, the seams at the entry point (until
   now only `omg mcp` read `OMGBASE_SPEC_MINTER`/`OMGBASE_SPEC_CLOCK`; every

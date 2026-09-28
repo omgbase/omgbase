@@ -374,6 +374,7 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `diff` / `diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 |
 | `repos` | — | `{ repos: [{ slug, has_source }] }` by slug |
+| `version` | — | (1.4) which engine and which versions: `{ engine: "typescript" \| "rust", version, components: { <package or crate>: <version>, … }, specs: { oqx, format, reconcile, store, properties, graph, search, mutate, sync, surface, cli }, schema, mcp: { protocol, sdk? }, runtime, commit, built }` — `version` is the serving binary's own (the `omgbase` npm package or crate); `components` every omgbase package the binary is built from with its version (the reference: `omgbase`, `@omgbase/core`, `@omgbase/oqx`, `@omgbase/sync`, `@omgbase/fs-adapter`; the port: `omgbase` and each `omgbase-*` crate and `oqx`), keys sorted bytewise; `specs` the `spec/<x>/VERSION` each was built against (a compile-time constant, not a file read); `schema` the open database's `PRAGMA user_version`; `mcp.protocol` the protocol version served, `mcp.sdk` the SDK's version when one is used; `runtime` `node <version>` or `rustc <version>`; `commit` the build's git revision (short, `null` when unknown — a published crate reads `.cargo_vcs_info.json`, the npm package a `build-info.json` written by `pnpm build`), `built` its RFC 3339 build time or `null`. Values are engine- and release-specific, so §6 pins the **shape**: leaves are recorded as their type. No repo scope, no workspace needed beyond the database for `schema` (`null` without one). |
 
 Dry runs never trigger the host's post-mutation hook (the embed drain);
 successful writes do.
@@ -401,7 +402,9 @@ verbs later.
   `query-edges.json`, `query-follow.json`, `query-functions.json`,
   `query-errors.json`.
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
-  steps — `{ "read": { "tool": "<name>", "args": {...}, "ts"? } }` — invoked
+  steps (a `version` read is recorded with every leaf value replaced by its
+  type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
+  values name the engine and the release; `interop.json` never calls it) — `{ "read": { "tool": "<name>", "args": {...}, "ts"? } }` — invoked
   through the MCP server itself (the reference connects an SDK client over an
   in-memory transport and calls the tool); the outcome is the tool's JSON
   result, or `{ error, retriable, data? }` for an error result (`message`
@@ -671,6 +674,11 @@ both and runs both harnesses.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key
   changed, so `VERSION` stays 1.1 and the crates take a patch.
+- 2026-09-27, surface 1.4: a `version` tool — which engine, its own version,
+  every component's version, the spec versions it was built against, the
+  database schema version, the MCP protocol, runtime, commit and build time.
+  Pinned by shape (leaf types), since the values are what tell the two
+  engines apart. A tool added: a minor.
 - 2026-09-27, surface 1.3: `docs_create`/`docs_move`/`docs_delete`/
   `docs_set_meta` take `dry_run` (the CLI's `--dry-run` on `new`/`mv`/
   `rm --doc`/`meta` needed it — `spec/cli` §9); an argument added, a minor.
