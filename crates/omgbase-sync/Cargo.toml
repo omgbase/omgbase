@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-sync"
-version = "1.3.1"
+version = "1.3.2"
 description = "omgbase sync: workspace discovery and repo selection, the source registry and settings, checkpoints and the filesystem freshness sweep, the adapter stdio protocol client, the coordinator over an engine client, the writer lock and watch lease — Rust implementation"
 keywords = ["markdown", "sync", "sqlite", "filesystem", "omgbase"]
 categories = ["filesystem", "text-processing"]
@@ -22,7 +22,7 @@ http = ["dep:ureq"]
 # The store: the database this layer's registry, settings, checkpoints and
 # file_stats live in; `observe_batch`/`observe_delete` (spec/store §5), the
 # reconciling ingest, `changes_since`, `reconstruct`, the `IdMinter` seam.
-omgbase-store = { version = "13.5.2", path = "../omgbase-store" }
+omgbase-store = { version = "13.5.3", path = "../omgbase-store" }
 # The matcher thresholds every ingest takes (`Config`).
 omgbase-reconcile = { version = "2.3.1", path = "../omgbase-reconcile" }
 # `sha256`/`hex` for file hashes (spec/store §2.3).

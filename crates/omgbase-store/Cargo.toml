@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-store"
-version = "13.5.2"
+version = "13.5.3"
 description = "omgbase store: the embedded SQLite database that owns block identity, history and current state — Rust implementation"
 keywords = ["markdown", "sqlite", "versioning", "blocks", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -34,7 +34,7 @@ omgbase-search = { version = "1.2.1", path = "../omgbase-search" }
 # renderer, the lowering and the opset; the store loads, applies, commits
 # (`api` ingest with known ids), runs the macros and document operations
 # (store 13.4).
-omgbase-mutate = { version = "1.2.1", path = "../omgbase-mutate" }
+omgbase-mutate = { version = "1.3.0", path = "../omgbase-mutate" }
 # The link-destination scanners of the repair/retarget macros and the
 # frontmatter splitter of `docs_set_meta` (spec/mutate §5–§6).
 regex = "1"
