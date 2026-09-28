@@ -78,6 +78,8 @@ docs::mv-dry-run
 docs::mv-dry-run-json
 docs::mv-json
 docs::mv-missing
+docs::mv-no-retarget
+docs::mv-no-retarget-json
 docs::mv-one-arg
 docs::mv-onto-existing
 docs::new

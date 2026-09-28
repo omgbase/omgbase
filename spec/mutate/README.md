@@ -321,7 +321,7 @@ All are `api` commits with a generated `reason`.
   starts with one) + body`, `yaml` being the mapping serialized by the
   reference's YAML emitter — §10); a file already on disk → `path_taken`;
   write; ingest with the **reconciling** resolver (`reason: "create <path>"`).
-- **`docs_move { doc, to_path, retarget_inbound? }`**: `doc_missing`;
+- **`docs_move { doc, to_path, retarget_inbound? = true }`**: `doc_missing`;
   `path_taken` if a live doc or a file exists at the destination; rename the
   file (or write the bytes when the source file is absent); in one
   transaction: an `api` commit (`reason: "move <from> -> <to>"`, no revision),
@@ -329,10 +329,17 @@ All are `api` commits with a generated `reason`.
   from **another** document into this one re-pointed to `phantom:<old
   path>`, a self-document edge re-pointed only when its link names the path
   (a pure fragment stays), affected rollups rebuilt, phantoms at the new
-  path adopted. Result lists the still-dangling inbound links; with
-  `retarget_inbound`, the deepest hit block per inbound link is rewritten
-  (relative forms against the source's current directory) as one follow-up
-  changeset (`reason: "retarget inbound links <from> -> <to>"`).
+  path adopted. Then, unless `retarget_inbound` is `false`, the deepest hit
+  block per inbound link is rewritten (relative forms against the source's
+  current directory) as one follow-up changeset (`reason: "retarget inbound
+  links <from> -> <to>"`) — a move means "same document, new place", so the
+  authored links follow it by default (1.3); `retarget_inbound: false` is
+  the opt-out for the rarer intent that the old path become unbound. The
+  result lists the still-dangling inbound links (with the default: the
+  frontmatter relations, which are never rewritten — `docs_set_meta` them)
+  and, when the rewrite ran, `retargeted { blocks, docs }` (empty lists when
+  only frontmatter relations linked in; `null` when it was opted out or
+  nothing linked in).
 - **`docs_delete { doc }`**: `doc_missing`; one transaction: `api` commit
   (`reason: "delete <path>"`), FTS rows dropped, live blocks and the doc
   tombstoned — **nothing pooled** (an intentional delete, unlike `spec/store`
@@ -558,6 +565,13 @@ and `files[path] == reconstruct(doc)`; then the projection deep-equals
 
 ## Decisions
 
+- 2026-09-28, mutate 1.3: `docs_move` retargets the inbound links by
+  default (`retarget_inbound` defaults to `true`; `false` opts out). A move
+  that leaves the graph broken until a second call was the common accident
+  the MCP surface produced; the operation's own result already knew the
+  links. What an op does changed: a minor. Fixtures: `docs::move-default-
+  retargets` (no argument), `move-retarget-inbound` (`true`),
+  `move-leave-inbound` (`false`, the former default pinned as the opt-out).
 - 2026-09-27, mutate 1.2: the destination parent of `insert`/`move` must be
   a container; a leaf is `type_mismatch` (least surprising: an error over
   silent data loss; `at.before`/`at.after` and `sections_append` already

@@ -191,7 +191,7 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 | `omg retarget <from> <to> [--scope glob] [--apply]` | `links_retarget` — **plan-by-default**: without `--apply` it runs the dry-run and prints, per hit block, the unified diff of the block's raw (the same `unifiedDiff` every preview prints — the 06 §4 "always dry-run first" contract, encoded as the default). |
 | `omg split <block> --at n[,n…]` / `omg merge <blocks…>` | `split` / `merge` (`--at` offsets must be integers — a usage error otherwise) |
 | `omg new <path> (-f file \| -)` | `docs_create` — content is complete file bytes, frontmatter included. |
-| `omg mv <doc> <new-path>` | `docs_move` — inbound links are **not** rewritten; the ones left dangling are reported (stderr in human mode, `dangling` in `--json`) together with the `omg retarget … --apply` that fixes them. |
+| `omg mv <doc> <new-path> [--no-retarget]` | `docs_move` — the inbound links are rewritten to the new path by default (spec/mutate 1.3) and counted on stderr; `--no-retarget` leaves them as written. Whatever still dangles (frontmatter relations, or everything under `--no-retarget`) is reported (stderr in human mode, `dangling` in `--json`) with the fix that clears it (`omg retarget … --apply` for authored links, `omg meta … --set` for a frontmatter relation). |
 | `omg rm --doc <doc>` | `docs_delete` (doc deletion always requires the explicit `--doc`) |
 | `omg meta <doc> --set k=v … [--unset k …]` | `docs_set_meta` — surgical frontmatter patch. Values parse as YAML scalars; `--set-json k='…'` for structures. |
 

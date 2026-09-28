@@ -36,17 +36,34 @@ function report(cli: Cli, verb: string, res: DocOpResult): number {
   return EXIT_OK;
 }
 
-// `mv` does not rewrite inbound links; say so wherever the move is reported
-// (spec/cli §6 `mv`): the human confirmation carries the same `dangling` list
-// the --json result does, with the retarget that fixes them.
+// `mv` rewrites the inbound links by default (spec/mutate 1.3; `--no-retarget`
+// opts out); say what happened wherever the move is reported (spec/cli §6 `mv`):
+// the human confirmation carries the `retargeted` count and the same `dangling`
+// list the --json result does, with the fix for each kind — `retarget` for
+// authored links left as written, `meta` for a frontmatter relation (never
+// rewritten by a move).
 function reportMove(cli: Cli, from: string, res: DocMoveResult): number {
   const code = report(cli, "moved to", res);
-  if (cli.flags.mode !== "human" || res.dangling.length === 0) return code;
+  if (cli.flags.mode !== "human") return code;
   const { style, io } = cli;
+  if (!cli.flags.dryRun && res.retargeted && res.retargeted.blocks.length > 0) {
+    const b = res.retargeted.blocks.length;
+    const d = res.retargeted.docs.length;
+    io.err(style.dim(`  ${style.ok(cli.render.g.ok)} retargeted ${b} inbound link${b === 1 ? "" : "s"} in ${d} document${d === 1 ? "" : "s"}`));
+  }
+  if (res.dangling.length === 0) return code;
   const where = res.dangling.map((l) => (l.block ? `${l.path} ${l.block}` : `${l.path} (frontmatter)`)).join(", ");
   const n = res.dangling.length;
   io.err(style.warn(`  ${style.warn(cli.render.g.warn)} ${n} inbound link${n === 1 ? "" : "s"} still name${n === 1 ? "s" : ""} the old path: ${where}`));
-  io.err(style.dim(`  fix: ${cli.prog} retarget /${from} /${res.path} --apply`));
+  if (res.dangling.some((l) => l.block)) io.err(style.dim(`  fix: ${cli.prog} retarget /${from} /${res.path} --apply`));
+  const seen = new Set<string>();
+  for (const l of res.dangling) {
+    if (l.block || !l.field) continue;
+    const key = `${l.path}\u0000${l.field}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    io.err(style.dim(`  fix: ${cli.prog} meta ${l.path} --set ${l.field}=/${res.path}`));
+  }
   return code;
 }
 
@@ -90,26 +107,30 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
-    options: { actor: { type: "string" }, help: { type: "boolean" } },
+    options: { actor: { type: "string" }, "no-retarget": { type: "boolean" }, help: { type: "boolean" } },
   });
   if (values.help) {
     return renderHelp(cli, {
       name: "mv",
-      summary: "Rename/move a document to a new path; its identity and history are preserved",
-      usage: "mv <doc> <new-path> [--actor <s>] [--dry-run]",
-      options: [["--actor <s>", "commit actor (default human:$USER)"]],
+      summary: "Rename/move a document to a new path; its identity and history are preserved and inbound links follow it",
+      usage: "mv <doc> <new-path> [--no-retarget] [--actor <s>] [--dry-run]",
+      options: [
+        ["--no-retarget", "leave the inbound links as written (they dangle; fix later with retarget)"],
+        ["--actor <s>", "commit actor (default human:$USER)"],
+      ],
     });
   }
   const doc = positionals[0];
   const toPath = positionals[1];
   if (!doc || !toPath) throw new CliUsageError("mv requires <doc> and <new-path>");
+  const noRetarget = values["no-retarget"] === true;
   if (cli.flags.server) {
-    const res = await remoteCall<DocMoveResult>(cli, "docs_move", { doc, to_path: toPath, ...dryRunArg(cli) });
+    const res = await remoteCall<DocMoveResult>(cli, "docs_move", { doc, to_path: toPath, ...(noRetarget ? { retarget_inbound: false } : {}), ...dryRunArg(cli) });
     return reportMove(cli, fromPathOf(res, doc), res);
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath);
+  const res = docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath, noRetarget ? { retargetInbound: false } : {});
   return reportMove(cli, fromPathOf(res, doc), res);
 }
 

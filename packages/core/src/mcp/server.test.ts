@@ -397,7 +397,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(q.hits.map((h) => h.path)).toContain("moved/notes.md");
   });
 
-  it("docs_move reports dangling inbound links; retarget_inbound rewrites them and adopts destination phantoms", async () => {
+  it("docs_move with retarget_inbound:false reports dangling inbound links; the default rewrites them; destination phantoms are adopted", async () => {
     // b links to notes.md by path; a links to the FUTURE path (a phantom today).
     writeFileSync(join(root, "b.md"), "# B\n\nSee [notes](/notes.md#Risks) and `[code](/notes.md)`.\n");
     writeFileSync(join(root, "a.md"), "# A\n\nSoon [moved](/moved/notes.md).\n");
@@ -405,8 +405,8 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const staleBefore = (await call("links_stale", {})) as { payload: { stale: { target: string }[] } };
     expect(staleBefore.payload.stale.map((s) => s.target)).toEqual(["moved/notes.md"]);
 
-    // Plain move: b's link dangles and is reported; a's phantom resolves.
-    const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as {
+    // Opted-out move: b's link dangles and is reported; a's phantom resolves.
+    const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
       payload: { path: string; dangling: { doc: string; path: string; block: string | null; target: string; anchor: string | null }[]; retargeted: unknown };
       isError: boolean;
     };
@@ -419,8 +419,8 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(staleAfter.payload.stale).toHaveLength(1);
     expect(staleAfter.payload.stale[0]).toMatchObject({ srcPath: "b.md", target: "notes.md" });
 
-    // Move again with retarget_inbound: zero dangling, file rewritten, code span untouched.
-    const { payload: p2 } = (await call("docs_move", { doc: "moved/notes.md", to_path: "final/notes.md", retarget_inbound: true })) as {
+    // Move again with the default (retarget_inbound omitted): zero dangling, file rewritten, code span untouched.
+    const { payload: p2 } = (await call("docs_move", { doc: "moved/notes.md", to_path: "final/notes.md" })) as {
       payload: { dangling: unknown[]; retargeted: { blocks: string[]; docs: string[] } | null };
     };
     expect(p2.dangling).toEqual([]);

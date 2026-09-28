@@ -572,7 +572,7 @@ pub fn tools() -> Vec<ToolSpec> {
         },
         ToolSpec {
             name: "docs_move",
-            description: "Rename a document to `to_path`, identity preserved; `retarget_inbound` rewrites inbound links; `dry_run` returns the plan (`dangling`, `retargeted`, per-file `diffs`) without renaming.",
+            description: "Rename a document to `to_path`, identity preserved; the inbound links are rewritten to the new path in the same call (`retarget_inbound` defaults to `true`; `false` leaves them as written, listed in `dangling`); `dry_run` returns the plan (`dangling`, `retargeted`, per-file `diffs`) without renaming.",
             input_schema: schema(
                 &[
                     ("doc", s()),
@@ -1775,7 +1775,8 @@ impl Surface {
                 let ctx = self.doc_ctx(&repo);
                 let doc = arg_string(args, "doc")?;
                 let to = arg_string(args, "to_path")?;
-                let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(false);
+                // spec/mutate §6 (1.3): the default is `true`; `false` opts out.
+                let retarget = arg_bool(args, "retarget_inbound")?.unwrap_or(true);
                 let dry = arg_bool(args, "dry_run")?.unwrap_or(false);
                 let res = self.with_writes(root.as_deref(), |store, ds| {
                     Ok(if dry {

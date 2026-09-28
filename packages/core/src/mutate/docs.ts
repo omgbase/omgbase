@@ -62,11 +62,14 @@ export interface DocOpResult {
 
 export interface DocMoveOptions {
   /**
-   * Also rewrite the inbound links that named the OLD path so they point at the
-   * new one — a destination-aware rewrite (anchors, link text, titles, and code
+   * Rewrite the inbound links that named the OLD path so they point at the new
+   * one — a destination-aware rewrite (anchors, link text, titles, and code
    * spans preserved; absolute/relative style kept) applied as a CAS-checked
-   * `update` per source block in one follow-up api changeset. Frontmatter-level
-   * relations are not rewritten (reported in `dangling`).
+   * `update` per source block in one follow-up api changeset. **Default `true`**
+   * (spec/mutate 1.3): a move means "same document, new place", so the authored
+   * links follow it; pass `false` for the rarer intent that the old path become
+   * unbound. Frontmatter-level relations are never rewritten (reported in
+   * `dangling`).
    */
   retargetInbound?: boolean;
 }
@@ -74,11 +77,16 @@ export interface DocMoveOptions {
 export interface DocMoveResult extends DocOpResult {
   /**
    * Inbound links still pointing at the OLD path after this call — the source
-   * blocks `links_stale` will now report (empty when `retargetInbound` rewrote
-   * them all). Computed from the open edge index before the move.
+   * blocks `links_stale` will now report (with the default retarget: only the
+   * frontmatter relations, which are never rewritten). Computed from the open
+   * edge index before the move.
    */
   dangling: InboundLink[];
-  /** With `retargetInbound`: the source blocks rewritten and the docs re-ingested. */
+  /**
+   * The source blocks rewritten and the docs re-ingested (empty lists when the
+   * rewrite ran but only frontmatter relations linked in); `null` when the
+   * retarget was opted out (`retargetInbound: false`) or nothing linked in.
+   */
   retargeted: { blocks: string[]; docs: string[] } | null;
 }
 
@@ -129,10 +137,13 @@ export function docsCreate(store: Store, ctx: DocOpContext, path: string, markdo
  * index follows the path, not the identity: links written against the OLD path
  * now dangle (their open edges are re-pointed at `phantom:<old>`, exactly what
  * re-extracting the source would produce, so `links_stale` sees them), and
- * phantom edges already written against the NEW path are adopted. The result
- * lists the dangling inbound links; `retargetInbound` rewrites them.
+ * phantom edges already written against the NEW path are adopted. By default
+ * the dangling inbound links are then rewritten to the new path in one
+ * follow-up changeset (spec/mutate 1.3); `retargetInbound: false` leaves them
+ * as written and the result lists them.
  */
 export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath: string, opts: DocMoveOptions = {}): DocMoveResult {
+  const retargetInbound = opts.retargetInbound !== false;
   const info = findDocByRef(store, ctx.repoId, docRef);
   if (!info) throw new MutationError("doc_missing", `no document ${docRef}`);
   const toRel = canonical(toPath);
@@ -147,7 +158,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     const content = docStore.read(info.path) ?? "";
     const diffs: Record<string, { before: string; after: string }> = { [info.path]: { before: content, after: "" }, [toRel]: { before: "", after: content } };
     const planned = { docId: info.docId, path: toRel, committed: false, diffs };
-    if (!opts.retargetInbound || inbound.length === 0) return { ...planned, dangling: inbound, retargeted: null };
+    if (!retargetInbound || inbound.length === 0) return { ...planned, dangling: inbound, retargeted: null };
     const plan = planInboundRetarget(store, info.docId, info.path, toRel, inbound);
     if (plan.ops.length > 0) {
       const preview = apply(store, { ...applyCtx(ctx), ops: plan.ops, dryRun: true, origin: { actor: ctx.actor ?? "api", reason: `retarget inbound links ${info.path} -> ${toRel}` } });
@@ -198,7 +209,7 @@ export function docsMove(store: Store, ctx: DocOpContext, docRef: string, toPath
     return { docId: info.docId, path: toRel, committed: true };
   });
 
-  if (!opts.retargetInbound || inbound.length === 0) return { ...moved, dangling: inbound, retargeted: null };
+  if (!retargetInbound || inbound.length === 0) return { ...moved, dangling: inbound, retargeted: null };
 
   // Rewrite the dangling links block by block (one coalesced update per block,
   // CAS on the block's current hash) and apply as one changeset; the re-ingest

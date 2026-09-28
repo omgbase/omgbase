@@ -7863,7 +7863,7 @@
     },
     {
       "name": "write-docs-create-move",
-      "notes": "§4 docs_create (frontmatter + body; a taken path → path_taken) and docs_move with retarget_inbound (index.md links to the moved text; a miss → doc_missing) — spec/mutate §6. Reads: docs_tree at the root and under texts/, docs_list by glob, links_stale, the graph out of the new document, the new document with ids, the retargeted index.md, docs_history by glob incl. deleted, the api feed, the admin tools.",
+      "notes": "§4 docs_create (frontmatter + body; a taken path → path_taken) and docs_move with the default retarget (spec/mutate 1.3: index.md links to the moved text and is rewritten without asking; a miss → doc_missing) — spec/mutate §6. Reads: docs_tree at the root and under texts/, docs_list by glob, links_stale, the graph out of the new document, the new document with ids, the retargeted index.md, docs_history by glob incl. deleted, the api feed, the admin tools.",
       "writes": [
         {
           "tool": "docs_create",
@@ -7887,8 +7887,7 @@
           "tool": "docs_move",
           "args": {
             "doc": "texts/mutus-liber.md",
-            "to_path": "texts/silent-book.md",
-            "retarget_inbound": true
+            "to_path": "texts/silent-book.md"
           }
         },
         {

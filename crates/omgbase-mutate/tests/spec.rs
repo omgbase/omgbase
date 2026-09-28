@@ -871,9 +871,10 @@ fn run_docs(r: &mut Runner, body: &JsonMap<String, Json>) -> Result<Json, String
                 &mut r.doc_store,
                 m["doc"].as_str().unwrap_or_default(),
                 m["to_path"].as_str().unwrap_or_default(),
+                // §6 (1.3): the default is `true`; `false` opts out.
                 m.get("retarget_inbound")
                     .and_then(Json::as_bool)
-                    .unwrap_or(false),
+                    .unwrap_or(true),
             )
             .map(|res| res.to_json())
     } else if let Some(d) = body.get("delete") {

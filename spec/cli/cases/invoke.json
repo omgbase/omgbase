@@ -478,7 +478,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  mv — Rename/move a document to a new path; its identity and history are preserved\n  usage: omg mv <doc> <new-path> [--actor <s>] [--dry-run]\n  options:\n    --actor <s>  commit actor (default human:$USER)\n    -h, --help   show this help\n"
+        "stdout": "  mv — Rename/move a document to a new path; its identity and history are preserved and inbound links follow it\n  usage: omg mv <doc> <new-path> [--no-retarget] [--actor <s>] [--dry-run]\n  options:\n    --no-retarget  leave the inbound links as written (they dangle; fix later with retarget)\n    --actor <s>    commit actor (default human:$USER)\n    -h, --help     show this help\n"
       }
     },
     {

@@ -639,8 +639,8 @@
       }
     },
     {
-      "name": "move-repoints-and-adopts",
-      "notes": "§6 docs_move: the file is renamed; an api commit with NO revision; b.md's two links dangle (`dangling`, block b_3, one with anchor `A`); c.md's phantom at the new path is adopted. `revisions.path` is rewritten for the current revision.",
+      "name": "move-leave-inbound",
+      "notes": "§6 docs_move with `retarget_inbound: false` (the opt-out; 1.3): the file is renamed; an api commit with NO revision; b.md's two links are left as written and dangle (`dangling`, block b_3, one with anchor `A`); c.md's phantom at the new path is adopted. `revisions.path` is rewritten for the current revision.",
       "steps": [
         {
           "observe": {
@@ -666,7 +666,8 @@
             "ts": "2026-09-26T10:01:00.000Z",
             "move": {
               "doc": "a.md",
-              "to_path": "moved/a.md"
+              "to_path": "moved/a.md",
+              "retarget_inbound": false
             }
           }
         }
@@ -1019,7 +1020,7 @@
     },
     {
       "name": "move-retarget-inbound",
-      "notes": "§6: `retarget_inbound` rewrites the deepest hit block per inbound link as one follow-up api changeset (`retarget inbound links a.md -> moved/a.md`); `dangling` is then empty.",
+      "notes": "§6: `retarget_inbound: true` (the default since 1.3, spelled out here) rewrites the deepest hit block per inbound link as one follow-up api changeset (`retarget inbound links a.md -> moved/a.md`); `dangling` is then empty.",
       "steps": [
         {
           "observe": {
@@ -1047,6 +1048,415 @@
               "doc": "a.md",
               "to_path": "moved/a.md",
               "retarget_inbound": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "a.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "b.md",
+              "echo": false,
+              "doc": "d_1",
+              "commit": "c_1",
+              "rev": "r_1",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            },
+            {
+              "path": "c.md",
+              "echo": false,
+              "doc": "d_2",
+              "commit": "c_2",
+              "rev": "r_2",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 2
+              }
+            }
+          ],
+          {
+            "doc": "d_0",
+            "path": "moved/a.md",
+            "committed": true,
+            "dangling": [],
+            "retargeted": {
+              "blocks": [
+                "b_3"
+              ],
+              "docs": [
+                "d_1"
+              ]
+            }
+          }
+        ],
+        "files": {
+          "b.md": "# B\n\nSee [a](/moved/a.md) and [a-sec](/moved/a.md#A).\n",
+          "c.md": "# C\n\nSee [new](/moved/a.md).\n",
+          "moved/a.md": "# A\n\nBody of a.\n"
+        },
+        "docs": [
+          {
+            "doc_id": "d_1",
+            "path": "b.md",
+            "format": "markdown",
+            "current_rev": "r_3",
+            "file_hash": "be32cf4103cc5d44a69400629610e7fc59a95c13e695080d83a091e6e50b843d",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_2",
+            "path": "c.md",
+            "format": "markdown",
+            "current_rev": "r_2",
+            "file_hash": "06da9e6db3c25655643d1662ed2dccd4505a4bb19522a63297fc25a0a7b8710f",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          },
+          {
+            "doc_id": "d_0",
+            "path": "moved/a.md",
+            "format": "markdown",
+            "current_rev": "r_0",
+            "file_hash": "839ea8980060a6d61fb300792181a93ebf019f2d170f0aca2c0f212ec6ffc3da",
+            "conflicted": 0,
+            "leading_trivia": "",
+            "frontmatter_trivia": null,
+            "deleted_commit": null
+          }
+        ],
+        "blocks": [
+          {
+            "block_id": "b_2",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "B",
+            "raw_hash": "216f4c6ac9ef17add951aa097934202649a6c6ea5f29263b00c59772ea6cff61",
+            "norm_hash": "df7e70e5021544f4834bbee64a9e3789febc4be81470df629cad6ddb03320a5c",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_4",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_3",
+            "doc_id": "d_1",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "See [a](/moved/a.md) and [a-sec](/moved/a.md#A).",
+            "raw_hash": "9e065ac5ab8691bea5562241df75bb473e571563db735ca1493794a0e85924fc",
+            "norm_hash": "9e065ac5ab8691bea5562241df75bb473e571563db735ca1493794a0e85924fc",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_4",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_4",
+            "doc_id": "d_2",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "C",
+            "raw_hash": "555fc820ecdc0ef529b81cb0639466e4a070b46678b176a887f62725c94abeae",
+            "norm_hash": "6b23c0d5f35d1b11f9b683f0b0a617355deb11277d91ae091d399c655b87940d",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_5",
+            "doc_id": "d_2",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "See [new](/moved/a.md).",
+            "raw_hash": "28cf266ed0f135be1852be4e9d19300baa87d71784112e74b75ff43851f39216",
+            "norm_hash": "28cf266ed0f135be1852be4e9d19300baa87d71784112e74b75ff43851f39216",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_2",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_0",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "V",
+            "ordinal": 0,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "text": "A",
+            "raw_hash": "327f031b25e00b1a7cd9b0c18f05948b60f55d09f9b3d177d21083f83a3cb6df",
+            "norm_hash": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd",
+            "trivia_hash": "75a11da44c802486bc6f65640aa48a730f0f684c5c07a42ba3cd1735eb3fb070",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          },
+          {
+            "block_id": "b_1",
+            "doc_id": "d_0",
+            "parent_block": null,
+            "order_key": "W",
+            "ordinal": 1,
+            "depth": 0,
+            "ancestor_path": "/",
+            "type": "paragraph",
+            "attrs": {},
+            "text": "Body of a.",
+            "raw_hash": "31e572fadb13aabbf6aa54c6ff909abe65e34173de08f47e4b4d32d9f37afe47",
+            "norm_hash": "31e572fadb13aabbf6aa54c6ff909abe65e34173de08f47e4b4d32d9f37afe47",
+            "trivia_hash": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+            "created_commit": "c_0",
+            "deleted_commit": null
+          }
+        ],
+        "commits": [
+          {
+            "commit_id": "c_0",
+            "seq": 1,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_1",
+            "seq": 2,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_2",
+            "seq": 3,
+            "ts": "2026-09-26T10:00:00.000Z",
+            "origin": "observed",
+            "actor": null,
+            "reason": null,
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_3",
+            "seq": 4,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": null,
+            "reason": "move a.md -> moved/a.md",
+            "checkpoint_id": null,
+            "ops": null
+          },
+          {
+            "commit_id": "c_4",
+            "seq": 5,
+            "ts": "2026-09-26T10:01:00.000Z",
+            "origin": "api",
+            "actor": "api",
+            "reason": "retarget inbound links a.md -> moved/a.md",
+            "checkpoint_id": null,
+            "ops": null
+          }
+        ],
+        "revisions": [
+          {
+            "rev_id": "r_0",
+            "doc_id": "d_0",
+            "seq": 1,
+            "root_tree": "e6bcf06d5a827f8dfedf94e9b5a73e58f320852837e66bc3bbbd20d777192e33",
+            "frontmatter_blob": null,
+            "rendered_hash": "839ea8980060a6d61fb300792181a93ebf019f2d170f0aca2c0f212ec6ffc3da",
+            "path": "moved/a.md",
+            "commit_id": "c_0"
+          },
+          {
+            "rev_id": "r_1",
+            "doc_id": "d_1",
+            "seq": 1,
+            "root_tree": "877a5678b810c93e76e990d5403bb674b860d86b25f36afe4657f8470342a2fa",
+            "frontmatter_blob": null,
+            "rendered_hash": "1e455805835607bd187410daa7dc21db1464409a6d9309e2c0c52f617e24cdc2",
+            "path": "b.md",
+            "commit_id": "c_1"
+          },
+          {
+            "rev_id": "r_3",
+            "doc_id": "d_1",
+            "seq": 2,
+            "root_tree": "6460962583f11d735099946feee8204c6746dd58a0b31493750d7a733068512e",
+            "frontmatter_blob": null,
+            "rendered_hash": "be32cf4103cc5d44a69400629610e7fc59a95c13e695080d83a091e6e50b843d",
+            "path": "b.md",
+            "commit_id": "c_4"
+          },
+          {
+            "rev_id": "r_2",
+            "doc_id": "d_2",
+            "seq": 1,
+            "root_tree": "23aaf510fc5c17da3442df3e3eae01ad163707dd8ed182850e90cafcd34a6c76",
+            "frontmatter_blob": null,
+            "rendered_hash": "06da9e6db3c25655643d1662ed2dccd4505a4bb19522a63297fc25a0a7b8710f",
+            "path": "c.md",
+            "commit_id": "c_2"
+          }
+        ],
+        "dispositions": [
+          {
+            "commit_id": "c_0",
+            "block_id": "b_0",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_0",
+            "block_id": "b_1",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_2",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_1",
+            "block_id": "b_3",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_4",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_2",
+            "block_id": "b_5",
+            "kind": "inserted",
+            "confidence": null,
+            "reason": null,
+            "matcher_v": "m2.3",
+            "detail": {}
+          },
+          {
+            "commit_id": "c_4",
+            "block_id": "b_2",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          },
+          {
+            "commit_id": "c_4",
+            "block_id": "b_3",
+            "kind": "edited",
+            "confidence": 1,
+            "reason": "api",
+            "matcher_v": null,
+            "detail": {}
+          }
+        ],
+        "resurrection_pool": []
+      }
+    },
+    {
+      "name": "move-default-retargets",
+      "notes": "§6 docs_move without `retarget_inbound` (1.3): the default is `true`, so the inbound links are rewritten exactly as `move-retarget-inbound` — the same follow-up api changeset, `dangling` empty, `retargeted` listing b_3 / d_1.",
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-26T10:00:00.000Z",
+            "items": [
+              {
+                "path": "a.md",
+                "source": "# A\n\nBody of a.\n"
+              },
+              {
+                "path": "b.md",
+                "source": "# B\n\nSee [a](/a.md) and [a-sec](/a.md#A).\n"
+              },
+              {
+                "path": "c.md",
+                "source": "# C\n\nSee [new](/moved/a.md).\n"
+              }
+            ]
+          }
+        },
+        {
+          "docs": {
+            "ts": "2026-09-26T10:01:00.000Z",
+            "move": {
+              "doc": "a.md",
+              "to_path": "moved/a.md"
             }
           }
         }

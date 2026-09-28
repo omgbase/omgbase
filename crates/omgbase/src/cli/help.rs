@@ -686,9 +686,19 @@ pub fn card(name: &'static str, prog: &str) -> Option<HelpSpec> {
             vec![],
         ),
         "mv" => spec(
-            s("Rename/move a document to a new path; its identity and history are preserved"),
-            vec![s("mv <doc> <new-path> [--actor <s>] [--dry-run]")],
-            opts(&[ACTOR]),
+            s(
+                "Rename/move a document to a new path; its identity and history are preserved and inbound links follow it",
+            ),
+            vec![s(
+                "mv <doc> <new-path> [--no-retarget] [--actor <s>] [--dry-run]",
+            )],
+            opts(&[
+                (
+                    "--no-retarget",
+                    "leave the inbound links as written (they dangle; fix later with retarget)",
+                ),
+                ACTOR,
+            ]),
             vec![],
         ),
         "meta" => spec(

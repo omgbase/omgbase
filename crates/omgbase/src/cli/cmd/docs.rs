@@ -17,6 +17,7 @@ use super::mutate::{extract_content_opts, read_content, render_diffs, set_actor}
 use super::{machine_out, str_of};
 
 const ACTOR: Opt = Opt::value("actor");
+const NO_RETARGET: Opt = Opt::flag("no-retarget");
 
 /// Run one document tool with the actor and the global `--dry-run` threaded.
 fn call_doc_tool(
@@ -76,28 +77,52 @@ pub fn new(cli: &mut Cli, args: &[String]) -> Result<i32> {
 
 // ---- mv -------------------------------------------------------------------------------
 
-/// `mv <doc> <new-path> [--actor <s>] [--dry-run]` — `docs_move`: identity
-/// and history preserved; inbound links are not rewritten and the human
-/// rendering says so on stderr (§9 Fixed).
+/// `mv <doc> <new-path> [--no-retarget] [--actor <s>] [--dry-run]` —
+/// `docs_move`: identity and history preserved; the inbound links are
+/// rewritten to the new path by default (spec/mutate 1.3) and the human
+/// rendering says how many; `--no-retarget` leaves them as written, and
+/// whatever still dangles is reported on stderr with the fix for its kind
+/// (spec/cli §6 `mv`).
 pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
     if wants_help(args) {
         return render_help_for(cli, "mv");
     }
-    let a = parse_args(args, &[ACTOR])?;
+    let a = parse_args(args, &[ACTOR, NO_RETARGET])?;
     let (Some(doc), Some(to)) = (a.pos(0), a.pos(1)) else {
         return Err(CliError::usage("mv requires <doc> and <new-path>"));
     };
     let mut m = Map::new();
     m.insert("doc".to_owned(), json!(doc));
     m.insert("to_path".to_owned(), json!(to));
+    if a.flag("no-retarget") {
+        m.insert("retarget_inbound".to_owned(), json!(false));
+    }
     let res = call_doc_tool(cli, "docs_move", m, a.value("actor"))?;
     let code = report(cli, "moved to", &res)?;
+    if cli.machine() {
+        return Ok(code);
+    }
+    let style = cli.style;
+    if !cli.flags.dry_run {
+        if let Some(r) = res.get("retargeted").filter(|r| !r.is_null()) {
+            let count = |k: &str| r.get(k).and_then(Json::as_array).map_or(0, Vec::len);
+            let (b, d) = (count("blocks"), count("docs"));
+            if b > 0 {
+                cli.io.err(&style.dim(&format!(
+                    "  {} retargeted {b} inbound link{} in {d} document{}",
+                    style.ok(style.glyphs().ok),
+                    if b == 1 { "" } else { "s" },
+                    if d == 1 { "" } else { "s" },
+                )));
+            }
+        }
+    }
     let dangling: Vec<&Json> = res
         .get("dangling")
         .and_then(Json::as_array)
         .map(|d| d.iter().collect())
         .unwrap_or_default();
-    if cli.machine() || dangling.is_empty() {
+    if dangling.is_empty() {
         return Ok(code);
     }
     let where_ = dangling
@@ -112,26 +137,51 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
         .collect::<Vec<_>>()
         .join(", ");
     let n = dangling.len();
-    let style = cli.style;
     cli.io.err(&style.warn(&format!(
         "  {} {n} inbound link{} still name{} the old path: {where_}",
         style.warn(style.glyphs().warn),
         if n == 1 { "" } else { "s" },
         if n == 1 { "s" } else { "" },
     )));
-    // The path the move left behind: as the dangling links name it (the
-    // canonical spelling with a leading `/`), else the ref as typed.
-    let from = dangling
+    let new_path = str_of(&res, "path");
+    // Authored links left as written (`--no-retarget`): the retarget that
+    // rewrites them. The path the move left behind is as the dangling links
+    // name it (the canonical spelling with a leading `/`), else the ref as typed.
+    if dangling
         .iter()
-        .find_map(|l| l.get("target").and_then(Json::as_str))
-        .unwrap_or(doc)
-        .trim_start_matches('/')
-        .to_owned();
-    cli.io.err(&style.dim(&format!(
-        "  fix: {} retarget /{from} /{} --apply",
-        cli.prog,
-        str_of(&res, "path")
-    )));
+        .any(|l| l.get("block").is_some_and(Json::is_string))
+    {
+        let from = dangling
+            .iter()
+            .find_map(|l| l.get("target").and_then(Json::as_str))
+            .unwrap_or(doc)
+            .trim_start_matches('/')
+            .to_owned();
+        cli.io.err(&style.dim(&format!(
+            "  fix: {} retarget /{from} /{new_path} --apply",
+            cli.prog
+        )));
+    }
+    // Frontmatter relations are never rewritten by a move: one `meta` per
+    // (source, field).
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for l in &dangling {
+        if l.get("block").is_some_and(Json::is_string) {
+            continue;
+        }
+        let Some(field) = l.get("field").and_then(Json::as_str) else {
+            continue;
+        };
+        let key = (str_of(l, "path"), field.to_owned());
+        if seen.contains(&key) {
+            continue;
+        }
+        cli.io.err(&style.dim(&format!(
+            "  fix: {} meta {} --set {field}=/{new_path}",
+            cli.prog, key.0
+        )));
+        seen.push(key);
+    }
     Ok(code)
 }
 

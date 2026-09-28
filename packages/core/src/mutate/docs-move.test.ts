@@ -10,8 +10,10 @@ import { inboundLinksTo, retargetLinksInRaw } from "../graph/inbound-links.js";
 import { docsCreate, docsDelete, docsMove, docsSetMeta } from "./docs.js";
 
 // docs_move and the edge index. Links follow the PATH: after a move, inbound
-// links written against the old path dangle (links_stale must see them), and
-// phantoms already written against the new path must resolve to the moved doc.
+// links written against the old path dangle (links_stale must see them) unless
+// the move rewrites them — which it does by default (spec/mutate 1.3;
+// `retargetInbound: false` opts out) — and phantoms already written against the
+// new path must resolve to the moved doc.
 
 let dir: string;
 let store: Store;
@@ -59,7 +61,7 @@ describe("docsMove — edge index follows the path", () => {
     expect(roll.map((r) => r.dst_node)).toEqual([res.docId]);
   });
 
-  it("reports the inbound links that now dangle, and links_stale sees them", () => {
+  it("retargetInbound: false leaves the inbound links as written, reports them, and links_stale sees them", () => {
     save("old.md", "# Old\n\n## Top\n\ntext\n");
     save("b.md", "# B\n\nSee [old](/old.md#Top) here.\n");
     save("c.md", "# C\n\n- item [[old.md]]\n");
@@ -69,7 +71,7 @@ describe("docsMove — edge index follows the path", () => {
     const inboundBefore = openEdgesTo(oldId).length;
     expect(inboundBefore).toBeGreaterThanOrEqual(3);
 
-    const res = docsMove(store, ctx(), "old.md", "moved/new.md");
+    const res = docsMove(store, ctx(), "old.md", "moved/new.md", { retargetInbound: false });
     const byPath = new Map(res.dangling.map((d) => [d.path, d]));
     expect([...byPath.keys()].sort()).toEqual(["b.md", "c.md", "sub/d.md"]);
     expect(byPath.get("b.md")).toMatchObject({ doc: docId("b.md"), target: "/old.md", anchor: "Top" });
@@ -100,7 +102,7 @@ describe("docsMove — edge index follows the path", () => {
     const oldId = docId("old.md");
     expect(openEdgesTo(oldId)).toHaveLength(2);
 
-    const res = docsMove(store, ctx(), "old.md", "new.md");
+    const res = docsMove(store, ctx(), "old.md", "new.md", { retargetInbound: false });
     expect(res.dangling).toHaveLength(1);
     expect(res.dangling[0]).toMatchObject({ doc: oldId, path: "old.md", target: "/old.md", anchor: "Other" });
     const kept = openEdgesTo(oldId);
@@ -109,14 +111,14 @@ describe("docsMove — edge index follows the path", () => {
     expect(openEdgesTo("phantom:old.md")).toHaveLength(1);
   });
 
-  it("retargetInbound rewrites the dangling links destination-aware and leaves zero dangling", () => {
+  it("by default the move rewrites the dangling links destination-aware and leaves zero dangling", () => {
     save("old.md", "# Old\n\n## Top\n\nSee [self](/old.md#Top).\n");
     save("b.md", "# B\n\nSee [old](/old.md#Top \"title\") and `[code](/old.md)` and [other](/old.md.bak).\n");
     save("c.md", "# C\n\n- item [[old.md]]\n- rel:: /old.md\n");
     save("sub/d.md", "# D\n\nUp [old](../old.md) and [dot](./x/../../old.md).\n");
     const oldId = docId("old.md");
 
-    const res = docsMove(store, ctx(), "old.md", "moved/new.md", { retargetInbound: true });
+    const res = docsMove(store, ctx(), "old.md", "moved/new.md");
     expect(res.dangling).toEqual([]);
     expect(res.retargeted).not.toBeNull();
     expect(new Set(res.retargeted!.docs)).toEqual(new Set([oldId, docId("b.md"), docId("c.md"), docId("sub/d.md")]));
@@ -148,8 +150,10 @@ describe("docsMove — edge index follows the path", () => {
   it("frontmatter relations are reported as dangling (block null) and not rewritten", () => {
     save("old.md", "# Old\n");
     save("fm.md", "---\ndepends_on: /old.md\n---\n\n# FM\n");
-    const res = docsMove(store, ctx(), "old.md", "new.md", { retargetInbound: true });
+    const res = docsMove(store, ctx(), "old.md", "new.md");
     expect(res.dangling).toEqual([{ doc: docId("fm.md"), path: "fm.md", block: null, target: "old.md", anchor: null, field: "depends_on" }]);
+    // The rewrite ran and touched nothing: empty lists, not null (null = opted out or nothing linked in).
+    expect(res.retargeted).toEqual({ blocks: [], docs: [] });
     expect(linksStale(store, repoId).stale.map((s) => s.srcPath)).toEqual(["fm.md"]);
   });
 });
@@ -173,11 +177,11 @@ describe("document operations — dryRun validates, plans, commits nothing", () 
     expect(() => docsCreate(store, dry(), "a.md", "x")).toThrow(/path_taken|already exists/);
   });
 
-  it("docsMove plans a rename as two file diffs, reports the dangling links, and leaves the tree alone", () => {
+  it("docsMove dryRun with retargetInbound: false plans a rename as two file diffs, reports the dangling links, and leaves the tree alone", () => {
     save("a.md", "# A\n\nSee [old](/old.md).\n");
     save("old.md", "# Old\n");
     const n = commits();
-    const res = docsMove(store, dry(), "old.md", "moved/new.md");
+    const res = docsMove(store, dry(), "old.md", "moved/new.md", { retargetInbound: false });
     expect(res.committed).toBe(false);
     expect(res.path).toBe("moved/new.md");
     expect(res.diffs).toEqual({ "old.md": { before: "# Old\n", after: "" }, "moved/new.md": { before: "", after: "# Old\n" } });
@@ -191,10 +195,10 @@ describe("document operations — dryRun validates, plans, commits nothing", () 
     expect(() => docsMove(store, dry(), "nope.md", "x.md")).toThrow(/doc_missing|no document/);
   });
 
-  it("docsMove dryRun with retargetInbound previews the rewritten sources too", () => {
+  it("docsMove dryRun previews the rewritten sources too (the default retarget)", () => {
     save("a.md", "# A\n\nSee [old](/old.md).\n");
     save("old.md", "# Old\n");
-    const res = docsMove(store, dry(), "old.md", "moved/new.md", { retargetInbound: true });
+    const res = docsMove(store, dry(), "old.md", "moved/new.md");
     expect(res.committed).toBe(false);
     expect(res.dangling).toEqual([]);
     expect(res.retargeted?.blocks).toHaveLength(1);

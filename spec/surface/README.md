@@ -366,7 +366,7 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits, pairs, applied, ...apply result }` |
 | `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6 shapes |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move with `retarget_inbound` also previews `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
 | `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text) |
 | `docs_update` | `doc`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
 | `observe` / `observe_many` / `observe_delete` | `spec/store` §5 | its outcomes (`observe` sweeps the pool) |
@@ -666,6 +666,12 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-09-28, surface 1.4 patch: `docs_move` follows `spec/mutate` 1.3 —
+  `retarget_inbound` defaults to `true`, so a bare move rewrites the inbound
+  links; §7's `write-docs-create-move` now moves without the argument and
+  both engines must produce the rewrite (its expectation is unchanged). No
+  field, tool or result key changed (the argument and both result keys
+  existed), so `VERSION` stays 1.4 and the crates take a patch.
 - 2026-09-27, surface 1.0 specified as built. Last spec of the series: with
   it, a Rust `omgbase` binary can be conformance-tested end to end.
 - 2026-09-26, surface 1.1: §7 cross-engine interop — one database, two

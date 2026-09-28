@@ -33,7 +33,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The `spec/cli/VERSION` this binary renders (`major.minor`; the `version`
 /// tool's `specs.cli`). A compile-time constant, not a file read — an
 /// installed binary has no `spec/` beside it; the test below pins it.
-pub const SPEC_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "1.2";
 
 /// What this binary knows about itself, for the surface's `version` tool
 /// (`spec/surface` §4): its version, the CLI spec it renders, and the build

@@ -106,7 +106,7 @@ const SEAMS: &[(&str, &str)] = &[
 ];
 
 /// The corpus every pair starts from: a link from `index.md` to `notes/b.md`
-/// (so `mv` dangles and `retarget` has a hit), a document with a heading
+/// (so `mv --no-retarget` dangles and `retarget` has a hit), a document with a heading
 /// section, tasks and a paragraph to split, and one with frontmatter.
 const SEED: &[(&str, &str)] = &[
     (
@@ -857,7 +857,12 @@ fn every_write_over_the_reference_server_lands_like_local() {
         text(&r.stderr),
         "usage: node props is local-only; run it against a local workspace\n"
     );
-    let moved = same("mv", &["mv", "notes/b.md", "notes/moved.md"]);
+    // `--no-retarget` keeps the inbound link dangling so `retarget` below has
+    // a hit (a bare `mv` rewrites it, spec/mutate 1.3).
+    let moved = same(
+        "mv",
+        &["mv", "notes/b.md", "notes/moved.md", "--no-retarget"],
+    );
     assert_eq!(moved.len(), 1);
     let (l, _) = p.both(&server, &["ls", "notes/moved.md"], None);
     assert!(text(&l.stdout).contains("notes/moved.md"));

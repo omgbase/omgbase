@@ -110,8 +110,11 @@ pub struct DocMoveResult {
     /// With a dry run: the old path emptied, the new path filled, then any
     /// source the `retarget_inbound` rewrite would touch. `None` when committed.
     pub diffs: Option<Diffs>,
-    /// Inbound links still naming the old path after the call.
+    /// Inbound links still naming the old path after the call (with the
+    /// retarget: the frontmatter relations, which are never rewritten).
     pub dangling: Vec<InboundLink>,
+    /// `None` when the retarget was opted out or nothing linked in; empty
+    /// lists when it ran but only frontmatter relations linked in.
     pub retargeted: Option<Retargeted>,
 }
 
@@ -386,8 +389,9 @@ impl Store {
     /// §6 `docs_move`: rename a document (identity kept); an `api` commit
     /// with no revision; open edges from other documents re-pointed to
     /// `phantom:<old path>` (a self edge only when its link names the path);
-    /// phantoms at the new path adopted. With `retarget_inbound`, the
-    /// dangling links are rewritten as one follow-up changeset.
+    /// phantoms at the new path adopted. With `retarget_inbound` — the
+    /// surface's default since mutate 1.3 — the dangling links are rewritten
+    /// as one follow-up changeset; `false` leaves them as written.
     pub fn docs_move(
         &mut self,
         ctx: &DocOpContext,

@@ -752,18 +752,27 @@ ids. Missing `--to` → `usage: move requires --to <parent>`; no blocks →
 
 ### `mv`
 
-`mv <doc> <new-path> [--actor <s>] [--dry-run]` — `docs_move`: the file is
-renamed, identity and history preserved. Confirmation (§4) `moved to
-<new-path>`; `--json` the `DocMoveResult`
-`{ docId, path, committed, dangling: [...], retargeted }`. Inbound links
-that named the old path are **not** rewritten; they are listed in
-`dangling` and, in human mode, reported on stderr after the confirmation:
-`  ! <n> inbound link(s) still name(s) the old path: <path> <block>, …`
-(`<path> (frontmatter)` for a block-less relation) then
-`  fix: omg retarget /<old path> /<new path> --apply`; nothing when none
+`mv <doc> <new-path> [--no-retarget] [--actor <s>] [--dry-run]` —
+`docs_move`: the file is renamed, identity and history preserved, and the
+inbound links that named the old path are rewritten to the new one
+(`spec/mutate` §6, 1.3 — a second `api` commit,
+`retarget inbound links <old> -> <new>`). Confirmation (§4) `moved to
+<new-path>`, then when anything was rewritten
+`  ok retargeted <n> inbound link(s) in <m> document(s)` (`link`/`document`
+for one); `--json` the `DocMoveResult`
+`{ docId, path, committed, dangling: [...], retargeted }`. `--no-retarget`
+(cli 1.2) passes `retarget_inbound: false`: the links are left as written
+and listed in `dangling`. Whatever still dangles is reported on stderr after
+the confirmation: `  ! <n> inbound link(s) still name(s) the old path:
+<path> <block>, …` (`<path> (frontmatter)` for a block-less relation), then
+the fix for each kind — `  fix: omg retarget /<old path> /<new path>
+--apply` when an authored link dangles, and one
+`  fix: omg meta <path> --set <field>=/<new path>` per (source, field) for a
+frontmatter relation (a move never rewrites frontmatter); nothing when none
 dangle. Unknown → `doc_missing: no document <ref>`; taken →
 `path_taken: a document already exists at <path>`. `--dry-run`: the rename
-as two file diffs (§3.6), then the same dangling note.
+as two file diffs plus the diff of every source the retarget would rewrite
+(§3.6), then the same dangling note (no retargeted line).
 
 ### `new`
 
@@ -1208,8 +1217,9 @@ prints nothing; `new`/`mv`/`rm --doc`/`meta` honor `--dry-run` (validate,
 render the diff, commit nothing); `node set` edits the property it names and
 honors `--actor`; `done` on a non-task block is `type_mismatch`; `retarget`'s
 plan is the unified diff of `spec/surface` §3; a whole-document `update`
-prints each id once; `mv` reports dangling inbound links on stderr in human
-mode too; an invalid `b_` token is `block_missing`; `split --at` with a
+prints each id once; `mv` retargets the inbound links by default and reports
+what it did (and what still dangles) on stderr in human mode too; an invalid
+`b_` token is `block_missing`; `split --at` with a
 non-integer is a usage error; machine modes follow one rule — `--jsonl` on a
 non-list result prints the `--json` document, `--ids` on a result without an
 id list prints the `--json` document, and the truncation footer is printed in
@@ -1342,8 +1352,11 @@ fixture change and a version bump, or keep). None was fixed here.
 - **Fixed — `mv` reports dangling inbound links on stderr in human mode
   too**: `! <n> inbound link(s) still name(s) the old path: <path> <block>, …`
   and `fix: omg retarget /<old> /<new> --apply`, after the confirmation
-  (and after a dry run's diffs); `--json`'s `dangling` is as before. `mv`
-  still does not rewrite them (`docs::mv`, `mv-dry-run`).
+  (and after a dry run's diffs); `--json`'s `dangling` is as before. Since
+  cli 1.2 the links are rewritten by default (`spec/mutate` 1.3) and the
+  confirmation counts them; the dangling note is what `--no-retarget` (or a
+  frontmatter relation, with a `meta` fix) leaves behind (`docs::mv`,
+  `mv-dry-run`, `mv-no-retarget`).
 - **Fixed — a `b_`-prefixed `update` target is always the block path**:
   `update b_nope` is `block_missing: not a block: b_nope`; it no longer
   falls through to the document path (`doc_missing: doc b_nope not found`)
@@ -1500,6 +1513,12 @@ bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
 
 ## 10. Decisions
 
+- 2026-09-28, cli 1.2: `mv --no-retarget`. `docs_move` retargets the
+  inbound links by default (`spec/mutate` 1.3), so `mv` does too and says
+  how many; the flag is the opt-out and the old dangling note is what it
+  (or a frontmatter relation) leaves. A flag added: a minor
+  (`docs::mv`, `mv-json`, `mv-dry-run`, `mv-dry-run-json`, `mv-no-retarget`,
+  `mv-no-retarget-json`, `invoke::help-card-mv`).
 - 2026-09-27, cli 1.1: a `version` verb rendering the surface's `version`
   tool (Brendan: one place that says which engine and which component
   versions an MCP host or a shell is talking to). A verb added: a minor.
