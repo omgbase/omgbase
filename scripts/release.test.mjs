@@ -347,3 +347,21 @@ test("isAlreadyPublished recognizes npm's and crates.io's republish refusals", a
   assert.equal(isAlreadyPublished("error: crate version `1.3.0` is already uploaded", "1.3.0"), true);
   assert.equal(isAlreadyPublished("ERR_PNPM_FAILED_TO_PUBLISH 401 Unauthorized", "0.4.1"), false);
 });
+
+test("computePlan: an npm dependent republishes as a (pin) patch when a workspace dependency bumps", () => {
+  // `@omgbase/core` gets a minor; `omgbase` (npm) depends on core with `workspace:^`
+  // and has no note of its own — pnpm would publish it as `^0.5.0`, so it must move.
+  const root = fixture({ notes: { c: NOTE('npm:\n  "@omgbase/core": minor') } });
+  const ws = loadWorkspace(root);
+  const { notes } = loadNotes(ws);
+  const plan = computePlan(ws, notes);
+  assert.deepEqual(plan.errors, []);
+  const by = Object.fromEntries(plan.entries.map((e) => [e.key, e]));
+  assert.equal(by["npm:@omgbase/core"].next, "0.5.0");
+  assert.equal(by["npm:omgbase"].level, "patch");
+  assert.equal(by["npm:omgbase"].pin, true);
+  assert.equal(by["npm:omgbase"].next, "0.4.1");
+  assert.equal(by["npm:@omgbase/oqx"].level, null, "a dependency of core, not a dependent — untouched");
+  assert.match(renderPlan(plan, ws, null), /omgbase \(npm\)\s+0\.4\.0 → 0\.4\.1\s+patch\s+\(pin\)/);
+  rmSync(root, { recursive: true, force: true });
+});
