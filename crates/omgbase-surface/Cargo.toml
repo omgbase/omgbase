@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-surface"
-version = "1.3.0"
+version = "1.4.0"
 description = "omgbase surface: the OQX query binding over the store, the document/block reads, the history reads and the MCP tool catalog as a library — Rust implementation"
 keywords = ["markdown", "query", "mcp", "sqlite", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -15,24 +15,24 @@ repository.workspace = true
 [dependencies]
 # The query language: parser, AST, the in-memory engine and its `DataContext`
 # seam (`spec/surface` §1). `json` for the `Value` ↔ `serde_json` bridge.
-oqx = { version = "0.13.0", path = "../oqx", features = ["json"] }
+oqx = { version = "0.13.1", path = "../oqx", features = ["json"] }
 # The store every read, query and mutation runs against.
-omgbase-store = { version = "13.5.1", path = "../omgbase-store" }
+omgbase-store = { version = "13.5.2", path = "../omgbase-store" }
 # Workspace discovery, repo listing with derived roots, `repos_status` /
 # `sync_status` (§4 repo scoping).
-omgbase-sync = { version = "1.3.0", path = "../omgbase-sync" }
+omgbase-sync = { version = "1.3.1", path = "../omgbase-sync" }
 # `sha256`/`hex`, the heading text normalizers of the `heading` resolver.
-omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
+omgbase-format = { version = "0.2.2", path = "../omgbase-format" }
 # `detect_range` for `range(x)` (§1.3).
-omgbase-properties = { version = "1.1.0", path = "../omgbase-properties" }
+omgbase-properties = { version = "1.1.1", path = "../omgbase-properties" }
 # The provider seam behind `semantic()`; the FTS sanitizer; `cosine_bytes`.
-omgbase-search = { version = "1.2.0", path = "../omgbase-search" }
+omgbase-search = { version = "1.2.1", path = "../omgbase-search" }
 # The matcher thresholds the observe tools take.
-omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile" }
+omgbase-reconcile = { version = "2.3.1", path = "../omgbase-reconcile" }
 # The graph and mutation kernels: their versions for the `version` tool (the
 # store binds them; the surface only reports them).
-omgbase-graph = { version = "1.1.0", path = "../omgbase-graph" }
-omgbase-mutate = { version = "1.2.0", path = "../omgbase-mutate" }
+omgbase-graph = { version = "1.1.1", path = "../omgbase-graph" }
+omgbase-mutate = { version = "1.2.1", path = "../omgbase-mutate" }
 # The store's connection; row reads.
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Results and arguments are JSON at the wire.

@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/sync",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Open Markdown Graph Base — standalone store-to-store synchronizer: a coordinator over an EngineClient seam (in-process or MCP-client) and source adapters",
   "license": "MIT",
   "repository": {

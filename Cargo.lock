@@ -578,7 +578,7 @@ checksum = "51d515d32fb182ee37cda2ccdcb92950d6a3c2893aa280e540671c2cd0f3b1d9"
 
 [[package]]
 name = "omgbase"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "libc",
  "omgbase-properties",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-format"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "markdown",
  "serde_json",
@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-graph"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "omgbase-format",
  "omgbase-properties",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-mutate"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "omgbase-format",
  "omgbase-reconcile",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-properties"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "omgbase-format",
  "regex",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-reconcile"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "omgbase-format",
  "serde_json",
@@ -656,7 +656,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-search"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "omgbase-reconcile",
  "omgbase-store",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-store"
-version = "13.5.1"
+version = "13.5.2"
 dependencies = [
  "getrandom 0.3.4",
  "omgbase-format",
@@ -686,7 +686,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-surface"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "omgbase-format",
  "omgbase-graph",
@@ -703,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "omgbase-sync"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "libc",
  "omgbase-format",
@@ -722,7 +722,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "oqx"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "regex",
  "rusqlite",

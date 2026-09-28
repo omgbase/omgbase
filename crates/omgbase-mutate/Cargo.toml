@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-mutate"
-version = "1.2.0"
+version = "1.2.1"
 description = "omgbase mutation kernel: the working block tree, the six ops (insert/update/move/remove/split/merge) with placement addressing and CAS, the splice renderer's dirty rules, changeset placeholders, the whole-document lowering and the opset — Rust implementation"
 keywords = ["markdown", "mutation", "blocks", "changeset", "omgbase"]
 categories = ["text-processing", "data-structures"]
@@ -15,10 +15,10 @@ repository.workspace = true
 [dependencies]
 # The block model: op-supplied content is parsed per spec/format; hashes for
 # the CAS tokens. `json` for attrs as JSON values.
-omgbase-format = { version = "0.2.1", path = "../omgbase-format", features = ["json"] }
+omgbase-format = { version = "0.2.2", path = "../omgbase-format", features = ["json"] }
 # The lowering (§7.1) consumes the matcher's assignment and dispositions; the
 # `Minter` seam is shared. `json` for the disposition `detail` an opset carries.
-omgbase-reconcile = { version = "2.3.0", path = "../omgbase-reconcile", features = ["json"] }
+omgbase-reconcile = { version = "2.3.1", path = "../omgbase-reconcile", features = ["json"] }
 # Ops, errors and opsets are JSON at the wire (the MCP surface, the fixtures);
 # block attrs are arbitrary JSON objects.
 serde_json = { version = "1", features = ["preserve_order"] }

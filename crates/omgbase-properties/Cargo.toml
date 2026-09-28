@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-properties"
-version = "1.1.0"
+version = "1.1.1"
 description = "omgbase document properties: YAML frontmatter, inline `key:: value` fields and computed intrinsics as typed property rows — Rust implementation"
 keywords = ["markdown", "frontmatter", "yaml", "properties", "omgbase"]
 categories = ["parser-implementations", "text-processing"]
@@ -15,7 +15,7 @@ repository.workspace = true
 [dependencies]
 # The block model: `Block`, `BlockKind`, `Attrs`, `parse_markdown` and the
 # JavaScript whitespace set (`text::is_js_whitespace`) the trim rules share.
-omgbase-format = { version = "0.2.1", path = "../omgbase-format" }
+omgbase-format = { version = "0.2.2", path = "../omgbase-format" }
 # The inline-field, tag and range patterns of spec/properties §2.2, §3.2, §3.3.
 regex = "1"
 # YAML 1.2 *structure* only (block/flow collections, anchors/aliases, block
