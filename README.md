@@ -84,6 +84,7 @@ packages/
       mcp/       MCP server · tools · error mapping
     corpus/      round-trip + matcher fixtures
   oqx/           @omgbase/oqx — the OQX query language + engine (standalone, zero deps, own version line; omgbase binds it in core/src/oqx-js/) (README: packages/oqx/README.md)
+  oqx-syntax/    @omgbase/oqx-syntax — OQX syntax highlighting assets: TextMate, Monarch, CodeMirror and Prism grammars, language configuration, Shiki/Monaco/CodeMirror/Prism/VS Code adapters, generated from one vocabulary (README: packages/oqx-syntax/README.md)
   cli/           omgbase — the `omg` CLI binary (depends on @omgbase/core + @omgbase/fs-adapter + @omgbase/sync) (README: packages/cli/README.md)
   sync/          @omgbase/sync — standalone store-to-store synchronizer (coordinator + `omgbase-sync` bin) (README: packages/sync/README.md)
   client/        @omgbase/client — thin remote MCP client (placeholder) (README: packages/client/README.md)

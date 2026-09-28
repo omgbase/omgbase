@@ -1,0 +1,279 @@
+{
+  "languageId": "oqx",
+  "languageVersion": "0.13",
+  "defaultToken": "invalid",
+  "tokenPostfix": ".oqx",
+  "ignoreCase": false,
+  "brackets": [
+    {
+      "open": "{",
+      "close": "}",
+      "token": "delimiter.curly"
+    },
+    {
+      "open": "(",
+      "close": ")",
+      "token": "delimiter.parenthesis"
+    }
+  ],
+  "memberCallBuiltinMethod": [
+    "lower",
+    "upper",
+    "contains",
+    "startsWith",
+    "endsWith",
+    "matches",
+    "size"
+  ],
+  "callBuiltinFunction": [
+    "list",
+    "size",
+    "has",
+    "range",
+    "entries"
+  ],
+  "callHostFunction": [
+    "text",
+    "semantic",
+    "under",
+    "under_heading",
+    "within",
+    "under_kind",
+    "yaml_path",
+    "json_pointer",
+    "has_edge",
+    "has_anchor",
+    "child_count",
+    "parent_type"
+  ],
+  "tokenizer": {
+    "root": [
+      {
+        "include": "@whitespace"
+      },
+      [
+        "\"",
+        {
+          "token": "string",
+          "next": "@stringDouble"
+        }
+      ],
+      [
+        "'",
+        {
+          "token": "string",
+          "next": "@stringSingle"
+        }
+      ],
+      [
+        "\\$\\{[^}]*\\}",
+        "variable.binding"
+      ],
+      [
+        "[0-9]+\\.(?![.0-9])",
+        "invalid.number"
+      ],
+      [
+        "[0-9]+(?:\\.[0-9]+)?[eE](?:[+\\-](?![0-9])|(?![0-9+\\-]))",
+        "invalid.number"
+      ],
+      [
+        "\\.[0-9]+(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?",
+        "invalid.number"
+      ],
+      [
+        "[0-9]+(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?",
+        "number"
+      ],
+      [
+        "\\.\\.\\.|\\.\\.",
+        "operator.range"
+      ],
+      [
+        "(\\.)([A-Za-z_$][A-Za-z0-9_$]*)(?=[ \\t]*\\()",
+        [
+          "delimiter.accessor",
+          {
+            "cases": {
+              "@memberCallBuiltinMethod": "predefined.method",
+              "@default": "identifier.method"
+            }
+          }
+        ]
+      ],
+      [
+        "(\\.)([A-Za-z_$][A-Za-z0-9_$]*)",
+        [
+          "delimiter.accessor",
+          "identifier.member"
+        ]
+      ],
+      [
+        "\\.",
+        "delimiter.accessor"
+      ],
+      [
+        "(select)([ \\t]+)(distinct)(?![A-Za-z0-9_$])",
+        [
+          "keyword",
+          "white",
+          "keyword.modifier"
+        ]
+      ],
+      [
+        "(follow)([ \\t]+)(distinct)(?![A-Za-z0-9_$])",
+        [
+          "keyword.clause",
+          "white",
+          "keyword.modifier"
+        ]
+      ],
+      [
+        "(order)([ \\t]+)(by)(?![A-Za-z0-9_$])",
+        [
+          "keyword.clause",
+          "white",
+          "keyword.clause"
+        ]
+      ],
+      [
+        "(?:select|where|from)(?![A-Za-z0-9_$])",
+        "keyword"
+      ],
+      [
+        "(?:collect|exists|single|count|first|none)(?![A-Za-z0-9_$])(?=[ \\t]*(?:distinct(?![A-Za-z0-9_$])[ \\t]*)?\\{)",
+        "keyword.consumer"
+      ],
+      [
+        "follow(?![A-Za-z0-9_$])(?=[ \\t]+[A-Za-z_$^])",
+        "keyword.clause"
+      ],
+      [
+        "(?:offset|limit)(?![A-Za-z0-9_$])(?=[ \\t]+(?:[0-9^]|\\$\\{))",
+        "keyword.clause"
+      ],
+      [
+        "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+        "keyword.follow"
+      ],
+      [
+        "(?:desc|asc)(?![A-Za-z0-9_$])(?=[ \\t]*(?:,|\\}|$|(?:offset|limit)(?![A-Za-z0-9_$])))",
+        "keyword.modifier"
+      ],
+      [
+        "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
+        "keyword.modifier"
+      ],
+      [
+        "distinct(?![A-Za-z0-9_$])(?=[ \\t]*\\{)",
+        "keyword.modifier"
+      ],
+      [
+        "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+        "keyword.operator.membership"
+      ],
+      [
+        "(?:false|null|true)(?![A-Za-z0-9_$])",
+        "constant.language"
+      ],
+      [
+        "[A-Za-z_$][A-Za-z0-9_$]*(?=[ \\t]*:)",
+        "identifier.alias"
+      ],
+      [
+        "([A-Za-z_$][A-Za-z0-9_$]*)(?=[ \\t]*\\()",
+        {
+          "cases": {
+            "@callBuiltinFunction": "predefined.function",
+            "@callHostFunction": "predefined.function.omgbase",
+            "@default": "identifier.function"
+          }
+        }
+      ],
+      [
+        "\\$[A-Za-z0-9_$]*",
+        "variable.predefined"
+      ],
+      [
+        "[A-Za-z_$][A-Za-z0-9_$]*",
+        "identifier"
+      ],
+      [
+        "!=|&&|<=|==|>=|\\|\\||!|%|\\*|\\+|-|\\/|<|>",
+        "operator"
+      ],
+      [
+        "\\^",
+        "operator.lift"
+      ],
+      [
+        ",",
+        "delimiter.comma"
+      ],
+      [
+        ":",
+        "delimiter.colon"
+      ],
+      [
+        "\\{",
+        "delimiter.curly"
+      ],
+      [
+        "\\}",
+        "delimiter.curly"
+      ],
+      [
+        "\\(",
+        "delimiter.parenthesis"
+      ],
+      [
+        "\\)",
+        "delimiter.parenthesis"
+      ],
+      [
+        "[^ \\t\\r\\n]",
+        "invalid"
+      ]
+    ],
+    "stringDouble": [
+      [
+        "[^\\\\\"]+",
+        "string"
+      ],
+      [
+        "\\\\(?:.|$)",
+        "string.escape"
+      ],
+      [
+        "\"",
+        {
+          "token": "string",
+          "next": "@pop"
+        }
+      ]
+    ],
+    "stringSingle": [
+      [
+        "[^\\\\']+",
+        "string"
+      ],
+      [
+        "\\\\(?:.|$)",
+        "string.escape"
+      ],
+      [
+        "'",
+        {
+          "token": "string",
+          "next": "@pop"
+        }
+      ]
+    ],
+    "whitespace": [
+      [
+        "[ \\t\\r\\n]+",
+        "white"
+      ]
+    ]
+  }
+}

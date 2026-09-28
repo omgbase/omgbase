@@ -1,0 +1,106 @@
+{
+  "name": "@omgbase/oqx-syntax",
+  "version": "0.0.0",
+  "description": "Syntax highlighting assets for OQX (omgbase Query eXpressions): TextMate grammar, Monaco Monarch grammar, language configuration and metadata, with Shiki, Monaco and VS Code adapters \u2014 all generated from one lexical vocabulary",
+  "keywords": [
+    "oqx",
+    "omgbase",
+    "syntax-highlighting",
+    "textmate",
+    "tmlanguage",
+    "monarch",
+    "monaco",
+    "shiki",
+    "codemirror",
+    "prism",
+    "vscode",
+    "grammar",
+    "query-language"
+  ],
+  "license": "MIT",
+  "author": "Brendan Baldwin",
+  "homepage": "https://github.com/omgbase/omgbase/tree/main/packages/oqx-syntax#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omgbase/omgbase.git",
+    "directory": "packages/oqx-syntax"
+  },
+  "bugs": {
+    "url": "https://github.com/omgbase/omgbase/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./vocabulary": {
+      "types": "./dist/src/vocabulary.d.ts",
+      "import": "./dist/src/vocabulary.js"
+    },
+    "./textmate": {
+      "types": "./dist/src/textmate.d.ts",
+      "import": "./dist/src/textmate.js"
+    },
+    "./monarch": {
+      "types": "./dist/src/monarch.d.ts",
+      "import": "./dist/src/monarch.js"
+    },
+    "./shiki": {
+      "types": "./dist/src/shiki.d.ts",
+      "import": "./dist/src/shiki.js"
+    },
+    "./monaco": {
+      "types": "./dist/src/monaco.d.ts",
+      "import": "./dist/src/monaco.js"
+    },
+    "./codemirror": {
+      "types": "./dist/src/codemirror.d.ts",
+      "import": "./dist/src/codemirror.js"
+    },
+    "./prism": {
+      "types": "./dist/src/prism.d.ts",
+      "import": "./dist/src/prism.js"
+    },
+    "./oqx.tmLanguage.json": "./syntax/oqx.tmLanguage.json",
+    "./oqx.monarch.json": "./syntax/oqx.monarch.json",
+    "./language-configuration.json": "./syntax/language-configuration.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo",
+    "syntax",
+    "vscode",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/generate.mjs",
+    "generate": "node scripts/generate.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@codemirror/language": "^6.12.4",
+    "@lezer/highlight": "^1.2.4",
+    "@omgbase/oqx": "workspace:^",
+    "@types/prismjs": "^1.26.6",
+    "prismjs": "^1.30.0",
+    "shiki": "^4.4.3",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.2.0"
+  }
+}

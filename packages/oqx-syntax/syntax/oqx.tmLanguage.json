@@ -1,0 +1,419 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "OQX",
+  "scopeName": "source.oqx",
+  "fileTypes": [
+    "oqx"
+  ],
+  "version": "0.13",
+  "patterns": [
+    {
+      "include": "#expression"
+    }
+  ],
+  "repository": {
+    "string-double": {
+      "comment": "string-double",
+      "name": "string.quoted.double.oqx",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.oqx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#string-escape"
+        }
+      ]
+    },
+    "string-single": {
+      "comment": "string-single",
+      "name": "string.quoted.single.oqx",
+      "begin": "'",
+      "end": "'",
+      "beginCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.begin.oqx"
+        }
+      },
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.string.end.oqx"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#string-escape"
+        }
+      ]
+    },
+    "string-escape": {
+      "comment": "string-escape",
+      "match": "\\\\(?:.|$)",
+      "name": "constant.character.escape.oqx"
+    },
+    "binding": {
+      "comment": "binding",
+      "match": "\\$\\{[^}]*\\}",
+      "name": "variable.other.binding.oqx"
+    },
+    "number-trailing-dot": {
+      "comment": "number-trailing-dot",
+      "match": "[0-9]+\\.(?![.0-9])",
+      "name": "invalid.illegal.number.oqx"
+    },
+    "number-bad-exponent": {
+      "comment": "number-bad-exponent",
+      "match": "[0-9]+(?:\\.[0-9]+)?[eE](?:[+\\-](?![0-9])|(?![0-9+\\-]))",
+      "name": "invalid.illegal.number.oqx"
+    },
+    "number-leading-dot": {
+      "comment": "number-leading-dot",
+      "match": "\\.[0-9]+(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?",
+      "name": "invalid.illegal.number.oqx"
+    },
+    "number": {
+      "comment": "number",
+      "match": "[0-9]+(?:\\.[0-9]+)?(?:[eE][+\\-]?[0-9]+)?",
+      "name": "constant.numeric.oqx"
+    },
+    "range": {
+      "comment": "range",
+      "match": "\\.\\.\\.|\\.\\.",
+      "name": "keyword.operator.range.oqx"
+    },
+    "member-call-builtinMethod": {
+      "comment": "member-call-builtinMethod",
+      "match": "(\\.)((?:startsWith|contains|endsWith|matches|lower|upper|size)(?![A-Za-z0-9_$]))(?=[ \\t]*\\()",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.oqx"
+        },
+        "2": {
+          "name": "support.function.method.oqx"
+        }
+      }
+    },
+    "member-call": {
+      "comment": "member-call",
+      "match": "(\\.)([A-Za-z_$][A-Za-z0-9_$]*)(?=[ \\t]*\\()",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.oqx"
+        },
+        "2": {
+          "name": "entity.name.function.method.oqx"
+        }
+      }
+    },
+    "member": {
+      "comment": "member",
+      "match": "(\\.)([A-Za-z_$][A-Za-z0-9_$]*)",
+      "captures": {
+        "1": {
+          "name": "punctuation.accessor.oqx"
+        },
+        "2": {
+          "name": "variable.other.member.oqx"
+        }
+      }
+    },
+    "accessor": {
+      "comment": "accessor",
+      "match": "\\.",
+      "name": "punctuation.accessor.oqx"
+    },
+    "select-distinct": {
+      "comment": "select-distinct",
+      "match": "(select)([ \\t]+)(distinct)(?![A-Za-z0-9_$])",
+      "captures": {
+        "1": {
+          "name": "keyword.control.oqx"
+        },
+        "3": {
+          "name": "keyword.other.modifier.oqx"
+        }
+      }
+    },
+    "follow-distinct": {
+      "comment": "follow-distinct",
+      "match": "(follow)([ \\t]+)(distinct)(?![A-Za-z0-9_$])",
+      "captures": {
+        "1": {
+          "name": "keyword.control.clause.oqx"
+        },
+        "3": {
+          "name": "keyword.other.modifier.oqx"
+        }
+      }
+    },
+    "order-by": {
+      "comment": "order-by",
+      "match": "(order)([ \\t]+)(by)(?![A-Za-z0-9_$])",
+      "captures": {
+        "1": {
+          "name": "keyword.control.clause.oqx"
+        },
+        "3": {
+          "name": "keyword.control.clause.oqx"
+        }
+      }
+    },
+    "keyword": {
+      "comment": "keyword",
+      "match": "(?:select|where|from)(?![A-Za-z0-9_$])",
+      "name": "keyword.control.oqx"
+    },
+    "consumer": {
+      "comment": "consumer",
+      "match": "(?:collect|exists|single|count|first|none)(?![A-Za-z0-9_$])(?=[ \\t]*(?:distinct(?![A-Za-z0-9_$])[ \\t]*)?\\{)",
+      "name": "keyword.control.consumer.oqx"
+    },
+    "follow": {
+      "comment": "follow",
+      "match": "follow(?![A-Za-z0-9_$])(?=[ \\t]+[A-Za-z_$^])",
+      "name": "keyword.control.clause.oqx"
+    },
+    "bound": {
+      "comment": "bound",
+      "match": "(?:offset|limit)(?![A-Za-z0-9_$])(?=[ \\t]+(?:[0-9^]|\\$\\{))",
+      "name": "keyword.control.clause.oqx"
+    },
+    "follow-option": {
+      "comment": "follow-option",
+      "match": "(?:frontier|depth|by)(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "name": "keyword.control.follow.oqx"
+    },
+    "order-direction": {
+      "comment": "order-direction",
+      "match": "(?:desc|asc)(?![A-Za-z0-9_$])(?=[ \\t]*(?:,|\\}|$|(?:offset|limit)(?![A-Za-z0-9_$])))",
+      "name": "keyword.other.modifier.oqx"
+    },
+    "values": {
+      "comment": "values",
+      "match": "values(?![A-Za-z0-9_$])(?=[ \\t]*(?:\\}|$|(?:follow|offset|limit|order|where|from)(?![A-Za-z0-9_$])))",
+      "name": "keyword.other.modifier.oqx"
+    },
+    "distinct": {
+      "comment": "distinct",
+      "match": "distinct(?![A-Za-z0-9_$])(?=[ \\t]*\\{)",
+      "name": "keyword.other.modifier.oqx"
+    },
+    "membership": {
+      "comment": "membership",
+      "match": "in(?![A-Za-z0-9_$])(?![ \\t]*(?:distinct|frontier|collect|exists|follow|offset|select|single|values|count|depth|first|limit|order|where|desc|from|none|asc|by|in)(?![A-Za-z0-9_$]))(?=[ \\t]*(?:[A-Za-z_$^(\"'0-9!\\-]|\\.\\.))",
+      "name": "keyword.operator.membership.oqx"
+    },
+    "literal": {
+      "comment": "literal",
+      "match": "(?:false|null|true)(?![A-Za-z0-9_$])",
+      "name": "constant.language.oqx"
+    },
+    "alias": {
+      "comment": "alias",
+      "match": "[A-Za-z_$][A-Za-z0-9_$]*(?=[ \\t]*:)",
+      "name": "variable.other.alias.oqx"
+    },
+    "call-builtinFunction": {
+      "comment": "call-builtinFunction",
+      "match": "((?:entries|range|list|size|has)(?![A-Za-z0-9_$]))(?=[ \\t]*\\()",
+      "name": "support.function.builtin.oqx"
+    },
+    "call-hostFunction": {
+      "comment": "call-hostFunction",
+      "match": "((?:under_heading|json_pointer|child_count|parent_type|has_anchor|under_kind|yaml_path|has_edge|semantic|within|under|text)(?![A-Za-z0-9_$]))(?=[ \\t]*\\()",
+      "name": "support.function.omgbase.oqx"
+    },
+    "call": {
+      "comment": "call",
+      "match": "([A-Za-z_$][A-Za-z0-9_$]*)(?=[ \\t]*\\()",
+      "name": "entity.name.function.oqx"
+    },
+    "intrinsic": {
+      "comment": "intrinsic",
+      "match": "\\$[A-Za-z0-9_$]*",
+      "name": "variable.language.oqx"
+    },
+    "identifier": {
+      "comment": "identifier",
+      "match": "[A-Za-z_$][A-Za-z0-9_$]*",
+      "name": "variable.other.readwrite.oqx"
+    },
+    "operator": {
+      "comment": "operator",
+      "match": "!=|&&|<=|==|>=|\\|\\||!|%|\\*|\\+|-|\\/|<|>",
+      "name": "keyword.operator.oqx"
+    },
+    "lift": {
+      "comment": "lift",
+      "match": "\\^",
+      "name": "keyword.operator.lift.oqx"
+    },
+    "comma": {
+      "comment": "comma",
+      "match": ",",
+      "name": "punctuation.separator.comma.oqx"
+    },
+    "colon": {
+      "comment": "colon",
+      "match": ":",
+      "name": "punctuation.separator.key-value.oqx"
+    },
+    "brace-open": {
+      "comment": "brace-open",
+      "match": "\\{",
+      "name": "punctuation.section.block.begin.oqx"
+    },
+    "brace-close": {
+      "comment": "brace-close",
+      "match": "\\}",
+      "name": "punctuation.section.block.end.oqx"
+    },
+    "paren-open": {
+      "comment": "paren-open",
+      "match": "\\(",
+      "name": "punctuation.section.group.begin.oqx"
+    },
+    "paren-close": {
+      "comment": "paren-close",
+      "match": "\\)",
+      "name": "punctuation.section.group.end.oqx"
+    },
+    "illegal": {
+      "comment": "illegal",
+      "match": "[^ \\t\\r\\n]",
+      "name": "invalid.illegal.oqx"
+    },
+    "expression": {
+      "patterns": [
+        {
+          "include": "#string-double"
+        },
+        {
+          "include": "#string-single"
+        },
+        {
+          "include": "#binding"
+        },
+        {
+          "include": "#number-trailing-dot"
+        },
+        {
+          "include": "#number-bad-exponent"
+        },
+        {
+          "include": "#number-leading-dot"
+        },
+        {
+          "include": "#number"
+        },
+        {
+          "include": "#range"
+        },
+        {
+          "include": "#member-call-builtinMethod"
+        },
+        {
+          "include": "#member-call"
+        },
+        {
+          "include": "#member"
+        },
+        {
+          "include": "#accessor"
+        },
+        {
+          "include": "#select-distinct"
+        },
+        {
+          "include": "#follow-distinct"
+        },
+        {
+          "include": "#order-by"
+        },
+        {
+          "include": "#keyword"
+        },
+        {
+          "include": "#consumer"
+        },
+        {
+          "include": "#follow"
+        },
+        {
+          "include": "#bound"
+        },
+        {
+          "include": "#follow-option"
+        },
+        {
+          "include": "#order-direction"
+        },
+        {
+          "include": "#values"
+        },
+        {
+          "include": "#distinct"
+        },
+        {
+          "include": "#membership"
+        },
+        {
+          "include": "#literal"
+        },
+        {
+          "include": "#alias"
+        },
+        {
+          "include": "#call-builtinFunction"
+        },
+        {
+          "include": "#call-hostFunction"
+        },
+        {
+          "include": "#call"
+        },
+        {
+          "include": "#intrinsic"
+        },
+        {
+          "include": "#identifier"
+        },
+        {
+          "include": "#operator"
+        },
+        {
+          "include": "#lift"
+        },
+        {
+          "include": "#comma"
+        },
+        {
+          "include": "#colon"
+        },
+        {
+          "include": "#brace-open"
+        },
+        {
+          "include": "#brace-close"
+        },
+        {
+          "include": "#paren-open"
+        },
+        {
+          "include": "#paren-close"
+        },
+        {
+          "include": "#illegal"
+        }
+      ]
+    }
+  }
+}

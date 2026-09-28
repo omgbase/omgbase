@@ -1,0 +1,61 @@
+{
+  "name": "oqx-syntax",
+  "displayName": "OQX Syntax",
+  "description": "Syntax highlighting for OQX (omgbase Query eXpressions) files and ```oqx Markdown fences",
+  "version": "0.0.0",
+  "publisher": "omgbase",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/omgbase/omgbase.git",
+    "directory": "packages/oqx-syntax/vscode"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "oqx",
+    "omgbase",
+    "query",
+    "syntax",
+    "highlighting"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "oqx",
+        "aliases": [
+          "OQX",
+          "oqx"
+        ],
+        "extensions": [
+          ".oqx"
+        ],
+        "mimetypes": [
+          "text/x-oqx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oqx",
+        "scopeName": "source.oqx",
+        "path": "./syntaxes/oqx.tmLanguage.json"
+      },
+      {
+        "scopeName": "markdown.oqx.codeblock",
+        "path": "./syntaxes/oqx.markdown-injection.tmLanguage.json",
+        "injectTo": [
+          "text.html.markdown"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.block.oqx": "oqx"
+        }
+      }
+    ]
+  }
+}

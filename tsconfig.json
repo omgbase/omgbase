@@ -6,6 +6,7 @@
     { "path": "packages/client" },
     { "path": "packages/embedder" },
     { "path": "packages/fs-adapter" },
+    { "path": "packages/oqx-syntax" },
     { "path": "packages/sync" }
   ]
 }
