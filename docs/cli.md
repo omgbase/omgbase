@@ -172,7 +172,7 @@ There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs 
 |---|---|
 | `omg log [--since ts\|24h\|7d] [--cursor n] [--origin api\|observed] [-n N]` | `changes_since`, one digest summary per line (the 06 §3 summary strings were designed for exactly this; a commit that wrote no revision reads `deleted <path>` or `moved <from> → <to>`). Relative `--since` values are resolved to **literal** ISO timestamps client-side before entering the envelope — the query language stays clock-free (10 §3.1); an unparsable `--since` is a usage error. `--ids` prints the commit ids and, when truncated, the footer. |
 | `omg hist <node> [-n N]` | `history_node` — the biography. |
-| `omg diff <doc> [--from r_x] [--to r_y] [--blocks]` | `diff_unified` (`docDiffUnified`, shared with the tool: `--json` is `{ doc, path, from, to, diff }`); with `--blocks` the block-grain `diff` tool's entries. With no revisions: current vs previous (the "what did the last commit do here" default). An unknown revision is `target_missing`. |
+| `omg diff <doc> [--from r_x] [--to r_y] [--blocks]` | `diff_unified` (`docDiffUnified`, shared with the tool: a unified diff of the two revisions' file texts — what `docs_read_at` returns — so hunk line numbers are file lines; `--json` is `{ doc, path, from, to, diff }`); with `--blocks` the block-grain `diff` tool's entries. With no revisions: current vs previous (the "what did the last commit do here" default). An unknown revision is `target_missing`. |
 
 ### 5.6 Mutate
 

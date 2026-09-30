@@ -561,7 +561,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "@@ -11,7 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft, revised.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+            "stdout": "@@ -27,7 +27,7 @@\n \n ## Status of these notes\n \n-Draft, revised.\n+From the second write.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n"
           }
         },
         {
@@ -572,7 +572,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -11,7 +11,7 @@\\n real strand of practice: dew was held to be a celestial condensate and a candidate\\n [prima materia](/substances/prima-materia.md).\\n ## Status of these notes\\n-Draft, revised.\\n+From the second write.\\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\\n - [ ] Decide whether the dew operation is literal\"}\n"
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         },
         {
@@ -584,7 +584,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "@@ -11,8 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+From the second write.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+            "stdout": "@@ -27,8 +27,7 @@\n \n ## Status of these notes\n \n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+From the second write.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n"
           }
         },
         {
@@ -598,7 +598,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "@@ -11,8 +11,7 @@\n real strand of practice: dew was held to be a celestial condensate and a candidate\n [prima materia](/substances/prima-materia.md).\n ## Status of these notes\n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Draft, revised.\n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n - [ ] Decide whether the dew operation is literal\n"
+            "stdout": "@@ -27,8 +27,7 @@\n \n ## Status of these notes\n \n-Draft. I have not worked through the plates in order against a commentary, and\n-the secondary literature disagrees about even the number of stages depicted.\n+Draft, revised.\n \n - [ ] Obtain a facsimile with plate numbering\n - [ ] Compare the 1677 and 1702 plate sequences\n"
           }
         },
         {
@@ -622,7 +622,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -11,7 +11,7 @@\\n real strand of practice: dew was held to be a celestial condensate and a candidate\\n [prima materia](/substances/prima-materia.md).\\n ## Status of these notes\\n-Draft, revised.\\n+From the second write.\\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\\n - [ ] Decide whether the dew operation is literal\"}\n"
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_18\",\"to\":\"r_19\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         }
       ]

@@ -291,10 +291,14 @@ verbatim, and this prose uses snake_case only as a naming convention.
   `before`/`after` as applicable. **`diff_unified(doc, from_rev?, to_rev?)`**:
   defaults to the previous and current revisions (`target_missing` when
   none); `{ doc, path, from, to, diff }` where `diff` is a **unified diff** of the
-  two revisions' rendered texts (each revision's live raws — all depths, so
-  a container's raw and its children's both appear — joined by `\n`, split
-  on `\n` exactly, no trimming; an empty text has **no** lines; since 1.1,
-  §9): the shortest edit script by Myers' O(ND) algorithm with the canonical
+  two revisions' **reconstructed file texts** — for each revision exactly the
+  bytes `docs_read_at` returns (§2: leading trivia, frontmatter, the top-level
+  raws with their trivia in order; a container's raw already holds its
+  children, so nothing appears twice and hunk line numbers are file lines;
+  since the 1.4 patch of 2026-09-30, §9 — until then the text was the
+  Merkle-tree walk, every live raw at every depth joined by `\n`), split on
+  `\n` exactly, no trimming; an empty text has **no** lines (since 1.1, §9):
+  the shortest edit script by Myers' O(ND) algorithm with the canonical
   tie rule (at each step take the diagonal from `k+1` — an insertion from
   the new side — when `k == -d` or `k != d` and `V[k-1] < V[k+1]`, else from
   `k-1` — a deletion from the old side — so on a tie the script prefers the
@@ -646,6 +650,23 @@ both and runs both harnesses.
   at all (`- old`/`+ new` with a space, no hunks). §3 now pins a real unified
   diff with a deterministic Myers script (least surprising: the tool is
   named after the format).
+- **Fixed (1.4.x) — `diff_unified` diffed the tree walk, not the file.** Each
+  revision was rendered as every live raw at every depth of its Merkle tree
+  joined by `\n` — but a container's raw already holds its children's text,
+  so every list item, quote line and table row appeared twice: inside the
+  container's raw and again as a block of its own. Appending one bullet to a
+  `## Log` list produced a `+` line at the end of the container's raw —
+  immediately before the first child's raw, so it read as an insertion
+  *before* the list's first item — and the same `+` line again in a later
+  hunk, where the new child sat at the end of the children. The bytes were
+  never wrong (`docs_read_at` was right all along); only the text being
+  diffed was. §3 now diffs each revision's reconstructed file text — exactly
+  what `docs_read_at` returns — so hunk line numbers are real file lines and
+  the frontmatter shows up as context (`reads::diff-unified-list-append`
+  pins a loose list, a tight pair of appended bullets, then one more). The
+  block-grain `diff` keeps the all-depths id → raw map: it compares blocks
+  by id, where a container and its children are distinct entries. No field,
+  tool or result key changed: a patch.
 - **Pinned — the catch-all error is `repo_not_found`.** An unexpected
   exception in a tool is reported under that code with its message.
 - **Pinned — `history_node` is not repo-scoped**; block ids are global.
@@ -666,6 +687,11 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-09-30, surface 1.4 patch: `diff_unified` diffs the two revisions'
+  reconstructed file texts (what `docs_read_at` returns) instead of the
+  Merkle-tree walk (§3, §9). The `diff` string of existing fixtures changed
+  — the old text repeated every nested block — but no field, tool or result
+  key did, so `VERSION` stays 1.4 and the crates take a patch.
 - 2026-09-28, surface 1.4 patch: `docs_move` follows `spec/mutate` 1.3 —
   `retarget_inbound` defaults to `true`, so a bare move rewrites the inbound
   links; §7's `write-docs-create-move` now moves without the argument and

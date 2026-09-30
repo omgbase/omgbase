@@ -147,13 +147,35 @@ describe("diffUnified (store-backed)", () => {
     return (store.db.prepare("SELECT current_rev FROM docs WHERE path=?").get(path) as { current_rev: string }).current_rev;
   }
 
-  it("one inserted block is one + line; identical revisions are \"\"", () => {
+  it("one inserted block is one + line (plus its blank-line separator: the text diffed is the file); identical revisions are \"\"", () => {
     save("a.md", "# H\n\none\n\ntwo\n\nthree\n\nfour\n\nfive\n");
     const rev1 = currentRev("a.md");
     save("a.md", "# H\n\none\n\ntwo\n\ninserted\n\nthree\n\nfour\n\nfive\n");
     const rev2 = currentRev("a.md");
-    expect(diffUnified(store, docId("a.md"), rev1, rev2)).toBe("@@ -1,6 +1,7 @@\n # H\n one\n two\n+inserted\n three\n four\n five");
+    // File lines 4–9 → 4–11: the blank lines between blocks are real lines of context.
+    expect(diffUnified(store, docId("a.md"), rev1, rev2)).toBe("@@ -4,6 +4,8 @@\n \n two\n \n+inserted\n+\n three\n \n four");
     expect(diffUnified(store, docId("a.md"), rev1, rev1)).toBe("");
+  });
+
+  it("diffs the reconstructed file text, not the tree walk: a bullet appended to a loose list is one + line at the list's end (spec/surface §9)", () => {
+    // A loose list (blank lines between items) whose last two items are a
+    // tight pair, as docs_append leaves them; the file has frontmatter too.
+    const before = "---\ntitle: Log\n---\n\n# Log\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n";
+    save("log.md", before);
+    const rev1 = currentRev("log.md");
+    save("log.md", before + "\n- item f\n");
+    const rev2 = currentRev("log.md");
+    const diff = diffUnified(store, docId("log.md"), rev1, rev2);
+    // Exactly the unified diff of the two files: one hunk, real file line
+    // numbers, the new bullet after "- item e" — never before "- item a", and
+    // never twice (the tree walk emitted the list's raw AND each item's raw).
+    expect(diff).toBe(unifiedDiff(before, before + "\n- item f\n"));
+    expect(diff).toBe("@@ -15,3 +15,5 @@\n - item d\n - item e\n \n+- item f\n+");
+    expect(diff.split("\n").filter((l) => l === "+- item f")).toHaveLength(1);
+    expect(diff.split("\n").filter((l) => l.startsWith("@@"))).toHaveLength(1);
+    expect(diff).not.toContain("- item a");
+    // The bug is invisible to the block-grain diff, which keeps the id → raw map.
+    expect(diffBlocks(store, docId("log.md"), rev1, rev2).some((d) => d.kind === "added" && d.after === "- item f")).toBe(true);
   });
 });
 

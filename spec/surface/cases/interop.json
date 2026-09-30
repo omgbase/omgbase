@@ -3743,7 +3743,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_18",
-            "diff": "@@ -42,4 +42,5 @@\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n ## Laboratory\n-Working notes live under `lab/`.\n+Working notes live under `lab/`, one file per month.\n+Appended by apply."
+            "diff": "@@ -50,5 +50,7 @@\n \n ## Laboratory\n \n-Working notes live under `lab/`.\n+Working notes live under `lab/`, one file per month.\n \n+Appended by apply.\n+"
           },
           [
             {
@@ -4433,7 +4433,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_18",
-            "diff": "@@ -1,7 +1,5 @@\n # Alchemy\n-The art of transformation — part proto-chemistry, part philosophy, part\n-contemplative practice. This repository collects notes on its substances,\n-processes, practitioners, and primary texts.\n+The art of transformation, revised for interop.\n ## The tria prima\n Paracelsus reduced the material world to three principles:\n - [[mercury]] — the volatile spirit"
+            "diff": "@@ -8,9 +8,7 @@\n \n # Alchemy\n \n-The art of transformation — part proto-chemistry, part philosophy, part\n-contemplative practice. This repository collects notes on its substances,\n-processes, practitioners, and primary texts.\n+The art of transformation, revised for interop.\n \n ## The tria prima\n "
           },
           [
             {
@@ -4662,7 +4662,7 @@
             "path": "index.md",
             "from": "r_0",
             "to": "r_19",
-            "diff": "@@ -2,14 +2,16 @@\n The art of transformation — part proto-chemistry, part philosophy, part\n contemplative practice. This repository collects notes on its substances,\n processes, practitioners, and primary texts.\n+## Laboratory\n+Working notes live under `lab/`.\n ## The tria prima\n Paracelsus reduced the material world to three principles:\n+- [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n - [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n-- [[salt]] — the fixed body\n ## Substances\n - [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n - [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n@@ -41,5 +43,3 @@\n - [Mutus Liber](/texts/mutus-liber.md)\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n-## Laboratory\n-Working notes live under `lab/`."
+            "diff": "@@ -12,13 +12,17 @@\n contemplative practice. This repository collects notes on its substances,\n processes, practitioners, and primary texts.\n \n+## Laboratory\n+\n+Working notes live under `lab/`.\n+\n ## The tria prima\n \n Paracelsus reduced the material world to three principles:\n \n+- [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n-- [[salt]] — the fixed body\n \n ## Substances\n \n@@ -48,7 +52,4 @@\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n \n-## Laboratory\n \n-Working notes live under `lab/`.\n-"
           },
           {
             "digests": [
@@ -9640,7 +9640,7 @@
             "path": "practitioners/newton.md",
             "from": "r_5",
             "to": "r_18",
-            "diff": "@@ -1,5 +1,5 @@\n # Isaac Newton\n-1643–1727. Wrote more on alchemy than on physics, and published none of it.\n+1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n known_for:: unpublished alchemical corpus\n century:: 17\n ## Scale of the work\n@@ -23,7 +23,7 @@\n capable investigator of the era worked the programme for thirty years with full\n rigour and got nothing, because there was nothing there. That is a result, and\n the [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list"
+            "diff": "@@ -9,7 +9,7 @@\n \n # Isaac Newton\n \n-1643–1727. Wrote more on alchemy than on physics, and published none of it.\n+1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n \n known_for:: unpublished alchemical corpus\n century:: 17\n@@ -43,6 +43,6 @@\n rigour and got nothing, because there was nothing there. That is a result, and\n the [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n \n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n "
           },
           {
             "digests": [

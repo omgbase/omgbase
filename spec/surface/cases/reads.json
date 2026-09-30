@@ -1815,14 +1815,14 @@
             "path": "guide.md",
             "from": "r_0",
             "to": "r_2",
-            "diff": "@@ -1,5 +1,5 @@\n # Guide\n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n owner:: bb\n ## Setup\n - first item\n@@ -11,8 +11,6 @@\n - [x] done task\n - [ ] open task\n - [x] done task\n-> a quote\n-a quote\n ```sh\n echo hi\n ```\n@@ -21,3 +19,4 @@\n | 1 | 2 |\n | a | b |\n | 1 | 2 |\n+A closing paragraph."
+            "diff": "@@ -5,7 +5,7 @@\n \n # Guide\n \n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n \n owner:: bb\n \n@@ -19,8 +19,6 @@\n - [ ] open task\n - [x] done task\n \n-> a quote\n-\n ```sh\n echo hi\n ```\n@@ -29,3 +27,5 @@\n |---|---|\n | 1 | 2 |\n \n+A closing paragraph.\n+"
           },
           {
             "doc": "d_0",
             "path": "guide.md",
             "from": "r_0",
             "to": "r_2",
-            "diff": "@@ -1,5 +1,5 @@\n # Guide\n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n owner:: bb\n ## Setup\n - first item\n@@ -11,8 +11,6 @@\n - [x] done task\n - [ ] open task\n - [x] done task\n-> a quote\n-a quote\n ```sh\n echo hi\n ```\n@@ -21,3 +19,4 @@\n | 1 | 2 |\n | a | b |\n | 1 | 2 |\n+A closing paragraph."
+            "diff": "@@ -5,7 +5,7 @@\n \n # Guide\n \n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n \n owner:: bb\n \n@@ -19,8 +19,6 @@\n - [ ] open task\n - [x] done task\n \n-> a quote\n-\n ```sh\n echo hi\n ```\n@@ -29,3 +27,5 @@\n |---|---|\n | 1 | 2 |\n \n+A closing paragraph.\n+"
           },
           {
             "doc": "d_0",
@@ -2215,6 +2215,201 @@
               "path": "notes/one.md"
             }
           }
+        ]
+      }
+    },
+    {
+      "name": "diff-unified-list-append",
+      "notes": "§3 diff_unified diffs the two revisions' RECONSTRUCTED FILE TEXT (what docs_read_at returns), not the Merkle-tree walk (§9, 1.4 patch). A heading over a LOOSE list (items separated by blank lines), then docs_append of a tight pair of bullets (r_1) and of one more bullet (r_2). The default diff (r_1 → r_2) must be ONE hunk with the one appended bullet at the end of the list — under the tree walk the container's raw and every child's raw were emitted, so the appended line showed up twice, the first time before the list's first item. docs_read_at pins the texts being diffed; the frontmatter appears as context because it is part of the file.",
+      "workspace": true,
+      "steps": [
+        {
+          "observe": {
+            "ts": "2026-09-27T10:00:00.000Z",
+            "items": [
+              {
+                "path": "log.md",
+                "source": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n"
+              }
+            ]
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "path": "log.md",
+              "text": "- item d\n- item e"
+            },
+            "ts": "2026-09-27T10:01:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_append",
+            "args": {
+              "path": "log.md",
+              "text": "- item f"
+            },
+            "ts": "2026-09-27T10:02:00.000Z"
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "doc": "log.md",
+              "rev": "r_1"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read_at",
+            "args": {
+              "doc": "log.md",
+              "rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff_unified",
+            "args": {
+              "doc": "log.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff_unified",
+            "args": {
+              "doc": "log.md",
+              "from_rev": "r_0",
+              "to_rev": "r_2"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "diff",
+            "args": {
+              "doc": "log.md",
+              "from_rev": "r_1",
+              "to_rev": "r_2"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "steps": [
+          [
+            {
+              "path": "log.md",
+              "echo": false,
+              "doc": "d_0",
+              "commit": "c_0",
+              "rev": "r_0",
+              "converged": true,
+              "conflicted": false,
+              "dispositions": {
+                "inserted": 7
+              }
+            }
+          ],
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_7"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "log.md"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "results": [
+              {
+                "ids": [
+                  "b_12"
+                ]
+              }
+            ],
+            "revisions": [
+              {
+                "doc": "d_0",
+                "path": "log.md"
+              }
+            ],
+            "committed": true
+          },
+          {
+            "path": "log.md",
+            "docId": "d_0",
+            "rev": "r_1",
+            "content": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n",
+            "renderedHashMatch": true,
+            "properties": {
+              "frontmatter": {
+                "title": "Log"
+              },
+              "inline": {},
+              "computed": {
+                "$title": "Log"
+              }
+            },
+            "propertiesAreCurrent": true
+          },
+          {
+            "path": "log.md",
+            "docId": "d_0",
+            "rev": "r_2",
+            "content": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f\n",
+            "renderedHashMatch": true,
+            "properties": {
+              "frontmatter": {
+                "title": "Log"
+              },
+              "inline": {},
+              "computed": {
+                "$title": "Log"
+              }
+            },
+            "propertiesAreCurrent": true
+          },
+          {
+            "doc": "d_0",
+            "path": "log.md",
+            "from": "r_1",
+            "to": "r_2",
+            "diff": "@@ -17,3 +17,5 @@\n - item d\n - item e\n \n+- item f\n+"
+          },
+          {
+            "doc": "d_0",
+            "path": "log.md",
+            "from": "r_0",
+            "to": "r_2",
+            "diff": "@@ -14,3 +14,8 @@\n \n - item c\n \n+- item d\n+- item e\n+\n+- item f\n+"
+          },
+          [
+            {
+              "kind": "changed",
+              "blockId": "b_3",
+              "before": "- item a\n\n- item b\n\n- item c\n\n- item d\n- item e",
+              "after": "- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f"
+            },
+            {
+              "kind": "added",
+              "blockId": "b_14",
+              "after": "- item f"
+            }
+          ]
         ]
       }
     },

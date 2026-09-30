@@ -1145,7 +1145,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "diff_unified",
     {
       description:
-        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ doc, path, from, to, diff }` where `diff` is a unified diff of the two rendered texts (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
+        "Unified diff between two revisions of a document (the `omg diff` rendering): returns `{ doc, path, from, to, diff }` where `diff` is a unified diff of the two revisions' file texts — for each revision exactly the bytes docs_read_at returns, so hunk line numbers are real file lines (Myers shortest edit script; `@@ -a,b +c,d @@` hunks with 3 lines of context; lines prefixed `-`, `+` or a space; no file header; identical texts → \"\"). `from_rev`/`to_rev` default to the previous and current revisions ('what did the last commit change here'). Contrast `diff`, which returns block-grain added/removed/changed entries.",
       inputSchema: { doc: z.string(), from_rev: z.string().optional(), to_rev: z.string().optional(), ...REPO_ARG },
     },
     async (args) => {

@@ -1,7 +1,7 @@
 //! History (`spec/surface/README.md` §3): `history_node`, the block-grain
-//! `diff`, the Myers unified `diff_unified` (§3; positional before 1.1, §9),
-//! `docs_history`. Port of `packages/core/src/graph/history.ts`;
-//! `changes_since` is the store's.
+//! `diff`, the Myers unified `diff_unified` over the two revisions'
+//! reconstructed files (§3; positional before 1.1, §9), `docs_history`. Port
+//! of `packages/core/src/graph/history.ts`; `changes_since` is the store's.
 
 use std::collections::HashMap;
 
@@ -43,8 +43,24 @@ pub fn history_node(store: &Store, block_id: &str, limit: Option<i64>) -> Result
     ))
 }
 
+/// §9: an unknown revision is `target_missing` (never an empty tree or an
+/// empty file). One constructor so `diff` and `diff_unified` report it with
+/// the same message and `data`.
+fn unknown_revision(doc_id: &str, rev_id: &str) -> crate::error::SurfaceError {
+    crate::error::SurfaceError::with_data(
+        "target_missing",
+        format!(
+            "no revision {} for document {doc_id}",
+            Json::String(rev_id.to_owned())
+        ),
+        json!({ "doc": doc_id, "rev": rev_id }),
+    )
+}
+
 /// The (block id → raw) map of a document at a revision, walking the Merkle
-/// tree to every depth (insertion order = tree order, roots first).
+/// tree to every depth (insertion order = tree order, roots first). The
+/// block grain of `diff`; not a rendering of the file (a container's raw
+/// already holds its children's).
 fn blocks_at_revision(
     conn: &Connection,
     doc_id: &str,
@@ -52,14 +68,7 @@ fn blocks_at_revision(
 ) -> Result<Vec<(String, String)>> {
     match blocks_at_known_revision(conn, doc_id, rev_id)? {
         Some(rows) => Ok(rows),
-        None => Err(crate::error::SurfaceError::with_data(
-            "target_missing",
-            format!(
-                "no revision {} for document {doc_id}",
-                Json::String(rev_id.to_owned())
-            ),
-            json!({ "doc": doc_id, "rev": rev_id }),
-        )),
+        None => Err(unknown_revision(doc_id, rev_id)),
     }
 }
 
@@ -139,22 +148,28 @@ pub fn diff_blocks(store: &Store, doc_id: &str, from_rev: &str, to_rev: &str) ->
     Ok(Json::Array(entries))
 }
 
-/// §3 `diff_unified`'s text: a unified diff of the two revisions' rendered
-/// texts — each revision's live raws joined by `\n` — via [`unified_diff`].
+/// §3 `diff_unified`: a unified diff of the two revisions' reconstructed
+/// files — what `docs_read_at` returns (`spec/store` §6.2: leading trivia,
+/// the revision's frontmatter, then each top-level block's raw and trivia,
+/// children not walked since a container's raw already holds them) — via
+/// [`unified_diff`]. Diffing the block map instead (the rendering this
+/// replaced: every live raw at every depth joined by `\n`) repeated each
+/// list item once inside its container's raw and once as its own block, so
+/// an appended bullet showed up twice, in two hunks. An unknown revision is
+/// `target_missing` (§9), exactly as `diff` reports it.
 pub fn diff_unified_text(
     store: &Store,
     doc_id: &str,
     from_rev: &str,
     to_rev: &str,
 ) -> Result<String> {
-    let rendered = |rev: &str| -> Result<String> {
-        let raws: Vec<String> = blocks_at_revision(store.conn(), doc_id, rev)?
-            .into_iter()
-            .map(|(_, raw)| raw)
-            .collect();
-        Ok(raws.join("\n"))
+    let file_at = |rev: &str| -> Result<String> {
+        store
+            .read_at_revision(doc_id, rev)?
+            .map(|r| r.content)
+            .ok_or_else(|| unknown_revision(doc_id, rev))
     };
-    Ok(unified_diff(&rendered(from_rev)?, &rendered(to_rev)?))
+    Ok(unified_diff(&file_at(from_rev)?, &file_at(to_rev)?))
 }
 
 // ---- unified diff (spec/surface §3) ------------------------------------------
@@ -574,6 +589,96 @@ mod tests {
             unified_diff("a\n\nb", "a\n\n\nb"),
             "@@ -1,3 +1,4 @@\n a\n \n+\n b"
         );
+    }
+
+    // ---- diff_unified over a store --------------------------------------------
+    // The bug this pins: a list container's raw already carries every item, so
+    // diffing "every live raw at every depth" showed an appended bullet twice
+    // (at the end of the container's raw, reading as an insertion before the
+    // first item, then again after the last item block). The diff must be over
+    // the reconstructed file, exactly what `docs_read_at` returns.
+
+    use omgbase_reconcile::Config;
+    use omgbase_store::SequentialMinter;
+
+    const REV1: &str = "# Notes\n\n## Log\n\n- first\n\n- second\n";
+    const REV2: &str = "# Notes\n\n## Log\n\n- first\n\n- second\n\n- third\n- fourth\n";
+    const REV3: &str = "# Notes\n\n## Log\n\n- first\n\n- second\n\n- third\n- fourth\n- fifth\n";
+
+    /// A store with `log.md` observed three times (a heading over a loose
+    /// list, then a tight pair appended, then one more bullet); returns the
+    /// store, the doc id and the three rev ids in order.
+    fn log_doc_store() -> (Store, String, Vec<String>) {
+        let mut store =
+            Store::open_in_memory_with_minter(Box::new(SequentialMinter::new())).unwrap();
+        let repo = store.create_repo("fixture").unwrap();
+        let mut revs = Vec::new();
+        let mut doc_id = String::new();
+        for (i, source) in [REV1, REV2, REV3].iter().enumerate() {
+            let ts = format!("2026-09-30T10:0{i}:00.000Z");
+            let out = store
+                .observe_one(&repo, "log.md", source, &ts, &Config::default())
+                .unwrap();
+            assert!(!out.echo, "revision {i} must commit");
+            doc_id = out.doc_id;
+            revs.push(out.rev.expect("a commit has a rev"));
+        }
+        (store, doc_id, revs)
+    }
+
+    #[test]
+    fn diff_unified_is_over_the_reconstructed_file_not_the_block_map() {
+        let (store, doc_id, revs) = log_doc_store();
+        // The two sides are byte for byte what `docs_read_at` returns.
+        for (rev, source) in revs.iter().zip([REV1, REV2, REV3]) {
+            let read = store.read_at_revision(&doc_id, rev).unwrap().unwrap();
+            assert_eq!(read.content, source);
+            assert!(read.rendered_hash_match);
+        }
+        let diff = diff_unified_text(&store, &doc_id, &revs[1], &revs[2]).unwrap();
+        assert_eq!(diff, unified_diff(REV2, REV3));
+        // Exactly one hunk, one `+` line, no `-` lines, the bullet once and
+        // after the previous last item.
+        assert_eq!(diff.matches("@@").count(), 2, "one hunk header: {diff}");
+        let lines: Vec<&str> = diff.lines().collect();
+        let plus: Vec<&str> = lines
+            .iter()
+            .copied()
+            .filter(|l| l.starts_with('+'))
+            .collect();
+        assert_eq!(plus, vec!["+- fifth"], "{diff}");
+        assert!(!lines.iter().any(|l| l.starts_with('-')), "{diff}");
+        assert_eq!(diff.matches("- fifth").count(), 1, "{diff}");
+        let fourth = lines.iter().position(|l| *l == " - fourth").unwrap();
+        let fifth = lines.iter().position(|l| *l == "+- fifth").unwrap();
+        assert_eq!(fifth, fourth + 1, "{diff}");
+        assert_eq!(diff, "@@ -8,4 +8,5 @@\n \n - third\n - fourth\n+- fifth\n ");
+        // The first append (a tight pair onto a loose list) reads the same way.
+        let first = diff_unified_text(&store, &doc_id, &revs[0], &revs[1]).unwrap();
+        assert_eq!(first, unified_diff(REV1, REV2));
+        assert_eq!(first.matches("- third").count(), 1, "{first}");
+        assert_eq!(first.matches("- fourth").count(), 1, "{first}");
+        assert_eq!(first.matches("@@").count(), 2, "one hunk header: {first}");
+        // Same revision on both sides: nothing.
+        assert_eq!(
+            diff_unified_text(&store, &doc_id, &revs[2], &revs[2]).unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn diff_unified_unknown_revision_is_target_missing_like_diff() {
+        let (store, doc_id, revs) = log_doc_store();
+        let err = diff_unified_text(&store, &doc_id, &revs[0], "rv_nope").unwrap_err();
+        assert_eq!(err.code, "target_missing");
+        assert_eq!(
+            err.message,
+            format!("no revision \"rv_nope\" for document {doc_id}")
+        );
+        assert_eq!(err.data, Some(json!({ "doc": doc_id, "rev": "rv_nope" })));
+        // Byte-identical to what the block-grain `diff` reports.
+        let block_err = diff_blocks(&store, &doc_id, &revs[0], "rv_nope").unwrap_err();
+        assert_eq!(err, block_err);
     }
 
     #[test]

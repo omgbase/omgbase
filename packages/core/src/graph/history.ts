@@ -1,5 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { findDocByRef } from "../core/read/reader.js";
+import { readDocumentAtRevision } from "../core/read/document.js";
 import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
 
@@ -69,7 +70,9 @@ export function diffBlocks(store: Store, docId: string, fromRev: string, toRev: 
 // core/hash.ts serializeTreeEntries): [blockId, rawHashHex, childTreeHashHex,
 // type, attrs, triviaHashHex]. Diff needs only the first three; whole-document
 // byte-faithful reconstruction (which also needs trivia + top-level order) lives
-// in core/read/document.ts readDocumentAtRevision.
+// in core/read/document.ts readDocumentAtRevision. This map is NOT a rendering
+// of the document: a container's raw already holds its children's text, so
+// joining the values would repeat every nested block (spec/surface §9).
 function blocksAtRevision(store: Store, docId: string, revId: string): Map<string, string> {
   const rev = store.db.prepare("SELECT root_tree FROM revisions WHERE rev_id = ? AND doc_id = ?").get(revId, docId) as { root_tree: Buffer } | undefined;
   if (!rev) throw new RevisionNotFound(docId, revId);
@@ -90,10 +93,22 @@ function blocksAtRevision(store: Store, docId: string, revId: string): Map<strin
   return out;
 }
 
-/** `diff_unified` (spec/surface §3): a unified diff of two revisions' rendered
- * texts — each revision's live raws joined by `\n` — via {@link unifiedDiff}. */
+/**
+ * `diff_unified` (spec/surface §3): a unified diff of the two revisions'
+ * **reconstructed file text** — exactly the bytes `docs_read_at` returns for
+ * each revision ({@link readDocumentAtRevision}: frontmatter, trivia and
+ * top-level order included) — via {@link unifiedDiff}, so hunk line numbers
+ * are real file lines. Until 1.4.x this diffed the Merkle-tree walk (every
+ * live raw at every depth joined by `\n`), which repeated each nested block
+ * after its container's raw and put an appended list item before the list's
+ * first item (§9). An unknown revision is {@link RevisionNotFound}.
+ */
 export function diffUnified(store: Store, docId: string, fromRev: string, toRev: string): string {
-  const rendered = (rev: string): string => [...blocksAtRevision(store, docId, rev).values()].join("\n");
+  const rendered = (rev: string): string => {
+    const at = readDocumentAtRevision(store, docId, rev);
+    if (!at) throw new RevisionNotFound(docId, rev);
+    return at.content;
+  };
   return unifiedDiff(rendered(fromRev), rendered(toRev));
 }
 
