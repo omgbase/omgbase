@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-surface"
-version = "1.4.1"
+version = "1.4.2"
 description = "omgbase surface: the OQX query binding over the store, the document/block reads, the history reads and the MCP tool catalog as a library — Rust implementation"
 keywords = ["markdown", "query", "mcp", "sqlite", "omgbase"]
 categories = ["database-implementations", "text-processing"]
