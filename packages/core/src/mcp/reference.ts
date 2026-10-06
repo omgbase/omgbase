@@ -11,7 +11,7 @@ export const QUERY_SYNTAX = `# query — OQX syntax reference
 The \`query\` tool takes ONE plain OQX string (+ optional \`limit\`/\`cursor\`). There
 is no {from, filter, order} envelope: every concern is a clause of the string.
 
-  [select <items>] from <target> [where <pred>] [follow <relation> [{ … }]]
+  [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   $repo.<target> count|exists|none|first|single { <block> }     (scalar/one-row form)
 
@@ -196,11 +196,19 @@ edges:  (the authored link graph as rows — one per open edge)
   from docs where <seed> follow doc.in             backlinks
     follow doc.out { depth 3 }                     bound (1..8, default 8)
     follow doc.out { where layer == "canon" }      keep only matching successors
+    follow doc.in { where before.contains(^$path) }   ^ = the row being expanded
+                                                   (^^ = the walk's enclosing scope)
+    follow doc.out, doc.in                         several destinations: their union
+                                                   (one step dedups by identity)
+    follow $repo.docs collect { where doc.out exists { where $path == ^^$path } }
+                                                   a destination block, re-read per
+                                                   frontier row (^ = that row) = doc.in
     follow doc.out { frontier type == "practitioner" }   cut, keeping the frontier row
     follow distinct doc.out / follow doc.out { by group } identity control
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
   depth|cycle), $leaf/$frontier, $ordinal — usable in select/order by and the
-  top-level post-walk where, NOT in the follow-local where/frontier.
+  top-level post-walk where, NOT metadata of the candidates the follow-local
+  where/frontier read.
   Type-preserving relations: doc.out/doc.in, block.children, section.children,
   section.subsections.
   from edges where $dst_path == "notes/x.md"       inbound edges to a doc, as rows

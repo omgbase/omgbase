@@ -12,8 +12,14 @@
 // Clause order is FIXED (ADR-020). Within one clause body — the top level or a
 // consumer block — each clause appears at most once, in exactly this order:
 //
-//   select <projection>  from <source>  where <predicate>  follow <relation> {…}
+//   select <projection>  from <source>  where <predicate>  follow <dest>, … {…}
 //   order by …  limit N  offset N
+//
+// A `follow` destination is a relation of the current row (a receiver, never
+// an outer reference) or a destination block — a receiver (which MAY be an
+// outer reference, `^people`) immediately followed by `collect`/`first`/
+// `single` [`distinct`] `{ body }`, exactly the select-position directive
+// `tryOp(false)` recognizes, re-evaluated per frontier row (language 0.14).
 //
 // Every clause is optional except that a top-level body needs `from` (the
 // receiver-plus-consumer form `<receiver> <consumer> { block }` supplies the
@@ -39,7 +45,7 @@ import type { Token, TokType } from "./lexer.ts";
 import { lexTemplate, lexString } from "./lexer.ts";
 import { OqxError } from "./errors.ts";
 import type {
-  Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, Consumer, RelOp,
+  Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
 } from "./ast.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
@@ -393,11 +399,15 @@ class Parser {
         this.fail("expected a relation after `follow distinct` (`follow distinct <relation>`)");
       }
     }
-    if (this.at("caret")) {
-      this.fail("`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there");
+    const destinations: FollowDestination[] = [this.parseFollowDestination()];
+    while (this.at("comma")) {
+      this.next();
+      if (!this.at("ident") && !this.at("binding") && !this.at("caret")) {
+        this.fail("expected a relation after ',' (`follow <relation>, <relation>`)");
+      }
+      destinations.push(this.parseFollowDestination());
     }
-    const receiver = this.parseReceiver();
-    const follow: Follow = { receiver, distinct, where: null, frontier: null, depth: null, by: null };
+    const follow: Follow = { destinations, distinct, where: null, frontier: null, depth: null, by: null };
     if (!this.at("lbrace")) return follow;
     this.next(); // '{'
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -427,6 +437,44 @@ class Parser {
     if (!this.at("rbrace")) this.fail("expected '}' to close the follow block");
     this.next();
     return follow;
+  }
+
+  // One `follow` destination. The lookahead mirrors `tryOp`: a receiver (binding,
+  // or carets + a dotted name) followed by a consumer word and `{` / `distinct {`
+  // is a destination block, parsed by `tryOp(false)` itself — but only the
+  // select-position consumers (collect/first/single) yield rows to walk; the
+  // where-position tests are rejected by name before their body is read. With
+  // no directive the tokens are re-read as a plain relation of the current row,
+  // where an outer reference is still an error (a `^name` head only makes sense
+  // as the receiver of a block, since the block is what varies per row).
+  private parseFollowDestination(): FollowDestination {
+    const start = this.pos;
+    let isReceiver = false;
+    if (this.at("binding")) { this.next(); isReceiver = true; }
+    else if (this.at("ident") || this.at("caret")) {
+      this.parseCarets();
+      if (this.at("ident")) { this.parseNavFrom(this.next()); isReceiver = true; }
+    }
+    if (isReceiver && this.at("ident") && CONSUMERS.has(this.peek().value)) {
+      const op = this.peek().value;
+      const after = this.peekAt(1);
+      const opThenBrace = after?.type === "lbrace";
+      const opDistinctBrace = after?.type === "ident" && after.value === "distinct" && this.peekAt(2)?.type === "lbrace";
+      if (opThenBrace || opDistinctBrace) {
+        if (op !== "collect" && op !== "first" && op !== "single") {
+          this.fail(`a follow destination must use collect/first/single, not \`${op}\` (exists/none/count are where-position tests)`);
+        }
+        this.pos = start;
+        const block = this.tryOp(false);
+        if (!block) this.fail("expected a destination block (`<receiver> collect { … }`) after `follow`");
+        return block;
+      }
+    }
+    this.pos = start;
+    if (this.at("caret")) {
+      this.fail("`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)");
+    }
+    return this.parseReceiver();
   }
 
   // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain

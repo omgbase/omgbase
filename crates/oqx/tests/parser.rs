@@ -5,8 +5,9 @@
 //! the tree.
 
 use oqx::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OqxError, OrderSpec, Query,
-    RelOp, SelectItem, Stage, Subquery, UnaryOp, Value, Where, parse_string, parse_template,
+    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OqxError,
+    OrderSpec, Query, RelOp, SelectItem, Stage, Subquery, UnaryOp, Value, Where, parse_string,
+    parse_template,
 };
 
 // ---- AST builders -------------------------------------------------------------
@@ -1137,7 +1138,7 @@ fn follow_collects_descendants() {
     assert_eq!(
         q.follow,
         Some(Follow {
-            receiver: ident("children"),
+            destinations: vec![FollowDestination::Relation(ident("children"))],
             distinct: false,
             r#where: None,
             frontier: None,
@@ -1160,7 +1161,7 @@ fn follow_block_options() {
     assert_eq!(
         q.follow,
         Some(Follow {
-            receiver: ident("children"),
+            destinations: vec![FollowDestination::Relation(ident("children"))],
             distinct: false,
             r#where: Some(ident("active")),
             frontier: Some(bin(BinaryOp::Eq, ident("kind"), str_("leaf"))),
@@ -1174,9 +1175,18 @@ fn follow_block_options() {
     assert_eq!((f.depth, f.by), (Some(1), Some(ident("id"))));
     // a dotted relation and a binding relation
     let q = parse("from tree follow rel.children");
-    assert_eq!(q.follow.unwrap().receiver, member(ident("rel"), "children"));
+    assert_eq!(
+        q.follow.unwrap().destinations,
+        vec![FollowDestination::Relation(member(
+            ident("rel"),
+            "children"
+        ))]
+    );
     let q = parse_template(&["from tree follow ", " { depth 3 }"], 1).unwrap();
-    assert_eq!(q.follow.unwrap().receiver, binding(0));
+    assert_eq!(
+        q.follow.unwrap().destinations,
+        vec![FollowDestination::Relation(binding(0))]
+    );
 }
 
 #[test]
@@ -1184,16 +1194,25 @@ fn follow_distinct() {
     let q = parse("id from xs follow distinct next order by id");
     let f = q.follow.unwrap();
     assert!(f.distinct);
-    assert_eq!(f.receiver, ident("next"));
+    assert_eq!(
+        f.destinations,
+        vec![FollowDestination::Relation(ident("next"))]
+    );
     let q = parse("from xs follow distinct rel.next { depth 2 }");
     let f = q.follow.unwrap();
     assert!(f.distinct);
-    assert_eq!(f.receiver, member(ident("rel"), "next"));
+    assert_eq!(
+        f.destinations,
+        vec![FollowDestination::Relation(member(ident("rel"), "next"))]
+    );
     assert_eq!(f.depth, Some(2));
     let q = parse_template(&["from xs follow distinct ", ""], 1).unwrap();
     let f = q.follow.unwrap();
     assert!(f.distinct);
-    assert_eq!(f.receiver, binding(0));
+    assert_eq!(
+        f.destinations,
+        vec![FollowDestination::Relation(binding(0))]
+    );
     // after `follow`, `distinct` is a keyword: it must be followed by the relation
     // (a relation literally named `distinct` is not supported)
     assert_parse_error(
@@ -1259,12 +1278,13 @@ fn follow_block_errors() {
         &["unexpected 'follow' after `from` — `follow` needs a relation"],
     );
     assert_parse_error("from tree follow 1", &["unexpected 'follow' after `from`"]);
-    // a `^`-headed relation IS recognized as a follow clause, and rejected: the
-    // relation is one of the current row's
+    // a `^`-headed relation IS recognized as a follow clause, and rejected: a
+    // plain destination is one of the current row's relations (an outer
+    // reference is only a destination block's receiver)
     assert_parse_error(
         "from tree follow ^rel",
         &[
-            "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there",
+            "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)",
         ],
     );
     assert_parse_error(
@@ -2698,7 +2718,7 @@ fn readme_full_query_shape() {
             order_by: Some(vec![desc(ident("age")), asc(ident("name"))]),
             consumer: Consumer::Collect,
             follow: Some(Follow {
-                receiver: ident("children"),
+                destinations: vec![FollowDestination::Relation(ident("children"))],
                 distinct: false,
                 r#where: None,
                 frontier: None,
@@ -2824,4 +2844,116 @@ fn operator_enums_round_trip_their_ts_spelling() {
     assert_eq!(UnaryOp::Neg.as_str(), "-");
     assert_eq!(LogicalOp::And.as_str(), "&&");
     assert_eq!(LogicalOp::Or.as_str(), "||");
+}
+
+// ---- follow destinations (0.14) -----------------------------------------------
+
+#[test]
+fn follow_takes_a_comma_separated_list_of_destinations() {
+    let q = parse("id from g follow before, after { depth 2 }");
+    let f = q.follow.unwrap();
+    assert_eq!(
+        f.destinations,
+        vec![
+            FollowDestination::Relation(ident("before")),
+            FollowDestination::Relation(ident("after")),
+        ]
+    );
+    assert_eq!(f.depth, Some(2));
+    // `distinct` applies to the whole list; dotted and binding destinations mix
+    let q = parse_template(&["from g follow distinct rel.a, ", ", c"], 1).unwrap();
+    let f = q.follow.unwrap();
+    assert!(f.distinct);
+    assert_eq!(
+        f.destinations,
+        vec![
+            FollowDestination::Relation(member(ident("rel"), "a")),
+            FollowDestination::Relation(binding(0)),
+            FollowDestination::Relation(ident("c")),
+        ]
+    );
+}
+
+#[test]
+fn a_follow_destination_block_is_a_select_position_directive() {
+    let q = parse("id from people where id == 1 follow ^people collect { where manager == ^id }");
+    let f = q.follow.unwrap();
+    let mut block = sub();
+    block.r#where = Some(scalar(bin(BinaryOp::Eq, ident("manager"), outer(1, "id"))));
+    assert_eq!(
+        f.destinations,
+        vec![FollowDestination::Block(Box::new(op(
+            outer(1, "people"),
+            Consumer::Collect,
+            block
+        )))]
+    );
+    // first/single, `distinct`, a projection, and an options block after the list
+    let q = parse(
+        "id from chain follow ^chain first distinct { id where id == ^prev order by id }, next { depth 3 }",
+    );
+    let f = q.follow.unwrap();
+    assert_eq!(f.depth, Some(3));
+    assert_eq!(f.destinations.len(), 2);
+    let FollowDestination::Block(b) = &f.destinations[0] else {
+        panic!("expected a destination block");
+    };
+    assert_eq!(b.op, Consumer::First);
+    assert!(b.distinct);
+    assert_eq!(b.receiver, outer(1, "chain"));
+    assert_eq!(b.sub.select, vec![bare("id")]);
+    assert_eq!(
+        f.destinations[1],
+        FollowDestination::Relation(ident("next"))
+    );
+    // a block receiver need not be an outer reference
+    let q = parse("id from t follow kids single { where ok }");
+    let FollowDestination::Block(b) = &q.follow.unwrap().destinations[0] else {
+        panic!("expected a destination block");
+    };
+    assert_eq!(b.receiver, ident("kids"));
+    assert_eq!(b.op, Consumer::Single);
+}
+
+#[test]
+fn follow_destination_errors() {
+    assert_parse_error(
+        "id from tree follow children, { depth 2 }",
+        &["expected a relation after ','"],
+    );
+    assert_parse_error(
+        "id from tree follow children,",
+        &["expected a relation after ','"],
+    );
+    assert_parse_error(
+        "id from tree follow children, ^others",
+        &["`follow` takes a relation", "^"],
+    );
+    assert_parse_error(
+        "id from tree follow children, null",
+        &["`null` is a literal"],
+    );
+    assert_parse_error(
+        "id from tree follow ^tree exists { where parent == ^id }",
+        &["a follow destination must use collect/first/single, not `exists`"],
+    );
+    assert_parse_error(
+        "id from tree follow children none { }",
+        &["collect/first/single", "none"],
+    );
+    assert_parse_error(
+        "id from tree follow children count { }",
+        &["collect/first/single", "count"],
+    );
+    assert_parse_error(
+        "id from tree follow ^tree collect { where parent == ^id",
+        &["expected '}' to close the collect { … } block"],
+    );
+    assert_parse_error(
+        "id from tree follow ^tree collect { where parent == ^id } { depth 2",
+        &["expected '}' to close the follow block"],
+    );
+    // a consumer word not followed by `{` is not a block, so the destination is
+    // plain and the word is leftover
+    assert_parse_error("id from tree follow children collect", &["unexpected"]);
 }

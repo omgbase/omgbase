@@ -241,7 +241,8 @@ nested/correlated scopes:
   `has_edge(pred[, target])`, `has_anchor()`, `parent_type()`, `child_count()`.
 
 ## 6. `follow`, the edge graph, and `distinct`
-- **Traversal:** `follow <relation>` recurses over a type-preserving relation
+- **Traversal:** `follow <dest>, …` recurses over one or more type-preserving
+  destinations; a plain destination is a relation of the current row
   (`doc.out`/`doc.in`, `block.children`, `section.children`/`section.subsections`).
   Per-path: a node reached by N paths yields N occurrences; `follow distinct`
   keeps one per identity (`by <expr>` sets that identity). Each occurrence carries
@@ -251,7 +252,24 @@ nested/correlated scopes:
   <pred> }` cuts, `{ depth <n> }` bounds (1..8). A revisited identity on the path
   is admitted once as `$stop == "cycle"` and never re-expanded. Recursion
   intrinsics are result metadata (valid in `select`/`order by` and the top-level
-  post-walk `where`), not in the successor `where`/`frontier`.
+  post-walk `where`), not metadata of the candidate rows the successor
+  `where`/`frontier` read.
+- **Destination lists** (`spec/oqx` 0.14): `follow doc.out, doc.in` walks the
+  union of the destinations — within one step the successors are concatenated
+  in source order and deduplicated by identity, so a document both cited by and
+  citing the current row is stepped into once. `frontier`, `depth` and `by`
+  apply whichever destination reached a row.
+- **Destination blocks:** a destination may be a select-position block
+  re-evaluated per frontier row — `follow $repo.docs collect { where doc.out
+  exists { where $path == ^^$path } }` computes backlinks as a block (the same
+  rows as `follow doc.in`). Inside the block `^` is the frontier row (`$repo` is
+  readable from every scope, so it needs no caret); `first`/`single` yield at
+  most one successor; `exists`/`none`/`count` are not destinations.
+- **Correlated successor `where`:** inside the follow-local `where`, a bare name
+  is the candidate's own property, `^name` is the **frontier row** being
+  expanded, and `^^name` the walk's enclosing scope — `follow doc.out { where
+  doc.out exists { where $path == ^^$path } }` keeps only mutual citations
+  (before 0.14 `^` skipped the frontier row and such predicates matched nothing).
 - **Edges as rows:** `from edges …`, or a doc's `doc.out_edges`/`doc.in_edges`.
 - **`distinct`** on any consumer dedups the rows it reduces by their **projected
   value**: `select distinct type`, `nodes collect distinct { select kind }`,

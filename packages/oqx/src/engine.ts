@@ -212,15 +212,39 @@ export class InMemoryEngine implements Engine {
   //   • identity for cycle detection + `distinct` is `by <expr>` when given, else
   //     `ctx.identity(row)` (an entry's identity is its value's); identities are
   //     compared structurally via `canonicalKey`, and `$ordinal` paths compare
-  //     component-wise (`comparePath`), so `10` follows `9`.
+  //     component-wise (`comparePath`), so `10` follows `9`;
+  //   • a row's successors are the destinations' rows in source order — a plain
+  //     relation read in the row's scope, a destination block evaluated as a
+  //     select-position directive in that scope (so `^` inside it is the frontier
+  //     row and its `^people` receiver resolves one scope further out) — filtered
+  //     by the follow `where`, then unioned by identity within the step (a
+  //     recurring identity is kept once, at its first position);
+  //   • the follow `where` reads the candidate's scope hung off the FRONTIER
+  //     row's scope: a bare name is the candidate's, `^name` the row being
+  //     expanded, `^^name` the walk's enclosing scope. `frontier` and `by` read
+  //     the occurrence's own scope with `^` the enclosing scope, as the body does.
   private followWalk(seedRows: unknown[], follow: Follow, parent: Scope): Occurrence[] {
     const cap = follow.depth ?? HARD_DEPTH_CAP;
     const scopeFor = (row: unknown): Scope => this.enter(row, parent);
     const identityOf = (row: unknown): unknown =>
       follow.by ? this.evalExpr(follow.by, scopeFor(row)) : this.ctx.identity(isEntry(row) ? row.value : row);
     const succOf = (row: unknown): unknown[] => {
-      const raw = this.rowsOf(this.evalExpr(follow.receiver, scopeFor(row)));
-      return follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, scopeFor(x)))) : raw;
+      const rowScope = scopeFor(row);
+      const raw: unknown[] = [];
+      for (const dest of follow.destinations) {
+        const v = dest.kind === "op" ? this.evalCollectValue(dest, rowScope) : this.evalExpr(dest, rowScope);
+        raw.push(...this.rowsOf(v));
+      }
+      const kept = follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, this.enter(x, rowScope)))) : raw;
+      const seen = new Set<string>();
+      const out: unknown[] = [];
+      for (const x of kept) {
+        const key = canonicalKey(identityOf(x));
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(x);
+      }
+      return out;
     };
     const frontierHit = (row: unknown): boolean =>
       follow.frontier ? truthy(this.evalExpr(follow.frontier, scopeFor(row))) : false;

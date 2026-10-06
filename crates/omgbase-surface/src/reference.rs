@@ -6,7 +6,7 @@ pub const QUERY_SYNTAX: &str = r#"# query — OQX syntax reference
 
 The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`).
 
-  [select <items>] from <target> [where <pred>] [follow <relation> [{ … }]]
+  [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   $repo.<target> count|exists|none|first|single { <block> }     (scalar/one-row form)
 
@@ -53,7 +53,13 @@ range. Methods: contains, startsWith, endsWith, matches, size, lower, upper.
 correlated to the current row; `^name` reads one scope out; `$repo.<target>`
 is an unbounded root scan from any depth. `distinct` dedups by projection;
 `values` returns bare values; `limit`/`offset` bound a block before its
-consumer. `follow <relation> { where … frontier … depth N by … }` recurses
-over a type-preserving relation ($depth, $stop, $leaf, $frontier, $ordinal).
+consumer. `follow <dest>, … { where … frontier … depth N by … }` recurses
+over type-preserving destinations ($depth, $stop, $leaf, $frontier,
+$ordinal): each <dest> is a relation of the current row or a
+`<recv> collect|first|single [distinct] { … }` block re-evaluated per frontier
+row; one step's successors are unioned by identity. Inside the follow-local
+`where` and inside a destination block `^` is the row being expanded (`^^`
+the walk's enclosing scope): `follow doc.in { where before.contains(^$path) }`,
+`follow doc.out, $repo.docs collect { where after.contains(^$path) }`.
 A custom `order by` disables the keyset cursor.
 "#;

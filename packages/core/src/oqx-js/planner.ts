@@ -121,8 +121,11 @@ function subMayRaise(s: Subquery, target: Target): boolean {
   return false;
 }
 
+// A destination is a relation Expr read in the frontier row's scope, or a
+// destination block (an OpNode) whose receiver and body may each raise.
 function followMayRaise(f: Follow, target: Target): boolean {
-  return [f.receiver, f.where, f.frontier, f.by].some((e) => e !== null && exprMayRaise(e, target, false));
+  if (f.destinations.some((d) => (d.kind === "op" ? opMayRaise(d, target, false) : exprMayRaise(d, target, false)))) return true;
+  return [f.where, f.frontier, f.by].some((e) => e !== null && exprMayRaise(e, target, false));
 }
 
 function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {

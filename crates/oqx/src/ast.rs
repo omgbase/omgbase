@@ -314,11 +314,20 @@ pub struct OpNode {
     pub distinct: bool,
 }
 
+/// One `follow` destination: a relation of the current row, or a destination block — a
+/// select-position directive (`collect`/`first`/`single`) re-evaluated per frontier row,
+/// inside which `^` is that row.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FollowDestination {
+    Relation(Expr),
+    Block(Box<OpNode>),
+}
+
 /// The recursive `follow` clause.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Follow {
-    /// The type-preserving successor relation (a nav expression).
-    pub receiver: Expr,
+    /// ≥ 1, in source order; the walk is their union.
+    pub destinations: Vec<FollowDestination>,
     pub distinct: bool,
     /// Successor predicate: which successors keep participating.
     pub r#where: Option<Expr>,

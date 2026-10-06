@@ -2620,10 +2620,11 @@ mod tests {
             m.body["diffs"]["a.md"],
             json!({ "before": a_src, "after": "# A\n\nSee [b](notes/b.md).\n" })
         );
-        // … and without `retarget_inbound`: two entries, the inbound link dangles.
+        // … and with `retarget_inbound: false` (mutate 1.3 retargets by default):
+        // two entries, the inbound link dangles.
         let plain = s.call(
             "docs_move",
-            json!({ "doc": "b.md", "to_path": "notes/b.md", "dry_run": true }),
+            json!({ "doc": "b.md", "to_path": "notes/b.md", "dry_run": true, "retarget_inbound": false }),
         );
         assert_eq!(
             serde_json::to_string(&plain.body).unwrap(),

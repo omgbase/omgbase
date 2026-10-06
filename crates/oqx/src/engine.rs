@@ -20,8 +20,8 @@
 //! the property's value and `$key` comes from scope metadata. A [`Value`] has no
 //! hidden tag, so the engine carries rows as a private `Row` — a value plus an optional
 //! entry key — and produces keyed rows only where the reference produces tagged
-//! ones: when a source, body-level `from`, directive receiver, or `follow`
-//! relation is literally `entries(x)`. A data row that merely looks like
+//! ones: when a source, body-level `from`, directive receiver, or plain `follow`
+//! destination is literally `entries(x)`. A data row that merely looks like
 //! `{ key, value }` is therefore never unwrapped, and `entries(x)` in value
 //! position (projected, or as an argument) is the plain array of `{ key, value }`
 //! records the builtin returns.
@@ -31,8 +31,8 @@ use std::cmp::Ordering;
 
 use crate::Result;
 use crate::ast::{
-    Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OrderSpec, Query, SelectItem, Subquery,
-    UnaryOp, Where,
+    Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query,
+    SelectItem, Subquery, UnaryOp, Where,
 };
 use crate::context::{DataContext, DefaultContext};
 use crate::errors::OqxError;
@@ -509,7 +509,8 @@ impl<C: DataContext> Exec<'_, C> {
         let mut walked: Vec<Walked> = Vec::new();
         let mut ancestors: Vec<Value> = Vec::new();
         for r in seeds {
-            self.follow_visit(follow, parent, cap, r, 1, &mut ancestors, &mut walked)?;
+            let key = self.follow_key(follow, &r, parent)?;
+            self.follow_visit(follow, parent, cap, r, key, 1, &mut ancestors, &mut walked)?;
         }
 
         let mut rows = walked;
@@ -555,9 +556,19 @@ impl<C: DataContext> Exec<'_, C> {
             .collect())
     }
 
+    /// A row's identity in the walk: `by E` read in the row's own scope under
+    /// `parent`, else the context's identity. One function so the cycle check,
+    /// `distinct`, and the within-step union of successors agree on the key.
+    fn follow_key(&self, follow: &Follow, row: &Row, parent: &Scope<'_>) -> Result<Value> {
+        match &follow.by {
+            Some(by) => self.eval_expr(by, &self.enter(row.clone(), parent, None)),
+            None => Ok(self.ctx.identity(&row.value)),
+        }
+    }
+
     // `ancestors` is the identity path of the current branch (the identities
     // from the seed down to the parent of `row`); each occurrence's path is
-    // that plus its own identity.
+    // that plus its own identity. `key` is `row`'s identity (`follow_key`).
     #[allow(clippy::too_many_arguments)]
     fn follow_visit(
         &self,
@@ -565,14 +576,11 @@ impl<C: DataContext> Exec<'_, C> {
         parent: &Scope<'_>,
         cap: u32,
         row: Row,
+        key: Value,
         depth: u32,
         ancestors: &mut Vec<Value>,
         walked: &mut Vec<Walked>,
     ) -> Result<()> {
-        let key = match &follow.by {
-            Some(by) => self.eval_expr(by, &self.enter(row.clone(), parent, None))?,
-            None => self.ctx.identity(&row.value),
-        };
         let mut path = Vec::with_capacity(ancestors.len() + 1);
         path.extend(ancestors.iter().cloned());
         path.push(key.clone());
@@ -596,8 +604,8 @@ impl<C: DataContext> Exec<'_, C> {
                     stop: "interior",
                 });
                 ancestors.push(key);
-                for s in succ {
-                    self.follow_visit(follow, parent, cap, s, depth + 1, ancestors, walked)?;
+                for (s, k) in succ {
+                    self.follow_visit(follow, parent, cap, s, k, depth + 1, ancestors, walked)?;
                 }
                 ancestors.pop();
                 return Ok(());
@@ -622,19 +630,47 @@ impl<C: DataContext> Exec<'_, C> {
         }
     }
 
-    fn successors_of(&self, follow: &Follow, row: &Row, parent: &Scope<'_>) -> Result<Vec<Row>> {
-        let raw = self.rows_of_expr(&follow.receiver, &self.enter(row.clone(), parent, None))?;
-        let Some(w) = &follow.r#where else {
-            return Ok(raw);
-        };
-        let mut out = Vec::with_capacity(raw.len());
-        for x in raw {
-            if self
-                .eval_expr(w, &self.enter(x.clone(), parent, None))?
-                .truthy()
-            {
-                out.push(x);
+    // A row's successors, each with its identity. Per destination in source
+    // order, the destination's rows are read in the row's own scope — a plain
+    // relation like a body-level `from`; a destination block as the
+    // select-position directive it is, so its receiver (`^people`) resolves one
+    // scope out of the frontier row and inside the block `^` IS the frontier
+    // row — then concatenated, kept by the follow `where` (read in the
+    // candidate's scope whose parent is the frontier row's scope: a bare name is
+    // the candidate's own, `^name` the frontier row's, `^^name` the walk's
+    // enclosing scope), then unioned by identity within the step: an identity
+    // that recurs is kept once, at its first position.
+    fn successors_of(
+        &self,
+        follow: &Follow,
+        row: &Row,
+        parent: &Scope<'_>,
+    ) -> Result<Vec<(Row, Value)>> {
+        let frontier = self.enter(row.clone(), parent, None);
+        let mut raw: Vec<Row> = Vec::new();
+        for dest in &follow.destinations {
+            match dest {
+                FollowDestination::Relation(e) => raw.extend(self.rows_of_expr(e, &frontier)?),
+                FollowDestination::Block(op) => {
+                    let v = self.eval_collect_value(op, &frontier)?;
+                    raw.extend(self.ctx.to_rows(&v).into_iter().map(Row::plain));
+                }
             }
+        }
+        let mut out: Vec<(Row, Value)> = Vec::with_capacity(raw.len());
+        for x in raw {
+            if let Some(w) = &follow.r#where
+                && !self
+                    .eval_expr(w, &self.enter(x.clone(), &frontier, None))?
+                    .truthy()
+            {
+                continue;
+            }
+            let key = self.follow_key(follow, &x, parent)?;
+            if out.iter().any(|(_, k)| equals(k, &key)) {
+                continue;
+            }
+            out.push((x, key));
         }
         Ok(out)
     }
@@ -2020,6 +2056,43 @@ mod tests {
             "xs count { limit 1.5 }",
             json!({ "xs": [] }),
             &["limit must be a non-negative integer"],
+        );
+    }
+
+    #[test]
+    fn follow_destinations_and_correlated_where() {
+        // the follow `where` reads the frontier row through `^` (0.14)
+        check(
+            "id values from g follow next { where prev == ^id } order by $ordinal",
+            json!({ "g": [{ "id": "a", "next": [
+                { "id": "b", "prev": "a", "next": [{ "id": "c", "prev": "b", "next": [] }] },
+                { "id": "d", "prev": "z", "next": [] }] }] }),
+            json!(["a", "b", "c"]),
+        );
+        // two destinations walk their union, unioned by identity within a step
+        check(
+            "id, d: $depth from g follow before, after order by $ordinal",
+            json!({ "g": [{ "id": 1,
+                "before": [{ "id": 2, "before": [], "after": [] }],
+                "after": [{ "id": 2, "before": [], "after": [] }, { "id": 3 }] }] }),
+            json!([{ "id": 1, "d": 1 }, { "id": 2, "d": 2 }, { "id": 3, "d": 2 }]),
+        );
+        // a destination block computes successors per frontier row: `^people` is
+        // the root one scope out of the frontier row, `^id` the frontier row's id
+        check(
+            "id values from people where id == 1 follow ^people collect { where manager == ^id } order by $ordinal",
+            json!({ "people": [
+                { "id": 1, "manager": null }, { "id": 2, "manager": 1 },
+                { "id": 3, "manager": 1 }, { "id": 4, "manager": 2 }] }),
+            json!([1, 2, 3, 4]),
+        );
+        // `first` yields at most one successor; `null` (no match) yields none
+        check(
+            "id values from people where id == 1 follow ^people first { where manager == ^id order by id desc } order by $ordinal",
+            json!({ "people": [
+                { "id": 1, "manager": null }, { "id": 2, "manager": 1 },
+                { "id": 3, "manager": 1 }, { "id": 4, "manager": 2 }] }),
+            json!([1, 3]),
         );
     }
 

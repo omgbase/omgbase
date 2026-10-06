@@ -429,12 +429,31 @@ rather than receiving an empty list. An unaliased `^name` item lifts the field
 
 ## 20. `follow`
 
-`follow R` turns a body into a bounded, **per-path**, depth-first walk. The
-body's `where` is split: conjuncts that mention no recursion intrinsic select
-the **seeds**; conjuncts that do are applied to the walked occurrences
-afterwards (seed predicates never prune the walk). From each seed the relation
-`R` (any expression yielding successors, coerced per §3; a row lacking it is a
-leaf) is followed, visiting successors in order.
+`follow D` turns a body into a bounded, **per-path**, depth-first walk over one
+or more comma-separated **destinations** `D1, …, Dn`. The body's `where` is
+split: conjuncts that mention no recursion intrinsic select the **seeds**;
+conjuncts that do are applied to the walked occurrences afterwards (seed
+predicates never prune the walk). From each seed the destinations are followed,
+visiting successors in order.
+
+A row's **successors** are, per destination in source order, the rows that
+destination yields (coerced per §3; a row lacking a relation contributes
+nothing), concatenated and then **unioned by identity**: an identity that
+recurs within one step is kept once, at its first position (since 0.14; a
+relation holding the same node twice yields one successor, and `follow before,
+after` steps once into a node both name). A row with no successors is a leaf.
+
+- A **plain destination** (`children`, `doc.out`) is read in the row's own
+  scope, like a body-level `from`.
+- A **destination block** (`^people collect { where manager == ^id }`) is
+  evaluated as a select-position directive **in the row's scope**: its receiver
+  is read there (so `^people` from a top-level walk is the named root), and
+  inside the block `^` reads the **frontier row** — the row being expanded —
+  exactly as `^` reads the enclosing row in any nested block. Its rows are the
+  block's result: the raw rows under an empty projection, projected records
+  otherwise, bare values under `values`; `first`/`single` yield at most one.
+  The block may order, bound and `distinct` its rows like any block. (since
+  0.14) [`follow`]
 
 Each occurrence carries intrinsics:
 
@@ -449,23 +468,30 @@ Each occurrence carries intrinsics:
   compared **component-wise as values**: two numbers numerically, two strings
   by code point (so `9` precedes `10`, never `"10" < "9"` as text); a number
   component precedes a string component; any other pairing orders by kind then
-  by canonical serialization (the reference's `comparePath`).
+  by canonical serialization (the reference's `comparePath`). Which destination
+  reached a row plays no part.
 
-Options: `where P` keeps only successors satisfying `P` (read in the successor's
-scope); `frontier P` marks a row a frontier (not expanded); `depth n` caps
-`$depth` at `n` (1–8; the default and hard cap is 8); `by E` gives the identity
-expression. **Identity** (portability) defaults to the row's `id` property, else
-its structural value, compared as §16 describes — id-less nodes with different
-contents are different nodes (not cycles of one another), and an `id` of `1`
-is not an `id` of `"1"`. A revisit of an identity on the current path is admitted
-**once** as `$stop == "cycle"` and not expanded, so cycles terminate. A node
-reached by N distinct paths yields N occurrences; `follow distinct` keeps the
-minimal `(depth, path)` occurrence per identity. Intrinsics belong to the
-occurrence's scope: inside a nested block `$depth` is the nested row's own
-`$depth` property (absent unless the host provides one, §2) and `^$depth` is
-the occurrence's. `follow` is legal at the top level and inside a
-select-position `collect`; inside a where-position directive it is an eval
-error. [`follow`]
+Options: `where P` keeps only successors satisfying `P`, read in the
+**successor's scope whose parent is the frontier row's scope**: a bare name is
+the candidate's own property, `^name` is the frontier row's — `follow next {
+where prev == ^id }` steps only into rows that name the row they were reached
+from — and `^^name` is the walk's enclosing scope (since 0.14;
+before, `^` skipped the frontier row and read the enclosing scope). `frontier
+P` marks a row a frontier (not expanded), whichever destination reached it;
+`depth n` caps `$depth` at `n` (1–8; the default and hard cap is 8); `by E`
+gives the identity expression. `frontier` and `by` are read in the occurrence's
+own scope with `^` the enclosing scope, as the body is. **Identity**
+(portability) defaults to the row's `id` property, else its structural value,
+compared as §16 describes — id-less nodes with different contents are different
+nodes (not cycles of one another), and an `id` of `1` is not an `id` of `"1"`.
+A revisit of an identity on the current path is admitted **once** as
+`$stop == "cycle"` and not expanded, so cycles terminate. A node reached by N
+distinct paths yields N occurrences; `follow distinct` keeps the minimal
+`(depth, path)` occurrence per identity. Intrinsics belong to the occurrence's
+scope: inside a nested block `$depth` is the nested row's own `$depth`
+property (absent unless the host provides one, §2) and `^$depth` is the
+occurrence's. `follow` is legal at the top level and inside a select-position
+`collect`; inside a where-position directive it is an eval error. [`follow`]
 
 ## 21. `entries()` and `$key`
 

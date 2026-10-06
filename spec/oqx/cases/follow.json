@@ -1163,6 +1163,901 @@
           "a"
         ]
       }
+    },
+    {
+      "name": "the follow where reads the frontier row through ^",
+      "notes": "Inside `follow R { where P }` the candidate's scope hangs off the row being expanded, so `^id` is the parent's id. Before 0.14 `^` skipped to the walk's enclosing scope (the root here), where `id` is absent, and the predicate never held.",
+      "roots": {
+        "g": [
+          {
+            "id": "a",
+            "next": [
+              {
+                "id": "b",
+                "prev": "a",
+                "next": [
+                  {
+                    "id": "c",
+                    "prev": "b",
+                    "next": []
+                  }
+                ]
+              },
+              {
+                "id": "d",
+                "prev": "z",
+                "next": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from g follow next { where prev == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "the follow where: a bare name is the candidate's own",
+      "roots": {
+        "g": [
+          {
+            "id": "a",
+            "next": [
+              {
+                "id": "b",
+                "prev": "a",
+                "next": [
+                  {
+                    "id": "c",
+                    "prev": "b",
+                    "next": []
+                  }
+                ]
+              },
+              {
+                "id": "d",
+                "prev": "z",
+                "next": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from g follow next { where prev == \"z\" } order by $ordinal",
+      "expect": {
+        "result": [
+          "a",
+          "d"
+        ]
+      }
+    },
+    {
+      "name": "the follow where: ^ is the frontier row inside a nested follow",
+      "notes": "The collect's rows seed the walk; `^tag` in the follow where is the frontier row's tag (`r1` is `m`), not the enclosing row's.",
+      "roots": {
+        "t": [
+          {
+            "id": "root",
+            "tag": "k",
+            "kids": [
+              {
+                "id": "r1",
+                "tag": "m",
+                "kids": [
+                  {
+                    "id": "r1a",
+                    "tag": "m",
+                    "kids": []
+                  },
+                  {
+                    "id": "r1b",
+                    "tag": "k",
+                    "kids": []
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "tag": "k",
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, desc: kids collect { id values follow kids { where tag == ^tag } order by $ordinal } from t",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "desc": [
+              "r1",
+              "r2",
+              "r1a"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "the follow where: ^^ is the walk's enclosing scope",
+      "notes": "Two carets out of the follow where is the scope the walk runs in — here the enclosing `root` row (tag `k`).",
+      "roots": {
+        "t": [
+          {
+            "id": "root",
+            "tag": "k",
+            "kids": [
+              {
+                "id": "r1",
+                "tag": "m",
+                "kids": [
+                  {
+                    "id": "r1a",
+                    "tag": "m",
+                    "kids": []
+                  },
+                  {
+                    "id": "r1b",
+                    "tag": "k",
+                    "kids": []
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "tag": "k",
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, desc: kids collect { id values follow kids { where tag == ^^tag } order by $ordinal } from t",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "desc": [
+              "r1",
+              "r2",
+              "r1b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "frontier and by read the occurrence with ^ the enclosing scope",
+      "notes": "`frontier`/`by` are not correlated: `^tag` there is the enclosing `root` row's tag (`k`), so `r1b` and `r2` are frontiers and `r1` (`m`) expands.",
+      "roots": {
+        "t": [
+          {
+            "id": "root",
+            "tag": "k",
+            "kids": [
+              {
+                "id": "r1",
+                "tag": "m",
+                "kids": [
+                  {
+                    "id": "r1a",
+                    "tag": "m",
+                    "kids": []
+                  },
+                  {
+                    "id": "r1b",
+                    "tag": "k",
+                    "kids": []
+                  }
+                ]
+              },
+              {
+                "id": "r2",
+                "tag": "k",
+                "kids": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, desc: kids collect { id, s: $stop follow kids { frontier tag == ^tag } order by $ordinal } from t",
+      "expect": {
+        "result": [
+          {
+            "id": "root",
+            "desc": [
+              {
+                "id": "r1",
+                "s": "interior"
+              },
+              {
+                "id": "r2",
+                "s": "frontier"
+              },
+              {
+                "id": "r1a",
+                "s": "leaf"
+              },
+              {
+                "id": "r1b",
+                "s": "frontier"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "two destinations walk their union",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "before": [],
+                "after": [
+                  {
+                    "id": 4,
+                    "before": [],
+                    "after": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow before, after order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "d": 1
+          },
+          {
+            "id": 2,
+            "d": 2
+          },
+          {
+            "id": 3,
+            "d": 2
+          },
+          {
+            "id": 4,
+            "d": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "destinations are unioned by identity within a step",
+      "notes": "Node 2 is both `before` and `after` of node 1; one step yields it once.",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ],
+            "after": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow before, after order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "d": 1
+          },
+          {
+            "id": 2,
+            "d": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a relation holding a node twice yields one successor",
+      "notes": "The within-step union applies to a single destination too (since 0.14).",
+      "roots": {
+        "t": [
+          {
+            "id": 1,
+            "kids": [
+              {
+                "id": 2
+              },
+              {
+                "id": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from t follow kids order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "d": 1
+          },
+          {
+            "id": 2,
+            "d": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a row lacking one destination still follows the others",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "after": [
+              {
+                "id": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from g follow before, after order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "the options block applies to the union: depth",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "before": [],
+                "after": [
+                  {
+                    "id": 4,
+                    "before": [],
+                    "after": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop from g follow before, after { depth 2 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "s": "interior"
+          },
+          {
+            "id": 2,
+            "s": "depth"
+          },
+          {
+            "id": 3,
+            "s": "depth"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the options block applies to the union: where",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "before": [],
+                "after": [
+                  {
+                    "id": 4,
+                    "before": [],
+                    "after": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id values from g follow before, after { where id != 3 } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2
+        ]
+      }
+    },
+    {
+      "name": "frontier applies to a row whichever destination reached it",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": []
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "before": [],
+                "after": [
+                  {
+                    "id": 4,
+                    "before": [],
+                    "after": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, s: $stop from g follow before, after { frontier id == 3 } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "s": "interior"
+          },
+          {
+            "id": 2,
+            "s": "leaf"
+          },
+          {
+            "id": 3,
+            "s": "frontier"
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow distinct over two destinations",
+      "roots": {
+        "g": [
+          {
+            "id": 1,
+            "before": [
+              {
+                "id": 2,
+                "before": [],
+                "after": [
+                  {
+                    "id": 3,
+                    "before": [],
+                    "after": []
+                  }
+                ]
+              }
+            ],
+            "after": [
+              {
+                "id": 3,
+                "before": [],
+                "after": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, d: $depth from g follow distinct before, after order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "d": 1
+          },
+          {
+            "id": 2,
+            "d": 2
+          },
+          {
+            "id": 3,
+            "d": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "a destination block computes successors per frontier row",
+      "notes": "`^people` is read in the frontier row's scope, one out of which is the root; inside the block `^id` is the frontier row's id. The walk is the reporting tree under person 1.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id values from people where id == 1 follow ^people collect { where manager == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2,
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "name": "a destination block's projection shapes the successors",
+      "notes": "The block projects `{ id }`, so every walked row after the seed carries only `id`; `manager` is absent on them.",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id, m: manager from people where id == 1 follow ^people collect { id where manager == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "m": null
+          },
+          {
+            "id": 2
+          },
+          {
+            "id": 3
+          },
+          {
+            "id": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "first as a destination yields at most one successor",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id values from people where id == 1 follow ^people first { where manager == ^id order by id desc } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          3
+        ]
+      }
+    },
+    {
+      "name": "a destination block honors its own limit",
+      "roots": {
+        "people": [
+          {
+            "id": 1,
+            "manager": null
+          },
+          {
+            "id": 2,
+            "manager": 1
+          },
+          {
+            "id": 3,
+            "manager": 1
+          },
+          {
+            "id": 4,
+            "manager": 2
+          }
+        ]
+      },
+      "query": "id values from people where id == 1 follow ^people collect { where manager == ^id order by id limit 1 } order by $ordinal",
+      "expect": {
+        "result": [
+          1,
+          2,
+          4
+        ]
+      }
+    },
+    {
+      "name": "a relation and a block walk both directions of a chain",
+      "notes": "Predecessors come from the frontier row's `prev` looked up in the root; successors are the rows whose `prev` names the frontier row. Each neighbour steps back onto the seed, admitted once as a cycle.",
+      "roots": {
+        "chain": [
+          {
+            "id": "a"
+          },
+          {
+            "id": "b",
+            "prev": "a"
+          },
+          {
+            "id": "c",
+            "prev": "b"
+          }
+        ]
+      },
+      "query": "id, s: $stop from chain where id == \"b\" follow ^chain collect { where id == ^prev }, ^chain collect { where prev == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          {
+            "id": "b",
+            "s": "interior"
+          },
+          {
+            "id": "a",
+            "s": "interior"
+          },
+          {
+            "id": "c",
+            "s": "interior"
+          },
+          {
+            "id": "b",
+            "s": "cycle"
+          },
+          {
+            "id": "b",
+            "s": "cycle"
+          }
+        ]
+      }
+    },
+    {
+      "name": "follow distinct over a bidirectional chain walk",
+      "roots": {
+        "chain": [
+          {
+            "id": "a"
+          },
+          {
+            "id": "b",
+            "prev": "a"
+          },
+          {
+            "id": "c",
+            "prev": "b"
+          }
+        ]
+      },
+      "query": "id values from chain where id == \"b\" follow distinct ^chain collect { where id == ^prev }, ^chain collect { where prev == ^id } order by $ordinal",
+      "expect": {
+        "result": [
+          "b",
+          "a",
+          "c"
+        ]
+      }
+    },
+    {
+      "name": "a destination block inside a nested follow correlates with the frontier row",
+      "notes": "Inside the block `^id` is the frontier row (the walked person), `^^id` would be the enclosing `teams` row.",
+      "roots": {
+        "teams": [
+          {
+            "id": "t",
+            "lead": 1,
+            "people": [
+              {
+                "id": 1,
+                "manager": null
+              },
+              {
+                "id": 2,
+                "manager": 1
+              },
+              {
+                "id": 3,
+                "manager": 2
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id, chain: people collect { id values where id == ^lead follow ^people collect { where manager == ^id } order by $ordinal } from teams",
+      "expect": {
+        "result": [
+          {
+            "id": "t",
+            "chain": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a trailing comma needs another destination",
+      "query": "id from tree follow children, { depth 2 }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a relation after ','"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a comma at the end of the query needs another destination",
+      "query": "id from tree follow children,",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected a relation after ','"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a later plain destination does not take an outer reference",
+      "roots": {
+        "tree": [
+          {
+            "id": "root",
+            "children": [
+              {
+                "id": "a",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      "query": "id from tree follow children, ^others",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`follow` takes a relation",
+            "^"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a literal is not a later destination",
+      "query": "id from tree follow children, null",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "`null` is a literal"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a destination block must use collect/first/single",
+      "query": "id from tree follow ^tree exists { where parent == ^id }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single",
+            "exists"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a destination block must use collect/first/single: count",
+      "query": "id from tree follow children count { }",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "collect/first/single",
+            "count"
+          ]
+        }
+      }
+    },
+    {
+      "name": "a destination block is closed before the options block",
+      "query": "id from tree follow ^tree collect { where parent == ^id } { depth 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [
+            "expected '}' to close the follow block"
+          ]
+        }
+      }
     }
   ]
 }

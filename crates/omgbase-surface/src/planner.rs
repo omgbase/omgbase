@@ -24,7 +24,7 @@
 //! `oqx::PlannedEngine::run` would execute.
 
 use oqx::Consumer;
-use oqx::ast::{Expr, Follow, OpNode, Query, SelectItem, Subquery, Where};
+use oqx::ast::{Expr, Follow, FollowDestination, OpNode, Query, SelectItem, Subquery, Where};
 use oqx::{Plan, QueryPlanner, Value, partition_pushable, residual_query};
 use rusqlite::Connection;
 use rusqlite::types::Value as SqlValue;
@@ -159,8 +159,10 @@ fn subquery_may_raise(sub: &Subquery, target: Target) -> bool {
 
 fn follow_may_raise(f: &Follow, target: Target) -> bool {
     let inner = |e: &Expr| expr_may_raise(e, target, false);
-    inner(&f.receiver)
-        || f.r#where.as_ref().is_some_and(inner)
+    f.destinations.iter().any(|d| match d {
+        FollowDestination::Relation(e) => inner(e),
+        FollowDestination::Block(op) => op_may_raise(op, target, false),
+    }) || f.r#where.as_ref().is_some_and(inner)
         || f.frontier.as_ref().is_some_and(inner)
         || f.by.as_ref().is_some_and(inner)
 }
@@ -424,6 +426,26 @@ mod tests {
         assert!(
             compile(
                 &parse("from docs where $path == \"a.md\" follow distinct doc.out"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
+        // follow with several destinations: relations and a destination block
+        // decline exactly like a single relation (0.14)
+        assert!(
+            compile(
+                &parse("from docs where $path == \"a.md\" follow doc.out, doc.in"),
+                &[],
+                "r"
+            )
+            .is_none()
+        );
+        assert!(
+            compile(
+                &parse(
+                    "from docs where $path == \"a.md\" follow $repo.docs collect { where after.contains(^$path) }"
+                ),
                 &[],
                 "r"
             )

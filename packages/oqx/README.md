@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.13"`); the patch digit is this implementation's own.
+> `"0.14"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -57,7 +57,7 @@ once, and every one is optional except `from` at the top level:
 [ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
 from <collection>          from ${people}
 [ where <predicate> ]      where age >= 18 && jobs exists { where !end }
-[ follow <relation> … ]    follow children { depth 4 }
+[ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people collect { … })
 [ order by <expr> … ]      order by age desc, name
 [ limit N ]                limit 10
 [ offset N ]               offset 20
@@ -555,10 +555,10 @@ A storage adapter that pushes the whole query may translate them to SQL
 
 ### 9. Recursion: `follow`
 
-`follow <relation>` turns a query into a bounded recursive traversal: the `where`
-selects the seed rows, and `follow` walks a relation from each reached row. It's
-fully duck-typed — the relation is any expression yielding successors; a row that
-lacks it is simply a leaf.
+`follow <destination>, …` turns a query into a bounded recursive traversal: the
+`where` selects the seed rows, and `follow` walks one or more **destinations**
+from each reached row. It's fully duck-typed — a relation is any expression
+yielding successors; a row that lacks it is simply a leaf.
 
 ```js
 const tree = [{ id: "root", children: [
@@ -599,11 +599,43 @@ occurrences, and revisiting an identity already on the current path is admitted
 runaway. `follow distinct` collapses occurrences to reached nodes (the minimal
 `(depth, path)` per identity).
 
+**Destinations** (language 0.14) are comma-separated; the walk is their union.
+A **plain destination** is a relation of the current row (`children`, `doc.out`
+— an outer reference `^rel` or a literal is a parse error). A **destination
+block** is a receiver followed by `collect`, `first` or `single` (optionally
+`distinct`) and a block — the same directive you would write in `select`,
+re-evaluated per frontier row with `^` bound to that row. Its receiver *may* be
+an outer reference, so a walk can compute successors from a named root:
+
+```js
+const people = [{ id: 1, manager: null }, { id: 2, manager: 1 }, { id: 3, manager: 1 }, { id: 4, manager: 2 }];
+oqx`id values from ${people} where id == 1 follow ^people collect { where manager == ^id } order by $ordinal`;
+// [1, 2, 3, 4] — the reporting tree under person 1 (`^people` names the root from a top-level walk)
+
+const chain = [{ id: "a" }, { id: "b", prev: "a" }, { id: "c", prev: "b" }];
+oqx`id values from ${chain} where id == "b" follow distinct ^chain collect { where id == ^prev }, ^chain collect { where prev == ^id } order by $ordinal`;
+// ["b", "a", "c"] — both directions of a chain; a block may order, bound and `distinct` its rows
+```
+
+A row's successors are, per destination in order, that destination's rows,
+filtered by the follow `where`, then **unioned by identity within the step**: a
+node reached by two destinations (or twice by one relation) in the same step is
+a single successor. `exists`/`none`/`count` are not destinations (they are
+where-position tests).
+
 The block accepts: `where <succ>` (which successors keep participating),
-`frontier <pred>` (cut a relation that could continue), `depth <n>` (1–8), and
-`by <expr>` (the identity used for cycle detection + `distinct` — default `.id`
-or the object reference). Give `follow` a stable identity (`.id` or `by`) when
-your relation returns fresh objects rather than shared references.
+`frontier <pred>` (cut a relation that could continue, whichever destination
+reached it), `depth <n>` (1–8), and `by <expr>` (the identity used for cycle
+detection + `distinct` — default `.id` or the object reference). The follow
+`where` is **correlated**: it reads the candidate successor's scope whose parent
+is the frontier row's — a bare name is the candidate's own property, `^name` is
+the row being expanded, `^^name` the walk's enclosing scope (language 0.14;
+before, `^` skipped the frontier row). So `follow doc.in { where
+before.contains(^$path) }` steps only into rows that name the row they were
+reached from. `frontier` and `by` are not correlated: they read the occurrence
+with `^` the enclosing scope, as the body does. Give `follow` a stable identity
+(`.id` or `by`) when your relation returns fresh objects rather than shared
+references.
 
 ### Cheat-sheet
 
@@ -626,7 +658,9 @@ from entries(obj) … $key / $value                a record's properties as a co
 entries(rel) exists { … }                        a free-function call may be a receiver
 order by expr desc, expr2                        ordering
 limit n / offset n                               bound the row set (after where/order/distinct, before the consumer)
-follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier)
+follow rel { where … frontier … depth n by … }  recursion ($depth/$stop/$leaf/$frontier); `^name` in the where is the frontier row
+follow before, after                             several destinations: the union of their rows (per step, by identity)
+follow ^people collect { where manager == ^id } a destination block: successors computed per frontier row (`^` = that row)
 ${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```
 

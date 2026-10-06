@@ -22,7 +22,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (850 cases in 29 files at language version 0.13) and all of them
+`spec/oqx/cases` (877 cases in 29 files at language version 0.14) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Published on crates.io
 as `oqx`.
 
@@ -52,7 +52,12 @@ Mirrors the reference so the two can be read side by side:
 
 - `lexer` / `parser` → `ast` — the fixed clause order (`select, from, where,
   follow, order by, limit, offset`; only a leading `select` may drop its
-  keyword) and the expression grammar.
+  keyword) and the expression grammar. `follow` takes a comma-separated list
+  of destinations (`Follow.destinations`, since 0.14): a relation of the
+  current row, or a destination block — `^people collect { where manager ==
+  ^id }`, a select-position directive re-read per frontier row with `^` bound
+  to that row; the walk is their union, successors unioned by identity within a
+  step, and the follow `where` reads the frontier row through `^`.
 - `semantics` — the scalar contract every backend obeys: typed equality with no
   coercion, absent-aware ordering (absent sorts last both ways), membership,
   ranges, arithmetic, builtins.

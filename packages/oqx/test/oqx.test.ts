@@ -525,6 +525,26 @@ test("follow distinct collapses per-path occurrences to reached nodes", () => {
   assert.deepEqual(out.map((r) => r.id), [1, 2]);
 });
 
+// The `Follow` AST shape is a contract shared with the omgbase bindings and the
+// Rust port (fixtures only see behavior): `destinations` holds a plain receiver
+// as an `Expr` and a destination block as the `OpNode` `tryOp` would build in
+// select position, discriminated on `kind === "op"`; `receiver` is gone.
+test("follow AST: destinations are receivers or select-position op nodes, in source order", () => {
+  const q = parse("id from people where id == 1 follow distinct children, ^people collect { where manager == ^id } { depth 3 }");
+  const f = q.follow!;
+  assert.equal(f.distinct, true);
+  assert.equal(f.depth, 3);
+  assert.equal(f.destinations.length, 2);
+  assert.equal(f.destinations[0]!.kind, "ident");
+  const block = f.destinations[1]!;
+  assert.equal(block.kind, "op");
+  if (block.kind !== "op") throw new Error("unreachable");
+  assert.equal(block.op, "collect");
+  assert.deepEqual(block.receiver, { kind: "outer", levels: 1, name: "people" });
+  assert.ok(block.sub.where);
+  assert.equal("receiver" in f, false);
+});
+
 // ---- distinct ---------------------------------------------------------------
 
 test("select distinct dedups top-level result rows by projection", () => {

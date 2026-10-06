@@ -184,8 +184,10 @@ group    = "(" where ")"                       ; a predicate group …
 ### `follow` — recursion
 
 ```
-follow   = "follow" [ "distinct" ] receiver [ "{" { option } "}" ]
-option   = "where" expr | "frontier" expr | "depth" integer | "by" expr
+follow      = "follow" [ "distinct" ] destination { "," destination } [ "{" { option } "}" ]
+destination = receiver                                                      ; a relation of the current row
+            | receiver ("collect" | "first" | "single") [ "distinct" ] "{" body "}"   ; a destination block
+option      = "where" expr | "frontier" expr | "depth" integer | "by" expr
 ```
 
 `follow` is a clause when an identifier, a binding, or a `^` follows the word;
@@ -193,11 +195,24 @@ otherwise it is a field name (`select follow from r`). After `follow`,
 **`distinct` is a keyword**: `follow distinct <relation>` sets the flag, and
 `follow distinct {` or `follow distinct` at the end of the input is a parse
 error `` expected a relation after `follow distinct` ``. A relation literally
-named `distinct` is therefore not supported. The relation is a relation **of the
-current row**: an outer reference (`follow ^rel`) is a parse error (`` `follow` takes a relation of the current row … ``), and so is a literal word (`follow
-null`). `depth` must be an integer literal in 1..8. Each option at most once; any
-other word in the block is a parse error. Semantics in SEMANTICS §follow.
-[`follow`, `errors-parse`]
+named `distinct` is therefore not supported.
+
+**Destinations** (since 0.14) are one or more, comma-separated; the walk is
+their union (SEMANTICS §20). A **plain destination** is a relation **of the
+current row**: an outer reference (`follow ^rel`) is a parse error (`` `follow`
+takes a relation of the current row … ``), and so is a literal word (`follow
+null`). A **destination block** is a receiver immediately followed by `collect`,
+`first` or `single` (optionally `distinct`) and `{`: an ordinary select-position
+block (§`select`), re-read per frontier row with `^` bound to that row. Its
+receiver **may** be an outer reference — `follow ^people collect { where
+manager == ^id }` reads the named root `people` from a top-level walk — since
+the block, not the receiver, is what varies per row. `exists`, `none` and
+`count` are not destinations (`` a follow destination must use
+collect/first/single, not `exists` … ``). A comma not followed by a destination
+is a parse error (`` expected a relation after ',' ``). The options block, when
+present, follows the last destination. `depth` must be an integer literal in
+1..8. Each option at most once; any other word in the block is a parse error.
+Semantics in SEMANTICS §follow. [`follow`, `errors-parse`]
 
 ### `order by`
 
@@ -275,7 +290,7 @@ values (bindings) and named roots are how collections enter a query.
 
 ## 5. Receivers
 
-A receiver (the left side of a consumer directive, or the relation of `follow`)
+A receiver (the left side of a consumer directive, or a `follow` destination)
 is deliberately narrower than an expression:
 
 ```

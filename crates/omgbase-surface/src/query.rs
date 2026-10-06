@@ -13,7 +13,9 @@ use std::collections::HashMap;
 
 use omgbase_search::{EmbeddingProvider, f32_to_blob};
 use omgbase_store::Store;
-use oqx::ast::{Expr, Follow, OpNode, OrderSpec, Query, SelectItem, Subquery, Where};
+use oqx::ast::{
+    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Subquery, Where,
+};
 use oqx::{Consumer, Engine, InMemoryEngine, Value};
 use serde_json::{Map, Value as Json};
 
@@ -222,7 +224,14 @@ fn rewrite_op(op: &OpNode) -> OpNode {
 
 fn rewrite_follow(f: &Follow) -> Follow {
     Follow {
-        receiver: rewrite_expr(&f.receiver),
+        destinations: f
+            .destinations
+            .iter()
+            .map(|d| match d {
+                FollowDestination::Relation(e) => FollowDestination::Relation(rewrite_expr(e)),
+                FollowDestination::Block(op) => FollowDestination::Block(Box::new(rewrite_op(op))),
+            })
+            .collect(),
         distinct: f.distinct,
         r#where: f.r#where.as_ref().map(rewrite_expr),
         frontier: f.frontier.as_ref().map(rewrite_expr),
@@ -360,7 +369,12 @@ fn visit_select(items: &[SelectItem], out: &mut Vec<String>) {
 }
 
 fn visit_follow(f: &Follow, out: &mut Vec<String>) {
-    visit_expr(&f.receiver, out);
+    for d in &f.destinations {
+        match d {
+            FollowDestination::Relation(e) => visit_expr(e, out),
+            FollowDestination::Block(op) => visit_op(op, out),
+        }
+    }
     for x in [&f.r#where, &f.frontier, &f.by].into_iter().flatten() {
         visit_expr(x, out);
     }
@@ -447,11 +461,13 @@ fn select_mentions(items: &[SelectItem], name: &str) -> bool {
 }
 
 fn follow_mentions(f: &Follow, name: &str) -> bool {
-    expr_mentions(&f.receiver, name)
-        || [&f.r#where, &f.frontier, &f.by]
-            .into_iter()
-            .flatten()
-            .any(|x| expr_mentions(x, name))
+    f.destinations.iter().any(|d| match d {
+        FollowDestination::Relation(e) => expr_mentions(e, name),
+        FollowDestination::Block(op) => op_mentions(op, name),
+    }) || [&f.r#where, &f.frontier, &f.by]
+        .into_iter()
+        .flatten()
+        .any(|x| expr_mentions(x, name))
 }
 
 fn order_mentions(o: Option<&Vec<OrderSpec>>, name: &str) -> bool {

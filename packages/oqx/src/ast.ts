@@ -57,9 +57,14 @@ export interface OpNode {
   distinct?: boolean;
 }
 
+/** One `follow` destination: a relation of the current row (an `Expr` receiver), or a
+ * destination block — a select-position directive (`collect`/`first`/`single`) re-evaluated
+ * per frontier row, inside which `^` is that row. Discriminate on `kind === "op"`. */
+export type FollowDestination = Expr | OpNode;
+
 /** The recursive `follow` clause. */
 export interface Follow {
-  receiver: Expr; // the type-preserving successor relation (a nav expression)
+  destinations: FollowDestination[]; // ≥ 1, in source order; the walk is their union
   distinct: boolean;
   where: Expr | null; // successor predicate: which successors keep participating
   frontier: Expr | null; // boundary predicate: cut a relation that could continue

@@ -124,7 +124,12 @@ different sets. Several tests depend on this; keep it fully checked.
   (`$stop == "cycle"` — paracelsus ⇄ index is admitted once, never looped),
   `frontier type == "practitioner"` (biographies as the edge of the walk),
   `by type` (re-keying identity so the walk stops when a document *type*
-  repeats), and `$ordinal`. The **structural** relations ride the heading
+  repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a **correlated
+  follow-local `where`** (`follow doc.out { where type == ^type }`, `^` being
+  the frontier row), a **destination list** (`follow doc.out, doc.in`, unioned
+  by identity within a step) and a **destination block** (`follow $repo.docs
+  collect { where doc.out exists { where $path == ^^$path } }`, backlinks
+  computed per frontier row, equal to `doc.in`). The **structural** relations ride the heading
   outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
   and the block tree (`block.children` — a bullet list down to its items),
   including a **nested follow-collect** projecting each process document's

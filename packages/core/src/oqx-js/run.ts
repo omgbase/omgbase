@@ -95,7 +95,8 @@ function rewriteOp(op: OpNode): OpNode {
 function rewriteFollow(f: Follow): Follow {
   return {
     ...f,
-    receiver: rewriteExpr(f.receiver),
+    // each destination is a relation Expr or a destination block (an OpNode)
+    destinations: f.destinations.map((d) => (d.kind === "op" ? rewriteOp(d) : rewriteExpr(d))),
     where: f.where ? rewriteExpr(f.where) : null,
     frontier: f.frontier ? rewriteExpr(f.frontier) : null,
     by: f.by ? rewriteExpr(f.by) : null,
@@ -171,12 +172,16 @@ export function collectSemanticPhrases(source: string): string[] {
     }
   };
   const visitOp = (op: OpNode): void => { visitExpr(op.receiver); visitSub(op.sub); };
+  const visitFollow = (f: Follow): void => {
+    f.destinations.forEach((d) => (d.kind === "op" ? visitOp(d) : visitExpr(d)));
+    [f.where, f.frontier, f.by].forEach((x) => x && visitExpr(x));
+  };
   const visitSub = (s: Subquery): void => {
     s.from.forEach(visitExpr);
     if (s.where) visitWhere(s.where);
     s.select.forEach((it) => it.kind === "field" ? visitExpr(it.expr) : visitOp(it.op));
     if (s.orderBy) s.orderBy.forEach((o) => visitExpr(o.expr));
-    if (s.follow) { visitExpr(s.follow.receiver); [s.follow.where, s.follow.frontier, s.follow.by].forEach((x) => x && visitExpr(x)); }
+    if (s.follow) visitFollow(s.follow);
   };
   let q: Query;
   try { q = parse(source); } catch { return []; }
@@ -185,7 +190,7 @@ export function collectSemanticPhrases(source: string): string[] {
   if (q.where) visitWhere(q.where);
   q.select.forEach((it) => it.kind === "field" ? visitExpr(it.expr) : visitOp(it.op));
   if (q.orderBy) q.orderBy.forEach((o) => visitExpr(o.expr));
-  if (q.follow) { visitExpr(q.follow.receiver); [q.follow.where, q.follow.frontier, q.follow.by].forEach((x) => x && visitExpr(x)); }
+  if (q.follow) visitFollow(q.follow);
   return [...phrases];
 }
 

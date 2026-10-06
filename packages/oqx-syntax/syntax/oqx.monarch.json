@@ -1,6 +1,6 @@
 {
   "languageId": "oqx",
-  "languageVersion": "0.13",
+  "languageVersion": "0.14",
   "defaultToken": "invalid",
   "tokenPostfix": ".oqx",
   "ignoreCase": false,

@@ -1028,6 +1028,44 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
     // far smaller than the id-identity closure (10): types repeat almost at once
     expect(res.hits.length).toBeLessThan(10);
   });
+
+  // spec/oqx 0.14: `^` inside the follow-local `where` is the frontier row (the
+  // row being expanded), `^^` the walk's enclosing scope. Before, `^` skipped to
+  // the enclosing scope and a correlated successor predicate matched nothing.
+  it("a correlated follow-local where — step only into citations of the SAME TYPE as the citer", () => {
+    const seed = "processes/magnum-opus.md";
+    // magnum-opus (a process) cites three processes and two substances; none of
+    // the three processes cites a process onward, so the walk is exactly the four.
+    const same = paths(`from docs where $path == "${seed}" follow doc.out { where type == ^type }`).sort();
+    expect(same).toEqual(["processes/calcination.md", "processes/coagulation.md", "processes/dissolution.md", "processes/magnum-opus.md"]);
+    // the same first step computed without a walk (inside the collect, ^ is the seed)
+    const h = hits(`select m: doc.out collect { select $path where type == ^type } from docs where $path == "${seed}"`).hits[0]!;
+    expect((h.m as { $path: string }[]).map((x) => x.$path).sort()).toEqual(same.filter((p) => p !== seed));
+    // the predicate bites: the unconstrained walk also reaches the substances
+    expect(paths(`from docs where $path == "${seed}" follow distinct doc.out`)).toContain("substances/prima-materia.md");
+  });
+
+  it("a destination list walks the union of its relations (one step dedups by identity)", () => {
+    const seed = "substances/prima-materia.md";
+    const both = paths(`from docs where $path == "${seed}" follow doc.out, doc.in { depth 2 }`);
+    const out = paths(`from docs where $path == "${seed}" follow doc.out { depth 2 }`);
+    const inn = paths(`from docs where $path == "${seed}" follow doc.in { depth 2 }`);
+    // seed + every distinct neighbour, each once, whichever relation reached it
+    expect(both.slice().sort()).toEqual([...new Set([...out, ...inn])].sort());
+    expect(both).toHaveLength(7); // seed + 3 cited + 4 citers − magnum-opus, which is both
+    expect(out).toHaveLength(4);
+    expect(inn).toHaveLength(5);
+  });
+
+  it("a destination block re-evaluated per frontier row — backlinks as a block equal doc.in", () => {
+    // `$repo` reads from every scope, so no caret is needed on the receiver; inside
+    // the block `^` is the frontier row, so `^^$path` from the nested exists is it.
+    const seed = "processes/magnum-opus.md";
+    const block = paths(`from docs where $path == "${seed}" follow $repo.docs collect { where doc.out exists { where $path == ^^$path } } { depth 3 }`);
+    const rel = paths(`from docs where $path == "${seed}" follow doc.in { depth 3 }`);
+    expect(block.slice().sort()).toEqual(rel.slice().sort()); // same occurrences (per-path walk)
+    expect(block.length).toBeGreaterThan(5);
+  });
 });
 
 describe("alchemy corpus — follow: the heading outline & block tree", () => {

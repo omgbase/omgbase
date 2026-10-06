@@ -14,7 +14,7 @@
 //! consumer block — each clause appears at most once, in exactly this order:
 //!
 //! ```text
-//! select <projection>  from <source>  where <predicate>  follow <relation> {…}
+//! select <projection>  from <source>  where <predicate>  follow <dest>, … {…}
 //! order by …  limit N  offset N
 //! ```
 //!
@@ -38,14 +38,21 @@
 //! `limit ^n` (there is no enclosing scope) are parse errors rather than silent
 //! misreads.
 //!
+//! `follow` (since 0.14) takes a comma-separated list of destinations: a plain
+//! destination is a relation of the current row (an outer reference or a
+//! literal word is a parse error); a destination block is a receiver — which
+//! MAY be an outer reference — followed by `collect`/`first`/`single`
+//! [`distinct`] `{ body }`, exactly what `try_op` recognizes in select position
+//! (`exists`/`none`/`count` are rejected: they are where-position tests).
+//!
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
 
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    BinaryOp, Consumer, CountCmp, Expr, Follow, LogicalOp, OpNode, OrderSpec, Query, RelOp,
-    SelectItem, Subquery, UnaryOp, Where,
+    BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
+    Query, RelOp, SelectItem, Subquery, UnaryOp, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
@@ -696,6 +703,7 @@ impl Parser {
     }
 
     // ---- follow ---------------------------------------------------------------
+    // `follow [distinct] dest { "," dest } [ "{" options "}" ]`.
     fn parse_follow(&mut self) -> Result<Follow> {
         self.next(); // `follow`
         let mut distinct = false;
@@ -713,14 +721,20 @@ impl Parser {
                 );
             }
         }
-        if self.at(TokType::Caret) {
-            return self.fail(
-                "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there",
-            );
+        let mut destinations = vec![self.parse_follow_destination()?];
+        while self.at(TokType::Comma) {
+            self.next();
+            if !matches!(
+                self.peek().kind,
+                TokType::Ident | TokType::Binding | TokType::Caret
+            ) {
+                return self
+                    .fail("expected a relation after ',' (`follow <relation>, <relation>`)");
+            }
+            destinations.push(self.parse_follow_destination()?);
         }
-        let receiver = self.parse_receiver()?;
         let mut follow = Follow {
-            receiver,
+            destinations,
             distinct,
             r#where: None,
             frontier: None,
@@ -775,6 +789,30 @@ impl Parser {
         }
         self.next();
         Ok(follow)
+    }
+
+    // One `follow` destination. The receiver is parsed first so that a block over an
+    // outer reference (`^people collect { … }`) is recognized before the plain-form
+    // rule — a relation of the current row, never `^rel` — rejects the caret.
+    fn parse_follow_destination(&mut self) -> Result<FollowDestination> {
+        let outer = self.at(TokType::Caret);
+        let receiver = self.parse_receiver()?;
+        if let Some(op) = self.at_consumer_block() {
+            if !matches!(op, Consumer::Collect | Consumer::First | Consumer::Single) {
+                return self.fail(format!(
+                    "a follow destination must use collect/first/single, not `{}` (exists/none/count are where-position tests)",
+                    op.as_str()
+                ));
+            }
+            let block = self.parse_consumer_block(receiver, op, false)?;
+            return Ok(FollowDestination::Block(Box::new(block)));
+        }
+        if outer {
+            return self.fail(
+                "`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)",
+            );
+        }
+        Ok(FollowDestination::Relation(receiver))
     }
 
     // A receiver/source: a `${…}` binding, or a dotted identifier navigation chain
@@ -1189,50 +1227,69 @@ impl Parser {
             return Ok(None);
         };
 
-        if self.at(TokType::Ident) && CONSUMERS.contains(&self.peek().value.as_str()) {
-            let after = self.peek_at(1);
-            // `<op> { … }` or `<op> distinct { … }`.
-            let op_then_brace = after.is_some_and(|a| a.kind == TokType::LBrace);
-            let op_distinct_brace = after
-                .is_some_and(|a| a.kind == TokType::Ident && a.value == "distinct")
-                && self.peek_at(2).is_some_and(|a| a.kind == TokType::LBrace);
-            if op_then_brace || op_distinct_brace {
-                if let Expr::Ident { name } = &receiver
-                    && LITERAL_WORDS.contains(&name.as_str())
-                {
-                    return self.fail(format!("`{name}` is a literal, not a collection"));
-                }
-                let op = Consumer::from_word(&self.next().value)
-                    .expect("CONSUMERS membership was checked");
-                let mut distinct = false;
-                if self.at_word(TokType::Ident, "distinct") {
-                    self.next();
-                    distinct = true;
-                }
-                self.next(); // '{'
-                let ctx = BodyCtx::Block {
-                    op,
-                    lifts_allowed: in_where && op == Consumer::Collect,
-                };
-                let (sub, body_distinct) = self.parse_subquery(ctx)?;
-                if !self.at(TokType::RBrace) {
-                    return self.fail(format!(
-                        "expected '}}' to close the {} {{ … }} block",
-                        op.as_str()
-                    ));
-                }
-                self.next();
-                return Ok(Some(OpNode {
-                    receiver,
-                    op,
-                    sub,
-                    count_cmp: None,
-                    distinct: distinct || body_distinct,
-                }));
+        if let Some(op) = self.at_consumer_block() {
+            if let Expr::Ident { name } = &receiver
+                && LITERAL_WORDS.contains(&name.as_str())
+            {
+                return self.fail(format!("`{name}` is a literal, not a collection"));
             }
+            return Ok(Some(self.parse_consumer_block(receiver, op, in_where)?));
         }
         self.pos = start;
         Ok(None)
+    }
+
+    // The cursor is at a consumer word that opens a block — `<op> {` or
+    // `<op> distinct {`. Consumes nothing.
+    fn at_consumer_block(&self) -> Option<Consumer> {
+        if !self.at(TokType::Ident) {
+            return None;
+        }
+        let op = Consumer::from_word(&self.peek().value)?;
+        let after = self.peek_at(1);
+        let op_then_brace = after.is_some_and(|a| a.kind == TokType::LBrace);
+        let op_distinct_brace = after
+            .is_some_and(|a| a.kind == TokType::Ident && a.value == "distinct")
+            && self.peek_at(2).is_some_and(|a| a.kind == TokType::LBrace);
+        (op_then_brace || op_distinct_brace).then_some(op)
+    }
+
+    // `<op> [distinct] { <sub> }` over an already-parsed receiver; the cursor is
+    // at the consumer word (`at_consumer_block` returned `op`). `in_where` says
+    // whether the op sits in where position, where a `collect` block may bind
+    // lifts.
+    fn parse_consumer_block(
+        &mut self,
+        receiver: Expr,
+        op: Consumer,
+        in_where: bool,
+    ) -> Result<OpNode> {
+        self.next(); // the consumer word
+        let mut distinct = false;
+        if self.at_word(TokType::Ident, "distinct") {
+            self.next();
+            distinct = true;
+        }
+        self.next(); // '{'
+        let ctx = BodyCtx::Block {
+            op,
+            lifts_allowed: in_where && op == Consumer::Collect,
+        };
+        let (sub, body_distinct) = self.parse_subquery(ctx)?;
+        if !self.at(TokType::RBrace) {
+            return self.fail(format!(
+                "expected '}}' to close the {} {{ … }} block",
+                op.as_str()
+            ));
+        }
+        self.next();
+        Ok(OpNode {
+            receiver,
+            op,
+            sub,
+            count_cmp: None,
+            distinct: distinct || body_distinct,
+        })
     }
 
     fn parse_subquery(&mut self, ctx: BodyCtx) -> Result<(Subquery, bool)> {

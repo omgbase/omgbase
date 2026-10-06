@@ -139,7 +139,7 @@ column), `$depth` (its nesting depth, 0 at the top level — the `depth`
 column), `$body` (= `text`), `$content_hash` (hex `raw_hash`), `$updated_at`
 (the latest commit `ts` among the block's `block_changes`, null when none).
 Inside a `follow` the walk's own `$ordinal`/`$depth` win over the block's
-(`spec/oqx` 0.13 §2: the recursion intrinsics are metadata only on a walk
+(`spec/oqx` 0.14 §2: the recursion intrinsics are metadata only on a walk
 occurrence; anywhere else the names are ordinary reads of the row, §9).
 Fields: `type`, `text`, `attrs` (parsed); any other bare
 identifier reads `attrs.<k>` (undefined when absent). `block` is the row;
@@ -687,6 +687,17 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-06, surface 1.4 patch: the query binding follows `spec/oqx` 0.14 —
+  `follow` takes a comma-separated destination list (unioned by identity
+  within one step) and destination blocks (`follow $repo.docs collect { … }`,
+  re-evaluated per frontier row), and `^` inside the follow-local `where`
+  reads the frontier row (`^^` the walk's enclosing scope). Three cases
+  (`correlated-follow-where-same-type`, `two-destinations-union`,
+  `destination-block-equals-doc-in`) pin the new forms. The within-step
+  union is keyed by the walk's identity, so under `by <expr>` successors
+  sharing a key collapse to the first (`by-rekeys-identity`: magnum-opus's
+  three process citations become one `cycle` row). No field, tool or result
+  key changed, so `VERSION` stays 1.4 and the crates take a patch.
 - 2026-09-30, surface 1.4 patch: `diff_unified` diffs the two revisions'
   reconstructed file texts (what `docs_read_at` returns) instead of the
   Merkle-tree walk (§3, §9). The `diff` string of existing fixtures changed
