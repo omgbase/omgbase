@@ -1,6 +1,6 @@
 {
   "name": "@omgbase/oqx-syntax",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Syntax highlighting assets for OQX (omgbase Query eXpressions): TextMate grammar, Monaco Monarch grammar, language configuration and metadata, with Shiki, Monaco and VS Code adapters \u2014 all generated from one lexical vocabulary",
   "keywords": [
     "oqx",
