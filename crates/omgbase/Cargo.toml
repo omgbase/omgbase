@@ -1,6 +1,6 @@
 [package]
 name = "omgbase"
-version = "0.8.1"
+version = "0.9.0"
 description = "omgbase: a versioned, addressable graph layer over authored Markdown — the `omgbase` binary (`omgbase mcp` serves the tool catalog over MCP stdio, with the filesystem watcher and the background embed drain)"
 keywords = ["markdown", "mcp", "knowledge-base", "sqlite", "omgbase"]
 categories = ["command-line-utilities", "text-processing"]
@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 # The catalog this binary serves.
-omgbase-surface = { version = "1.4.4", path = "../omgbase-surface" }
+omgbase-surface = { version = "1.4.5", path = "../omgbase-surface" }
 # Workspace discovery and repo selection (`spec/sync` §1), the settings the
 # embedding provider is read from; `http` for `--server https://…` (the MCP
 # engine client over Streamable HTTP).
@@ -34,7 +34,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 # The query language's parser: the projected column names of a `select` for
 # the hit table (`spec/cli` §4 — a projected key prints its header even when
 # every hit lacks it).
-oqx = { version = "0.14.1", path = "../oqx" }
+oqx = { version = "0.15.0", path = "../oqx" }
 # The store's connection: the CLI's own row reads (`log --since`, `links`).
 rusqlite = { version = "0.40", features = ["bundled"] }
 # `signal(2)` for SIGINT/SIGTERM shutdown of the watcher and the drainer

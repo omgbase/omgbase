@@ -1,6 +1,6 @@
 [package]
 name = "omgbase-surface"
-version = "1.4.4"
+version = "1.4.5"
 description = "omgbase surface: the OQX query binding over the store, the document/block reads, the history reads and the MCP tool catalog as a library — Rust implementation"
 keywords = ["markdown", "query", "mcp", "sqlite", "omgbase"]
 categories = ["database-implementations", "text-processing"]
@@ -15,7 +15,7 @@ repository.workspace = true
 [dependencies]
 # The query language: parser, AST, the in-memory engine and its `DataContext`
 # seam (`spec/surface` §1). `json` for the `Value` ↔ `serde_json` bridge.
-oqx = { version = "0.14.1", path = "../oqx", features = ["json"] }
+oqx = { version = "0.15.0", path = "../oqx", features = ["json"] }
 # The store every read, query and mutation runs against.
 omgbase-store = { version = "13.5.3", path = "../omgbase-store" }
 # Workspace discovery, repo listing with derived roots, `repos_status` /
