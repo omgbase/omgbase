@@ -39,3 +39,15 @@ root and reuse its indexes. `InMemoryEngine` takes `{ rules, trace }`
 (TypeScript) / `with_rules` (Rust); `rules: []` is the naive scan, and the
 conformance suites prove optimized ≡ naive — result or error, stage and
 message — over every `spec/oqx` fixture. No language change.
+
+A `RowIndex` may also implement `lookupRows(value)` (TypeScript) /
+`lookup_rows` (Rust): the matching rows themselves, in receiver order. For a
+statically stable receiver the engine asks the context's index **before**
+reading the collection and, when it answers rows, never materializes the
+receiver (one correlation is probed — the first whose outer side is a `^`
+reference rather than a literal — and the other conjuncts, remaining equalities
+included, stay residual in their original order; a `TraceEvent` of kind
+`lookup` reports it). A statically stable receiver is now also read once per
+run when nothing is correlated, instead of once per enclosing row. Rust:
+`index_for` returns `Option<Rc<dyn RowIndex>>` and `lookup` returns
+`Vec<usize>`, so a context can create indexes on demand.

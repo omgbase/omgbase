@@ -843,16 +843,26 @@ would not otherwise perform — building an index, evaluating the probe value �
 and the block falls back to the scan, which raises or not in its own order.
 
 **Which receivers are indexed.** A receiver that reads only the root scope and
-bindings (`^customers`, `${customers}`, `^^config.items`) is materialized and
-indexed once per run even if the context hands out a fresh array per read.
-Any other receiver is indexed the second time the **same object** is probed, so
-a per-row relation (`lines collect { … where cid == ^id }` with a different
-`lines` array per row) is scanned, not indexed. A scalar receiver is one row.
+bindings (`^customers`, `${customers}`, `^^config.items`) is evaluated once per
+run — its rows are read once and reused across the enclosing rows, with or
+without a correlation — and indexed once per path even if the context hands out
+a fresh array per read. Any other receiver is indexed the second time the
+**same object** is probed, so a per-row relation (`lines collect { … where cid
+== ^id }` with a different `lines` array per row) is scanned, not indexed. A
+scalar receiver is one row.
 
 **Pre-built indexes.** `DataContext.indexFor(collection, path)` is an optional
 seam: return a `RowIndex` (`lookup(value) → ascending positions into
 toRows(collection)`) for a collection you have already indexed, or `undefined`
-to let the engine build one. `IndexedCollection` does this for its fields:
+to let the engine build one. A `RowIndex` may also implement
+`lookupRows(value) → the matching rows, in receiver order`: for a stable
+receiver the engine then probes it **before** reading the collection, so a
+context backed by a store (a lazy handle for a table, an index on a column)
+answers the probe with one indexed lookup and the table is never materialized.
+One correlation is probed this way — the first whose outer side is a `^`
+reference rather than a literal — and the other conjuncts, remaining
+equalities included, are evaluated per selected row in their original order.
+`IndexedCollection` does the positional form for its fields:
 
 ```js
 import { parse, run, IndexedCollection } from "@omgbase/oqx";
@@ -866,8 +876,9 @@ whose equality sits right of a conjunct that could raise; inequalities,
 `in`, `contains()` and other non-equality correlations; `order by … limit N`
 (sorted in full, then bounded); `distinct` (hashes projections, not an index);
 top-level queries (a `QueryPlanner` is the seam for those). `trace` in
-`InMemoryEngine`'s options receives one event per index built, probe, memo hit,
-cardinality answer or fallback, if you want to see what a query did.
+`InMemoryEngine`'s options receives one event per index built, probe, direct
+lookup, memo hit, cardinality answer or fallback, if you want to see what a
+query did.
 
 ## Exports
 
@@ -923,7 +934,8 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
 - `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identity`,
   plus optional `callFunction` / `callMethod` (above), an optional
   `indexFor(collection, path)` returning a `RowIndex` for a pre-built equality
-  index, and an optional
+  index (`lookup` → positions; optionally `lookupRows` → rows, probed without
+  materializing the collection), and an optional
   `regexDialect` (`"oqx"` default | `"native"`). The engine dispatches
   `matches` through `callMethod`, so a custom context that wants the native
   dialect answers `matches` itself with `semantics.regexMatches(recv, args,

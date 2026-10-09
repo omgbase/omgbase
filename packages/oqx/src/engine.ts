@@ -32,7 +32,7 @@ import {
   relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange,
 } from "./semantics.ts";
 import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts";
-import { DEFAULT_RULES, HashIndex, intersectPositions, planFor } from "./optimize/index.ts";
+import { DEFAULT_RULES, HashIndex, conjunction, conjuncts, intersectPositions, planFor } from "./optimize/index.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
 export type OqxResult =
@@ -74,7 +74,9 @@ interface RunState {
    * that evaluates to a fresh array each time is never found twice). */
   collections: WeakMap<object, CollectionState>;
   /** Collections keyed by the block whose receiver is statically stable
-   * (reads only the root scope / bindings), evaluated once per run. */
+   * (reads only the root scope / bindings), evaluated once per run — and, with
+   * a correlation to probe, materialized only when no context index answers
+   * the probe with rows directly. */
   stableCollections: Map<OpNode, CollectionState>;
   /** Values of invariant blocks, by block. */
   memo: Map<OpNode, { value: unknown }>;
@@ -89,16 +91,22 @@ interface CollectionState {
   value: unknown;
   seen: number;
   rows: unknown[] | null;
+  /** The index serving each local path (`null`: none could be built). */
   indexes: Map<string, RowIndex | null>;
+  /** What the context answered for each path (`null`: it offered none). */
+  contextIndexes: Map<string, RowIndex | null>;
 }
 
 /** What the optimizer did at run time (for tests and diagnostics): an index
  * built (or taken from the context) for a collection and path, a probe that
- * selected a bucket, a memoized invariant block reused, a consumer answered
- * from a cardinality, or a probe that fell back to the scan. */
+ * selected a bucket, a context index that answered a probe with rows directly
+ * (`lookupRows`: the collection was never materialized), a memoized invariant
+ * block reused, a consumer answered from a cardinality, or a probe that fell
+ * back to the scan. */
 export type TraceEvent =
   | { kind: "index"; path: readonly string[]; rows: number; source: "engine" | "context" }
   | { kind: "probe"; paths: readonly (readonly string[])[]; candidates: number }
+  | { kind: "lookup"; path: readonly string[]; candidates: number }
   | { kind: "memo"; op: OpNode }
   | { kind: "cardinality"; count: number }
   | { kind: "fallback"; reason: "unstable" | "index" | "probe-value" | "not-a-collection" };
@@ -509,44 +517,84 @@ export class InMemoryEngine implements Engine {
   // each local path the second time it is probed, and the buckets for the outer
   // values — evaluated once, in a row-less scope inside the block, exactly as a
   // bound is — are intersected smallest-first. The rows come back in receiver
-  // order with the residual predicate. Whenever the probe is not available
-  // (first sight of a collection, a receiver that is not a collection, an index
-  // or probe value whose evaluation threw) the result is the plain scan: the
-  // receiver's rows, re-projected by `from`, with the whole `where`.
+  // order with the residual predicate. A statically stable receiver is
+  // evaluated once per run whether or not anything is correlated (its value is
+  // the same for every enclosing row), and when a context index answers a
+  // probe with rows directly (`RowIndex.lookupRows`) its collection is never
+  // materialized at all. Whenever the probe is not available (first sight of a
+  // collection, a receiver that is not a collection, an index or probe value
+  // whose evaluation threw) the result is the plain scan: the receiver's rows,
+  // re-projected by `from`, with the whole `where`.
   private access(op: OpNode, plan: BlockPlan, scope: Scope): Access {
     const run = scope.run;
     let recv: unknown;
     let state: CollectionState | null = null;
-    if (plan.receiverStable && plan.correlated.length > 0) {
+    if (plan.receiverStable) {
       state = run.stableCollections.get(op) ?? null;
       if (!state) {
         recv = this.evalExpr(op.receiver, scope);
-        run.stableCollections.set(op, (state = { value: recv, seen: 0, rows: this.rowsOf(recv), indexes: new Map() }));
+        run.stableCollections.set(op, (state = { value: recv, seen: 0, rows: null, indexes: new Map(), contextIndexes: new Map() }));
       }
     } else {
       recv = this.evalExpr(op.receiver, scope);
       if (plan.correlated.length > 0) {
         if (recv !== null && typeof recv === "object") {
           state = run.collections.get(recv) ?? null;
-          if (!state) run.collections.set(recv, (state = { value: recv, seen: 0, rows: null, indexes: new Map() }));
+          if (!state) run.collections.set(recv, (state = { value: recv, seen: 0, rows: null, indexes: new Map(), contextIndexes: new Map() }));
         } else run.trace?.({ kind: "fallback", reason: "not-a-collection" });
       }
     }
     if (state) {
       state.seen++;
-      // Index on the second sight: a collection probed once is cheaper to scan
-      // than to index, and a receiver that yields a fresh value per enclosing
-      // row (never seen twice) must not pay for indexes it will never reuse.
-      if (state.seen >= 2 || plan.receiverStable) {
+      if (plan.correlated.length > 0) {
+        // Index on the second sight: a collection probed once is cheaper to scan
+        // than to index, and a receiver that yields a fresh value per enclosing
+        // row (never seen twice) must not pay for indexes it will never reuse.
+        if (state.seen >= 2 || plan.receiverStable) {
+          const direct = this.lookupRows(plan, state, scope);
+          if (direct) return direct;
+          if (state.rows === null) state.rows = this.rowsOf(state.value);
+          const probed = this.probe(plan, state, scope);
+          if (probed) return { rows: probed, where: plan.residual };
+        } else run.trace?.({ kind: "fallback", reason: "unstable" });
+        if (state.rows !== null) return { rows: state.rows, where: op.sub.where }; // `from` is empty when anything is correlated
+      }
+      if (plan.receiverStable) {
         if (state.rows === null) state.rows = this.rowsOf(state.value);
-        const probed = this.probe(plan, state, scope);
-        if (probed) return { rows: probed, where: plan.residual };
-      } else run.trace?.({ kind: "fallback", reason: "unstable" });
-      if (state.rows !== null) return { rows: state.rows, where: op.sub.where }; // `from` is empty when anything is correlated
+        let rows = state.rows;
+        for (const proj of op.sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
+        return { rows, where: op.sub.where };
+      }
     }
     let rows = this.rowsOf(recv);
     for (const proj of op.sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
     return { rows, where: op.sub.where };
+  }
+
+  // A probe answered by a context index that yields rows directly, before the
+  // collection is materialized. One correlation is probed — the first whose
+  // outer side varies with the enclosing row (a `^` reference rather than a
+  // literal), else the first offered — and every other conjunct, the remaining
+  // equalities included, is evaluated per selected row in its original place:
+  // a kept equality is true by construction for the rows it would have
+  // selected and, being two reads, can neither raise nor bind, so the residual
+  // keeps the scan's strict left-to-right order and outcome.
+  private lookupRows(plan: BlockPlan, state: CollectionState, scope: Scope): Access | null {
+    const run = scope.run;
+    let chosen: { c: Correlation; index: RowIndex } | null = null;
+    for (const c of plan.correlated) {
+      const index = this.contextIndex(state, c);
+      if (!index?.lookupRows) continue;
+      if (!chosen || (chosen.c.outer.kind === "lit" && c.outer.kind !== "lit")) chosen = { c, index };
+    }
+    if (!chosen) return null;
+    let value: unknown;
+    try { value = this.evalExpr(chosen.c.outer, rowless(scope)); }
+    catch { run.trace?.({ kind: "fallback", reason: "probe-value" }); return null; }
+    const rows = Array.from(chosen.index.lookupRows!(value));
+    run.trace?.({ kind: "lookup", path: chosen.c.path, candidates: rows.length });
+    const residual = plan.where ? conjunction(conjuncts(plan.where).filter((_, i) => i !== chosen!.c.index)) : null;
+    return { rows, where: residual };
   }
 
   private probe(plan: BlockPlan, state: CollectionState, scope: Scope): unknown[] | null {
@@ -569,6 +617,18 @@ export class InMemoryEngine implements Engine {
     return candidates.map((i) => rows[i]);
   }
 
+  // The context's pre-built index of the collection on a correlation's local
+  // path, if it offers one (asked once per collection and path; a refusal is
+  // cached too, so `indexFor` goes on to build the engine's own).
+  private contextIndex(state: CollectionState, c: Correlation): RowIndex | null {
+    const key = JSON.stringify(c.path);
+    const hit = state.contextIndexes.get(key);
+    if (hit !== undefined) return hit;
+    const index = this.ctx.indexFor?.(state.value, c.path) ?? null;
+    state.contextIndexes.set(key, index);
+    return index;
+  }
+
   // The index of `rows` on a correlation's local path: the context's pre-built
   // one when it offers it, else built here by evaluating the local expression
   // in each row's scope — the same evaluation the scan performs — so the keys
@@ -578,7 +638,7 @@ export class InMemoryEngine implements Engine {
     const key = JSON.stringify(c.path);
     const hit = state.indexes.get(key);
     if (hit !== undefined) return hit;
-    let index: RowIndex | null = this.ctx.indexFor?.(state.value, c.path) ?? null;
+    let index: RowIndex | null = this.contextIndex(state, c);
     if (index) scope.run.trace?.({ kind: "index", path: c.path, rows: rows.length, source: "context" });
     else {
       const built = new HashIndex();

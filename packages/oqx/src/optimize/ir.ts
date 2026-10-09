@@ -21,6 +21,10 @@ export interface Correlation {
   readonly local: Expr;
   readonly outer: Expr;
   readonly path: readonly string[];
+  /** Position of the equality among `conjuncts(where)`, so a probe that
+   * answers ONE correlation (a store-backed `lookupRows`) can put the others
+   * back in their place as residual conjuncts. */
+  readonly index: number;
 }
 
 /** The plan for one block. `receiver`/`from`/`projection`/`orderBy`/`bound`/

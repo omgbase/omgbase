@@ -41,30 +41,30 @@ export const correlatedEqualityProbe: Rule = (plan, ctx) => {
   const correlated: Correlation[] = [];
   const residual: Where[] = [];
   let prefixRaiseFree = true;
-  for (const part of conjuncts(plan.where)) {
-    const eq = prefixRaiseFree ? asCorrelation(part, ctx) : null;
+  conjuncts(plan.where).forEach((part, index) => {
+    const eq = prefixRaiseFree ? asCorrelation(part, index, ctx) : null;
     if (eq) correlated.push(eq);
     else {
       residual.push(part);
       prefixRaiseFree &&= whereRaiseFree(part, ctx);
     }
-  }
+  });
   if (correlated.length === 0) return null;
   return { ...plan, correlated, residual: conjunction(residual) };
 };
 
 /** `local == outer` / `outer == local` as a correlation, else null. */
-function asCorrelation(w: Where, ctx: RuleContext): Correlation | null {
+function asCorrelation(w: Where, index: number, ctx: RuleContext): Correlation | null {
   if (w.kind !== "scalar" || w.expr.kind !== "binary" || w.expr.op !== "==") return null;
   const { left, right } = w.expr;
-  return pair(left, right, ctx) ?? pair(right, left, ctx);
+  return pair(left, right, index, ctx) ?? pair(right, left, index, ctx);
 }
 
-function pair(local: Expr, outer: Expr, ctx: RuleContext): Correlation | null {
+function pair(local: Expr, outer: Expr, index: number, ctx: RuleContext): Correlation | null {
   const path = localPath(local);
   if (path === null) return null;
   if (exprReadsCurrentScope(outer) || !exprRaiseFree(outer, ctx)) return null;
-  return { local, outer, path };
+  return { local, outer, path, index };
 }
 
 // ---- rule 1b: a receiver stable across enclosing rows ----------------------------

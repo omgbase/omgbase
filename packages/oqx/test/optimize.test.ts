@@ -369,6 +369,110 @@ test("IndexedCollection keys under §5 equality (absent ≡ null; NaN matches no
   assert.deepEqual(planned.run(q, []), run(q, { roots: { t: rows } }));
 });
 
+// ---- RowIndex.lookupRows: a store-backed index that never materializes the collection ----
+
+/** A context whose `orders` root is a LAZY handle (an iterable that counts how
+ * often it is walked) with a `lookupRows` index on `customer_id` — the shape a
+ * store-backed context takes: the engine must probe the index and never walk
+ * the handle. `region` is not indexed, so a probe on it falls back to the
+ * engine's own index (one walk). */
+function lazyOrdersContext(): DataContext & { walks: number; probes: unknown[] } {
+  const base = new DefaultContext({ customers });
+  const self = {
+    walks: 0,
+    probes: [] as unknown[],
+    handle: {
+      [Symbol.iterator]: function* () { self.walks++; yield* orders; },
+    },
+    root(name: string) { return name === "orders" ? self.handle : base.root(name); },
+    get(row: unknown, key: string) { return base.get(row, key); },
+    toRows(v: unknown) { return base.toRows(v); },
+    identity(row: unknown) { return base.identity(row); },
+    callFunction(name: string, args: unknown[]) { return base.callFunction(name, args); },
+    callMethod(name: string, recv: unknown, args: unknown[]) { return base.callMethod(name, recv, args); },
+    indexFor(collection: unknown, path: readonly string[]) {
+      if (collection !== self.handle || path.length !== 1 || path[0] !== "customer_id") return undefined;
+      return {
+        lookup: (value: unknown) => orders.flatMap((o, i) => (o.customer_id === value ? [i] : [])),
+        lookupRows: (value: unknown) => { self.probes.push(value); return orders.filter((o) => o.customer_id === value); },
+      };
+    },
+  };
+  return self;
+}
+
+test("lookupRows: a context index answers a stable receiver's probe with rows; the collection is never walked", () => {
+  const ctx = lazyOrdersContext();
+  const q = parse('select name, o: ^orders collect { id values where customer_id == ^id } from customers');
+  const naive = new InMemoryEngine(ctx, { rules: [] }).run(q, []);
+  assert.equal(ctx.walks, 3, "the scan walks the handle once per customer");
+  ctx.walks = 0;
+  const events: TraceEvent[] = [];
+  const optimized = new InMemoryEngine(ctx, { trace: (e) => events.push(e) }).run(q, []);
+  assert.deepEqual(optimized, naive);
+  assert.equal(ctx.walks, 0, "the probe never materializes the receiver");
+  assert.deepEqual(ctx.probes, [1, 2, 3]);
+  assert.deepEqual(events.filter((e) => e.kind === "lookup"), [
+    { kind: "lookup", path: ["customer_id"], candidates: 2 },
+    { kind: "lookup", path: ["customer_id"], candidates: 1 },
+    { kind: "lookup", path: ["customer_id"], candidates: 0 },
+  ]);
+  assert.equal(count(events, "index"), 0, "no index is built or taken");
+});
+
+test("lookupRows: with several equalities the varying one is probed and the rest stay residual, in place", () => {
+  const ctx = lazyOrdersContext();
+  // literal first, `^` second: the probe is on customer_id, `region == "east"` is evaluated per candidate
+  const q = parse('select name, o: ^orders collect { id values where region == "east" && customer_id == ^id } from customers');
+  const naive = new InMemoryEngine(ctx, { rules: [] }).run(q, []);
+  ctx.walks = 0;
+  const events: TraceEvent[] = [];
+  assert.deepEqual(new InMemoryEngine(ctx, { trace: (e) => events.push(e) }).run(q, []), naive);
+  assert.deepEqual(value({ ok: true, value: unwrap(naive) }), [{ name: "Ann", o: [12] }, { name: "Bob", o: [11] }, { name: "Cy", o: [] }]);
+  assert.equal(ctx.walks, 0);
+  assert.deepEqual(events.filter((e) => e.kind === "lookup").map((e) => e.kind === "lookup" && e.path), [["customer_id"], ["customer_id"], ["customer_id"]]);
+  // the kept equality is a residual conjunct: a cardinality-only consumer still enters rows for it
+  const q2 = parse('select name from customers where ^orders exists { where region == "east" && customer_id == ^id }');
+  const r2 = new InMemoryEngine(ctx, { trace: (e) => events.push(e) }).run(q2, []);
+  assert.deepEqual(r2, new InMemoryEngine(ctx, { rules: [] }).run(q2, []));
+  assert.deepEqual(unwrap(r2), [{ name: "Ann" }, { name: "Bob" }]);
+});
+
+test("lookupRows: a path the context does not serve falls back to the engine's index over one walk", () => {
+  const ctx = lazyOrdersContext();
+  const q = parse('select name, o: ^orders collect { id values where region == ^region } from customers');
+  const naive = new InMemoryEngine(ctx, { rules: [] }).run(q, []);
+  ctx.walks = 0;
+  const events: TraceEvent[] = [];
+  assert.deepEqual(new InMemoryEngine(ctx, { trace: (e) => events.push(e) }).run(q, []), naive);
+  assert.equal(ctx.walks, 1, "materialized once per run, indexed by the engine");
+  assert.deepEqual(events.filter((e) => e.kind === "index"), [{ kind: "index", path: ["region"], rows: 4, source: "engine" }]);
+  assert.equal(count(events, "lookup"), 0);
+});
+
+test("lookupRows: a probe value that throws falls back to the scan (same error as the scan, or none)", () => {
+  const ctx = lazyOrdersContext();
+  // `${1}` is out of range: not raise-free, so it is never a correlation — the scan raises first
+  const q = parseTemplate(["select name, o: ^orders collect { id values where customer_id == ", " } from customers"], 1);
+  const naive = outcome(() => new InMemoryEngine(ctx, { rules: [] }).run(q, [1]));
+  const optimized = outcome(() => new InMemoryEngine(ctx).run(q, [1]));
+  assert.deepEqual(optimized, naive);
+  assert.equal(naive.ok, true);
+  assert.deepEqual(ctx.probes, [1], "a constant binding is still probed through the index (once: the block is invariant)");
+});
+
+test("a statically stable receiver is evaluated once per run even without a correlation", () => {
+  const ctx = lazyOrdersContext();
+  // `>` is no correlation and `^id` keeps the block from being invariant: only the receiver is stable
+  const q = parse('select name from customers where ^orders exists { where total > ^id * 3 }');
+  const naive = new InMemoryEngine(ctx, { rules: [] }).run(q, []);
+  assert.equal(ctx.walks, 3);
+  ctx.walks = 0;
+  assert.deepEqual(new InMemoryEngine(ctx).run(q, []), naive);
+  assert.equal(ctx.walks, 1, "the receiver's rows are read once and reused across the enclosing rows");
+  assert.deepEqual(unwrap(naive), [{ name: "Ann" }, { name: "Bob" }]);
+});
+
 // ---- invariant blocks ----------------------------------------------------------------------
 
 test("a nested block that reads nothing from the enclosing rows is evaluated once per run", () => {

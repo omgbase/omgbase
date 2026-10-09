@@ -15,9 +15,17 @@
 
 /** A pre-built equality index a `DataContext` may expose for a collection
  * (see `DataContext.indexFor`): `lookup(value)` returns the ascending positions
- * (into `toRows(collection)`) of the rows whose key equals `value` under §5. */
+ * (into `toRows(collection)`) of the rows whose key equals `value` under §5.
+ *
+ * `lookupRows`, when present, answers the same probe with the ROWS themselves —
+ * exactly the rows `lookup(value)` would select, in receiver order — without
+ * the engine ever materializing `toRows(collection)`. A store-backed context
+ * implements it over its own indexes (one indexed statement per probe); the
+ * engine prefers it for a statically stable receiver, so the collection is
+ * never read whole. A throw is the query's error (as a `get` that throws is). */
 export interface RowIndex {
   lookup(value: unknown): readonly number[];
+  lookupRows?(value: unknown): Iterable<unknown>;
 }
 
 const NONE: readonly number[] = Object.freeze([]);
