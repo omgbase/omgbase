@@ -12,8 +12,9 @@
 // the corpus and the differential baseline. The tier-3 SQLite planner (planner.ts)
 // pushes the hot predicates down; both must agree (conformance suite).
 
-import type { DataContext, CallResult } from "@omgbase/oqx";
+import type { DataContext, CallResult, RowIndex } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
+import { storeIndexFor } from "./store-index.js";
 import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
 import { docsRead } from "../core/read/document.js";
@@ -76,24 +77,61 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   // ---- root collections (ordered for a stable (path, id) default) -----------
-  const docsRoot = (): Row[] =>
-    tagAll(all(`SELECT * FROM docs WHERE repo_id = ? AND deleted_commit IS NULL ORDER BY path, doc_id`, repoId), "docs");
-  const blocksRoot = (): Row[] =>
-    tagAll(all(
-      `SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
+  const scanSql: Record<Target, string> = {
+    docs: `SELECT * FROM docs WHERE repo_id = ? AND deleted_commit IS NULL ORDER BY path, doc_id`,
+    blocks: `SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
        WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
-       ORDER BY d.path, b.block_id`, repoId), "blocks");
-  const nodesRoot = (): Row[] =>
-    tagAll(all(
-      `SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
-       WHERE n.repo_id = ? AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id`, repoId), "nodes");
-  const edgesRoot = (): Row[] =>
-    tagAll(all(
-      `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
+       ORDER BY d.path, b.block_id`,
+    nodes: `SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
+       WHERE n.repo_id = ? AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id`,
+    edges: `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
        WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL
-       ORDER BY d.path, e.edge_id`, repoId), "edges");
+       ORDER BY d.path, e.edge_id`,
+  };
+  const scan = (t: Target): Row[] => tagAll(all(scanSql[t], repoId), t);
 
-  const rootFns: Record<string, () => Row[]> = { docs: docsRoot, blocks: blocksRoot, nodes: nodesRoot, edges: edgesRoot };
+  // A root scan is handed out LAZILY: an array (a `Proxy` over one — `Array.isArray`,
+  // iteration, indexing, `length`, rendering all see a plain array of tagged
+  // rows) that runs its SELECT on first use. The engine's optimizer asks
+  // `indexFor` about a nested block's receiver BEFORE reading it, so a
+  // correlated probe on `$repo.docs` / `$repo.edges` / … is answered from the
+  // store's indexes (store-index.ts) and the scan never runs; anything else
+  // (a top-level `from docs`, a `count { }`, a non-indexable path) reads it
+  // whole exactly as before. One handle per target per context: a context lives
+  // for one run, during which the store does not change, so `$repo.docs` read
+  // from every outer row is one SELECT, not one per row — and the engine, which
+  // keys collections by identity, sees the same collection each time.
+  // `rootScans` recognizes the handles for `indexFor`.
+  const rootScans = new WeakMap<object, { target: Target; rows(): Row[] }>();
+  const handles = new Map<Target, Row[]>();
+  const lazyRoot = (t: Target): Row[] => {
+    let h = handles.get(t);
+    if (!h) handles.set(t, (h = makeLazyRoot(t)));
+    return h;
+  };
+  const makeLazyRoot = (t: Target): Row[] => {
+    const backing: Row[] = [];
+    let filled = false;
+    const fill = (): Row[] => {
+      if (!filled) { filled = true; for (const r of scan(t)) backing.push(r); }
+      return backing;
+    };
+    const proxy = new Proxy(backing, {
+      get(target, prop, receiver) { fill(); return Reflect.get(target, prop, receiver); },
+      has(target, prop) { fill(); return Reflect.has(target, prop); },
+      ownKeys(target) { fill(); return Reflect.ownKeys(target); },
+      getOwnPropertyDescriptor(target, prop) { fill(); return Reflect.getOwnPropertyDescriptor(target, prop); },
+      set(target, prop, value, receiver) { fill(); return Reflect.set(target, prop, value, receiver); },
+      defineProperty(target, prop, desc) { fill(); return Reflect.defineProperty(target, prop, desc); },
+      deleteProperty(target, prop) { fill(); return Reflect.deleteProperty(target, prop); },
+    });
+    rootScans.set(proxy, { target: t, rows: fill });
+    return proxy;
+  };
+
+  const rootFns: Record<string, () => Row[]> = {
+    docs: () => lazyRoot("docs"), blocks: () => lazyRoot("blocks"), nodes: () => lazyRoot("nodes"), edges: () => lazyRoot("edges"),
+  };
   // The repository handle behind the `$repo` intrinsic: `$repo.<target>` is the
   // explicit root scan (rootFns), `$repo.$id` the repository id.
   const repoRoot: RepoRoot = { [REPO_ROOT]: true };
@@ -528,6 +566,18 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return jattr(r, "key") === leaf || jattr(r, "key") === key;
   };
 
+  // Store indexes by (target, path) — one object, one set of prepared statements,
+  // for the whole run (`null`: the path is not indexable).
+  const indexes = new Map<string, RowIndex | null>();
+  const identity = (row: unknown): unknown => {
+    const t = (row as Row)?.[TARGET];
+    if (t === "docs") return (row as Row).doc_id;
+    if (t === "blocks") return (row as Row).block_id;
+    if (t === "nodes") return (row as Row).node_id;
+    if (t === "edges") return (row as Row).edge_id;
+    return row;
+  };
+
   return {
     root(name: string): unknown {
       if (opts.rowsRoot && name === opts.rowsRoot.name) return opts.rowsRoot.rows;
@@ -542,13 +592,22 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       if (typeof value === "object" && Symbol.iterator in (value as object)) return value as Iterable<unknown>;
       return [value];
     },
-    identity(row: unknown): unknown {
-      const t = (row as Row)?.[TARGET];
-      if (t === "docs") return (row as Row).doc_id;
-      if (t === "blocks") return (row as Row).block_id;
-      if (t === "nodes") return (row as Row).node_id;
-      if (t === "edges") return (row as Row).edge_id;
-      return row;
+    identity,
+    // A store-backed equality index for a ROOT SCAN handle on a column or
+    // property SQLite indexes (store-index.ts); `undefined` for any other
+    // collection (a relation's rows, a lifted array) or path, so the engine
+    // builds its own over the materialized rows.
+    indexFor(collection: unknown, path: readonly string[]): RowIndex | undefined {
+      if (collection === null || typeof collection !== "object") return undefined;
+      const root = rootScans.get(collection);
+      if (!root) return undefined;
+      const key = `${root.target}\u0000${JSON.stringify(path)}`;
+      let index = indexes.get(key);
+      if (index === undefined) {
+        index = storeIndexFor(root.target, path, { db, repoId, tag: (rows, t) => tagAll(rows, t), get: getFrom, rows: root.rows, identity }) ?? null;
+        indexes.set(key, index);
+      }
+      return index ?? undefined;
     },
     // Free functions: oqx-js builtins (list/size/has) plus `range(s)`, which
     // coerces a string value to a range so `<point> in range(prop)` tests

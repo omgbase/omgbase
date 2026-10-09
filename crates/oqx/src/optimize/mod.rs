@@ -504,6 +504,14 @@ pub fn where_has_lifts(w: &Where) -> bool {
     }
 }
 
+
+/// The scope-metadata intrinsics: `$key` (an entry's key) and the `follow`
+/// occurrence fields. In a block's row scope these read scope metadata when it
+/// is present and fall through to the context otherwise; every other `$`-name
+/// (`$id`, `$path`, a context's own intrinsics) is always a plain `get` on the
+/// row, so it is a local path like any other property.
+pub const SCOPE_INTRINSICS: &[&str] = &["$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"];
+
 /// The property path a bare identifier or member chain reads off the current
 /// row — `customer_id` → `["customer_id"]`, `meta.id` → `["meta", "id"]`,
 /// `$value` → `[]` — or `None` when `e` is not such a chain or starts from a
@@ -511,7 +519,7 @@ pub fn where_has_lifts(w: &Where) -> bool {
 pub fn local_path(e: &Expr) -> Option<Vec<String>> {
     match e {
         Expr::Ident { name } if name == "$value" => Some(Vec::new()),
-        Expr::Ident { name } if name.starts_with('$') => None,
+        Expr::Ident { name } if SCOPE_INTRINSICS.contains(&name.as_str()) => None,
         Expr::Ident { name } => Some(vec![name.clone()]),
         Expr::Member { recv, name } => {
             let mut path = local_path(recv)?;

@@ -158,15 +158,22 @@ export function whereHasLifts(w: Where): boolean {
 
 // ---- local paths --------------------------------------------------------------
 
+/** The scope-metadata intrinsics: `$key` (an entry's key) and the `follow`
+ * occurrence fields. In a block's row scope these read scope metadata when it is
+ * present and fall through to the context otherwise; every other `$`-name
+ * (`$id`, `$path`, a context's own intrinsics) is always a plain `get` on the
+ * row. */
+export const SCOPE_INTRINSICS: ReadonlySet<string> = new Set(["$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
+
 /** The property path a bare identifier or member chain reads off the current
  * row — `customer_id` → `["customer_id"]`, `meta.id` → `["meta", "id"]`,
- * `$value` → `[]`, `$value.x` → `["x"]` — or `null` when `e` is not such a
- * chain or starts from a scope intrinsic (`$key`, `$depth`, …, whose value is
- * scope metadata rather than a row property). */
+ * `$value` → `[]`, `$value.x` → `["x"]`, `$path` → `["$path"]` — or `null` when
+ * `e` is not such a chain or starts from a scope intrinsic (`$key`, `$depth`,
+ * …, whose value is scope metadata rather than a row property). */
 export function localPath(e: Expr): readonly string[] | null {
   if (e.kind === "ident") {
     if (e.name === "$value") return [];
-    return e.name.startsWith("$") ? null : [e.name];
+    return SCOPE_INTRINSICS.has(e.name) ? null : [e.name];
   }
   if (e.kind === "member") {
     const head = localPath(e.recv);

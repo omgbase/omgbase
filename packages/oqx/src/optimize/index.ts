@@ -12,5 +12,5 @@ export type { RowIndex } from "./hash-index.ts";
 export { HashIndex, primitiveKey, intersectPositions } from "./hash-index.ts";
 export {
   exprReadsScopeIn, whereReadsScopeIn, opReadsScopeIn, exprReadsCurrentScope,
-  exprRaiseFree, whereRaiseFree, opRaiseFree, opHasLifts, whereHasLifts, localPath,
+  exprRaiseFree, whereRaiseFree, opRaiseFree, opHasLifts, whereHasLifts, localPath, SCOPE_INTRINSICS,
 } from "./analysis.ts";

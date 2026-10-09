@@ -20,41 +20,7 @@ import { ROWS_ROOT, partitionPushable, residualQuery } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { makeStoreContext, tagRows, type StoreContextOptions } from "./context.js";
 import { translatePredicate, RESERVED_DOC_BASENAMES, type Target, type TranslateCtx } from "./sql/translate.js";
-
-const ALIAS: Record<Target, { self: string; doc: string }> = {
-  docs: { self: "d", doc: "d" },
-  blocks: { self: "b", doc: "d" },
-  nodes: { self: "n", doc: "d" },
-  edges: { self: "e", doc: "d" },
-};
-const FROM: Record<Target, string> = {
-  docs: "docs d",
-  blocks: "blocks b JOIN docs d ON d.doc_id = b.doc_id",
-  nodes: "nodes n JOIN docs d ON d.doc_id = n.doc_id",
-  edges: "edges e JOIN docs d ON d.doc_id = e.src_doc",
-};
-// Row columns + the owning-doc path as __path (matches the context roots so
-// produced rows are indistinguishable from a full scan's).
-const COLS: Record<Target, string> = {
-  docs: "d.*",
-  blocks: "b.*, d.path AS __path",
-  nodes: "n.*, d.path AS __path",
-  edges: "e.*, d.path AS __path",
-};
-const ORDER: Record<Target, string> = {
-  docs: "d.path, d.doc_id",
-  blocks: "d.path, b.block_id",
-  nodes: "d.path, n.node_id",
-  edges: "d.path, e.edge_id",
-};
-function guards(target: Target, repoId: string): { sql: string; params: unknown[] } {
-  switch (target) {
-    case "docs": return { sql: "d.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
-    case "blocks": return { sql: "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
-    case "nodes": return { sql: "n.repo_id = ? AND d.deleted_commit IS NULL", params: [repoId] };
-    case "edges": return { sql: "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL", params: [repoId] };
-  }
-}
+import { ALIAS, COLS, FROM, ORDER, guards } from "./sql/scan.js";
 
 // The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
 // or `$repo.<target>` source (else null — not a pushable shape).

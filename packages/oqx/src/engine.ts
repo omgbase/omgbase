@@ -547,12 +547,15 @@ export class InMemoryEngine implements Engine {
     if (state) {
       state.seen++;
       if (plan.correlated.length > 0) {
-        // Index on the second sight: a collection probed once is cheaper to scan
-        // than to index, and a receiver that yields a fresh value per enclosing
-        // row (never seen twice) must not pay for indexes it will never reuse.
+        // A context index that yields rows costs nothing to obtain, so it is
+        // asked for on every sight — a store handle handed out fresh per row is
+        // still probed, never read. The engine's OWN index waits for the second
+        // sight: a collection probed once is cheaper to scan than to index, and
+        // a receiver that yields a fresh value per enclosing row (never seen
+        // twice) must not pay for indexes it will never reuse.
+        const direct = this.lookupRows(plan, state, scope);
+        if (direct) return direct;
         if (state.seen >= 2 || plan.receiverStable) {
-          const direct = this.lookupRows(plan, state, scope);
-          if (direct) return direct;
           if (state.rows === null) state.rows = this.rowsOf(state.value);
           const probed = this.probe(plan, state, scope);
           if (probed) return { rows: probed, where: plan.residual };

@@ -109,6 +109,41 @@ const QUERIES: string[] = [
   'select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !attrs.checked }',
   // edges target
   'select $src, $dst_path from edges where predicate == "references"',
+  // nested blocks over a ROOT SCAN with a correlated / constant equality: the
+  // store answers these from SQLite indexes (oqx-js/store-index.ts) instead of
+  // materializing `$repo.<target>` — results must not move an inch
+  'select $path, cited: $repo.docs collect { $path where doc.out exists { where $path == ^^$path } } from docs',
+  'select name, orders: $repo.docs collect { $path where type == "order" && customer == ^$path } from docs where type == "customer"',
+  'from docs where $path == "index.md" follow doc.out, $repo.docs collect { where after.contains(^$path) }',
+  'select $path, same_type: $repo.docs collect { $path where type == ^type && $path != ^$path } from docs',
+  'select $path, same_era: $repo.docs collect { $path where era == ^era } from docs where type == "practitioner"',
+  'select $path, same_layer: $repo.docs collect { $path values where layer == ^layer } from docs',
+  'from docs where $repo.docs count { where layer == ^layer } > 3',
+  'from docs where $repo.docs exists { where $title == ^$title && $id != ^$id }',
+  'select $path, by_title: $repo.docs collect { $path values where $title == ^$title } from docs where type == "process"',
+  'select $path, self: $repo.docs first { $path values where $path == ^$path } from docs',
+  'select $path, by_id: $repo.docs single { $path values where $id == ^$id } from docs where type == "substance"',
+  // mixed value kinds on one property: a number probe against a string property
+  // (and the reverse) matches nothing; an absent probe matches the documents
+  // lacking the key (the in-memory fallback)
+  'select $path, s: $repo.docs collect { $path where slug == ^era } from docs where type == "practitioner"',
+  'select $path, e: $repo.docs collect { $path where era == ^slug } from docs where type == "substance"',
+  'from docs where $repo.docs none { where era == ^type }',
+  'select $path, no_era: $repo.docs collect { $path values where era == ^nope } from docs where $path == "index.md"',
+  'select $path, no_slug: $repo.docs collect { $path where slug == null } from docs where type == "text"',
+  'select $path, l: $repo.docs collect { $path values where tags == ^tags } from docs',
+  'select $path, l: $repo.docs collect { $path values where layer == ^tags } from docs',
+  // the other targets as receivers: an edges-target correlated block, blocks by $doc, nodes by kind
+  'select $path, inbound: $repo.edges collect { $src where $dst == ^$id } from docs',
+  'select $path, outbound: $repo.edges collect { $dst_path values where $path == ^$path } from docs',
+  'from docs where $repo.edges count { where $path == ^$path } > 2',
+  'select $src, same_dst: $repo.edges collect { $src values where $dst_path == ^$dst_path && $id != ^$id } from edges where predicate == "references"',
+  'select $id, paragraphs: $repo.blocks collect { $ordinal values where $doc == ^$doc && type == "paragraph" } from blocks where type == "heading"',
+  'from blocks where type == "heading" && $repo.blocks count { where $doc == ^$doc && type == "paragraph" } > 3',
+  'from nodes where kind == "md:section" && $repo.nodes count { where kind == ^kind } > 10',
+  'select name, same_kind: $repo.nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == "md:section"',
+  'select $path, by_name: $repo.nodes collect { $id where name == ^name } from nodes where kind == "md:section" && name == "Preparation"',
+  'select $path, nameless: $repo.nodes collect { kind values where name == ^nope } from nodes where kind == "md:section" && name == "Preparation"',
 ];
 
 describe("OQX differential conformance — planned == in-memory", () => {
