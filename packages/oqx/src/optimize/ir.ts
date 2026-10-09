@@ -107,3 +107,22 @@ export function conjunction(parts: readonly Where[]): Where | null {
 export function conjuncts(where: Where): readonly Where[] {
   return where.kind === "and" ? where.parts : [where];
 }
+
+/** The residual when exactly ONE correlation is answered by a probe (a context
+ * index's `lookupRows`): every other conjunct, the remaining equalities
+ * included, stays in its original place. A kept equality is true by
+ * construction for the rows the probe selects and, being two reads, can neither
+ * raise nor bind, so the scan's strict left-to-right order and outcome hold. */
+export function residualWithout(plan: BlockPlan, answered: Correlation): Where | null {
+  return plan.where ? conjunction(conjuncts(plan.where).filter((_, i) => i !== answered.index)) : null;
+}
+
+/** The order in which a single-correlation probe tries the plan's correlations:
+ * those whose outer side varies with the enclosing row first (a literal selects
+ * the same rows for every enclosing row and narrows nothing), each group in
+ * conjunct order. */
+export function lookupOrder(plan: BlockPlan): readonly Correlation[] {
+  const all = plan.correlated;
+  if (all.length < 2) return all;
+  return [...all.filter((c) => c.outer.kind !== "lit"), ...all.filter((c) => c.outer.kind === "lit")];
+}

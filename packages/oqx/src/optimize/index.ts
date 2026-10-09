@@ -5,7 +5,7 @@
 // user-facing summary.
 
 export type { BlockPlan, Correlation, Rule, RuleContext } from "./ir.ts";
-export { logicalBlock, conjunction, conjuncts } from "./ir.ts";
+export { logicalBlock, conjunction, conjuncts, residualWithout, lookupOrder } from "./ir.ts";
 export { optimizeBlock, planFor } from "./driver.ts";
 export { correlatedEqualityProbe, stableReceiver, invariantBlock, cardinalityOnly, DEFAULT_RULES } from "./rules.ts";
 export type { RowIndex } from "./hash-index.ts";

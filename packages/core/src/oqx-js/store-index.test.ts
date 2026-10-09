@@ -38,7 +38,8 @@ function prepared(store: Store, fn: () => void): string[] {
   return seen;
 }
 
-const SCAN = /^SELECT (\*|[bne]\.\*, d\.path AS __path) FROM (docs|blocks|nodes|edges)\b.*ORDER BY/;
+// The root-scan shape of sql/scan.ts (`SELECT ${COLS[t]} FROM ${FROM[t]} … ORDER BY`).
+const SCAN = /^SELECT (d\.\*|[bne]\.\*, d\.path AS __path) FROM (docs|blocks|nodes|edges) [dbne]\b.*ORDER BY/;
 const isScan = (sql: string): boolean => SCAN.test(sql) && !/= \?\s*ORDER BY|IN \(SELECT|CROSS JOIN/.test(sql);
 
 function engineRun(store: Store, repoId: string, q: string, opts: { naive?: boolean } = {}): { result: OqxResult; events: TraceEvent[] } {
@@ -95,7 +96,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     // the top-level `from docs` scanned docs ONCE; the nested `$repo.docs` never did
     const scans = sql.filter(isScan);
     expect(scans).toHaveLength(1);
-    expect(scans[0]).toMatch(/^SELECT \* FROM docs/);
+    expect(scans[0]).toMatch(/^SELECT d\.\* FROM docs d\b/);
     // the probe statement is the indexed property lookup, prepared once (cached per index)
     const probes = sql.filter((s) => /FROM properties p CROSS JOIN docs d ON d\.doc_id = p\.doc_id WHERE p\.repo_id = \? AND p\.key = \? AND p\.type = 'string' AND p\.val_text = \?/.test(s));
     expect(probes).toHaveLength(1);

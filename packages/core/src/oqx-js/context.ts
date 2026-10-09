@@ -15,6 +15,7 @@
 import type { DataContext, CallResult, RowIndex } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
 import { storeIndexFor } from "./store-index.js";
+import { COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
 import { docsRead } from "../core/read/document.js";
@@ -76,19 +77,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return Object.values(r)[0];
   };
 
-  // ---- root collections (ordered for a stable (path, id) default) -----------
-  const scanSql: Record<Target, string> = {
-    docs: `SELECT * FROM docs WHERE repo_id = ? AND deleted_commit IS NULL ORDER BY path, doc_id`,
-    blocks: `SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id
-       WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL
-       ORDER BY d.path, b.block_id`,
-    nodes: `SELECT n.*, d.path AS __path FROM nodes n JOIN docs d ON d.doc_id = n.doc_id
-       WHERE n.repo_id = ? AND d.deleted_commit IS NULL ORDER BY d.path, n.node_id`,
-    edges: `SELECT e.*, d.path AS __path FROM edges e JOIN docs d ON d.doc_id = e.src_doc
-       WHERE e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL
-       ORDER BY d.path, e.edge_id`,
+  // ---- root collections (the shared scan shape of sql/scan.ts: live rows of
+  // this repo, ordered for a stable (path, id) default) -----------------------
+  const scan = (t: Target): Row[] => {
+    const g = guards(t, repoId);
+    return tagAll(all(`SELECT ${COLS[t]} FROM ${FROM[t]} WHERE ${g.sql} ORDER BY ${ORDER[t]}`, ...g.params), t);
   };
-  const scan = (t: Target): Row[] => tagAll(all(scanSql[t], repoId), t);
 
   // A root scan is handed out LAZILY: an array (a `Proxy` over one — `Array.isArray`,
   // iteration, indexing, `length`, rendering all see a plain array of tagged
