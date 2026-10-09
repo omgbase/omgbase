@@ -862,6 +862,18 @@ answers the probe with one indexed lookup and the table is never materialized.
 One correlation is probed this way — the first whose outer side is a `^`
 reference rather than a literal — and the other conjuncts, remaining
 equalities included, are evaluated per selected row in their original order.
+
+**Lazy handles.** A context that hands out a stand-in for a collection it has
+not read yet may also implement `materialize(value)`: the engine calls it on
+every value it is about to observe *as a value* (an operand of `==`/`in`/
+arithmetic, a function or method argument, a projected item, an `order by` or
+`distinct` key, a `where` scalar, a lift) and never on a value in *row
+position* (the source, a block receiver, a body-level `from`, a `follow`
+destination), which reaches `toRows` / `indexFor` as handed out. So the probe
+above never reads the table, and the language never sees the stand-in. A
+handle that already behaves as the collection (a `Proxy` over an array, as
+omgbase's does) needs no `materialize`; the Rust crate's `DataContext::
+materialize` is the same seam for a `Value` that cannot be lazy on its own.
 `IndexedCollection` does the positional form for its fields:
 
 ```js
@@ -935,7 +947,9 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   plus optional `callFunction` / `callMethod` (above), an optional
   `indexFor(collection, path)` returning a `RowIndex` for a pre-built equality
   index (`lookup` → positions; optionally `lookupRows` → rows, probed without
-  materializing the collection), and an optional
+  materializing the collection), an optional `materialize(value)` resolving a
+  lazy handle the engine is about to observe as a value (see
+  [Performance](#performance-relational-patterns)), and an optional
   `regexDialect` (`"oqx"` default | `"native"`). The engine dispatches
   `matches` through `callMethod`, so a custom context that wants the native
   dialect answers `matches` itself with `semantics.regexMatches(recv, args,

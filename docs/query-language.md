@@ -359,7 +359,11 @@ nested/correlated scopes:
   (`oqx-js/store-index.ts`, Rust `omgbase-surface::store_index`). A root scan
   (`$repo.docs`, `$repo.edges`, …, or a bare `docs` at the root scope) is handed
   to the engine as a *lazy* handle — one per target per run — that runs its
-  `SELECT` only when something reads it whole. The `@omgbase/oqx` optimizer
+  `SELECT` only when something reads it whole (a `Proxy` over an array in
+  TypeScript; in Rust a marker the engine resolves through
+  `DataContext::materialize` before any operand, argument, key or projected
+  item observes it — `spec/surface` `lazy-root-*` pins that both engines see
+  the same array). The `@omgbase/oqx` optimizer
   turns a block's top-level `local == outer` conjunct (a `^` reference OR a
   literal: `where customer == ^$path`, `where type == "order"`, `where $dst ==
   ^$id`) into a probe and asks the context for an index first

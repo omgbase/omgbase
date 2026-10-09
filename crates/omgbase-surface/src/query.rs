@@ -695,23 +695,9 @@ impl Runner<'_> {
         if let Some(failed) = engine.context().take_root_failure() {
             return Err(failed.into());
         }
-        // A root scan projected as a VALUE (`select all: $repo.docs`) is its
-        // lazy marker until here: expand it to the rows a scan would have been.
-        let ctx = engine.context();
-        Ok(match out? {
-            oqx::OqxResult::Collect(rows) => oqx::OqxResult::Collect(
-                rows.into_iter()
-                    .map(|r| ctx.expand_scans(r))
-                    .collect::<oqx::Result<_>>()?,
-            ),
-            oqx::OqxResult::First(r) => {
-                oqx::OqxResult::First(r.map(|r| ctx.expand_scans(r)).transpose()?)
-            }
-            oqx::OqxResult::Single(r) => {
-                oqx::OqxResult::Single(r.map(|r| ctx.expand_scans(r)).transpose()?)
-            }
-            other => other,
-        })
+        // A root scan projected as a VALUE (`select all: $repo.docs`) was
+        // materialized into its rows by the engine (`DataContext::materialize`).
+        Ok(out?)
     }
 }
 

@@ -733,11 +733,22 @@ both and runs both harnesses.
   0.13), `semantic()` reads the current-context row (search 1.1), and
   `diff_unified` is a Myers unified diff.
 - 2026-10-08, implementation note (no spec change): nested blocks over a root
-  scan probe SQLite indexes instead of materializing the root (§1). The Rust
-  port represents a lazy root as a marker value (a `Value` has no identity or
-  laziness) that its `to_rows`, row functions, `size(…)`/`list(…)` and the
-  result renderer expand; the engine's own `in` / `==` / `[i]` applied directly
-  to `$repo.docs` as a value would see the marker — unexercised, unpinned.
+  scan probe SQLite indexes instead of materializing the root (§1). Both
+  engines hand `$repo.<target>` (and a bare target at the root scope) to the
+  OQX engine as a lazy handle — the reference a `Proxy` over an array, the Rust
+  port a marker value (a `Value` has no identity or laziness) that the engine
+  resolves through `DataContext::materialize` (oqx 0.14 patch) before it
+  observes the value as an operand, argument, key or projected item; in row
+  position (a receiver, a `from`, a source, a `follow` destination) the handle
+  reaches `to_rows` / `index_for` as handed out, so a probe never runs the
+  scan. The handle as a VALUE is pinned by the `lazy-root-*` cases of
+  `query-functions.json` (2026-10-09): one array per target per run, so
+  `$repo.docs == $repo.docs` is true and `$repo.docs == $repo.blocks` false;
+  `in` tests the rows (a string is never a member); truthy as a `where`
+  scalar; `size(…)`, `.size()` and `entries(…)` see the rows (in row position
+  `entries($repo.docs)` yields `(index, row)` entries); `select distinct
+  all: $repo.docs` collapses to one hit whose rows render `{ id, path }`; as an
+  `order by` key it is one constant. Both engines produce these results.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key
   changed, so `VERSION` stays 1.1 and the crates take a patch.

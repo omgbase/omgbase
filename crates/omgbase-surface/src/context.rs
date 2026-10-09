@@ -52,10 +52,14 @@ use rusqlite::{Connection, OptionalExtension, params_from_iter};
 pub const TAG_KEY: &str = "__oqx_target";
 const REPO_TAG: &str = "$repo";
 /// The key of a lazy ROOT SCAN marker: `{ "__oqx_scan": "docs" }` stands for
-/// `$repo.docs` / a bare `docs` until something reads it (`to_rows`, a row
-/// function argument, a projected value) — or probes it through `index_for`,
-/// in which case the scan never runs. A `Value` has no identity or laziness
-/// of its own, so this is the port of the reference's lazy array handle.
+/// `$repo.docs` / a bare `docs` until the engine reads it in row position
+/// (`to_rows`) or is about to observe it as a value (`materialize` — an
+/// operand, an argument, a projected item, a key), or probes it through
+/// `index_for`, in which case the scan never runs. The marker never reaches
+/// the language: the engine materializes every value it observes, so `==`,
+/// `in`, `entries(…)`, `size(…)`, truthiness, `distinct` and `order by` see
+/// the rows exactly as the reference's `Proxy` array shows them. A `Value` has
+/// no identity or laziness of its own, so this is the port of that handle.
 pub const SCAN_KEY: &str = "__oqx_scan";
 
 /// The four scan targets.
@@ -356,36 +360,6 @@ impl<'a> StoreContext<'a> {
                 Vec::new()
             }
         }
-    }
-
-    /// `v` with every lazy root-scan marker in it replaced by the scan's rows
-    /// (a store row is left as is). The runner applies it to projected values
-    /// before rendering, so `select all: $repo.docs` is the array of rows the
-    /// reference renders.
-    pub fn expand_scans(&self, v: Value) -> oqx::Result<Value> {
-        Ok(match v {
-            Value::Object(o) => {
-                let v = Value::Object(o);
-                if let Some(t) = scan_of(&v) {
-                    return Ok(Value::Array(self.scan_rows(t)?.as_ref().clone()));
-                }
-                if target_of(&v).is_some() {
-                    return Ok(v);
-                }
-                let Value::Object(o) = v else { unreachable!() };
-                let mut out = Object::with_capacity(o.len());
-                for (k, x) in o {
-                    out.insert(k, self.expand_scans(x)?);
-                }
-                Value::Object(out)
-            }
-            Value::Array(a) => Value::Array(
-                a.into_iter()
-                    .map(|x| self.expand_scans(x))
-                    .collect::<oqx::Result<Vec<_>>>()?,
-            ),
-            other => other,
-        })
     }
 
     /// Serve `rows` — target-tagged store rows a plan produced — as the
@@ -1371,6 +1345,19 @@ impl DataContext for StoreContext<'_> {
         }
     }
 
+    /// A lazy root-scan marker observed as a VALUE is its rows (read once per
+    /// run); everything else is itself. A store row is an object with several
+    /// columns and the marker has exactly one key, so the common case is one
+    /// length check.
+    fn materialize(&self, value: Value) -> Value {
+        if value.as_object().is_some_and(|o| o.len() == 1)
+            && let Some(t) = scan_of(&value)
+        {
+            return Value::Array(self.expand_scan(t));
+        }
+        value
+    }
+
     fn index_for(&self, collection: &Value, path: &[String]) -> Option<Rc<dyn RowIndex + '_>> {
         crate::store_index::index_for(self, scan_of(collection)?, path)
     }
@@ -1386,17 +1373,8 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_function(&self, name: &str, args: &[Value]) -> Option<oqx::Result<Value>> {
-        // `size($repo.docs)`, `list(…)`, `has(…)`: a lazy scan is its rows here.
-        if args.iter().any(|a| scan_of(a).is_some()) {
-            let expanded: Vec<Value> = args
-                .iter()
-                .map(|a| match scan_of(a) {
-                    Some(t) => Value::Array(self.expand_scan(t)),
-                    None => a.clone(),
-                })
-                .collect();
-            return self.call_function(name, &expanded);
-        }
+        // `size($repo.docs)`, `list(…)`, `has(…)`: the engine has materialized a
+        // lazy scan argument into its rows before the call.
         if name == "range" {
             let x = args.first().unwrap_or(&Value::Undefined);
             return Some(Ok(match x {
@@ -1419,10 +1397,8 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<oqx::Result<Value>> {
-        // `$repo.docs.size()`: a lazy scan is its rows here.
-        if let Some(t) = scan_of(recv) {
-            return self.call_method(name, &Value::Array(self.expand_scan(t)), args);
-        }
+        // `$repo.docs.size()`: the receiver, a value, is materialized by the
+        // engine before the call.
         if let Some(t) = target_of(recv) {
             if let Some(r) = self.row_method(name, recv, t, args) {
                 return Some(r);

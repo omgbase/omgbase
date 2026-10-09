@@ -141,7 +141,7 @@ export class InMemoryEngine implements Engine {
     };
     if (this.trace) run.trace = this.trace;
     const root: Scope = { row: null, parent: null, bindings, run };
-    const rows = this.reproject(this.rowsOf(this.evalExpr(query.source, root)), query.from, root);
+    const rows = this.reproject(this.rowsOf(this.evalRaw(query.source, root)), query.from, root);
 
     const bound = this.boundOf(query, root);
     if (query.follow) return this.runFollow(query, rows, root, bound);
@@ -298,7 +298,7 @@ export class InMemoryEngine implements Engine {
       const rowScope = scopeFor(row);
       const raw: unknown[] = [];
       for (const dest of follow.destinations) {
-        const v = dest.kind === "op" ? this.evalCollectValue(dest, rowScope) : this.evalExpr(dest, rowScope);
+        const v = dest.kind === "op" ? this.evalCollectValue(dest, rowScope) : this.evalRaw(dest, rowScope);
         raw.push(...this.rowsOf(v));
       }
       const kept = follow.where ? raw.filter((x) => truthy(this.evalExpr(follow.where!, this.enter(x, rowScope)))) : raw;
@@ -514,7 +514,7 @@ export class InMemoryEngine implements Engine {
     const run = scope.run;
     let state = plan.receiverStable ? run.stableCollections.get(op) : undefined;
     if (!state) {
-      const value = this.evalExpr(op.receiver, scope);
+      const value = this.evalRaw(op.receiver, scope);
       if (plan.receiverStable) run.stableCollections.set(op, (state = newCollection(value)));
       else if (plan.correlated.length === 0) return this.scan(this.rowsOf(value), op, scope);
       else if (value !== null && typeof value === "object") {
@@ -543,7 +543,7 @@ export class InMemoryEngine implements Engine {
   }
 
   private reproject(rows: unknown[], from: readonly Expr[], scope: Scope): unknown[] {
-    for (const proj of from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
+    for (const proj of from) rows = rows.flatMap((r) => this.rowsOf(this.evalRaw(proj, this.child(r, scope))));
     return rows;
   }
 
@@ -687,7 +687,19 @@ export class InMemoryEngine implements Engine {
 
   // ---- scalar expression evaluation -----------------------------------------
 
+  // An expression as a VALUE: whatever `evalRaw` yields, with a context's lazy
+  // stand-in resolved (`DataContext.materialize`), so no operand, argument, key
+  // or projected item ever observes a value the context meant as a collection
+  // it had not read yet.
   private evalExpr(e: Expr, scope: Scope): unknown {
+    const v = this.evalRaw(e, scope);
+    return this.ctx.materialize ? this.ctx.materialize(v) : v;
+  }
+
+  // An expression as the context handed it out — for ROW POSITION only (the
+  // source, a receiver, a `from`, a `follow` destination), where the value goes
+  // straight to `toRows` / `indexFor`. Operands inside it are values (`evalExpr`).
+  private evalRaw(e: Expr, scope: Scope): unknown {
     switch (e.kind) {
       case "lit": return e.value;
       case "binding":

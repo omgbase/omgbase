@@ -113,6 +113,37 @@ pub fn conjuncts(w: &Where) -> Vec<&Where> {
     }
 }
 
+/// The residual when exactly ONE correlation is answered by a probe (a context
+/// index's `lookup_rows`): every other conjunct, the remaining equalities
+/// included, stays in its original place. A kept equality is true by
+/// construction for the rows the probe selects and, being two reads, can
+/// neither raise nor bind, so the scan's strict left-to-right order and outcome
+/// hold.
+pub fn residual_without(plan: &BlockPlan, answered: &Correlation) -> Option<Where> {
+    plan.node.sub.r#where.as_ref().and_then(|w| {
+        conjunction(
+            conjuncts(w)
+                .into_iter()
+                .enumerate()
+                .filter(|(i, _)| *i != answered.index)
+                .map(|(_, part)| part.clone())
+                .collect(),
+        )
+    })
+}
+
+/// The order in which a single-correlation probe tries the plan's
+/// correlations: those whose outer side varies with the enclosing row first (a
+/// literal selects the same rows for every enclosing row and narrows nothing),
+/// each group in conjunct order.
+pub fn lookup_order(plan: &BlockPlan) -> Vec<&Correlation> {
+    let (varying, literal): (Vec<&Correlation>, Vec<&Correlation>) = plan
+        .correlated
+        .iter()
+        .partition(|c| !matches!(c.outer, Expr::Lit(_)));
+    varying.into_iter().chain(literal).collect()
+}
+
 // ---- driver ------------------------------------------------------------------
 
 const MAX_PASSES: usize = 8;

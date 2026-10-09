@@ -25,3 +25,12 @@ documents take ≈ 9 ms of SQLite time and the whole planned query ≈ 160–180
 wall time (TypeScript); a 2,000-document / 200-probe run takes ≈ 60 ms end to
 end (Rust). The planner's scan SQL now lives in
 `oqx-js/sql/scan.ts` (shared with the indexes).
+
+The Rust `$repo.<target>` handle (a marker value) is resolved through the new
+`DataContext::materialize` seam, so `$repo.docs == $repo.docs`, `"x" in
+$repo.docs`, `entries($repo.docs)`, `size($repo.docs)`, truthiness,
+`distinct`, `order by` and projection see the rows exactly as the TypeScript
+`Proxy` array shows them; the runner's post-hoc expansion and the row-function
+argument expansion are gone. `spec/surface` gains eight `lazy-root-*` cases
+(`query-functions.json`) and an interop read pinning the handle as a value on
+both engines.

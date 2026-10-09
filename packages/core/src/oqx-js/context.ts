@@ -95,7 +95,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // for one run, during which the store does not change, so `$repo.docs` read
   // from every outer row is one SELECT, not one per row — and the engine, which
   // keys collections by identity, sees the same collection each time.
-  // `rootScans` recognizes the handles for `indexFor`.
+  // `rootScans` recognizes the handles for `indexFor`. Because the handle IS an
+  // array, this context needs no `DataContext.materialize` (the Rust port's
+  // marker value does); `spec/surface` `lazy-root-*` pins what the language
+  // sees either way.
   const rootScans = new WeakMap<object, { target: Target; rows(): Row[] }>();
   const handles = new Map<Target, Row[]>();
   const lazyRoot = (t: Target): Row[] => {

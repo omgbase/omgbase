@@ -51,3 +51,16 @@ included, stay residual in their original order; a `TraceEvent` of kind
 run when nothing is correlated, instead of once per enclosing row. Rust:
 `index_for` returns `Option<Rc<dyn RowIndex>>` and `lookup` returns
 `Vec<usize>`, so a context can create indexes on demand.
+
+`DataContext::materialize(value)` (Rust) / `materialize?(value)` (TypeScript)
+is a new optional seam, default identity: a context that hands out a stand-in
+for a collection it has not read yet (a lazy table handle) resolves it here.
+The engine calls it on every value it is about to observe as a value — an
+operand, an argument, a projected item, an `order by`/`distinct` key, a
+`where` scalar, a lift — and never in row position (the source, a receiver, a
+`from`, a `follow` destination), where the value reaches `to_rows`/`index_for`
+as handed out. The Rust engine's execution path was folded to mirror the
+TypeScript one: one `access` for every consumer (the `follow` seeds included),
+`scan`/`materialize`, a `memoized` helper for invariant plans, `outer_value`,
+and `lookup_order`/`residual_without` in `optimize`; optimized ≡ naive over
+every fixture, same perf.

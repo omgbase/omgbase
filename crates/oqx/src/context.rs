@@ -40,6 +40,22 @@ pub trait DataContext {
     /// Coerce a relation/source value into rows.
     fn to_rows(&self, value: &Value) -> Vec<Value>;
 
+    /// Optional: a value this context handed out as a stand-in for a
+    /// collection it has not read yet (a lazy table handle), resolved to what
+    /// it stands for. The engine calls it on every value it is about to observe
+    /// AS A VALUE — an operand of `==`/`in`/arithmetic, a function or method
+    /// argument, a projected item, an `order by` or `distinct` key, a `where`
+    /// scalar, a lift — and never on a value it reads in ROW POSITION (the
+    /// query source, a block receiver, a body-level `from`, a `follow`
+    /// destination), which goes to [`DataContext::to_rows`] and
+    /// [`DataContext::index_for`] as the context handed it out, so a
+    /// store-backed context can answer a probe on the handle without reading the
+    /// table and still never lets the stand-in be seen by the language. The
+    /// default is the identity (a context whose values are what they are).
+    fn materialize(&self, value: Value) -> Value {
+        value
+    }
+
     /// Identity of a row for `follow` cycle detection / dedup and for
     /// `distinct` over unprojected rows.
     fn identity(&self, row: &Value) -> Value;

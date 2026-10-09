@@ -1409,6 +1409,12 @@
           "args": {
             "query": "from docs where semantic(\"the great work\") > 0.5"
           }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select same: $repo.docs == $repo.docs, n: size($repo.docs), e: size(entries($repo.docs)), hit: \"index.md\" in $repo.docs from docs where $path == \"index.md\""
+          }
         }
       ],
       "expect": {
@@ -1730,6 +1736,21 @@
           {
             "error": "semantic_unavailable",
             "retriable": false
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "index.md",
+                "same": true,
+                "n": 18,
+                "e": 18,
+                "hit": false
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
           }
         ]
       }

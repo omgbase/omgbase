@@ -114,7 +114,15 @@ something is correlated — so a store-backed context (a lazy table marker, an
 index on a column) answers with one indexed lookup and the table is never
 materialized; one correlation is probed (the first whose outer side is a `^`
 reference rather than a literal) and the other conjuncts, remaining equalities
-included, stay residual in their original order.
+included, stay residual in their original order. Such a marker is resolved by
+`DataContext::materialize(value)` (default: identity) wherever the engine is
+about to observe the value AS A VALUE — an operand, an argument, a projected
+item, an `order by`/`distinct` key, a `where` scalar, a lift — and never in row
+position (the source, a receiver, a `from`, a `follow` destination), where it
+reaches `to_rows` / `index_for` as handed out; so the language never sees the
+stand-in, and `$repo.docs == $repo.docs`, `"x" in $repo.docs`,
+`entries($repo.docs)` behave as they do over the reference's lazy array. The
+TypeScript package has the same optional `materialize` hook.
 `InMemoryEngine::with_rules(&[])` is the naive engine;
 `tests/spec.rs` proves optimized ≡ naive (result, or error stage and message)
 over every spec fixture, and `tests/optimize.rs` covers the rules.

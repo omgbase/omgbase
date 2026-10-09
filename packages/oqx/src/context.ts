@@ -37,6 +37,18 @@ export interface DataContext {
   get(row: unknown, key: string): unknown;
   /** Coerce a relation/source value into rows (may be lazy). */
   toRows(value: unknown): Iterable<unknown>;
+  /** Optional: a value this context handed out as a stand-in for a collection
+   * it has not read yet (a lazy table handle), resolved to what it stands for.
+   * The engine calls it on every value it is about to observe AS A VALUE — an
+   * operand of `==`/`in`/arithmetic, a function or method argument, a projected
+   * item, an `order by` or `distinct` key, a `where` scalar, a lift — and never
+   * on a value it reads in ROW POSITION (the query source, a block receiver, a
+   * body-level `from`, a `follow` destination), which reaches `toRows` and
+   * `indexFor` as handed out, so a store-backed context can answer a probe on
+   * the handle without reading the table and still never lets the stand-in be
+   * seen by the language. Absent = identity; a context whose handle already
+   * behaves as the collection (a `Proxy` over an array) needs none. */
+  materialize?(value: unknown): unknown;
   /** Identity of a row for `follow` cycle detection / dedup. */
   identity(row: unknown): unknown;
   /** Optional custom free function; return `{ handled: false }` to defer. */
