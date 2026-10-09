@@ -31,8 +31,13 @@ export { OqxError } from "./errors.ts";
 /** The OQX spec version (`spec/oqx/VERSION`, `major.minor`) this implementation
  * conforms to — distinct from the package's own semver. */
 export const LANGUAGE_VERSION = "0.14";
-export type { OqxResult, Engine } from "./engine.ts";
+export type { OqxResult, Engine, InMemoryEngineOptions, TraceEvent } from "./engine.ts";
 export { InMemoryEngine, runQuery } from "./engine.ts";
+export type { BlockPlan, Correlation, Rule, RuleContext, RowIndex } from "./optimize/index.ts";
+export {
+  DEFAULT_RULES, correlatedEqualityProbe, stableReceiver, invariantBlock, cardinalityOnly,
+  optimizeBlock, logicalBlock, HashIndex,
+} from "./optimize/index.ts";
 export type { DataContext, CallResult, DefaultContextOptions } from "./context.ts";
 export { DefaultContext } from "./context.ts";
 export type { RegexDialect, RegexFlags } from "./regex.ts";

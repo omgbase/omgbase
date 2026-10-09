@@ -1,7 +1,18 @@
-// The scalar-semantics contract every backend must obey (see src/semantics.ts).
+// Implementation conformance: (1) the scalar-semantics contract every backend
+// must obey (see src/semantics.ts); (2) the optimizer invariant — for every
+// fixture under spec/oqx/cases, the optimized engine (the default rule set)
+// and the naive engine (`rules: []`) produce the same canonical result, or the
+// same error (stage and message). Planner behavior is implementation
+// conformance, never a spec fixture (spec/oqx/README.md, "What does not belong
+// in cases/"), so this is where the optimizer is proven against the language.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { equals, relate, membership, arith, compareForSort, coerceCollection, makeRange, isRange, rangeCovers, parseRangeString, BUILTIN_FUNCTIONS } from "../src/semantics.ts";
+import { parseString, parseTemplate } from "../src/parser.ts";
+import { DefaultContext, InMemoryEngine, OqxError } from "../src/index.ts";
+import type { OqxResult, Query, TraceEvent } from "../src/index.ts";
 
 test("equality is typed and strict; absence normalizes", () => {
   assert.equal(equals(5, 5), true);
@@ -105,4 +116,90 @@ test("coerceCollection normalizes sources", () => {
   assert.deepEqual(coerceCollection([1, 2]), [1, 2]);
   assert.deepEqual(coerceCollection(new Set([1, 2])), [1, 2]);
   assert.deepEqual(coerceCollection("x"), ["x"]); // a string is a single value, not chars
+});
+
+// ---- optimized ≡ naive over every spec fixture ---------------------------------------
+//
+// spec.test.ts validates the fixture files and checks each against its expected
+// outcome; this pass only needs the inputs, and compares the two engines with
+// each other — so an optimizer bug shows up even on a fixture whose expectation
+// both engines happen to miss the same way.
+
+const CASES_DIR = join(import.meta.dirname, "../../../spec/oqx/cases");
+
+interface SpecCase {
+  name: string;
+  roots?: Record<string, unknown>;
+  query?: string;
+  template?: { strings: string[]; values: unknown[] };
+}
+
+type Outcome = { ok: true; value: unknown } | { ok: false; stage: string; message: string };
+
+function unwrap(result: OqxResult): unknown {
+  switch (result.consumer) {
+    case "collect": return result.rows;
+    case "exists": return result.exists;
+    case "none": return result.none;
+    case "count": return result.count;
+    case "first": case "single": return result.row;
+  }
+}
+
+/** JSON round trip with sorted keys: the spec's canonical form (README). */
+function canonical(v: unknown): unknown {
+  if (v === undefined) return null;
+  const sorted = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(sorted);
+    if (typeof x === "object" && x !== null) {
+      const o = x as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(o).sort()) out[k] = sorted(o[k]);
+      return out;
+    }
+    return x;
+  };
+  return sorted(JSON.parse(JSON.stringify(v)) as unknown);
+}
+
+function outcomeOf(c: SpecCase, optimized: boolean, trace?: (e: TraceEvent) => void): Outcome {
+  try {
+    let query: Query;
+    let values: unknown[] = [];
+    if (c.template) {
+      values = c.template.values;
+      query = parseTemplate(c.template.strings, values.length);
+    } else {
+      query = parseString(c.query!);
+    }
+    const engine = new InMemoryEngine(new DefaultContext(c.roots ?? {}), optimized ? { trace } : { rules: [] });
+    return { ok: true, value: canonical(unwrap(engine.run(query, values))) };
+  } catch (e) {
+    if (e instanceof OqxError) return { ok: false, stage: e.stage, message: e.message };
+    throw e;
+  }
+}
+
+const files = readdirSync(CASES_DIR).filter((f) => f.endsWith(".json")).sort();
+const exercised = { probe: 0, memo: 0, cardinality: 0, index: 0 };
+
+for (const file of files) {
+  const doc = JSON.parse(readFileSync(join(CASES_DIR, file), "utf8")) as { cases: SpecCase[] };
+  const stem = file.replace(/\.json$/, "");
+  for (const c of doc.cases) {
+    test(`optimized ≡ naive: ${stem}::${c.name}`, () => {
+      const naive = outcomeOf(c, false);
+      const planned = outcomeOf(c, true, (e) => {
+        if (e.kind === "probe" || e.kind === "memo" || e.kind === "cardinality" || e.kind === "index") exercised[e.kind]++;
+      });
+      assert.deepStrictEqual(planned, naive);
+    });
+  }
+}
+
+test("optimized ≡ naive: the fixtures exercise the probe and the cardinality rules", (t) => {
+  // (No fixture re-evaluates an invariant block across outer rows; optimize.test.ts covers the memo.)
+  t.diagnostic(`optimizer actions over the spec fixtures: ${JSON.stringify(exercised)}`);
+  assert.ok(exercised.index > 0 && exercised.probe > 0, "some fixture probed an index");
+  assert.ok(exercised.cardinality > 0, "some fixture was answered from a cardinality");
 });

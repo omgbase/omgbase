@@ -8,6 +8,15 @@
 // and `&&` evaluates strictly left to right — evaluation order is observable
 // through errors, so the engine never reorders conjuncts.)
 //
+// Nested blocks additionally run through the optimizer (`./optimize`): each
+// block gets a `BlockPlan` — a correlated equality (`id == ^customer_id`)
+// becomes a hash probe on the receiver, a block that reads nothing from the
+// enclosing rows is evaluated once per run, an `exists`/`count` with nothing
+// left to check per row is answered from a cardinality. Every rule carries a
+// proof that it is unobservable (same rows, lifts and errors); `rules: []`
+// turns the optimizer off, which the conformance suite uses to compare both
+// paths over every spec fixture.
+//
 // Name resolution is strictly lexical and LOCAL: a bare identifier is read from
 // the current scope only, and an enclosing scope is reached solely through an
 // explicit `^name` (exactly one scope out per caret). There is no implicit
@@ -22,6 +31,8 @@ import { OqxError } from "./errors.ts";
 import {
   relate, arith, membership, truthy, compareForSort, compare, canonicalKey, makeRange, isEntry, isRange,
 } from "./semantics.ts";
+import type { BlockPlan, Correlation, Rule, RowIndex } from "./optimize/index.ts";
+import { DEFAULT_RULES, HashIndex, intersectPositions, planFor } from "./optimize/index.ts";
 
 /** The shaped result of a top-level query, discriminated by consumer. */
 export type OqxResult =
@@ -47,8 +58,57 @@ interface Scope {
   row: unknown;
   parent: Scope | null;
   bindings: readonly unknown[];
+  run: RunState;
   lifts?: Record<string, unknown>;
   meta?: Record<string, unknown>;
+}
+
+// State that lives for exactly one `run()`: the optimizer's rule set, the
+// per-collection materialized rows and indexes, the memoized values of
+// invariant blocks, and an optional trace sink. Nothing here outlives the run,
+// so data that changes between runs is never served stale.
+interface RunState {
+  rules: readonly Rule[];
+  bindingCount: number;
+  /** Collections keyed by the receiver VALUE's identity (a per-row receiver
+   * that evaluates to a fresh array each time is never found twice). */
+  collections: WeakMap<object, CollectionState>;
+  /** Collections keyed by the block whose receiver is statically stable
+   * (reads only the root scope / bindings), evaluated once per run. */
+  stableCollections: Map<OpNode, CollectionState>;
+  /** Values of invariant blocks, by block. */
+  memo: Map<OpNode, { value: unknown }>;
+  trace?: (event: TraceEvent) => void;
+}
+
+// A receiver collection seen during a run: how many times it was probed, its
+// rows once materialized, and its indexes by local path (`null` marks a path
+// whose index could not be built — the scan serves it).
+interface CollectionState {
+  /** The receiver's value (what `toRows` coerced and what `indexFor` is asked about). */
+  value: unknown;
+  seen: number;
+  rows: unknown[] | null;
+  indexes: Map<string, RowIndex | null>;
+}
+
+/** What the optimizer did at run time (for tests and diagnostics): an index
+ * built (or taken from the context) for a collection and path, a probe that
+ * selected a bucket, a memoized invariant block reused, a consumer answered
+ * from a cardinality, or a probe that fell back to the scan. */
+export type TraceEvent =
+  | { kind: "index"; path: readonly string[]; rows: number; source: "engine" | "context" }
+  | { kind: "probe"; paths: readonly (readonly string[])[]; candidates: number }
+  | { kind: "memo"; op: OpNode }
+  | { kind: "cardinality"; count: number }
+  | { kind: "fallback"; reason: "unstable" | "index" | "probe-value" | "not-a-collection" };
+
+export interface InMemoryEngineOptions {
+  /** The optimizer rules to apply to nested blocks (default `DEFAULT_RULES`);
+   * `[]` runs the naive scan everywhere. */
+  rules?: readonly Rule[];
+  /** Receives a `TraceEvent` for each optimizer action during `run`. */
+  trace?: (event: TraceEvent) => void;
 }
 
 const RECUR = new Set(["$depth", "$stop", "$leaf", "$frontier", "$ordinal"]);
@@ -65,13 +125,25 @@ const UNBOUNDED: Bound = { offset: 0, limit: null };
 
 export class InMemoryEngine implements Engine {
   private ctx: DataContext;
+  private rules: readonly Rule[];
+  private trace: ((event: TraceEvent) => void) | undefined;
 
-  constructor(context: DataContext = new DefaultContext()) {
+  constructor(context: DataContext = new DefaultContext(), options: InMemoryEngineOptions = {}) {
     this.ctx = context;
+    this.rules = options.rules ?? DEFAULT_RULES;
+    this.trace = options.trace;
   }
 
   run(query: Query, bindings: readonly unknown[] = []): OqxResult {
-    const root: Scope = { row: null, parent: null, bindings };
+    const run: RunState = {
+      rules: this.rules,
+      bindingCount: bindings.length,
+      collections: new WeakMap(),
+      stableCollections: new Map(),
+      memo: new Map(),
+    };
+    if (this.trace) run.trace = this.trace;
+    const root: Scope = { row: null, parent: null, bindings, run };
     let rows = this.rowsOf(this.evalExpr(query.source, root));
     for (const proj of query.from) {
       rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, root))));
@@ -123,7 +195,7 @@ export class InMemoryEngine implements Engine {
   // is the root. Each must be a non-negative integer.
   private boundOf(b: Pick<Subquery, "limit" | "offset">, enclosing: Scope): Bound {
     if (!b.limit && !b.offset) return UNBOUNDED;
-    const scope: Scope = enclosing.parent === null ? enclosing : { row: undefined, parent: enclosing, bindings: enclosing.bindings };
+    const scope: Scope = enclosing.parent === null ? enclosing : rowless(enclosing);
     const read = (e: Expr | undefined, word: string): number | null => {
       if (!e) return null;
       const v = this.evalExpr(e, scope);
@@ -155,7 +227,7 @@ export class InMemoryEngine implements Engine {
   // goes through this, so entries behave the same at the top level, in nested
   // blocks, as `from` re-projections, and as follow seeds.
   private enter(row: unknown, parent: Scope, extra: { lifts?: Record<string, unknown>; meta?: Record<string, unknown> } = {}): Scope {
-    const s: Scope = { row, parent, bindings: parent.bindings };
+    const s: Scope = { row, parent, bindings: parent.bindings, run: parent.run };
     if (extra.lifts) s.lifts = extra.lifts;
     if (extra.meta) s.meta = extra.meta;
     if (isEntry(row)) {
@@ -344,11 +416,36 @@ export class InMemoryEngine implements Engine {
 
   private evalWhereOp(op: OpNode, scope: Scope): boolean {
     if (op.sub.follow) throw new OqxError("`follow` is only valid on a select-position collect { … }, not a where op", "eval");
+    const plan = this.planOf(op, scope);
+    if (plan.invariant) {
+      const hit = scope.run.memo.get(op);
+      if (hit) { scope.run.trace?.({ kind: "memo", op }); return hit.value as boolean; }
+      const value = this.evalWhereOpPlanned(op, plan, scope);
+      scope.run.memo.set(op, { value });
+      return value;
+    }
+    return this.evalWhereOpPlanned(op, plan, scope);
+  }
+
+  private evalWhereOpPlanned(op: OpNode, plan: BlockPlan, scope: Scope): boolean {
     const bound = this.boundOf(op.sub, scope);
-    if (op.op === "exists" || op.op === "none") {
+    if (op.op === "exists" || op.op === "none" || op.op === "count") {
+      const acc = this.access(op, plan, scope);
+      if (plan.fromCardinality && acc.where === null) {
+        // Nothing left to evaluate per row: the accessed rows ARE the matched
+        // rows, and the consumer only needs their count after the bound.
+        const n = boundedCount(acc.rows.length, bound);
+        scope.run.trace?.({ kind: "cardinality", count: n });
+        if (op.op === "count") return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
+        return op.op === "exists" ? n > 0 : n === 0;
+      }
+      if (op.op === "count") {
+        const n = this.opRows(op, scope, bound, acc).length;
+        return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
+      }
       // Unbounded: stop at the first match (dedup cannot change emptiness).
       // Bounded: the offset/limit decide emptiness, so materialize the set.
-      const any = bound === UNBOUNDED ? this.anyMatch(op, scope) : this.opRows(op, scope, bound).length > 0;
+      const any = bound === UNBOUNDED ? this.anyMatch(op, scope, acc) : this.opRows(op, scope, bound, acc).length > 0;
       return op.op === "exists" ? any : !any;
     }
     if (op.op === "collect") {
@@ -367,42 +464,150 @@ export class InMemoryEngine implements Engine {
       }
       return matched.length > 0;
     }
-    if (op.op === "count") {
-      const n = this.opRows(op, scope, bound).length;
-      return op.countCmp ? compareCount(n, op.countCmp) : n > 0;
-    }
     return this.opRows(op, scope, bound).length > 0;
   }
 
   // The rows a consumer op reduces: matched → ordered → distinct → bounded.
-  private opRows(op: OpNode, scope: Scope, bound: Bound): Scope[] {
-    let scopes = this.matchRows(op, scope);
+  private opRows(op: OpNode, scope: Scope, bound: Bound, acc?: Access): Scope[] {
+    let scopes = this.matchRows(op, scope, acc);
     this.sortScopes(scopes, op.sub.orderBy);
     if (op.distinct) scopes = this.dedupByProjection(scopes, op.sub);
     return sliceBound(scopes, bound);
   }
 
-  // Short-circuiting existence check over a consumer receiver.
-  private anyMatch(op: OpNode, scope: Scope): boolean {
-    for (const s of this.iterMatchRows(op, scope)) { void s; return true; }
+  // Short-circuiting existence check over a consumer receiver. Over a probe's
+  // bucket this stops at the first bucket row that passes the residual — the
+  // semi-join (`exists`) / anti-join (`none`) never materializes the bucket.
+  private anyMatch(op: OpNode, scope: Scope, acc?: Access): boolean {
+    for (const s of this.iterMatchRows(op, scope, acc)) { void s; return true; }
     return false;
   }
 
-  private *iterMatchRows(op: OpNode, scope: Scope): Generator<Scope> {
-    let rows = this.rowsOf(this.evalExpr(op.receiver, scope));
-    for (const proj of op.sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
+  // The block's candidate rows (per its plan's access path), entered as scopes
+  // under `scope`, filtered by the predicate the access left to evaluate.
+  private *iterMatchRows(op: OpNode, scope: Scope, acc?: Access): Generator<Scope> {
+    const { rows, where } = acc ?? this.access(op, this.planOf(op, scope), scope);
     for (const r of rows) {
       const s = this.enter(r, scope, { lifts: {} });
-      if (!op.sub.where || this.evalWhere(op.sub.where, s)) yield s;
+      if (!where || this.evalWhere(where, s)) yield s;
     }
   }
 
-  private matchRows(op: OpNode, scope: Scope): Scope[] {
-    return Array.from(this.iterMatchRows(op, scope));
+  private matchRows(op: OpNode, scope: Scope, acc?: Access): Scope[] {
+    return Array.from(this.iterMatchRows(op, scope, acc));
+  }
+
+  // ---- planned access -------------------------------------------------------
+
+  private planOf(op: OpNode, scope: Scope): BlockPlan {
+    return planFor(op, scopeDepth(scope), { bindingCount: scope.run.bindingCount }, scope.run.rules);
+  }
+
+  // How a block reaches its rows. With correlated equalities the plan asks for
+  // a probe: the receiver's collection is looked up (by block when the receiver
+  // is statically stable, else by the receiver value's identity), indexed on
+  // each local path the second time it is probed, and the buckets for the outer
+  // values — evaluated once, in a row-less scope inside the block, exactly as a
+  // bound is — are intersected smallest-first. The rows come back in receiver
+  // order with the residual predicate. Whenever the probe is not available
+  // (first sight of a collection, a receiver that is not a collection, an index
+  // or probe value whose evaluation threw) the result is the plain scan: the
+  // receiver's rows, re-projected by `from`, with the whole `where`.
+  private access(op: OpNode, plan: BlockPlan, scope: Scope): Access {
+    const run = scope.run;
+    let recv: unknown;
+    let state: CollectionState | null = null;
+    if (plan.receiverStable && plan.correlated.length > 0) {
+      state = run.stableCollections.get(op) ?? null;
+      if (!state) {
+        recv = this.evalExpr(op.receiver, scope);
+        run.stableCollections.set(op, (state = { value: recv, seen: 0, rows: this.rowsOf(recv), indexes: new Map() }));
+      }
+    } else {
+      recv = this.evalExpr(op.receiver, scope);
+      if (plan.correlated.length > 0) {
+        if (recv !== null && typeof recv === "object") {
+          state = run.collections.get(recv) ?? null;
+          if (!state) run.collections.set(recv, (state = { value: recv, seen: 0, rows: null, indexes: new Map() }));
+        } else run.trace?.({ kind: "fallback", reason: "not-a-collection" });
+      }
+    }
+    if (state) {
+      state.seen++;
+      // Index on the second sight: a collection probed once is cheaper to scan
+      // than to index, and a receiver that yields a fresh value per enclosing
+      // row (never seen twice) must not pay for indexes it will never reuse.
+      if (state.seen >= 2 || plan.receiverStable) {
+        if (state.rows === null) state.rows = this.rowsOf(state.value);
+        const probed = this.probe(plan, state, scope);
+        if (probed) return { rows: probed, where: plan.residual };
+      } else run.trace?.({ kind: "fallback", reason: "unstable" });
+      if (state.rows !== null) return { rows: state.rows, where: op.sub.where }; // `from` is empty when anything is correlated
+    }
+    let rows = this.rowsOf(recv);
+    for (const proj of op.sub.from) rows = rows.flatMap((r) => this.rowsOf(this.evalExpr(proj, this.child(r, scope))));
+    return { rows, where: op.sub.where };
+  }
+
+  private probe(plan: BlockPlan, state: CollectionState, scope: Scope): unknown[] | null {
+    const run = scope.run;
+    const rows = state.rows!;
+    const probeScope = rowless(scope);
+    const buckets: (readonly number[])[] = [];
+    for (const c of plan.correlated) {
+      const index = this.indexFor(state, rows, c, scope);
+      if (!index) { run.trace?.({ kind: "fallback", reason: "index" }); return null; }
+      let value: unknown;
+      try { value = this.evalExpr(c.outer, probeScope); }
+      catch { run.trace?.({ kind: "fallback", reason: "probe-value" }); return null; }
+      buckets.push(index.lookup(value));
+    }
+    buckets.sort((a, b) => a.length - b.length);
+    let candidates = buckets[0]!;
+    for (let i = 1; i < buckets.length && candidates.length > 0; i++) candidates = intersectPositions(candidates, buckets[i]!);
+    run.trace?.({ kind: "probe", paths: plan.correlated.map((c) => c.path), candidates: candidates.length });
+    return candidates.map((i) => rows[i]);
+  }
+
+  // The index of `rows` on a correlation's local path: the context's pre-built
+  // one when it offers it, else built here by evaluating the local expression
+  // in each row's scope — the same evaluation the scan performs — so the keys
+  // are exactly what `==` would compare. A throw while building (a context that
+  // rejects a read) leaves the path un-indexed and the scan in charge.
+  private indexFor(state: CollectionState, rows: unknown[], c: Correlation, scope: Scope): RowIndex | null {
+    const key = JSON.stringify(c.path);
+    const hit = state.indexes.get(key);
+    if (hit !== undefined) return hit;
+    let index: RowIndex | null = this.ctx.indexFor?.(state.value, c.path) ?? null;
+    if (index) scope.run.trace?.({ kind: "index", path: c.path, rows: rows.length, source: "context" });
+    else {
+      const built = new HashIndex();
+      try {
+        for (let i = 0; i < rows.length; i++) built.add(this.evalExpr(c.local, this.enter(rows[i], scope)), i);
+        index = built;
+        scope.run.trace?.({ kind: "index", path: c.path, rows: rows.length, source: "engine" });
+      } catch {
+        index = null;
+      }
+    }
+    state.indexes.set(key, index);
+    return index;
   }
 
   // A select-position collect/first/single, optionally recursive via `follow`.
   private evalCollectValue(op: OpNode, scope: Scope): unknown {
+    const plan = this.planOf(op, scope);
+    if (plan.invariant) {
+      const hit = scope.run.memo.get(op);
+      if (hit) { scope.run.trace?.({ kind: "memo", op }); return hit.value; }
+      const value = this.evalCollectValuePlanned(op, scope);
+      scope.run.memo.set(op, { value });
+      return value;
+    }
+    return this.evalCollectValuePlanned(op, scope);
+  }
+
+  private evalCollectValuePlanned(op: OpNode, scope: Scope): unknown {
     const sub = op.sub;
     const bound = this.boundOf(sub, scope);
     let scopes: Scope[];
@@ -547,7 +752,23 @@ export class InMemoryEngine implements Engine {
 
 interface Occurrence { row: unknown; meta: Record<string, unknown>; }
 
+// A block's accessed rows and the predicate still to evaluate over each.
+interface Access { rows: unknown[]; where: Where | null; }
+
 // ---- free helpers -----------------------------------------------------------
+
+// A row-less scope INSIDE a block: a bare name is absent, `^name` is the
+// enclosing row — how a block's bound and a probe's outer value are read.
+function rowless(enclosing: Scope): Scope {
+  return { row: undefined, parent: enclosing, bindings: enclosing.bindings, run: enclosing.run };
+}
+
+// How many scopes out the root is (the root itself is 0).
+function scopeDepth(scope: Scope): number {
+  let d = 0;
+  for (let s = scope; s.parent !== null; s = s.parent) d++;
+  return d;
+}
 
 function isRelOp(op: string): boolean {
   return op === "==" || op === "!=" || op === "<" || op === "<=" || op === ">" || op === ">=";
