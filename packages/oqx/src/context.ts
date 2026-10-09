@@ -10,6 +10,7 @@
 
 import { coerceCollection, regexMatches, BUILTIN_FUNCTIONS, BUILTIN_METHODS } from "./semantics.ts";
 import type { RegexDialect } from "./regex.ts";
+import type { RowIndex } from "./optimize/hash-index.ts";
 
 // An array's only properties are its integer indices, spelled canonically
 // (`"0"`, `"12"`; never `"01"`, `"length"`, or a method name).
@@ -50,6 +51,17 @@ export interface DataContext {
    * `regexMatches(recv, args, dialect)` is the helper). `BUILTIN_METHODS.matches`
    * is always the baseline. */
   readonly regexDialect?: RegexDialect;
+  /** Optional: a pre-built equality index over `collection` (a value this
+   * context served as a root or relation) on the property path `path`
+   * (`["customer_id"]`, `["meta", "id"]`; `[]` keys by the row itself). The
+   * engine asks before building its own hash index for a correlated equality
+   * in a nested block (`where id == ^customer_id`); return `undefined` to let
+   * it build one. `lookup(value)` must return the ascending positions, into
+   * `toRows(collection)` in order, of the rows whose value at `path` equals
+   * `value` under OQX equality (SEMANTICS §5: absent ≡ null, `-0` ≡ `0`, `NaN`
+   * matches nothing, objects by reference). `IndexedCollection.context()`
+   * implements it over its indexes. */
+  indexFor?(collection: unknown, path: readonly string[]): RowIndex | undefined;
 }
 
 export interface DefaultContextOptions {
