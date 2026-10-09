@@ -355,6 +355,39 @@ nested/correlated scopes:
   `^` name, a bare reserved docs basename), the whole query runs unplanned so
   an emptying pushed conjunct cannot hide the error (`planner.ts`,
   `residualMayRaise`).
+- **Nested blocks over a root scan are answered from SQLite indexes**
+  (`oqx-js/store-index.ts`, Rust `omgbase-surface::store_index`). A root scan
+  (`$repo.docs`, `$repo.edges`, …, or a bare `docs` at the root scope) is handed
+  to the engine as a *lazy* handle — one per target per run — that runs its
+  `SELECT` only when something reads it whole. The `@omgbase/oqx` optimizer
+  turns a block's top-level `local == outer` conjunct (a `^` reference OR a
+  literal: `where customer == ^$path`, `where type == "order"`, `where $dst ==
+  ^$id`) into a probe and asks the context for an index first
+  (`DataContext.indexFor` → `RowIndex.lookupRows`); the store context answers
+  with ONE prepared, index-driven statement per probe under the same live-row
+  and repo guards as the planner (`sql/scan.ts`), yielding rows built exactly as
+  the scan builds them — so the handle is never materialized and every
+  intrinsic/relation works downstream. Indexed paths: docs `$id` (PK), `$path`
+  (`UNIQUE (repo_id, path)`), `$title` and any frontmatter/inline **property
+  key** (`idx_props_key_text` / `idx_props_key_num`, under the scalar-in-scope
+  rule and **typed**: a string probe matches only a `type = 'string'` row by
+  `val_text`, a number only `type = 'number'` by `val_num`, a boolean only
+  `type = 'bool'`, so `1` never meets `"1"`); blocks `$id`, `$doc`, `type`,
+  `$path`; nodes `$id`/`$node_id`, `$doc_id`, `kind`, `name`, `$path`; edges
+  `$id`, `$src`, `$dst`, `$path`, `$dst_path`. A `$path` probe on a joined
+  target drives from `docs (repo_id, path)` into the target's `doc_id` index. An
+  **absent** probe (`key == null`, `name == ^missing`) is an anti-join SQLite has
+  no index for: the handle is read once and filtered in memory (same answer).
+  Not indexed — the engine's own hash index over the handle, built once per
+  run — `format`, `$tags`, edge `predicate` / `src_field`, multi-segment paths
+  (`meta.id`), reserved docs basenames (the scan raises). With several
+  equalities the varying one is probed and the rest stay residual conjuncts in
+  their original order. Nothing here changes a result: `corpus/oqx/
+  conformance.test.ts` runs the correlated shapes planned vs. in-memory, and
+  `oqx-js/store-index.test.ts` proves the root scan statement never runs and
+  that 500 correlated probes over 5k documents take ~10 ms of SQLite time.
+  Probes are per outer row (one statement each, ~20 µs); batching them into
+  `IN (…)` lists was measured and is not worth its complexity.
 - **Correctness is guaranteed** by the residual fallback and verified by the
   differential conformance suite (`corpus/oqx/conformance.test.ts`): every query
   returns identical results planned vs. pure in-memory.

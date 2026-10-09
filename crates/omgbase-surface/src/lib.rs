@@ -2,7 +2,8 @@
 //!
 //! The omgbase surface, Rust implementation of `spec/surface`: the OQX
 //! **query binding** over [`omgbase_store::Store`] ([`context`], [`mod@query`],
-//! the tier-3 pushdown [`planner`] and its [`translate`] seam),
+//! the tier-3 pushdown [`planner`] and its [`translate`] seam, the
+//! store-backed indexes nested blocks probe — [`store_index`]),
 //! the document and block **reads** ([`read`]), the **history** reads
 //! ([`history`]), link health ([`links`]), the `graph` macro ([`graph`]), and
 //! the **MCP tool catalog** as a library ([`catalog`]): a table of tools with
@@ -42,6 +43,7 @@ pub mod planner;
 pub mod query;
 pub mod read;
 pub mod reference;
+pub mod store_index;
 pub mod translate;
 pub mod version;
 

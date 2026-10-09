@@ -23,6 +23,7 @@
 //! engine's `==` does in this crate.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::Query;
@@ -41,8 +42,8 @@ pub use crate::optimize::hash_index::index_key;
 pub struct IndexedCollection {
     name: String,
     rows: Vec<Value>,
-    /// field → index over `rows`.
-    indexes: HashMap<String, HashIndex>,
+    /// field → index over `rows` (shared with the engine through `index_for`).
+    indexes: HashMap<String, Rc<HashIndex>>,
 }
 
 impl IndexedCollection {
@@ -57,7 +58,7 @@ impl IndexedCollection {
             for (pos, row) in rows.iter().enumerate() {
                 idx.add(&DefaultContext::read(row, field), pos);
             }
-            indexes.insert(field.to_owned(), idx);
+            indexes.insert(field.to_owned(), Rc::new(idx));
         }
         Self {
             name: name.into(),
@@ -86,7 +87,7 @@ impl IndexedCollection {
     /// compared structurally — once per run per block, cheaper than the index
     /// it saves) and `path` is one indexed field. The [`DataContext::index_for`]
     /// seam, which [`IndexedCollection::context`] wires up.
-    pub fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+    pub fn index_for(&self, collection: &Value, path: &[String]) -> Option<Rc<dyn RowIndex>> {
         let [field] = path else { return None };
         let idx = self.indexes.get(field)?;
         match collection {
@@ -94,7 +95,7 @@ impl IndexedCollection {
                 if items.len() == self.rows.len()
                     && items.iter().zip(&self.rows).all(|(a, b)| equals(a, b)) =>
             {
-                Some(idx)
+                Some(Rc::clone(idx) as Rc<dyn RowIndex>)
             }
             _ => None,
         }
@@ -115,7 +116,7 @@ impl IndexedCollection {
     /// The rows whose `field` equals `value` (under OQX `==`), in row order,
     /// or `None` when `field` is not indexed.
     fn probe(&self, field: &str, value: &Value) -> Option<&[usize]> {
-        Some(self.indexes.get(field)?.lookup(value))
+        Some(self.indexes.get(field)?.positions(value))
     }
 }
 
@@ -157,7 +158,7 @@ impl DataContext for IndexedContext {
         self.inner.regex_dialect()
     }
 
-    fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+    fn index_for(&self, collection: &Value, path: &[String]) -> Option<Rc<dyn RowIndex + '_>> {
         self.owner.index_for(collection, path)
     }
 }

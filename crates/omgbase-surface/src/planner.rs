@@ -42,7 +42,7 @@ fn aliases(t: Target) -> (&'static str, &'static str) {
     }
 }
 
-fn from_clause(t: Target) -> &'static str {
+pub(crate) fn from_clause(t: Target) -> &'static str {
     match t {
         Target::Docs => "docs d",
         Target::Blocks => "blocks b JOIN docs d ON d.doc_id = b.doc_id",
@@ -53,7 +53,7 @@ fn from_clause(t: Target) -> &'static str {
 
 /// Row columns + the owning-doc path as `__path` (matches the context's
 /// roots so produced rows are indistinguishable from a full scan's).
-fn columns(t: Target) -> &'static str {
+pub(crate) fn columns(t: Target) -> &'static str {
     match t {
         Target::Docs => "d.*",
         Target::Blocks => "b.*, d.path AS __path",
@@ -63,7 +63,7 @@ fn columns(t: Target) -> &'static str {
 }
 
 /// The root order (`spec/surface` §1.1).
-fn order_clause(t: Target) -> &'static str {
+pub(crate) fn order_clause(t: Target) -> &'static str {
     match t {
         Target::Docs => "d.path, d.doc_id",
         Target::Blocks => "d.path, b.block_id",
@@ -73,12 +73,43 @@ fn order_clause(t: Target) -> &'static str {
 }
 
 /// The liveness guards of the root scan, with the repo id bound.
-fn guards(t: Target) -> &'static str {
+pub(crate) fn guards(t: Target) -> &'static str {
     match t {
         Target::Docs => "d.repo_id = ? AND d.deleted_commit IS NULL",
         Target::Blocks => "b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL",
         Target::Nodes => "n.repo_id = ? AND d.deleted_commit IS NULL",
         Target::Edges => "e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL",
+    }
+}
+
+/// The joined targets driven FROM the document: the same rows and columns as
+/// [`from_clause`], with the loop order fixed by `CROSS JOIN` so a predicate on
+/// the document (`d.path = ?`) is the outer search and the target's rows are
+/// reached through their `doc_id` / `src_doc` index (the store indexes'
+/// `$path` probes). [`guards_by_doc`] goes with it; `Docs` is `from_clause`.
+pub(crate) fn from_by_doc(t: Target) -> &'static str {
+    match t {
+        Target::Docs => from_clause(t),
+        Target::Blocks => "docs d CROSS JOIN blocks b ON b.doc_id = d.doc_id",
+        Target::Nodes => "docs d CROSS JOIN nodes n ON n.doc_id = d.doc_id",
+        Target::Edges => "docs d CROSS JOIN edges e ON e.src_doc = d.doc_id",
+    }
+}
+
+/// [`guards`] for a [`from_by_doc`] statement: the same tests, with the
+/// document's repo first and the target's repo term behind SQLite's unary `+`
+/// so it stays a filter and never selects a `(repo_id, …)` index over the
+/// `doc_id` one. Two repo-id binds (`Docs`: one, as `guards`).
+pub(crate) fn guards_by_doc(t: Target) -> &'static str {
+    match t {
+        Target::Docs => guards(t),
+        Target::Blocks => {
+            "d.repo_id = ? AND +b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL"
+        }
+        Target::Nodes => "d.repo_id = ? AND +n.repo_id = ? AND d.deleted_commit IS NULL",
+        Target::Edges => {
+            "d.repo_id = ? AND +e.repo_id = ? AND e.to_commit IS NULL AND d.deleted_commit IS NULL"
+        }
     }
 }
 

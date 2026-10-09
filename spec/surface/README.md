@@ -42,7 +42,20 @@ describes the in-memory semantics only.
 
 Both implementations run the same tier-3 planner (the pushable top-level
 `&&`-conjuncts of a bare root scan become one SQL statement; the residual
-finishes in memory over the produced rows). Invisibility is kept by
+finishes in memory over the produced rows). Both also answer a **nested
+block's equality probe over a root scan** from the store's indexes
+(implementation note, 2026-10-08: `oqx-js/store-index.ts`,
+`omgbase-surface::store_index`): a root (`$repo.<target>`, a bare target at
+the root scope) is handed to the engine lazily and a block whose top-level
+conjunct is `local == outer` — `$repo.docs collect { where customer == ^$path
+}`, `$repo.edges exists { where $dst == ^$id }`, `$repo.docs single { where
+type == "x" }` — is served by one indexed statement per probe (docs `$id`,
+`$path`, `$title`, any property key by typed value; blocks `$id`, `$doc`,
+`type`, `$path`; nodes `$id`, `$doc_id`, `kind`, `name`, `$path`; edges
+`$id`, `$src`, `$dst`, `$path`, `$dst_path`) under the root scan's guards and
+order, so the root is never read whole; an absent probe or an unindexed path
+reads it once. Results are unchanged — the §6 fixtures and the conformance
+lists are the gate — only the work is. Invisibility is kept by
 **declining** rather than by cleverness; since the 1.1 patch of 2026-09-26
 (§9) the planner declines, in both translators:
 
@@ -719,6 +732,12 @@ both and runs both harnesses.
 - 2026-09-26, surface 1.1 also: block `$ordinal`/`$depth` reachable (oqx
   0.13), `semantic()` reads the current-context row (search 1.1), and
   `diff_unified` is a Myers unified diff.
+- 2026-10-08, implementation note (no spec change): nested blocks over a root
+  scan probe SQLite indexes instead of materializing the root (§1). The Rust
+  port represents a lazy root as a marker value (a `Value` has no identity or
+  laziness) that its `to_rows`, row functions, `size(…)`/`list(…)` and the
+  result renderer expand; the engine's own `in` / `==` / `[i]` applied directly
+  to `$repo.docs` as a value would see the marker — unexercised, unpinned.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key
   changed, so `VERSION` stays 1.1 and the crates take a patch.

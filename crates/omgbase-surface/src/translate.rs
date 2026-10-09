@@ -1578,9 +1578,8 @@ mod tests {
 
         let is_shape = |v: &Value| matches!(v, Value::Array(_) | Value::Object(_));
         for target in [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges] {
-            let Value::Array(rows) = ctx.root(target.as_str()) else {
-                panic!("{target:?} root is not an array");
-            };
+            // a root is a lazy scan marker; `to_rows` reads it
+            let rows = ctx.to_rows(&ctx.root(target.as_str()));
             assert!(!rows.is_empty(), "{target:?} has rows");
             let set = non_property_handles(target);
             for name in &universe {

@@ -29,14 +29,27 @@
 
 use std::collections::HashMap;
 
+use crate::errors::Result;
 use crate::value::Value;
 
 /// A pre-built equality index a [`crate::DataContext`] may expose for a
 /// collection (see `DataContext::index_for`): `lookup(value)` returns the
 /// ascending positions, into `to_rows(collection)` in order, of the rows whose
 /// key equals `value` under §5.
+///
+/// `lookup_rows`, when implemented (`Some`), answers the same probe with the
+/// ROWS themselves — exactly the rows `lookup(value)` would select, in
+/// receiver order — without the engine ever materializing
+/// `to_rows(collection)`. A store-backed context implements it over its own
+/// indexes (one indexed statement per probe); the engine prefers it for a
+/// statically stable receiver, so the collection is never read whole. An
+/// `Err` is the query's error (as an `Err` from `get` is).
 pub trait RowIndex {
-    fn lookup(&self, value: &Value) -> &[usize];
+    fn lookup(&self, value: &Value) -> Vec<usize>;
+    fn lookup_rows(&self, value: &Value) -> Option<Result<Vec<Value>>> {
+        let _ = value;
+        None
+    }
 }
 
 /// The engine's own [`RowIndex`]: `add` every row's key in row order, then probe.
@@ -68,13 +81,19 @@ impl HashIndex {
     pub fn is_empty(&self) -> bool {
         self.count == 0
     }
-}
 
-impl RowIndex for HashIndex {
-    fn lookup(&self, value: &Value) -> &[usize] {
+    /// The ascending positions of the rows whose key equals `value` (§5), as
+    /// a borrowed slice — what [`RowIndex::lookup`] copies.
+    pub fn positions(&self, value: &Value) -> &[usize] {
         index_key(value)
             .and_then(|key| self.buckets.get(&key))
             .map_or(&[][..], Vec::as_slice)
+    }
+}
+
+impl RowIndex for HashIndex {
+    fn lookup(&self, value: &Value) -> Vec<usize> {
+        self.positions(value).to_vec()
     }
 }
 
@@ -197,12 +216,12 @@ mod tests {
             idx.add(k, i);
         }
         assert_eq!(idx.len(), 6, "the NaN row is not indexed");
-        assert_eq!(idx.lookup(&num(1.0)), &[0, 6]);
-        assert_eq!(idx.lookup(&Value::Null), &[1, 3]);
-        assert_eq!(idx.lookup(&Value::Undefined), &[1, 3]);
-        assert_eq!(idx.lookup(&num(0.0)), &[2, 4]);
-        assert_eq!(idx.lookup(&num(-0.0)), &[2, 4]);
-        assert!(idx.lookup(&num(f64::NAN)).is_empty());
+        assert_eq!(idx.positions(&num(1.0)), &[0, 6]);
+        assert_eq!(idx.lookup(&Value::Null), vec![1, 3]);
+        assert_eq!(idx.positions(&Value::Undefined), &[1, 3]);
+        assert_eq!(idx.positions(&num(0.0)), &[2, 4]);
+        assert_eq!(idx.positions(&num(-0.0)), &[2, 4]);
+        assert!(idx.positions(&num(f64::NAN)).is_empty());
         assert!(idx.lookup(&Value::Str("1".to_owned())).is_empty());
     }
 

@@ -11,6 +11,8 @@
 //! row by row here.)
 
 use crate::Result;
+use std::rc::Rc;
+
 use crate::optimize::hash_index::RowIndex;
 use crate::regex_dialect::RegexDialect;
 use crate::semantics::{builtin_function, builtin_method_with, coerce_collection};
@@ -76,8 +78,12 @@ pub trait DataContext {
     /// `None` (the default) lets it build one. `lookup(value)` must return the
     /// ascending positions, into `to_rows(collection)` in order, of the rows
     /// whose value at `path` equals `value` under OQX equality (SEMANTICS §5).
-    /// [`crate::adapters::indexed::IndexedContext`] implements it.
-    fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+    /// An index may also implement [`RowIndex::lookup_rows`]: the engine then
+    /// probes it for a statically stable receiver BEFORE reading the
+    /// collection, which is never materialized when the index answers.
+    /// [`crate::adapters::indexed::IndexedContext`] implements the positional
+    /// form. The `Rc` lets a context create indexes on demand.
+    fn index_for(&self, collection: &Value, path: &[String]) -> Option<Rc<dyn RowIndex + '_>> {
         let _ = (collection, path);
         None
     }

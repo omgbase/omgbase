@@ -100,12 +100,22 @@ and its outer side is; a `where` with a lift anywhere is never probed. Property
 reads are treated as total (SEMANTICS §23); an `Err` from `DataContext::get`
 while an index is built or a probe value evaluated falls back to the scan.
 
-Unlike the reference, a `Value` has no identity, so a receiver is indexed only
-when it is *statically* stable — it reads only the root scope and bindings
-(`^customers` from a top-level block, a `${…}` binding). A per-row relation is
-scanned. `DataContext::index_for(collection, path)` lets a context hand the
-engine a pre-built `RowIndex`; `IndexedCollection::context(extra_roots)` does so
-for its fields. `InMemoryEngine::with_rules(&[])` is the naive engine;
+Unlike the reference, a `Value` has no identity, so the engine builds its own
+index only over a receiver that is *statically* stable — it reads only the
+root scope and bindings (`^customers` from a top-level block, a `${…}`
+binding); such a receiver is also read once per run, with or without a
+correlation. A per-row relation is scanned. `DataContext::index_for(collection,
+path)` lets a context hand the engine a pre-built `Rc<dyn RowIndex>`
+(`lookup` → positions); `IndexedCollection::context(extra_roots)` does so for
+its fields. A `RowIndex` may also implement `lookup_rows` (the matching rows,
+in receiver order): the engine then probes it **before** reading the
+collection — for a stable receiver and for any receiver it is offered when
+something is correlated — so a store-backed context (a lazy table marker, an
+index on a column) answers with one indexed lookup and the table is never
+materialized; one correlation is probed (the first whose outer side is a `^`
+reference rather than a literal) and the other conjuncts, remaining equalities
+included, stay residual in their original order.
+`InMemoryEngine::with_rules(&[])` is the naive engine;
 `tests/spec.rs` proves optimized ≡ naive (result, or error stage and message)
 over every spec fixture, and `tests/optimize.rs` covers the rules.
 

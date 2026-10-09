@@ -35,22 +35,31 @@
 //!   reference's lazy handle. `frontmatter.<k>` and `entries(frontmatter)`
 //!   read the same values either way.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use omgbase_properties::Bound;
 use omgbase_search::{cosine_bytes, sanitize_fts_query};
 use oqx::semantics::{builtin_function, builtin_method_with, make_range, string_form};
-use oqx::{CompiledRegex, DataContext, Object, OqxError, RegexDialect, Value, compile_regex};
+use oqx::{
+    CompiledRegex, DataContext, Object, OqxError, RegexDialect, RowIndex, Value, compile_regex,
+};
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
 /// The hidden column tagging a store row with its target.
 pub const TAG_KEY: &str = "__oqx_target";
 const REPO_TAG: &str = "$repo";
+/// The key of a lazy ROOT SCAN marker: `{ "__oqx_scan": "docs" }` stands for
+/// `$repo.docs` / a bare `docs` until something reads it (`to_rows`, a row
+/// function argument, a projected value) — or probes it through `index_for`,
+/// in which case the scan never runs. A `Value` has no identity or laziness
+/// of its own, so this is the port of the reference's lazy array handle.
+pub const SCAN_KEY: &str = "__oqx_scan";
 
 /// The four scan targets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Target {
     Docs,
     Blocks,
@@ -108,6 +117,12 @@ pub struct StoreContext<'a> {
     /// `matches()` patterns compiled during this run, by `(String(pattern),
     /// flags)`; see [`Self::matches_memoized`].
     regexes: RefCell<HashMap<(String, Option<String>), CompiledRegex>>,
+    /// Root scans read during this run, by target: a context lives for one
+    /// run, during which the store does not change, so `$repo.docs` read from
+    /// every outer row is one SELECT, not one per row.
+    scans: RefCell<HashMap<Target, Rc<Vec<Value>>>>,
+    /// How many root scans actually ran (tests prove a probe runs none).
+    scans_run: Cell<usize>,
 }
 
 /// The planned rows behind [`oqx::ROWS_ROOT`]: cloned out on every read, or
@@ -179,6 +194,21 @@ pub fn target_of(row: &Value) -> Option<Target> {
         .and_then(|o| o.get(TAG_KEY))
         .and_then(Value::as_str)
         .and_then(Target::parse)
+}
+
+/// The target of a lazy root-scan marker, if `v` is one.
+#[must_use]
+pub fn scan_of(v: &Value) -> Option<Target> {
+    v.as_object()
+        .and_then(|o| o.get(SCAN_KEY))
+        .and_then(Value::as_str)
+        .and_then(Target::parse)
+}
+
+fn scan_marker(t: Target) -> Value {
+    let mut o = Object::with_capacity(1);
+    o.insert(SCAN_KEY, Value::Str(t.as_str().to_owned()));
+    Value::Object(o)
 }
 
 fn is_repo_root(row: &Value) -> bool {
@@ -270,7 +300,92 @@ impl<'a> StoreContext<'a> {
             root_failure: RefCell::new(None),
             rows_root: None,
             regexes: RefCell::new(HashMap::new()),
+            scans: RefCell::new(HashMap::new()),
+            scans_run: Cell::new(0),
         }
+    }
+
+    /// The repository this context is scoped to.
+    #[must_use]
+    pub fn repo_id(&self) -> &str {
+        &self.repo_id
+    }
+
+    /// How many root scans (`SELECT … FROM <target>` whole) this context has
+    /// run — at most one per target per run; none for a block whose probes
+    /// the store indexes answered.
+    #[must_use]
+    pub fn scans_run(&self) -> usize {
+        self.scans_run.get()
+    }
+
+    /// The rows of a root scan, read once per run and shared.
+    pub(crate) fn scan_rows(&self, t: Target) -> oqx::Result<Rc<Vec<Value>>> {
+        if let Some(rows) = self.scans.borrow().get(&t) {
+            return Ok(Rc::clone(rows));
+        }
+        self.scans_run.set(self.scans_run.get() + 1);
+        let rows = match self.root_scan(t)? {
+            Value::Array(rows) => Rc::new(rows),
+            _ => Rc::new(Vec::new()),
+        };
+        self.scans.borrow_mut().insert(t, Rc::clone(&rows));
+        Ok(rows)
+    }
+
+    /// The tagged rows of one store-index probe statement (`store_index`).
+    pub(crate) fn probe_rows(
+        &self,
+        t: Target,
+        sql: &str,
+        params: &[SqlValue],
+    ) -> oqx::Result<Vec<Value>> {
+        Ok(tag_rows(self.all(sql, params)?, t))
+    }
+
+    /// A lazy root-scan marker expanded to its rows (`Err` → recorded as the
+    /// run's root failure, served empty — the `root` discipline).
+    fn expand_scan(&self, t: Target) -> Vec<Value> {
+        match self.scan_rows(t) {
+            Ok(rows) => rows.as_ref().clone(),
+            Err(e) => {
+                let mut slot = self.root_failure.borrow_mut();
+                if slot.is_none() {
+                    *slot = Some(e);
+                }
+                Vec::new()
+            }
+        }
+    }
+
+    /// `v` with every lazy root-scan marker in it replaced by the scan's rows
+    /// (a store row is left as is). The runner applies it to projected values
+    /// before rendering, so `select all: $repo.docs` is the array of rows the
+    /// reference renders.
+    pub fn expand_scans(&self, v: Value) -> oqx::Result<Value> {
+        Ok(match v {
+            Value::Object(o) => {
+                let v = Value::Object(o);
+                if let Some(t) = scan_of(&v) {
+                    return Ok(Value::Array(self.scan_rows(t)?.as_ref().clone()));
+                }
+                if target_of(&v).is_some() {
+                    return Ok(v);
+                }
+                let Value::Object(o) = v else { unreachable!() };
+                let mut out = Object::with_capacity(o.len());
+                for (k, x) in o {
+                    out.insert(k, self.expand_scans(x)?);
+                }
+                Value::Object(out)
+            }
+            Value::Array(a) => Value::Array(
+                a.into_iter()
+                    .map(|x| self.expand_scans(x))
+                    .collect::<oqx::Result<Vec<_>>>()?,
+            ),
+            other => other,
+        })
     }
 
     /// Serve `rows` — target-tagged store rows a plan produced — as the
@@ -1166,21 +1281,9 @@ impl DataContext for StoreContext<'_> {
         if name == "$repo" {
             return self.repo_root();
         }
-        let Some(t) = Target::parse(name) else {
-            return Value::Undefined;
-        };
-        // No error channel here: a failed scan is served empty and reported
-        // by the runner (see `take_root_failure`).
-        match self.root_scan(t) {
-            Ok(rows) => rows,
-            Err(e) => {
-                let mut slot = self.root_failure.borrow_mut();
-                if slot.is_none() {
-                    *slot = Some(e);
-                }
-                Value::Array(Vec::new())
-            }
-        }
+        // A root scan is handed out LAZILY (see `SCAN_KEY`): `to_rows` runs it
+        // — once per run — and `index_for` probes it without running it.
+        Target::parse(name).map_or(Value::Undefined, scan_marker)
     }
 
     fn get(&self, row: &Value, key: &str) -> oqx::Result<Value> {
@@ -1196,10 +1299,7 @@ impl DataContext for StoreContext<'_> {
             if key == "$id" {
                 return Ok(Value::Str(self.repo_id.clone()));
             }
-            return match Target::parse(key) {
-                Some(t) => self.root_scan(t),
-                None => Ok(Value::Undefined),
-            };
+            return Ok(Target::parse(key).map_or(Value::Undefined, scan_marker));
         }
         let Some(t) = target_of(row) else {
             // A plain value (parsed attrs, a property bag, a lifted element).
@@ -1264,8 +1364,15 @@ impl DataContext for StoreContext<'_> {
         match value {
             Value::Undefined | Value::Null => Vec::new(),
             Value::Array(a) => a.clone(),
-            other => vec![other.clone()],
+            other => match scan_of(other) {
+                Some(t) => self.expand_scan(t),
+                None => vec![other.clone()],
+            },
         }
+    }
+
+    fn index_for(&self, collection: &Value, path: &[String]) -> Option<Rc<dyn RowIndex + '_>> {
+        crate::store_index::index_for(self, scan_of(collection)?, path)
     }
 
     fn identity(&self, row: &Value) -> Value {
@@ -1279,6 +1386,17 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_function(&self, name: &str, args: &[Value]) -> Option<oqx::Result<Value>> {
+        // `size($repo.docs)`, `list(…)`, `has(…)`: a lazy scan is its rows here.
+        if args.iter().any(|a| scan_of(a).is_some()) {
+            let expanded: Vec<Value> = args
+                .iter()
+                .map(|a| match scan_of(a) {
+                    Some(t) => Value::Array(self.expand_scan(t)),
+                    None => a.clone(),
+                })
+                .collect();
+            return self.call_function(name, &expanded);
+        }
         if name == "range" {
             let x = args.first().unwrap_or(&Value::Undefined);
             return Some(Ok(match x {
@@ -1301,6 +1419,10 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<oqx::Result<Value>> {
+        // `$repo.docs.size()`: a lazy scan is its rows here.
+        if let Some(t) = scan_of(recv) {
+            return self.call_method(name, &Value::Array(self.expand_scan(t)), args);
+        }
         if let Some(t) = target_of(recv) {
             if let Some(r) = self.row_method(name, recv, t, args) {
                 return Some(r);

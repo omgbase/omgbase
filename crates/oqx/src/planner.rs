@@ -178,7 +178,7 @@ impl DataContext for Overlay<'_> {
         &self,
         collection: &Value,
         path: &[String],
-    ) -> Option<&dyn crate::optimize::RowIndex> {
+    ) -> Option<std::rc::Rc<dyn crate::optimize::RowIndex + '_>> {
         self.inner.index_for(collection, path)
     }
 }

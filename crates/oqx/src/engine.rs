@@ -49,8 +49,8 @@ use crate::ast::{
 use crate::context::{DataContext, DefaultContext};
 use crate::errors::OqxError;
 use crate::optimize::{
-    BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext,
-    intersect_positions, optimize_block,
+    BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext, conjunction,
+    conjuncts, intersect_positions, optimize_block,
 };
 use crate::semantics::{
     arith, canonical_key, compare, compare_for_sort_dir, entries_of, equals, is_range, make_range,
@@ -262,40 +262,49 @@ struct RunState<'e> {
     memo: RefCell<HashMap<usize, Value>>,
 }
 
-/// A stable receiver's collection: its rows, materialized once, and its
-/// indexes by local path (`None` marks a path whose index could not be built —
-/// the scan serves it).
+/// A stable receiver's collection: its value (evaluated once per run), its
+/// rows — materialized the first time something needs them whole, never when
+/// a context index answers every probe with rows — the indexes serving each
+/// local path (`None` marks a path whose index could not be built — the scan
+/// serves it) and what the context answered for each path.
 struct CollectionState<'e> {
     value: Value,
-    rows: Rc<Vec<Row>>,
+    rows: RefCell<Option<Rc<Vec<Row>>>>,
     indexes: RefCell<HashMap<String, Option<Rc<dyn RowIndex + 'e>>>>,
+    context_indexes: RefCell<HashMap<String, Option<Rc<dyn RowIndex + 'e>>>>,
 }
 
-/// A borrowed [`RowIndex`] (one a context owns) behind an `Rc<dyn RowIndex>`.
-struct Borrowed<'e>(&'e dyn RowIndex);
-
-impl RowIndex for Borrowed<'_> {
-    fn lookup(&self, value: &Value) -> &[usize] {
-        self.0.lookup(value)
-    }
+/// Which predicate still applies to a block's accessed rows: the block's whole
+/// `where` (a scan), the plan's residual (a probe selected the rows), or a
+/// residual built for one probed correlation (a context's `lookup_rows`
+/// answered it; the other conjuncts, remaining equalities included, stay in
+/// their original order).
+enum Predicate {
+    Whole,
+    Residual,
+    Other(Option<Where>),
 }
 
-/// A block's accessed rows and which predicate still applies to each: the
-/// plan's residual when a probe selected them, else the block's whole `where`.
+/// A block's accessed rows and which predicate still applies to each.
 struct Access {
     rows: Vec<Row>,
-    probed: bool,
+    predicate: Predicate,
     plan: Rc<BlockPlan>,
 }
 
 impl Access {
     fn predicate(&self) -> Option<&Where> {
-        if self.probed {
-            self.plan.residual.as_ref()
-        } else {
-            self.plan.node.sub.r#where.as_ref()
+        match &self.predicate {
+            Predicate::Whole => self.plan.node.sub.r#where.as_ref(),
+            Predicate::Residual => self.plan.residual.as_ref(),
+            Predicate::Other(w) => w.as_ref(),
         }
     }
+}
+
+/// `entries(x)` as a receiver: keyed rows in row position, no value of its own.
+fn is_entries_call(e: &Expr) -> bool {
+    matches!(e, Expr::Call { recv: None, name, .. } if name == "entries")
 }
 
 fn node_key(op: &OpNode) -> usize {
@@ -1033,29 +1042,75 @@ impl<'e, C: DataContext> Exec<'e, C> {
         plan
     }
 
-    // How a block reaches its rows. With correlated equalities over a
-    // statically stable receiver the plan asks for a probe: the receiver's
-    // collection is materialized once per run, indexed on each local path, and
-    // the buckets for the outer values — evaluated once, in a row-less scope
-    // inside the block, exactly as a bound is — are intersected smallest-first.
-    // The rows come back in receiver order with the residual predicate.
-    // Whenever the probe is not available (a receiver that is not stable, an
-    // index or probe value whose evaluation failed) the result is the plain
-    // scan: the receiver's rows, re-projected by `from`, with the whole `where`.
+    // How a block reaches its rows. A statically stable receiver is evaluated
+    // once per run (its value is the same for every enclosing row) and its
+    // rows are read once and reused. With correlated equalities over it the
+    // plan asks for a probe: first the context's own index, which may answer
+    // with rows directly (`RowIndex::lookup_rows`) before the collection is
+    // ever read; else the collection is materialized, indexed on each local
+    // path, and the buckets for the outer values — evaluated once, in a
+    // row-less scope inside the block, exactly as a bound is — are intersected
+    // smallest-first. The rows come back in receiver order with the residual
+    // predicate. A receiver that is not statically stable is still offered to
+    // the context's `index_for` when something is correlated (a store handle
+    // handed out fresh per row is probed, never read); a `Value` has no
+    // identity, so the engine never builds its own index over one. Whenever
+    // the probe is not available (an index or probe value whose evaluation
+    // failed) the result is the plain scan: the receiver's rows, re-projected
+    // by `from`, with the whole `where`.
     fn access(&self, op: &OpNode, plan: &Rc<BlockPlan>, scope: &Scope<'_>) -> Result<Access> {
-        if plan.receiver_stable && !plan.correlated.is_empty() {
+        if plan.receiver_stable {
             let state = self.collection_of(op, scope)?;
-            if let Some(rows) = self.probe(plan, &state, scope)? {
+            if !plan.correlated.is_empty() {
+                if let Some(acc) = self.lookup_rows(plan, &state, scope)? {
+                    return Ok(acc);
+                }
+                let rows = self.rows_of_state(&state, op, scope)?;
+                if let Some(rows) = self.probe(plan, &state, &rows, scope)? {
+                    return Ok(Access {
+                        rows,
+                        predicate: Predicate::Residual,
+                        plan: Rc::clone(plan),
+                    });
+                }
+                // `from` is empty when anything is correlated: the rows are the receiver's.
                 return Ok(Access {
-                    rows,
-                    probed: true,
+                    rows: rows.as_ref().clone(),
+                    predicate: Predicate::Whole,
                     plan: Rc::clone(plan),
                 });
             }
-            // `from` is empty when anything is correlated: the rows are the receiver's.
+            let mut rows = self.rows_of_state(&state, op, scope)?.as_ref().clone();
+            for proj in &op.sub.from {
+                rows = self.reproject(rows, proj, scope)?;
+            }
             return Ok(Access {
-                rows: state.rows.as_ref().clone(),
-                probed: false,
+                rows,
+                predicate: Predicate::Whole,
+                plan: Rc::clone(plan),
+            });
+        }
+        if !plan.correlated.is_empty() && !is_entries_call(&op.receiver) {
+            let value = self.eval_expr(&op.receiver, scope)?;
+            let state = CollectionState {
+                value,
+                rows: RefCell::new(None),
+                indexes: RefCell::new(HashMap::new()),
+                context_indexes: RefCell::new(HashMap::new()),
+            };
+            if let Some(acc) = self.lookup_rows(plan, &state, scope)? {
+                return Ok(acc);
+            }
+            // `from` is empty when anything is correlated.
+            let rows = self
+                .ctx
+                .to_rows(&state.value)
+                .into_iter()
+                .map(Row::plain)
+                .collect();
+            return Ok(Access {
+                rows,
+                predicate: Predicate::Whole,
                 plan: Rc::clone(plan),
             });
         }
@@ -1065,24 +1120,31 @@ impl<'e, C: DataContext> Exec<'e, C> {
         }
         Ok(Access {
             rows,
-            probed: false,
+            predicate: Predicate::Whole,
             plan: Rc::clone(plan),
         })
     }
 
-    /// The materialized rows of a stable receiver, evaluated the first time
-    /// the block is reached in this run.
+    /// A stable receiver's collection, evaluated the first time the block is
+    /// reached in this run; its rows are not read until something needs them.
+    /// An `entries(x)` receiver has no value of its own (it yields keyed rows
+    /// in row position only): its collection is read through `rows_of_expr`
+    /// and never offered to the context.
     fn collection_of(&self, op: &OpNode, scope: &Scope<'_>) -> Result<Rc<CollectionState<'e>>> {
         let key = node_key(op);
         if let Some(c) = self.state.collections.borrow().get(&key) {
             return Ok(Rc::clone(c));
         }
-        let value = self.eval_expr(&op.receiver, scope)?;
-        let rows = self.rows_of_expr(&op.receiver, scope)?;
+        let value = if is_entries_call(&op.receiver) {
+            Value::Undefined
+        } else {
+            self.eval_expr(&op.receiver, scope)?
+        };
         let state = Rc::new(CollectionState {
             value,
-            rows: Rc::new(rows),
+            rows: RefCell::new(None),
             indexes: RefCell::new(HashMap::new()),
+            context_indexes: RefCell::new(HashMap::new()),
         });
         self.state
             .collections
@@ -1091,11 +1153,99 @@ impl<'e, C: DataContext> Exec<'e, C> {
         Ok(state)
     }
 
+    /// The materialized rows of a stable receiver (read once per run) — the
+    /// receiver in row position, exactly as the scan reads it.
+    fn rows_of_state(
+        &self,
+        state: &CollectionState<'e>,
+        op: &OpNode,
+        scope: &Scope<'_>,
+    ) -> Result<Rc<Vec<Row>>> {
+        if let Some(rows) = state.rows.borrow().as_ref() {
+            return Ok(Rc::clone(rows));
+        }
+        let rows = Rc::new(self.rows_of_expr(&op.receiver, scope)?);
+        *state.rows.borrow_mut() = Some(Rc::clone(&rows));
+        Ok(rows)
+    }
+
+    // A probe answered by a context index that yields rows directly, before the
+    // collection is materialized. One correlation is probed — the first whose
+    // outer side varies with the enclosing row (a `^` reference rather than a
+    // literal), else the first offered — and every other conjunct, the
+    // remaining equalities included, is evaluated per selected row in its
+    // original place: a kept equality is true by construction for the rows it
+    // would have selected and, being two reads, can neither raise nor bind,
+    // so the residual keeps the scan's strict left-to-right order and outcome.
+    fn lookup_rows(
+        &self,
+        plan: &Rc<BlockPlan>,
+        state: &CollectionState<'e>,
+        scope: &Scope<'_>,
+    ) -> Result<Option<Access>> {
+        // Candidates in preference order: the correlations whose outer side
+        // varies with the enclosing row first, each in conjunct order.
+        let mut candidates: Vec<(&Correlation, Rc<dyn RowIndex + 'e>)> = Vec::new();
+        for varying in [true, false] {
+            for c in &plan.correlated {
+                if matches!(c.outer, Expr::Lit(_)) == varying {
+                    continue;
+                }
+                if let Some(index) = self.context_index(state, c) {
+                    candidates.push((c, index));
+                }
+            }
+        }
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+        let probe_scope = Scope {
+            row: Value::Undefined,
+            parent: Some(scope),
+            lifts: RefCell::new(Object::new()),
+            meta: None,
+        };
+        let mut found = None;
+        for (c, index) in candidates {
+            // The outer side is raise-free by the rule; a context that fails the
+            // read leaves the scan to raise (or not) in its own order.
+            let Ok(value) = self.eval_expr(&c.outer, &probe_scope) else {
+                return Ok(None);
+            };
+            // A positional-only index answers `None`: the next candidate, else
+            // the positional probe over the materialized rows.
+            if let Some(rows) = index.lookup_rows(&value) {
+                found = Some((c, rows?));
+                break;
+            }
+        }
+        let Some((c, rows)) = found else {
+            return Ok(None);
+        };
+        let rows = rows.into_iter().map(Row::plain).collect();
+        let residual = plan.node.sub.r#where.as_ref().and_then(|w| {
+            conjunction(
+                conjuncts(w)
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != c.index)
+                    .map(|(_, part)| part.clone())
+                    .collect(),
+            )
+        });
+        Ok(Some(Access {
+            rows,
+            predicate: Predicate::Other(residual),
+            plan: Rc::clone(plan),
+        }))
+    }
+
     /// The probe's rows, or `None` to fall back to the scan.
     fn probe(
         &self,
         plan: &BlockPlan,
         state: &CollectionState<'e>,
+        rows: &Rc<Vec<Row>>,
         scope: &Scope<'_>,
     ) -> Result<Option<Vec<Row>>> {
         let probe_scope = Scope {
@@ -1106,7 +1256,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
         };
         let mut buckets: Vec<Vec<usize>> = Vec::with_capacity(plan.correlated.len());
         for c in &plan.correlated {
-            let Some(index) = self.index_for(state, c, scope) else {
+            let Some(index) = self.index_for(state, rows, c, scope) else {
                 return Ok(None);
             };
             // The outer side is raise-free by the rule; a context that fails
@@ -1114,7 +1264,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             let Ok(value) = self.eval_expr(&c.outer, &probe_scope) else {
                 return Ok(None);
             };
-            buckets.push(index.lookup(&value).to_vec());
+            buckets.push(index.lookup(&value));
         }
         buckets.sort_by_key(Vec::len);
         let mut candidates = buckets.remove(0);
@@ -1125,11 +1275,28 @@ impl<'e, C: DataContext> Exec<'e, C> {
             candidates = intersect_positions(&candidates, bucket);
         }
         Ok(Some(
-            candidates
-                .into_iter()
-                .map(|i| state.rows[i].clone())
-                .collect(),
+            candidates.into_iter().map(|i| rows[i].clone()).collect(),
         ))
+    }
+
+    // The context's pre-built index of the collection on a correlation's local
+    // path, if it offers one (asked once per collection and path; a refusal is
+    // cached too, so `index_for` goes on to build the engine's own).
+    fn context_index(
+        &self,
+        state: &CollectionState<'e>,
+        c: &Correlation,
+    ) -> Option<Rc<dyn RowIndex + 'e>> {
+        let key = c.path.join("\u{0}");
+        if let Some(hit) = state.context_indexes.borrow().get(&key) {
+            return hit.clone();
+        }
+        let index = self.ctx.index_for(&state.value, &c.path);
+        state
+            .context_indexes
+            .borrow_mut()
+            .insert(key, index.clone());
+        index
     }
 
     // The index of the collection on a correlation's local path: the context's
@@ -1141,6 +1308,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     fn index_for(
         &self,
         state: &CollectionState<'e>,
+        rows: &Rc<Vec<Row>>,
         c: &Correlation,
         scope: &Scope<'_>,
     ) -> Option<Rc<dyn RowIndex + 'e>> {
@@ -1148,12 +1316,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if let Some(hit) = state.indexes.borrow().get(&key) {
             return hit.clone();
         }
-        let index: Option<Rc<dyn RowIndex + 'e>> = match self.ctx.index_for(&state.value, &c.path) {
-            Some(found) => Some(Rc::new(Borrowed(found))),
+        let index: Option<Rc<dyn RowIndex + 'e>> = match self.context_index(state, c) {
+            Some(found) => Some(found),
             None => {
                 let mut built = HashIndex::new();
                 let mut ok = true;
-                for (i, row) in state.rows.iter().enumerate() {
+                for (i, row) in rows.iter().enumerate() {
                     match self.eval_expr(&c.local, &self.enter(row.clone(), scope, None)) {
                         Ok(v) => built.add(&v, i),
                         Err(_) => {

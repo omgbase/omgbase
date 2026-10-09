@@ -39,6 +39,10 @@ pub struct Correlation {
     pub local: Expr,
     pub outer: Expr,
     pub path: Vec<String>,
+    /// Position of the equality among `conjuncts(where)`, so a probe that
+    /// answers ONE correlation (a context's `lookup_rows`) can put the others
+    /// back in their place as residual conjuncts.
+    pub index: usize,
 }
 
 /// The plan for one block: the AST node (an owned copy, so a plan has no
@@ -93,7 +97,7 @@ pub fn logical_block(node: &OpNode, depth: usize) -> BlockPlan {
 }
 
 /// Rebuild a conjunction from its remaining parts.
-fn conjunction(mut parts: Vec<Where>) -> Option<Where> {
+pub fn conjunction(mut parts: Vec<Where>) -> Option<Where> {
     match parts.len() {
         0 => None,
         1 => parts.pop(),
@@ -102,7 +106,7 @@ fn conjunction(mut parts: Vec<Where>) -> Option<Where> {
 }
 
 /// The top-level `&&` conjuncts of a where tree (a non-`and` tree is one).
-fn conjuncts(w: &Where) -> Vec<&Where> {
+pub fn conjuncts(w: &Where) -> Vec<&Where> {
     match w {
         Where::And { parts } => parts.iter().collect(),
         other => vec![other],
@@ -176,9 +180,9 @@ pub fn correlated_equality_probe(plan: &BlockPlan, ctx: &RuleContext) -> Option<
     let mut correlated = Vec::new();
     let mut residual = Vec::new();
     let mut prefix_raise_free = true;
-    for part in conjuncts(w) {
+    for (index, part) in conjuncts(w).into_iter().enumerate() {
         let eq = if prefix_raise_free {
-            as_correlation(part, ctx)
+            as_correlation(part, index, ctx)
         } else {
             None
         };
@@ -200,7 +204,7 @@ pub fn correlated_equality_probe(plan: &BlockPlan, ctx: &RuleContext) -> Option<
     })
 }
 
-fn as_correlation(w: &Where, ctx: &RuleContext) -> Option<Correlation> {
+fn as_correlation(w: &Where, index: usize, ctx: &RuleContext) -> Option<Correlation> {
     let Where::Scalar {
         expr:
             Expr::Binary {
@@ -212,10 +216,10 @@ fn as_correlation(w: &Where, ctx: &RuleContext) -> Option<Correlation> {
     else {
         return None;
     };
-    pair(left, right, ctx).or_else(|| pair(right, left, ctx))
+    pair(left, right, index, ctx).or_else(|| pair(right, left, index, ctx))
 }
 
-fn pair(local: &Expr, outer: &Expr, ctx: &RuleContext) -> Option<Correlation> {
+fn pair(local: &Expr, outer: &Expr, index: usize, ctx: &RuleContext) -> Option<Correlation> {
     let path = local_path(local)?;
     if expr_reads_current_scope(outer) || !expr_raise_free(outer, ctx) {
         return None;
@@ -224,6 +228,7 @@ fn pair(local: &Expr, outer: &Expr, ctx: &RuleContext) -> Option<Correlation> {
         local: local.clone(),
         outer: outer.clone(),
         path,
+        index,
     })
 }
 
@@ -504,13 +509,13 @@ pub fn where_has_lifts(w: &Where) -> bool {
     }
 }
 
-
 /// The scope-metadata intrinsics: `$key` (an entry's key) and the `follow`
 /// occurrence fields. In a block's row scope these read scope metadata when it
 /// is present and fall through to the context otherwise; every other `$`-name
 /// (`$id`, `$path`, a context's own intrinsics) is always a plain `get` on the
 /// row, so it is a local path like any other property.
-pub const SCOPE_INTRINSICS: &[&str] = &["$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"];
+pub const SCOPE_INTRINSICS: &[&str] =
+    &["$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"];
 
 /// The property path a bare identifier or member chain reads off the current
 /// row — `customer_id` → `["customer_id"]`, `meta.id` → `["meta", "id"]`,
