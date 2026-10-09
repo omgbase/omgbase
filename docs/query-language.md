@@ -385,7 +385,9 @@ nested/correlated scopes:
   their original order. Nothing here changes a result: `corpus/oqx/
   conformance.test.ts` runs the correlated shapes planned vs. in-memory, and
   `oqx-js/store-index.test.ts` proves the root scan statement never runs and
-  that 500 correlated probes over 5k documents take ~10 ms of SQLite time.
+  that the probe statement is prepared once. Measured: 500 raw probes over 5k
+  documents ≈ 9 ms of SQLite time; the whole planned query ≈ 160–180 ms wall
+  time in the test (engine overhead dominates), vs. a full scan per outer row.
   Probes are per outer row (one statement each, ~20 µs); batching them into
   `IN (…)` lists was measured and is not worth its complexity.
 - **Correctness is guaranteed** by the residual fallback and verified by the

@@ -20,7 +20,8 @@ only a bool row, under the scalar-in-scope rule); blocks `$id`, `$doc`, `type`,
 `$dst`, `$path`, `$dst_path`. An absent probe (`key == null`) or an unindexed
 path (`format`, `predicate`, `$tags`, `meta.id`) reads the handle once per run
 and falls back to the scan's own answer. Results are unchanged (the
-conformance suites gained the correlated shapes); 500 correlated probes over
-5,000 documents run in ~10 ms of SQLite time (TypeScript), a 2,000-document
-run in ~60 ms end to end (Rust). The planner's scan SQL now lives in
+conformance suites gained the correlated shapes); 500 raw probes over 5,000
+documents take ≈ 9 ms of SQLite time and the whole planned query ≈ 160–180 ms
+wall time (TypeScript); a 2,000-document / 200-probe run takes ≈ 60 ms end to
+end (Rust). The planner's scan SQL now lives in
 `oqx-js/sql/scan.ts` (shared with the indexes).
