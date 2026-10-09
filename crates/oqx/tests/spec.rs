@@ -24,7 +24,10 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
-use oqx::{Object, OqxError, Value, parse_string, parse_template, run_query};
+use oqx::{
+    DefaultContext, Engine, InMemoryEngine, Object, OqxError, Value, parse_string, parse_template,
+    run_query,
+};
 use serde_json::Value as Json;
 
 const CASES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/oqx/cases");
@@ -369,6 +372,56 @@ fn execute(c: &SpecCase) -> Result<Value, OqxError> {
         (None, None) => unreachable!("validated: one of query / template"),
     };
     Ok(run_query(&query, &bindings, roots)?.into_value())
+}
+
+/// `execute` on the naive engine (no optimizer rules), for the optimized ≡
+/// naive pass.
+fn execute_naive(c: &SpecCase) -> Result<Value, OqxError> {
+    let Some(roots) = from_json(&c.roots).as_object().cloned() else {
+        unreachable!("roots validated as an object")
+    };
+    let (query, bindings) = match (&c.template, &c.query) {
+        (Some(t), _) => {
+            let bindings: Vec<Value> = t.values.iter().map(from_json).collect();
+            (parse_template(&t.strings, bindings.len())?, bindings)
+        }
+        (None, Some(q)) => (parse_string(q)?, Vec::new()),
+        (None, None) => unreachable!("validated: one of query / template"),
+    };
+    Ok(InMemoryEngine::new(DefaultContext::new(roots))
+        .with_rules(&[])
+        .run(&query, &bindings)?
+        .into_value())
+}
+
+/// The optimizer invariant: the default engine and the naive engine agree on
+/// every fixture — same canonical result, or the same error stage and message.
+fn check_optimized_equals_naive(c: &SpecCase) -> Result<(), String> {
+    match (execute(c), execute_naive(c)) {
+        (Ok(a), Ok(b)) => {
+            let (a, b) = (canonicalize(&a), canonicalize(&b));
+            if json_eq(&a, &b) {
+                Ok(())
+            } else {
+                Err(clip(format!("optimized {a} ≠ naive {b}")))
+            }
+        }
+        (Err(a), Err(b)) => {
+            if a.stage == b.stage && a.message == b.message {
+                Ok(())
+            } else {
+                Err(clip(format!("optimized error {a} ≠ naive error {b}")))
+            }
+        }
+        (Ok(a), Err(b)) => Err(clip(format!(
+            "optimized succeeded with {} but naive raised {b}",
+            canonicalize(&a)
+        ))),
+        (Err(a), Ok(b)) => Err(clip(format!(
+            "optimized raised {a} but naive succeeded with {}",
+            canonicalize(&b)
+        ))),
+    }
 }
 
 /// Clip a one-line diagnostic so a big result cannot flood the report.
@@ -741,4 +794,46 @@ fn runner_conversions_agree_with_oqx_json() {
         }
     }
     assert!(checked > 100, "checked only {checked} values");
+}
+
+/// The optimizer invariant over the whole spec: for every fixture, the default
+/// engine (the optimizer's rules) and the naive engine (`with_rules(&[])`)
+/// produce the same canonical result or the same error (stage and message).
+/// Planner behavior is implementation conformance, never a spec fixture
+/// (spec/oqx/README.md, "What does not belong in cases/"), so this is where the
+/// optimizer is proven against the language. Mirrors the reference's
+/// `test/conformance.test.ts`.
+#[test]
+fn optimized_equals_naive_on_every_case() {
+    if !spec_available() {
+        return;
+    }
+    let loaded = load();
+    let mut checked = 0usize;
+    let mut failing: Vec<(String, Option<String>)> = Vec::new();
+    for f in &loaded.files {
+        for c in &f.cases {
+            checked += 1;
+            let outcome = panic::catch_unwind(AssertUnwindSafe(|| check_optimized_equals_naive(c)));
+            match outcome {
+                Ok(Ok(())) => {}
+                Ok(Err(reason)) => failing.push((c.id.clone(), Some(reason))),
+                Err(payload) => failing.push((
+                    c.id.clone(),
+                    Some(clip(format!("panicked: {}", panic_message(payload)))),
+                )),
+            }
+        }
+    }
+    eprintln!(
+        "spec: optimized ≡ naive on {} of {checked} cases",
+        checked - failing.len()
+    );
+    report("optimized ≠ naive", &failing);
+    assert!(
+        failing.is_empty(),
+        "{} cases differ between the optimized and the naive engine",
+        failing.len()
+    );
+    assert!(checked > 800, "checked only {checked} cases");
 }

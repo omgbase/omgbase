@@ -17,6 +17,7 @@ pub mod errors;
 #[cfg(feature = "json")]
 pub mod json;
 pub mod lexer;
+pub mod optimize;
 pub mod parser;
 pub mod plan;
 pub mod planner;
@@ -42,6 +43,7 @@ pub use context::{DataContext, DefaultContext};
 pub use engine::{Engine, InMemoryEngine, OqxResult, run_query};
 pub use errors::{OqxError, Result, Stage};
 pub use lexer::{TokType, Token, lex_string, lex_template, raw_source};
+pub use optimize::{BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext};
 pub use parser::{parse_string, parse_template};
 pub use plan::{
     Equality, ROWS_ROOT, as_equality, const_value, is_const, partition_pushable, residual_query,

@@ -173,6 +173,14 @@ impl DataContext for Overlay<'_> {
     fn regex_dialect(&self) -> crate::regex_dialect::RegexDialect {
         self.inner.regex_dialect()
     }
+
+    fn index_for(
+        &self,
+        collection: &Value,
+        path: &[String],
+    ) -> Option<&dyn crate::optimize::RowIndex> {
+        self.inner.index_for(collection, path)
+    }
 }
 
 #[cfg(test)]

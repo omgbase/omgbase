@@ -9,6 +9,6 @@ pub mod indexed;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
-pub use indexed::{IndexedCollection, index_key};
+pub use indexed::{IndexedCollection, IndexedContext, index_key};
 #[cfg(feature = "sqlite")]
 pub use sqlite::SqliteTable;

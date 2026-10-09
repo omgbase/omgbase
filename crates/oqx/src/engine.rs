@@ -8,6 +8,16 @@
 //! evaluation order is observable through errors, so the engine never reorders
 //! conjuncts.)
 //!
+//! Nested blocks additionally run through the optimizer ([`crate::optimize`]):
+//! each block gets a `BlockPlan` — a correlated equality (`id == ^customer_id`)
+//! over a statically stable receiver becomes a hash probe, a block that reads
+//! nothing from the enclosing rows is evaluated once per run, an
+//! `exists`/`count` with nothing left to check per row is answered from a
+//! cardinality. Every rule carries a proof that it is unobservable (same rows,
+//! lifts and errors); [`InMemoryEngine::with_rules`] with an empty slice runs
+//! the naive scan everywhere, which the conformance runner uses to compare both
+//! paths over every spec fixture.
+//!
 //! Name resolution is strictly lexical and LOCAL: a bare identifier is read from
 //! the current scope only, and an enclosing scope is reached solely through an
 //! explicit `^name` (exactly one scope out per caret). There is no implicit
@@ -28,6 +38,8 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::Result;
 use crate::ast::{
@@ -36,6 +48,10 @@ use crate::ast::{
 };
 use crate::context::{DataContext, DefaultContext};
 use crate::errors::OqxError;
+use crate::optimize::{
+    BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext,
+    intersect_positions, optimize_block,
+};
 use crate::semantics::{
     arith, canonical_key, compare, compare_for_sort_dir, entries_of, equals, is_range, make_range,
     membership, relate, to_number,
@@ -89,11 +105,23 @@ pub trait Engine {
 /// The in-memory engine over a [`DataContext`].
 pub struct InMemoryEngine<C: DataContext> {
     ctx: C,
+    rules: Vec<Rule>,
 }
 
 impl<C: DataContext> InMemoryEngine<C> {
+    /// An engine applying the default optimizer rules ([`DEFAULT_RULES`]).
     pub fn new(ctx: C) -> Self {
-        Self { ctx }
+        Self {
+            ctx,
+            rules: DEFAULT_RULES.to_vec(),
+        }
+    }
+
+    /// Replace the optimizer rules; an empty slice is the naive engine (every
+    /// nested block a plain scan).
+    pub fn with_rules(mut self, rules: &[Rule]) -> Self {
+        self.rules = rules.to_vec();
+        self
     }
 
     pub fn context(&self) -> &C {
@@ -106,6 +134,8 @@ impl<C: DataContext> Engine for InMemoryEngine<C> {
         Exec {
             ctx: &self.ctx,
             bindings,
+            rules: &self.rules,
+            state: RunState::default(),
         }
         .run(query)
     }
@@ -220,13 +250,79 @@ struct Walked {
     stop: &'static str,
 }
 
-/// One run: the context plus the positional bindings.
+/// State that lives for exactly one run: the plans of the blocks met so far,
+/// the materialized rows and indexes of statically stable receivers, and the
+/// memoized values of invariant blocks — all keyed by the block's address in
+/// the query AST, which the run borrows for its whole duration. Nothing here
+/// outlives the run, so data that changes between runs is never served stale.
+#[derive(Default)]
+struct RunState<'e> {
+    plans: RefCell<HashMap<usize, Rc<BlockPlan>>>,
+    collections: RefCell<HashMap<usize, Rc<CollectionState<'e>>>>,
+    memo: RefCell<HashMap<usize, Value>>,
+}
+
+/// A stable receiver's collection: its rows, materialized once, and its
+/// indexes by local path (`None` marks a path whose index could not be built —
+/// the scan serves it).
+struct CollectionState<'e> {
+    value: Value,
+    rows: Rc<Vec<Row>>,
+    indexes: RefCell<HashMap<String, Option<Rc<dyn RowIndex + 'e>>>>,
+}
+
+/// A borrowed [`RowIndex`] (one a context owns) behind an `Rc<dyn RowIndex>`.
+struct Borrowed<'e>(&'e dyn RowIndex);
+
+impl RowIndex for Borrowed<'_> {
+    fn lookup(&self, value: &Value) -> &[usize] {
+        self.0.lookup(value)
+    }
+}
+
+/// A block's accessed rows and which predicate still applies to each: the
+/// plan's residual when a probe selected them, else the block's whole `where`.
+struct Access {
+    rows: Vec<Row>,
+    probed: bool,
+    plan: Rc<BlockPlan>,
+}
+
+impl Access {
+    fn predicate(&self) -> Option<&Where> {
+        if self.probed {
+            self.plan.residual.as_ref()
+        } else {
+            self.plan.node.sub.r#where.as_ref()
+        }
+    }
+}
+
+fn node_key(op: &OpNode) -> usize {
+    std::ptr::from_ref(op) as usize
+}
+
+/// How many scopes out the root is (the root itself is 0).
+fn scope_depth(scope: &Scope<'_>) -> usize {
+    let mut d = 0;
+    let mut s = scope;
+    while let Some(p) = s.parent {
+        d += 1;
+        s = p;
+    }
+    d
+}
+
+/// One run: the context, the positional bindings, the optimizer rules and the
+/// run's state.
 struct Exec<'e, C: DataContext> {
     ctx: &'e C,
     bindings: &'e [Value],
+    rules: &'e [Rule],
+    state: RunState<'e>,
 }
 
-impl<C: DataContext> Exec<'_, C> {
+impl<'e, C: DataContext> Exec<'e, C> {
     fn run(&self, query: &Query) -> Result<OqxResult> {
         let root = Scope::root();
         let mut rows = self.rows_of_expr(&query.source, &root)?;
@@ -778,21 +874,62 @@ impl<C: DataContext> Exec<'_, C> {
                 "`follow` is only valid on a select-position collect { … }, not a where op",
             ));
         }
+        let plan = self.plan_of(op, scope);
+        if plan.invariant {
+            let key = node_key(op);
+            if let Some(Value::Bool(b)) = self.state.memo.borrow().get(&key) {
+                return Ok(*b);
+            }
+            let value = self.eval_where_op_planned(op, &plan, scope)?;
+            self.state.memo.borrow_mut().insert(key, Value::Bool(value));
+            return Ok(value);
+        }
+        self.eval_where_op_planned(op, &plan, scope)
+    }
+
+    fn eval_where_op_planned(
+        &self,
+        op: &OpNode,
+        plan: &Rc<BlockPlan>,
+        scope: &Scope<'_>,
+    ) -> Result<bool> {
         let bound = self.bound_of(op.sub.limit.as_ref(), op.sub.offset.as_ref(), scope)?;
         match op.op {
-            Consumer::Exists | Consumer::None => {
+            Consumer::Exists | Consumer::None | Consumer::Count => {
+                let acc = self.access(op, plan, scope)?;
+                if plan.from_cardinality && acc.predicate().is_none() {
+                    // Nothing left to evaluate per row: the accessed rows ARE
+                    // the matched rows, and the consumer only needs their count
+                    // after the bound.
+                    let n = bounded_count(acc.rows.len(), bound);
+                    return Ok(match op.op {
+                        Consumer::Count => match &op.count_cmp {
+                            Some(cmp) => compare_count(n, cmp)?,
+                            None => n > 0,
+                        },
+                        Consumer::Exists => n > 0,
+                        _ => n == 0,
+                    });
+                }
+                if op.op == Consumer::Count {
+                    let n = self.op_rows(op, scope, bound, Some(acc))?.len();
+                    return match &op.count_cmp {
+                        Some(cmp) => compare_count(n, cmp),
+                        None => Ok(n > 0),
+                    };
+                }
                 // Unbounded: stop at the first match (dedup cannot change
                 // emptiness). Bounded: the offset/limit decide emptiness, so
                 // materialize the set.
                 let any = if bound == UNBOUNDED {
-                    !self.match_rows(op, scope, Some(1))?.is_empty()
+                    !self.match_rows(op, scope, Some(1), Some(acc))?.is_empty()
                 } else {
-                    !self.op_rows(op, scope, bound)?.is_empty()
+                    !self.op_rows(op, scope, bound, Some(acc))?.is_empty()
                 };
                 Ok(if op.op == Consumer::Exists { any } else { !any })
             }
             Consumer::Collect => {
-                let matched = self.op_rows(op, scope, bound)?;
+                let matched = self.op_rows(op, scope, bound, None)?;
                 for item in &op.sub.select {
                     let SelectItem::Field { name, expr, lift } = item else {
                         continue;
@@ -825,14 +962,9 @@ impl<C: DataContext> Exec<'_, C> {
                 }
                 Ok(!matched.is_empty())
             }
-            Consumer::Count => {
-                let n = self.op_rows(op, scope, bound)?.len();
-                match &op.count_cmp {
-                    Some(cmp) => compare_count(n, cmp),
-                    None => Ok(n > 0),
-                }
+            Consumer::First | Consumer::Single => {
+                Ok(!self.op_rows(op, scope, bound, None)?.is_empty())
             }
-            Consumer::First | Consumer::Single => Ok(!self.op_rows(op, scope, bound)?.is_empty()),
         }
     }
 
@@ -842,8 +974,9 @@ impl<C: DataContext> Exec<'_, C> {
         op: &OpNode,
         scope: &'p Scope<'p>,
         bound: Bound,
+        acc: Option<Access>,
     ) -> Result<Vec<Scope<'p>>> {
-        let mut scopes = self.match_rows(op, scope, None)?;
+        let mut scopes = self.match_rows(op, scope, None, acc)?;
         scopes = self.sort_scopes(scopes, op.sub.order_by.as_deref())?;
         if op.distinct {
             scopes = self.dedup_by_projection(scopes, Projection::from(&op.sub))?;
@@ -851,23 +984,27 @@ impl<C: DataContext> Exec<'_, C> {
         Ok(slice_bound(scopes, bound))
     }
 
-    /// The receiver's rows, re-projected by the block's `from` chain, entered
-    /// as scopes under `scope`, filtered by the block's `where`. `stop_after`
-    /// caps how many matches are collected (the `exists` short-circuit).
+    /// The block's candidate rows (per its plan's access path), entered as
+    /// scopes under `scope`, filtered by the predicate the access left to
+    /// evaluate. `stop_after` caps how many matches are collected (the `exists`
+    /// short-circuit — over a probe's bucket it stops at the first bucket row
+    /// that passes the residual, so the semi/anti-join never materializes it).
     fn match_rows<'p>(
         &self,
         op: &OpNode,
         scope: &'p Scope<'p>,
         stop_after: Option<usize>,
+        acc: Option<Access>,
     ) -> Result<Vec<Scope<'p>>> {
-        let mut rows = self.rows_of_expr(&op.receiver, scope)?;
-        for proj in &op.sub.from {
-            rows = self.reproject(rows, proj, scope)?;
-        }
+        let mut acc = match acc {
+            Some(a) => a,
+            None => self.access(op, &self.plan_of(op, scope), scope)?,
+        };
+        let rows = std::mem::take(&mut acc.rows);
         let mut out = Vec::new();
         for r in rows {
             let s = self.enter(r, scope, None);
-            let keep = match &op.sub.r#where {
+            let keep = match acc.predicate() {
                 None => true,
                 Some(w) => self.eval_where(w, &s)?,
             };
@@ -881,8 +1018,173 @@ impl<C: DataContext> Exec<'_, C> {
         Ok(out)
     }
 
+    // ---- planned access -----------------------------------------------------
+
+    fn plan_of(&self, op: &OpNode, scope: &Scope<'_>) -> Rc<BlockPlan> {
+        let key = node_key(op);
+        if let Some(p) = self.state.plans.borrow().get(&key) {
+            return Rc::clone(p);
+        }
+        let ctx = RuleContext {
+            binding_count: self.bindings.len(),
+        };
+        let plan = Rc::new(optimize_block(op, scope_depth(scope), &ctx, self.rules));
+        self.state.plans.borrow_mut().insert(key, Rc::clone(&plan));
+        plan
+    }
+
+    // How a block reaches its rows. With correlated equalities over a
+    // statically stable receiver the plan asks for a probe: the receiver's
+    // collection is materialized once per run, indexed on each local path, and
+    // the buckets for the outer values — evaluated once, in a row-less scope
+    // inside the block, exactly as a bound is — are intersected smallest-first.
+    // The rows come back in receiver order with the residual predicate.
+    // Whenever the probe is not available (a receiver that is not stable, an
+    // index or probe value whose evaluation failed) the result is the plain
+    // scan: the receiver's rows, re-projected by `from`, with the whole `where`.
+    fn access(&self, op: &OpNode, plan: &Rc<BlockPlan>, scope: &Scope<'_>) -> Result<Access> {
+        if plan.receiver_stable && !plan.correlated.is_empty() {
+            let state = self.collection_of(op, scope)?;
+            if let Some(rows) = self.probe(plan, &state, scope)? {
+                return Ok(Access {
+                    rows,
+                    probed: true,
+                    plan: Rc::clone(plan),
+                });
+            }
+            // `from` is empty when anything is correlated: the rows are the receiver's.
+            return Ok(Access {
+                rows: state.rows.as_ref().clone(),
+                probed: false,
+                plan: Rc::clone(plan),
+            });
+        }
+        let mut rows = self.rows_of_expr(&op.receiver, scope)?;
+        for proj in &op.sub.from {
+            rows = self.reproject(rows, proj, scope)?;
+        }
+        Ok(Access {
+            rows,
+            probed: false,
+            plan: Rc::clone(plan),
+        })
+    }
+
+    /// The materialized rows of a stable receiver, evaluated the first time
+    /// the block is reached in this run.
+    fn collection_of(&self, op: &OpNode, scope: &Scope<'_>) -> Result<Rc<CollectionState<'e>>> {
+        let key = node_key(op);
+        if let Some(c) = self.state.collections.borrow().get(&key) {
+            return Ok(Rc::clone(c));
+        }
+        let value = self.eval_expr(&op.receiver, scope)?;
+        let rows = self.rows_of_expr(&op.receiver, scope)?;
+        let state = Rc::new(CollectionState {
+            value,
+            rows: Rc::new(rows),
+            indexes: RefCell::new(HashMap::new()),
+        });
+        self.state
+            .collections
+            .borrow_mut()
+            .insert(key, Rc::clone(&state));
+        Ok(state)
+    }
+
+    /// The probe's rows, or `None` to fall back to the scan.
+    fn probe(
+        &self,
+        plan: &BlockPlan,
+        state: &CollectionState<'e>,
+        scope: &Scope<'_>,
+    ) -> Result<Option<Vec<Row>>> {
+        let probe_scope = Scope {
+            row: Value::Undefined,
+            parent: Some(scope),
+            lifts: RefCell::new(Object::new()),
+            meta: None,
+        };
+        let mut buckets: Vec<Vec<usize>> = Vec::with_capacity(plan.correlated.len());
+        for c in &plan.correlated {
+            let Some(index) = self.index_for(state, c, scope) else {
+                return Ok(None);
+            };
+            // The outer side is raise-free by the rule; a context that fails
+            // the read leaves the scan to raise (or not) in its own order.
+            let Ok(value) = self.eval_expr(&c.outer, &probe_scope) else {
+                return Ok(None);
+            };
+            buckets.push(index.lookup(&value).to_vec());
+        }
+        buckets.sort_by_key(Vec::len);
+        let mut candidates = buckets.remove(0);
+        for bucket in &buckets {
+            if candidates.is_empty() {
+                break;
+            }
+            candidates = intersect_positions(&candidates, bucket);
+        }
+        Ok(Some(
+            candidates
+                .into_iter()
+                .map(|i| state.rows[i].clone())
+                .collect(),
+        ))
+    }
+
+    // The index of the collection on a correlation's local path: the context's
+    // pre-built one when it offers it, else built here by evaluating the local
+    // expression in each row's scope — the same evaluation the scan performs —
+    // so the keys are exactly what `==` would compare. A failure while building
+    // (a context that rejects a read) leaves the path un-indexed and the scan in
+    // charge.
+    fn index_for(
+        &self,
+        state: &CollectionState<'e>,
+        c: &Correlation,
+        scope: &Scope<'_>,
+    ) -> Option<Rc<dyn RowIndex + 'e>> {
+        let key = c.path.join("\u{0}");
+        if let Some(hit) = state.indexes.borrow().get(&key) {
+            return hit.clone();
+        }
+        let index: Option<Rc<dyn RowIndex + 'e>> = match self.ctx.index_for(&state.value, &c.path) {
+            Some(found) => Some(Rc::new(Borrowed(found))),
+            None => {
+                let mut built = HashIndex::new();
+                let mut ok = true;
+                for (i, row) in state.rows.iter().enumerate() {
+                    match self.eval_expr(&c.local, &self.enter(row.clone(), scope, None)) {
+                        Ok(v) => built.add(&v, i),
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                ok.then(|| Rc::new(built) as Rc<dyn RowIndex + 'e>)
+            }
+        };
+        state.indexes.borrow_mut().insert(key, index.clone());
+        index
+    }
+
     // A select-position collect/first/single, optionally recursive via `follow`.
     fn eval_collect_value(&self, op: &OpNode, scope: &Scope<'_>) -> Result<Value> {
+        let plan = self.plan_of(op, scope);
+        if plan.invariant {
+            let key = node_key(op);
+            if let Some(v) = self.state.memo.borrow().get(&key) {
+                return Ok(v.clone());
+            }
+            let value = self.eval_collect_value_planned(op, scope)?;
+            self.state.memo.borrow_mut().insert(key, value.clone());
+            return Ok(value);
+        }
+        self.eval_collect_value_planned(op, scope)
+    }
+
+    fn eval_collect_value_planned(&self, op: &OpNode, scope: &Scope<'_>) -> Result<Value> {
         let sub = &op.sub;
         let bound = self.bound_of(sub.limit.as_ref(), sub.offset.as_ref(), scope)?;
         let proj = Projection::from(sub);
@@ -912,7 +1214,7 @@ impl<C: DataContext> Exec<'_, C> {
             }
             slice_bound(scopes, bound)
         } else {
-            self.op_rows(op, scope, bound)?
+            self.op_rows(op, scope, bound, None)?
         };
         match op.op {
             Consumer::Collect => Ok(Value::Array(self.project_all(proj, &scopes)?)),

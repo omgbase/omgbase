@@ -9,51 +9,40 @@
 //! as a naive scan, far fewer rows examined, and partial-pushdown correctness
 //! via the residual.
 //!
-//! # Index keys
+//! The same indexes serve the engine's correlated probes: [`IndexedCollection::context`]
+//! is a [`DataContext`] that resolves the root and answers
+//! [`DataContext::index_for`] from them, so a nested `^emp first { where id ==
+//! ^manager_id }` probes the pre-built index instead of building one per run.
+//! The planner's own plans carry that context too, so a residual's nested
+//! blocks still see the root.
 //!
-//! The reference keys its buckets by the raw field value in a JS `Map`
-//! (SameValueZero). [`Value`] is neither `Hash` nor `Eq` (it holds `f64`), so
-//! buckets here are keyed by a canonical string, [`index_key`], chosen so that
-//! two values share a key iff OQX `==` ([`crate::semantics::equals`]) holds
-//! between them — which is exactly what makes an index probe give the same
-//! rows as the scan it replaces:
-//!
-//! | value | key |
-//! | --- | --- |
-//! | `Undefined`, `Null` | `_` (absent ≡ absent under `==`) |
-//! | `Bool` | `t` / `f` |
-//! | `Number` | `n` + the number's [`Display`](std::fmt::Display) (`-0` is `0`, so it meets `0`) |
-//! | `Str` | `s` + the string (the prefix keeps `"5"` apart from `5`) |
-//! | `Array` | `a[` + each element as `<len>:<key>` + `]` |
-//! | `Object` | `o{` + entries sorted by name, each `<len>:<name>=<len>:<key>` + `}` |
-//! | `Range` | `r` + `i`/`x` (inclusive/exclusive end) + lo and hi as `<len>:<key>` or `-` |
-//!
-//! Nested keys are length-prefixed so the encoding is injective without
-//! escaping. `NaN` has no key (`NaN == NaN` is false): a row whose indexed
-//! field is or contains `NaN` is never found by a probe, and a probe for `NaN`
-//! finds nothing.
-//!
-//! Two consequences differ from the reference, in the direction of agreeing
-//! with the in-memory engine: `field == null` finds rows whose field is
-//! absent or `null` alike (the reference's `Map` keeps `null` and `undefined`
-//! apart), and object-valued fields match structurally rather than by
-//! reference.
+//! Buckets are [`HashIndex`]es keyed under OQX equality (see
+//! [`crate::optimize::hash_index`] for the key scheme, formerly this module's):
+//! `field == null` finds rows whose field is absent or `null` alike, and
+//! object-valued fields match structurally — exactly what the in-memory
+//! engine's `==` does in this crate.
 
 use std::collections::HashMap;
 
+use crate::Result;
 use crate::ast::Query;
-use crate::context::DefaultContext;
-use crate::plan::{as_equality, const_value, partition_pushable, residual_query};
+use crate::context::{DataContext, DefaultContext};
+use crate::optimize::hash_index::{HashIndex, RowIndex, intersect_positions};
+use crate::plan::{ROWS_ROOT, as_equality, const_value, partition_pushable, residual_query};
 use crate::planner::{Plan, QueryPlanner};
-use crate::value::Value;
+use crate::regex_dialect::RegexDialect;
+use crate::semantics::equals;
+use crate::value::{Object, Value};
+
+pub use crate::optimize::hash_index::index_key;
 
 /// A named root collection hash-indexed on chosen fields; see the module docs.
 #[derive(Clone, Debug)]
 pub struct IndexedCollection {
     name: String,
     rows: Vec<Value>,
-    /// field → index key → positions in `rows`, ascending (built in row order).
-    indexes: HashMap<String, HashMap<String, Vec<usize>>>,
+    /// field → index over `rows`.
+    indexes: HashMap<String, HashIndex>,
 }
 
 impl IndexedCollection {
@@ -64,11 +53,9 @@ impl IndexedCollection {
     pub fn new(name: impl Into<String>, rows: Vec<Value>, index_fields: &[&str]) -> Self {
         let mut indexes = HashMap::with_capacity(index_fields.len());
         for &field in index_fields {
-            let mut idx: HashMap<String, Vec<usize>> = HashMap::new();
+            let mut idx = HashIndex::new();
             for (pos, row) in rows.iter().enumerate() {
-                if let Some(key) = index_key(&DefaultContext::read(row, field)) {
-                    idx.entry(key).or_default().push(pos);
-                }
+                idx.add(&DefaultContext::read(row, field), pos);
             }
             indexes.insert(field.to_owned(), idx);
         }
@@ -94,14 +81,84 @@ impl IndexedCollection {
         self.indexes.contains_key(field)
     }
 
+    /// The pre-built index for `collection` on `path` when `collection` is
+    /// this collection's rows (a [`Value`] has no identity, so the array is
+    /// compared structurally — once per run per block, cheaper than the index
+    /// it saves) and `path` is one indexed field. The [`DataContext::index_for`]
+    /// seam, which [`IndexedCollection::context`] wires up.
+    pub fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+        let [field] = path else { return None };
+        let idx = self.indexes.get(field)?;
+        match collection {
+            Value::Array(items)
+                if items.len() == self.rows.len()
+                    && items.iter().zip(&self.rows).all(|(a, b)| equals(a, b)) =>
+            {
+                Some(idx)
+            }
+            _ => None,
+        }
+    }
+
+    /// A [`DataContext`] over plain values that serves this collection as the
+    /// root `name` (plus `extra_roots`) and exposes the indexes through
+    /// [`DataContext::index_for`], so the engine's correlated probes reuse them.
+    pub fn context(&self, extra_roots: Object) -> IndexedContext {
+        let mut roots = extra_roots;
+        roots.insert(self.name.clone(), Value::Array(self.rows.clone()));
+        IndexedContext {
+            owner: self.clone(),
+            inner: DefaultContext::new(roots),
+        }
+    }
+
     /// The rows whose `field` equals `value` (under OQX `==`), in row order,
     /// or `None` when `field` is not indexed.
     fn probe(&self, field: &str, value: &Value) -> Option<&[usize]> {
-        let idx = self.indexes.get(field)?;
-        let positions = index_key(value)
-            .and_then(|key| idx.get(&key))
-            .map_or(&[][..], Vec::as_slice);
-        Some(positions)
+        Some(self.indexes.get(field)?.lookup(value))
+    }
+}
+
+/// The context [`IndexedCollection::context`] returns: a [`DefaultContext`]
+/// over the collection's root that answers [`DataContext::index_for`] from the
+/// collection's indexes.
+#[derive(Clone, Debug)]
+pub struct IndexedContext {
+    owner: IndexedCollection,
+    inner: DefaultContext,
+}
+
+impl DataContext for IndexedContext {
+    fn root(&self, name: &str) -> Value {
+        self.inner.root(name)
+    }
+
+    fn get(&self, row: &Value, key: &str) -> Result<Value> {
+        self.inner.get(row, key)
+    }
+
+    fn to_rows(&self, value: &Value) -> Vec<Value> {
+        self.inner.to_rows(value)
+    }
+
+    fn identity(&self, row: &Value) -> Value {
+        self.inner.identity(row)
+    }
+
+    fn call_function(&self, name: &str, args: &[Value]) -> Option<Result<Value>> {
+        self.inner.call_function(name, args)
+    }
+
+    fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<Result<Value>> {
+        self.inner.call_method(name, recv, args)
+    }
+
+    fn regex_dialect(&self) -> RegexDialect {
+        self.inner.regex_dialect()
+    }
+
+    fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+        self.owner.index_for(collection, path)
     }
 }
 
@@ -122,129 +179,39 @@ impl QueryPlanner for IndexedCollection {
             return None; // no index probe available — let the scan handle it
         }
 
-        // Intersect the candidate sets from each indexed equality.
-        let mut candidate: Option<Vec<usize>> = None;
-        for e in &pushed {
-            let eq = as_equality(e).expect("pushed conjuncts are indexed equalities");
-            let value = const_value(eq.value, params).expect("an equality's value side is const");
-            let bucket = self
-                .probe(eq.field, &value)
-                .expect("pushed conjuncts are indexed equalities");
-            candidate = Some(match candidate {
-                None => bucket.to_vec(),
-                Some(current) => intersect(&current, bucket),
-            });
+        // Intersect the candidate sets from each indexed equality (smallest first).
+        let mut buckets: Vec<&[usize]> = pushed
+            .iter()
+            .map(|e| {
+                let eq = as_equality(e).expect("pushed conjuncts are indexed equalities");
+                let value =
+                    const_value(eq.value, params).expect("an equality's value side is const");
+                self.probe(eq.field, &value)
+                    .expect("pushed conjuncts are indexed equalities")
+            })
+            .collect();
+        buckets.sort_by_key(|b| b.len());
+        let mut candidate = buckets[0].to_vec();
+        for bucket in &buckets[1..] {
+            if candidate.is_empty() {
+                break;
+            }
+            candidate = intersect_positions(&candidate, bucket);
         }
-        let rows = candidate
-            .unwrap_or_default()
+        let rows: Vec<Value> = candidate
             .into_iter()
             .map(|pos| self.rows[pos].clone())
             .collect();
-        Some(Plan::new(rows, residual_query(query, residual)))
+        let mut extra = Object::with_capacity(1);
+        extra.insert(ROWS_ROOT, Value::Array(rows.clone()));
+        Some(Plan::new(rows, residual_query(query, residual)).with_context(self.context(extra)))
     }
-}
-
-/// Intersection of two ascending position lists, ascending.
-fn intersect(a: &[usize], b: &[usize]) -> Vec<usize> {
-    let mut out = Vec::with_capacity(a.len().min(b.len()));
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        match a[i].cmp(&b[j]) {
-            std::cmp::Ordering::Less => i += 1,
-            std::cmp::Ordering::Greater => j += 1,
-            std::cmp::Ordering::Equal => {
-                out.push(a[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-    }
-    out
-}
-
-/// The canonical index key of a value — see the module docs for the scheme.
-/// `None` when the value is or contains `NaN`, which equals nothing.
-pub fn index_key(v: &Value) -> Option<String> {
-    let mut out = String::new();
-    push_key(v, &mut out).then_some(out)
-}
-
-fn push_key(v: &Value, out: &mut String) -> bool {
-    match v {
-        Value::Undefined | Value::Null => out.push('_'),
-        Value::Bool(true) => out.push('t'),
-        Value::Bool(false) => out.push('f'),
-        Value::Number(n) => {
-            if n.is_nan() {
-                return false;
-            }
-            out.push('n');
-            out.push_str(&v.to_string());
-        }
-        Value::Str(s) => {
-            out.push('s');
-            out.push_str(s);
-        }
-        Value::Array(items) => {
-            out.push_str("a[");
-            for item in items {
-                if !push_nested(item, out) {
-                    return false;
-                }
-            }
-            out.push(']');
-        }
-        Value::Object(o) => {
-            let mut entries: Vec<(&str, &Value)> = o.iter().collect();
-            entries.sort_by_key(|(a, _)| *a);
-            out.push_str("o{");
-            for (name, value) in entries {
-                out.push_str(&name.len().to_string());
-                out.push(':');
-                out.push_str(name);
-                out.push('=');
-                if !push_nested(value, out) {
-                    return false;
-                }
-            }
-            out.push('}');
-        }
-        Value::Range(r) => {
-            out.push('r');
-            out.push(if r.exclusive_end { 'x' } else { 'i' });
-            for bound in [&r.lo, &r.hi] {
-                match bound {
-                    None => out.push('-'),
-                    Some(b) => {
-                        if !push_nested(b, out) {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    true
-}
-
-/// Append `v`'s key as `<byte length>:<key>`.
-fn push_nested(v: &Value, out: &mut String) -> bool {
-    let mut inner = String::new();
-    if !push_key(v, &mut inner) {
-        return false;
-    }
-    out.push_str(&inner.len().to_string());
-    out.push(':');
-    out.push_str(&inner);
-    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::parser::{parse_string, parse_template};
-    use crate::semantics::equals;
-    use crate::value::Range;
 
     fn num(n: f64) -> Value {
         Value::Number(n)
@@ -300,7 +267,18 @@ mod tests {
             .expect("planner should handle an indexed equality");
         assert_eq!(ids(&plan.rows), [1.0, 2.0, 4.0]);
         assert_eq!(plan.residual.r#where, None);
-        assert!(plan.context.is_none());
+        // the plan carries the collection's context: a residual's nested blocks
+        // see the root (and the indexes through `index_for`)
+        let ctx = plan.context.as_ref().expect("plan context");
+        assert_eq!(ctx.root("emp").as_array().map(<[Value]>::len), Some(4));
+        assert!(
+            ctx.index_for(&ctx.root("emp"), &["dept".to_owned()])
+                .is_some()
+        );
+        assert!(
+            ctx.index_for(&ctx.root("emp"), &["level".to_owned()])
+                .is_none()
+        );
     }
 
     #[test]
@@ -383,114 +361,5 @@ mod tests {
         assert_eq!(idx.rows().len(), 4);
         assert!(idx.is_indexed("dept"));
         assert!(!idx.is_indexed("city"));
-    }
-
-    // ---- the key scheme ------------------------------------------------------
-
-    fn range(lo: Option<Value>, hi: Option<Value>, exclusive_end: bool) -> Value {
-        Value::Range(Box::new(Range {
-            lo,
-            hi,
-            exclusive_end,
-        }))
-    }
-
-    #[test]
-    fn keys_are_distinct_across_types_and_stable_within() {
-        assert_eq!(index_key(&num(5.0)), Some("n5".to_owned()));
-        assert_eq!(index_key(&s("5")), Some("s5".to_owned()));
-        assert_eq!(index_key(&Value::Bool(true)), Some("t".to_owned()));
-        assert_eq!(index_key(&Value::Bool(false)), Some("f".to_owned()));
-        assert_eq!(index_key(&Value::Null), Some("_".to_owned()));
-        assert_eq!(index_key(&Value::Undefined), Some("_".to_owned()));
-        assert_eq!(index_key(&num(-0.0)), index_key(&num(0.0)));
-        assert_eq!(index_key(&num(1.5)), Some("n1.5".to_owned()));
-        assert_eq!(index_key(&num(f64::NAN)), None);
-        assert_eq!(index_key(&Value::Array(vec![num(f64::NAN)])), None);
-        assert_ne!(index_key(&s("true")), index_key(&Value::Bool(true)));
-        assert_ne!(index_key(&s("null")), index_key(&Value::Null));
-        assert_ne!(index_key(&s("")), index_key(&Value::Null));
-    }
-
-    #[test]
-    fn nested_keys_are_injective_and_ignore_object_key_order() {
-        let a = Value::Array(vec![num(1.0), s("x")]);
-        assert_eq!(index_key(&a), Some("a[2:n12:sx]".to_owned()));
-        // `[1, "x"]` vs `["1x"]` vs `[1, "x", …]`: length prefixes keep them apart.
-        assert_ne!(index_key(&a), index_key(&Value::Array(vec![s("1x")])));
-        assert_ne!(
-            index_key(&Value::Array(vec![s("a,b")])),
-            index_key(&Value::Array(vec![s("a"), s("b")]))
-        );
-        assert_ne!(index_key(&Value::Array(vec![])), index_key(&obj(&[])));
-        assert_ne!(
-            index_key(&Value::Array(vec![s("_")])),
-            index_key(&Value::Array(vec![Value::Null]))
-        );
-
-        let o1 = obj(&[("a", num(1.0)), ("b", Value::Null)]);
-        let o2 = obj(&[("b", Value::Undefined), ("a", num(1.0))]);
-        assert_eq!(index_key(&o1), index_key(&o2));
-        assert_eq!(index_key(&o1), Some("o{1:a=2:n11:b=1:_}".to_owned()));
-        assert_ne!(index_key(&obj(&[("a", num(1.0))])), index_key(&o1));
-        assert_ne!(
-            index_key(&obj(&[("a=1", num(1.0))])),
-            index_key(&obj(&[("a", s("1"))]))
-        );
-
-        let r = range(Some(num(1.0)), Some(num(2.0)), true);
-        assert_eq!(index_key(&r), Some("rx2:n12:n2".to_owned()));
-        assert_ne!(
-            index_key(&r),
-            index_key(&range(Some(num(1.0)), Some(num(2.0)), false))
-        );
-        assert_eq!(
-            index_key(&range(None, Some(num(2.0)), false)),
-            Some("ri-2:n2".to_owned())
-        );
-    }
-
-    #[test]
-    fn key_equality_agrees_with_oqx_equality() {
-        let samples = vec![
-            Value::Undefined,
-            Value::Null,
-            Value::Bool(true),
-            Value::Bool(false),
-            num(0.0),
-            num(-0.0),
-            num(1.0),
-            num(1.5),
-            s(""),
-            s("1"),
-            s("true"),
-            s("null"),
-            Value::Array(vec![]),
-            Value::Array(vec![num(1.0)]),
-            Value::Array(vec![s("1")]),
-            Value::Array(vec![num(1.0), num(1.0)]),
-            obj(&[]),
-            obj(&[("a", num(1.0))]),
-            obj(&[("a", num(1.0)), ("b", Value::Null)]),
-            obj(&[("b", Value::Undefined), ("a", num(1.0))]),
-            range(Some(num(1.0)), Some(num(2.0)), true),
-            range(Some(num(1.0)), Some(num(2.0)), false),
-            range(Some(num(1.0)), None, false),
-        ];
-        for x in &samples {
-            for y in &samples {
-                let kx = index_key(x).expect("no NaN in samples");
-                let ky = index_key(y).expect("no NaN in samples");
-                assert_eq!(kx == ky, equals(x, y), "{x:?} vs {y:?}: {kx} / {ky}");
-            }
-        }
-    }
-
-    #[test]
-    fn intersect_is_an_ordered_merge() {
-        assert_eq!(intersect(&[0, 1, 3, 5], &[1, 2, 3, 6]), [1, 3]);
-        assert_eq!(intersect(&[], &[1]), Vec::<usize>::new());
-        assert_eq!(intersect(&[1], &[]), Vec::<usize>::new());
-        assert_eq!(intersect(&[2, 4], &[2, 4]), [2, 4]);
     }
 }

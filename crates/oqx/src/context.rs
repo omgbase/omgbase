@@ -11,6 +11,7 @@
 //! row by row here.)
 
 use crate::Result;
+use crate::optimize::hash_index::RowIndex;
 use crate::regex_dialect::RegexDialect;
 use crate::semantics::{builtin_function, builtin_method_with, coerce_collection};
 use crate::value::{Object, Value};
@@ -65,6 +66,20 @@ pub trait DataContext {
     /// [`crate::semantics::builtin_method`] is always the baseline.
     fn regex_dialect(&self) -> RegexDialect {
         RegexDialect::Oqx
+    }
+
+    /// Optional: a pre-built equality index over `collection` (a value this
+    /// context served as a root or relation) on the property path `path`
+    /// (`["customer_id"]`, `["meta", "id"]`; an empty path keys by the row
+    /// itself). The engine asks before building its own [`crate::optimize::HashIndex`]
+    /// for a correlated equality in a nested block (`where id == ^customer_id`);
+    /// `None` (the default) lets it build one. `lookup(value)` must return the
+    /// ascending positions, into `to_rows(collection)` in order, of the rows
+    /// whose value at `path` equals `value` under OQX equality (SEMANTICS §5).
+    /// [`crate::adapters::indexed::IndexedContext`] implements it.
+    fn index_for(&self, collection: &Value, path: &[String]) -> Option<&dyn RowIndex> {
+        let _ = (collection, path);
+        None
     }
 }
 
