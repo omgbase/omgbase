@@ -444,7 +444,7 @@
       "roots": {
         "xs": []
       },
-      "query": "from xs where $value.matches(\"(\")",
+      "query": "from xs where $it.matches(\"(\")",
       "expect": {
         "result": []
       }

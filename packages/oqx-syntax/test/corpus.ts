@@ -34,18 +34,18 @@ export const CORPUS: Sample[] = [
       "alias(label) colon(:) identifier(name) comma(,) alias(decade) colon(:) identifier(age) operator(/) number(10) keyword(from) identifier(people) keyword(where) identifier(name) operator(==) string('Bob')",
   },
   {
-    name: "$value, order by desc",
+    name: "$it, order by desc",
     valid: true,
-    source: "$value values from scores where $value > 50 order by $value desc",
+    source: "$it values from scores where $it > 50 order by $it desc",
     tokens:
-      "intrinsic($value) modifier(values) keyword(from) identifier(scores) keyword(where) intrinsic($value) operator(>) number(50) clause(order) clause(by) intrinsic($value) modifier(desc)",
+      "intrinsic($it) modifier(values) keyword(from) identifier(scores) keyword(where) intrinsic($it) operator(>) number(50) clause(order) clause(by) intrinsic($it) modifier(desc)",
   },
   {
     name: "entries, $key, limit and offset",
     valid: true,
-    source: "key: $key, value: $value from entries(settings) limit 10 offset 20",
+    source: "key: $key, value: $it from entries(settings) limit 10 offset 20",
     tokens:
-      "alias(key) colon(:) intrinsic($key) comma(,) alias(value) colon(:) intrinsic($value) keyword(from) builtinFunction(entries) parenOpen(() identifier(settings) parenClose()) clause(limit) number(10) clause(offset) number(20)",
+      "alias(key) colon(:) intrinsic($key) comma(,) alias(value) colon(:) intrinsic($it) keyword(from) builtinFunction(entries) parenOpen(() identifier(settings) parenClose()) clause(limit) number(10) clause(offset) number(20)",
   },
   {
     name: "outer reference",

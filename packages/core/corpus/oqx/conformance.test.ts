@@ -81,12 +81,12 @@ const QUERIES: string[] = [
   'select distinct type from docs',
   'select k: nodes collect distinct { select kind } from docs where $path == "processes/magnum-opus.md"',
   'from docs where nodes count distinct { select kind } == 3',
-  // values / $value (top-level values is shaped by the runner; nested by the engine)
+  // values / $it (top-level values is shaped by the runner; nested by the engine)
   'select era values from docs where type == "practitioner" order by era asc',
   'select distinct type values from docs',
   '$repo.docs first { select $path values where type == "practitioner" order by era desc }',
-  'select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"',
-  'from docs where tags exists { where $value == "tria-prima" }',
+  'select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"',
+  'from docs where tags exists { where $it == "tria-prima" }',
   // none / limit / offset (top-level bounds are applied by the runner, nested by the engine)
   'from docs where type == "substance" && nodes none { where kind == "md:task" }',
   '$repo.docs none { where type == "nope" }',
@@ -96,10 +96,10 @@ const QUERIES: string[] = [
   'from docs where nodes exists { where kind == "md:task" offset 3 }',
   '$repo.docs first { select $path values where type == "practitioner" order by era asc offset 1 }',
   // entries() / $key (a free call → residual; the store context materializes frontmatter/inline)
-  'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "substances/salt.md"',
-  'from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }',
+  'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "substances/salt.md"',
+  'from docs where entries(frontmatter) exists { where $key == "era" && $it > 1600 }',
   'select ks: entries(inline) collect { $key values } from docs where entries(inline) exists { }',
-  'select $path from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value }',
+  'select $path from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $it }',
   'select h: nodes collect { select name values where kind == "md:section" order by first_ordinal limit 2 } from docs where $path == "processes/magnum-opus.md"',
   // follow (planner declines → in-memory both ways, still must agree)
   'from docs where $path == "substances/philosophers-stone.md" follow distinct doc.out',

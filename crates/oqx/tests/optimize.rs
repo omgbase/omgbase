@@ -724,7 +724,7 @@ fn dollar_names_other_than_scope_intrinsics_are_local_paths() {
     roots.insert("a", Value::Array(vec![obj(&[("k", s("x"))])]));
     roots.insert("cfg", obj(&[("x", num(1.0)), ("y", num(2.0))]));
     let (out, _, _) = both(
-        "select v: entries(^cfg) collect { $value values where $key == ^k } from a",
+        "select v: entries(^cfg) collect { $it values where $key == ^k } from a",
         roots,
     );
     assert_eq!(

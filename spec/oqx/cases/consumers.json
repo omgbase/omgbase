@@ -640,7 +640,7 @@
           2
         ]
       },
-      "query": "xs none { where $value > 2 }",
+      "query": "xs none { where $it > 2 }",
       "expect": {
         "result": true
       }
@@ -739,7 +739,7 @@
           }
         ]
       },
-      "query": "name, big: scores collect { $value values where $value > 50 } from players",
+      "query": "name, big: scores collect { $it values where $it > 50 } from players",
       "expect": {
         "result": [
           {
@@ -1634,7 +1634,7 @@
           }
         ]
       },
-      "query": "r collect { $value values from tag }",
+      "query": "r collect { $it values from tag }",
       "expect": {
         "result": [
           "x"
@@ -1668,7 +1668,7 @@
           ]
         }
       },
-      "query": "$value values from cfg.items",
+      "query": "$it values from cfg.items",
       "expect": {
         "result": [
           1,

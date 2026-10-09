@@ -72,9 +72,9 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
-    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == \"x.md\"'   # a record as a collection ($key/$value); also entries(attrs), entries(inline)");
+    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
     cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
-    cli.io.out("       query 'select $path, tags: tags collect { $value values where $value != \"draft\" } from docs'   # $value = the current item (here: each tag)");
+    cli.io.out("       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");

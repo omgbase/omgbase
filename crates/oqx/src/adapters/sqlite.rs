@@ -28,7 +28,7 @@
 //! | `!a`, `-a` | `(NOT a)`, `(-a)` |
 //! | `a && b`, `a \|\| b` (as a scalar expression) | `(a AND b)`, `(a OR b)` |
 //!
-//! Everything else — `^outer`, `$value`, `.member`, calls, `in`, ranges, and an
+//! Everything else — `^outer`, `$it`, `.member`, calls, `in`, ranges, and an
 //! identifier that is not a declared column — makes the conjunct residual.
 //! The statement is always `SELECT * FROM "table"`, optionally `WHERE` the
 //! pushed conjuncts joined by `AND`, and `LIMIT 1` for an unordered `first`

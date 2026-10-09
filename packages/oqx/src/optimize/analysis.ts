@@ -167,12 +167,12 @@ export const SCOPE_INTRINSICS: ReadonlySet<string> = new Set(["$key", "$depth", 
 
 /** The property path a bare identifier or member chain reads off the current
  * row — `customer_id` → `["customer_id"]`, `meta.id` → `["meta", "id"]`,
- * `$value` → `[]`, `$value.x` → `["x"]`, `$path` → `["$path"]` — or `null` when
+ * `$it` → `[]`, `$it.x` → `["x"]`, `$path` → `["$path"]` — or `null` when
  * `e` is not such a chain or starts from a scope intrinsic (`$key`, `$depth`,
  * …, whose value is scope metadata rather than a row property). */
 export function localPath(e: Expr): readonly string[] | null {
   if (e.kind === "ident") {
-    if (e.name === "$value") return [];
+    if (e.name === "$it") return [];
     return SCOPE_INTRINSICS.has(e.name) ? null : [e.name];
   }
   if (e.kind === "member") {

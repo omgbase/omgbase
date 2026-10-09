@@ -178,12 +178,12 @@ test("two correlated equalities intersect their buckets; a residual conjunct fil
   assert.deepEqual(value(r4), [{ name: "Ann", w: [10, 13] }, { name: "Bob", w: [10, 13] }, { name: "Cy", w: [10, 13] }]);
 });
 
-test("member chains on the row and $value are local paths", () => {
+test("member chains on the row and $it are local paths", () => {
   const items = [{ meta: { k: 1 }, v: "a" }, { meta: { k: 2 }, v: "b" }, { v: "c" }];
   const keys = [{ k: 1 }, { k: 2 }, { k: 3 }];
   const r = both('select k, v: ^items first { v values where meta.k == ^k } from keys', { items, keys });
   assert.deepEqual(value(r), [{ k: 1, v: "a" }, { k: 2, v: "b" }, { k: 3, v: null }]);
-  const r2 = both('select k from keys where ^ids exists { where $value == ^k }', { ids: [2, 3, 3], keys });
+  const r2 = both('select k from keys where ^ids exists { where $it == ^k }', { ids: [2, 3, 3], keys });
   assert.deepEqual(value(r2), [{ k: 2 }, { k: 3 }]);
   assert.ok(count(r2.events, "probe") >= 2);
 });
@@ -269,7 +269,7 @@ test("hash keys reproduce strict equality: NaN matches nothing, -0 is 0, absent 
   assert.ok(count(r.events, "probe") >= 8);
 });
 
-test("entries as rows: $value and member paths key by the entry's value", () => {
+test("entries as rows: $it and member paths key by the entry's value", () => {
   const dict = { a: { id: 1 }, b: { id: 2 } };
   const keys = [{ id: 2 }, { id: 1 }, { id: 3 }];
   const r = both('select id, key: entries(^dict) first { $key values where id == ^id } from keys', { dict, keys });
@@ -297,11 +297,11 @@ test("a receiver that varies per outer row is never indexed; one that is the sam
   assert.equal(count(r2.events, "probe"), 2, "probed from the second sight on");
 
   // a scalar receiver coerces to one row; a statically stable one is still probed (a one-row index is harmless)
-  const r3 = both('select id from varying where ^one exists { where $value == ^id }', { varying, one: 1 });
+  const r3 = both('select id from varying where ^one exists { where $it == ^id }', { varying, one: 1 });
   assert.deepEqual(value(r3), [{ id: 1 }, { id: 1 }]);
   assert.equal(count(r3.events, "index"), 1);
   // …while a per-row scalar receiver is never a collection to index
-  const r4 = both('select id from varying where id exists { where $value == ^id }', { varying });
+  const r4 = both('select id from varying where id exists { where $it == ^id }', { varying });
   assert.deepEqual(value(r4), [{ id: 1 }, { id: 2 }, { id: 1 }]);
   assert.equal(count(r4.events, "probe"), 0);
   assert.ok(r4.events.some((e) => e.kind === "fallback" && e.reason === "not-a-collection"));

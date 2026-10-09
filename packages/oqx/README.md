@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.14"`); the patch digit is this implementation's own.
+> `"0.15"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -151,45 +151,50 @@ projection and inside any `collect` / `first` / `single` block, and composes wit
 employers as strings, not `{ employer }` records). An alias, if present, is
 ignored; a lift (`^name:`) cannot be combined with it.
 
-**`$value` — the current item.** Every scope has a current value; `$value` is
+**`$it` — the current item.** Every scope has a current value; `$it` is
 that exact value, whatever its type (an object row or a plain scalar). Bare names
-still navigate it (`name` ≡ `$value.name`), so `$value` matters exactly where
+still navigate it (`name` ≡ `$it.name`), so `$it` matters exactly where
 there is nothing to navigate: collections of numbers or strings, or handing the
 whole row somewhere. Together with `values` this makes scalar collections
 first-class:
 
 ```js
 const scores = [10, 60, 70, 45];
-oqx`$value values from ${scores} where $value > 50`;              // [60, 70]
-oqx`$value values from ${scores} order by $value desc`;           // [70, 60, 45, 10]
+oqx`$it values from ${scores} where $it > 50`;              // [60, 70]
+oqx`$it values from ${scores} order by $it desc`;           // [70, 60, 45, 10]
 
 const players = [{ name: "Ann", scores: [10, 60, 70] }, { name: "Ben", scores: [45] }];
-oqx`name, big: scores collect { $value values where $value > 50 } from ${players}`;
+oqx`name, big: scores collect { $it values where $it > 50 } from ${players}`;
 // [{ name: "Ann", big: [60, 70] }, { name: "Ben", big: [] }]
 
-oqx`employee: $value from ${people} where name == "Bob"`;         // [{ employee: <Bob> }]
+oqx`employee: $it from ${people} where name == "Bob"`;         // [{ employee: <Bob> }]
 ```
 
-Inside a nested block `$value` is the inner item; the enclosing row is `^$value`
-(§3). At the root scope (before any row) it is absent.
+Inside a nested block `$it` is the inner item; the enclosing row is `^$it`
+(§3). At the root scope (before any row) it is absent. `$it` is the only name
+for the current item (language 0.15; through 0.14 it was spelled `$value`, and
+there is no synonym): `$value` is now an ordinary property read, like any other
+non-metadata `$name` — a row `{ "$value": 3 }` projects `3`, a row without one
+reads absent. A row that itself owns a `$it` property is shadowed by the
+intrinsic; reach it with `^` from a nested scope or rename it upstream.
 
 **`entries(x)` and `$key` — records to collections, explicitly.** A plain object
 is **not** iterable: `from ${obj}` is one row (the object). `entries(obj)`
 converts it into a collection of entries, and inside such a scope the current
-item is the property's **value** — `$value` and bare names read it — while
+item is the property's **value** — `$it` and bare names read it — while
 **`$key`** is the property's key:
 
 ```js
 const settings = { theme: "dark", fontSize: 14, autosave: true };
-oqx`key: $key, value: $value from entries(${settings})`;
+oqx`key: $key, value: $it from entries(${settings})`;
 // [{ key: "theme", value: "dark" }, { key: "fontSize", value: 14 }, { key: "autosave", value: true }]
-oqx`$key values from entries(${settings}) where $value != "dark"`;   // ["fontSize", "autosave"]
+oqx`$key values from entries(${settings}) where $it != "dark"`;   // ["fontSize", "autosave"]
 
 const flags = { beta: { on: true }, legacy: { on: false } };
 oqx`$key values from entries(${flags}) where on`;                    // ["beta"]  (bare `on` reads the value)
 
-oqx`name, on: entries(prefs) collect { $key values where $value } from ${users}`;   // as a nested receiver
-oqx`name from ${users} where entries(prefs) exists { where $key == "dark" && $value }`;
+oqx`name, on: entries(prefs) collect { $key values where $it } from ${users}`;   // as a nested receiver
+oqx`name from ${users} where entries(prefs) exists { where $key == "dark" && $it }`;
 ```
 
 `entries(array)` yields numeric index keys, a `Map` yields its entries, and
@@ -524,7 +529,7 @@ fully), not a short-circuiting `exists`.
 ### 8. Ordering
 
 `order by <expr> [asc|desc]`, comma-separated for tie-breaks. Absent values sort
-last. The sort expression reads the row (fields, `$value`, recursion
+last. The sort expression reads the row (fields, `$it`, recursion
 intrinsics) — it is not rewritten against the `select` aliases, so
 `order by decade` sorts by a field called `decade`, not by `decade: age / 10`.
 
@@ -649,10 +654,10 @@ where rel none { … }                             zero rows (≡ !rel exists { 
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
 name                                             the CURRENT row's field only (never climbs)
-$value                                           the current item itself (a scalar row, or the whole object)
-from entries(obj) … $key / $value                a record's properties as a collection (key + value; bare names read the value)
+$it                                              the current item itself (a scalar row, or the whole object)
+from entries(obj) … $key / $it                   a record's properties as a collection (key + value; bare names read the value)
 <expr> values                                    scalar projection: the value, not a { name: value } record
-^name / ^^name                                   read an enclosing row's field (exactly N scopes out); ^$value = the enclosing row
+^name / ^^name                                   read an enclosing row's field (exactly N scopes out); ^$it = the enclosing row
 ^name: expr  /  ^^name: expr                     lift/export a value N scopes out (flatten-append)
 ^rel collect { … }  /  ^^root exists { … }       nested consumer over an enclosing row's relation / a named root
 entries(rel) exists { … }                        a free-function call may be a receiver
@@ -805,7 +810,7 @@ results and on errors.
 
 - **Correlated equality → hash probe.** A top-level `&&` conjunct of the block's
   `where` of the form `local == outer` (either side) — `local` a bare identifier
-  or member chain on the block's row (`customer_id`, `meta.id`, `$value`),
+  or member chain on the block's row (`customer_id`, `meta.id`, `$it`),
   `outer` anything that reads nothing from that row (`^customer_id`, `^^x.id`,
   a `${…}` binding, a literal, arithmetic over them) — is answered from a hash
   index on the receiver built **once per run** per collection and path. The

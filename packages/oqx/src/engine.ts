@@ -216,7 +216,7 @@ export class InMemoryEngine implements Engine {
   }
 
   // Make the scope for a row. An `entries()` entry is unwrapped here: the scope's
-  // row is the property's VALUE (so `$value` and bare names read it) and the key
+  // row is the property's VALUE (so `$it` and bare names read it) and the key
   // becomes the `$key` intrinsic in `meta`. Every place a row becomes a scope
   // goes through this, so entries behave the same at the top level, in nested
   // blocks, as `from` re-projections, and as follow seeds.
@@ -749,9 +749,9 @@ export class InMemoryEngine implements Engine {
   }
 
   // Resolve a name against ONE scope — never its ancestors. A scope provides,
-  // in order: `$value` (the scope's row itself — the current item, whatever its
+  // in order: `$it` (the scope's row itself — the current item, whatever its
   // type, so scalar collections are queryable; absent at the root, which has no
-  // row); `$key` (the property key) when it is an entry scope — see `enter`;
+  // row; `$value`, its pre-0.15 spelling, is an ordinary property name now); `$key` (the property key) when it is an entry scope — see `enter`;
   // the recursion intrinsics (`$depth`, …) when it is a follow occurrence;
   // values lifted into it by `^name:` items; then either the row's own property
   // or, for the root scope (no row), the context's named roots.
@@ -770,7 +770,7 @@ export class InMemoryEngine implements Engine {
   // always spelled explicitly as `^name`. Present-but-falsy values (null, false,
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
-    if (name === "$value") return scope.parent === null ? undefined : scope.row;
+    if (name === "$it") return scope.parent === null ? undefined : scope.row;
     if ((name === KEY || RECUR.has(name)) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);

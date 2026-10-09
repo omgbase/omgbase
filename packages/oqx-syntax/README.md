@@ -12,7 +12,7 @@ so no grammar can drift from another.
 - Zero runtime dependencies. Nothing here imports the parser: highlighting is
   lexical and deliberately separate from `@omgbase/oqx`, which stays the semantic
   source of truth.
-- Describes OQX language **0.13** (`LANGUAGE_VERSION`, pinned by tests to
+- Describes OQX language **0.15** (`LANGUAGE_VERSION`, pinned by tests to
   `spec/oqx/VERSION` and to `@omgbase/oqx`).
 
 ## Install
@@ -124,7 +124,7 @@ The grammar follows `spec/oqx/GRAMMAR.md` §1. It distinguishes:
 | malformed numbers | `invalid.illegal.number.oqx` | `invalid.number` | `1.` `1e` `.5` |
 | strings, escapes | `string.quoted.{double,single}.oqx`, `constant.character.escape.oqx` | `string`, `string.escape` | `"a\"b"` `'x'` |
 | bindings | `variable.other.binding.oqx` | `variable.binding` | `${0}` (the tagged-template form) |
-| intrinsics | `variable.language.oqx` | `variable.predefined` | `$value` `$key` `$depth` `$path` `$repo` — any `$name` |
+| intrinsics | `variable.language.oqx` | `variable.predefined` | `$it` `$key` `$depth` `$path` `$repo` — any `$name` |
 | lift / outer reference | `keyword.operator.lift.oqx` | `operator.lift` | `^budget` `^name:` |
 | aliases | `variable.other.alias.oqx` | `identifier.alias` | `label:` |
 | builtin functions / methods | `support.function.builtin.oqx`, `support.function.method.oqx` | `predefined.function`, `predefined.method` | `size(…)` `entries(…)` `.lower()` `.matches(…)` |

@@ -16,7 +16,7 @@
 //! climbs to an enclosing scope or a named root), an [`Expr::Ident`] in a
 //! top-level `where` is unambiguously a column of the scanned rows and is safe
 //! to push. An [`Expr::Outer`] (`^name`) reference is not a row column and
-//! stays residual, and so is the `$value` intrinsic (the row itself, not one of
+//! stays residual, and so is the `$it` intrinsic (the row itself, not one of
 //! its columns) — adapters gate idents on their known column set, which never
 //! includes it.
 
@@ -236,13 +236,13 @@ mod tests {
         };
         assert_eq!(as_equality(expr), None);
 
-        // `$value == "x"` IS syntactically an equality on the ident `$value`;
+        // `$it == "x"` IS syntactically an equality on the ident `$it`;
         // the adapter's column gate is what keeps it residual.
-        let q = parse("name from emp where $value == \"x\"");
+        let q = parse("name from emp where $it == \"x\"");
         let Some(Where::Scalar { expr }) = &q.r#where else {
             panic!("scalar where expected: {:?}", q.r#where);
         };
-        assert_eq!(as_equality(expr).map(|eq| eq.field), Some("$value"));
+        assert_eq!(as_equality(expr).map(|eq| eq.field), Some("$it"));
         let (pushed, _) = partition_pushable(q.r#where.as_ref(), indexed_on(&["dept"]));
         assert!(pushed.is_empty());
     }

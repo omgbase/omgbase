@@ -88,8 +88,10 @@ edges:  (the authored link graph as rows — one per open edge)
   $repo.<t>     the root scan — $repo.docs / $repo.nodes / $repo.blocks /
                 $repo.edges — available from ANY depth (uncorrelated until you
                 add a ^ predicate). $repo.$id = the repository id.
-  $value        the current item itself (a row, or each ELEMENT when the
-                receiver is a list property); ^$value = the enclosing row.
+  $it           the current item itself (a row, or each ELEMENT when the
+                receiver is a list property); ^$it = the enclosing row.
+                $value is NOT an intrinsic (since oqx 0.15): it reads a
+                property literally named $value, absent when there is none.
   $key          inside an entries(x) block: the entry's key.
 
 ## Scalar semantics (@omgbase/oqx)
@@ -174,11 +176,11 @@ edges:  (the authored link graph as rows — one per open edge)
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
                 from docs select distinct type values          → values: ["hub","lab-note",…]
-                tags: tags collect { $value values }             → a plain array
+                tags: tags collect { $it values }             → a plain array
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
-  entries(x)  a record as a collection ($key / $value per entry), key order:
-                select fm: entries(frontmatter) collect { k: $key, v: $value }
-                where entries(frontmatter) exists { where $key == "era" && $value > 1600 }
+  entries(x)  a record as a collection ($key / $it per entry), key order:
+                select fm: entries(frontmatter) collect { k: $key, v: $it }
+                where entries(frontmatter) exists { where $key == "era" && $it > 1600 }
                 entries(inline), entries(attrs), a nested map, or a list (index keys)
   $semantic_score is not a field — project semantic("…") under an alias instead.
 
@@ -231,8 +233,8 @@ text()/where prune the candidate set; only order by reweights.
   from docs where format == "yaml"
   from docs where type == "practitioner" order by era desc limit 2
   from docs where nodes none { where kind == "md:task" && !checked }
-  from docs where tags exists { where $value == "tria-prima" }
-  from docs where $path == "x.md" select fm: entries(frontmatter) collect { k: $key, v: $value }
+  from docs where tags exists { where $it == "tria-prima" }
+  from docs where $path == "x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
   from docs select owner_id, owner: $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }
   from blocks where type == "task" && !checked && under_heading("Launch") && doc.layer == "working"
   from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")

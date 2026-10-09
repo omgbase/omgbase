@@ -252,7 +252,7 @@ export function parseRangeString(s: string): OqxRange | null {
 // converts it explicitly into a collection of ENTRY values, each `{ key, value }`
 // tagged (non-enumerably, so JSON/deepEqual see a plain record) so the engine
 // can recognize one: when an entry becomes a query scope, the scope's ROW is
-// the property's value (`$value`, bare names) and `$key` is scope metadata.
+// the property's value (`$it`, bare names) and `$key` is scope metadata.
 // Arrays yield numeric index keys; a Map yields its entries; null/scalars yield
 // nothing. (Arrays never expose an implicit `$key` — `entries(arr)` is how you
 // ask for the index.)

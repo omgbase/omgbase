@@ -478,7 +478,7 @@
           }
         ]
       },
-      "query": "r collect { $value values from jobs }",
+      "query": "r collect { $it values from jobs }",
       "expect": {
         "result": [
           1,

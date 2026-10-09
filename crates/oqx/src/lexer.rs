@@ -469,9 +469,9 @@ mod tests {
     fn dollar_identifiers() {
         use TokType::*;
         assert_eq!(
-            kinds("$value $key $depth _x1 a$b"),
+            kinds("$it $key $depth _x1 a$b"),
             vec![
-                tok(Ident, "$value"),
+                tok(Ident, "$it"),
                 tok(Ident, "$key"),
                 tok(Ident, "$depth"),
                 tok(Ident, "_x1"),

@@ -700,6 +700,14 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-09, surface 1.4 patch: the query binding follows `spec/oqx` 0.15 —
+  the current item is **`$it`** and `$value` is no longer an intrinsic (no
+  synonym). `$key` and the recursion intrinsics are unchanged, as is the
+  `{ key, value }` record of `entries(x)` used as a plain value. Every fixture
+  query was rewritten `$value` → `$it` with its expectation untouched; a
+  `$value` in a query now reads a property literally so named (a frontmatter
+  key `$value` would surface; none in the alchemy corpus does), absent
+  otherwise. No field, tool or result key changed: a patch.
 - 2026-10-06, surface 1.4 patch: the query binding follows `spec/oqx` 0.14 —
   `follow` takes a comma-separated destination list (unioned by identity
   within one step) and destination blocks (`follow $repo.docs collect { … }`,

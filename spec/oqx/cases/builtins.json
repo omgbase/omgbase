@@ -359,7 +359,7 @@
           1
         ]
       },
-      "query": "$value values from xs where has($value) && !$value",
+      "query": "$it values from xs where has($it) && !$it",
       "expect": {
         "result": [
           0,
@@ -410,7 +410,7 @@
       "roots": {
         "n": 5
       },
-      "query": "$value values from list(n)",
+      "query": "$it values from list(n)",
       "expect": {
         "result": [
           5

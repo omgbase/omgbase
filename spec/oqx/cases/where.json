@@ -576,7 +576,7 @@
           "a"
         ]
       },
-      "query": "$value values from xs where $value",
+      "query": "$it values from xs where $it",
       "expect": {
         "result": [
           [],
@@ -600,7 +600,7 @@
           "a"
         ]
       },
-      "query": "$value values from xs where !$value",
+      "query": "$it values from xs where !$it",
       "expect": {
         "result": [
           0,

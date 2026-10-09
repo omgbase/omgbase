@@ -141,13 +141,13 @@ different sets. Several tests depend on this; keep it fully checked.
   authored as plain strings, so `"2026-01-15" in range(window)` and
   `2 in range(stage_range)` test point-in-interval while a bare `window` stays a
   string (`range()` is the explicit opt-in).
-- **`$value` / `values`** (oqx ≥ 0.8) — `select era values order by era` yields
+- **`$it` / `values`** (oqx ≥ 0.8) — `select era values order by era` yields
   the bare `[250, 800, 1530, 1680]`; `select distinct type values` the six type
   strings; `values` pages like hits (5 + 13 = 18 paths). Inside a block,
-  `tags collect { $value values where $value != "substance" }` names each tag
+  `tags collect { $it values where $it != "substance" }` names each tag
   element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
   the list-authored substances keep their extras — and
-  `tags exists { where $value == "tria-prima" }` equals `"tria-prima" in list(tags)`.
+  `tags exists { where $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
 - **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");
@@ -158,7 +158,7 @@ different sets. Several tests depend on this; keep it fully checked.
   `count { … } >= 4`; a non-literal bound is `filter_invalid`.
 - **`entries()` / `$key`** (oqx ≥ 0.10) — salt's frontmatter comes back as seven
   `{k, v}` entries in key order, valued exactly like the bare reads (`tags` →
-  the array); `entries(frontmatter) exists { where $key == "era" && $value >
+  the array); `entries(frontmatter) exists { where $key == "era" && $it >
   1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(inline)` is
   non-empty for exactly the docs with `md:inline_field` nodes (Jabir's keys:
   `century`, `known_for`); `entries(attrs)` on task nodes inspects the attrs

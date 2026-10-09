@@ -196,7 +196,7 @@ pub enum Expr {
     /// A literal: `string | number | boolean | null` in the TS, so the [`Value`]
     /// is always one of `Str`, `Number`, `Bool`, or `Null`.
     Lit(Value),
-    /// Bare property of the CURRENT row/scope only (never climbs); `$value` is
+    /// Bare property of the CURRENT row/scope only (never climbs); `$it` is
     /// the row itself.
     Ident {
         name: String,
@@ -350,7 +350,7 @@ pub struct Subquery {
     pub follow: Option<Follow>,
     /// `values` — scalar projection mode: the (single) projected expression is
     /// the row's result itself rather than being wrapped in a `{ name: value }`
-    /// record, so `name values` yields `["Bob", …]` and `$value values` yields
+    /// record, so `name values` yields `["Bob", …]` and `$it values` yields
     /// the rows.
     pub values: bool,
     /// `limit N` / `offset N` — bound the row set AFTER where/order/distinct and

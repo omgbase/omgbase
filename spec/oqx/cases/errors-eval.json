@@ -65,7 +65,7 @@
           }
         ]
       },
-      "query": "n: xs single { $value values } from r",
+      "query": "n: xs single { $it values } from r",
       "expect": {
         "error": {
           "stage": "eval",
@@ -266,7 +266,7 @@
           }
         ]
       },
-      "query": "n: xs single { $value values } from r",
+      "query": "n: xs single { $it values } from r",
       "expect": {
         "error": {
           "stage": "eval",

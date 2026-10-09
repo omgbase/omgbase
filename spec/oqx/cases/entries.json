@@ -2,7 +2,7 @@
   "suite": "entries",
   "cases": [
     {
-      "name": "entries yields $key and $value",
+      "name": "entries yields $key and $it",
       "roots": {
         "settings": {
           "theme": "dark",
@@ -10,7 +10,7 @@
           "autosave": true
         }
       },
-      "query": "key: $key, value: $value from entries(settings)",
+      "query": "key: $key, value: $it from entries(settings)",
       "expect": {
         "result": [
           {
@@ -47,7 +47,7 @@
       }
     },
     {
-      "name": "$value values with a where on $key",
+      "name": "$it values with a where on $key",
       "roots": {
         "settings": {
           "theme": "dark",
@@ -55,7 +55,7 @@
           "autosave": true
         }
       },
-      "query": "$value values from entries(settings) where $key != \"theme\"",
+      "query": "$it values from entries(settings) where $key != \"theme\"",
       "expect": {
         "result": [
           14,
@@ -186,7 +186,7 @@
           "y"
         ]
       },
-      "query": "k: $key, v: $value from entries(xs)",
+      "query": "k: $key, v: $it from entries(xs)",
       "expect": {
         "result": [
           {
@@ -340,7 +340,7 @@
           }
         ]
       },
-      "query": "name, on: entries(prefs) collect { $key values where $value } from users",
+      "query": "name, on: entries(prefs) collect { $key values where $it } from users",
       "expect": {
         "result": [
           {
@@ -383,7 +383,7 @@
           }
         ]
       },
-      "query": "name values from users where entries(prefs) exists { where $key == \"dark\" && $value }",
+      "query": "name values from users where entries(prefs) exists { where $key == \"dark\" && $it }",
       "expect": {
         "result": [
           "Ann"
@@ -449,7 +449,7 @@
       }
     },
     {
-      "name": "$value as a nested receiver",
+      "name": "$it as a nested receiver",
       "roots": {
         "groups": {
           "a": [
@@ -462,7 +462,7 @@
           ]
         }
       },
-      "query": "g: $key, big: $value collect { $value values where $value > 1 } from entries(groups)",
+      "query": "g: $key, big: $it collect { $it values where $it > 1 } from entries(groups)",
       "expect": {
         "result": [
           {
@@ -495,7 +495,7 @@
           ]
         }
       },
-      "query": "$key values from entries(groups) where $value exists { where $value > 4 && ^$key == \"b\" }",
+      "query": "$key values from entries(groups) where $it exists { where $it > 4 && ^$key == \"b\" }",
       "expect": {
         "result": [
           "b"
@@ -581,7 +581,7 @@
           "c": 2
         }
       },
-      "query": "select distinct $value values from entries(o)",
+      "query": "select distinct $it values from entries(o)",
       "expect": {
         "result": [
           1,

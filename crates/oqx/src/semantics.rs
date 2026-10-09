@@ -534,7 +534,7 @@ pub fn size_of(v: &Value) -> f64 {
 // entry is a plain `{ key, value }` object carrying a hidden (non-enumerable
 // symbol) tag, so JSON and deep-equality see a two-property record while the
 // engine can still recognize one: when an entry becomes a query scope, the
-// scope's ROW is the property's value (`$value`, bare names) and `$key` is scope
+// scope's ROW is the property's value (`$it`, bare names) and `$key` is scope
 // metadata. Arrays yield numeric index keys; absent values, scalars, and ranges
 // yield nothing. (Arrays never expose an implicit `$key` — `entries(arr)` is how
 // you ask for the index.)

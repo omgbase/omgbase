@@ -9,7 +9,7 @@ Read in order:
 
 1. **[filtering.md](./filtering.md)** — `from` / `where`, and the scalar
    predicate surface: frontmatter, numbers, ranges, booleans, `$path`, `list()`,
-   `$value`, `entries()`.
+   `$it`, `entries()`.
 2. **[targets.md](./targets.md)** — the three targets `docs` / `blocks` /
    `nodes`, reaching the owning document with `doc.`, and `--ids`.
 3. **[shaping-results.md](./shaping-results.md)** — `select`, `order by`, and

@@ -55,9 +55,17 @@ describe("vocabulary", () => {
     expect(sorted(methods)).toEqual(sorted(BUILTIN_METHODS));
   });
 
-  it("intrinsics are every $name SEMANTICS.md defines", () => {
-    const names = read("SEMANTICS.md").match(/\$[a-z_]+/g) ?? [];
+  it("intrinsics are the $names SEMANTICS §2 resolves before the row (steps 1-3)", () => {
+    // §2's resolution list: steps 1-3 are the language's intrinsics; step 4 is
+    // lifts, step 5 the row. Names mentioned elsewhere in the prose are not
+    // intrinsics by virtue of being mentioned (`$value` is named there as an
+    // ordinary property since 0.15).
+    const sem = read("SEMANTICS.md");
+    const s2 = sem.slice(sem.indexOf("## 2."), sem.indexOf("## 3."));
+    const steps = s2.slice(s2.search(/^1\. /m), s2.search(/^4\. /m));
+    const names = steps.match(/\$[a-z_]+/g) ?? [];
     expect(sorted(names)).toEqual(sorted(INTRINSICS));
+    expect(INTRINSICS).not.toContain("$value");
   });
 
   it("the omgbase host vocabulary matches spec/surface §1.2–1.3", () => {

@@ -193,7 +193,7 @@ fn tier_2_an_err_from_get_is_the_query_s_eval_error() {
         "secret from rows",
         "id values from rows where secret == \"x\"",
         "id values from rows order by secret",
-        "x: $value.secret from rows",
+        "x: $it.secret from rows",
         "id values from rows where kids exists { where ^secret == \"x\" }",
         "id values from rows where secret == \"x\" follow kids",
         "id values from rows follow kids { where secret == \"x\" }",

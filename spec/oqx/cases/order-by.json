@@ -202,7 +202,7 @@
           "9"
         ]
       },
-      "query": "$value values from xs order by $value",
+      "query": "$it values from xs order by $it",
       "expect": {
         "result": [
           "10",
@@ -440,7 +440,7 @@
       }
     },
     {
-      "name": "order by $value over scalars",
+      "name": "order by $it over scalars",
       "roots": {
         "xs": [
           1,
@@ -448,7 +448,7 @@
           2
         ]
       },
-      "query": "$value values from xs order by $value desc",
+      "query": "$it values from xs order by $it desc",
       "expect": {
         "result": [
           3,
@@ -561,7 +561,7 @@
           "a"
         ]
       },
-      "query": "$value values from xs order by $value",
+      "query": "$it values from xs order by $it",
       "expect": {
         "result": [
           "a",

@@ -1683,7 +1683,7 @@ mod tests {
         assert_eq!(translate_predicate(&pred("doc.verified"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("size(tags) > 1"), &DOCS), None);
         assert_eq!(translate_predicate(&pred("$self.text(\"x\")"), &DOCS), None);
-        assert_eq!(translate_predicate(&pred("$value == \"x\""), &DOCS), None);
+        assert_eq!(translate_predicate(&pred("$it == \"x\""), &DOCS), None);
         assert_eq!(translate_predicate(&pred("^slug == \"x\""), &DOCS), None);
         assert_eq!(
             translate_predicate(&pred("frontmatter.era == 1"), &DOCS),

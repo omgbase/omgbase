@@ -934,7 +934,7 @@
       "name": "a bound object through entries",
       "template": {
         "strings": [
-          "key: $key, value: $value from entries(",
+          "key: $key, value: $it from entries(",
           ")"
         ],
         "values": [
@@ -966,8 +966,8 @@
       "name": "bound scalars as a source",
       "template": {
         "strings": [
-          "$value values from ",
-          " where $value > 50"
+          "$it values from ",
+          " where $it > 50"
         ],
         "values": [
           [
@@ -1303,7 +1303,7 @@
       "name": "a bound string is a one-row collection",
       "template": {
         "strings": [
-          "$value values from ",
+          "$it values from ",
           ""
         ],
         "values": [
@@ -1320,7 +1320,7 @@
       "name": "a bound array of arrays is nested rows",
       "template": {
         "strings": [
-          "n: $value.size() from ",
+          "n: $it.size() from ",
           ""
         ],
         "values": [

@@ -980,8 +980,8 @@
     },
     {
       "name": "nested-collect-values-of-rows",
-      "notes": "§1.4 rows as values (1.2): a `values` projection whose item is the row ($value) renders each row as { id, path }.",
-      "query": "select tasks: nodes collect { select $value values where kind == \"md:task\" } from docs where $path == \"substances/salt.md\"",
+      "notes": "§1.4 rows as values (1.2): a `values` projection whose item is the row ($it) renders each row as { id, path }.",
+      "query": "select tasks: nodes collect { select $it values where kind == \"md:task\" } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
@@ -1127,7 +1127,7 @@
     },
     {
       "name": "value-over-list-property",
-      "query": "select tags: tags collect { $value values where $value != \"substance\" } from docs where type == \"substance\"",
+      "query": "select tags: tags collect { $it values where $it != \"substance\" } from docs where type == \"substance\"",
       "expect": {
         "hits": [
           {
@@ -1172,7 +1172,7 @@
     },
     {
       "name": "value-membership",
-      "query": "from docs where tags exists { where $value == \"tria-prima\" }",
+      "query": "from docs where tags exists { where $it == \"tria-prima\" }",
       "expect": {
         "hits": [
           {
@@ -1191,7 +1191,7 @@
     },
     {
       "name": "value-scalar-authored-is-one-element",
-      "query": "from docs where tags exists { where $value == \"substance\" }",
+      "query": "from docs where tags exists { where $it == \"substance\" }",
       "expect": {
         "hits": [
           {
@@ -1916,8 +1916,8 @@
     },
     {
       "name": "lazy-root-entries-in-row-position",
-      "notes": "§9: `entries(handle)` in row position yields (index, row) entries; `$key` is the index, `$value` the row.",
-      "query": "entries($repo.docs) first { select k: $key, p: $value.$path }",
+      "notes": "§9: `entries(handle)` in row position yields (index, row) entries; `$key` is the index, `$it` the row.",
+      "query": "entries($repo.docs) first { select k: $key, p: $it.$path }",
       "expect": {
         "hits": [
           {

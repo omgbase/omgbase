@@ -734,7 +734,7 @@ fn a_dotted_receiver_and_a_call_receiver() {
         panic!()
     };
     assert_eq!(o.receiver, member(ident("author"), "books"));
-    let q = parse("from users where entries(prefs) exists { where $key == \"dark\" && $value }");
+    let q = parse("from users where entries(prefs) exists { where $key == \"dark\" && $it }");
     let Some(Where::Op(o)) = q.r#where else {
         panic!()
     };
@@ -743,7 +743,7 @@ fn a_dotted_receiver_and_a_call_receiver() {
         o.sub.r#where,
         Some(and(vec![
             scalar(bin(BinaryOp::Eq, ident("$key"), str_("dark"))),
-            scalar(ident("$value"))
+            scalar(ident("$it"))
         ]))
     );
     // a call receiver may be navigated further
@@ -790,7 +790,7 @@ fn caret_outer_references_in_expressions() {
             field("four", outer(4, "v")),
         ]
     );
-    // `^$value` / `^$depth` — the enclosing row's intrinsic
+    // `^$it` / `^$depth` — the enclosing row's intrinsic
     let q = parse("id, kids: children collect { id, own: $depth, parentDepth: ^$depth } from tree");
     let SelectItem::Collect { op, .. } = &q.select[1] else {
         panic!()
@@ -803,13 +803,13 @@ fn caret_outer_references_in_expressions() {
             field("parentDepth", outer(1, "$depth"))
         ]
     );
-    let q = parse("from xs where scores.size() > ^$value.scores.size()");
+    let q = parse("from xs where scores.size() > ^$it.scores.size()");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(
             BinaryOp::Gt,
             call(Some(ident("scores")), "size", vec![]),
-            call(Some(member(outer(1, "$value"), "scores")), "size", vec![]),
+            call(Some(member(outer(1, "$it"), "scores")), "size", vec![]),
         )))
     );
 }
@@ -869,7 +869,7 @@ fn top_level_directives() {
     let q = parse("people single { name values where name == \"Carol\" }");
     assert_eq!(q.consumer, Consumer::Single);
     assert!(q.values);
-    let q = parse("xs none { where $value > 2 }");
+    let q = parse("xs none { where $it > 2 }");
     assert_eq!(q.consumer, Consumer::None);
     let q = parse("people collect { }");
     assert_eq!(q.consumer, Consumer::Collect);
@@ -1616,33 +1616,29 @@ fn stray_tokens_name_the_remaining_clauses() {
     );
 }
 
-// ---- `$value` and `values` ----------------------------------------------------
+// ---- `$it` and `values` ----------------------------------------------------
 
 #[test]
 fn dollar_value_is_an_ordinary_identifier() {
-    let q = parse("$value values from scores where $value > 50");
+    let q = parse("$it values from scores where $it > 50");
     assert!(q.values);
-    assert_eq!(q.select, vec![bare("$value")]);
+    assert_eq!(q.select, vec![bare("$it")]);
     assert_eq!(
         q.r#where,
-        Some(scalar(bin(BinaryOp::Gt, ident("$value"), num(50.0))))
+        Some(scalar(bin(BinaryOp::Gt, ident("$it"), num(50.0))))
     );
-    let q = parse("$value values from xs order by $value desc");
-    assert_eq!(q.order_by, Some(vec![desc(ident("$value"))]));
-    let q = parse("employee: $value from people where name == \"Bob\"");
-    assert_eq!(q.select, vec![field("employee", ident("$value"))]);
-    // bare `$value` keys by its own name, like any other bare projection
-    let q = parse("$value from xs");
-    assert_eq!(q.select, vec![bare("$value")]);
+    let q = parse("$it values from xs order by $it desc");
+    assert_eq!(q.order_by, Some(vec![desc(ident("$it"))]));
+    let q = parse("employee: $it from people where name == \"Bob\"");
+    assert_eq!(q.select, vec![field("employee", ident("$it"))]);
+    // bare `$it` keys by its own name, like any other bare projection
+    let q = parse("$it from xs");
+    assert_eq!(q.select, vec![bare("$it")]);
     assert!(!q.values);
-    let q = parse("xs exists { where $value == ^$value }");
+    let q = parse("xs exists { where $it == ^$it }");
     assert_eq!(
         q.r#where,
-        Some(scalar(bin(
-            BinaryOp::Eq,
-            ident("$value"),
-            outer(1, "$value")
-        )))
+        Some(scalar(bin(BinaryOp::Eq, ident("$it"), outer(1, "$it"))))
     );
 }
 
@@ -1814,9 +1810,8 @@ fn limit_and_offset_are_value_expressions() {
     .unwrap();
     assert_eq!(q.limit, Some(binding(1)));
     // or an outer reference (inside a block)
-    let q = parse(
-        "name, top: scores collect { $value values order by $value desc limit ^n } from ranked",
-    );
+    let q =
+        parse("name, top: scores collect { $it values order by $it desc limit ^n } from ranked");
     let SelectItem::Collect { op, .. } = &q.select[1] else {
         panic!()
     };
@@ -1878,15 +1873,15 @@ fn a_field_named_limit_is_still_a_field() {
 
 #[test]
 fn entries_is_a_free_function_call_usable_as_a_source() {
-    let q = parse_template(&["key: $key, value: $value from entries(", ")"], 1).unwrap();
+    let q = parse_template(&["key: $key, value: $it from entries(", ")"], 1).unwrap();
     assert_eq!(q.source, call(None, "entries", vec![binding(0)]));
     assert_eq!(
         q.select,
-        vec![field("key", ident("$key")), field("value", ident("$value"))]
+        vec![field("key", ident("$key")), field("value", ident("$it"))]
     );
     let q = parse("from entries(settings)");
     assert_eq!(q.source, call(None, "entries", vec![ident("settings")]));
-    let q = parse("name, on: entries(prefs) collect { $key values where $value } from users");
+    let q = parse("name, on: entries(prefs) collect { $key values where $it } from users");
     let SelectItem::Collect { op, .. } = &q.select[1] else {
         panic!()
     };
@@ -1896,13 +1891,11 @@ fn entries_is_a_free_function_call_usable_as_a_source() {
     let q = parse("entries(settings) count { }");
     assert_eq!(q.source, call(None, "entries", vec![ident("settings")]));
     assert_eq!(q.consumer, Consumer::Count);
-    let q = parse(
-        "g: $key, big: $value collect { $value values where $value > 1 } from entries(groups)",
-    );
+    let q = parse("g: $key, big: $it collect { $it values where $it > 1 } from entries(groups)");
     let SelectItem::Collect { op, .. } = &q.select[1] else {
         panic!()
     };
-    assert_eq!(op.receiver, ident("$value"));
+    assert_eq!(op.receiver, ident("$it"));
     // as a plain value it is just a call
     let q = parse("e: entries(prefs) from xs");
     assert_eq!(

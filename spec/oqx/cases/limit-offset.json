@@ -1185,7 +1185,7 @@
           }
         ]
       },
-      "query": "name, top: scores collect { $value values order by $value desc limit ^n } from ranked",
+      "query": "name, top: scores collect { $it values order by $it desc limit ^n } from ranked",
       "expect": {
         "result": [
           {
@@ -1353,7 +1353,7 @@
           }
         ]
       },
-      "query": "name, top: scores collect { $value values limit ^n } from r",
+      "query": "name, top: scores collect { $it values limit ^n } from r",
       "expect": {
         "error": {
           "stage": "eval",
@@ -1376,7 +1376,7 @@
           }
         ]
       },
-      "query": "name, top: scores collect { $value values limit ^n } from r",
+      "query": "name, top: scores collect { $it values limit ^n } from r",
       "expect": {
         "error": {
           "stage": "eval",

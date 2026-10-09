@@ -14,7 +14,7 @@ import type { Consumer, Expr, Follow, OpNode, OrderSpec, SelectItem, Where } fro
 
 /** One hoisted equality `local == outer` from the block's top-level `&&`
  * conjunction: `local` reads only the block's row (an identifier or member
- * chain; `path` is its property path, `[]` for `$value`), `outer` reads nothing
+ * chain; `path` is its property path, `[]` for `$it`), `outer` reads nothing
  * from the block's row (outer references, bindings, literals, arithmetic over
  * them) and cannot raise. */
 export interface Correlation {

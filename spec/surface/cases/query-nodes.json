@@ -567,7 +567,7 @@
     },
     {
       "name": "entries-attrs",
-      "query": "from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $value }",
+      "query": "from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $it }",
       "expect": {
         "hits": [
           {

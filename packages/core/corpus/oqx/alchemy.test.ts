@@ -1151,12 +1151,12 @@ describe("alchemy corpus — failure modes are loud", () => {
   });
 });
 
-// `$value` (the current item) and `values` (scalar projection mode), oqx ≥ 0.8.
-// `$value` is engine-owned: on a target scan it is the store row; when a block's
+// `$it` (the current item) and `values` (scalar projection mode), oqx ≥ 0.8.
+// `$it` is engine-owned: on a target scan it is the store row; when a block's
 // receiver is a list-valued property (tags) the rows are its ELEMENTS, and
-// `$value` is how you name one. A top-level `values` projection comes back as
+// `$it` is how you name one. A top-level `values` projection comes back as
 // `values: [...]` with no hits (paged like hits); a nested one is a plain array.
-describe("alchemy corpus — $value and values (scalar collections)", () => {
+describe("alchemy corpus — $it and values (scalar collections)", () => {
   it("top-level values: bare projected values in place of hits", () => {
     const r = hits('select era values from docs where type == "practitioner" order by era asc');
     expect(r.hits).toEqual([]);
@@ -1188,8 +1188,8 @@ describe("alchemy corpus — $value and values (scalar collections)", () => {
     expect(hits('$repo.docs first { select $path values where type == "nope" }').values).toEqual([]);
   });
 
-  it("$value names each element of a list property inside a block", () => {
-    const r = hits('select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"');
+  it("$it names each element of a list property inside a block", () => {
+    const r = hits('select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"');
     const byPath = Object.fromEntries(r.hits.map((h) => [h.path, h.tags]));
     expect(byPath).toEqual({
       "substances/mercury.md": [],                       // scalar-authored `tags: substance` → one element, filtered out
@@ -1200,12 +1200,12 @@ describe("alchemy corpus — $value and values (scalar collections)", () => {
     });
   });
 
-  it("$value in a where block is an element-wise membership test, equal to `in list()`", () => {
-    const viaValue = paths('from docs where tags exists { where $value == "tria-prima" }');
+  it("$it in a where block is an element-wise membership test, equal to `in list()`", () => {
+    const viaValue = paths('from docs where tags exists { where $it == "tria-prima" }');
     expect(viaValue).toEqual(["substances/salt.md", "substances/sulphur.md"]);
     expect(viaValue).toEqual(paths('from docs where "tria-prima" in list(tags)'));
     // the scalar-authored tag is one element too
-    expect(paths('from docs where tags exists { where $value == "substance" }')).toEqual(SUBSTANCES);
+    expect(paths('from docs where tags exists { where $it == "substance" }')).toEqual(SUBSTANCES);
   });
 
   it("values takes exactly one item; a call needs an alias unless followed by values", () => {
@@ -1284,7 +1284,7 @@ describe("alchemy corpus — none, limit, offset", () => {
 // lazy handles the store context materializes (ADR-018).
 describe("alchemy corpus — entries() and $key", () => {
   it("entries(frontmatter) is the authored bag, in key order, valued like a bare read", () => {
-    const fm = hits('select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "substances/salt.md"').hits[0]!.fm;
+    const fm = hits('select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "substances/salt.md"').hits[0]!.fm;
     // key order: authored position is not indexed (properties.ord is the position
     // within a list key), so the bag comes in the table's deterministic key order
     expect(fm).toEqual([
@@ -1302,14 +1302,14 @@ describe("alchemy corpus — entries() and $key", () => {
   });
 
   it("entries(frontmatter) as a where receiver: keys and values are both queryable", () => {
-    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }'))
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $it > 1600 }'))
       .toEqual(["practitioners/newton.md", "texts/mutus-liber.md"]); // eras 1680 and 1677
-    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $value > 1600 }'))
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "era" && $it > 1600 }'))
       .toEqual(paths('from docs where era > 1600'));
     // every doc has a `type` key
     expect(paths('from docs where entries(frontmatter) none { where $key == "type" }')).toEqual([]);
     // the value of a list key is the array: membership works on it
-    expect(paths('from docs where entries(frontmatter) exists { where $key == "tags" && "tria-prima" in $value }'))
+    expect(paths('from docs where entries(frontmatter) exists { where $key == "tags" && "tria-prima" in $it }'))
       .toEqual(["substances/salt.md", "substances/sulphur.md"]);
   });
 
@@ -1323,14 +1323,14 @@ describe("alchemy corpus — entries() and $key", () => {
   });
 
   it("entries(attrs) on nodes: per-key inspection of the attrs bag", () => {
-    const checked = paths('from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $value }');
+    const checked = paths('from nodes where kind == "md:task" && entries(attrs) exists { where $key == "checked" && $it }');
     expect(checked).toEqual(paths('from nodes where kind == "md:task" && checked'));
     const ks = hits('select ks: entries(attrs) collect { $key values } from nodes where kind == "md:task" limit 1').hits[0]!.ks as string[];
     expect(ks).toContain("checked");
   });
 
   it("a list property through entries() yields numeric index keys", () => {
-    const idx = hits('select t: entries(tags) collect { k: $key, v: $value } from docs where $path == "substances/salt.md"').hits[0]!.t;
+    const idx = hits('select t: entries(tags) collect { k: $key, v: $it } from docs where $path == "substances/salt.md"').hits[0]!.t;
     expect(idx).toEqual([{ k: 0, v: "substance" }, { k: 1, v: "tria-prima" }]);
   });
 });

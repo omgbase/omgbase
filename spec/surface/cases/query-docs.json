@@ -573,7 +573,7 @@
     {
       "name": "entries-frontmatter-key-order",
       "notes": "§9: entries(frontmatter) is in key order, valued like the bare reads.",
-      "query": "select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == \"substances/salt.md\"",
+      "query": "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {
@@ -621,7 +621,7 @@
     },
     {
       "name": "entries-frontmatter-as-receiver",
-      "query": "from docs where entries(frontmatter) exists { where $key == \"era\" && $value > 1600 }",
+      "query": "from docs where entries(frontmatter) exists { where $key == \"era\" && $it > 1600 }",
       "expect": {
         "hits": [
           {
@@ -640,7 +640,7 @@
     },
     {
       "name": "entries-frontmatter-list-value",
-      "query": "from docs where entries(frontmatter) exists { where $key == \"tags\" && \"tria-prima\" in $value }",
+      "query": "from docs where entries(frontmatter) exists { where $key == \"tags\" && \"tria-prima\" in $it }",
       "expect": {
         "hits": [
           {
@@ -779,7 +779,7 @@
     },
     {
       "name": "entries-list-property-numeric-keys",
-      "query": "select t: entries(tags) collect { k: $key, v: $value } from docs where $path == \"substances/salt.md\"",
+      "query": "select t: entries(tags) collect { k: $key, v: $it } from docs where $path == \"substances/salt.md\"",
       "expect": {
         "hits": [
           {

@@ -529,7 +529,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     // Make the scope for a row. An entry row is unwrapped here: the scope's row
-    // is the property's VALUE (so `$value` and bare names read it) and the key
+    // is the property's VALUE (so `$it` and bare names read it) and the key
     // becomes the `$key` intrinsic in `meta`. Every place a row becomes a scope
     // goes through this, so entries behave the same at the top level, in nested
     // blocks, as `from` re-projections, and as follow seeds.
@@ -1536,9 +1536,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
     }
 
     // Resolve a name against ONE scope — never its ancestors. A scope provides,
-    // in order: `$value` (the scope's row itself — the current item, whatever
+    // in order: `$it` (the scope's row itself — the current item, whatever
     // its type, so scalar collections are queryable; absent at the root, which
-    // has no row); `$key` (the property key) when it is an entry scope; the
+    // has no row; `$value`, its pre-0.15 spelling, is an ordinary property); `$key` (the property key) when it is an entry scope; the
     // recursion intrinsics (`$depth`, …) when it is a follow occurrence; values
     // lifted into it by `^name:` items; then either the row's own property or,
     // for the root scope (no row), the context's named roots.
@@ -1556,7 +1556,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
     // there is no "absent, so look outward" rule. The only failure is the
     // context's own: `DataContext::get` may reject the read.
     fn resolve_in(&self, name: &str, scope: &Scope<'_>) -> Result<Value> {
-        if name == "$value" {
+        if name == "$it" {
             return Ok(if scope.is_root() {
                 Value::Undefined
             } else {
@@ -1966,22 +1966,22 @@ mod tests {
         );
         let scores = json!({ "scores": [10, 60, 70, 45] });
         check(
-            "$value values from scores where $value > 50",
+            "$it values from scores where $it > 50",
             scores.clone(),
             json!([60, 70]),
         );
         check(
-            "$value values from scores order by $value desc",
+            "$it values from scores order by $it desc",
             scores,
             json!([70, 60, 45, 10]),
         );
         check(
-            "name, big: scores collect { $value values where $value > 50 } from players",
+            "name, big: scores collect { $it values where $it > 50 } from players",
             json!({ "players": [{ "name": "Ann", "scores": [10, 60, 70] }, { "name": "Ben", "scores": [45] }] }),
             json!([{ "name": "Ann", "big": [60, 70] }, { "name": "Ben", "big": [] }]),
         );
         check(
-            r#"employee: $value from people where name == "Carol""#,
+            r#"employee: $it from people where name == "Carol""#,
             people(),
             json!([{ "employee": { "name": "Carol", "id": 55, "title": "Analyst", "active": false, "age": 29, "city": "NYC",
                                    "jobs": [{ "employer": "Globocorp", "start": "2020" }] } }]),
@@ -1992,12 +1992,12 @@ mod tests {
     fn tutorial_entries_and_key() {
         let settings = json!({ "settings": { "theme": "dark", "fontSize": 14, "autosave": true } });
         check(
-            "key: $key, value: $value from entries(settings)",
+            "key: $key, value: $it from entries(settings)",
             settings.clone(),
             json!([{ "key": "theme", "value": "dark" }, { "key": "fontSize", "value": 14 }, { "key": "autosave", "value": true }]),
         );
         check(
-            r#"$key values from entries(settings) where $value != "dark""#,
+            r#"$key values from entries(settings) where $it != "dark""#,
             settings.clone(),
             json!(["fontSize", "autosave"]),
         );
@@ -2024,12 +2024,12 @@ mod tests {
             { "name": "Cid" }
         ]});
         check(
-            "name, on: entries(prefs) collect { $key values where $value } from users",
+            "name, on: entries(prefs) collect { $key values where $it } from users",
             users.clone(),
             json!([{ "name": "Ann", "on": ["dark"] }, { "name": "Ben", "on": [] }, { "name": "Cid", "on": [] }]),
         );
         check(
-            r#"name values from users where entries(prefs) exists { where $key == "dark" && $value }"#,
+            r#"name values from users where entries(prefs) exists { where $key == "dark" && $it }"#,
             users.clone(),
             json!(["Ann"]),
         );
@@ -2039,7 +2039,7 @@ mod tests {
             json!(["Cid"]),
         );
         check(
-            "k: $key, v: $value from entries(xs)",
+            "k: $key, v: $it from entries(xs)",
             json!({ "xs": ["x", "y"] }),
             json!([{ "k": 0, "v": "x" }, { "k": 1, "v": "y" }]),
         );
@@ -2064,7 +2064,7 @@ mod tests {
             json!(["a", "b"]),
         );
         check(
-            r#"$key values from entries(groups) where $value exists { where $value > 4 && ^$key == "b" }"#,
+            r#"$key values from entries(groups) where $it exists { where $it > 4 && ^$key == "b" }"#,
             json!({ "groups": { "a": [1, 2, 3], "b": [4, 5] } }),
             json!(["b"]),
         );
@@ -2187,15 +2187,15 @@ mod tests {
                    { "name": "Alice", "peers": [] },
                    { "name": "Carol", "peers": [{ "name": "Bob" }] }]),
         );
-        // ^ past the root is absent; ^$value is the enclosing row; $value at root is absent.
-        // `^$value` from a top-level row names the root scope, which has no row.
+        // ^ past the root is absent; ^$it is the enclosing row; $it at root is absent.
+        // `^$it` from a top-level row names the root scope, which has no row.
         check(
-            "x: ^^^nope, y: ^$value, z: ^r from r",
+            "x: ^^^nope, y: ^$it, z: ^r from r",
             json!({ "r": [1] }),
             json!([{ "z": [1] }]),
         );
         check(
-            "r collect { a: $value, b: ^$value, c: ^^r }",
+            "r collect { a: $it, b: ^$it, c: ^^r }",
             json!({ "r": [1] }),
             json!([{ "a": 1 }]),
         );
@@ -2465,7 +2465,7 @@ mod tests {
         );
         // `^n` inside a block reads the enclosing row.
         check(
-            "name, top: xs collect { $value values limit ^n } from r",
+            "name, top: xs collect { $it values limit ^n } from r",
             json!({ "r": [{ "name": "a", "n": 1, "xs": [1, 2, 3] }, { "name": "b", "n": 2, "xs": [1, 2, 3] }] }),
             json!([{ "name": "a", "top": [1] }, { "name": "b", "top": [1, 2] }]),
         );
@@ -2731,7 +2731,7 @@ mod tests {
         );
         check("people count { from jobs where end }", people(), json!(3));
         check(
-            "name, n: $value collect { from jobs } from people where name == \"Bob\"",
+            "name, n: $it collect { from jobs } from people where name == \"Bob\"",
             people(),
             json!([{ "name": "Bob", "n": [
                 { "employer": "Globocorp", "start": "1984", "end": "1990" },
@@ -2739,9 +2739,9 @@ mod tests {
             ] }]),
         );
         // A free-function call may be a source.
-        check("$value values from list(x)", json!({ "x": 5 }), json!([5]));
+        check("$it values from list(x)", json!({ "x": 5 }), json!([5]));
         check(
-            "g: $key, big: $value collect { $value values where $value > 1 } from entries(groups)",
+            "g: $key, big: $it collect { $it values where $it > 1 } from entries(groups)",
             json!({ "groups": { "a": [1, 2, 3], "b": [5] } }),
             json!([{ "g": "a", "big": [2, 3] }, { "g": "b", "big": [5] }]),
         );
@@ -2752,12 +2752,12 @@ mod tests {
         let r = json!({ "r": [{ "a": 1, "b": 0, "s": "" }, { "a": 0, "b": 2, "s": "x" }, {}] });
         check("a values from r where a || b", r.clone(), json!([1, 0]));
         check(
-            "$value from r where !(a > 0) && !(b > 0)",
+            "$it from r where !(a > 0) && !(b > 0)",
             r.clone(),
-            json!([{ "$value": {} }]),
+            json!([{ "$it": {} }]),
         );
         check(
-            "$value values from r where !(a > 0) && !(b > 0)",
+            "$it values from r where !(a > 0) && !(b > 0)",
             r.clone(),
             json!([{}]),
         );
@@ -2931,7 +2931,7 @@ mod tests {
         );
         check_eq_t(&["", " count { }"], vec![json!({ "a": 1 })], json!(1));
         check_eq_t(
-            &["", " first { $value values }"],
+            &["", " first { $it values }"],
             vec![json!([7, 8])],
             json!(7),
         );

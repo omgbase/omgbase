@@ -15,7 +15,7 @@ Tokens:
 
 | Token | Form |
 | --- | --- |
-| identifier | `[A-Za-z_$][A-Za-z0-9_$]*` — `$value`, `$key`, `$depth` are ordinary identifiers with intrinsic meaning |
+| identifier | `[A-Za-z_$][A-Za-z0-9_$]*` — `$it`, `$key`, `$depth` are ordinary identifiers with intrinsic meaning |
 | keyword | `from`, `where`, `select` — **reserved**; never usable as a bare field name (`select where from r` is a parse error) |
 | number | `digits [ "." digits ] [ ("e"\|"E") ["+"\|"-"] digits ]`. A `.` is a decimal point only when a digit follows, so `1..5` lexes as `1`, `..`, `5` and `1.5..2` as `1.5`, `..`, `2`. A **malformed number is a lex error** whose message names `malformed number`: a trailing decimal point (`1.`, `1.x`), an exponent without digits (`1e`, `1e+`), and a leading-dot numeral (`.5` — write `0.5`; `xs.0` is the same error, since a property name cannot be a digit and there is no index access) [`errors-lex`, `lexing`] |
 | string | `"…"` or `'…'`, the two quotes interchangeable. Escapes: `\n` `\t` `\r` `\0` and `\<c>` for any other character `<c>` itself (`\"`, `\'`, `\\`). An unterminated string is a lex error |
@@ -107,7 +107,7 @@ item       = { "^" } ident ":" ( directive | expr )      ; alias (carets = lift)
            | { "^" } expr                               ; unaliased
 ```
 
-- An unaliased item must be a plain navigation (`name`, `meta.slug`, `$value`);
+- An unaliased item must be a plain navigation (`name`, `meta.slug`, `$it`);
   its key is the **last segment**. Any other unaliased expression (a call,
   arithmetic, a comparison) is a parse error `… needs an alias …` unless the
   projection is in `values` mode.

@@ -163,7 +163,7 @@
           "b"
         ]
       },
-      "query": "$value values from xs where has($value) && $value.matches(\"^a\")",
+      "query": "$it values from xs where has($it) && $it.matches(\"^a\")",
       "expect": {
         "result": [
           "ab"

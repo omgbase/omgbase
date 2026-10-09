@@ -631,7 +631,7 @@
       }
     },
     {
-      "name": "$value projects the whole row",
+      "name": "$it projects the whole row",
       "roots": {
         "people": [
           {
@@ -686,7 +686,7 @@
           }
         ]
       },
-      "query": "employee: $value from people where name == \"Bob\"",
+      "query": "employee: $it from people where name == \"Bob\"",
       "expect": {
         "result": [
           {
@@ -713,21 +713,21 @@
       }
     },
     {
-      "name": "bare $value keys by its own name",
+      "name": "bare $it keys by its own name",
       "roots": {
         "xs": [
           1,
           2
         ]
       },
-      "query": "$value from xs",
+      "query": "$it from xs",
       "expect": {
         "result": [
           {
-            "$value": 1
+            "$it": 1
           },
           {
-            "$value": 2
+            "$it": 2
           }
         ]
       }

@@ -94,17 +94,17 @@ guard — use `$path` or `frontmatter.path`).
   collection: `entries(frontmatter)` / `entries(inline)` (oqx ≥ 0.10) — one
   entry per top-level key, **in key order** (authored position is not indexed),
   valued by the same scalar-vs-list rule as a bare read, dotted keys folded back
-  into a nested value; inside the block `$key` is the key and `$value` the value.
+  into a nested value; inside the block `$key` is the key and `$it` the value.
 - **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
 - **Intrinsics:** `$id`, `$path`, `$updated_at` (ISO-8601 UTC, compares
   lexicographically = chronologically), `$body`, `$content_hash`, `format`.
 - **`$repo`** (every scope): the repository handle — `$repo.docs` / `$repo.nodes` /
   `$repo.blocks` / `$repo.edges` are the explicit root scans (§3.4), `$repo.$id`
   the repository id. **[was: `$repo` on a doc was the repository id string.]**
-- **`$value`** (every scope, oqx ≥ 0.8): the current item **itself** — the row
+- **`$it`** (every scope, oqx ≥ 0.8): the current item **itself** — the row
   when scanning a target, or the scalar element when a block's receiver is a
-  list-valued property (`tags exists { where $value == "pricing" }`,
-  `tags collect { $value values }`). Inside a block `^$value` is the enclosing
+  list-valued property (`tags exists { where $it == "pricing" }`,
+  `tags collect { $it values }`). Inside a block `^$it` is the enclosing
   row. It is engine-owned (never a stored field) and never pushed to SQL.
 - **Relations:** `nodes`, `blocks`, `doc.out`/`doc.in` (the citation graph),
   `doc.out_edges`/`doc.in_edges` (a doc's edges as rows).
@@ -288,7 +288,7 @@ nested/correlated scopes:
   projection is in `values` mode. **Rows as values** (surface 1.2): wherever a
   store row surfaces as a *value* rather than a hit — a nested `collect { }` /
   `first { }` / `single { }` with an **empty** projection ("the row itself",
-  oqx §12), a `values` projection of `$value`, a field bound to a row — it is
+  oqx §12), a `values` projection of `$it`, a field bound to a row — it is
   rendered as `{ id, path }` (the row's id and its document's path), never the
   raw store row (before 1.2 the columns leaked, `attrs` as a JSON string and the
   `__path` join column included). `tasks: nodes collect { where kind ==
@@ -298,7 +298,7 @@ nested/correlated scopes:
   top level the result carries `values: […]` in place of `hits` (empty), paged
   and `distinct`-deduped exactly like hits (`select distinct type values from docs`
   → the type strings). Inside a `collect`/`first`/`single` block it yields a plain
-  array / scalar (`tags: tags collect { $value values }`, `latest: nodes first
+  array / scalar (`tags: tags collect { $it values }`, `latest: nodes first
   { value values order by … }`). The runner implements the top-level form by
   projecting the single item under a reserved key alongside the injected
   id/path, then peeling the values off the final page — so the keyset cursor
@@ -415,11 +415,11 @@ projected-query fence (ADR-011, deferred).
 | Distinct doc types | `select distinct type from docs` |
 | Distinct doc types as bare strings | `select distinct type values from docs` |
 | Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
-| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == "x.md"` |
-| Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $value > 1600 }` |
+| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "x.md"` |
+| Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $it > 1600 }` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
-| Each substance's tags minus one | `select tags: tags collect { $value values where $value != "substance" } from docs where type == "substance"` |
+| Each substance's tags minus one | `select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |

@@ -167,7 +167,7 @@ const QUERIES: &[(&str, Push)] = &[
         "from docs where nodes count distinct { select kind } == 3",
         Declined,
     ),
-    // values / $value (top-level values is shaped by the runner; nested by the engine)
+    // values / $it (top-level values is shaped by the runner; nested by the engine)
     (
         "select era values from docs where type == \"practitioner\" order by era asc",
         Planned,
@@ -178,11 +178,11 @@ const QUERIES: &[(&str, Push)] = &[
         Planned,
     ),
     (
-        "select tags: tags collect { $value values where $value != \"substance\" } from docs where type == \"substance\"",
+        "select tags: tags collect { $it values where $it != \"substance\" } from docs where type == \"substance\"",
         Planned,
     ),
     (
-        "from docs where tags exists { where $value == \"tria-prima\" }",
+        "from docs where tags exists { where $it == \"tria-prima\" }",
         Declined,
     ),
     // none / limit / offset (top-level bounds are applied by the runner, nested by the engine)
@@ -210,11 +210,11 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // entries() / $key (a free call → residual; the context materializes frontmatter/inline)
     (
-        "select fm: entries(frontmatter) collect { k: $key, v: $value } from docs where $path == \"substances/salt.md\"",
+        "select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"substances/salt.md\"",
         Planned,
     ),
     (
-        "from docs where entries(frontmatter) exists { where $key == \"era\" && $value > 1600 }",
+        "from docs where entries(frontmatter) exists { where $key == \"era\" && $it > 1600 }",
         Declined,
     ),
     (
@@ -223,7 +223,7 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // (a call in the residual block's receiver: the whole query declines)
     (
-        "select $path from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $value }",
+        "select $path from nodes where kind == \"md:task\" && entries(attrs) exists { where $key == \"checked\" && $it }",
         Declined,
     ),
     (

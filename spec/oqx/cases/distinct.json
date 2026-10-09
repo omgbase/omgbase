@@ -774,7 +774,7 @@
           1
         ]
       },
-      "query": "select distinct $value values from xs",
+      "query": "select distinct $it values from xs",
       "expect": {
         "result": [
           1,

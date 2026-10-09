@@ -658,7 +658,7 @@ test("first { … } in where position is rejected", () => {
   assert.throws(() => execute("name from people where jobs first { employer }", { people }), OqxError);
 });
 
-// ---- `$value` (the current item) and `values` (scalar projection mode) -------
+// ---- `$it` (the current item) and `values` (scalar projection mode) -------
 
 const scores = [10, 60, 70, 45];
 const players = [
@@ -667,34 +667,34 @@ const players = [
   { name: "Cid", scores: [] },
 ];
 
-test("$value is the current row itself, so scalar collections are queryable", () => {
-  assert.deepEqual(oqx`$value values from ${scores} where $value > 50`, [60, 70]);
-  assert.deepEqual(oqx`$value values from ${["b", "a"]} order by $value`, ["a", "b"]);
-  assert.deepEqual(oqx`$value values from ${scores} order by $value desc`, [70, 60, 45, 10]);
+test("$it is the current row itself, so scalar collections are queryable", () => {
+  assert.deepEqual(oqx`$it values from ${scores} where $it > 50`, [60, 70]);
+  assert.deepEqual(oqx`$it values from ${["b", "a"]} order by $it`, ["a", "b"]);
+  assert.deepEqual(oqx`$it values from ${scores} order by $it desc`, [70, 60, 45, 10]);
 });
 
-test("$value on an object row is that exact object (reference identity)", () => {
-  const out = oqx`employee: $value from ${people} where name == "Bob"` as Array<{ employee: unknown }>;
+test("$it on an object row is that exact object (reference identity)", () => {
+  const out = oqx`employee: $it from ${people} where name == "Bob"` as Array<{ employee: unknown }>;
   assert.equal(out[0]!.employee, people[0]);
-  // bare `$value` keys by its own name, like any other bare projection
-  assert.deepEqual(oqx`$value from ${[1, 2]}`, [{ $value: 1 }, { $value: 2 }]);
+  // bare `$it` keys by its own name, like any other bare projection
+  assert.deepEqual(oqx`$it from ${[1, 2]}`, [{ $it: 1 }, { $it: 2 }]);
 });
 
-test("$value inside a nested block is the inner item; ^$value is the enclosing row", () => {
+test("$it inside a nested block is the inner item; ^$it is the enclosing row", () => {
   assert.deepEqual(
-    oqx`name, big: scores collect { $value values where $value > 50 } from ${players}`,
+    oqx`name, big: scores collect { $it values where $it > 50 } from ${players}`,
     [{ name: "Ann", big: [60, 70] }, { name: "Ben", big: [] }, { name: "Cid", big: [] }],
   );
-  // `^$value` reads the enclosing scope's row: players with strictly more scores than me
+  // `^$it` reads the enclosing scope's row: players with strictly more scores than me
   assert.deepEqual(
-    oqx`name, richer: ${players} collect { name values where scores.size() > ^$value.scores.size() } from ${players}`,
+    oqx`name, richer: ${players} collect { name values where scores.size() > ^$it.scores.size() } from ${players}`,
     [{ name: "Ann", richer: [] }, { name: "Ben", richer: ["Ann"] }, { name: "Cid", richer: ["Ann", "Ben"] }],
   );
 });
 
-test("$value is absent at the root scope and is never a named root", () => {
-  assert.deepEqual(execute("$value values from xs where has($value)", { xs: [1, null, 2] }), [1, 2]);
-  assert.equal(execute("xs exists { where $value == ^$value }", { xs: [1] }), false); // ^$value from a top-level row is the root: absent
+test("$it is absent at the root scope and is never a named root", () => {
+  assert.deepEqual(execute("$it values from xs where has($it)", { xs: [1, null, 2] }), [1, 2]);
+  assert.equal(execute("xs exists { where $it == ^$it }", { xs: [1] }), false); // ^$it from a top-level row is the root: absent
 });
 
 test("values: a record projection becomes the bare value", () => {
@@ -760,7 +760,7 @@ test("none { … } is true iff the block yields no rows — the complement of ex
 test("none as the whole-query consumer returns a boolean", () => {
   assert.equal(oqx`${people} none { where age > 90 }`, true);
   assert.equal(oqx`${people} none { where age > 50 }`, false);
-  const r = run(parse("xs none { where $value > 2 }"), { roots: { xs: [1, 2] } });
+  const r = run(parse("xs none { where $it > 2 }"), { roots: { xs: [1, 2] } });
   assert.deepEqual(r, { consumer: "none", none: true });
 });
 
@@ -806,7 +806,7 @@ test("limit/offset inside nested blocks, evaluated in the enclosing scope", () =
   // `^n` reads the enclosing row: each player's top-n scores where n is their own field
   const ranked = [{ name: "A", n: 2, scores: [5, 9, 1] }, { name: "B", n: 1, scores: [7, 3] }];
   assert.deepEqual(
-    oqx`name, top: scores collect { $value values order by $value desc limit ^n } from ${ranked}`,
+    oqx`name, top: scores collect { $it values order by $it desc limit ^n } from ${ranked}`,
     [{ name: "A", top: [9, 5] }, { name: "B", top: [7] }],
   );
 });
@@ -830,13 +830,13 @@ test("limit/offset must be non-negative integers; a field named limit is still a
 
 const settings = { theme: "dark", fontSize: 14, autosave: true };
 
-test("entries(object) yields entry scopes exposing $key and $value", () => {
+test("entries(object) yields entry scopes exposing $key and $it", () => {
   assert.deepEqual(
-    oqx`key: $key, value: $value from entries(${settings})`,
+    oqx`key: $key, value: $it from entries(${settings})`,
     [{ key: "theme", value: "dark" }, { key: "fontSize", value: 14 }, { key: "autosave", value: true }],
   );
   assert.deepEqual(oqx`$key values from entries(${settings})`, ["theme", "fontSize", "autosave"]);
-  assert.deepEqual(oqx`$value values from entries(${settings}) where $key != "theme"`, [14, true]);
+  assert.deepEqual(oqx`$it values from entries(${settings}) where $key != "theme"`, [14, true]);
   // the scope's row IS the value: a bare projection returns the values
   assert.deepEqual(oqx`from entries(${settings})`, ["dark", 14, true]);
 });
@@ -854,7 +854,7 @@ test("plain objects still do not auto-iterate; entries() is the explicit opt-in"
 });
 
 test("entries of arrays give numeric index keys; Map, null, and scalars", () => {
-  assert.deepEqual(oqx`k: $key, v: $value from entries(${["x", "y"]})`, [{ k: 0, v: "x" }, { k: 1, v: "y" }]);
+  assert.deepEqual(oqx`k: $key, v: $it from entries(${["x", "y"]})`, [{ k: 0, v: "x" }, { k: 1, v: "y" }]);
   assert.deepEqual(oqx`$key values from entries(${new Map([["a", 1], ["b", 2]])})`, ["a", "b"]);
   assert.deepEqual(oqx`from entries(${null})`, []);
   assert.deepEqual(oqx`from entries(${42})`, []);
@@ -866,25 +866,25 @@ test("$key is entry-scope-only: absent on ordinary rows and array elements", () 
   assert.deepEqual(oqx`k: $key from ${people} where name == "Bob"`, [{ k: undefined }]);
 });
 
-test("entries() as a nested receiver, and ^$key / ^$value from inside an entry scope", () => {
+test("entries() as a nested receiver, and ^$key / ^$it from inside an entry scope", () => {
   const users = [
     { name: "Ann", prefs: { dark: true, compact: false } },
     { name: "Ben", prefs: { dark: false } },
     { name: "Cid", prefs: {} },
   ];
-  assert.deepEqual(oqx`name, on: entries(prefs) collect { $key values where $value } from ${users}`,
+  assert.deepEqual(oqx`name, on: entries(prefs) collect { $key values where $it } from ${users}`,
     [{ name: "Ann", on: ["dark"] }, { name: "Ben", on: [] }, { name: "Cid", on: [] }]);
-  assert.deepEqual(oqx`name values from ${users} where entries(prefs) exists { where $key == "dark" && $value }`, ["Ann"]);
+  assert.deepEqual(oqx`name values from ${users} where entries(prefs) exists { where $key == "dark" && $it }`, ["Ann"]);
   assert.deepEqual(oqx`name values from ${users} where entries(prefs) none { }`, ["Cid"]);
   assert.equal(oqx`${users} count { where entries(prefs) count { } >= 2 }`, 1);
-  // inside an entry scope, `^$key` / `^$value` reach the enclosing entry
+  // inside an entry scope, `^$key` / `^$it` reach the enclosing entry
   const groups = { a: [1, 2, 3], b: [5] };
   assert.deepEqual(
-    oqx`g: $key, big: $value collect { $value values where $value > 1 } from entries(${groups})`,
+    oqx`g: $key, big: $it collect { $it values where $it > 1 } from entries(${groups})`,
     [{ g: "a", big: [2, 3] }, { g: "b", big: [5] }],
   );
   assert.deepEqual(
-    oqx`$key values from entries(${groups}) where $value exists { where $value > 4 && ^$key == "b" }`,
+    oqx`$key values from entries(${groups}) where $it exists { where $it > 4 && ^$key == "b" }`,
     ["b"],
   );
 });
@@ -896,7 +896,7 @@ test("entries() as a plain value is an array of { key, value } records", () => {
 
 test("entries compose with order/limit/distinct and a follow seed keeps its $key", () => {
   assert.deepEqual(oqx`$key values from entries(${settings}) order by $key limit 2`, ["autosave", "fontSize"]);
-  assert.deepEqual(oqx`select distinct $value values from entries(${{ a: 1, b: 1, c: 2 }})`, [1, 2]);
+  assert.deepEqual(oqx`select distinct $it values from entries(${{ a: 1, b: 1, c: 2 }})`, [1, 2]);
   const forest = { left: { id: "L", children: [{ id: "L1", children: [] }] }, right: { id: "R", children: [] } };
   assert.deepEqual(
     oqx`id, root: $key from entries(${forest}) follow children order by $ordinal`,

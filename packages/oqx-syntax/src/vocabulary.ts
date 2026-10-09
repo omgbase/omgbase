@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.14";
+export const LANGUAGE_VERSION = "0.15";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). */
 export const KEYWORDS = ["from", "where", "select"] as const;
@@ -62,7 +62,7 @@ export const BUILTIN_METHODS = ["lower", "upper", "contains", "startsWith", "end
  * (SEMANTICS §2, §21) and the recursion intrinsics of a `follow` occurrence (§20).
  * Any other `$name` is a host intrinsic — the grammar scopes every `$`-identifier
  * as `variable.language`, so hosts need not be enumerated to be highlighted. */
-export const INTRINSICS = ["$value", "$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"] as const;
+export const INTRINSICS = ["$it", "$key", "$depth", "$stop", "$leaf", "$frontier", "$ordinal"] as const;
 
 /** Identifier shape (GRAMMAR §1): `[A-Za-z_$][A-Za-z0-9_$]*`. */
 export const IDENTIFIER = "[A-Za-z_$][A-Za-z0-9_$]*";

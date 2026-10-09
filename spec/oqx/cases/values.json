@@ -672,13 +672,13 @@
           2
         ]
       },
-      "query": "xs count { $value values }",
+      "query": "xs count { $it values }",
       "expect": {
         "result": 2
       }
     },
     {
-      "name": "$value values over scalars",
+      "name": "$it values over scalars",
       "roots": {
         "scores": [
           10,
@@ -687,7 +687,7 @@
           45
         ]
       },
-      "query": "$value values from scores where $value > 50",
+      "query": "$it values from scores where $it > 50",
       "expect": {
         "result": [
           60,
@@ -696,7 +696,7 @@
       }
     },
     {
-      "name": "$value values ordered",
+      "name": "$it values ordered",
       "roots": {
         "scores": [
           10,
@@ -705,7 +705,7 @@
           45
         ]
       },
-      "query": "$value values from scores order by $value desc",
+      "query": "$it values from scores order by $it desc",
       "expect": {
         "result": [
           70,
@@ -716,14 +716,14 @@
       }
     },
     {
-      "name": "$value values over strings ordered",
+      "name": "$it values over strings ordered",
       "roots": {
         "xs": [
           "b",
           "a"
         ]
       },
-      "query": "$value values from xs order by $value",
+      "query": "$it values from xs order by $it",
       "expect": {
         "result": [
           "a",

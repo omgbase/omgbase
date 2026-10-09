@@ -46,7 +46,8 @@ row's scope for a nested block's rows).
 A **bare identifier** resolves against exactly **one** scope — the current one —
 and never climbs:
 
-1. `$value` — the scope's row itself (absent at the root).
+1. `$it` — the scope's row itself (absent at the root). Unconditional: a
+   row property literally named `$it` is unreachable by bare name.
 2. `$key` — the property key, in an entry scope (§21).
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
    intrinsics, on a `follow` occurrence (§20).
@@ -59,12 +60,17 @@ else the name is an ordinary property read (step 5), so a host whose rows
 carry a `$depth` or `$ordinal` of their own (omgbase's blocks do) exposes it
 outside a `follow`, and a plain-JSON row `{ "$depth": 3 }` projects `3`.
 Since 0.13; before, the six names read absent everywhere they were not
-metadata, shadowing the row.
+metadata, shadowing the row. **`$value` is not an intrinsic** (since 0.15,
+when the current item was renamed from `$value` to `$it` with no synonym): it
+is an ordinary property read under step 5 everywhere — at the top level, in a
+nested block, and in an entry scope (where it is a property of the entry's
+*value*) — so `{ "$value": 3 }` projects `3` and a row without it reads absent.
+[`intrinsics`]
 
 A name the scope lacks is **absent**. Present-but-falsy values are ordinary
 values. `^name` reads from exactly one scope out per caret; past the root it is
 absent. `.name` navigates the value to its left; navigating from absent yields
-absent, never an error (`a.b.c` on `{}` is absent). `^$value` is the enclosing
+absent, never an error (`a.b.c` on `{}` is absent). `^$it` is the enclosing
 row; `^people` from a top-level row is the named root `people`.
 [`outer-refs`, `projection`]
 
@@ -402,7 +408,7 @@ Rows sort by each key in turn; ties fall through to the next key; the sort is
 by §6 (numbers numerically, strings by **code point**: `"a"`, `"～"`, `"😀"`)
 and `desc` reverses that order of present values only: **absent sorts last in
 both directions**. Keys are arbitrary expressions read in the row's scope
-(fields, `$value`, intrinsics, `^outer`); they are not rewritten against
+(fields, `$it`, intrinsics, `^outer`); they are not rewritten against
 aliases. Ordering of mixed-type or boolean keys is not specified. [`order-by`]
 
 ## 18. `limit` / `offset`
@@ -507,7 +513,7 @@ implementation undoes it. Fixtures therefore **must not depend on the relative
 order of integer-like and non-integer-like keys** in one object (`{ "b":1,
 "2":2, "a":3 }` yields `["2","b","a"]` in the reference and `["b","2","a"]`
 elsewhere); an object with only one kind of key is safe. When an entry becomes a scope's row, the scope's row is
-the property's **value** (`$value`, bare names, navigation) and `$key` is the
+the property's **value** (`$it`, bare names, navigation) and `$key` is the
 property's key. `$key` exists only in an entry scope; ordinary rows and array
 elements have none. Entries flow through every place a row does: sources,
 `from` re-projections, nested receivers, `follow` seeds (which keep their

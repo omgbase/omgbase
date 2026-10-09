@@ -34,7 +34,7 @@ pub use ast::{
 };
 /// The OQX language version this crate conforms to (`spec/oqx/VERSION`). It is
 /// also this crate's `major.minor`: the patch digit is the crate's own.
-pub const LANGUAGE_VERSION: &str = "0.14";
+pub const LANGUAGE_VERSION: &str = "0.15";
 
 /// This crate's own version (`Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

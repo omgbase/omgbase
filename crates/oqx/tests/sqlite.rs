@@ -221,7 +221,7 @@ fn planned_result_equals_the_in_memory_engine_over_the_same_rows() {
         // untranslatable leaves are residual
         "name from emp where name.matches(\"^[AB]\") order by name",
         "name from emp where level in 7.. order by name",
-        "name from emp where $value.level == 5",
+        "name from emp where $it.level == 5",
         "name from emp where name.lower() == \"bob\"",
         "name from emp where unknown == 1",
         // no where, ordering, bounding, distinct, values, projections
@@ -307,12 +307,12 @@ fn compile_pins_the_sql_and_parameters() {
     let c = compile("emp count { where dept == \"eng\" }");
     assert_eq!(c.sql, "SELECT * FROM \"emp\" WHERE (\"emp\".\"dept\" = ?)");
 
-    // Undeclared columns, outer refs, `$value`, members, calls, `in` → residual.
+    // Undeclared columns, outer refs, `$it`, members, calls, `in` → residual.
     for src in [
         "name from emp where unknown == 1",
         "name from emp where ^dept == \"eng\"",
-        "name from emp where $value == 1",
-        "name from emp where $value.dept == \"eng\"",
+        "name from emp where $it == 1",
+        "name from emp where $it.dept == \"eng\"",
         "name from emp where name.lower() == \"bob\"",
         "name from emp where level in 4..6",
         "name from emp where dept == \"e\" + name.lower()",
@@ -371,7 +371,7 @@ fn sqlite_types_map_to_values_and_select_star_returns_every_column() {
     .unwrap();
     // `extra` is not a declared column: not pushable, but still returned.
     let planner = SqliteTable::new(&db, "t", &["id", "ratio", "label", "absent", "bytes"]);
-    let q = parse_string("$value values from t").unwrap();
+    let q = parse_string("$it values from t").unwrap();
     let plan = planner.plan(&q, &[]).unwrap();
     assert_eq!(
         plan.rows,
@@ -434,7 +434,7 @@ fn json_columns_are_parsed_back_into_row_values() {
     )
     .unwrap();
     let planner = SqliteTable::new(&db2, "doc", &["id"]).json_columns(&["tags"]);
-    let q = parse_string("id values from doc where tags exists { where $value == \"a\" }").unwrap();
+    let q = parse_string("id values from doc where tags exists { where $it == \"a\" }").unwrap();
     let res = PlannedEngine::new(planner).run(&q, &[]).unwrap();
     assert_eq!(res, OqxResult::Collect(vec![num(1.0)]));
 }
@@ -491,7 +491,7 @@ fn accessors_and_debug() {
     let planner = planner(&db).json_columns(&["name"]);
     assert_eq!(planner.table(), "emp");
     assert!(planner.is_column("dept"));
-    assert!(!planner.is_column("$value"));
+    assert!(!planner.is_column("$it"));
     let dbg = format!("{planner:?}");
     assert!(dbg.contains("SqliteTable"), "{dbg}");
     assert!(dbg.contains("\"emp\""), "{dbg}");

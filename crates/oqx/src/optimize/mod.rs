@@ -32,7 +32,7 @@ pub use hash_index::{HashIndex, RowIndex, index_key, intersect_positions};
 
 /// One hoisted equality `local == outer` from the block's top-level `&&`
 /// conjunction: `local` reads only the block's row (an identifier or member
-/// chain; `path` is its property path, empty for `$value`), `outer` reads
+/// chain; `path` is its property path, empty for `$it`), `outer` reads
 /// nothing from the block's row and cannot raise.
 #[derive(Clone, Debug)]
 pub struct Correlation {
@@ -550,11 +550,11 @@ pub const SCOPE_INTRINSICS: &[&str] =
 
 /// The property path a bare identifier or member chain reads off the current
 /// row — `customer_id` → `["customer_id"]`, `meta.id` → `["meta", "id"]`,
-/// `$value` → `[]` — or `None` when `e` is not such a chain or starts from a
+/// `$it` → `[]` — or `None` when `e` is not such a chain or starts from a
 /// scope intrinsic (`$key`, `$depth`, …).
 pub fn local_path(e: &Expr) -> Option<Vec<String>> {
     match e {
-        Expr::Ident { name } if name == "$value" => Some(Vec::new()),
+        Expr::Ident { name } if name == "$it" => Some(Vec::new()),
         Expr::Ident { name } if SCOPE_INTRINSICS.contains(&name.as_str()) => None,
         Expr::Ident { name } => Some(vec![name.clone()]),
         Expr::Member { recv, name } => {
@@ -637,7 +637,7 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(
-            plan("select c: ^cs first { where $value == ^cid } from os").correlated[0].path,
+            plan("select c: ^cs first { where $it == ^cid } from os").correlated[0].path,
             Vec::<String>::new()
         );
     }

@@ -511,7 +511,7 @@
       }
     },
     {
-      "name": "^$value is the enclosing row",
+      "name": "^$it is the enclosing row",
       "roots": {
         "players": [
           {
@@ -534,7 +534,7 @@
           }
         ]
       },
-      "query": "name, richer: ^players collect { name values where scores.size() > ^$value.scores.size() } from players",
+      "query": "name, richer: ^players collect { name values where scores.size() > ^$it.scores.size() } from players",
       "expect": {
         "result": [
           {
@@ -558,19 +558,19 @@
       }
     },
     {
-      "name": "$value is absent at the root scope",
+      "name": "$it is absent at the root scope",
       "roots": {
         "xs": [
           1
         ]
       },
-      "query": "xs exists { where $value == ^$value }",
+      "query": "xs exists { where $it == ^$it }",
       "expect": {
         "result": false
       }
     },
     {
-      "name": "$value inside a block is the inner item",
+      "name": "$it inside a block is the inner item",
       "roots": {
         "players": [
           {
@@ -593,7 +593,7 @@
           }
         ]
       },
-      "query": "name, big: scores collect { $value values where $value > 50 } from players",
+      "query": "name, big: scores collect { $it values where $it > 50 } from players",
       "expect": {
         "result": [
           {
@@ -615,7 +615,7 @@
       }
     },
     {
-      "name": "has($value) filters absent scalars",
+      "name": "has($it) filters absent scalars",
       "roots": {
         "xs": [
           1,
@@ -623,7 +623,7 @@
           2
         ]
       },
-      "query": "$value values from xs where has($value)",
+      "query": "$it values from xs where has($it)",
       "expect": {
         "result": [
           1,

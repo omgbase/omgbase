@@ -204,7 +204,7 @@ const VALUE_KEY = "__oqx_value";
 // Rows as values (spec/surface §1.4, 1.2). The engine hands back store rows
 // wherever the projection made a row a VALUE — a nested `collect { }` /
 // `first { }` / `single { }` with an empty projection ("the row itself",
-// spec/oqx §12), a `values` projection of `$value`/`$self`, a field bound to a
+// spec/oqx §12), a `values` projection of `$it`/`$self`, a field bound to a
 // row — and a store row is not a wire shape (column names, `attrs` as a JSON
 // string, the `__path` join column, Buffers). Walk the projected value and
 // render every tagged row as `{ id, path }`; everything else passes through
