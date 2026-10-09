@@ -68,8 +68,46 @@ Mirrors the reference so the two can be read side by side:
   host into the crate's native syntax instead (not portable).
 - `engine` — the in-memory engine over a `DataContext` (the seam that binds the
   language to a data model; the default context is plain `Value`s).
+- `optimize` — the nested-block optimizer (below).
 - `planner` — the seam for pushing work into a store and finishing the residual
   in memory.
+
+## Performance: relational patterns
+
+A nested block runs once per enclosing row, so `^customers first { where id ==
+^customer_id }`, `^orders collect { … where customer_id == ^id }` and
+`^customers exists { where id == ^customer_id }` would be quadratic if the block
+scanned its receiver each time. `optimize` gives every block a `BlockPlan` and
+applies `Rule`s (`fn(&BlockPlan, &RuleContext) -> Option<BlockPlan>`, a fixpoint
+over `DEFAULT_RULES`), each proven unobservable — same rows, lifts and errors as
+the scan:
+
+- **Correlated equality → hash probe.** A top-level `&&` conjunct `local ==
+  outer` (`local` an identifier/member chain on the block's row, `outer`
+  reading nothing from it and raise-free) is answered from a `HashIndex` on the
+  receiver built once per run (keys reproduce `==`: absent ≡ null, `-0` ≡ `0`,
+  `NaN` matches nothing, arrays/objects structurally as this crate's `equals`
+  is); the residual conjuncts run over the bucket in receiver order; several
+  equalities intersect smallest first.
+- **Invariant blocks run once** (nothing read from any enclosing row, no lifts).
+- **`exists`/`none` stop at the first bucket row** that passes the residual.
+- **`exists`/`none`/`count` with no residual** are answered from the bucket's
+  size after the bound.
+
+The sound rule: an equality is hoisted only when every conjunct to its left is
+raise-free (no call, no `single`, no lift, no bound, no out-of-range binding)
+and its outer side is; a `where` with a lift anywhere is never probed. Property
+reads are treated as total (SEMANTICS §23); an `Err` from `DataContext::get`
+while an index is built or a probe value evaluated falls back to the scan.
+
+Unlike the reference, a `Value` has no identity, so a receiver is indexed only
+when it is *statically* stable — it reads only the root scope and bindings
+(`^customers` from a top-level block, a `${…}` binding). A per-row relation is
+scanned. `DataContext::index_for(collection, path)` lets a context hand the
+engine a pre-built `RowIndex`; `IndexedCollection::context(extra_roots)` does so
+for its fields. `InMemoryEngine::with_rules(&[])` is the naive engine;
+`tests/spec.rs` proves optimized ≡ naive (result, or error stage and message)
+over every spec fixture, and `tests/optimize.rs` covers the rules.
 
 ## Features
 

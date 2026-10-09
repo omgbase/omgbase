@@ -781,6 +781,94 @@ blocks/nodes, the relations table, `$` intrinsics, `WITH RECURSIVE` for `follow`
 becomes a `QueryPlanner`, while oqx contributes the parser, IR, semantics
 contract, and residual executor.
 
+## Performance: relational patterns
+
+A nested block runs once per enclosing row, so the natural way to join two
+collections —
+
+```js
+oqx`select id, total, customer: ${customers} first { where id == ^customer_id } from ${orders}`;
+oqx`select name, orders: ${orders} collect { id, total where customer_id == ^id } from ${customers}`;
+oqx`select id from ${orders} where ${customers} exists { where id == ^customer_id }`;
+```
+
+— would be quadratic if the block scanned its receiver each time. It does not:
+the in-memory engine runs every nested block through an **optimizer**
+(`src/optimize/`), a small logical plan per block plus rules that rewrite it,
+each with a proof that the rewrite is unobservable — same rows in the same
+order, same lifts, same error (same message) at the same point. The planned
+engine and the naive engine (`new InMemoryEngine(ctx, { rules: [] })`) are run
+over every `spec/oqx` fixture by `test/conformance.test.ts` and must agree on
+results and on errors.
+
+**What is optimized**
+
+- **Correlated equality → hash probe.** A top-level `&&` conjunct of the block's
+  `where` of the form `local == outer` (either side) — `local` a bare identifier
+  or member chain on the block's row (`customer_id`, `meta.id`, `$value`),
+  `outer` anything that reads nothing from that row (`^customer_id`, `^^x.id`,
+  a `${…}` binding, a literal, arithmetic over them) — is answered from a hash
+  index on the receiver built **once per run** per collection and path. The
+  remaining conjuncts run over the bucket only, in receiver order; several
+  equalities intersect their buckets smallest first. The index keys are exactly
+  `==` (SEMANTICS §5): absent ≡ `null`, `-0` ≡ `0`, `NaN` matches nothing,
+  objects and arrays by reference. 5 000 orders × 5 000 customers zip in a few
+  milliseconds; the scan takes seconds.
+- **Invariant blocks run once.** A block that reads nothing from any enclosing
+  row (`^customers collect { name values }` from a top-level row) and lifts
+  nothing is evaluated the first time it is reached and its value reused for
+  every other row (the same array/record by reference).
+- **Semi/anti-join short-circuit.** `exists` and `none` stop at the first bucket
+  row that passes the residual, as they stop at the first matching row of a scan.
+- **Cardinality only.** `exists` / `none` / `count` with nothing left to check
+  per row (no `where`, or every conjunct correlated; no `distinct`, no `order
+  by`) are answered from the bucket's size after the bound without entering a
+  row.
+
+**The sound rule.** `&&` is strictly left to right and short-circuiting (§13),
+so a probe may skip a row only if everything the scan would have evaluated for
+it could neither raise nor bind: an equality is hoisted only when **every
+conjunct to its left is raise-free** — no function or method call, no `single`,
+no lift, no `limit`/`offset`, no out-of-range `${…}`, only `exists`/`none`/
+`count` blocks that are themselves raise-free — and its outer side is raise-free
+too. A conjunct that could raise *right* of the equality is simply evaluated
+over the bucket, where the scan would have evaluated it on the same rows. A
+block whose `where` lifts anywhere is never probed (a lift could change what
+the outer side reads between rows). Otherwise the block scans as before, so
+`where nope(x) && id == ^id` still raises `unknown function`.
+
+Property reads are treated as total (§23: evaluation is otherwise total). A
+`DataContext.get` that throws is caught where the engine relies on reads it
+would not otherwise perform — building an index, evaluating the probe value —
+and the block falls back to the scan, which raises or not in its own order.
+
+**Which receivers are indexed.** A receiver that reads only the root scope and
+bindings (`^customers`, `${customers}`, `^^config.items`) is materialized and
+indexed once per run even if the context hands out a fresh array per read.
+Any other receiver is indexed the second time the **same object** is probed, so
+a per-row relation (`lines collect { … where cid == ^id }` with a different
+`lines` array per row) is scanned, not indexed. A scalar receiver is one row.
+
+**Pre-built indexes.** `DataContext.indexFor(collection, path)` is an optional
+seam: return a `RowIndex` (`lookup(value) → ascending positions into
+toRows(collection)`) for a collection you have already indexed, or `undefined`
+to let the engine build one. `IndexedCollection` does this for its fields:
+
+```js
+import { parse, run, IndexedCollection } from "@omgbase/oqx";
+const orders = new IndexedCollection("orders", orderRows, ["customer_id"]);
+run(parse("select name, o: ^orders collect { id values where customer_id == ^id } from customers"),
+    { context: orders.context({ customers }) });   // probes the pre-built index
+```
+
+**Still a scan.** A block with a `from` re-projection or a `follow`; a `where`
+whose equality sits right of a conjunct that could raise; inequalities,
+`in`, `contains()` and other non-equality correlations; `order by … limit N`
+(sorted in full, then bounded); `distinct` (hashes projections, not an index);
+top-level queries (a `QueryPlanner` is the seam for those). `trace` in
+`InMemoryEngine`'s options receives one event per index built, probe, memo hit,
+cardinality answer or fallback, if you want to see what a query did.
+
 ## Exports
 
 Everything below is exported from `@omgbase/oqx` (`src/index.ts`); the SQLite
@@ -827,10 +915,15 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
 **Engines and contexts**
 
 - `Engine` — `{ run(query, bindings): OqxResult }`; what `run({ engine })` accepts.
-- `InMemoryEngine` — `new InMemoryEngine(context?)`; the reference engine over a
-  `DataContext` (tier 1/2).
+- `InMemoryEngine` — `new InMemoryEngine(context?, options?)`; the reference
+  engine over a `DataContext` (tier 1/2). `InMemoryEngineOptions`: `rules`
+  (the optimizer rules for nested blocks, default `DEFAULT_RULES`; `[]` is the
+  naive scan) and `trace` (a `(event: TraceEvent) => void` sink for index /
+  probe / memo / cardinality / fallback events). See [Performance](#performance-relational-patterns).
 - `DataContext` — the tier-2 interface: `root`, `get`, `toRows`, `identity`,
-  plus optional `callFunction` / `callMethod` (above) and an optional
+  plus optional `callFunction` / `callMethod` (above), an optional
+  `indexFor(collection, path)` returning a `RowIndex` for a pre-built equality
+  index, and an optional
   `regexDialect` (`"oqx"` default | `"native"`). The engine dispatches
   `matches` through `callMethod`, so a custom context that wants the native
   dialect answers `matches` itself with `semantics.regexMatches(recv, args,
@@ -873,16 +966,30 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   its native query using `constValue` for parameters, then returns
   `{ rows, residual: residualQuery(query, residual) }`.
 - `IndexedCollection` — `new IndexedCollection(rootName, rows, indexFields)`; a
-  `QueryPlanner` that hash-indexes `rows` on `indexFields` and answers
-  `field == value` predicates on them from the index, leaving the rest residual:
+  `QueryPlanner` that hash-indexes `rows` on `indexFields` (under `==`: absent ≡
+  null, `NaN` matches nothing) and answers `field == value` predicates on them
+  from the index, leaving the rest residual. `indexFor(collection, path)` serves
+  the same indexes to the engine's correlated probes and `context(extraRoots?)`
+  is a `DataContext` that resolves the root and wires `indexFor` up; the plans
+  it returns carry that context, so a residual's nested blocks see the root.
 
   ```js
   import { parse, run, IndexedCollection, PlannedEngine } from "@omgbase/oqx";
   const planner = new IndexedCollection("people", people, ["city", "title"]);
-  const engine = new PlannedEngine(planner);
+  const engine = new PlannedEngine(planner, planner.context());
   run(parse('name from people where city == "NYC" && age > 30'), { engine });
   // city probe from the index; `age > 30` finished in-memory over the candidates
   ```
+
+**Optimizer (nested blocks)**
+
+- `DEFAULT_RULES`, `correlatedEqualityProbe`, `stableReceiver`, `invariantBlock`,
+  `cardinalityOnly` — the shipped `Rule`s (`(plan: BlockPlan, ctx: RuleContext)
+  => BlockPlan | null`); `logicalBlock(op, depth)` is the unoptimized plan of a
+  block and `optimizeBlock(op, depth, ctx, rules)` runs rules to a fixpoint.
+  `BlockPlan` / `Correlation` / `RuleContext` are the types; `HashIndex` is the
+  engine's `RowIndex` implementation (`add(value, position)`, `lookup(value)`),
+  reusable by a context implementing `indexFor`.
 
 - `SqliteTable` (from `@omgbase/oqx/sqlite`) —
   `new SqliteTable(db, tableName, options)` over a `node:sqlite` `DatabaseSync`.
