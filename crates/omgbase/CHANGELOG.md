@@ -4,6 +4,11 @@ All notable changes to `omgbase` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.11.2] - 2026-10-10
+
+### Patch
+- Dependency pins moved: omgbase-surface 2.0.1 → 2.0.2, oqx 0.18.0 → 0.19.0.
+
 ## [0.11.1] - 2026-10-10
 
 ### Patch

@@ -4,6 +4,11 @@ All notable changes to `@omgbase/core` are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (pre-1.0: a minor bump may break).
 
+## [0.10.2] - 2026-10-10
+
+### Patch
+- OQX language 0.19 — outer-reference `follow` destinations take the implicit `collect`. A `follow` destination whose receiver is headed by an outer reference (`^docs`, `^^root.rel`, `0^docs`, `^$it.docs`, with any member chain) can never be a plain destination (plain destinations are relations of the current row), so a `{` right after it now opens a **destination block** with the implicit `collect`: `follow refs(before), ^docs { where ^$path in list(after) }` walks `before` references forward and, backward, every document whose `after` names the frontier row — exactly `^docs collect { … }` with the 0.17 body rules (where-first, projections). Until 0.18 that query failed with the outer-reference error, because the 0.17 carve-out reserved a brace after the last destination for the options block. Any other receiver (a bare relation, a call like `refs(before)` or `entries(kids)`, a binding) keeps that reading: a brace after it is the options block when it is the last destination (`follow children { depth 2 }`, `follow a, children { depth 2 }`) and the "a destination block needs its consumer" error when the brace holds a predicate. An options block may still follow a trailing destination block (`follow ^docs { where … } { depth 2 }`). A plain `follow ^children` (no brace, no consumer) is still an error; its message now names both block spellings: `` `follow` takes a relation of the current row (`follow <relation>`); an outer reference walks a root collection only as a destination block — `follow ^docs { where … }` or `follow ^docs collect { … }` ``. Fixtures: 25 new cases across `follow`, `sugar`, `errors-parse` and `ast` (1188 total); the 0.17 sugar case "an outer-reference destination with a brace is the outer-reference error" is replaced by its positive form. `LANGUAGE_VERSION` is 0.19 in both engines and in `@omgbase/oqx-syntax`; the `query_syntax` reference (`@omgbase/core`, `omgbase-surface`) describes the new rule.
+
 ## [0.10.1] - 2026-10-10
 
 ### Patch
