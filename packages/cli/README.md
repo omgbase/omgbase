@@ -50,7 +50,7 @@ $ omg q 'from blocks where type == "task" && !attrs.checked'
 b_24nr0y0  README.md
 b_36p2zw1  README.md
 
-$ omg q '$repo.blocks count { where type == "task" && !attrs.checked }'
+$ omg q 'blocks count { where type == "task" && !attrs.checked }'
 2
 
 $ omg outline README.md

@@ -12,7 +12,7 @@ import { readStdin } from "./_mutate.js";
 // object model (`doc.layer`, `section.blocks`); whitespace query directives
 // belong to OQX (`<receiver> collect|exists|count|first|single { <block> }`).
 // `from E` selects + flattens a relation relative to the current source scope
-// (top-level `from docs` = the repository's docs; `$repo.docs collect { from
+// (top-level `from docs` = the repository's docs; `docs collect { from
 // nodes … }` re-projects each doc through its nodes). Clause order is fixed
 // (ADR-020): `select … from … where … follow … order by … limit … offset …`,
 // each at most once, at the top level and inside every block. Only `select` may
@@ -23,14 +23,14 @@ import { readStdin } from "./_mutate.js";
 // tree over scalar predicates and consumer directives, count comparisons
 // (`nodes count { … } >= 2`), nestable collect, one-scope lifts (^name:) that
 // filter + capture, one-scope-outward references (^name) that correlate a nested
-// query to a parent binding, explicit root relations $repo.docs/nodes/blocks for
+// query to a parent binding, the root row's collections ^docs/^nodes/^blocks for
 // join-equivalents, first/single lookups, full-text text(...) + embedding-score
 // semantic(...) predicates, `order by <expr> [asc|desc]` ranking, and recursive
 // `follow [distinct] <rel> [{ where … frontier … depth n by … }]` traversal over
 // a type-preserving relation with $depth/$stop/$ordinal recursion metadata +
 // post-walk filtering. A top-level consumer directive changes the result shape:
-// `$repo.docs count { … }` / `$repo.docs exists { … }` reduce to a scalar,
-// `$repo.docs first { … }` / `$repo.docs single { … }` to zero-or-one row (bare
+// `docs count { … }` / `docs exists { … }` reduce to a scalar,
+// `docs first { … }` / `docs single { … }` to zero-or-one row (bare
 // `from …` = collect). Coexists with `omg q` (CEL). Source is a positional
 // string or -f file|-. Human output: one hit per line (id + path), or an aligned
 // id/path/columns table when the query projects (`select`), or the scalar for
@@ -68,14 +68,14 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'");
     cli.io.out("       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'");
     cli.io.out("       query 'select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }'");
-    cli.io.out("       query 'select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'");
-    cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
+    cli.io.out("       query 'select owner_id, owner: ^nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'   # ^docs/^nodes/^blocks/^edges: the repository (the root row) from inside a row; 0^docs from any depth");
+    cli.io.out("       query 'docs count { where layer == \"canon\" }'   # scalar; also <target> exists/none/first/single { … } at the top level");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
     cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
     cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
     cli.io.out("       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)");
-    cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
+    cli.io.out("       query 'docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
     cli.io.out("       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune");
     cli.io.out("       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");

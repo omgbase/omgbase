@@ -1,5 +1,5 @@
 // Store-backed equality indexes for the OQX engine (`DataContext.indexFor`):
-// when a nested block's receiver is a ROOT SCAN (`$repo.docs`, `$repo.edges`,
+// when a nested block's receiver is a ROOT SCAN (`^docs`, `^edges`,
 // a bare `docs` at the root scope) and its correlated or constant equality is on
 // a column or property SQLite can look up — `where $path == ^^$path`,
 // `where customer == ^$path`, `where $dst == ^$id`, `where type == "order"` —

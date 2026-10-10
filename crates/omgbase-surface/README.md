@@ -5,7 +5,8 @@ what a client sees of an omgbase repository.
 
 - **The query binding** (`context`, `query`): an `oqx` `DataContext` over
   `omgbase_store::Store` — the `docs` / `blocks` / `nodes` / `edges` roots,
-  `$repo`, the per-target intrinsics, reach-through and relations, the
+  the root row (`^docs`, `^$id`, `^$it`), the per-target intrinsics,
+  reach-through and relations, the
   property rule (`spec/properties`), the row functions (`text`, `under`,
   `within`, `has_edge`, `semantic`, …) — and the §1.4 runner: `{ id, path }`
   injection, `distinct` by projection, top-level `limit`/`offset`, keyset

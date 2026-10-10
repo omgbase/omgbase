@@ -527,7 +527,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
     expect(() => paths('from docs type == "lab-note" && nodes exists { kind == "md:task" && !attrs.checked }')).toThrow(/no implicit where/);
     // …and the footgun is closed: `from docs count` no longer projects a field called count
     expect(() => hits("from docs count")).toThrow(/`<collection> count { … }`/);
-    expect(hits("$repo.docs count { }").count).toBe(20);
+    expect(hits("docs count { }").count).toBe(20);
   });
 
   it("clauses out of the fixed order fail naming the order", () => {
@@ -644,7 +644,7 @@ describe("alchemy corpus — lifts (^name: filter + capture in one expression)",
 });
 
 // The join-equivalent surface: a nested query over an EXPLICIT root relation
-// ($repo.docs / $repo.nodes) correlated to a parent binding via the one-scope
+// (^docs / ^nodes) correlated to a parent binding via the one-scope
 // `^name` reference. These express dependent/semi/anti joins and 1:1 lookups
 // without a JOIN keyword. Substances and processes carry a `slug`; a wikilink's
 // value IS a slug, so links resolve to real documents.
@@ -668,7 +668,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // the documents whose slug is one of this row's link targets. One expression
     // does link-extraction AND resolution — a citation/reference graph.
     const res = hits(
-      "select p: $path, cites: $repo.docs collect { select target: $path where slug in ^refs } " +
+      "select p: $path, cites: ^docs collect { select target: $path where slug in ^refs } " +
         "from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" }",
     );
     expect(res.hits.map((h) => h.p)).toEqual(WITH_WIKILINK); // only docs that link out
@@ -694,9 +694,9 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("finds substances actually cited by a wikilink anywhere (correlated semi-join over a global node scan)", () => {
     // For each substance, does ANY wikilink node in the whole repository name its
-    // slug? $repo.nodes is the explicit global scan; ^slug ties it to this row.
+    // slug? ^nodes is the explicit global scan; ^slug ties it to this row.
     const cited = paths(
-      'select slug from docs where type == "substance" && $repo.nodes exists { where kind == "md:wikilink" && value == ^slug }',
+      'select slug from docs where type == "substance" && ^nodes exists { where kind == "md:wikilink" && value == ^slug }',
     );
     expect(cited).toEqual([
       "/substances/mercury.md",
@@ -707,7 +707,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("finds substances no wikilink points to (correlated anti-join)", () => {
     const uncited = paths(
-      'select slug from docs where type == "substance" && !$repo.nodes exists { where kind == "md:wikilink" && value == ^slug }',
+      'select slug from docs where type == "substance" && !^nodes exists { where kind == "md:wikilink" && value == ^slug }',
     );
     // the tria prima are all cited; the two abstractions are named by prose, not links.
     expect(uncited).toEqual([
@@ -718,9 +718,9 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("pairs each practitioner with their tradition-mates, excluding themselves (self-join)", () => {
     // Two correlations at once: ^tradition matches the tradition, ^me excludes
-    // the row itself. A self-join over $repo.docs.
+    // the row itself. A self-join over ^docs.
     const res = hits(
-      "select me: $path, tradition, peers: $repo.docs collect { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } " +
+      "select me: $path, tradition, peers: ^docs collect { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } " +
         "from docs where type == \"practitioner\"",
     );
     const peers = new Map(
@@ -738,7 +738,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
     // `subject` names a process slug; slug is unique, so single(...) is a
     // cardinality-checked 1:1 lookup returning one record (not an array).
     const res = hits(
-      "select subject, process: $repo.docs single { select p: $path, layer where slug == ^subject } " +
+      "select subject, process: ^docs single { select p: $path, layer where slug == ^subject } " +
         "from docs where type == \"lab-note\"",
     );
     const by = new Map(res.hits.map((h) => [h.path, h.process as { p: string; layer: string }]));
@@ -748,7 +748,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("first { … } returns a zero-or-one tradition-mate (null when there is none)", () => {
     const res = hits(
-      "select me: $path, tradition, mate: $repo.docs first { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } " +
+      "select me: $path, tradition, mate: ^docs first { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } " +
         "from docs where type == \"practitioner\"",
     );
     const by = new Map(res.hits.map((h) => [h.me, h.mate as { p: string } | null]));
@@ -758,7 +758,7 @@ describe("alchemy corpus — correlation & joins (^ outer references)", () => {
 
   it("same-document correlation needs no root relation (^ against the owning row)", () => {
     // A lab note's subject is calcination; correlate its OWN task nodes against a
-    // parent binding — no $repo.* scan, just the structural doc.nodes relation.
+    // parent binding — no ^* scan, just the structural doc.nodes relation.
     const res = hits(
       "select subject, mentions: nodes collect { select tgt: value where kind == \"md:wikilink\" } " +
         "from docs where $path == \"lab/2026-01-notes.md\"",
@@ -862,44 +862,44 @@ describe("alchemy corpus — order by", () => {
   });
 
   it("repo.first + order by era desc is the latest practitioner (Newton)", () => {
-    const r = hits('$repo.docs first { where type == "practitioner" order by era desc }');
+    const r = hits('docs first { where type == "practitioner" order by era desc }');
     expect(r.hits.map((h) => h.path)).toEqual([`${P}newton.md`]);
   });
 });
 
-describe("alchemy corpus — top-level consumers ($repo.<target> <op>)", () => {
+describe("alchemy corpus — top-level consumers (^<target> <op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.
-    expect(hits("$repo.docs count { }").count).toBe(20);
-    expect(hits('$repo.docs count { where type == "substance" }').count).toBe(5);
+    expect(hits("docs count { }").count).toBe(20);
+    expect(hits('docs count { where type == "substance" }').count).toBe(5);
   });
 
   it("repo.count of a correlated query counts DOCS, not their matched nodes", () => {
     // docs that contain at least one task node (the lab notes) — a handful of
     // docs, though they hold many tasks between them.
     const docsWithTasks = paths('from docs where nodes exists { where kind == "md:task" }');
-    expect(hits('$repo.docs count { where nodes exists { where kind == "md:task" } }').count).toBe(docsWithTasks.length);
+    expect(hits('docs count { where nodes exists { where kind == "md:task" } }').count).toBe(docsWithTasks.length);
   });
 
   it("repo.exists answers presence with a boolean", () => {
-    expect(hits('$repo.docs exists { where layer == "draft" }').exists).toBe(true);
-    expect(hits('$repo.docs exists { where layer == "nonexistent" }').exists).toBe(false);
+    expect(hits('docs exists { where layer == "draft" }').exists).toBe(true);
+    expect(hits('docs exists { where layer == "nonexistent" }').exists).toBe(false);
   });
 
   it("repo.first returns the first document in path order, with projections", () => {
-    const r = hits('$repo.docs first { select t: type }');
+    const r = hits('docs first { select t: type }');
     expect(r.hits.length).toBe(1);
     expect(r.hits[0]!.path).toBe("/index.md"); // sorts before every subdirectory
   });
 
   it("repo.single fetches the sole draft document (mutus-liber)", () => {
-    const r = hits('$repo.docs single { where layer == "draft" }');
+    const r = hits('docs single { where layer == "draft" }');
     expect(r.hits.map((h) => h.path)).toEqual(["/texts/mutus-liber.md"]);
   });
 
   it("repo.single fails loudly when the query matches more than one document", () => {
     // 13 documents are canon — single must refuse to pick one.
-    expect(() => hits('$repo.docs single { where layer == "canon" }')).toThrow(/matched \d+ rows/);
+    expect(() => hits('docs single { where layer == "canon" }')).toThrow(/matched \d+ rows/);
   });
 });
 
@@ -1007,8 +1007,8 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   });
 
   it("default keeps per-path occurrences; `distinct` collapses to reached nodes", () => {
-    const occ = hits('$repo.docs count { where $path == "/substances/philosophers-stone.md" follow doc.out }').count!;
-    const dist = hits('$repo.docs count { where $path == "/substances/philosophers-stone.md" follow distinct doc.out }').count!;
+    const occ = hits('docs count { where $path == "/substances/philosophers-stone.md" follow doc.out }').count!;
+    const dist = hits('docs count { where $path == "/substances/philosophers-stone.md" follow distinct doc.out }').count!;
     expect(dist).toBe(10);
     expect(occ).toBeGreaterThan(dist); // the dense graph reaches nodes by many distinct paths
   });
@@ -1062,10 +1062,10 @@ describe("alchemy corpus — follow: the citation graph (out / in)", () => {
   });
 
   it("a destination block re-evaluated per frontier row — backlinks as a block equal doc.in", () => {
-    // `$repo` reads from every scope, so no caret is needed on the receiver; inside
+    // `^docs` from the frontier row is the root's documents (the destination is read in that row's scope); inside
     // the block `^` is the frontier row, so `^^$path` from the nested exists is it.
     const seed = "/processes/magnum-opus.md";
-    const block = paths(`from docs where $path == "${seed}" follow $repo.docs collect { where doc.out exists { where $path == ^^$path } } { depth 3 }`);
+    const block = paths(`from docs where $path == "${seed}" follow ^docs collect { where doc.out exists { where $path == ^^$path } } { depth 3 }`);
     const rel = paths(`from docs where $path == "${seed}" follow doc.in { depth 3 }`);
     expect(block.slice().sort()).toEqual(rel.slice().sort()); // same occurrences (per-path walk)
     expect(block.length).toBeGreaterThan(5);
@@ -1186,10 +1186,10 @@ describe("alchemy corpus — $it and values (scalar collections)", () => {
   });
 
   it("first/single with values yield zero-or-one bare value", () => {
-    const newest = hits('$repo.docs first { select $path values where type == "practitioner" order by era desc }');
+    const newest = hits('docs first { select $path values where type == "practitioner" order by era desc }');
     expect(newest.hits).toEqual([]);
     expect(newest.values).toEqual(["/practitioners/newton.md"]);
-    expect(hits('$repo.docs first { select $path values where type == "nope" }').values).toEqual([]);
+    expect(hits('docs first { select $path values where type == "nope" }').values).toEqual([]);
   });
 
   it("$it names each element of a list property inside a block", () => {
@@ -1233,8 +1233,8 @@ describe("alchemy corpus — none, limit, offset", () => {
   });
 
   it("none as the whole-query consumer returns a scalar", () => {
-    expect(hits('$repo.docs none { where type == "nope" }')).toMatchObject({ consumer: "none", none: true, hits: [] });
-    expect(hits('$repo.docs none { where type == "substance" }').none).toBe(false);
+    expect(hits('docs none { where type == "nope" }')).toMatchObject({ consumer: "none", none: true, hits: [] });
+    expect(hits('docs none { where type == "substance" }').none).toBe(false);
   });
 
   it("top-level limit/offset bound the ordered result set", () => {
@@ -1268,7 +1268,7 @@ describe("alchemy corpus — none, limit, offset", () => {
   });
 
   it("first/single honor offset; nested blocks honor limit; exists { offset } is a cardinality floor", () => {
-    expect(hits('$repo.docs first { select $path values where type == "practitioner" order by era asc offset 1 }').values)
+    expect(hits('docs first { select $path values where type == "practitioner" order by era asc offset 1 }').values)
       .toEqual(["/practitioners/jabir-ibn-hayyan.md"]);
     const secs = hits('select h: nodes collect { select name values where kind == "md:section" order by first_ordinal } from docs where $path == "/processes/magnum-opus.md"').hits[0]!.h as string[];
     const top2 = hits('select h: nodes collect { select name values where kind == "md:section" order by first_ordinal limit 2 } from docs where $path == "/processes/magnum-opus.md"').hits[0]!.h;

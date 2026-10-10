@@ -461,8 +461,10 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
             }
             let name = name.as_str();
             // A relation, reach-through handle, source handle or bag is not a
-            // property read (§1): rows or an object in memory, never a key.
-            if non_property_handles(target).contains(&name) {
+            // property read (§1): rows or an object in memory, never a key. A
+            // bare target name is a relation or a loud error (the root-row
+            // rule, `crate::query`), never a property.
+            if non_property_handles(target).contains(&name) || Target::parse(name).is_some() {
                 return None;
             }
             match target {
@@ -526,10 +528,11 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                     return Operand::text(format!("{d}.format"));
                 }
                 // `doc.nodes`, `doc.frontmatter`, `doc.doc`… are the doc's
-                // handles, not its properties.
+                // handles, not its properties; `doc.docs` / `doc.edges` raise.
                 if k.starts_with('$')
                     || RESERVED_DOC_BASENAMES.contains(&k)
                     || non_property_handles(Target::Docs).contains(&k)
+                    || Target::parse(k).is_some()
                 {
                     return None;
                 }
@@ -1687,7 +1690,13 @@ mod tests {
             for name in &universe {
                 let mut shaped = 0;
                 for row in &rows {
-                    let v = ctx.get(row, name).expect("get");
+                    let v = match ctx.get(row, name) {
+                        Ok(v) => v,
+                        // a target name that is not one of this row's
+                        // relations is the root-row error, never a property
+                        Err(_) if Target::parse(name).is_some() && !set.contains(name) => continue,
+                        Err(e) => panic!("{target:?}.{name}: {e}"),
+                    };
                     if set.contains(name) {
                         assert!(
                             v.is_absent() || is_shape(&v),

@@ -11,7 +11,7 @@
 //! differential gate (planned == in-memory over every corpus-backed query
 //! case and the conformance list). Deliberately conservative: only simple
 //! top-level target scans (no `follow`, no `from E` re-projection) whose
-//! source is a bare `docs|blocks|nodes|edges` or `$repo.<target>`, with at
+//! source is a bare `docs|blocks|nodes|edges` or `<target>`, with at
 //! least one pushable scalar conjunct, are planned; everything else declines
 //! to a full in-memory run.
 //!
@@ -114,15 +114,31 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
 }
 
 /// The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
-/// or `$repo.<target>` source (else `None` — not a pushable shape). The runner
-/// asks too: a bare root scan's rows are store rows by construction.
+/// source at the root scope (else `None` — not a pushable shape; a nested
+/// `^docs` is a block's receiver, never the query's source). The runner asks
+/// too: a bare root scan's rows are store rows by construction.
 pub(crate) fn root_target(source: &Expr) -> Option<Target> {
     match source {
         Expr::Ident { name, .. } => Target::parse(name),
-        Expr::Member { recv, name, .. } => match &**recv {
-            Expr::Ident { name: r, .. } if r == "$repo" => Target::parse(name),
-            _ => None,
-        },
+        _ => None,
+    }
+}
+
+/// Whether `name` is a relation of `target`'s rows that is spelled like a
+/// target (§1.2: `docs.nodes`, `docs.blocks`, `blocks.nodes`, `section.blocks`).
+fn is_target_relation_of(target: Target, name: &str) -> bool {
+    matches!(
+        (target, name),
+        (Target::Docs, "nodes" | "blocks") | (Target::Blocks, "nodes") | (Target::Nodes, "blocks")
+    )
+}
+
+/// The row a reach-through head reaches (`doc.x`, `block.x`, `section.x`).
+fn reach_through(head: &str) -> Option<Target> {
+    match head {
+        "doc" => Some(Target::Docs),
+        "block" => Some(Target::Blocks),
+        "section" => Some(Target::Nodes),
         _ => None,
     }
 }
@@ -207,12 +223,22 @@ fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
     let again = |e: &Expr| expr_may_raise(e, target, root);
     match e {
         Expr::Lit { .. } | Expr::Binding { .. } => false,
+        // A bare target name read as a property raises (the root-row rule,
+        // `crate::query`) unless it is a relation of the rows at hand: known at
+        // the root scope, unknown below.
+        Expr::Ident { name, .. } if Target::parse(name).is_some() => {
+            !root || !is_target_relation_of(target, name)
+        }
         Expr::Ident { name, .. } => root && target == Target::Docs && is_reserved(name),
         Expr::Outer { .. } | Expr::Call { .. } => true,
         // `doc.<reserved>`: the reach-through row is a doc (the row itself on
-        // docs), so the guard fires on any target at any depth.
+        // docs), so the guard fires on any target at any depth. `<head>.<target>`
+        // raises unless the head is a reach-through whose row has that relation.
         Expr::Member { recv, name, .. } => {
             (is_reserved(name) && matches!(&**recv, Expr::Ident { name, .. } if name == "doc"))
+                || (Target::parse(name).is_some()
+                    && !matches!(&**recv, Expr::Ident { name: head, .. }
+                        if reach_through(head).is_some_and(|t| is_target_relation_of(t, name))))
                 || again(recv)
         }
         Expr::Unary { expr, .. } => again(expr),
@@ -381,7 +407,7 @@ mod tests {
         );
         assert_eq!(b.params, vec![text("r"), text("lab/"), text("lab/")]);
         let n = compile(
-            &parse("$repo.nodes count { where kind == \"md:task\" }"),
+            &parse("nodes count { where kind == \"md:task\" }"),
             &[],
             "r",
         )
@@ -481,7 +507,7 @@ mod tests {
         assert!(
             compile(
                 &parse(
-                    "from docs where $path == \"a.md\" follow $repo.docs collect { where after.contains(^$path) }"
+                    "from docs where $path == \"a.md\" follow ^docs collect { where after.contains(^$path) }"
                 ),
                 &[],
                 "r"
@@ -490,7 +516,7 @@ mod tests {
         );
         // not a root scan
         assert!(compile(&parse("from things where $path == \"a.md\""), &[], "r").is_none());
-        assert!(compile(&parse("from $repo where $path == \"a.md\""), &[], "r").is_none());
+        assert!(compile(&parse("from nope where $path == \"a.md\""), &[], "r").is_none());
         assert!(compile(&parse("from docs.nodes where kind == \"x\""), &[], "r").is_none());
         // a `from E` re-projection (an AST-level shape)
         let mut q = parse("from docs where $path == \"a.md\"");

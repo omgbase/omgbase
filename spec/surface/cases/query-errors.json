@@ -101,7 +101,7 @@
     },
     {
       "name": "single-matches-many",
-      "query": "$repo.docs single { where layer == \"canon\" }",
+      "query": "docs single { where layer == \"canon\" }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "matched"
@@ -109,7 +109,7 @@
     },
     {
       "name": "nested-single-matches-many",
-      "query": "select x: $repo.docs single { where type == \"substance\" } from docs where $path == \"index.md\"",
+      "query": "select x: ^docs single { where type == \"substance\" } from docs where $path == \"index.md\"",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "matched"
@@ -297,7 +297,7 @@
     {
       "name": "hit-not-a-row-nested-from",
       "notes": "§1.4 (1.5): a top-level directive whose block re-projects to scalars reaches a string hit.",
-      "query": "$repo.docs collect { select $it from tags }",
+      "query": "docs collect { select $it from tags }",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"alchemy\")"

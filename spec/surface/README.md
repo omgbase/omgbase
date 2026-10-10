@@ -73,10 +73,10 @@ Both implementations run the same tier-3 planner (the pushable top-level
 finishes in memory over the produced rows). Both also answer a **nested
 block's equality probe over a root scan** from the store's indexes
 (implementation note, 2026-10-08: `oqx-js/store-index.ts`,
-`omgbase-surface::store_index`): a root (`$repo.<target>`, a bare target at
-the root scope) is handed to the engine lazily and a block whose top-level
-conjunct is `local == outer` — `$repo.docs collect { where customer == ^$path
-}`, `$repo.edges exists { where $dst == ^$id }`, `$repo.docs single { where
+`omgbase-surface::store_index`): a root (`^<target>` from a row, a bare target
+at the root scope) is handed to the engine lazily and a block whose top-level
+conjunct is `local == outer` — `^docs collect { where customer == ^$path
+}`, `^edges exists { where $dst == ^$id }`, `^docs single { where
 type == "x" }` — is served by one indexed statement per probe (docs `$id`,
 `$path`, `$title`, any property key by typed value; blocks `$id`, `$doc`,
 `type`, `$path`; nodes `$id`, `$doc_id`, `kind`, `name`, `$path`; edges
@@ -137,8 +137,9 @@ proves each decline: `query-errors::planned-*` and the `planned-*` cases of
 
 ### 1.1 Roots and rows
 
-`from docs | blocks | nodes | edges` and `$repo.docs | .blocks | .nodes |
-.edges` scan the repo's **live** rows in a fixed order:
+`from docs | blocks | nodes | edges` — and, from inside a row, `^docs | ^blocks
+| ^nodes | ^edges` (the root row, below) — scan the repo's **live** rows in a
+fixed order:
 
 | root | rows | order |
 | --- | --- | --- |
@@ -147,11 +148,59 @@ proves each decline: `query-errors::planned-*` and the `planned-*` cases of
 | `nodes` | `nodes` of live docs | `(doc path, node_id)` |
 | `edges` | open edges (`to_commit IS NULL`) of live source docs | `(source doc path, edge_id)` |
 
-`$repo` is an intrinsic of every scope (the root and any row): `$repo.$id`
-is the repo id, `$repo.<root>` the scan above. A row's **identity** (for
-`distinct`, `follow` cycles) is its id column. A relation returns rows of
-its successor target; a scalar reach-through (`doc`, `block`) returns one
-row.
+**The repository is the root row** (2.0, with `spec/oqx` 0.18 §2). The root
+scope's names are the four scans above and **`$id`**, the repository id; the
+root scope's **row** (`DataContext.rootObject` / `root_object`) is the root
+object, whose entries are exactly the four collections in that order (`$id`
+is an intrinsic of it, not an entry). So from a top-level row `^docs` is the
+documents scan and `^$id` the repository id; from a block's rows one caret
+deeper (`^^docs`), or the absolute `0^docs` / `0^$id` from any depth; `^$it`
+is the root object, `^$it.docs` the same handle as `^docs` (a receiver, a
+value, a probe), `entries(^$it)` yields `docs`, `blocks`, `nodes`, `edges`
+(`query-root.json`). At the root scope a bare target name is the scan — the
+receiver of a top-level directive (`docs count { … }`), `from docs`,
+`entries(docs)` — because a bare name there is `root(name)`.
+
+Two spellings are **refused** as `filter_invalid`, before any row is read, so
+the error is the same whether or not a row would have reached them and the
+planned and in-memory paths agree trivially (`query-root::repo-removed-*`,
+`bare-target-*`):
+
+- **`$repo`** (an intrinsic of every scope before 2.0) anywhere — bare, as a
+  member head (`$repo.docs`, `$repo.$id`), `^$repo`, `0^$repo` — with the
+  message `` `$repo` was removed in surface 2.0 — reach the repository's
+  collections through the root row: `^docs` from a top-level row (one caret
+  per enclosing block, or the absolute `0^docs`), and the repository id as
+  `^$id` / `0^$id` ``.
+- **A bare target name inside a block** — at scope depth ≥ 1 (a top-level
+  row's clauses, a block's body, a `from E` re-projection, a `follow`
+  destination), where a bare name reads a property of the current row, which
+  has none — with the message `` `docs` inside a block reads a property of the
+  current row, which has none — did you mean `^docs` (the repository's
+  documents)? `` (the carets count the depth: `^^docs` from depth two).
+  `docs` and `edges` are no row's relation, so they are refused statically.
+  `blocks` and `nodes` ARE relations of some rows (`docs.blocks`,
+  `docs.nodes`, `blocks.nodes`, `section.blocks`, §1.2) and stay those; on a
+  row that lacks the relation (`blocks` on a block or edge row, `nodes` on a
+  node or edge row, `block.blocks`) the context raises the same error when
+  the name is read, the hint spelling the rule (`one caret per enclosing
+  block, or the absolute 0^blocks`). Consequence: a frontmatter key named
+  `docs`, `blocks`, `nodes` or `edges` is unreachable by bare name — read it
+  as `frontmatter.<k>`. The planner declines a bare target name as a property
+  read and treats one that could raise as a residual that may raise (§1), so
+  a pushed conjunct cannot hide the error.
+- **A `^<target>` with more carets than enclosing scopes** — `^docs count { }`
+  at the top level, `^^edges` from a top-level row — which `spec/oqx` §2
+  reads as absent (so the count would be a silent 0), with the message
+  `` `^docs` reaches past the root — there is no enclosing row at this depth;
+  at the top level the repository's documents are the bare `docs` (`docs count
+  { … }`, `from docs`, `entries(docs)`) `` (statically, by the same walk;
+  `query-root::root-caret-past-the-root*`). Only the four target names: any
+  other outer reference past the root keeps the language's absent.
+
+A row's **identity** (for `distinct`, `follow` cycles) is its id column. A
+relation returns rows of its successor target; a scalar reach-through
+(`doc`, `block`) returns one row.
 
 ### 1.2 Fields, intrinsics, reach-through, relations
 
@@ -273,7 +322,7 @@ cursor, consumer, count?, exists?, none?, values? }`:
 - **A hit is a store row (1.5).** Every top-level row of a `collect`, `first`
   or `single` query must be a docs, blocks, nodes or edges row; a query whose
   rows reach anything else — `follow before` over a frontmatter list of paths
-  (the strings), a block re-projected to scalars (`$repo.docs collect { select
+  (the strings), a block re-projected to scalars (`docs collect { select
   $it from tags }`) — fails as `filter_invalid` with the message `` a hit must
   be a document, block, node or edge row — the query reached a string
   ("/timeline/kickoff.md"); to follow document references held in a property
@@ -494,7 +543,9 @@ verbs later.
   case both planned and in-memory and fails on any difference. Suites:
   `query-docs.json`, `query-blocks.json`, `query-nodes.json`,
   `query-edges.json`, `query-follow.json`, `query-functions.json`,
-  `query-refs.json`, `query-errors.json`.
+  `query-refs.json`, `query-errors.json`, `query-root.json` (the root row,
+  2.0: `^docs` / `0^docs` / `^$id` / `^$it`, the `$repo` and bare-target
+  errors).
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
@@ -799,6 +850,33 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-10, surface 2.0 also: **the repository is the root row; `$repo` is
+  removed** (Brendan's decision of 2026-10-09/10, §1.1). `spec/oqx` 0.18 made
+  the root scope a row — the host's root object — so the repository no longer
+  needs an intrinsic of every scope to be reachable: from a top-level row
+  `^docs` / `^blocks` / `^nodes` / `^edges` are the collections (one caret per
+  enclosing block, or the absolute `0^docs`), `^$id` / `0^$id` the repository
+  id (the root scope's `$id`), `^$it` the root object (its entries exactly the
+  four collections; `^$it.docs` ≡ `^docs`). Reading `$repo` anywhere — bare,
+  `$repo.docs`, `$repo.$id`, `^$repo`, `0^$repo` — is `filter_invalid` with a
+  message naming the replacement, detected statically over the parsed tree so
+  it does not depend on which rows the data holds; and a bare target name
+  inside a block — a property read of a row that has none, until now a silent
+  empty read — is `filter_invalid` with "did you mean `^docs`" (`docs`/`edges`
+  statically; `blocks`/`nodes`, which are relations of some rows, by the
+  context when a row lacks the relation). Every fixture query that spelled
+  `$repo.<target>` was rewritten: a top-level receiver to the bare target
+  (`docs count { … }`), a read inside a row to `^<target>`, `$repo.$id` to
+  `^$id`; every expectation is unchanged except two cases that pinned the
+  silent read of a target name on an edge/node row (`query-edges::no-relations`,
+  `query-nodes::no-relations-beyond-section`), re-queried with a non-target
+  name and pinned as errors in `query-root.json` (31 cases); §7 gained a
+  `^docs` / `^$id` / `entries(^$it)` read and a `0^docs` read. **Migration:**
+  `$repo.docs collect { … }` inside a row → `^docs collect { … }` (depth 1) or
+  `0^docs collect { … }` (anywhere); a top-level `$repo.docs count { … }` →
+  `docs count { … }`; `$repo.$id` → `^$id` / `0^$id`; a bare `docs` inside a
+  block → `^docs`; a frontmatter key named after a target → `frontmatter.<k>`.
+  An intrinsic removed and a silent read made an error: part of the 2.0 major.
 - 2026-10-10, surface 2.0: **paths on the surface are `/`-rooted** (Brendan's
   decision, §1 "Paths"). Every path a query, a tool or the CLI returns is the
   reference form; every path they accept tolerates both forms; a string
@@ -880,7 +958,8 @@ both and runs both harnesses.
   `diff_unified` is a Myers unified diff.
 - 2026-10-08, implementation note (no spec change): nested blocks over a root
   scan probe SQLite indexes instead of materializing the root (§1). Both
-  engines hand `$repo.<target>` (and a bare target at the root scope) to the
+  engines hand the root scan (`^<target>` from a row, a bare target at the
+  root scope; `$repo.<target>` before 2.0) to the
   OQX engine as a lazy handle — the reference a `Proxy` over an array, the Rust
   port a marker value (a `Value` has no identity or laziness) that the engine
   resolves through `DataContext::materialize` (oqx 0.14 patch) before it
@@ -888,12 +967,12 @@ both and runs both harnesses.
   position (a receiver, a `from`, a source, a `follow` destination) the handle
   reaches `to_rows` / `index_for` as handed out, so a probe never runs the
   scan. The handle as a VALUE is pinned by the `lazy-root-*` cases of
-  `query-functions.json` (2026-10-09): one array per target per run, so
-  `$repo.docs == $repo.docs` is true and `$repo.docs == $repo.blocks` false;
+  `query-functions.json` (2026-10-09; respelled for 2.0): one array per
+  target per run, so `^docs == ^docs` is true and `^docs == ^blocks` false;
   `in` tests the rows (a string is never a member); truthy as a `where`
   scalar; `size(…)`, `.size()` and `entries(…)` see the rows (in row position
-  `entries($repo.docs)` yields `(index, row)` entries); `select distinct
-  all: $repo.docs` collapses to one hit whose rows render `{ id, path }`; as an
+  `entries(docs)` yields `(index, row)` entries); `select distinct
+  all: ^docs` collapses to one hit whose rows render `{ id, path }`; as an
   `order by` key it is one constant. Both engines produce these results.
 - 2026-09-26, surface 1.1 patch: the planner declines the four shapes where
   planned differed from in-memory (§1, §9); no field, tool or result key

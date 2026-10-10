@@ -98,7 +98,7 @@ fn index_for_answers_for_a_root_scan_marker_on_an_indexable_path_and_for_nothing
         return;
     };
     let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
-    let repo_root = ctx.root("$repo");
+    let repo_root = ctx.root_object();
     let docs = ctx.get(&repo_root, "docs").unwrap();
     assert_eq!(
         scan_of(&docs),
@@ -151,12 +151,12 @@ fn a_correlated_block_over_repo_docs_probes_sqlite_and_never_runs_the_docs_scan(
     let Some((store, repo)) = alchemy() else {
         return;
     };
-    let q = "select $path, same_type: $repo.docs collect { $path values where type == ^type && $path != ^$path } from docs";
+    let q = "select $path, same_type: ^docs collect { $path values where type == ^type && $path != ^$path } from docs";
     let (out, scans, naive) = run(&store, &repo, q);
     assert_eq!(out, naive);
     let rows = out.as_array().unwrap();
     assert!(rows.len() > 10);
-    // the top-level `from docs` scanned docs ONCE; the nested `$repo.docs` never did
+    // the top-level `from docs` scanned docs ONCE; the nested `^docs` never did
     assert_eq!(scans, 1);
     // substances see the other four substances, in (path, id) order
     let salt = rows
@@ -187,10 +187,10 @@ fn the_other_targets_are_probed_from_their_indexes() {
         return;
     };
     for q in [
-        "select $path, inbound: $repo.edges collect { $src values where $dst == ^$id } from docs",
-        "select $id, paragraphs: $repo.blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
-        "select name, same_kind: $repo.nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
-        "select $path, outbound: $repo.edges collect { $dst_path values where $path == ^$path } from docs",
+        "select $path, inbound: ^edges collect { $src values where $dst == ^$id } from docs",
+        "select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
+        "select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
+        "select $path, outbound: ^edges collect { $dst_path values where $path == ^$path } from docs",
     ] {
         let (out, scans, naive) = run(&store, &repo, q);
         assert_eq!(out, naive, "{q}");
@@ -204,7 +204,7 @@ fn typed_equality_per_value_kind_and_the_absent_fallback() {
         return;
     };
     let ctx = StoreContext::new(store.conn(), &repo, HashMap::new());
-    let docs = ctx.get(&ctx.root("$repo"), "docs").unwrap();
+    let docs = ctx.get(&ctx.root_object(), "docs").unwrap();
     let era = ctx.index_for(&docs, &["era".to_owned()]).unwrap();
     let rows = |v: Value| era.lookup_rows(&v).unwrap().unwrap();
     assert_eq!(
@@ -289,7 +289,7 @@ fn a_scan_projected_as_a_value_renders_as_its_rows() {
     let res = omgbase_surface::query(
         &store,
         &repo,
-        "select n: size($repo.docs), all: $repo.docs from docs where $path == \"index.md\"",
+        "select n: size(^docs), all: ^docs from docs where $path == \"index.md\"",
         omgbase_surface::QueryOptions {
             limit: Some(10),
             cursor: None,
@@ -327,7 +327,7 @@ fn perf_a_correlated_block_over_two_thousand_documents_runs_no_scan_and_stays_fa
         })
         .collect();
     let (store, repo) = store_of(&files);
-    let q = "select name, orders: $repo.docs collect { $path where type == \"order\" && customer == ^$path } from docs where type == \"customer\"";
+    let q = "select name, orders: ^docs collect { $path where type == \"order\" && customer == ^$path } from docs where type == \"customer\"";
     let parsed = rewrite_query(&oqx::parse_string(q).expect("parses"));
     let t0 = Instant::now();
     let engine = InMemoryEngine::new(StoreContext::new(store.conn(), &repo, HashMap::new()));

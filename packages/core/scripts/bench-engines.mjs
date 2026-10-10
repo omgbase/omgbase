@@ -22,7 +22,7 @@ const calls = [
   ["query", { query: 'select $path, text from blocks where type == "task" && checked == false', limit: 50 }],
   ["query", { query: 'select $path, value from nodes where kind == "md:link"', limit: 50 }],
   ["query", { query: 'select $path from docs where layer == "draft" && tags.contains("mercury")', limit: 50 }],
-  ["query", { query: '$repo.blocks count { where text.contains("crucible") }', limit: 50 }],
+  ["query", { query: 'blocks count { where text.contains("crucible") }', limit: 50 }],
   ["docs_read", { path: "notes/a/doc-0000.md", include_ids: true }],
   ["docs_outline", { path: "notes/a/doc-0000.md" }],
   ["graph", { roots: ["notes/a/doc-0000.md"], degrees: 2 }],

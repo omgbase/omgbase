@@ -53,9 +53,8 @@ use crate::planner;
 
 /// The hidden column tagging a store row with its target.
 pub const TAG_KEY: &str = "__oqx_target";
-const REPO_TAG: &str = "$repo";
 /// The key of a lazy ROOT SCAN marker: `{ "__oqx_scan": "docs" }` stands for
-/// `$repo.docs` / a bare `docs` until the engine reads it in row position
+/// `^docs` / a bare `docs` at the root until the engine reads it in row position
 /// (`to_rows`) or is about to observe it as a value (`materialize` — an
 /// operand, an argument, a projected item, a key), or probes it through
 /// `index_for`, in which case the scan never runs. The marker never reaches
@@ -125,7 +124,7 @@ pub struct StoreContext<'a> {
     /// flags)`; see [`Self::matches_memoized`].
     regexes: RefCell<HashMap<(String, Option<String>), CompiledRegex>>,
     /// Root scans read during this run, by target: a context lives for one
-    /// run, during which the store does not change, so `$repo.docs` read from
+    /// run, during which the store does not change, so `^docs` read from
     /// every outer row is one SELECT, not one per row.
     scans: RefCell<HashMap<Target, Rc<Vec<Value>>>>,
     /// How many root scans actually ran (tests prove a probe runs none).
@@ -218,11 +217,20 @@ fn scan_marker(t: Target) -> Value {
     Value::Object(o)
 }
 
-fn is_repo_root(row: &Value) -> bool {
-    row.as_object()
-        .and_then(|o| o.get(TAG_KEY))
-        .and_then(Value::as_str)
-        == Some(REPO_TAG)
+/// The four targets, in the order the root object lists them.
+const ALL_TARGETS: [Target; 4] = [Target::Docs, Target::Blocks, Target::Nodes, Target::Edges];
+
+/// Whether `row` is the root object ([`StoreContext::root_object`]): a plain
+/// object whose own keys are exactly the four collections, each the lazy
+/// marker of its target. Recognized by shape — a hidden tag would show up in
+/// `entries(^$it)`, which must name exactly the collections.
+fn is_root_object(row: &Value) -> bool {
+    row.as_object().is_some_and(|o| {
+        o.len() == ALL_TARGETS.len()
+            && ALL_TARGETS
+                .iter()
+                .all(|t| o.get(t.as_str()).is_some_and(|v| scan_of(v) == Some(*t)))
+    })
 }
 
 fn col<'v>(row: &'v Value, key: &str) -> &'v Value {
@@ -492,9 +500,17 @@ impl<'a> StoreContext<'a> {
         tag_row(row, t)
     }
 
-    fn repo_root(&self) -> Value {
-        let mut o = Object::with_capacity(1);
-        o.insert(TAG_KEY, Value::Str(REPO_TAG.to_owned()));
+    /// The root row (`spec/surface` §1.1, 2.0; `spec/oqx` 0.18 `root_object`):
+    /// the repository, reached as `^$it` from a top-level row (`0^$it` from any
+    /// depth). Its own keys are the four collections as lazy markers, so
+    /// `entries(^$it)` names them without running a scan and `^$it.docs` is
+    /// the same scan as `^docs`; `get` answers `$id` with the repository id (an
+    /// intrinsic, not an entry). Same shape as the reference's root row.
+    fn root_row(&self) -> Value {
+        let mut o = Object::with_capacity(ALL_TARGETS.len());
+        for t in ALL_TARGETS {
+            o.insert(t.as_str(), scan_marker(t));
+        }
         Value::Object(o)
     }
 
@@ -1325,30 +1341,30 @@ impl DataContext for StoreContext<'_> {
             let rows = if rr.once { slot.take() } else { slot.clone() };
             return Value::Array(rows.unwrap_or_default());
         }
-        if name == "$repo" {
-            return self.repo_root();
+        // The root scope's names (`spec/oqx` §2 step 5 at the root): the four
+        // lazy scans and `$id`, the repository id — so `^docs` / `0^docs` from
+        // any row is the scan and `^$id` / `0^$id` the id.
+        if name == "$id" {
+            return Value::Str(self.repo_id.clone());
         }
         // A root scan is handed out LAZILY (see `SCAN_KEY`): `to_rows` runs it
         // — once per run — and `index_for` probes it without running it.
         Target::parse(name).map_or(Value::Undefined, scan_marker)
     }
 
-    /// The root scope's row (oqx 0.18): the repository root, so `^$it` from a
-    /// top-level row is `$repo` and `^$it.docs` the docs scan.
+    /// The root scope's row (oqx 0.18): the repository, so `^$it` from a
+    /// top-level row is the root row and `^$it.docs` the docs scan.
     fn root_object(&self) -> Value {
-        self.repo_root()
+        self.root_row()
     }
 
     fn get(&self, row: &Value, key: &str) -> oqx::Result<Value> {
         if row.is_absent() {
             return Ok(Value::Undefined);
         }
-        // `$repo` is an intrinsic of EVERY scope, so a correlated subquery at any
-        // depth reaches the repository root without scope climbing.
-        if key == "$repo" {
-            return Ok(self.repo_root());
-        }
-        if is_repo_root(row) {
+        // The root row: `^$it.$id` is the repository id, `^$it.<target>` the
+        // lazy root scan (the same marker `^<target>` / `root(name)` hands out).
+        if is_root_object(row) {
             if key == "$id" {
                 return Ok(Value::Str(self.repo_id.clone()));
             }
@@ -1372,6 +1388,16 @@ impl DataContext for StoreContext<'_> {
         }
         if let Some(v) = self.relation(row, t, key)? {
             return Ok(v);
+        }
+        // A bare target name that is not one of this row's relations reads a
+        // property the row has none of (`spec/surface` §1.1, 2.0): loud, naming
+        // the root-row spelling. `docs`/`edges` never get here (the runner
+        // refuses them statically); `blocks` on a block or edge row and `nodes`
+        // on a node or edge row do. The reference throws from `get` too.
+        if let Some(named) = Target::parse(key) {
+            return Err(OqxError::eval(crate::query::bare_target_message(
+                named, None,
+            )));
         }
         let c = |k: &str| col(row, k).clone();
         Ok(match t {
@@ -1452,7 +1478,7 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_function(&self, name: &str, args: &[Value]) -> Option<oqx::Result<Value>> {
-        // `size($repo.docs)`, `list(…)`, `has(…)`: the engine has materialized a
+        // `size(^docs)`, `list(…)`, `has(…)`: the engine has materialized a
         // lazy scan argument into its rows before the call.
         if name == "refs" {
             return Some(self.refs(args.first().unwrap_or(&Value::Undefined)));
@@ -1479,7 +1505,7 @@ impl DataContext for StoreContext<'_> {
     }
 
     fn call_method(&self, name: &str, recv: &Value, args: &[Value]) -> Option<oqx::Result<Value>> {
-        // `$repo.docs.size()`: the receiver, a value, is materialized by the
+        // `^docs.size()`: the receiver, a value, is materialized by the
         // engine before the call.
         if let Some(t) = target_of(recv) {
             if let Some(r) = self.row_method(name, recv, t, args) {

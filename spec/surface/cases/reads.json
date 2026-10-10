@@ -2520,7 +2520,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "$repo.docs single { where $path != \"zzz\" }"
+              "query": "docs single { where $path != \"zzz\" }"
             }
           }
         },
@@ -5175,7 +5175,7 @@
           "read": {
             "tool": "query",
             "args": {
-              "query": "$repo.docs count { where nodes exists { where kind == \"md:task\" && !checked } }"
+              "query": "docs count { where nodes exists { where kind == \"md:task\" && !checked } }"
             }
           }
         },

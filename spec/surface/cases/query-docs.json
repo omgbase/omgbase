@@ -200,8 +200,8 @@
     },
     {
       "name": "repo-id-intrinsic",
-      "notes": "§1.1: $repo.$id is the repo id from any row.",
-      "query": "select r: $repo.$id from docs where $path == \"index.md\"",
+      "notes": "§1.1: `^$id` from a top-level row is the repo id (the root scope's `$id`).",
+      "query": "select r: ^$id from docs where $path == \"index.md\"",
       "expect": {
         "hits": [
           {
@@ -1738,8 +1738,8 @@
     },
     {
       "name": "repo-root-scan",
-      "notes": "§1.1: `$repo.docs` is the same scan as `from docs`.",
-      "query": "$repo.docs collect { select t: type where type == \"text\" }",
+      "notes": "§1.1: a bare `docs` at the root scope (the receiver of a top-level directive) is the same scan as `from docs`.",
+      "query": "docs collect { select t: type where type == \"text\" }",
       "expect": {
         "hits": [
           {
@@ -2143,7 +2143,7 @@
     {
       "name": "planned-typed-number-property-not-equal",
       "notes": "§1 typed pushes (1.2): `era != 800` pushes as `(SELECT p.type = 'number' AND p.val_num = ? … LIMIT 1) IS NOT 1` — the equality test, negated by the wrap — every document but the two at 800 (a doc without `era` reads NULL → IS NOT 1 → true, as `absent != 800` in memory; an inner `<>` would have dropped the other four dated documents).",
-      "query": "$repo.docs count { where era != 800 }",
+      "query": "docs count { where era != 800 }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2302,7 +2302,7 @@
     {
       "name": "path-compared-with-a-property-is-not-rewritten",
       "notes": "§1 Paths: only a LITERAL is rooted. A property's value is the author's: `kickoff.md`'s `after` is written rooted and matches review.md's `$path` directly; `see_also` holds the bare `processes/calcination.md`, which equals no rooted path (`refs(x)` is the tolerant read for references).",
-      "query": "select hit: $repo.docs collect { $path where $path == ^after }, miss: $repo.docs collect { $path where $path == ^see_also } from docs where $path == \"/timeline/kickoff.md\"",
+      "query": "select hit: ^docs collect { $path where $path == ^after }, miss: ^docs collect { $path where $path == ^see_also } from docs where $path == \"/timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {

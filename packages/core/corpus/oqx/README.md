@@ -85,15 +85,15 @@ different sets. Several tests depend on this; keep it fully checked.
   "md:task" && !attrs.checked }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
-- **Correlation & joins (`^name` outer references + `$repo.*` roots)** — the
+- **Correlation & joins (`^name` outer references + the root row's `^docs`/`^nodes` scans)** — the
   wikilink graph is the join fixture. `slug` on every substance/process is the
   key a `[[wikilink]]` value matches, so:
   - a *dependent join* resolves each document's outgoing wikilinks to the
-    documents they name (`$repo.docs collect { where slug in ^refs }`), with
+    documents they name (`^docs collect { where slug in ^refs }`), with
     `prima-materia.md`'s lone `[[nigredo]]` (no target document) as the dangling
     reference that resolves to `[]`;
   - a *semi-join* finds the substances any wikilink actually points to —
-    mercury, salt, sulphur — over the global `$repo.nodes` scan, and the *anti-join*
+    mercury, salt, sulphur — over the global `^nodes` scan, and the *anti-join*
     the two (philosophers-stone, prima-materia) named only in prose;
   - a *self-join* on `tradition` pairs the two western practitioners (Newton,
     Paracelsus) while the sole Islamic (Jabir) and Alexandrian (Maria) holders
@@ -104,15 +104,15 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Order by (`order by <expr> [asc|desc]`)** — the four practitioners have
   distinct `era` values (250 / 800 / 1530 / 1680), so `order by era` sorts them
   Maria → Jabir → Paracelsus → Newton (numeric, not lexical), `desc` reverses,
-  and `$repo.docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
+  and `docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
   bm25 scores become a top-K.
-- **Top-level consumers (`$repo.<target> <op> { … }`)** — a postfix directive over
-  a root receiver shapes the whole result, over the 18-document corpus:
-  `$repo.docs count` folds a set to a number (18 total, 5 substances),
-  `$repo.docs exists` to a boolean, `$repo.docs first` to the first document in path
-  order (`index.md`, which sorts before every subdirectory), and `$repo.docs single`
+- **Top-level consumers (`<target> <op> { … }`)** — a postfix directive over
+  a bare root receiver (a target name at the root scope) shapes the whole result, over the 18-document corpus:
+  `docs count` folds a set to a number (18 total, 5 substances),
+  `docs exists` to a boolean, `docs first` to the first document in path
+  order (`index.md`, which sorts before every subdirectory), and `docs single`
   to the sole `draft` document (`texts/mutus-liber.md`) — while
-  `$repo.docs single { where layer == "canon" }` fails loudly because 13 documents
+  `docs single { where layer == "canon" }` fails loudly because 13 documents
   match.
 - **Recursive `follow`** — the corpus is ingested through `processCheckpoint`
   (the real sync path) so the wikilink/markdown-link graph is extracted to
@@ -127,7 +127,7 @@ different sets. Several tests depend on this; keep it fully checked.
   repeats), and `$ordinal`; and the `spec/oqx` 0.14 forms — a **correlated
   follow-local `where`** (`follow doc.out { where type == ^type }`, `^` being
   the frontier row), a **destination list** (`follow doc.out, doc.in`, unioned
-  by identity within a step) and a **destination block** (`follow $repo.docs
+  by identity within a step) and a **destination block** (`follow ^docs
   collect { where doc.out exists { where $path == ^^$path } }`, backlinks
   computed per frontier row, equal to `doc.in`). The **structural** relations ride the heading
   outline (`section.children` — magnum-opus's `#` over four `##`, with `$leaf`)
@@ -151,7 +151,7 @@ different sets. Several tests depend on this; keep it fully checked.
 - **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");
-  `$repo.docs none { … }` is the scalar form. `order by era desc limit 2` /
+  `docs none { … }` is the scalar form. `order by era desc limit 2` /
   `offset 1 limit 2` bound the practitioners; a page `limit` walks *within* the
   query's bound (`limit 3` paged by 2 → 2 + 1); a bound applies after
   `distinct`; `first { … offset 1 }` is the second; `exists { offset 3 }` equals

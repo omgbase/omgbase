@@ -611,7 +611,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
             "query --ids -n",
             vec!["--ids", "query", "from docs", "-n", "2"],
         ),
-        ("query count", vec!["query", "$repo.docs count { }"]),
+        ("query count", vec!["query", "docs count { }"]),
         (
             "query values",
             vec!["query", "select $path values from docs"],

@@ -98,7 +98,7 @@ Every doc here is maintained as an **as-built** description of the code (last ve
 | `docs/graph-and-query.md` | edge extraction, OQX traversal, RRF retrieval, embeddings |
 | `docs/mcp-api.md` | MCP tool surface, resources, error codes (`mcp/server.ts` is the ultimate source) |
 | `docs/decisions.md` | the ADR log ("why"); all remain `Status: proposed` |
-| `docs/query-language.md` | OQX query language as-built: targets/fields, `@omgbase/oqx` scalar semantics, scoping (`^`/`$repo`), consumers, `values`/`none`/`limit`/`entries()`, `follow`, execution model |
+| `docs/query-language.md` | OQX query language as-built: targets/fields, `@omgbase/oqx` scalar semantics, scoping (`^`, the root row), consumers, `values`/`none`/`limit`/`entries()`, `follow`, execution model |
 | `docs/cli.md` | the `omg` CLI: commands, concurrency/freshness model, output contract |
 | `docs/properties-table.md` | the properties table + unified property query surface |
 | `docs/sync-plugins.md` | external-source stdio adapter protocol + `@omgbase/fs-adapter`; the adapters/sources/attachments registry (wired — `omg source`), sourceless repos |

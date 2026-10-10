@@ -404,7 +404,7 @@
     },
     {
       "name": "checked-flat-filter",
-      "query": "$repo.blocks count { where checked }",
+      "query": "blocks count { where checked }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -694,7 +694,7 @@
     },
     {
       "name": "relation-nodes-exists",
-      "query": "$repo.blocks count { where nodes exists { where kind == \"md:wikilink\" } }",
+      "query": "blocks count { where nodes exists { where kind == \"md:wikilink\" } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -865,7 +865,7 @@
     },
     {
       "name": "under-heading-any-block",
-      "query": "$repo.blocks count { where under_heading(\"Open questions\") }",
+      "query": "blocks count { where under_heading(\"Open questions\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -974,7 +974,7 @@
     },
     {
       "name": "under-unknown-id",
-      "query": "$repo.blocks count { where under(\"b_zzz\") }",
+      "query": "blocks count { where under(\"b_zzz\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -985,7 +985,7 @@
     },
     {
       "name": "within-path",
-      "query": "$repo.blocks count { where within(\"index.md\") }",
+      "query": "blocks count { where within(\"index.md\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1018,7 +1018,7 @@
     },
     {
       "name": "within-doc-id",
-      "query": "$repo.blocks count { where within(\"d_0\") }",
+      "query": "blocks count { where within(\"d_0\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1030,7 +1030,7 @@
     {
       "name": "within-glob-escapes-like-metachars",
       "notes": "§1.3: `_` in the pattern is a literal, not a LIKE wildcard.",
-      "query": "$repo.blocks count { where within(\"lab/2026_01-notes.md\") }",
+      "query": "blocks count { where within(\"lab/2026_01-notes.md\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1082,7 +1082,7 @@
     },
     {
       "name": "under-kind-top-level-is-false",
-      "query": "$repo.blocks count { where type == \"heading\" && under_kind(\"list\") }",
+      "query": "blocks count { where type == \"heading\" && under_kind(\"list\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1196,7 +1196,7 @@
     },
     {
       "name": "has-anchor",
-      "query": "$repo.blocks count { where has_anchor() }",
+      "query": "blocks count { where has_anchor() }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1207,7 +1207,7 @@
     },
     {
       "name": "yaml-path-on-markdown-is-false",
-      "query": "$repo.blocks count { where yaml_path(\"a.b\") || json_pointer(\"/a/b\") }",
+      "query": "blocks count { where yaml_path(\"a.b\") || json_pointer(\"/a/b\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1244,7 +1244,7 @@
     },
     {
       "name": "text-count",
-      "query": "$repo.blocks count { where text(\"mercury\") }",
+      "query": "blocks count { where text(\"mercury\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1256,7 +1256,7 @@
     {
       "name": "text-empty-is-false",
       "notes": "§1.3: an empty sanitized query matches nothing.",
-      "query": "$repo.blocks count { where text(\"\") }",
+      "query": "blocks count { where text(\"\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1267,7 +1267,7 @@
     },
     {
       "name": "text-punctuation-sanitized",
-      "query": "$repo.blocks count { where text(\"solve/coagula!\") }",
+      "query": "blocks count { where text(\"solve/coagula!\") }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1600,7 +1600,7 @@
     {
       "name": "planned-typed-bool-attr-negated",
       "notes": "§1 typed pushes (1.2): `checked != true` pushes as `(json_type(attrs,'$.checked') = 'true') IS NOT 1` — json_type is NULL for an absent path, so every non-task block and every open task count, exactly as the in-memory `absent != true`. The complement of planned-typed-bool-attr over every block.",
-      "query": "$repo.blocks count { where checked != true }",
+      "query": "blocks count { where checked != true }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -2003,7 +2003,7 @@
     {
       "name": "planned-typed-number-attr-not-equal",
       "notes": "§1 typed pushes (1.2): `level != 2` pushes as `(json_type(attrs,'$.level') IN ('integer','real') AND json_extract(attrs,'$.level') = ?) IS NOT 1` — the equality test, negated by the wrap (an inner `<>` would drop the level-1 and level-3 headings; the differential caught it) — so every block that is not a level-2 heading counts, an absent `level` reading NULL → IS NOT 1 → true, matching `absent != 2`.",
-      "query": "$repo.blocks count { where level != 2 }",
+      "query": "blocks count { where level != 2 }",
       "expect": {
         "hits": [],
         "truncated": false,

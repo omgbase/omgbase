@@ -36,8 +36,8 @@ The `query` MCP tool takes a single OQX **string** plus pagination:
 Every concern folds into the expression: `select <expr>, name: <expr>, …`
 (projection), `from docs|blocks|nodes|edges` (source), `where <predicate>`,
 receiver-constrained nested queries (`nodes exists { … }`, `collect { … }`),
-correlation/joins (the `^` sigil with `$repo.docs`/`$repo.nodes`/`$repo.blocks`
-roots), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
+correlation/joins (the `^` sigil, with `^docs`/`^nodes`/`^blocks` reaching the
+root row's collections), bounded traversal (`follow`), `order by <expr> [asc|desc]`, and
 `limit`/`offset`. Results are lean projected hits (`{id, path, …projections}`),
 a `count`/`exists`/`none` scalar, or — for a `select <expr> values` projection —
 the bare projected values (`values: […]`, §7); never full documents; hydrate by
@@ -51,7 +51,8 @@ or any `{ block }` — clauses appear at most once each, in exactly this order:
 ```
 
 Every clause is optional except a top-level `from`; the receiver-plus-consumer
-form `$repo.<target> count|exists|none|first|single { <block> }` supplies its own
+form `<target> count|exists|none|first|single { <block> }` (a bare target at the
+root scope) supplies its own
 source, so the block's `from` is an optional re-projection. A clause out of order
 is a parse error that names the order (`` `select` must come before `from` — OQX
 clause order is select, from, where, follow, order by, limit, offset ``). **Only
@@ -63,7 +64,7 @@ that a **block** whose leading expression is syntactically a predicate is a
 `nodes exists { where kind == "md:task" }` (§3.6; a bare name still projects, a
 predicate after a projection still needs `where`). At the top level a predicate
 always needs `where`, and `from docs count` is an error rather than a projection
-of a field called `count` (write `$repo.docs count { … }`, or
+of a field called `count` (write `docs count { … }`, or
 `select count from docs`). **`where` (and, since 0.17, a later `select` item) may
 reference the same body's `select` aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
 expression is substituted before evaluation (`resolveAliases`, once, ahead of
@@ -118,9 +119,19 @@ column) so pushed SQL and the in-memory engine agree.
 - **Intrinsics:** `$id`, `$path` (the **reference form**, `/`-rooted — see
   "Paths" below), `$updated_at` (ISO-8601 UTC, compares lexicographically =
   chronologically), `$body`, `$content_hash`, `format`.
-- **`$repo`** (every scope): the repository handle — `$repo.docs` / `$repo.nodes` /
-  `$repo.blocks` / `$repo.edges` are the explicit root scans (§3.4), `$repo.$id`
-  the repository id. **[was: `$repo` on a doc was the repository id string.]**
+- **The root row** (spec/oqx 0.18, surface 2.0): the repository is the root
+  scope's row. From a top-level row `^docs` / `^blocks` / `^nodes` / `^edges` are
+  the explicit root scans (§3.4; one caret per enclosing block, or the absolute
+  `0^docs` from any depth), `^$id` / `0^$id` the repository id, and `^$it` the
+  root object itself — `^$it.docs` ≡ `^docs`, `entries(^$it)` names the four
+  collections (`$id` is an intrinsic, not an entry). **[was: `$repo.<target>` /
+  `$repo.$id`, an intrinsic of every scope — removed in surface 2.0; reading
+  `$repo` anywhere is `filter_invalid` naming the replacement. A bare target
+  name inside a block (`docs collect { … }` at depth ≥ 1) is `filter_invalid`
+  too — "did you mean `^docs`" — not an empty property read, and so is a
+  `^docs` with more carets than enclosing scopes (`^docs count { }` at the top
+  level — write the bare `docs`); a frontmatter key named
+  `docs`/`blocks`/`nodes`/`edges` is reachable only as `frontmatter.<k>`.]**
 - **`$it`** (every scope, oqx ≥ 0.8): the current item **itself** — the row
   when scanning a target, or the scalar element when a block's receiver is a
   list-valued property (`tags exists { where $it == "pricing" }`,
@@ -176,7 +187,7 @@ Comparisons (`== != < <= > >=`), identity (`is`, `is not`; §3.6), boolean
 (`lo..hi`, `lo...hi`, `..hi`, `lo..`; §3.5), method calls (`x.contains("s")`),
 free functions (`list(x)`, `size(x)`, `has(x)` + omgbase's domain functions §5),
 field/intrinsic access with `.` navigation, bracket lookups (`refs(x)[0]`,
-`$repo.docs[$path == ^company]`; §3.6), the postfix required operator (`title!`;
+`^docs[$path == ^company]`; §3.6), the postfix required operator (`title!`;
 §3.6), and outer references (`^name`, `^^name`). Reserved words (never a bare
 field name): `from where select is not and or`, `true false null`.
 **[was CEL: arithmetic, ternary, and `in` without `list()` were rejected — now
@@ -237,18 +248,18 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 | --- | --- |
 | `nodes { kind == "md:task" }` | `nodes collect { where kind == "md:task" }` — a receiver block without a consumer is `collect`; a block whose *leading* expression is syntactically a predicate (a comparison, `in`, `&&`/`||`, a prefix `!`/`is`/`not`, an infix `is`, a call, a literal, a binding, a parenthesized expression, a consumer test, a bracket chain or `x!` — anything but a bare name, a dotted path or a `^`-lift) is `where`-first. `nodes { name }` still projects; `nodes { is checked }` is the bare-field filter; `{ name where kind == "md:task" }` keeps the keyword. Not after `follow`: `follow children { depth 2 }` is the options block. |
 | `refs(x)[0]`, `refs(x)[${i}]` | `refs(x) first { offset 0 }` — positional (an integer literal or a binding; out of range ⇒ absent); `refs(x)[0].$title` navigates the row |
-| `$repo.docs[$path == ^company]` | `$repo.docs first { where $path == ^company }` — the first match or absent |
-| `$repo.docs[$path == ^company]!` | `$repo.docs single { where $path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
+| `^docs[$path == ^company]` | `^docs first { where $path == ^company }` — the first match or absent |
+| `^docs[$path == ^company]!` | `^docs single { where $path == ^company }!` — exactly one match; zero or many is `filter_invalid` |
 | `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select $id!, status from docs` insists on identity before a write. |
 | `is x`, `not x` | `!!x`, `!x` (truthiness) |
 | `x is y`, `x is not y` | identity: a row's `id` when present, else structural — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
 | `a and b`, `a or b` | exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or $path` coalesces) |
-| `boss: $repo.docs[$path == ^manager], bossName: boss.$title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
+| `boss: ^docs[$path == ^manager], bossName: boss.$title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
 
 The top level is unchanged: `type == "x" from docs` stays the parse error it was
 (`where` would precede `from`). There is no `expand`/`unnest` and no automatic
 dereference of a path-valued field: the body-level `from` chain flat-maps
-(`$repo.docs collect { from nodes … }`) and `refs(x)[0].$title` is the
+(`docs collect { from nodes … }`) and `refs(x)[0].$title` is the
 dereference.
 
 ### 3.4 Correlation (`^`) and lifts
@@ -256,9 +267,13 @@ dereference.
   only**; an absent field is absent — it never falls through to an enclosing row
   or to the repository root, so adding a same-named field to an inner row cannot
   change what an outer reference means. Reach outward explicitly: `^name` for
-  the enclosing row, `$repo.<target>` for a root scan from any depth. **[was
-  (oqx < 0.7): an absent local name climbed enclosing scopes, and a bare `repo`
-  reached the root that way.]**
+  the enclosing row, `^docs` / `^nodes` / … for a root scan — the repository is
+  the root row (spec/oqx 0.18), one caret per enclosing block, or the absolute
+  `0^docs` from any depth. A bare target name inside a block is `filter_invalid`
+  ("did you mean `^docs`"), never an empty read. **[was (surface < 2.0):
+  `$repo.<target>` reached the root from any scope — refused now, with the
+  replacement named; (oqx < 0.7): an absent local name climbed enclosing scopes,
+  and a bare `repo` reached the root that way.]**
 - **`^name` reads a name `N` scopes outward** (`^` = one scope, `^^` = two) — it
   resolves against the enclosing **row's fields/intrinsics/lifts**, not the outer
   query's select aliases. To reference the outer row's path write `^$path` (not a
@@ -297,7 +312,7 @@ nested/correlated scopes:
   the referenced documents; `where refs(see_also) exists { where type == "x" }`
   filters on them; `from refs("/index.md")` is a source. The reverse direction
   needs no function: `$path` is already the reference form, so
-  `$repo.docs collect { where ^$path in list(after) }` is "the documents whose
+  `^docs collect { where ^$path in list(after) }` is "the documents whose
   `after` names me".
 - **A hit is a store row.** Every top-level row of a `collect`/`first`/`single`
   query must be a document, block, node or edge; `follow before` over a list of
@@ -328,10 +343,11 @@ nested/correlated scopes:
   citing the current row is stepped into once. `frontier`, `depth` and `by`
   apply whichever destination reached a row.
 - **Destination blocks:** a destination may be a select-position block
-  re-evaluated per frontier row — `follow $repo.docs collect { where doc.out
+  re-evaluated per frontier row — `follow ^docs collect { where doc.out
   exists { where $path == ^^$path } }` computes backlinks as a block (the same
-  rows as `follow doc.in`). Inside the block `^` is the frontier row (`$repo` is
-  readable from every scope, so it needs no caret); `first`/`single` yield at
+  rows as `follow doc.in`). Inside the block `^` is the frontier row (the
+  destination is read in that row's scope, so `^docs` there is the root's
+  documents); `first`/`single` yield at
   most one successor; `exists`/`none`/`count` are not destinations.
 - **Correlated successor `where`:** inside the follow-local `where`, a bare name
   is the candidate's own property, `^name` is the **frontier row** being
@@ -425,7 +441,7 @@ nested/correlated scopes:
   `residualMayRaise`).
 - **Nested blocks over a root scan are answered from SQLite indexes**
   (`oqx-js/store-index.ts`, Rust `omgbase-surface::store_index`). A root scan
-  (`$repo.docs`, `$repo.edges`, …, or a bare `docs` at the root scope) is handed
+  (`^docs`, `^edges`, …, or a bare `docs` at the root scope) is handed
   to the engine as a *lazy* handle — one per target per run — that runs its
   `SELECT` only when something reads it whole (a `Proxy` over an array in
   TypeScript; in Rust a marker the engine resolves through
@@ -509,5 +525,5 @@ projected-query fence (ADR-011, deferred).
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
 | Everything a note transitively cites | `from docs where $path == "/index.md" follow doc.out` |
-| The documents whose `after` names this one | `select next: $repo.docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |
+| The documents whose `after` names this one | `select next: ^docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |
 | Every `depends_on` edge, both endpoints | `select $src, $dst_path from edges where predicate == "depends_on"` |

@@ -1,5 +1,5 @@
 {
-  "suite": "query-edges",
+  "suite": "query-root",
   "corpus": {
     "index.md": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n",
     "lab/2026-01-notes.md": "---\ntype: lab-note\nlayer: working\ntags: [lab, calcination]\nverified: true\nmonth: 1\nsubject: calcination\nwindow: 2026-01-01..2026-01-31\n---\n\n# Laboratory notes — January\n\nBench work on [calcination](/processes/calcination.md), chasing the weight gain.\n\noperator:: bb\nbalance:: analytical\n\n## Setup\n\nLead sheet cut into 2 g pieces, crucible pre-fired to constant weight, muffle at\n600 °C. Weighings after cooling in a desiccator.\n\n```text\ntare crucible → weigh Pb → 600C 2h → cool in desiccator → reweigh\n```\n\n## Results\n\n| Run | Pb in (g) | Calx out (g) | Change |\n|---|---|---|---|\n| 1 | 2.001 | 2.140 | +0.139 |\n| 2 | 2.004 | 2.147 | +0.143 |\n| 3 | 1.998 | 2.138 | +0.140 |\n\nConsistent gain of about 7% by mass. The colour went yellow then, on longer\nheating, red — massicot to minium, as expected.\n\nThe gain is real and reproducible on a bench with 1830s-grade equipment. Anyone\ndoing this carefully before Lavoisier had the fact in hand; what was missing was\na framework that could accept it.\n\n## Side work\n\nBurned a batch of wormwood to ash and leached it while the muffle was up to\ntemperature: 40 g dried herb gave 1.1 g of crude salt after a single\nrecrystallization. That is the [[salt]] of the tria prima, obtained in an\nafternoon, and it is easy to see why the operation carried evidential weight.\n\nSulphide colours are next — sulphur over the same metals, recording colour\nagainst stoichiometry.\n\n## Safety\n\nMercury work deferred — see [[mercury]] for the toxicity notes. Not handling it\nwithout a fume hood.\n\n## Tasks\n\n- [x] Pre-fire crucibles to constant weight\n- [x] Three replicate runs on lead\n- [x] Record the colour sequence\n- [x] Extract the salt of wormwood and weigh the yield\n- [ ] Repeat the series with copper\n- [ ] Plot mass gain against heating time\n- [ ] Tabulate the metal sulphides by colour\n",
@@ -24,85 +24,15 @@
   },
   "cases": [
     {
-      "name": "root-order",
-      "notes": "§1.1: open edges of live source docs in (source path, edge_id) order.",
-      "query": "select p: predicate from edges where $path == \"index.md\"",
+      "name": "root-docs-depth-1",
+      "notes": "§1.1: the repository is the root row — `^docs` from a top-level row is the documents scan (20).",
+      "query": "select n: size(^docs) from docs where $path == \"/index.md\" && ^docs count { } == 20",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
+            "id": "d_0",
             "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_1",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_10",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_11",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_12",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_13",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_14",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_2",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_3",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_4",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_5",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_6",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_7",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_8",
-            "path": "/index.md",
-            "p": "references"
-          },
-          {
-            "id": "e_9",
-            "path": "/index.md",
-            "p": "references"
+            "n": 20
           }
         ],
         "truncated": false,
@@ -111,45 +41,15 @@
       }
     },
     {
-      "name": "fields",
-      "query": "select predicate, provenance, dst_kind, anchor, src_field from edges where $path == \"substances/prima-materia.md\"",
+      "name": "root-docs-depth-2-carets",
+      "notes": "§1.1: two carets from a block's rows (depth 2) reach the root.",
+      "query": "select n: nodes first { select c: size(^^docs) values } from docs where $path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "src_field": null
-          },
-          {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "src_field": null
-          },
-          {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "src_field": null
-          },
-          {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
-            "predicate": "references",
-            "provenance": "link",
-            "dst_kind": "document",
-            "anchor": null,
-            "src_field": null
+            "id": "d_0",
+            "path": "/index.md",
+            "n": 20
           }
         ],
         "truncated": false,
@@ -158,54 +58,15 @@
       }
     },
     {
-      "name": "intrinsics",
-      "notes": "§1.2: $src/$dst/$src_block/$via/$from_commit/$dst_path/$dst_uri; the dangling [[nigredo]] is a phantom with no $dst_path.",
-      "query": "select s: $src, d: $dst, sb: $src_block, v: $via, fc: $from_commit, dp: $dst_path, du: $dst_uri from edges where $path == \"substances/prima-materia.md\"",
+      "name": "root-docs-depth-2-absolute",
+      "notes": "§1.1: `0^docs` is the absolute spelling of the same scan.",
+      "query": "select n: nodes first { select c: size(0^docs) values } from docs where $path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_47",
-            "path": "/substances/prima-materia.md",
-            "s": "d_13",
-            "d": "d_16",
-            "sb": "b_254",
-            "v": null,
-            "fc": "c_13",
-            "dp": "/texts/emerald-tablet.md",
-            "du": null
-          },
-          {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "s": "d_13",
-            "d": "d_10",
-            "sb": "b_256",
-            "v": null,
-            "fc": "c_13",
-            "dp": "/processes/magnum-opus.md",
-            "du": null
-          },
-          {
-            "id": "e_49",
-            "path": "/substances/prima-materia.md",
-            "s": "d_13",
-            "d": "d_7",
-            "sb": "b_256",
-            "v": null,
-            "fc": "c_13",
-            "dp": "/processes/calcination.md",
-            "du": null
-          },
-          {
-            "id": "e_50",
-            "path": "/substances/prima-materia.md",
-            "s": "d_13",
-            "d": "phantom:nigredo",
-            "sb": "b_256",
-            "v": null,
-            "fc": "c_13",
-            "dp": null,
-            "du": null
+            "id": "d_0",
+            "path": "/index.md",
+            "n": 20
           }
         ],
         "truncated": false,
@@ -214,29 +75,17 @@
       }
     },
     {
-      "name": "doc-reach-through",
-      "query": "select dt: doc.type from edges where $path == \"substances/salt.md\"",
+      "name": "root-targets-depth-1",
+      "notes": "§1.1: every target is a root-row collection.",
+      "query": "select b: size(^blocks), n: size(^nodes), e: size(^edges) from docs where $path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_51",
-            "path": "/substances/salt.md",
-            "dt": "substance"
-          },
-          {
-            "id": "e_52",
-            "path": "/substances/salt.md",
-            "dt": "substance"
-          },
-          {
-            "id": "e_53",
-            "path": "/substances/salt.md",
-            "dt": "substance"
-          },
-          {
-            "id": "e_54",
-            "path": "/substances/salt.md",
-            "dt": "substance"
+            "id": "d_0",
+            "path": "/index.md",
+            "b": 327,
+            "n": 214,
+            "e": 69
           }
         ],
         "truncated": false,
@@ -245,193 +94,222 @@
       }
     },
     {
-      "name": "doc-reach-through-filter",
-      "query": "edges count { where doc.type == \"lab-note\" }",
-      "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "count",
-        "count": 5
-      }
-    },
-    {
-      "name": "count-all",
-      "query": "edges count { }",
-      "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "count",
-        "count": 69
-      }
-    },
-    {
-      "name": "count-by-provenance",
-      "query": "edges count { where provenance == \"link\" }",
-      "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "count",
-        "count": 64
-      }
-    },
-    {
-      "name": "distinct-provenance",
-      "query": "select distinct provenance values from edges",
-      "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect",
-        "values": [
-          "link",
-          "frontmatter"
-        ]
-      }
-    },
-    {
-      "name": "distinct-predicate",
-      "query": "select distinct predicate values from edges",
-      "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect",
-        "values": [
-          "references",
-          "after",
-          "see_also",
-          "before"
-        ]
-      }
-    },
-    {
-      "name": "phantom-targets",
-      "notes": "spec/graph: a wikilink resolves by path, so every [[slug]] here is a phantom — dst_kind document, $dst `phantom:<value>`, null $dst_path.",
-      "query": "select d: $dst from edges where dst_kind == \"document\" && $dst_path == null",
+      "name": "root-id-is-repo-id",
+      "notes": "§1.1: `^$id` / `0^$id` at the root is the repository id (`rp_0` under the fixture minter); the two spellings are one value.",
+      "query": "select r: ^$id, a: 0^$id, same: ^$id is 0^$id from docs where $path == \"/index.md\"",
       "expect": {
         "hits": [
           {
-            "id": "e_0",
+            "id": "d_0",
             "path": "/index.md",
-            "d": "phantom:mercury"
-          },
+            "r": "rp_0",
+            "a": "rp_0",
+            "same": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "root-id-depth-2",
+      "notes": "§1.1: `^^$id` from depth two.",
+      "query": "select r: nodes first { select r: ^^$id values } from docs where $path == \"/index.md\"",
+      "expect": {
+        "hits": [
           {
-            "id": "e_1",
+            "id": "d_0",
             "path": "/index.md",
-            "d": "phantom:sulphur"
-          },
+            "r": "rp_0"
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "root-object-entries-names",
+      "notes": "§1.1: the root object exposes exactly the four collections as entries, in target order; `$id` is an intrinsic, not an entry.",
+      "query": "select ks: entries(^$it) collect { $key values } from docs where $path == \"/index.md\"",
+      "expect": {
+        "hits": [
           {
-            "id": "e_2",
+            "id": "d_0",
             "path": "/index.md",
-            "d": "phantom:salt"
-          },
+            "ks": [
+              "docs",
+              "blocks",
+              "nodes",
+              "edges"
+            ]
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "root-object-collection-is-the-root-name",
+      "notes": "§1.1: `^$it.docs` is `^docs` (one handle per run) and `^$it.$id` the repository id.",
+      "query": "select a: size(^$it.docs), b: size(^docs), same: ^$it.docs == ^docs, id: ^$it.$id from docs where $path == \"/index.md\"",
+      "expect": {
+        "hits": [
           {
-            "id": "e_16",
-            "path": "/lab/2026-01-notes.md",
-            "d": "phantom:salt"
-          },
+            "id": "rp_0",
+            "path": "/index.md",
+            "a": 20,
+            "b": 20,
+            "same": true
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "root-object-collection-as-receiver-probe",
+      "notes": "§1.1, §9: `^$it.docs` serves as a correlated receiver (the lazy handle reaches the store index) exactly like `^docs`.",
+      "query": "select cited: ^$it.docs collect { $path where doc.out exists { where $path == ^^$path } } from docs where type == \"substance\"",
+      "expect": {
+        "hits": [
           {
-            "id": "e_17",
-            "path": "/lab/2026-01-notes.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_20",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_21",
-            "path": "/practitioners/jabir-ibn-hayyan.md",
-            "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_25",
-            "path": "/practitioners/newton.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_27",
-            "path": "/practitioners/paracelsus.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_28",
-            "path": "/practitioners/paracelsus.md",
-            "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_29",
-            "path": "/practitioners/paracelsus.md",
-            "d": "phantom:salt"
-          },
-          {
-            "id": "e_30",
-            "path": "/processes/calcination.md",
-            "d": "phantom:salt"
-          },
-          {
-            "id": "e_38",
+            "id": "d_11",
             "path": "/substances/mercury.md",
-            "d": "phantom:salt"
+            "cited": []
           },
           {
-            "id": "e_39",
-            "path": "/substances/mercury.md",
-            "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_45",
+            "id": "d_12",
             "path": "/substances/philosophers-stone.md",
-            "d": "phantom:magnum-opus"
+            "cited": [
+              {
+                "$path": "/index.md"
+              },
+              {
+                "$path": "/lab/2026-02-notes.md"
+              },
+              {
+                "$path": "/processes/coagulation.md"
+              },
+              {
+                "$path": "/processes/magnum-opus.md"
+              }
+            ]
           },
           {
-            "id": "e_46",
-            "path": "/substances/philosophers-stone.md",
-            "d": "phantom:mercury"
-          },
-          {
-            "id": "e_50",
+            "id": "d_13",
             "path": "/substances/prima-materia.md",
-            "d": "phantom:nigredo"
+            "cited": [
+              {
+                "$path": "/index.md"
+              },
+              {
+                "$path": "/processes/magnum-opus.md"
+              },
+              {
+                "$path": "/substances/philosophers-stone.md"
+              },
+              {
+                "$path": "/texts/mutus-liber.md"
+              }
+            ]
           },
           {
-            "id": "e_51",
+            "id": "d_14",
             "path": "/substances/salt.md",
-            "d": "phantom:mercury"
+            "cited": []
           },
           {
-            "id": "e_52",
-            "path": "/substances/salt.md",
-            "d": "phantom:sulphur"
-          },
-          {
-            "id": "e_55",
+            "id": "d_15",
             "path": "/substances/sulphur.md",
-            "d": "phantom:mercury"
+            "cited": []
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "root-object-absolute-depth-2",
+      "notes": "§1.1: `0^$it` from depth two is the root object.",
+      "query": "select n: nodes first { select c: size(0^$it.docs) values } from docs where $path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "n": 20
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "relations-spelled-like-targets-still-relations",
+      "notes": "§1.1: `nodes`/`blocks` on a doc row and `section.blocks` on a node row are the §1.2 relations, not bare-target reads.",
+      "query": "select n: size(nodes), b: size(blocks), s: nodes first { select k: size(section.blocks) values where kind == \"md:section\" } from docs where $path == \"/index.md\"",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_0",
+            "path": "/index.md",
+            "n": 22,
+            "b": 31,
+            "s": 31
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "destination-block-rooted-paths-are-live",
+      "notes": "§1 Paths, §1.1: a destination block over the root's documents, correlated by the frontier row's rooted `$path` against the authored `after` references — kickoff names review, nothing names kickoff.",
+      "query": "select $path, $depth from docs where $path == \"/timeline/review.md\" follow ^docs collect { where ^$path in list(after) } { depth 3 }",
+      "expect": {
+        "hits": [
+          {
+            "id": "d_19",
+            "path": "/timeline/review.md",
+            "$path": "/timeline/review.md",
+            "$depth": 1
           },
           {
-            "id": "e_56",
-            "path": "/substances/sulphur.md",
-            "d": "phantom:salt"
-          },
-          {
-            "id": "e_65",
+            "id": "d_18",
             "path": "/timeline/kickoff.md",
-            "d": "phantom:timeline/lost-notes.md"
-          },
+            "$path": "/timeline/kickoff.md",
+            "$depth": 2
+          }
+        ],
+        "truncated": false,
+        "cursor": null,
+        "consumer": "collect"
+      }
+    },
+    {
+      "name": "destination-block-absolute-root",
+      "notes": "§1.1: the `0^docs` spelling of the destination block, two scopes below the root.",
+      "query": "select $path, $depth from docs where $path == \"/timeline/review.md\" follow 0^docs collect { where ^$path in list(after) } { depth 3 }",
+      "expect": {
+        "hits": [
           {
-            "id": "e_67",
+            "id": "d_19",
             "path": "/timeline/review.md",
-            "d": "phantom:timeline/lost-notes.md"
+            "$path": "/timeline/review.md",
+            "$depth": 1
           },
           {
-            "id": "e_68",
-            "path": "/timeline/review.md",
-            "d": "phantom:timeline/next-season.md"
+            "id": "d_18",
+            "path": "/timeline/kickoff.md",
+            "$path": "/timeline/kickoff.md",
+            "$depth": 2
           }
         ],
         "truncated": false,
@@ -440,191 +318,173 @@
       }
     },
     {
-      "name": "external-targets-none",
-      "query": "edges count { where $dst_uri != null }",
+      "name": "repo-removed-bare",
+      "notes": "§1.1, §9 (2.0): `$repo` is removed — every spelling is refused before evaluation, naming the replacement.",
+      "query": "from docs where $repo",
       "expect": {
-        "hits": [],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "count",
-        "count": 0
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
       }
     },
     {
-      "name": "edges-into-a-doc",
-      "query": "select $path, provenance from edges where $dst_path == \"processes/magnum-opus.md\"",
+      "name": "repo-removed-member",
+      "query": "select r: size($repo.docs) from docs",
       "expect": {
-        "hits": [
-          {
-            "id": "e_5",
-            "path": "/index.md",
-            "$path": "/index.md",
-            "provenance": "link"
-          },
-          {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "$path": "/practitioners/maria-prophetissa.md",
-            "provenance": "link"
-          },
-          {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "$path": "/practitioners/newton.md",
-            "provenance": "link"
-          },
-          {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "$path": "/substances/philosophers-stone.md",
-            "provenance": "link"
-          },
-          {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "$path": "/substances/prima-materia.md",
-            "provenance": "link"
-          }
-        ],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
       }
     },
     {
-      "name": "no-relations",
-      "notes": "§1.2: edges have no relations — a navigation by a name that is not a target's yields undefined (a target name there is the §1.1 bare-target error: `query-root::bare-target-nodes-on-edge-row`).",
-      "query": "select x: children, y: out_edges from edges where $path == \"index.md\" limit 1",
+      "name": "repo-removed-id",
+      "query": "select r: $repo.$id from docs",
       "expect": {
-        "hits": [
-          {
-            "id": "e_0",
-            "path": "/index.md"
-          }
-        ],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
       }
     },
     {
-      "name": "edges-page",
-      "query": "from edges where $path.startsWith(\"substances/\")",
-      "limit": 6,
+      "name": "repo-removed-outer",
+      "query": "select r: nodes first { select x: ^$repo.$id values } from docs",
       "expect": {
-        "hits": [
-          {
-            "id": "e_38",
-            "path": "/substances/mercury.md"
-          },
-          {
-            "id": "e_39",
-            "path": "/substances/mercury.md"
-          },
-          {
-            "id": "e_40",
-            "path": "/substances/mercury.md"
-          },
-          {
-            "id": "e_41",
-            "path": "/substances/mercury.md"
-          },
-          {
-            "id": "e_42",
-            "path": "/substances/mercury.md"
-          },
-          {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md"
-          }
-        ],
-        "truncated": true,
-        "cursor": "WyIvc3Vic3RhbmNlcy9waGlsb3NvcGhlcnMtc3RvbmUubWQiLCJlXzQzIl0",
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
       }
     },
     {
-      "name": "dst-path-rooted-literal",
-      "notes": "§1 Paths (2.0): `$dst_path` is the reference form; a rooted literal matches it (and the planner's `$dst_path` probe de-roots it).",
-      "query": "select $path, $dst_path from edges where $dst_path == \"/processes/magnum-opus.md\"",
+      "name": "repo-removed-absolute",
+      "query": "select r: nodes first { select x: 0^$repo values } from docs",
       "expect": {
-        "hits": [
-          {
-            "id": "e_5",
-            "path": "/index.md",
-            "$path": "/index.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "$path": "/practitioners/maria-prophetissa.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "$path": "/practitioners/newton.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "$path": "/substances/philosophers-stone.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "$path": "/substances/prima-materia.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          }
-        ],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
       }
     },
     {
-      "name": "dst-path-bare-literal",
-      "notes": "§1 Paths: the bare spelling is rooted first — the same edges.",
-      "query": "select $path, $dst_path from edges where $dst_path == \"processes/magnum-opus.md\"",
+      "name": "repo-removed-source",
+      "notes": "the error is static: it fires whether or not a row would have read it.",
+      "query": "$repo.docs count { }",
       "expect": {
-        "hits": [
-          {
-            "id": "e_5",
-            "path": "/index.md",
-            "$path": "/index.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_23",
-            "path": "/practitioners/maria-prophetissa.md",
-            "$path": "/practitioners/maria-prophetissa.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_24",
-            "path": "/practitioners/newton.md",
-            "$path": "/practitioners/newton.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_43",
-            "path": "/substances/philosophers-stone.md",
-            "$path": "/substances/philosophers-stone.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          },
-          {
-            "id": "e_48",
-            "path": "/substances/prima-materia.md",
-            "$path": "/substances/prima-materia.md",
-            "$dst_path": "/processes/magnum-opus.md"
-          }
-        ],
-        "truncated": false,
-        "cursor": null,
-        "consumer": "collect"
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
+      }
+    },
+    {
+      "name": "repo-removed-in-unreached-branch",
+      "notes": "static: no row reaches the conjunct, the query still fails.",
+      "query": "from docs where $path == \"nope\" && $repo.docs exists { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`"
+      }
+    },
+    {
+      "name": "bare-target-docs-receiver",
+      "notes": "§1.1 (2.0): a bare target name at depth ≥ 1 reads a property of the current row, which has none — refused, naming `^docs`.",
+      "query": "select x: docs collect { } from docs",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-edges-in-where",
+      "query": "from docs where edges exists { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`edges` inside a block reads a property of the current row, which has none — did you mean `^edges` (the repository's edges)?"
+      }
+    },
+    {
+      "name": "bare-target-docs-depth-2",
+      "notes": "the hint counts the carets: `^^docs` from depth two.",
+      "query": "select x: nodes collect { select y: size(docs) } from docs",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-from-reprojection",
+      "notes": "a `from E` re-projection (depth 1 under a top-level directive) is a property read too.",
+      "query": "docs collect { from docs }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-from-in-block",
+      "query": "select x: nodes collect { from docs } from docs",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-follow-destination",
+      "query": "from docs where $path == \"/index.md\" follow docs",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-in-unreached-branch",
+      "notes": "static for `docs`/`edges`: no row reaches the conjunct, the query still fails.",
+      "query": "from docs where $path == \"nope\" && docs exists { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?"
+      }
+    },
+    {
+      "name": "bare-target-blocks-on-block-row",
+      "notes": "`blocks` is a relation of docs, not of blocks: on a block row it is the bare-target error, raised by the context when read.",
+      "query": "from blocks where blocks exists { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"
+      }
+    },
+    {
+      "name": "bare-target-nodes-on-node-row",
+      "query": "select x: nodes from nodes where kind == \"md:section\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes; one caret per enclosing block, or the absolute `0^nodes`)?"
+      }
+    },
+    {
+      "name": "bare-target-nodes-on-edge-row",
+      "query": "select x: nodes from edges limit 1",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`nodes` inside a block reads a property of the current row, which has none — did you mean `^nodes` (the repository's nodes; one caret per enclosing block, or the absolute `0^nodes`)?"
+      }
+    },
+    {
+      "name": "bare-target-blocks-via-reach-through",
+      "notes": "`block.blocks` reaches a block row, which has no `blocks` relation.",
+      "query": "select x: block.blocks from nodes where kind == \"md:task\"",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`blocks` inside a block reads a property of the current row, which has none — did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"
+      }
+    },
+    {
+      "name": "root-caret-past-the-root",
+      "notes": "§1.1 (2.0): `^docs` at the top level reaches past the root — OQX would read absent and count 0; refused, naming the bare spelling.",
+      "query": "^docs count { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)"
+      }
+    },
+    {
+      "name": "root-caret-past-the-root-from-a-row",
+      "query": "select $path from docs where ^^edges exists { }",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "`^^edges` reaches past the root — there is no enclosing row at this depth; at the top level the repository's edges are the bare `edges` (`edges count { … }`, `from edges`, `entries(edges)`)"
       }
     }
   ]

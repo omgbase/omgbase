@@ -81,15 +81,15 @@ describe("planner — decline (c): a residual that could raise sends the whole q
 describe("planner — typed pushes (1.2): a bool or num literal against a json or prop read plans", () => {
   it("the query-blocks::planned-typed-* fixtures", () => {
     expect(planned('select $path, checked from blocks where checked == true')).toBe(true);
-    expect(planned('$repo.blocks count { where checked != true }')).toBe(true);
+    expect(planned('blocks count { where checked != true }')).toBe(true);
     expect(planned('select $path, level from blocks where level >= 2')).toBe(true);
-    expect(planned('$repo.blocks count { where level != 2 }')).toBe(true);
+    expect(planned('blocks count { where level != 2 }')).toBe(true);
   });
 
   it("the query-docs::planned-typed-* fixtures", () => {
     expect(planned('select $path, verified from docs where verified == true')).toBe(true);
     expect(planned('select $path, era from docs where era >= 800')).toBe(true);
-    expect(planned('$repo.docs count { where era != 800 }')).toBe(true);
+    expect(planned('docs count { where era != 800 }')).toBe(true);
   });
 
   it("the same cells against a binding, and through `doc.<k>` / `attrs.<k>`", () => {

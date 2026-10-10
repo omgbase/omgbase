@@ -17,7 +17,7 @@ Read in order:
 4. **[correlated-subqueries.md](./correlated-subqueries.md)** — `exists`,
    `count`, and `collect` over a document's own blocks and nodes.
 5. **[joins-and-lifts.md](./joins-and-lifts.md)** — `^name` correlation and
-   `$repo.*` scans: lifts, dependent/semi/anti/self joins, `single`.
+   `^docs` / `^nodes` root scans: lifts, dependent/semi/anti/self joins, `single`.
 6. **[aggregates.md](./aggregates.md)** — folding a query to a value
    (`count`/`exists`/`first`/`single`) and full-text `text()`.
 7. **[graph-traversal.md](./graph-traversal.md)** — `follow` over the link and

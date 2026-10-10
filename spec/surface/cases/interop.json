@@ -1375,7 +1375,7 @@
         {
           "tool": "query",
           "args": {
-            "query": "$repo.nodes count { where kind == \"md:task\" && !checked }"
+            "query": "nodes count { where kind == \"md:task\" && !checked }"
           }
         },
         {
@@ -1432,13 +1432,25 @@
         {
           "tool": "query",
           "args": {
-            "query": "select same: $repo.docs == $repo.docs, n: size($repo.docs), e: size(entries($repo.docs)), hit: \"index.md\" in $repo.docs from docs where $path == \"index.md\""
+            "query": "select same: ^docs == ^docs, n: size(^docs), e: size(entries(^docs)), hit: \"index.md\" in ^docs from docs where $path == \"index.md\""
           }
         },
         {
           "tool": "query",
           "args": {
             "query": "select $path, $depth, prior: refs(before) collect { $path } from docs where $path == \"timeline/review.md\" follow refs(before)"
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select n: size(^docs), rid: ^$id, ks: entries(^$it) collect { $key values } from docs where $path == \"index.md\""
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where $path == \"timeline/review.md\""
           }
         }
       ],
@@ -1808,6 +1820,41 @@
                 "$path": "/processes/dissolution.md",
                 "$depth": 2,
                 "prior": []
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "n": 20,
+                "rid": "rp_0",
+                "ks": [
+                  "docs",
+                  "blocks",
+                  "nodes",
+                  "edges"
+                ]
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_19",
+                "path": "/timeline/review.md",
+                "back": [
+                  {
+                    "$path": "/timeline/kickoff.md"
+                  }
+                ]
               }
             ],
             "truncated": false,

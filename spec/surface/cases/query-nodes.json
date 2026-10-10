@@ -43,7 +43,7 @@
     },
     {
       "name": "task-node-count",
-      "query": "$repo.nodes count { where kind == \"md:task\" }",
+      "query": "nodes count { where kind == \"md:task\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -673,8 +673,8 @@
     },
     {
       "name": "no-relations-beyond-section",
-      "notes": "an unknown navigation resolves to no rows / undefined, not an error.",
-      "query": "select x: nodes from nodes where kind == \"md:section\" && name == \"Supplies\"",
+      "notes": "an unknown navigation resolves to no rows / undefined, not an error — unless it is spelled like a target (`nodes` on a node row is the §1.1 bare-target error: `query-root::bare-target-nodes-on-node-row`).",
+      "query": "select x: out_edges from nodes where kind == \"md:section\" && name == \"Supplies\"",
       "expect": {
         "hits": [
           {

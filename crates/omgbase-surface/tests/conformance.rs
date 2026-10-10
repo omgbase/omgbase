@@ -139,12 +139,12 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     // consumers
     (
-        "$repo.docs count { where $path.startsWith(\"substances/\") }",
+        "docs count { where $path.startsWith(\"substances/\") }",
         Planned,
     ),
-    ("$repo.docs exists { where $path == \"index.md\" }", Planned),
+    ("docs exists { where $path == \"index.md\" }", Planned),
     (
-        "$repo.docs first { where type == \"practitioner\" order by era desc }",
+        "docs first { where type == \"practitioner\" order by era desc }",
         Planned,
     ),
     (
@@ -174,7 +174,7 @@ const QUERIES: &[(&str, Push)] = &[
     ),
     ("select distinct type values from docs", Declined),
     (
-        "$repo.docs first { select $path values where type == \"practitioner\" order by era desc }",
+        "docs first { select $path values where type == \"practitioner\" order by era desc }",
         Planned,
     ),
     (
@@ -190,7 +190,7 @@ const QUERIES: &[(&str, Push)] = &[
         "from docs where type == \"substance\" && nodes none { where kind == \"md:task\" }",
         Planned,
     ),
-    ("$repo.docs none { where type == \"nope\" }", Planned),
+    ("docs none { where type == \"nope\" }", Planned),
     (
         "from docs where type == \"practitioner\" order by era desc limit 2",
         Planned,
@@ -205,7 +205,7 @@ const QUERIES: &[(&str, Push)] = &[
         Declined,
     ),
     (
-        "$repo.docs first { select $path values where type == \"practitioner\" order by era asc offset 1 }",
+        "docs first { select $path values where type == \"practitioner\" order by era asc offset 1 }",
         Planned,
     ),
     // entries() / $key (a free call → residual; the context materializes frontmatter/inline)
@@ -242,7 +242,7 @@ const QUERIES: &[(&str, Push)] = &[
     // correlation / lifts
     // (a `^`-escaped name in the residual block: the whole query declines)
     (
-        "select slug from docs where type == \"substance\" && $repo.nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
+        "select slug from docs where type == \"substance\" && ^nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
         Declined,
     ),
     (
@@ -276,121 +276,121 @@ const QUERIES: &[(&str, Push)] = &[
     ("from docs where $updated_at >= \"2026-01-01\"", Planned),
     // nested blocks over a ROOT SCAN with a correlated / constant equality: the
     // store answers these from SQLite indexes (`store_index`) instead of
-    // materializing `$repo.<target>` — results must not move an inch
+    // materializing `^<target>` — results must not move an inch
     (
-        "select $path, cited: $repo.docs collect { $path where doc.out exists { where $path == ^^$path } } from docs",
+        "select $path, cited: ^docs collect { $path where doc.out exists { where $path == ^^$path } } from docs",
         Declined,
     ),
     (
-        "select name, orders: $repo.docs collect { $path where type == \"order\" && customer == ^$path } from docs where type == \"customer\"",
+        "select name, orders: ^docs collect { $path where type == \"order\" && customer == ^$path } from docs where type == \"customer\"",
         Planned,
     ),
     (
-        "from docs where $path == \"index.md\" follow doc.out, $repo.docs collect { where after.contains(^$path) }",
+        "from docs where $path == \"index.md\" follow doc.out, ^docs collect { where after.contains(^$path) }",
         Declined,
     ),
     (
-        "select $path, same_type: $repo.docs collect { $path where type == ^type && $path != ^$path } from docs",
+        "select $path, same_type: ^docs collect { $path where type == ^type && $path != ^$path } from docs",
         Declined,
     ),
     (
-        "select $path, same_era: $repo.docs collect { $path where era == ^era } from docs where type == \"practitioner\"",
+        "select $path, same_era: ^docs collect { $path where era == ^era } from docs where type == \"practitioner\"",
         Planned,
     ),
     (
-        "select $path, same_layer: $repo.docs collect { $path values where layer == ^layer } from docs",
+        "select $path, same_layer: ^docs collect { $path values where layer == ^layer } from docs",
         Declined,
     ),
     (
-        "from docs where $repo.docs count { where layer == ^layer } > 3",
+        "from docs where ^docs count { where layer == ^layer } > 3",
         Declined,
     ),
     (
-        "from docs where $repo.docs exists { where $title == ^$title && $id != ^$id }",
+        "from docs where ^docs exists { where $title == ^$title && $id != ^$id }",
         Declined,
     ),
     (
-        "select $path, by_title: $repo.docs collect { $path values where $title == ^$title } from docs where type == \"process\"",
+        "select $path, by_title: ^docs collect { $path values where $title == ^$title } from docs where type == \"process\"",
         Planned,
     ),
     (
-        "select $path, self: $repo.docs first { $path values where $path == ^$path } from docs",
+        "select $path, self: ^docs first { $path values where $path == ^$path } from docs",
         Declined,
     ),
     (
-        "select $path, by_id: $repo.docs single { $path values where $id == ^$id } from docs where type == \"substance\"",
+        "select $path, by_id: ^docs single { $path values where $id == ^$id } from docs where type == \"substance\"",
         Planned,
     ),
     // mixed value kinds on one property: a number probe against a string
     // property (and the reverse) matches nothing; an absent probe matches the
     // documents lacking the key (the in-memory fallback)
     (
-        "select $path, s: $repo.docs collect { $path where slug == ^era } from docs where type == \"practitioner\"",
+        "select $path, s: ^docs collect { $path where slug == ^era } from docs where type == \"practitioner\"",
         Planned,
     ),
     (
-        "select $path, e: $repo.docs collect { $path where era == ^slug } from docs where type == \"substance\"",
+        "select $path, e: ^docs collect { $path where era == ^slug } from docs where type == \"substance\"",
         Planned,
     ),
     (
-        "from docs where $repo.docs none { where era == ^type }",
+        "from docs where ^docs none { where era == ^type }",
         Declined,
     ),
     (
-        "select $path, no_era: $repo.docs collect { $path values where era == ^nope } from docs where $path == \"index.md\"",
+        "select $path, no_era: ^docs collect { $path values where era == ^nope } from docs where $path == \"index.md\"",
         Planned,
     ),
     (
-        "select $path, no_slug: $repo.docs collect { $path where slug == null } from docs where type == \"text\"",
+        "select $path, no_slug: ^docs collect { $path where slug == null } from docs where type == \"text\"",
         Planned,
     ),
     (
-        "select $path, l: $repo.docs collect { $path values where tags == ^tags } from docs",
+        "select $path, l: ^docs collect { $path values where tags == ^tags } from docs",
         Declined,
     ),
     (
-        "select $path, l: $repo.docs collect { $path values where layer == ^tags } from docs",
+        "select $path, l: ^docs collect { $path values where layer == ^tags } from docs",
         Declined,
     ),
     // the other targets as receivers: an edges-target correlated block, blocks by $doc, nodes by kind
     (
-        "select $path, inbound: $repo.edges collect { $src where $dst == ^$id } from docs",
+        "select $path, inbound: ^edges collect { $src where $dst == ^$id } from docs",
         Declined,
     ),
     (
-        "select $path, outbound: $repo.edges collect { $dst_path values where $path == ^$path } from docs",
+        "select $path, outbound: ^edges collect { $dst_path values where $path == ^$path } from docs",
         Declined,
     ),
     (
-        "from docs where $repo.edges count { where $path == ^$path } > 2",
+        "from docs where ^edges count { where $path == ^$path } > 2",
         Declined,
     ),
     (
-        "select $src, same_dst: $repo.edges collect { $src values where $dst_path == ^$dst_path && $id != ^$id } from edges where predicate == \"references\"",
+        "select $src, same_dst: ^edges collect { $src values where $dst_path == ^$dst_path && $id != ^$id } from edges where predicate == \"references\"",
         Planned,
     ),
     (
-        "select $id, paragraphs: $repo.blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
+        "select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == \"paragraph\" } from blocks where type == \"heading\"",
         Planned,
     ),
     (
-        "from blocks where type == \"heading\" && $repo.blocks count { where $doc == ^$doc && type == \"paragraph\" } > 3",
+        "from blocks where type == \"heading\" && ^blocks count { where $doc == ^$doc && type == \"paragraph\" } > 3",
         Declined,
     ),
     (
-        "from nodes where kind == \"md:section\" && $repo.nodes count { where kind == ^kind } > 10",
+        "from nodes where kind == \"md:section\" && ^nodes count { where kind == ^kind } > 10",
         Declined,
     ),
     (
-        "select name, same_kind: $repo.nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
+        "select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == \"md:section\"",
         Planned,
     ),
     (
-        "select $path, by_name: $repo.nodes collect { $id where name == ^name } from nodes where kind == \"md:section\" && name == \"Preparation\"",
+        "select $path, by_name: ^nodes collect { $id where name == ^name } from nodes where kind == \"md:section\" && name == \"Preparation\"",
         Planned,
     ),
     (
-        "select $path, nameless: $repo.nodes collect { kind values where name == ^nope } from nodes where kind == \"md:section\" && name == \"Preparation\"",
+        "select $path, nameless: ^nodes collect { kind values where name == ^nope } from nodes where kind == \"md:section\" && name == \"Preparation\"",
         Planned,
     ),
 ];

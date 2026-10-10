@@ -18,7 +18,7 @@ use oqx::walk::{Clause, Node, VisitContext, Visitor, transform, visit};
 use oqx::{Consumer, Engine, InMemoryEngine, Value, build, resolve_aliases};
 use serde_json::{Map, Value as Json};
 
-use crate::context::{SemanticVec, StoreContext, render_row_values, target_of};
+use crate::context::{SemanticVec, StoreContext, Target, render_row_values, target_of};
 use crate::cursor::{decode_path_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
 use crate::paths::reference_path;
@@ -241,6 +241,105 @@ pub fn rewrite_query(q: &Query) -> Query {
         },
         other => root_path_literals(other),
     })
+}
+
+// ---- the root row (spec/surface §1.1, 2.0) ----------------------------------------------
+
+/// The `$repo` error (removed in surface 2.0): the same text in both engines.
+pub const REPO_REMOVED_MESSAGE: &str = "`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`";
+
+/// The bare-target error. `depth` is the scope depth the name was read at when
+/// known statically (the carets in the hint count it); `None` when raised at
+/// read time by the context, where the hint spells out the rule instead.
+#[must_use]
+pub fn bare_target_message(t: Target, depth: Option<usize>) -> String {
+    let name = t.as_str();
+    let noun = match t {
+        Target::Docs => "documents",
+        Target::Blocks => "blocks",
+        Target::Nodes => "nodes",
+        Target::Edges => "edges",
+    };
+    let carets = "^".repeat(depth.unwrap_or(1));
+    let how = if depth.is_none() {
+        format!("; one caret per enclosing block, or the absolute `0^{name}`")
+    } else {
+        String::new()
+    };
+    format!(
+        "`{name}` inside a block reads a property of the current row, which has none — did you mean `{carets}{name}` (the repository's {noun}{how})?"
+    )
+}
+
+/// The past-the-root error: `^docs` at the root scope (more carets than there
+/// are enclosing scopes) would read absent and count 0 — refused, naming the
+/// bare spelling. `levels` is the caret count written.
+#[must_use]
+pub fn past_root_message(t: Target, levels: usize) -> String {
+    let name = t.as_str();
+    let noun = match t {
+        Target::Docs => "documents",
+        Target::Blocks => "blocks",
+        Target::Nodes => "nodes",
+        Target::Edges => "edges",
+    };
+    let carets = "^".repeat(levels);
+    format!(
+        "`{carets}{name}` reaches past the root — there is no enclosing row at this depth; at the top level the repository's {noun} are the bare `{name}` (`{name} count {{ … }}`, `from {name}`, `entries({name})`)"
+    )
+}
+
+/// The repository is OQX's root row (`spec/oqx` 0.18): from a top-level row
+/// `^docs` reaches the documents (one caret per enclosing block, or the
+/// absolute `0^docs`) and `^$id` the repository id. Two spellings are refused
+/// before evaluation, by one walk over the parsed tree, so the error does not
+/// depend on which rows the data holds and the planned and in-memory paths
+/// agree trivially: `$repo` anywhere (bare, as a member head, `^$repo`,
+/// `0^$repo`), and a bare `docs`/`edges` at scope depth ≥ 1 — a property read
+/// of a row that has none. `blocks`/`nodes` are relations of some rows
+/// (`docs.blocks`, `docs.nodes`, `blocks.nodes`, `section.blocks`) and are
+/// judged by the context at read time with the same message. A `^<target>`
+/// with more carets than enclosing scopes (`^docs count { }` at the top level)
+/// would read absent and count 0: refused too, naming the bare spelling. Port
+/// of the reference's `checkRootSpellings`.
+pub fn check_root_spellings(q: &Query) -> Result<()> {
+    struct Check(Option<SurfaceError>);
+    impl Visitor for Check {
+        fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
+            if self.0.is_some() {
+                return false;
+            }
+            match node {
+                Node::Expr(Expr::Ident { name, .. } | Expr::Outer { name, .. })
+                    if name == "$repo" =>
+                {
+                    self.0 = Some(SurfaceError::filter_invalid(REPO_REMOVED_MESSAGE, "OQX"));
+                }
+                Node::Expr(Expr::Ident { name, .. })
+                    if ctx.depth >= 1 && matches!(name.as_str(), "docs" | "edges") =>
+                {
+                    let t = Target::parse(name).expect("a target name");
+                    self.0 = Some(SurfaceError::filter_invalid(
+                        bare_target_message(t, Some(ctx.depth)),
+                        "OQX",
+                    ));
+                }
+                Node::Expr(Expr::Outer { name, levels, .. }) if *levels > ctx.depth => {
+                    if let Some(t) = Target::parse(name) {
+                        self.0 = Some(SurfaceError::filter_invalid(
+                            past_root_message(t, *levels),
+                            "OQX",
+                        ));
+                    }
+                }
+                _ => {}
+            }
+            self.0.is_none()
+        }
+    }
+    let mut check = Check(None);
+    visit(Node::Query(q), &mut check);
+    check.0.map_or(Ok(()), Err)
 }
 
 // ---- semantic phrases -----------------------------------------------------------------
@@ -551,7 +650,7 @@ impl Runner<'_> {
         if let Some(failed) = engine.context().take_root_failure() {
             return Err(failed.into());
         }
-        // A root scan projected as a VALUE (`select all: $repo.docs`) was
+        // A root scan projected as a VALUE (`select all: ^docs`) was
         // materialized into its rows by the engine (`DataContext::materialize`).
         Ok(out?)
     }
@@ -560,7 +659,9 @@ impl Runner<'_> {
 fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Result<OqxResult> {
     // The query's `select` aliases are resolved HERE, once, before the runner
     // renames/injects items (an engine evaluates the query it is given).
-    let parsed = rewrite_query(&resolve_aliases(&oqx::parse_string(source)?)?);
+    let raw = oqx::parse_string(source)?;
+    check_root_spellings(&raw)?;
+    let parsed = rewrite_query(&resolve_aliases(&raw)?);
     let consumer = parsed.consumer;
 
     match consumer {
@@ -774,7 +875,7 @@ mod tests {
     #[test]
     fn path_literals_are_rooted_only_against_path_reads() {
         let q = oqx::parse_string(
-            "select n: $repo.docs collect { $path where $path == ^after || \"x.md\" != $dst_path } from docs where $path.startsWith(\"lab/\") && doc.$path == \"a.md\" && type == \"a.md\" && ^$path == \"b.md\"",
+            "select n: ^docs collect { $path where $path == ^after || \"x.md\" != $dst_path } from docs where $path.startsWith(\"lab/\") && doc.$path == \"a.md\" && type == \"a.md\" && ^$path == \"b.md\"",
         )
         .unwrap();
         let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
@@ -794,6 +895,67 @@ mod tests {
         assert!(printed.contains("$path.contains(\"a/\")"), "{printed}");
         assert!(printed.contains("$path.endsWith(\".md\")"), "{printed}");
         assert!(printed.contains("$path == \"/\""), "{printed}");
+    }
+
+    #[test]
+    fn repo_and_bare_targets_are_refused_statically() {
+        let parse = |s: &str| oqx::parse_string(s).unwrap();
+        for q in [
+            "from docs where $repo",
+            "select r: size($repo.docs) from docs",
+            "select r: $repo.$id from docs",
+            "select r: nodes first { select x: ^$repo.$id values } from docs",
+            "select r: nodes first { select x: 0^$repo values } from docs",
+            "$repo.docs count { }",
+        ] {
+            let e = check_root_spellings(&parse(q)).unwrap_err();
+            assert_eq!(e.code, "filter_invalid", "{q}");
+            assert_eq!(e.message, REPO_REMOVED_MESSAGE, "{q}");
+        }
+        // a bare `docs`/`edges` at depth ≥ 1; the hint counts the carets
+        let e = check_root_spellings(&parse("select x: docs collect { } from docs")).unwrap_err();
+        assert_eq!(e.message, bare_target_message(Target::Docs, Some(1)));
+        assert!(
+            e.message
+                .contains("did you mean `^docs` (the repository's documents)?")
+        );
+        let e = check_root_spellings(&parse(
+            "select x: nodes collect { select y: size(edges) } from docs",
+        ))
+        .unwrap_err();
+        assert!(
+            e.message
+                .contains("did you mean `^^edges` (the repository's edges)?")
+        );
+        let e = check_root_spellings(&parse("docs collect { from docs }")).unwrap_err();
+        assert!(e.message.contains("`^docs`"));
+        // the root scope is depth 0: a bare target there is the scan
+        for q in [
+            "docs count { }",
+            "from docs where nodes exists { }",
+            "entries(docs) first { }",
+            "select n: size(^docs), id: ^$id, k: size(0^edges) from docs",
+            "from blocks where blocks exists { }", // judged by the context at read time
+        ] {
+            check_root_spellings(&parse(q)).unwrap_or_else(|e| panic!("{q}: {e}"));
+        }
+        // a `^target` reaching past the root
+        let e = check_root_spellings(&parse("^docs count { }")).unwrap_err();
+        assert_eq!(e.message, past_root_message(Target::Docs, 1));
+        assert_eq!(
+            e.message,
+            "`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)"
+        );
+        let e = check_root_spellings(&parse("select $path from docs where ^^edges exists { }"))
+            .unwrap_err();
+        assert!(
+            e.message.contains("`^^edges` reaches past the root"),
+            "{}",
+            e.message
+        );
+        // the read-time message spells out the rule
+        let m = bare_target_message(Target::Blocks, None);
+        assert!(m.contains("did you mean `^blocks` (the repository's blocks; one caret per enclosing block, or the absolute `0^blocks`)?"), "{m}");
     }
 
     #[test]

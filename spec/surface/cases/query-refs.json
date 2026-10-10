@@ -412,7 +412,7 @@
     {
       "name": "reverse-reference-by-path-membership",
       "notes": "§1 Paths (2.0): the reverse of `refs(x)` needs no function — a document's `$path` is already the reference form, so `^$path in list(before)` finds the documents whose `before` names it (review.md names kickoff.md). Before 2.0 this needed `\"/\" + ^$path`.",
-      "query": "select next: $repo.docs collect { $path where ^$path in list(before) } from docs where $path == \"/timeline/kickoff.md\"",
+      "query": "select next: ^docs collect { $path where ^$path in list(before) } from docs where $path == \"/timeline/kickoff.md\"",
       "expect": {
         "hits": [
           {

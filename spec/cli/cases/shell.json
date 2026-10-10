@@ -226,7 +226,7 @@
       "argv": [
         "shell"
       ],
-      "stdin": "@n = q '$repo.docs count { where layer == \"canon\" }'\n@n\nbindings\n",
+      "stdin": "@n = q 'docs count { where layer == \"canon\" }'\n@n\nbindings\n",
       "pin_stderr": true,
       "expect": {
         "exit": 0,
@@ -462,7 +462,7 @@
         "--prompt",
         "P> "
       ],
-      "stdin": "ls --ids texts/*\nq '$repo.docs count { }'\nexit\n",
+      "stdin": "ls --ids texts/*\nq 'docs count { }'\nexit\n",
       "pin_stderr": true,
       "expect": {
         "exit": 0,

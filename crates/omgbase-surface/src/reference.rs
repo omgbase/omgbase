@@ -8,7 +8,7 @@ The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`).
 
   [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
-  $repo.<target> count|exists|none|first|single { <block> }     (scalar/one-row form)
+  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
 each at most once. Only `select` may drop its keyword, and only as the first
@@ -26,14 +26,14 @@ Every form is shorthand for an explicit directive (the AST is the explicit form)
                                     field with nodes { is checked }. Not after follow: a brace there is options.
   refs(x)[0]                       ≡ refs(x) first { offset 0 } (integer literal or ${binding}; out of
                                     range ⇒ absent); refs(x)[0].$path navigates the row
-  $repo.docs[$path == ^company]    ≡ $repo.docs first { where $path == ^company } — first match or absent
-  $repo.docs[$path == ^company]!   ≡ … single { … } required: exactly one, else filter_invalid
+  ^docs[$path == ^company]         ≡ ^docs first { where $path == ^company } — first match or absent
+  ^docs[$path == ^company]!        ≡ … single { … } required: exactly one, else filter_invalid
   title!                           required: title, or an error naming the expression (and the row's $id);
                                     never a filter or a coercion; tightest (a!.b vs a.b!)
   is x / not x                     ≡ !!x / !x;   x is y / x is not y  = identity (row id, else structural;
                                     x is null = absent; scalars: is ≡ ==); comparison precedence, no chaining
   a and b / a or b                 ≡ a && b / a || b (same precedence, short-circuit, value semantics)
-  boss: $repo.docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
+  boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
 
 Results are LEAN hits — {id, path} + whatever `select` projects (or `values`,
@@ -87,7 +87,7 @@ to that doc's row; dangling and non-string elements are dropped. Yields docs
 rows, so it is a source, a receiver or a follow destination:
 `follow refs(before), refs(after)` walks a timeline both ways. The reverse
 direction needs no function: a document's $path is already the reference
-form, so `$repo.docs collect { where ^$path in list(after) }` is "the
+form, so `^docs collect { where ^$path in list(after) }` is "the
 documents whose `after` names me". A HIT IS A STORE ROW: a top-level row that is not
 a doc/block/node/edge fails (filter_invalid) — `follow before` over a list of
 paths reaches the STRINGS; write `follow refs(before)`.
@@ -95,8 +95,19 @@ paths reaches the STRINGS; write `follow refs(before)`.
 ## Directives
 
 <receiver> exists|none|count|collect|first|single { <block> } — nested,
-correlated to the current row; `^name` reads one scope out; `$repo.<target>`
-is an unbounded root scan from any depth. `distinct` dedups by projection;
+correlated to the current row; `^name` reads one scope out. THE ROOT ROW
+(surface 2.0, oqx 0.18): the repository is the root scope's row, so from a
+top-level row `^docs` / `^nodes` / `^blocks` / `^edges` are the whole
+collections (unbounded until a `^` predicate correlates them) — one caret per
+enclosing block (`^^docs` from depth two), or the absolute `0^docs` from any
+depth; `^$id` / `0^$id` is the repository id; `^$it` the root object
+(`^$it.docs` ≡ `^docs`, `entries(^$it)` names the four collections). At the
+root scope a bare target is the scan (`docs count { … }`, `from docs`). A
+bare `docs` INSIDE a block reads a property of the current row and is refused
+("did you mean `^docs`"); `^docs` AT THE TOP LEVEL reaches past the root and is
+refused (write the bare `docs`); so is `$repo` (surface < 2.0), with the
+replacement named. `nodes`/`blocks` on a doc row are that doc's relations, not the root.
+`distinct` dedups by projection;
 `values` returns bare values; `limit`/`offset` bound a block before its
 consumer. `follow <dest>, … { where … frontier … depth N by … }` recurses
 over type-preserving destinations ($depth, $stop, $leaf, $frontier,
@@ -105,6 +116,6 @@ $ordinal): each <dest> is a relation of the current row or a
 row; one step's successors are unioned by identity. Inside the follow-local
 `where` and inside a destination block `^` is the row being expanded (`^^`
 the walk's enclosing scope): `follow doc.in { where ^$path in list(before) }`,
-`follow doc.out, $repo.docs collect { where ^$path in list(after) }`.
+`follow doc.out, ^docs collect { where ^$path in list(after) }`.
 A custom `order by` disables the keyset cursor.
 "#;

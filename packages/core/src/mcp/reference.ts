@@ -13,7 +13,7 @@ is no {from, filter, order} envelope: every concern is a clause of the string.
 
   [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
-  $repo.<target> count|exists|none|first|single { <block> }     (scalar/one-row form)
+  <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
@@ -21,7 +21,7 @@ Only \`select\` may drop its keyword, and only as the first clause
 (\`$path, era from docs where …\`). Every other clause always carries its keyword:
 a predicate is NEVER implicit (\`nodes exists { where kind == "md:task" }\`, not
 \`{ name, kind == "md:task" }\` — but a block may LEAD with a predicate, see Sugar),
-and \`from docs count\` is an error (write \`$repo.docs count { … }\`). \`where\` and
+and \`from docs count\` is an error (write \`docs count { … }\`). \`where\` and
 later \`select\` items may use the same body's \`select\` aliases
 (\`select $path, old: era < 1000 from docs where old\`; an alias shadows a
 same-named field there).
@@ -37,15 +37,15 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
                                        nodes { is checked }. Not after follow: follow children { depth 2 } is options.
   refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or \${binding});
                                        out of range ⇒ absent; refs(x)[0].$path navigates the row
-  $repo.docs[$path == ^company]       ≡ $repo.docs first { where $path == ^company }   first match or absent
-  $repo.docs[$path == ^company]!      ≡ … single { … } required: exactly one, else filter_invalid
+  ^docs[$path == ^company]            ≡ ^docs first { where $path == ^company }   first match or absent
+  ^docs[$path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid
   title!                              required: title, or an error naming the expression (and the row's $id)
                                        — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
   is x / not x                        ≡ !!x / !x (truthiness)
   x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
                                        x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
   a and b / a or b                    ≡ a && b / a || b (same precedence, short-circuit, value: title or $path coalesces)
-  boss: $repo.docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
+  boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
 
 Results are LEAN hits — {id, path} + whatever \`select\` projects (or \`values\`,
@@ -67,7 +67,7 @@ reference compares directly: \`where ^$path in list(after)\`,
 
 The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
 your content. On docs a bare first segment that collides with an intrinsic base
-name (id/path/repo/updated_at/content_hash/body) is REJECTED with a "did you mean
+name (id/path/updated_at/content_hash/body) is REJECTED with a "did you mean
 $X?" hint (bare \`path\` would silently read an absent frontmatter key). Force the
 property with \`frontmatter.<k>\`. \`title\`/\`tags\` are NOT reserved: \`$title\`/\`$tags\`
 are computed and never shadow an authored \`title:\`/\`tags:\` key.
@@ -114,15 +114,26 @@ edges:  (the authored link graph as rows — one per open edge)
                        and doc.<key> reach the SOURCE document.
   - text()/semantic() are N/A on edges.
 
-## Scoping (ADR-015): bare names are LOCAL
+## Scoping (ADR-015; the root row since surface 2.0): bare names are LOCAL
 
   name          the CURRENT row only — never falls through to an enclosing row
                 or the repository; an absent field is simply absent.
   ^name         one scope OUT (the enclosing row's fields/intrinsics/lifts);
                 ^^name two scopes out. \`^$path\` = the enclosing row's path.
-  $repo.<t>     the root scan — $repo.docs / $repo.nodes / $repo.blocks /
-                $repo.edges — available from ANY depth (uncorrelated until you
-                add a ^ predicate). $repo.$id = the repository id.
+  ^docs ^nodes ^blocks ^edges
+                THE ROOT ROW (surface 2.0, oqx 0.18): the repository is the root
+                scope's row, one scope out from a top-level row, so ^docs there is
+                the whole documents scan (uncorrelated until you add a ^ predicate);
+                one caret per enclosing block (^^docs from depth two), or the
+                absolute 0^docs from ANY depth. ^$id / 0^$id = the repository id.
+                ^$it = the root object: ^$it.docs ≡ ^docs, entries(^$it) names the
+                four collections. At the root scope itself a bare target is the scan
+                (docs count { … }, from docs, entries(docs)).
+                ERRORS: a bare \`docs\` INSIDE a block reads a property of the current
+                row, which has none — refused ("did you mean ^docs"); \`^docs\` AT THE
+                TOP LEVEL reaches past the root — refused (write the bare \`docs\`);
+                so is \`$repo\` (surface < 2.0; the message names the replacement).
+                nodes/blocks on a doc row are that doc's RELATIONS, not the root.
   $it           the current item itself (a row, or each ELEMENT when the
                 receiver is a list property); ^$it = the enclosing row.
                 $value is NOT an intrinsic (since oqx 0.15): it reads a
@@ -186,7 +197,7 @@ edges:  (the authored link graph as rows — one per open edge)
                        follow refs(before), refs(after) walks a timeline both ways.
                        The reverse direction needs no function: a document's
                        $path is already the reference form, so
-                       $repo.docs collect { where ^$path in list(after) } is
+                       ^docs collect { where ^$path in list(after) } is
                        "the documents whose \`after\` names me".
   A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
                        (filter_invalid). \`follow before\` over a list of paths
@@ -196,7 +207,7 @@ edges:  (the authored link graph as rows — one per open edge)
 
   <receiver> collect|exists|none|count|first|single { <block> }
     receiver = a relation (nodes, blocks, doc.out_edges, section.blocks, …), a
-    list property (tags), entries(x), or a root ($repo.docs).
+    list property (tags), entries(x), or a root collection (^docs; 0^docs at depth ≥ 2).
     block    = [select …] [where …] [follow …] [order by …] [limit N] [offset N]
                — the same fixed order as the top level (\`from\` optional; the
                receiver supplies the rows). A leading name/alias list is the
@@ -212,8 +223,8 @@ edges:  (the authored link graph as rows — one per open edge)
             first { … offset 1 } = the second.
   lift      \`^name:\` in a where-collect binds values outward:
             select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !checked }
-  joins     $repo.<t> exists { where slug == ^ref }  semi-join; !… exists  anti-join;
-            $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }  lookup;
+  joins     ^<t> exists { where slug == ^ref }  semi-join; !… exists  anti-join;
+            ^nodes single { where kind == "person" && attrs.id == ^owner_id }  lookup;
             x in ^keys  membership over a lifted set.
 
 ## select — projection
@@ -252,9 +263,10 @@ edges:  (the authored link graph as rows — one per open edge)
                                                    (^^ = the walk's enclosing scope)
     follow doc.out, doc.in                         several destinations: their union
                                                    (one step dedups by identity)
-    follow $repo.docs collect { where doc.out exists { where $path == ^^$path } }
+    follow ^docs collect { where doc.out exists { where $path == ^^$path } }
                                                    a destination block, re-read per
-                                                   frontier row (^ = that row) = doc.in
+                                                   frontier row (^ = that row; ^docs
+                                                   is the root's documents) = doc.in
     follow doc.out { frontier type == "practitioner" }   cut, keeping the frontier row
     follow distinct doc.out / follow doc.out { by group } identity control
   Per-occurrence metadata: $depth (seed = 1), $stop (interior|leaf|frontier|
@@ -285,15 +297,17 @@ text()/where prune the candidate set; only order by reweights.
   from docs where nodes none { where kind == "md:task" && !checked }
   from docs where tags exists { where $it == "tria-prima" }
   from docs where $path == "/x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
-  from docs select owner_id, owner: $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }
+  from docs select owner_id, owner: ^nodes single { where kind == "person" && attrs.id == ^owner_id }
   from blocks where type == "task" && !checked && under_heading("Launch") && doc.layer == "working"
   from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")
   select $path, $depth from docs where $path == "/timeline/review.md" follow refs(before), refs(after)
-  select $path, next: $repo.docs collect { $path where ^$path in list(before) } from docs where type == "milestone"
+  select $path, next: ^docs collect { $path where ^$path in list(before) } from docs where type == "milestone"
+  select $path, n: ^docs count { }, id: ^$id from docs limit 1
+  select $path, back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where type == "milestone"
   select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
   from edges where dst_kind == "external" select $dst_uri
-  $repo.docs count { where layer == "canon" }
+  docs count { where layer == "canon" }
 
 Common mistake: bare \`path.startsWith(...)\` meant the intrinsic — it fails loud
 with a hint; write \`$path.startsWith(...)\`. Another: \`where tags == "x"\` on a

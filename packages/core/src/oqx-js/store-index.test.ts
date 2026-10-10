@@ -59,7 +59,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("indexFor answers for a root-scan handle on an indexable path, and for nothing else", () => {
     const ctx = makeStoreContext(store, repoId);
-    const repo = ctx.root("$repo");
+    const repo = ctx.rootObject!();
     const docs = ctx.get(repo, "docs");
     expect(ctx.indexFor!(docs, ["$path"])?.lookupRows).toBeTypeOf("function");
     expect(ctx.indexFor!(docs, ["$path"])).toBe(ctx.indexFor!(docs, ["$path"])); // one index per (target, path)
@@ -82,8 +82,8 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(indexablePaths("edges")).toEqual(["$id", "$src", "$dst", "$path", "$dst_path"]);
   });
 
-  it("a correlated block over $repo.docs probes SQLite per outer row and never runs the docs scan", () => {
-    const q = 'select $path, same_type: $repo.docs collect { $path values where type == ^type && $path != ^$path } from docs';
+  it("a correlated block over ^docs probes SQLite per outer row and never runs the docs scan", () => {
+    const q = 'select $path, same_type: ^docs collect { $path values where type == ^type && $path != ^$path } from docs';
     let out!: { result: OqxResult; events: TraceEvent[] };
     const sql = prepared(store, () => { out = engineRun(store, repoId, q); });
     const rows = out.result.consumer === "collect" ? out.result.rows : [];
@@ -93,7 +93,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     expect(lookups.length).toBe(rows.length);
     expect(lookups.every((e) => e.kind === "lookup" && e.path[0] === "type")).toBe(true);
     expect(out.events.filter((e) => e.kind === "index" || e.kind === "probe" || e.kind === "fallback")).toEqual([]);
-    // the top-level `from docs` scanned docs ONCE; the nested `$repo.docs` never did
+    // the top-level `from docs` scanned docs ONCE; the nested `^docs` never did
     const scans = sql.filter(isScan);
     expect(scans).toHaveLength(1);
     expect(scans[0]).toMatch(/^SELECT d\.\* FROM docs d\b/);
@@ -109,9 +109,9 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("an edges-target correlated block is answered from idx_edges_dst; blocks from idx_blocks_doc; nodes from idx_nodes_kind", () => {
     const cases: [string, RegExp][] = [
-      ['select $path, inbound: $repo.edges collect { $src values where $dst == ^$id } from docs', /e\.dst_node = \? ORDER BY/],
-      ['select $id, paragraphs: $repo.blocks collect { $ordinal values where $doc == ^$doc && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
-      ['select name, same_kind: $repo.nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
+      ['select $path, inbound: ^edges collect { $src values where $dst == ^$id } from docs', /e\.dst_node = \? ORDER BY/],
+      ['select $id, paragraphs: ^blocks collect { $ordinal values where $doc == ^$doc && type == "paragraph" } from blocks where type == "heading"', /b\.doc_id = \? ORDER BY/],
+      ['select name, same_kind: ^nodes collect { name values where kind == ^kind && $doc_id == ^$doc_id } from nodes where kind == "md:section"', /n\.kind = \? ORDER BY/],
     ];
     for (const [q, probe] of cases) {
       let out!: { result: OqxResult; events: TraceEvent[] };
@@ -126,7 +126,7 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
 
   it("typed equality: a number probe reaches val_num, a string val_text, a boolean val_bool; other kinds match nothing", () => {
     const ctx = makeStoreContext(store, repoId);
-    const docs = ctx.get(ctx.root("$repo"), "docs");
+    const docs = ctx.get(ctx.rootObject!(), "docs");
     const era = ctx.indexFor!(docs, ["era"])!;
     const paths = (rows: Iterable<unknown>): unknown[] => Array.from(rows, (r) => ctx.get(r, "$path"));
     expect(paths(era.lookupRows!(800))).toEqual(["/practitioners/jabir-ibn-hayyan.md", "/texts/emerald-tablet.md"]);
@@ -159,13 +159,13 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
   });
 
   it("the runner path: planned and in-memory agree and the in-memory run uses the indexes", () => {
-    const q = 'select $path, cited: $repo.docs collect { $path where doc.out exists { where $path == ^^$path } } from docs where type == "substance"';
+    const q = 'select $path, cited: ^docs collect { $path where doc.out exists { where $path == ^^$path } } from docs where type == "substance"';
     const planned = oqxRun(store, repoId, q, { limit: 100 });
     const memory = oqxRun(store, repoId, q, { limit: 100, plan: false });
     expect(planned).toEqual(memory);
     expect(planned.hits.length).toBe(5);
     // this shape is NOT index-answerable (the inner block's receiver is a per-row
-    // relation), but `$repo.docs` is now ONE handle per run: the top-level
+    // relation), but `^docs` is now ONE handle per run: the top-level
     // `from docs` and the nested receiver share a single SELECT (was one per outer row)
     const sql = prepared(store, () => { oqxRun(store, repoId, q, { limit: 100, plan: false }); });
     expect(sql.filter(isScan).length).toBe(1);
@@ -193,7 +193,7 @@ describe.skipIf(!!process.env.CI)("perf: a correlated block over ~5k documents",
   afterAll(() => store.close());
 
   it("orders per customer: 500 outer rows × 4,500 candidates in well under a second (indexed probe, no scan)", () => {
-    const q = 'select name, orders: $repo.docs collect { $path where type == "order" && customer == ^$path } from docs where type == "customer"';
+    const q = 'select name, orders: ^docs collect { $path where type == "order" && customer == ^$path } from docs where type == "customer"';
     let out!: { result: OqxResult; events: TraceEvent[] };
     const t0 = performance.now();
     const sql = prepared(store, () => { out = engineRun(store, repoId, q); });

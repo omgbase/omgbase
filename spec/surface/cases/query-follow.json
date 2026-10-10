@@ -207,7 +207,7 @@
     {
       "name": "occurrences-count",
       "notes": "default follow keeps one occurrence per distinct walk path.",
-      "query": "$repo.docs count { where $path == \"substances/philosophers-stone.md\" follow doc.out }",
+      "query": "docs count { where $path == \"substances/philosophers-stone.md\" follow doc.out }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -218,7 +218,7 @@
     },
     {
       "name": "distinct-count",
-      "query": "$repo.docs count { where $path == \"substances/philosophers-stone.md\" follow distinct doc.out }",
+      "query": "docs count { where $path == \"substances/philosophers-stone.md\" follow distinct doc.out }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1027,7 +1027,7 @@
     },
     {
       "name": "consumer-over-a-walk",
-      "query": "$repo.blocks count { where $path == \"index.md\" && type == \"list\" follow block.children }",
+      "query": "blocks count { where $path == \"index.md\" && type == \"list\" follow block.children }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1161,8 +1161,8 @@
     },
     {
       "name": "destination-block-equals-doc-in",
-      "query": "select p: $path, d: $depth from docs where $path == \"processes/magnum-opus.md\" follow $repo.docs collect { where doc.out exists { where $path == ^^$path } } { depth 2 }",
-      "notes": "a destination block is re-evaluated per frontier row with `^` bound to it (`$repo` reads from every scope); backlinks computed as a block equal `follow doc.in { depth 2 }` (`doc-in-direct-citers`).",
+      "query": "select p: $path, d: $depth from docs where $path == \"processes/magnum-opus.md\" follow ^docs collect { where doc.out exists { where $path == ^^$path } } { depth 2 }",
+      "notes": "a destination block is re-evaluated per frontier row with `^` bound to it (`^docs` from the frontier row is the root's documents); backlinks computed as a block equal `follow doc.in { depth 2 }` (`doc-in-direct-citers`).",
       "expect": {
         "hits": [
           {

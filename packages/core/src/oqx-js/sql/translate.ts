@@ -42,6 +42,7 @@
 
 import type { Expr } from "@omgbase/oqx";
 import { storagePath } from "../../core/paths.js";
+import { TARGETS } from "../root-row.js";
 
 /** SQL row domain, matching the store's tables. */
 export type Target = "docs" | "blocks" | "nodes" | "edges";
@@ -246,8 +247,9 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
     case "ident": {
       if (e.name.startsWith("$")) return intrinsicSql(e.name, ctx);
       // A relation, reach-through, source handle or the whole attrs object is not a
-      // scalar read (decline (b)).
-      if (NON_PROPERTY_NAMES[target].has(e.name)) return null;
+      // scalar read (decline (b)); a bare target name is a relation or a loud
+      // error (root-row.ts), never a property.
+      if (NON_PROPERTY_NAMES[target].has(e.name) || TARGETS.has(e.name)) return null;
       // Bare field per target.
       if (target === "docs") {
         if (e.name === "format") return text(`${self}.format`); // a column, not a property
@@ -288,7 +290,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
         if (k === "format") return text(`${doc}.format`);
         if (k.startsWith("$")) return null;
         if (RESERVED_DOC_BASENAMES.has(k)) return null;
-        if (NON_PROPERTY_NAMES.docs.has(k)) return null; // `doc.nodes`, `doc.frontmatter`, … (decline (b))
+        if (NON_PROPERTY_NAMES.docs.has(k) || TARGETS.has(k)) return null; // `doc.nodes`, `doc.frontmatter`, `doc.docs` … (decline (b))
         return propScalar(doc, k);
       }
       // block.type / block.text reach-through from a node.

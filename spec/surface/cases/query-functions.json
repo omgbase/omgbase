@@ -392,7 +392,7 @@
     },
     {
       "name": "consumer-count-all",
-      "query": "$repo.docs count { }",
+      "query": "docs count { }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -403,7 +403,7 @@
     },
     {
       "name": "consumer-count-filtered",
-      "query": "$repo.docs count { where type == \"substance\" }",
+      "query": "docs count { where type == \"substance\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -414,7 +414,7 @@
     },
     {
       "name": "consumer-count-correlated-counts-docs",
-      "query": "$repo.docs count { where nodes exists { where kind == \"md:task\" } }",
+      "query": "docs count { where nodes exists { where kind == \"md:task\" } }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -425,7 +425,7 @@
     },
     {
       "name": "consumer-exists-true",
-      "query": "$repo.docs exists { where layer == \"draft\" }",
+      "query": "docs exists { where layer == \"draft\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -436,7 +436,7 @@
     },
     {
       "name": "consumer-exists-false",
-      "query": "$repo.docs exists { where layer == \"nonexistent\" }",
+      "query": "docs exists { where layer == \"nonexistent\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -447,7 +447,7 @@
     },
     {
       "name": "consumer-none-true",
-      "query": "$repo.docs none { where type == \"nope\" }",
+      "query": "docs none { where type == \"nope\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -458,7 +458,7 @@
     },
     {
       "name": "consumer-none-false",
-      "query": "$repo.docs none { where type == \"substance\" }",
+      "query": "docs none { where type == \"substance\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -469,7 +469,7 @@
     },
     {
       "name": "consumer-first",
-      "query": "$repo.docs first { select t: type }",
+      "query": "docs first { select t: type }",
       "expect": {
         "hits": [
           {
@@ -485,7 +485,7 @@
     },
     {
       "name": "consumer-first-ordered",
-      "query": "$repo.docs first { where type == \"practitioner\" order by era desc }",
+      "query": "docs first { where type == \"practitioner\" order by era desc }",
       "expect": {
         "hits": [
           {
@@ -500,7 +500,7 @@
     },
     {
       "name": "consumer-first-offset",
-      "query": "$repo.docs first { select $path values where type == \"practitioner\" order by era asc offset 1 }",
+      "query": "docs first { select $path values where type == \"practitioner\" order by era asc offset 1 }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -513,7 +513,7 @@
     },
     {
       "name": "consumer-first-values-empty",
-      "query": "$repo.docs first { select $path values where type == \"nope\" }",
+      "query": "docs first { select $path values where type == \"nope\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -524,7 +524,7 @@
     },
     {
       "name": "consumer-first-none-matches",
-      "query": "$repo.docs first { where type == \"nope\" }",
+      "query": "docs first { where type == \"nope\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -534,7 +534,7 @@
     },
     {
       "name": "consumer-single",
-      "query": "$repo.docs single { where layer == \"draft\" }",
+      "query": "docs single { where layer == \"draft\" }",
       "expect": {
         "hits": [
           {
@@ -549,7 +549,7 @@
     },
     {
       "name": "consumer-single-values",
-      "query": "$repo.docs single { select era values where layer == \"draft\" }",
+      "query": "docs single { select era values where layer == \"draft\" }",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1054,7 +1054,7 @@
     },
     {
       "name": "nested-first-and-single",
-      "query": "select subject, process: $repo.docs single { select p: $path, layer where slug == ^subject }, mate: $repo.docs first { select p: $path where type == \"practitioner\" && era > 1600 } from docs where type == \"lab-note\"",
+      "query": "select subject, process: ^docs single { select p: $path, layer where slug == ^subject }, mate: ^docs first { select p: $path where type == \"practitioner\" && era > 1600 } from docs where type == \"lab-note\"",
       "expect": {
         "hits": [
           {
@@ -1353,7 +1353,7 @@
     },
     {
       "name": "join-dependent",
-      "query": "select p: $path, cites: $repo.docs collect { select target: $path where slug in ^refs } from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" }",
+      "query": "select p: $path, cites: ^docs collect { select target: $path where slug in ^refs } from docs where nodes collect { ^refs: value where kind == \"md:wikilink\" }",
       "expect": {
         "hits": [
           {
@@ -1500,7 +1500,7 @@
     },
     {
       "name": "join-semi",
-      "query": "select slug from docs where type == \"substance\" && $repo.nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
+      "query": "select slug from docs where type == \"substance\" && ^nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
       "expect": {
         "hits": [
           {
@@ -1526,7 +1526,7 @@
     },
     {
       "name": "join-anti",
-      "query": "select slug from docs where type == \"substance\" && !$repo.nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
+      "query": "select slug from docs where type == \"substance\" && !^nodes exists { where kind == \"md:wikilink\" && value == ^slug }",
       "expect": {
         "hits": [
           {
@@ -1547,7 +1547,7 @@
     },
     {
       "name": "join-self",
-      "query": "select me: $path, tradition, peers: $repo.docs collect { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } from docs where type == \"practitioner\"",
+      "query": "select me: $path, tradition, peers: ^docs collect { select p: $path where type == \"practitioner\" && tradition == ^tradition && $path != ^$path } from docs where type == \"practitioner\"",
       "expect": {
         "hits": [
           {
@@ -1595,7 +1595,7 @@
     {
       "name": "from-reprojection",
       "notes": "spec/oqx: `from E` inside a consumer block re-projects the rows through a relation.",
-      "query": "$repo.docs collect { select value from nodes where kind == \"md:task\" && !checked && doc.type == \"lab-note\" }",
+      "query": "docs collect { select value from nodes where kind == \"md:task\" && !checked && doc.type == \"lab-note\" }",
       "expect": {
         "hits": [
           {
@@ -1739,8 +1739,8 @@
     },
     {
       "name": "lazy-root-distinct-renders-rows",
-      "notes": "§1.1, §9: `$repo.docs` as a VALUE is the one array of docs rows of the run (same handle from every row), so `distinct` collapses every doc to one hit and the rows render `{ id, path }`.",
-      "query": "select distinct all: $repo.docs from docs",
+      "notes": "§1.1, §9: `^docs` as a VALUE is the one array of docs rows of the run (same handle from every row), so `distinct` collapses every doc to one hit and the rows render `{ id, path }`.",
+      "query": "select distinct all: ^docs from docs",
       "expect": {
         "hits": [
           {
@@ -1838,7 +1838,7 @@
     {
       "name": "lazy-root-equality-by-handle",
       "notes": "§9: a root handle equals itself (one per target per run) and no other target.",
-      "query": "select same: $repo.docs == $repo.docs, other: $repo.docs == $repo.blocks, ne: $repo.docs != $repo.docs from docs limit 1",
+      "query": "select same: ^docs == ^docs, other: ^docs == ^blocks, ne: ^docs != ^docs from docs limit 1",
       "expect": {
         "hits": [
           {
@@ -1857,7 +1857,7 @@
     {
       "name": "lazy-root-membership",
       "notes": "§9: `in` over a root handle tests the rows (objects, by handle), so a string and the handle itself are not members.",
-      "query": "select hit: \"index.md\" in $repo.docs, self: $repo.docs in $repo.docs from docs limit 1",
+      "query": "select hit: \"index.md\" in ^docs, self: ^docs in ^docs from docs limit 1",
       "expect": {
         "hits": [
           {
@@ -1875,7 +1875,7 @@
     {
       "name": "lazy-root-membership-in-where",
       "notes": "§9: `in` over a root handle in `where` is false for a string — no hits.",
-      "query": "select $path from docs where \"index.md\" in $repo.docs",
+      "query": "select $path from docs where \"index.md\" in ^docs",
       "expect": {
         "hits": [],
         "truncated": false,
@@ -1886,7 +1886,7 @@
     {
       "name": "lazy-root-truthiness",
       "notes": "§9: a root handle is an array — truthy as a `where` scalar, not absent.",
-      "query": "select $path from docs where $repo.docs && !($repo.docs == null) limit 2",
+      "query": "select $path from docs where ^docs && !(^docs == null) limit 2",
       "expect": {
         "hits": [
           {
@@ -1908,7 +1908,7 @@
     {
       "name": "lazy-root-size-and-entries",
       "notes": "§1.3, §9: `size(handle)`, `handle.size()` and `entries(handle)` as a plain value see the rows.",
-      "query": "select n: size($repo.docs), m: $repo.docs.size(), e: size(entries($repo.docs)) from docs limit 1",
+      "query": "select n: size(^docs), m: ^docs.size(), e: size(entries(^docs)) from docs limit 1",
       "expect": {
         "hits": [
           {
@@ -1927,7 +1927,7 @@
     {
       "name": "lazy-root-entries-in-row-position",
       "notes": "§9: `entries(handle)` in row position yields (index, row) entries; `$key` is the index, `$it` the row.",
-      "query": "entries($repo.docs) first { select k: $key, p: $it.$path }",
+      "query": "entries(docs) first { select k: $key, p: $it.$path }",
       "expect": {
         "hits": [
           {
@@ -1945,7 +1945,7 @@
     {
       "name": "lazy-root-order-by-constant-key",
       "notes": "§9: a root handle as an `order by` key is one constant array; the next key decides.",
-      "query": "select $path from docs order by $repo.docs, $path limit 2",
+      "query": "select $path from docs order by ^docs, $path limit 2",
       "expect": {
         "hits": [
           {

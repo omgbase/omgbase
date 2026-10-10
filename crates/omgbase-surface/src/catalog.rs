@@ -2467,7 +2467,7 @@ mod tests {
         assert_eq!(q.body["consumer"], "collect");
         let c = s.call(
             "query",
-            json!({ "query": "$repo.blocks count { where text(\"hello\") }" }),
+            json!({ "query": "blocks count { where text(\"hello\") }" }),
         );
         assert_eq!(c.body["count"], 1);
         let bad = s.call(

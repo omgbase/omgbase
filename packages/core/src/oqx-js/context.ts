@@ -15,6 +15,7 @@
 import type { DataContext, CallResult, RowIndex } from "@omgbase/oqx";
 import { semantics } from "@omgbase/oqx";
 import { storeIndexFor } from "./store-index.js";
+import { TARGETS, bareTargetMessage } from "./root-row.js";
 import { COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
@@ -31,10 +32,10 @@ export type Target = "docs" | "blocks" | "nodes" | "edges";
 
 const TARGET = Symbol("oqx.target");
 type Row = Record<string, unknown> & { [TARGET]?: Target };
-const REPO_ROOT = Symbol("oqx.repoRoot");
+const ROOT_ROW = Symbol("oqx.rootRow");
 const PROP_SOURCE = Symbol("oqx.propSource");
 
-interface RepoRoot { [REPO_ROOT]: true }
+interface RootRow { [ROOT_ROW]: true }
 interface PropSourceRef { [PROP_SOURCE]: true; docId: string; source: string }
 
 function tag(row: Record<string, unknown> | undefined, t: Target): Row | undefined {
@@ -48,9 +49,9 @@ function tagAll(rows: Record<string, unknown>[], t: Target): Row[] {
 }
 
 // docs intrinsics whose BARE (non-$) form is almost always a typo (10 §2); a bare
-// read of one is a loud error, matching the CEL guard.
-// (The root-scan receiver is the `$repo` intrinsic — `$repo.docs`/`$repo.nodes`/… —
-// so a bare `repo` is just an ordinary frontmatter key.)
+// read of one is a loud error, matching the CEL guard. (A bare target name —
+// `docs`, `edges`, … — is a loud error of its own, root-row.ts; `repo` is just an
+// ordinary frontmatter key.)
 const RESERVED_DOC_BASENAMES = new Set(["id", "path", "updated_at", "content_hash", "body"]);
 
 export interface StoreContextOptions {
@@ -89,11 +90,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // iteration, indexing, `length`, rendering all see a plain array of tagged
   // rows) that runs its SELECT on first use. The engine's optimizer asks
   // `indexFor` about a nested block's receiver BEFORE reading it, so a
-  // correlated probe on `$repo.docs` / `$repo.edges` / … is answered from the
+  // correlated probe on `^docs` / `^edges` / … is answered from the
   // store's indexes (store-index.ts) and the scan never runs; anything else
   // (a top-level `from docs`, a `count { }`, a non-indexable path) reads it
   // whole exactly as before. One handle per target per context: a context lives
-  // for one run, during which the store does not change, so `$repo.docs` read
+  // for one run, during which the store does not change, so `^docs` read
   // from every outer row is one SELECT, not one per row — and the engine, which
   // keys collections by identity, sees the same collection each time.
   // `rootScans` recognizes the handles for `indexFor`. Because the handle IS an
@@ -130,9 +131,18 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   const rootFns: Record<string, () => Row[]> = {
     docs: () => lazyRoot("docs"), blocks: () => lazyRoot("blocks"), nodes: () => lazyRoot("nodes"), edges: () => lazyRoot("edges"),
   };
-  // The repository handle behind the `$repo` intrinsic: `$repo.<target>` is the
-  // explicit root scan (rootFns), `$repo.$id` the repository id.
-  const repoRoot: RepoRoot = { [REPO_ROOT]: true };
+  // The root row (spec/surface §1.1, 2.0; spec/oqx 0.18 `rootObject`): the
+  // repository, reached as `^$it` from a top-level row (`0^$it` from any depth).
+  // Its own enumerable keys are the four collections — lazy getters, so
+  // `entries(^$it)` names them without running a scan and `^$it.docs` is the
+  // same handle as `^docs` — and `get` answers `$id` with the repository id (an
+  // intrinsic, not an entry). Tagged so `get` recognizes it.
+  const rootRow: RootRow = Object.defineProperties({ [ROOT_ROW]: true } as RootRow, {
+    docs: { enumerable: true, get: () => lazyRoot("docs") },
+    blocks: { enumerable: true, get: () => lazyRoot("blocks") },
+    nodes: { enumerable: true, get: () => lazyRoot("nodes") },
+    edges: { enumerable: true, get: () => lazyRoot("edges") },
+  });
 
   // ---- attrs / property decoding --------------------------------------------
   const parseJson = (v: unknown): unknown => {
@@ -396,13 +406,9 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // ---- get ------------------------------------------------------------------
   const getFrom = (row: unknown, key: string): unknown => {
     if (row == null) return undefined;
-    // `$repo` is an intrinsic of EVERY scope — the root and any row, store-backed
-    // or plain. Bare names resolve against the current row only (oqx ≥ 0.7: no
-    // scope climbing), so a correlated subquery at any depth reaches the
-    // repository root through this local intrinsic, never by falling through
-    // to an enclosing scope.
-    if (key === "$repo") return repoRoot;
-    if ((row as RepoRoot)[REPO_ROOT]) {
+    // The root row: `^$it.$id` is the repository id, `^$it.<target>` the lazy
+    // root scan (the same handle `^<target>` / `root(name)` hands out).
+    if ((row as RootRow)[ROOT_ROW]) {
       if (key === "$id") return repoId;
       return rootFns[key] ? rootFns[key]!() : undefined;
     }
@@ -431,6 +437,12 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     // relations.
     const rels = rel[t];
     if (rels[key]) return rels[key]!(r);
+    // A bare target name that is not one of this row's relations reads a
+    // property the row has none of (spec/surface §1.1, 2.0): loud, naming the
+    // root-row spelling. `docs`/`edges` never get here (run.ts refuses them
+    // statically); `blocks` on a block or edge row and `nodes` on a node or
+    // edge row do.
+    if (TARGETS.has(key)) throw new FilterInvalid(bareTargetMessage(key, null), "OQX");
 
     // per-target scalar fields.
     if (t === "docs") {
@@ -614,15 +626,18 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   };
 
   return {
+    // The root scope's names (spec/oqx §2 step 5 at the root): the four lazy
+    // scans and `$id`, the repository id — so `^docs` / `0^docs` from any row is
+    // the scan and `^$id` / `0^$id` the id.
     root(name: string): unknown {
       if (opts.rowsRoot && name === opts.rowsRoot.name) return opts.rowsRoot.rows;
-      if (name === "$repo") return repoRoot;
+      if (name === "$id") return repoId;
       return rootFns[name] ? rootFns[name]!() : undefined;
     },
-    // The root scope's row (oqx 0.18): the repository root, so `^$it` from a
-    // top-level row is `$repo` and `^$it.docs` the docs scan.
+    // The root scope's row (oqx 0.18): the repository, so `^$it` from a
+    // top-level row is the root row and `^$it.docs` the docs scan.
     rootObject(): unknown {
-      return repoRoot;
+      return rootRow;
     },
     get: getFrom,
     toRows(value: unknown): Iterable<unknown> {

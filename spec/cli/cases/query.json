@@ -83,7 +83,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "$repo.docs count { where layer == \"canon\" }"
+        "docs count { where layer == \"canon\" }"
       ],
       "expect": {
         "exit": 0,
@@ -95,7 +95,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "$repo.docs exists { where layer == \"nope\" }"
+        "docs exists { where layer == \"nope\" }"
       ],
       "expect": {
         "exit": 0,
@@ -107,7 +107,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "$repo.docs none { where layer == \"nope\" }"
+        "docs none { where layer == \"nope\" }"
       ],
       "expect": {
         "exit": 0,
@@ -120,7 +120,7 @@
       "workspace": "alchemy",
       "argv": [
         "q",
-        "$repo.docs count { where layer == \"canon\" }",
+        "docs count { where layer == \"canon\" }",
         "--json"
       ],
       "expect": {
@@ -635,7 +635,7 @@
             "new",
             "q.md",
             "-m",
-            "```omg\nfrom docs where type == \"text\"\n```\n\n```omg\n$repo.docs count { }\n```\n",
+            "```omg\nfrom docs where type == \"text\"\n```\n\n```omg\ndocs count { }\n```\n",
             "--actor",
             "human:spec"
           ],
@@ -763,6 +763,75 @@
         "exit": 1,
         "stdout": "",
         "stderr": "error[filter_invalid]: invalid cursor: cursor was issued before surface 2.0 (its path \"index.md\" is not /-rooted); start the page sequence again without a cursor\n  {\n    \"reason\": \"cursor was issued before surface 2.0 (its path \\\"index.md\\\" is not /-rooted); start the page sequence again without a cursor\",\n    \"hint\": \"resume only with a `cursor` returned by a truncated page of the same tool\"\n  }\n"
+      }
+    },
+    {
+      "name": "root-caret",
+      "notes": "spec/surface §1.1 (cli 2.0): the repository is the root row — `^docs` from a row is the documents scan, `^$id` the repository id.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select n: size(^docs), rid: ^$id from docs where $path == \"/index.md\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "id   path       n   rid\nd_0  /index.md  20  rp_0\n"
+      }
+    },
+    {
+      "name": "repo-removed",
+      "notes": "spec/surface §1.1 (cli 2.0): `$repo` is refused with the replacement named.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select r: $repo.$id from docs"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: `$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`\n  {\n    \"reason\": \"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`\",\n    \"hint\": \"OQX\"\n  }\n"
+      }
+    },
+    {
+      "name": "repo-removed-json",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "$repo.docs count { }",
+        "--json"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "{\"error\":\"filter_invalid\",\"message\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`\",\"data\":{\"reason\":\"`$repo` was removed in surface 2.0 — reach the repository's collections through the root row: `^docs` from a top-level row (one caret per enclosing block, or the absolute `0^docs`), and the repository id as `^$id` / `0^$id`\",\"hint\":\"OQX\"},\"retriable\":false}\n"
+      }
+    },
+    {
+      "name": "bare-target-in-block",
+      "notes": "spec/surface §1.1: a bare target name inside a block is an error naming `^docs`.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "select x: docs collect { } from docs"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: `docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?\n  {\n    \"reason\": \"`docs` inside a block reads a property of the current row, which has none — did you mean `^docs` (the repository's documents)?\",\n    \"hint\": \"OQX\"\n  }\n"
+      }
+    },
+    {
+      "name": "root-caret-past-the-root",
+      "notes": "spec/surface §1.1: `^docs` at the top level reaches past the root — refused, naming the bare spelling.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "^docs count { }"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: `^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)\n  {\n    \"reason\": \"`^docs` reaches past the root — there is no enclosing row at this depth; at the top level the repository's documents are the bare `docs` (`docs count { … }`, `from docs`, `entries(docs)`)\",\n    \"hint\": \"OQX\"\n  }\n"
       }
     }
   ]

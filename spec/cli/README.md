@@ -1526,6 +1526,15 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-10, cli 2.0 also: the query text follows `spec/surface` 2.0 §1.1 —
+  the repository is the root row (`^docs` from a row, `0^docs` from any depth,
+  `^$id` the repository id; a top-level consumer is `docs count { … }`), and
+  `$repo` or a bare target name inside a block is `filter_invalid` rendered
+  like any other OQX error (§3.5; `query::root-caret`, `query::repo-removed`,
+  `query::repo-removed-json`, `query::bare-target-in-block`). The `query` help
+  card's examples are respelled (`invoke::help-card-query`); `^docs count { }`
+  at the top level is refused too (`query::root-caret-past-the-root`). The CLI renders; the
+  rule is the surface's.
 - 2026-10-10, cli 2.0: paths print in the reference form (§3.1a), following
   `spec/surface` 2.0 — the same decision, rendered: every `<path>` cell, header,
   confirmation, diff header, `log` subject and `--json` path is `/`-rooted; every

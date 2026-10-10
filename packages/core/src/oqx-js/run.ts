@@ -9,6 +9,7 @@ import type { Engine } from "@omgbase/oqx";
 import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
 import { SQLiteQueryPlanner, rootTarget } from "./planner.js";
+import { REPO_REMOVED_MESSAGE, TARGETS, bareTargetMessage, pastRootMessage } from "./root-row.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
@@ -87,6 +88,30 @@ export function rootPathLiterals(e: Expr): Expr {
     return { ...e, args: [rootLiteral(e.args[0]!)] };
   }
   return e;
+}
+
+// The root row (root-row.ts, spec/surface §1.1, 2.0): `$repo` anywhere, and a
+// bare `docs`/`edges` at scope depth ≥ 1 (a property read of a row that has
+// none), are refused before evaluation — one `visit` over the parsed tree, so
+// the error does not depend on which rows the data happens to hold and the
+// planned and in-memory paths agree trivially. `blocks`/`nodes` are relations of
+// some rows and are judged by the context at read time (same message). A
+// `^<target>` with more carets than enclosing scopes (`^docs count { }` at the
+// top level) would read absent and count 0: refused too, naming the bare
+// spelling.
+export function checkRootSpellings(q: Query): void {
+  visit(q, {
+    enter(node, ctx) {
+      if (node.kind !== "ident" && node.kind !== "outer") return;
+      if (node.name === "$repo") throw new FilterInvalid(REPO_REMOVED_MESSAGE, "OQX");
+      if (node.kind === "ident" && ctx.depth >= 1 && (node.name === "docs" || node.name === "edges")) {
+        throw new FilterInvalid(bareTargetMessage(node.name, ctx.depth), "OQX");
+      }
+      if (node.kind === "outer" && TARGETS.has(node.name) && node.levels > ctx.depth) {
+        throw new FilterInvalid(pastRootMessage(node.name, node.levels), "OQX");
+      }
+    },
+  });
 }
 
 function rewriteQuery(q: Query): Query {
@@ -215,7 +240,9 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
 function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOptions): OqxResult {
   // The query's `select` aliases are resolved HERE, once, before the runner
   // renames/injects items (an engine evaluates the query it is given).
-  const parsed = rewriteQuery(resolveAliases(parse(source)));
+  const raw = parse(source);
+  checkRootSpellings(raw);
+  const parsed = rewriteQuery(resolveAliases(raw));
   const consumer = parsed.consumer as OqxConsumer;
   const ctxOpts: StoreContextOptions = opts.semanticVectors ? { semanticVectors: opts.semanticVectors } : {};
   const ctx = makeStoreContext(store, repoId, ctxOpts);

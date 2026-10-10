@@ -136,8 +136,8 @@ row, unlike the full-scan fallback, which still works:
 follow refs(before), ^docs collect { where after.contains(^$path) }
 ```
 
-(`^docs` is the root `docs` collection seen from inside the block; `$repo.docs`
-spells the same thing.) The comparison works because, since surface 2.0,
+(`^docs` is the root `docs` collection seen from inside the block; the pre-2.0 `$repo.docs`
+is refused since surface 2.0 with a message pointing at `^docs`.) The comparison works because, since surface 2.0,
 `$path` is `/`-rooted like the authored reference it is compared with; on a
 1.x server `$path` is bare (`timeline/kickoff.md`) and the same block reads
 `("/" + ^$path) in list(after)` — the next section.
@@ -447,9 +447,8 @@ module becomes the fallback.
    relation is itself a candidate (`doc.out` / `out` / `$it.out` = links,
    `doc.in` / `in` / `$it.in` = backlinks with direction *backward*, any other
    bare name = a frontmatter relation — flagged by the editor's hint, since it
-   follows the strings). A **destination block** (`$repo.docs collect { where
-   … }`, `^docs collect { … }`, `$it.in collect { … }`, `refs(before) collect {
-   … }`) is read first through its receiver — `refs(<field>)` names `<field>`,
+   follows the strings). A **destination block** (`^docs collect { where
+   … }`, `$it.in collect { … }`, `refs(before) collect { … }`) is read first through its receiver — `refs(<field>)` names `<field>`,
    *forward* — then through its correlated `where`: a bare property of the
    candidate row compared against an outer reference (`^$path in list(after)`,
    `after.contains(^$path)`, or the 1.x spellings `("/" + ^$path) in
