@@ -18,7 +18,9 @@
     "substances/salt.md": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n",
     "substances/sulphur.md": "---\ntype: substance\nslug: sulphur\nlayer: canon\ntradition: western\nelement: sulphur\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Sulphur\n\nBrimstone: yellow, brittle, and burns with a blue flame and a choking smell.\nIts behaviour under heat made it the natural emblem of combustibility.\n\nsymbol:: 🜍\nmelting_point:: 115.2\ntoxic:: mildly\n\n## As a principle\n\nSulphur is the soul — the combustible principle, what makes a substance\nflammable and gives it colour and character. It mediates between the volatile\n[[mercury]] and the fixed [[salt]].\n\nIn the mercury–sulphur theory inherited from\n[Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md), every metal is a\ncompound of the two, and the proportions determine the metal. Gold is a perfect\nbalance; lead is the same pair badly mixed. Transmutation therefore requires no\nnew matter, only a correction of proportion — which is why the theory was so\ndurable and so encouraging.\n\n## As a material\n\nSulphur combines directly with most metals on heating, producing sulphides whose\ncolours are dramatic and reproducible. This is genuinely useful chemistry, and\nmuch of the practical content of the alchemical corpus concerns it. The bench\nwork is tracked in the [January notes](/lab/2026-01-notes.md).\n",
     "texts/emerald-tablet.md": "---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
-    "texts/mutus-liber.md": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+    "texts/mutus-liber.md": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n",
+    "timeline/kickoff.md": "---\ntype: milestone\nlayer: working\ntags: [timeline, milestone]\nverified: true\nwhen: 2026-01-05\nafter: /timeline/review.md\nsee_also: [processes/calcination.md, d_0, /timeline/lost-notes.md]\n---\n# Kickoff of the Great Work\n\nThe laboratory year opened with the furnace lit for the first calcination\nseries. The plan for the season: run the nigredo processes in order and keep\nthe monthly lab notes current. (Fixture note: `after` is a repo-root-absolute\npath, `see_also` mixes a bare repo-relative path, a document id — `d_0` under\nthe spec minter, `index.md` — and a dangling reference, for `refs(x)`.)\n\n## Agenda\n\n- Light the athanor and season the crucibles\n- Agree the order of operations for the season\n- Name the scribe for the monthly notes\n",
+    "timeline/review.md": "---\ntype: milestone\nlayer: working\ntags: [timeline, milestone]\nverified: false\nwhen: 2026-02-27\nbefore: [/timeline/kickoff.md, processes/dissolution.md, /timeline/lost-notes.md]\nafter: /timeline/next-season.md\nsee_also: d_0\n---\n# Review of the season\n\nTwo months in: the calcination series is tabulated, the dissolution trials are\nhalf done, and the coagulation plateau is written up. Decisions for the next\nseason are deferred to a note that does not exist yet. (Fixture note: `before`\nholds a repo-root-absolute path, a bare repo-relative path and a dangling\nreference; `after` is a dangling scalar; `see_also` is a document id.)\n\n## Questions for spring\n\n- Should the dissolution trials move to the spring?\n- Who keeps the lab notes in March?\n"
   },
   "cases": [
     {
@@ -978,8 +980,8 @@
             "prefix": "",
             "depth": 1,
             "total": {
-              "docs": 18,
-              "blocks": 314
+              "docs": 20,
+              "blocks": 327
             },
             "entries": [
               {
@@ -1022,6 +1024,13 @@
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 25,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 13,
                 "ts": "2026-09-27T00:00:00.000Z"
               }
             ],
@@ -1098,8 +1107,8 @@
             "prefix": "",
             "depth": 2,
             "total": {
-              "docs": 18,
-              "blocks": 314
+              "docs": 20,
+              "blocks": 327
             },
             "entries": [
               {
@@ -1225,6 +1234,16 @@
                 "path": "texts/mutus-liber.md",
                 "blocks": 12,
                 "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/kickoff.md",
+                "blocks": 7,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/review.md",
+                "blocks": 6,
+                "ts": "2026-09-27T00:00:00.000Z"
               }
             ],
             "truncated": false,
@@ -1333,7 +1352,7 @@
     },
     {
       "name": "read-query",
-      "notes": "§1 through the query tool: a filter with projections, a follow over doc.out, a nested collect, a count consumer, an order by with limit (absent sorts last), a keyset page and its continuation (cursor = base64url(JSON [path, id])), values, an edges scan, blocks row functions, the reserved-basename loud error (filter_invalid) and semantic() without a provider (semantic_unavailable, §4).",
+      "notes": "§1 through the query tool: a filter with projections, a follow over doc.out, a nested collect, a count consumer, an order by with limit (absent sorts last), a keyset page and its continuation (cursor = base64url(JSON [path, id])), values, an edges scan, blocks row functions, the reserved-basename loud error (filter_invalid) and semantic() without a provider (semantic_unavailable, §4). A refs(before) walk with a refs(before) projection (surface 1.5).",
       "reads": [
         {
           "tool": "query",
@@ -1414,6 +1433,12 @@
           "tool": "query",
           "args": {
             "query": "select same: $repo.docs == $repo.docs, n: size($repo.docs), e: size(entries($repo.docs)), hit: \"index.md\" in $repo.docs from docs where $path == \"index.md\""
+          }
+        },
+        {
+          "tool": "query",
+          "args": {
+            "query": "select $path, $depth, prior: refs(before) collect { $path } from docs where $path == \"timeline/review.md\" follow refs(before)"
           }
         }
       ],
@@ -1628,7 +1653,9 @@
               "lab/2026-01-notes.md",
               "lab/2026-02-notes.md",
               "practitioners/newton.md",
-              "processes/coagulation.md"
+              "processes/coagulation.md",
+              "timeline/kickoff.md",
+              "timeline/review.md"
             ]
           },
           {
@@ -1743,9 +1770,44 @@
                 "id": "d_0",
                 "path": "index.md",
                 "same": true,
-                "n": 18,
-                "e": 18,
+                "n": 20,
+                "e": 20,
                 "hit": false
+              }
+            ],
+            "truncated": false,
+            "cursor": null,
+            "consumer": "collect"
+          },
+          {
+            "hits": [
+              {
+                "id": "d_19",
+                "path": "timeline/review.md",
+                "$path": "timeline/review.md",
+                "$depth": 1,
+                "prior": [
+                  {
+                    "$path": "timeline/kickoff.md"
+                  },
+                  {
+                    "$path": "processes/dissolution.md"
+                  }
+                ]
+              },
+              {
+                "id": "d_18",
+                "path": "timeline/kickoff.md",
+                "$path": "timeline/kickoff.md",
+                "$depth": 2,
+                "prior": []
+              },
+              {
+                "id": "d_9",
+                "path": "processes/dissolution.md",
+                "$path": "processes/dissolution.md",
+                "$depth": 2,
+                "prior": []
               }
             ],
             "truncated": false,
@@ -2278,7 +2340,7 @@
                 "path": "lab/2026-01-notes.md",
                 "type": "paragraph",
                 "text": "Bench work on [calcination](/processes/calcination.md), chasing the weight gain.",
-                "score": 7.944252751888561
+                "score": 7.7872515587047095
               },
               {
                 "blockId": "b_146",
@@ -2286,7 +2348,7 @@
                 "path": "processes/calcination.md",
                 "type": "paragraph",
                 "text": "Organic matter burns away; metals take up oxygen. The characteristic *gain* in weight when calcining a metal is the observation that eventually broke the phlogiston theory — the calx weighs more than the metal, which a theory of escaping substance cannot accommodate.",
-                "score": 3.3060307657249703
+                "score": 3.2699388469255717
               }
             ],
             "truncated": false
@@ -2299,7 +2361,7 @@
                 "path": "substances/mercury.md",
                 "type": "heading",
                 "text": "Mercury",
-                "score": 4.26152054296047
+                "score": 4.329678976266676
               },
               {
                 "blockId": "b_216",
@@ -2307,7 +2369,7 @@
                 "path": "substances/mercury.md",
                 "type": "table_row",
                 "text": "Mercury spirit no",
-                "score": 3.8601132110990592
+                "score": 3.925817389355735
               },
               {
                 "blockId": "b_5",
@@ -2315,7 +2377,7 @@
                 "path": "index.md",
                 "type": "list_item",
                 "text": "[[mercury]] — the volatile spirit",
-                "score": 3.686491529151427
+                "score": 3.7508810067725338
               }
             ],
             "truncated": true
@@ -2657,14 +2719,50 @@
                 "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_18",
+                "srcPath": "timeline/kickoff.md",
+                "srcBlock": null,
+                "predicate": "see_also",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "before",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "after",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/next-season.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 64,
+            "totalOpenEdges": 69,
             "truncated": false
           },
           {
-            "staleCount": 21,
+            "staleCount": 24,
             "byTarget": [
               {
                 "target": "mercury",
@@ -2679,11 +2777,19 @@
                 "count": 5
               },
               {
+                "target": "timeline/lost-notes.md",
+                "count": 2
+              },
+              {
                 "target": "magnum-opus",
                 "count": 1
               },
               {
                 "target": "nigredo",
+                "count": 1
+              },
+              {
+                "target": "timeline/next-season.md",
                 "count": 1
               }
             ],
@@ -2721,6 +2827,10 @@
                 "count": 2
               },
               {
+                "srcPath": "timeline/review.md",
+                "count": 2
+              },
+              {
                 "srcPath": "practitioners/newton.md",
                 "count": 1
               },
@@ -2731,10 +2841,14 @@
               {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
+              },
+              {
+                "srcPath": "timeline/kickoff.md",
+                "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 64
+            "totalOpenEdges": 69
           },
           {
             "stale": [
@@ -3289,11 +3403,39 @@
                     "contentHash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
                   }
                 ]
+              },
+              {
+                "commit": "c_18",
+                "seq": 19,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_18",
+                    "path": "timeline/kickoff.md",
+                    "contentHash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                  }
+                ]
+              },
+              {
+                "commit": "c_19",
+                "seq": 20,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_19",
+                    "path": "timeline/review.md",
+                    "contentHash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                  }
+                ]
               }
             ],
-            "cursor": 18,
+            "cursor": 20,
             "truncated": false,
-            "head": 18
+            "head": 20
           },
           {
             "digests": [
@@ -3324,11 +3466,39 @@
                     "contentHash": "ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5"
                   }
                 ]
+              },
+              {
+                "commit": "c_18",
+                "seq": 19,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_18",
+                    "path": "timeline/kickoff.md",
+                    "contentHash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                  }
+                ]
+              },
+              {
+                "commit": "c_19",
+                "seq": 20,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_19",
+                    "path": "timeline/review.md",
+                    "contentHash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                  }
+                ]
               }
             ],
-            "cursor": 18,
+            "cursor": 20,
             "truncated": false,
-            "head": 18
+            "head": 20
           },
           {
             "digests": [
@@ -3363,22 +3533,22 @@
             ],
             "cursor": 2,
             "truncated": true,
-            "head": 18
+            "head": 20
           },
           {
             "digests": [],
             "cursor": 0,
             "truncated": false,
-            "head": 18
+            "head": 20
           },
           {
             "repoId": "rp_0",
             "slug": "fixture",
             "rootPath": "<workspace>",
-            "docs": 18,
-            "blocks": 314,
-            "commits": 18,
-            "openEdges": 64,
+            "docs": 20,
+            "blocks": 327,
+            "commits": 20,
+            "openEdges": 69,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -3388,7 +3558,7 @@
             }
           },
           {
-            "lastCommitSeq": 18,
+            "lastCommitSeq": 20,
             "lastCheckpoint": null,
             "convergent": true,
             "diskChecked": true,
@@ -3481,7 +3651,7 @@
           "args": {
             "doc": "index.md",
             "from_rev": "r_0",
-            "to_rev": "r_18"
+            "to_rev": "r_20"
           }
         },
         {
@@ -3493,7 +3663,7 @@
         {
           "tool": "history_node",
           "args": {
-            "id": "b_314"
+            "id": "b_327"
           }
         },
         {
@@ -3524,7 +3694,7 @@
             "results": [
               {
                 "ids": [
-                  "b_314"
+                  "b_327"
                 ]
               },
               {
@@ -3571,7 +3741,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -3621,7 +3791,7 @@
               "b_28",
               "b_29",
               "b_30",
-              "b_314"
+              "b_327"
             ],
             "hashes": {
               "b_0": "7a4a6dfa67be0eaa480fef04560a2b79a17f708aba30aec3a1587afe8b64c56d",
@@ -3655,7 +3825,7 @@
               "b_28": "8bcaf3c914c34fa95195733dd70fb28512acb54ab01c27f5db6a5e3c74c8aeae",
               "b_29": "0ea6eb263d4f956db48be06cdf734e9dbb2b0ea5ce615b196b4766ff84ed5172",
               "b_30": "421e0df737049b3ebbd48dbccecf7069574432a362e944d1f88fca34ee2745ff",
-              "b_314": "0e557dd9f2af0117a76c802502648f3fc0a7130da704355cea17a2a5c9126391"
+              "b_327": "0e557dd9f2af0117a76c802502648f3fc0a7130da704355cea17a2a5c9126391"
             },
             "parents": {
               "b_0": null,
@@ -3689,7 +3859,7 @@
               "b_28": "b_26",
               "b_29": null,
               "b_30": null,
-              "b_314": null
+              "b_327": null
             }
           },
           {
@@ -3698,7 +3868,7 @@
                 "docId": "d_0",
                 "path": "index.md",
                 "deleted": false,
-                "currentRev": "r_18",
+                "currentRev": "r_20",
                 "versions": [
                   {
                     "rev": "r_0",
@@ -3711,9 +3881,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 2,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -3728,8 +3898,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -3742,9 +3912,9 @@
                 ]
               }
             ],
-            "cursor": 19,
+            "cursor": 21,
             "truncated": false,
-            "head": 19
+            "head": 21
           },
           [
             {
@@ -3755,7 +3925,7 @@
             },
             {
               "kind": "added",
-              "blockId": "b_314",
+              "blockId": "b_327",
               "after": "Appended by apply."
             }
           ],
@@ -3763,13 +3933,13 @@
             "doc": "d_0",
             "path": "index.md",
             "from": "r_0",
-            "to": "r_18",
+            "to": "r_20",
             "diff": "@@ -50,5 +50,7 @@\n \n ## Laboratory\n \n-Working notes live under `lab/`.\n+Working notes live under `lab/`, one file per month.\n \n+Appended by apply.\n+"
           },
           [
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "inserted",
@@ -3779,8 +3949,8 @@
           ],
           [
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -3825,10 +3995,10 @@
             "repoId": "rp_0",
             "slug": "fixture",
             "rootPath": "<workspace>",
-            "docs": 18,
-            "blocks": 315,
-            "commits": 19,
-            "openEdges": 64,
+            "docs": 20,
+            "blocks": 328,
+            "commits": 21,
+            "openEdges": 69,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -3838,7 +4008,7 @@
             }
           },
           {
-            "lastCommitSeq": 19,
+            "lastCommitSeq": 21,
             "lastCheckpoint": null,
             "convergent": true,
             "diskChecked": true,
@@ -3921,8 +4091,8 @@
             "results": [
               {
                 "ids": [
-                  "b_314",
-                  "b_315"
+                  "b_327",
+                  "b_328"
                 ]
               }
             ],
@@ -3938,7 +4108,7 @@
             "results": [
               {
                 "ids": [
-                  "b_317"
+                  "b_330"
                 ]
               }
             ],
@@ -3962,7 +4132,7 @@
           {
             "path": "processes/calcination.md",
             "docId": "d_7",
-            "rev": "r_19",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "process",
@@ -3999,7 +4169,7 @@
               "b_148",
               "b_149",
               "b_150",
-              "b_317",
+              "b_330",
               "b_151",
               "b_152",
               "b_153",
@@ -4007,8 +4177,8 @@
               "b_155",
               "b_156",
               "b_157",
-              "b_314",
-              "b_315"
+              "b_327",
+              "b_328"
             ],
             "hashes": {
               "b_138": "c80957125cbf96b568d93b2fd598465181bd8a0bd2465b037cc566e7c24cd724",
@@ -4024,7 +4194,7 @@
               "b_148": "a7d9b6e0901063a46ad0bd5f358041262dfd9772530c4bce47c91fb988ef388a",
               "b_149": "185c4e370b73cb1f80e3b122762c2fc99764e6eb553dd84d05af62221539fd92",
               "b_150": "2c6eb790b6de163036e3740f6013754c3af1aded51abe79076b2a8d835d6bbc4",
-              "b_317": "a7ed02e7e0fe3a09639d18ad0674b7c8627fbb23b359a9f31903a823f2f19da3",
+              "b_330": "a7ed02e7e0fe3a09639d18ad0674b7c8627fbb23b359a9f31903a823f2f19da3",
               "b_151": "8d2e464371ea5cb4bf15a00a6fcc252707b1a9134f8756a3c1adf7046a35676e",
               "b_152": "853ca0777d8eb1f83697e086926000fcbddf13159353769909e8522dc974cdff",
               "b_153": "fd67d489c7528e070c4dbe7e6b7d2eb8ce82617196a7248b9b5dfe7d50e33d33",
@@ -4032,8 +4202,8 @@
               "b_155": "440ab374742d03d3e87c14f355e0715af7d3edc95d27e859ba5e851d81917262",
               "b_156": "486941ab0289c44861dbb27a24a15ead06b99010198d50b08929464e0a4ef491",
               "b_157": "994aab71eeef4ab790507ae7dffa6af8fe5eb4de7227289af58156da719ea96b",
-              "b_314": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
-              "b_315": "f1343af4c64ef8da8fdfe2839c35455389a03defe7d1f80c5afb4a0ed9c277b9"
+              "b_327": "63e13e87b378d1e85f838ead267db9020c1457b1118a37e0af9fb5f976144f4b",
+              "b_328": "f1343af4c64ef8da8fdfe2839c35455389a03defe7d1f80c5afb4a0ed9c277b9"
             },
             "parents": {
               "b_138": null,
@@ -4049,7 +4219,7 @@
               "b_148": null,
               "b_149": null,
               "b_150": "b_149",
-              "b_317": "b_149",
+              "b_330": "b_149",
               "b_151": "b_149",
               "b_152": "b_149",
               "b_153": null,
@@ -4057,12 +4227,12 @@
               "b_155": "b_154",
               "b_156": "b_154",
               "b_157": "b_154",
-              "b_314": null,
-              "b_315": null
+              "b_327": null,
+              "b_328": null
             }
           },
           {
-            "text": "b_138 h1   Calcination  §\nb_139 p    Heating a substance in air until it is reduced to…\nb_140 p    element:: fire reversible:: no\nb_141 h2   Procedure  §\nb_142 p    Grind the material, spread it thinly in an open crucible,…\nb_143 code crucible → grind → thin layer → moderate heat →…\nb_144 p    The endpoint is the constant weight, not the colour. Colour…\nb_145 h2   What is actually happening  §\nb_146 p    Organic matter burns away; metals take up oxygen. The characteristic…\nb_147 p    Alchemical practice recorded this gain for centuries without drawing the…\nb_148 h2   Products  §\nb_149 ul\n  b_150 li   calcined lead → yellow massicot, then red minium\n  b_317 li   calcined tin → white putty powder\n  b_151 li   calcined copper → black tenorite\n  b_152 li   plant matter → ash, source of the [[salt]]\nb_153 h2   Tasks  §\nb_154 ul\n  b_155 li   ☑ Verify the weight gain on lead with a balance\n  b_156 li   ☐ Repeat with copper and record the colour sequence\n  b_157 li   ☐ Chase down the earliest recorded weight-gain measurement\nb_314 h2   Notes  §\nb_315 p    Inserted at the end.",
+            "text": "b_138 h1   Calcination  §\nb_139 p    Heating a substance in air until it is reduced to…\nb_140 p    element:: fire reversible:: no\nb_141 h2   Procedure  §\nb_142 p    Grind the material, spread it thinly in an open crucible,…\nb_143 code crucible → grind → thin layer → moderate heat →…\nb_144 p    The endpoint is the constant weight, not the colour. Colour…\nb_145 h2   What is actually happening  §\nb_146 p    Organic matter burns away; metals take up oxygen. The characteristic…\nb_147 p    Alchemical practice recorded this gain for centuries without drawing the…\nb_148 h2   Products  §\nb_149 ul\n  b_150 li   calcined lead → yellow massicot, then red minium\n  b_330 li   calcined tin → white putty powder\n  b_151 li   calcined copper → black tenorite\n  b_152 li   plant matter → ash, source of the [[salt]]\nb_153 h2   Tasks  §\nb_154 ul\n  b_155 li   ☑ Verify the weight gain on lead with a balance\n  b_156 li   ☐ Repeat with copper and record the colour sequence\n  b_157 li   ☐ Chase down the earliest recorded weight-gain measurement\nb_327 h2   Notes  §\nb_328 p    Inserted at the end.",
             "truncated": false
           },
           {
@@ -4076,7 +4246,7 @@
                 "text": "calcined lead → yellow massicot, then red minium"
               },
               {
-                "id": "b_317",
+                "id": "b_330",
                 "type": "list_item",
                 "text": "calcined tin → white putty powder"
               },
@@ -4110,7 +4280,7 @@
                 "text": "plant matter → ash, source of the [[salt]]"
               },
               {
-                "id": "b_317",
+                "id": "b_330",
                 "path": "processes/calcination.md",
                 "text": "calcined tin → white putty powder"
               }
@@ -4122,8 +4292,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4136,8 +4306,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4150,9 +4320,9 @@
                 ]
               }
             ],
-            "cursor": 20,
+            "cursor": 22,
             "truncated": false,
-            "head": 20
+            "head": 22
           }
         ]
       }
@@ -4223,7 +4393,7 @@
           "args": {
             "doc": "d_0",
             "from_rev": "r_0",
-            "to_rev": "r_18"
+            "to_rev": "r_20"
           }
         },
         {
@@ -4306,7 +4476,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -4346,7 +4516,7 @@
                 "docId": "d_0",
                 "path": "index.md",
                 "deleted": false,
-                "currentRev": "r_18",
+                "currentRev": "r_20",
                 "versions": [
                   {
                     "rev": "r_0",
@@ -4359,9 +4529,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 2,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -4379,7 +4549,7 @@
                 "docId": "d_1",
                 "path": "lab/2026-01-notes.md",
                 "deleted": false,
-                "currentRev": "r_19",
+                "currentRev": "r_21",
                 "versions": [
                   {
                     "rev": "r_1",
@@ -4392,9 +4562,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_19",
+                    "rev": "r_21",
                     "seq": 2,
-                    "commit": "c_19",
+                    "commit": "c_21",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -4409,8 +4579,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4423,8 +4593,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4437,9 +4607,9 @@
                 ]
               }
             ],
-            "cursor": 20,
+            "cursor": 22,
             "truncated": false,
-            "head": 20
+            "head": 22
           },
           [
             {
@@ -4453,13 +4623,13 @@
             "doc": "d_0",
             "path": "index.md",
             "from": "r_0",
-            "to": "r_18",
+            "to": "r_20",
             "diff": "@@ -8,9 +8,7 @@\n \n # Alchemy\n \n-The art of transformation — part proto-chemistry, part philosophy, part\n-contemplative practice. This repository collects notes on its substances,\n-processes, practitioners, and primary texts.\n+The art of transformation, revised for interop.\n \n ## The tria prima\n "
           },
           [
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -4553,7 +4723,7 @@
           "args": {
             "doc": "index.md",
             "from_rev": "r_0",
-            "to_rev": "r_19"
+            "to_rev": "r_21"
           }
         },
         {
@@ -4561,7 +4731,7 @@
           "args": {
             "doc": "index.md",
             "from_rev": "r_0",
-            "to_rev": "r_19"
+            "to_rev": "r_21"
           }
         },
         {
@@ -4622,7 +4792,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_19",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -4643,8 +4813,8 @@
           },
           [
             {
-              "commitId": "c_19",
-              "seq": 20,
+              "commitId": "c_21",
+              "seq": 22,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -4652,8 +4822,8 @@
               "reason": "api"
             },
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -4682,14 +4852,14 @@
             "doc": "d_0",
             "path": "index.md",
             "from": "r_0",
-            "to": "r_19",
+            "to": "r_21",
             "diff": "@@ -12,13 +12,17 @@\n contemplative practice. This repository collects notes on its substances,\n processes, practitioners, and primary texts.\n \n+## Laboratory\n+\n+Working notes live under `lab/`.\n+\n ## The tria prima\n \n Paracelsus reduced the material world to three principles:\n \n+- [[salt]] — the fixed body\n - [[mercury]] — the volatile spirit\n - [[sulphur]] — the combustible soul\n-- [[salt]] — the fixed body\n \n ## Substances\n \n@@ -48,7 +52,4 @@\n - [The Emerald Tablet](/texts/emerald-tablet.md)\n - [Mutus Liber](/texts/mutus-liber.md)\n \n-## Laboratory\n \n-Working notes live under `lab/`.\n-"
           },
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4702,8 +4872,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -4716,9 +4886,9 @@
                 ]
               }
             ],
-            "cursor": 20,
+            "cursor": 22,
             "truncated": false,
-            "head": 20
+            "head": 22
           }
         ]
       }
@@ -4786,7 +4956,7 @@
         {
           "tool": "nodes_get",
           "args": {
-            "id": "b_314",
+            "id": "b_327",
             "resolution": "raw"
           }
         },
@@ -4813,7 +4983,7 @@
           "args": {
             "doc": "lab/2026-01-notes.md",
             "from_rev": "r_1",
-            "to_rev": "r_20"
+            "to_rev": "r_22"
           }
         },
         {
@@ -4830,7 +5000,7 @@
               {
                 "ids": [
                   "b_1",
-                  "b_314"
+                  "b_327"
                 ]
               }
             ],
@@ -4894,7 +5064,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -4916,7 +5086,7 @@
           {
             "path": "lab/2026-01-notes.md",
             "docId": "d_1",
-            "rev": "r_20",
+            "rev": "r_22",
             "properties": {
               "frontmatter": {
                 "type": "lab-note",
@@ -5026,15 +5196,15 @@
             "truncated": false
           },
           {
-            "id": "b_314",
+            "id": "b_327",
             "type": "paragraph",
             "raw": "This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.",
             "content_hash": "05ba22f68a663e80f800263114a7680ca832add2f1340f1025b8cda9907cf1e7"
           },
           [
             {
-              "commitId": "c_20",
-              "seq": 21,
+              "commitId": "c_22",
+              "seq": 23,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -5042,8 +5212,8 @@
               "reason": "api"
             },
             {
-              "commitId": "c_19",
-              "seq": 20,
+              "commitId": "c_21",
+              "seq": 22,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -5073,8 +5243,8 @@
           ],
           [
             {
-              "commitId": "c_19",
-              "seq": 20,
+              "commitId": "c_21",
+              "seq": 22,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -5123,8 +5293,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -5137,8 +5307,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -5151,8 +5321,8 @@
                 ]
               },
               {
-                "commit": "c_20",
-                "seq": 21,
+                "commit": "c_22",
+                "seq": 23,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -5165,9 +5335,9 @@
                 ]
               }
             ],
-            "cursor": 21,
+            "cursor": 23,
             "truncated": false,
-            "head": 21
+            "head": 23
           }
         ]
       }
@@ -5455,7 +5625,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_21",
+            "rev": "r_23",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -5475,7 +5645,7 @@
             "content": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [Calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
           },
           {
-            "staleCount": 21,
+            "staleCount": 24,
             "byTarget": [
               {
                 "target": "mercury",
@@ -5490,11 +5660,19 @@
                 "count": 5
               },
               {
+                "target": "timeline/lost-notes.md",
+                "count": 2
+              },
+              {
                 "target": "magnum-opus",
                 "count": 1
               },
               {
                 "target": "nigredo",
+                "count": 1
+              },
+              {
+                "target": "timeline/next-season.md",
                 "count": 1
               }
             ],
@@ -5532,6 +5710,10 @@
                 "count": 2
               },
               {
+                "srcPath": "timeline/review.md",
+                "count": 2
+              },
+              {
                 "srcPath": "practitioners/newton.md",
                 "count": 1
               },
@@ -5542,10 +5724,14 @@
               {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
+              },
+              {
+                "srcPath": "timeline/kickoff.md",
+                "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 64
+            "totalOpenEdges": 69
           },
           {
             "roots": [
@@ -6245,8 +6431,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6259,8 +6445,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6273,8 +6459,8 @@
                 ]
               },
               {
-                "commit": "c_20",
-                "seq": 21,
+                "commit": "c_22",
+                "seq": 23,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6287,8 +6473,8 @@
                 ]
               },
               {
-                "commit": "c_21",
-                "seq": 22,
+                "commit": "c_23",
+                "seq": 24,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6301,9 +6487,9 @@
                 ]
               }
             ],
-            "cursor": 22,
+            "cursor": 24,
             "truncated": false,
-            "head": 22
+            "head": 24
           }
         ]
       }
@@ -6398,7 +6584,7 @@
             "results": [
               {
                 "ids": [
-                  "b_314"
+                  "b_327"
                 ]
               }
             ],
@@ -6414,7 +6600,7 @@
             "results": [
               {
                 "ids": [
-                  "b_320"
+                  "b_333"
                 ]
               }
             ],
@@ -6449,7 +6635,7 @@
                   "doc": "d_9"
                 },
                 {
-                  "block": "b_314",
+                  "block": "b_327",
                   "doc": "d_7"
                 }
               ]
@@ -6459,8 +6645,8 @@
             "results": [
               {
                 "ids": [
-                  "b_321",
-                  "b_322"
+                  "b_334",
+                  "b_335"
                 ]
               }
             ],
@@ -6476,7 +6662,7 @@
             "results": [
               {
                 "ids": [
-                  "b_323"
+                  "b_336"
                 ]
               }
             ],
@@ -6500,7 +6686,7 @@
           {
             "path": "processes/calcination.md",
             "docId": "d_7",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "process",
@@ -6527,7 +6713,7 @@
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_19",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -6549,7 +6735,7 @@
           {
             "path": "texts/mutus-liber.md",
             "docId": "d_17",
-            "rev": "r_20",
+            "rev": "r_22",
             "properties": {
               "frontmatter": {
                 "type": "text",
@@ -6575,7 +6761,7 @@
           {
             "path": "texts/emerald-tablet.md",
             "docId": "d_16",
-            "rev": "r_21",
+            "rev": "r_23",
             "properties": {
               "frontmatter": {
                 "type": "text",
@@ -6689,6 +6875,16 @@
                 "path": "texts/mutus-liber.md",
                 "blocks": 14,
                 "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/kickoff.md",
+                "blocks": 7,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/review.md",
+                "blocks": 6,
+                "ts": "2026-09-27T00:00:00.000Z"
               }
             ],
             "truncated": false,
@@ -6697,8 +6893,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6711,8 +6907,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6725,8 +6921,8 @@
                 ]
               },
               {
-                "commit": "c_20",
-                "seq": 21,
+                "commit": "c_22",
+                "seq": 23,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6739,8 +6935,8 @@
                 ]
               },
               {
-                "commit": "c_21",
-                "seq": 22,
+                "commit": "c_23",
+                "seq": 24,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -6753,9 +6949,9 @@
                 ]
               }
             ],
-            "cursor": 22,
+            "cursor": 24,
             "truncated": false,
-            "head": 22
+            "head": 24
           }
         ]
       }
@@ -7171,7 +7367,7 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_322",
+                "srcBlock": "b_335",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
@@ -7183,7 +7379,7 @@
               {
                 "srcDoc": "d_0",
                 "srcPath": "index.md",
-                "srcBlock": "b_321",
+                "srcBlock": "b_334",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
@@ -7299,14 +7495,50 @@
                 "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_18",
+                "srcPath": "timeline/kickoff.md",
+                "srcBlock": null,
+                "predicate": "see_also",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "before",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "after",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/next-season.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 63,
+            "totalOpenEdges": 68,
             "truncated": false
           },
           {
-            "staleCount": 11,
+            "staleCount": 14,
             "byTarget": [
               {
                 "target": "salt",
@@ -7315,6 +7547,14 @@
               {
                 "target": "sulphur",
                 "count": 5
+              },
+              {
+                "target": "timeline/lost-notes.md",
+                "count": 2
+              },
+              {
+                "target": "timeline/next-season.md",
+                "count": 1
               }
             ],
             "bySource": [
@@ -7328,6 +7568,10 @@
               },
               {
                 "srcPath": "substances/mercury.md",
+                "count": 2
+              },
+              {
+                "srcPath": "timeline/review.md",
                 "count": 2
               },
               {
@@ -7349,10 +7593,14 @@
               {
                 "srcPath": "substances/sulphur.md",
                 "count": 1
+              },
+              {
+                "srcPath": "timeline/kickoff.md",
+                "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 63
+            "totalOpenEdges": 68
           },
           {
             "roots": [
@@ -7466,7 +7714,7 @@
                 "src_field": null
               },
               {
-                "id": "e_67",
+                "id": "e_72",
                 "src": "d_0",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7478,7 +7726,7 @@
                 "src_field": null
               },
               {
-                "id": "e_70",
+                "id": "e_75",
                 "src": "d_1",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7526,7 +7774,7 @@
                 "src_field": null
               },
               {
-                "id": "e_66",
+                "id": "e_71",
                 "src": "d_12",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7538,7 +7786,7 @@
                 "src_field": null
               },
               {
-                "id": "e_74",
+                "id": "e_79",
                 "src": "d_14",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7574,7 +7822,7 @@
                 "src_field": null
               },
               {
-                "id": "e_75",
+                "id": "e_80",
                 "src": "d_15",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7586,7 +7834,7 @@
                 "src_field": null
               },
               {
-                "id": "e_71",
+                "id": "e_76",
                 "src": "d_3",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7598,7 +7846,7 @@
                 "src_field": null
               },
               {
-                "id": "e_72",
+                "id": "e_77",
                 "src": "d_5",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7622,7 +7870,7 @@
                 "src_field": null
               },
               {
-                "id": "e_73",
+                "id": "e_78",
                 "src": "d_6",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
@@ -7684,7 +7932,7 @@
           {
             "path": "substances/prima-materia.md",
             "docId": "d_13",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "substance",
@@ -7718,7 +7966,7 @@
                 "$dst_uri": null
               },
               {
-                "id": "e_64",
+                "id": "e_69",
                 "path": "substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
@@ -7726,7 +7974,7 @@
                 "$dst_uri": null
               },
               {
-                "id": "e_65",
+                "id": "e_70",
                 "path": "substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
@@ -7734,7 +7982,7 @@
                 "$dst_uri": null
               },
               {
-                "id": "e_66",
+                "id": "e_71",
                 "path": "substances/philosophers-stone.md",
                 "predicate": "references",
                 "dst_kind": "document",
@@ -7749,8 +7997,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7763,8 +8011,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7777,8 +8025,8 @@
                 ]
               },
               {
-                "commit": "c_20",
-                "seq": 21,
+                "commit": "c_22",
+                "seq": 23,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7791,8 +8039,8 @@
                 ]
               },
               {
-                "commit": "c_21",
-                "seq": 22,
+                "commit": "c_23",
+                "seq": 24,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7805,8 +8053,8 @@
                 ]
               },
               {
-                "commit": "c_22",
-                "seq": 23,
+                "commit": "c_24",
+                "seq": 25,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7819,8 +8067,8 @@
                 ]
               },
               {
-                "commit": "c_23",
-                "seq": 24,
+                "commit": "c_25",
+                "seq": 26,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7833,8 +8081,8 @@
                 ]
               },
               {
-                "commit": "c_24",
-                "seq": 25,
+                "commit": "c_26",
+                "seq": 27,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7847,8 +8095,8 @@
                 ]
               },
               {
-                "commit": "c_25",
-                "seq": 26,
+                "commit": "c_27",
+                "seq": 28,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7861,8 +8109,8 @@
                 ]
               },
               {
-                "commit": "c_26",
-                "seq": 27,
+                "commit": "c_28",
+                "seq": 29,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -7875,9 +8123,9 @@
                 ]
               }
             ],
-            "cursor": 27,
+            "cursor": 29,
             "truncated": false,
-            "head": 27
+            "head": 29
           }
         ]
       }
@@ -7988,7 +8236,7 @@
       "expect": {
         "writes": [
           {
-            "docId": "d_18",
+            "docId": "d_20",
             "path": "substances/gold.md",
             "committed": true
           },
@@ -8022,8 +8270,8 @@
             "prefix": "",
             "depth": 1,
             "total": {
-              "docs": 19,
-              "blocks": 316
+              "docs": 21,
+              "blocks": 329
             },
             "entries": [
               {
@@ -8066,6 +8314,13 @@
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 25,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 13,
                 "ts": "2026-09-27T00:00:00.000Z"
               }
             ],
@@ -8261,9 +8516,9 @@
                 "reason": "dangling_doc"
               },
               {
-                "srcDoc": "d_18",
+                "srcDoc": "d_20",
                 "srcPath": "substances/gold.md",
-                "srcBlock": "b_315",
+                "srcBlock": "b_328",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
@@ -8379,21 +8634,57 @@
                 "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_18",
+                "srcPath": "timeline/kickoff.md",
+                "srcBlock": null,
+                "predicate": "see_also",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "before",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "after",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/next-season.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 66,
+            "totalOpenEdges": 71,
             "truncated": false
           },
           {
             "roots": [
-              "d_18"
+              "d_20"
             ],
             "degrees": 1,
             "direction": "out",
             "documents": [
               {
-                "id": "d_18",
+                "id": "d_20",
                 "path": "substances/gold.md",
                 "degree": 0,
                 "frontier": false
@@ -8431,8 +8722,8 @@
                 "src_field": null
               },
               {
-                "id": "e_64",
-                "src": "d_18",
+                "id": "e_69",
+                "src": "d_20",
                 "dst": "d_11",
                 "dst_path": "substances/mercury.md",
                 "dst_uri": null,
@@ -8443,8 +8734,8 @@
                 "src_field": null
               },
               {
-                "id": "e_65",
-                "src": "d_18",
+                "id": "e_70",
+                "src": "d_20",
                 "dst": "phantom:mercury",
                 "dst_path": null,
                 "dst_uri": null,
@@ -8464,13 +8755,13 @@
             ],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_18\" follow distinct doc.out { depth 2 }"
+              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_20\" follow distinct doc.out { depth 2 }"
             ]
           },
           {
             "path": "substances/gold.md",
-            "docId": "d_18",
-            "rev": "r_18",
+            "docId": "d_20",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "substance",
@@ -8483,22 +8774,22 @@
             },
             "content": "---\ntype: substance\nlayer: working\n---\n\n# Gold\n\nThe goal. See [[mercury]] and [mercury](/substances/mercury.md).\n",
             "ids": [
-              "b_314",
-              "b_315"
+              "b_327",
+              "b_328"
             ],
             "hashes": {
-              "b_314": "b9c04db058845a364796f6b1b2e50e63b34ba96eaf2fb5bd1842f658c9cbb2f4",
-              "b_315": "1c4d38e59b02899e9c7011aa2b32f8cd2f9734c1784adb6065feb4bdacf571a6"
+              "b_327": "b9c04db058845a364796f6b1b2e50e63b34ba96eaf2fb5bd1842f658c9cbb2f4",
+              "b_328": "1c4d38e59b02899e9c7011aa2b32f8cd2f9734c1784adb6065feb4bdacf571a6"
             },
             "parents": {
-              "b_314": null,
-              "b_315": null
+              "b_327": null,
+              "b_328": null
             }
           },
           {
             "path": "index.md",
             "docId": "d_0",
-            "rev": "r_19",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "hub",
@@ -8561,30 +8852,30 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
                 "revisions": [
                   {
-                    "doc": "d_18",
+                    "doc": "d_20",
                     "path": "substances/gold.md",
                     "contentHash": "dec5be2d918d5220c673d3f50edf8a25e7d8c78c2af3a0c0a892d8142c9791cd"
                   }
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
                 "revisions": []
               },
               {
-                "commit": "c_20",
-                "seq": 21,
+                "commit": "c_22",
+                "seq": 23,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -8597,18 +8888,18 @@
                 ]
               }
             ],
-            "cursor": 21,
+            "cursor": 23,
             "truncated": false,
-            "head": 21
+            "head": 23
           },
           {
             "repoId": "rp_0",
             "slug": "fixture",
             "rootPath": "<workspace>",
-            "docs": 19,
-            "blocks": 316,
-            "commits": 21,
-            "openEdges": 66,
+            "docs": 21,
+            "blocks": 329,
+            "commits": 23,
+            "openEdges": 71,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -8618,7 +8909,7 @@
             }
           },
           {
-            "lastCommitSeq": 21,
+            "lastCommitSeq": 23,
             "lastCheckpoint": null,
             "convergent": true,
             "diskChecked": true,
@@ -8735,7 +9026,7 @@
           {
             "path": "substances/salt.md",
             "docId": "d_14",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "substance",
@@ -8859,6 +9150,16 @@
               {
                 "path": "texts/mutus-liber.md",
                 "blocks": 12,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/kickoff.md",
+                "blocks": 7,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "timeline/review.md",
+                "blocks": 6,
                 "ts": "2026-09-27T00:00:00.000Z"
               }
             ],
@@ -9145,10 +9446,46 @@
                 "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_18",
+                "srcPath": "timeline/kickoff.md",
+                "srcBlock": null,
+                "predicate": "see_also",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "before",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/lost-notes.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
+              },
+              {
+                "srcDoc": "d_19",
+                "srcPath": "timeline/review.md",
+                "srcBlock": null,
+                "predicate": "after",
+                "provenance": "frontmatter",
+                "dstKind": "document",
+                "target": "timeline/next-season.md",
+                "authored": null,
+                "anchor": null,
+                "reason": "dangling_doc"
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 60,
+            "totalOpenEdges": 65,
             "truncated": false
           },
           {
@@ -9173,8 +9510,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -9187,26 +9524,26 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
                 "revisions": []
               }
             ],
-            "cursor": 20,
+            "cursor": 22,
             "truncated": false,
-            "head": 20
+            "head": 22
           },
           {
             "repoId": "rp_0",
             "slug": "fixture",
             "rootPath": "<workspace>",
-            "docs": 17,
-            "blocks": 301,
-            "commits": 20,
-            "openEdges": 64,
+            "docs": 19,
+            "blocks": 314,
+            "commits": 22,
+            "openEdges": 69,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -9276,7 +9613,7 @@
           "args": {
             "doc": "d_5",
             "from_rev": "r_5",
-            "to_rev": "r_18"
+            "to_rev": "r_20"
           }
         },
         {
@@ -9472,7 +9809,7 @@
               "precondition": {
                 "doc": "d_5",
                 "path": "practitioners/newton.md",
-                "baseRevision": "r_18",
+                "baseRevision": "r_20",
                 "baseContentHash": "c8dbadfd60e5b18497d40562cdd55ac3bca31fad84e310b4b62ba594cf410459"
               },
               "matcherV": "m2.3",
@@ -9502,7 +9839,7 @@
           {
             "path": "practitioners/newton.md",
             "docId": "d_5",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "practitioner",
@@ -9579,8 +9916,8 @@
           },
           [
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "edited",
@@ -9603,7 +9940,7 @@
                 "docId": "d_5",
                 "path": "practitioners/newton.md",
                 "deleted": false,
-                "currentRev": "r_18",
+                "currentRev": "r_20",
                 "versions": [
                   {
                     "rev": "r_5",
@@ -9616,9 +9953,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 2,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -9660,14 +9997,14 @@
             "doc": "d_5",
             "path": "practitioners/newton.md",
             "from": "r_5",
-            "to": "r_18",
+            "to": "r_20",
             "diff": "@@ -9,7 +9,7 @@\n \n # Isaac Newton\n \n-1643–1727. Wrote more on alchemy than on physics, and published none of it.\n+1643–1727. Wrote more on alchemy than on physics, and published almost none of it.\n \n known_for:: unpublished alchemical corpus\n century:: 17\n@@ -43,6 +43,6 @@\n rigour and got nothing, because there was nothing there. That is a result, and\n the [magnum opus](/processes/magnum-opus.md) framework does not survive it.\n \n-- [ ] Read the Index Chemicus entries on [[mercury]]\n-- [ ] Cross-check the furnace dates against the Principia years\n+- [x] Read the Index Chemicus entries on [[mercury]]\n+- [ ] Compare Keynes's catalogue with the Sotheby's lot list\n "
           },
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -9680,9 +10017,9 @@
                 ]
               }
             ],
-            "cursor": 19,
+            "cursor": 21,
             "truncated": false,
-            "head": 19
+            "head": 21
           }
         ]
       }
@@ -9790,10 +10127,10 @@
       "expect": {
         "writes": [
           {
-            "docId": "d_18",
+            "docId": "d_20",
             "path": "lab/2026-03-notes.md",
-            "rev": "r_18",
-            "commitId": "c_18",
+            "rev": "r_20",
+            "commitId": "c_20",
             "converged": true,
             "echo": false,
             "conflicted": false,
@@ -9806,7 +10143,7 @@
           },
           [
             {
-              "docId": "d_18",
+              "docId": "d_20",
               "path": "lab/2026-03-notes.md",
               "rev": null,
               "commitId": null,
@@ -9816,10 +10153,10 @@
               "dispositions": []
             },
             {
-              "docId": "d_19",
+              "docId": "d_21",
               "path": "lab/2026-04-notes.md",
-              "rev": "r_19",
-              "commitId": "c_19",
+              "rev": "r_21",
+              "commitId": "c_21",
               "converged": true,
               "echo": false,
               "conflicted": false,
@@ -9832,10 +10169,10 @@
             }
           ],
           {
-            "docId": "d_18",
+            "docId": "d_20",
             "path": "lab/2026-03-notes.md",
-            "rev": "r_20",
-            "commitId": "c_20",
+            "rev": "r_22",
+            "commitId": "c_22",
             "converged": true,
             "echo": false,
             "conflicted": false,
@@ -9890,8 +10227,8 @@
           },
           {
             "path": "lab/2026-03-notes.md",
-            "docId": "d_18",
-            "rev": "r_20",
+            "docId": "d_20",
+            "rev": "r_22",
             "properties": {
               "frontmatter": {
                 "type": "lab-note",
@@ -9905,28 +10242,28 @@
             },
             "content": "---\ntype: lab-note\nlayer: working\nmonth: 3\n---\n\n# Laboratory notes — March\n\nCopper foil arrived. Planning the copper series from [January](/lab/2026-01-notes.md).\n\n- [x] Order copper foil\n",
             "ids": [
-              "b_314",
-              "b_315",
-              "b_316",
-              "b_317"
+              "b_327",
+              "b_328",
+              "b_329",
+              "b_330"
             ],
             "hashes": {
-              "b_314": "ec8067810c5a261e8360fcbb3d59d72ef9a032385ba3adebf7c16a6f9e43a5eb",
-              "b_315": "a3b3332c7b6aff4150e919ee12354db2107ae8aca1ec0eaa9dda835c0e289347",
-              "b_316": "b7d049a087db1e7b4dd86d67348a152bb0d8293047fe78b02f1681aa91ee50be",
-              "b_317": "b7d049a087db1e7b4dd86d67348a152bb0d8293047fe78b02f1681aa91ee50be"
+              "b_327": "ec8067810c5a261e8360fcbb3d59d72ef9a032385ba3adebf7c16a6f9e43a5eb",
+              "b_328": "a3b3332c7b6aff4150e919ee12354db2107ae8aca1ec0eaa9dda835c0e289347",
+              "b_329": "b7d049a087db1e7b4dd86d67348a152bb0d8293047fe78b02f1681aa91ee50be",
+              "b_330": "b7d049a087db1e7b4dd86d67348a152bb0d8293047fe78b02f1681aa91ee50be"
             },
             "parents": {
-              "b_314": null,
-              "b_315": null,
-              "b_316": null,
-              "b_317": "b_316"
+              "b_327": null,
+              "b_328": null,
+              "b_329": null,
+              "b_330": "b_329"
             }
           },
           {
             "path": "lab/2026-04-notes.md",
-            "docId": "d_19",
-            "rev": "r_19",
+            "docId": "d_21",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "lab-note",
@@ -9966,15 +10303,15 @@
           {
             "docs": [
               {
-                "docId": "d_18",
+                "docId": "d_20",
                 "path": "lab/2026-03-notes.md",
                 "deleted": false,
-                "currentRev": "r_20",
+                "currentRev": "r_22",
                 "versions": [
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 1,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "observed",
                     "actor": null,
@@ -9982,9 +10319,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_20",
+                    "rev": "r_22",
                     "seq": 2,
-                    "commit": "c_20",
+                    "commit": "c_22",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "observed",
                     "actor": null,
@@ -10007,8 +10344,8 @@
                 "revisions": [
                   {
                     "doc": "d_18",
-                    "path": "lab/2026-03-notes.md",
-                    "contentHash": "44ab278e3c4f1d9fc1f8e71e4f023335820e27e4c407247b9fc12c46290bbef1"
+                    "path": "timeline/kickoff.md",
+                    "contentHash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
                   }
                 ]
               },
@@ -10021,8 +10358,8 @@
                 "revisions": [
                   {
                     "doc": "d_19",
-                    "path": "lab/2026-04-notes.md",
-                    "contentHash": "30900fa1bf2e5f47969faf493d31e584686025663def486cb701e0024be80c42"
+                    "path": "timeline/review.md",
+                    "contentHash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
                   }
                 ]
               },
@@ -10034,9 +10371,9 @@
                 "actor": null,
                 "revisions": [
                   {
-                    "doc": "d_18",
+                    "doc": "d_20",
                     "path": "lab/2026-03-notes.md",
-                    "contentHash": "598e37ddd5806f95d81cd11d845a7d4fc760d259a3b6cbb43d121227c3d9fa2f"
+                    "contentHash": "44ab278e3c4f1d9fc1f8e71e4f023335820e27e4c407247b9fc12c46290bbef1"
                   }
                 ]
               },
@@ -10046,15 +10383,43 @@
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "observed",
                 "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_21",
+                    "path": "lab/2026-04-notes.md",
+                    "contentHash": "30900fa1bf2e5f47969faf493d31e584686025663def486cb701e0024be80c42"
+                  }
+                ]
+              },
+              {
+                "commit": "c_22",
+                "seq": 23,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_20",
+                    "path": "lab/2026-03-notes.md",
+                    "contentHash": "598e37ddd5806f95d81cd11d845a7d4fc760d259a3b6cbb43d121227c3d9fa2f"
+                  }
+                ]
+              },
+              {
+                "commit": "c_23",
+                "seq": 24,
+                "ts": "2026-09-27T00:00:00.000Z",
+                "origin": "observed",
+                "actor": null,
                 "revisions": []
               }
             ],
-            "cursor": 22,
+            "cursor": 24,
             "truncated": false,
-            "head": 22
+            "head": 24
           },
           {
-            "staleCount": 18,
+            "staleCount": 21,
             "byTarget": [
               {
                 "target": "mercury",
@@ -10069,11 +10434,19 @@
                 "count": 4
               },
               {
+                "target": "timeline/lost-notes.md",
+                "count": 2
+              },
+              {
                 "target": "magnum-opus",
                 "count": 1
               },
               {
                 "target": "nigredo",
+                "count": 1
+              },
+              {
+                "target": "timeline/next-season.md",
                 "count": 1
               }
             ],
@@ -10107,6 +10480,10 @@
                 "count": 2
               },
               {
+                "srcPath": "timeline/review.md",
+                "count": 2
+              },
+              {
                 "srcPath": "practitioners/newton.md",
                 "count": 1
               },
@@ -10117,19 +10494,23 @@
               {
                 "srcPath": "substances/prima-materia.md",
                 "count": 1
+              },
+              {
+                "srcPath": "timeline/kickoff.md",
+                "count": 1
               }
             ],
             "externalCount": 0,
-            "totalOpenEdges": 61
+            "totalOpenEdges": 66
           },
           {
             "repoId": "rp_0",
             "slug": "fixture",
             "rootPath": "<workspace>",
-            "docs": 19,
-            "blocks": 304,
-            "commits": 22,
-            "openEdges": 65,
+            "docs": 21,
+            "blocks": 317,
+            "commits": 24,
+            "openEdges": 70,
             "unconverged": 0,
             "disk": {
               "changed": 0,
@@ -10139,7 +10520,7 @@
             }
           },
           {
-            "lastCommitSeq": 22,
+            "lastCommitSeq": 24,
             "lastCheckpoint": null,
             "convergent": false,
             "diskChecked": true,
@@ -10227,7 +10608,7 @@
           {
             "path": "lab/2026-01-notes.md",
             "docId": "d_1",
-            "rev": "r_18",
+            "rev": "r_20",
             "properties": {
               "frontmatter": {
                 "type": "lab-note",
@@ -10254,7 +10635,7 @@
           {
             "path": "lab/2026-02-notes.md",
             "docId": "d_2",
-            "rev": "r_19",
+            "rev": "r_21",
             "properties": {
               "frontmatter": {
                 "type": "lab-note",
@@ -10280,8 +10661,8 @@
           },
           [
             {
-              "commitId": "c_19",
-              "seq": 20,
+              "commitId": "c_21",
+              "seq": 22,
               "ts": "2026-09-27T00:00:00.000Z",
               "origin": "api",
               "kind": "inserted",
@@ -10304,7 +10685,7 @@
                 "docId": "d_1",
                 "path": "lab/2026-01-notes.md",
                 "deleted": false,
-                "currentRev": "r_18",
+                "currentRev": "r_20",
                 "versions": [
                   {
                     "rev": "r_1",
@@ -10317,9 +10698,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 2,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -10332,7 +10713,7 @@
                 "docId": "d_2",
                 "path": "lab/2026-02-notes.md",
                 "deleted": false,
-                "currentRev": "r_19",
+                "currentRev": "r_21",
                 "versions": [
                   {
                     "rev": "r_2",
@@ -10345,9 +10726,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_19",
+                    "rev": "r_21",
                     "seq": 2,
-                    "commit": "c_19",
+                    "commit": "c_21",
                     "ts": "2026-09-27T00:00:00.000Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -10362,8 +10743,8 @@
           {
             "digests": [
               {
-                "commit": "c_18",
-                "seq": 19,
+                "commit": "c_20",
+                "seq": 21,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -10376,8 +10757,8 @@
                 ]
               },
               {
-                "commit": "c_19",
-                "seq": 20,
+                "commit": "c_21",
+                "seq": 22,
                 "ts": "2026-09-27T00:00:00.000Z",
                 "origin": "api",
                 "actor": "agent:mcp",
@@ -10390,9 +10771,9 @@
                 ]
               }
             ],
-            "cursor": 20,
+            "cursor": 22,
             "truncated": false,
-            "head": 20
+            "head": 22
           }
         ]
       }
@@ -10468,7 +10849,7 @@
                 "docId": "d_14",
                 "path": "substances/salt.md",
                 "deleted": false,
-                "currentRev": "r_18",
+                "currentRev": "r_20",
                 "versions": [
                   {
                     "rev": "r_14",
@@ -10481,9 +10862,9 @@
                     "isCurrent": false
                   },
                   {
-                    "rev": "r_18",
+                    "rev": "r_20",
                     "seq": 2,
-                    "commit": "c_18",
+                    "commit": "c_20",
                     "ts": "2026-10-01T12:34:56.789Z",
                     "origin": "api",
                     "actor": "agent:mcp",
@@ -10753,6 +11134,34 @@
                 "commit": "c_18",
                 "seq": 19,
                 "ts": "2026-10-01T12:34:56.789Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_18",
+                    "path": "timeline/kickoff.md",
+                    "contentHash": "be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141"
+                  }
+                ]
+              },
+              {
+                "commit": "c_19",
+                "seq": 20,
+                "ts": "2026-10-01T12:34:56.789Z",
+                "origin": "observed",
+                "actor": null,
+                "revisions": [
+                  {
+                    "doc": "d_19",
+                    "path": "timeline/review.md",
+                    "contentHash": "291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701"
+                  }
+                ]
+              },
+              {
+                "commit": "c_20",
+                "seq": 21,
+                "ts": "2026-10-01T12:34:56.789Z",
                 "origin": "api",
                 "actor": "agent:mcp",
                 "revisions": [
@@ -10764,9 +11173,9 @@
                 ]
               }
             ],
-            "cursor": 19,
+            "cursor": 21,
             "truncated": false,
-            "head": 19
+            "head": 21
           },
           {
             "items": [
@@ -10803,8 +11212,8 @@
             "prefix": "",
             "depth": 1,
             "total": {
-              "docs": 18,
-              "blocks": 314
+              "docs": 20,
+              "blocks": 327
             },
             "entries": [
               {
@@ -10848,6 +11257,13 @@
                 "docs": 2,
                 "blocks": 25,
                 "ts": "2026-10-01T12:34:56.789Z"
+              },
+              {
+                "path": "timeline/",
+                "kind": "dir",
+                "docs": 2,
+                "blocks": 13,
+                "ts": "2026-10-01T12:34:56.789Z"
               }
             ],
             "truncated": false,
@@ -10855,8 +11271,8 @@
           },
           [
             {
-              "commitId": "c_18",
-              "seq": 19,
+              "commitId": "c_20",
+              "seq": 21,
               "ts": "2026-10-01T12:34:56.789Z",
               "origin": "api",
               "kind": "edited",

@@ -13,9 +13,9 @@ from <target> where <filter>
 prints as `<id>  <locator>` — a stable id paired with a readable locator. (Ids
 are minted per ingest, so yours will differ from the ones shown.)
 
-> Every block on this page is run for real against the alchemy corpus — eighteen
-> interlinked notes on substances, processes, practitioners, texts, and lab
-> work. See [getting-started.md](../getting-started.md) for what that corpus is.
+> Every block on this page is run for real against the alchemy corpus — twenty
+> interlinked notes on substances, processes, practitioners, texts, lab
+> work and two timeline milestones. See [getting-started.md](../getting-started.md) for what that corpus is.
 
 ## Filter on frontmatter
 
@@ -127,6 +127,7 @@ d_m67jwv8  processes/magnum-opus.md
 d_1rren8z  substances/philosophers-stone.md
 d_prj3j7a  substances/prima-materia.md
 d_f7w5k26  texts/mutus-liber.md
+d_3n5zn8a  timeline/review.md
 ```
 
 ## Combine terms

@@ -142,6 +142,16 @@ edges:  (the authored link graph as rows — one per open edge)
     has_anchor()              block carries an authored ^ref
     parent_type() == "x"      parent block's type (must be compared)
     child_count() > 0         number of direct children (must be compared)
+  refs(x)              the live documents a property's document references name:
+                       x is a string, a list or absent; each "/a/b.md", "a/b.md"
+                       or "d_…" element resolves to that doc's row (paths match
+                       $path after one leading "/" is stripped); dangling and
+                       non-string elements are dropped. Yields docs rows, so it is
+                       a source, a receiver or a follow destination:
+                       follow refs(before), refs(after) walks a timeline both ways.
+  A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
+                       (filter_invalid). \`follow before\` over a list of paths
+                       reaches the STRINGS — write \`follow refs(before)\`.
 
 ## Nested queries & consumers
 
@@ -238,6 +248,8 @@ text()/where prune the candidate set; only order by reweights.
   from docs select owner_id, owner: $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }
   from blocks where type == "task" && !checked && under_heading("Launch") && doc.layer == "working"
   from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")
+  select $path, $depth from docs where $path == "timeline/review.md" follow refs(before), refs(after)
+  select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
   from edges where dst_kind == "external" select $dst_uri
   $repo.docs count { where layer == "canon" }

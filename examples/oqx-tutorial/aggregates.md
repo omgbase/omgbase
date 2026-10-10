@@ -9,7 +9,7 @@ matching set instead of listing rows. `count` yields a number:
 
 ```console
 $ omg query '$repo.docs count { }'
-18
+20
 $ omg query '$repo.docs count { where type == "substance" }'
 5
 ```

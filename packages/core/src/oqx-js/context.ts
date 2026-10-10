@@ -563,6 +563,33 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     return jattr(r, "key") === leaf || jattr(r, "key") === key;
   };
 
+  // ---- refs(x): document references held in a property (spec/surface §1.3, 1.5)
+  // `x` is a string, a list, or absent; every string element that names a live
+  // document of this repo — a doc id (`d_…`), a repo-root-absolute path
+  // (`/a/b.md`) or a bare repo-relative path (`a/b.md`) — resolves to that
+  // document's row; anything else (a dangling reference, a non-string element)
+  // is dropped. Order preserved, duplicates kept. Each element is one indexed
+  // lookup under the root scan's guards and columns (`sql/scan.ts`), so the rows
+  // are indistinguishable from scanned ones and the docs root is never read.
+  const refDoc = (ref: string): Row | undefined => {
+    const g = guards("docs", repoId);
+    const path = ref.startsWith("/") ? ref.slice(1) : ref;
+    const byPath = one(`SELECT ${COLS.docs} FROM ${FROM.docs} WHERE ${g.sql} AND d.path = ?`, ...g.params, path);
+    if (byPath) return tag(byPath, "docs");
+    if (!ref.startsWith("d_")) return undefined;
+    return tag(one(`SELECT ${COLS.docs} FROM ${FROM.docs} WHERE ${g.sql} AND d.doc_id = ?`, ...g.params, ref), "docs");
+  };
+  const refs = (x: unknown): Row[] => {
+    const items = x == null ? [] : Array.isArray(x) ? x : [x];
+    const out: Row[] = [];
+    for (const item of items) {
+      if (typeof item !== "string") continue;
+      const row = refDoc(item);
+      if (row) out.push(row);
+    }
+    return out;
+  };
+
   // Store indexes by (target, path) — one object, one set of prepared statements,
   // for the whole run (`null`: the path is not indexable).
   const indexes = new Map<string, RowIndex | null>();
@@ -620,6 +647,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
         const p = args[0] as PropSourceRef;
         return { handled: true, value: docPropEntries(p.docId, p.source) };
       }
+      if (name === "refs") return { handled: true, value: refs(args[0]) };
       if (name === "range") {
         const s = args[0];
         if (semantics.isRange(s)) return { handled: true, value: s };

@@ -66,7 +66,7 @@ export interface QueryCase {
 
 export interface QuerySuite {
   suite: string;
-  /** path → exact source, the 18 alchemy documents (regenerated from disk) */
+  /** path → exact source, the 20 alchemy documents (regenerated from disk) */
   corpus: Record<string, string>;
   cases: QueryCase[];
 }
@@ -139,7 +139,7 @@ export interface InteropCase {
 
 export interface InteropSuite {
   suite: string;
-  /** path → exact source, the 18 alchemy documents (regenerated from disk) */
+  /** path → exact source, the 20 alchemy documents (regenerated from disk) */
   corpus: Record<string, string>;
   cases: InteropCase[];
 }

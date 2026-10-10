@@ -240,6 +240,26 @@ nested/correlated scopes:
   `under_heading("s")` (case-insensitive), `within(doc|path|glob)`,
   `under_kind(type[, name])`, `yaml_path("a.b")`, `json_pointer("#/a/b")`,
   `has_edge(pred[, target])`, `has_anchor()`, `parent_type()`, `child_count()`.
+- **`refs(x)`** (surface 1.5) — the live documents named by the **document
+  references** a property holds: `x` is a string, a list, or absent; each
+  string element that is a repo-root-absolute path (`/timeline/kickoff.md`), a
+  bare repo-relative path (`timeline/kickoff.md`) or a doc id (`d_…`) resolves
+  to that document's row (paths match `$path` after stripping one leading
+  `/`; an id is tried when no path matches); anything that resolves to
+  nothing is dropped — no phantom, no error. Order preserved, duplicates kept.
+  Index-backed (one lookup per element, never a scan). It yields docs rows, so
+  it works wherever rows do: `follow refs(before), refs(after)` walks a
+  timeline both ways; `select prior: refs(before) collect { $path }` projects
+  the referenced documents; `where refs(see_also) exists { where type == "x" }`
+  filters on them; `from refs("/index.md")` is a source.
+- **A hit is a store row.** Every top-level row of a `collect`/`first`/`single`
+  query must be a document, block, node or edge; `follow before` over a list of
+  paths reaches the list's *strings* and fails loud — `filter_invalid: a hit
+  must be a document, block, node or edge row — the query reached a string
+  ("/timeline/kickoff.md"); to follow document references held in a property
+  use refs(<field>)`. Write `follow refs(before)`. A `values` projection
+  returns no hits and is exempt; nested blocks are unaffected (their rows are
+  values, see §7).
 
 ## 6. `follow`, the edge graph, and `distinct`
 - **Traversal:** `follow <dest>, …` recurses over one or more type-preserving

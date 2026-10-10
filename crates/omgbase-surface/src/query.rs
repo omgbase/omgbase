@@ -18,16 +18,19 @@ use oqx::walk::{Clause, Node, VisitContext, Visitor, transform, visit};
 use oqx::{Consumer, Engine, InMemoryEngine, Value, build, resolve_aliases};
 use serde_json::{Map, Value as Json};
 
-use crate::context::{SemanticVec, StoreContext, render_row_values};
+use crate::context::{SemanticVec, StoreContext, render_row_values, target_of};
 use crate::cursor::{decode_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
-use crate::planner::SqlitePlanner;
+use crate::planner::{SqlitePlanner, root_target};
 
 /// The default page size.
 pub const DEFAULT_LIMIT: usize = 50;
 
 /// Row-scoped domain functions: authored as free calls that implicitly
-/// reference the current row; rewritten to `$self.fn(…)`.
+/// reference the current row; rewritten to `$self.fn(…)`. `refs(x)` is not
+/// one: it reads no row, so it stays a free function of the context. The
+/// planner treats every call alike (declined by the translator, flagged by
+/// `expr_may_raise`), `has_edge` and `refs` included.
 const ROW_FNS: [&str; 12] = [
     "text",
     "semantic",
@@ -45,6 +48,16 @@ const ROW_FNS: [&str; 12] = [
 
 const ID_KEY: &str = "__oqx_id";
 const PATH_KEY: &str = "__oqx_path";
+/// A hit is a store row (§1.4, 1.5). A bare root scan's rows are store rows by
+/// construction; a `follow` destination (`follow before` over a frontmatter
+/// list of paths), a `from E` re-projection or any other source can reach a
+/// scalar, which the injected `$id`/`$path` reads would render as the junk hit
+/// `{ id: "undefined", path: "" }`. For those queries the row itself is
+/// projected too (`$it`) under this key and [`to_hit`] fails the query when it
+/// is not a row. Only then: the clone of every projected row is a real cost
+/// here, and a root scan cannot need it. A `values` projection returns no
+/// hits, so it is exempt. Same rule as the reference's `SELF_ITEM`.
+const SELF_KEY: &str = "__oqx_self";
 /// The reserved key a top-level `values` projection's single item is renamed
 /// to, so it rides through id/path injection, paging and distinct as an
 /// ordinary field and is peeled off at the end.
@@ -218,14 +231,57 @@ fn mentions_outside_source(q: &Query, name: &str) -> bool {
 
 // ---- hits ----------------------------------------------------------------------------
 
+/// Whether the engine's top-level rows can be anything but store rows: a
+/// `follow` (a destination may be a property's value), a `from E`
+/// re-projection, or a source that is not a bare root scan.
+fn may_reach_non_rows(q: &Query) -> bool {
+    q.follow.is_some() || !q.from.is_empty() || root_target(&q.source).is_none()
+}
+
+/// The reference's `describeValue`: what a non-row hit was, for the error.
+fn describe_value(v: &Value) -> String {
+    match v {
+        Value::Undefined | Value::Null => "an absent value".to_owned(),
+        Value::Str(s) => format!(
+            "a string ({})",
+            serde_json::to_string(s).unwrap_or_default()
+        ),
+        Value::Number(_) => format!("a number ({v})"),
+        Value::Bool(b) => format!("a boolean ({b})"),
+        Value::Array(_) => "an array".to_owned(),
+        Value::Range(_) => "a range".to_owned(),
+        Value::Object(_) => "an object".to_owned(),
+    }
+}
+
+fn not_a_store_row(v: &Value) -> SurfaceError {
+    SurfaceError::filter_invalid(
+        format!(
+            "a hit must be a document, block, node or edge row — the query reached {}; to follow document references held in a property use refs(<field>)",
+            describe_value(v)
+        ),
+        "OQX",
+    )
+}
+
 /// A projected row as a hit: `{ id, path, ...rest }` with the injected
 /// columns peeled off (JavaScript's `String()` on the id, `""` for an absent
 /// path). The projection's values are rendered per §1.4 "rows as values": a
 /// store row nested in the result (an empty-projection `collect { }` and
-/// friends) becomes `{ id, path }`.
-fn to_hit(row: Value) -> Value {
-    let Value::Object(o) = render_row_values(row) else {
-        return Value::Object(oqx::Object::new());
+/// friends) becomes `{ id, path }`. When the row itself was projected under
+/// [`SELF_KEY`] and is not a store row, the query fails (§1.4: a hit is a
+/// store row).
+fn to_hit(row: Value) -> Result<Value> {
+    let Value::Object(mut o) = row else {
+        return Ok(Value::Object(oqx::Object::new()));
+    };
+    if let Some(me) = o.remove(SELF_KEY) {
+        if target_of(&me).is_none() {
+            return Err(not_a_store_row(&me));
+        }
+    }
+    let Value::Object(o) = render_row_values(Value::Object(o)) else {
+        return Ok(Value::Object(oqx::Object::new()));
     };
     let mut id = Value::Undefined;
     let mut path = Value::Undefined;
@@ -250,7 +306,7 @@ fn to_hit(row: Value) -> Value {
     for (k, v) in rest {
         hit.insert(k, v);
     }
-    Value::Object(hit)
+    Ok(Value::Object(hit))
 }
 
 fn hit_str(hit: &Value, key: &str) -> String {
@@ -485,6 +541,9 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     let id_item = build::field(ID_KEY, build::ident("$id"));
     let path_item = build::field(PATH_KEY, build::ident("$path"));
     let mut select = vec![id_item, path_item];
+    if !top_values && may_reach_non_rows(&parsed) {
+        select.push(build::field(SELF_KEY, build::ident("$it")));
+    }
     select.extend(user_select);
     // On the collect path the query's own limit/offset is taken out of the
     // engine query and applied after the runner's distinct; first/single keep
@@ -521,7 +580,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
                 }
             }
             Some(r) => {
-                let hit = to_hit(r);
+                let hit = to_hit(r)?;
                 if top_values {
                     out.values = Some(vec![value_of(&hit).to_canonical_json()]);
                 } else {
@@ -545,7 +604,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     // scan that projects thousands of rows shapes fifty.
     let eager = top_distinct || cursor.is_some();
     if eager {
-        rows = rows.into_iter().map(to_hit).collect();
+        rows = rows.into_iter().map(to_hit).collect::<Result<_>>()?;
     }
     if top_distinct {
         rows = dedup_hits_by_projection(rows);
@@ -575,7 +634,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     let truncated = page.len() > cap;
     page.truncate(cap);
     if !eager {
-        page = page.into_iter().map(to_hit).collect();
+        page = page.into_iter().map(to_hit).collect::<Result<_>>()?;
     }
     let cursor = if truncated && !custom {
         page.last()
@@ -643,7 +702,7 @@ mod tests {
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Null);
         o.insert("layer", Value::Str("canon".into()));
-        let hit = to_hit(Value::Object(o));
+        let hit = to_hit(Value::Object(o)).unwrap();
         let ho = hit.as_object().unwrap();
         assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path", "layer"]);
         assert_eq!(ho.get("path"), Some(&Value::Str(String::new())));
@@ -652,10 +711,47 @@ mod tests {
         o.insert(ID_KEY, Value::Str("d_1".into()));
         o.insert(PATH_KEY, Value::Str("a.md".into()));
         o.insert("id", Value::Number(7.0));
-        let hit = to_hit(Value::Object(o));
+        let hit = to_hit(Value::Object(o)).unwrap();
         let ho = hit.as_object().unwrap();
         assert_eq!(ho.keys().collect::<Vec<_>>(), ["id", "path"]);
         assert_eq!(ho.get("id"), Some(&Value::Number(7.0)));
+    }
+
+    #[test]
+    fn a_hit_that_is_not_a_store_row_fails_the_query() {
+        // The row itself rides under SELF_KEY when the query can reach a
+        // non-row; a string there is the `follow before` shape (§1.4, 1.5).
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Undefined);
+        o.insert(PATH_KEY, Value::Undefined);
+        o.insert(SELF_KEY, Value::Str("/timeline/kickoff.md".into()));
+        let e = to_hit(Value::Object(o)).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert_eq!(
+            e.message,
+            "a hit must be a document, block, node or edge row — the query reached a string (\"/timeline/kickoff.md\"); to follow document references held in a property use refs(<field>)"
+        );
+        // A tagged row under SELF_KEY passes and the key is peeled off.
+        let mut row = oqx::Object::new();
+        row.insert("doc_id", Value::Str("d_1".into()));
+        row.insert("path", Value::Str("a.md".into()));
+        let row = crate::context::tag_row(row, crate::context::Target::Docs);
+        let mut o = oqx::Object::new();
+        o.insert(ID_KEY, Value::Str("d_1".into()));
+        o.insert(PATH_KEY, Value::Str("a.md".into()));
+        o.insert(SELF_KEY, row);
+        let hit = to_hit(Value::Object(o)).unwrap();
+        assert_eq!(
+            hit.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["id", "path"]
+        );
+        // Only queries that can reach a non-row project the row itself.
+        let parse = |s: &str| oqx::parse_string(s).unwrap();
+        assert!(!may_reach_non_rows(&parse(
+            "from docs where layer == \"canon\""
+        )));
+        assert!(may_reach_non_rows(&parse("from docs follow before")));
+        assert!(may_reach_non_rows(&parse("refs(\"/index.md\") first { }")));
     }
 
     #[test]

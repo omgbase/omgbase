@@ -18,7 +18,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -36,11 +36,11 @@
           "argv": [
             "log",
             "--cursor",
-            "18"
+            "20"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#19 api      api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\n"
+            "stdout": "#21 api      api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\n"
           }
         }
       ]
@@ -63,7 +63,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -97,7 +97,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -115,7 +115,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_316\n",
+            "stdout": "b_329\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -188,7 +188,7 @@
           "argv": [
             "log",
             "--cursor",
-            "18"
+            "20"
           ],
           "pin_stderr": true,
           "expect": {
@@ -216,7 +216,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"diffs\":{\"texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Zeroth\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"committed\":false}\n"
+        "stdout": "{\"results\":[{\"ids\":[\"b_328\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"diffs\":{\"texts/mutus-liber.md\":{\"before\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\",\"after\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Zeroth\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}},\"committed\":false}\n"
       }
     },
     {
@@ -233,7 +233,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+        "stdout": "{\"results\":[{\"ids\":[\"b_328\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
       }
     },
     {
@@ -294,7 +294,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -360,7 +360,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -395,7 +395,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -1167,7 +1167,7 @@
           "argv": [
             "log",
             "--cursor",
-            "18"
+            "20"
           ],
           "expect": {
             "exit": 0,
@@ -1205,7 +1205,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_314\n",
+            "stdout": "b_327\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -1237,7 +1237,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_314\n",
+            "stdout": "b_327\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -1318,7 +1318,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_303\nb_314\n",
+            "stdout": "b_303\nb_327\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -1329,7 +1329,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silen\nb_314 p    t book,\" La Rochelle, 1677: fifteen engraved plates and essentially…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
+            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_303 p    The \"silen\nb_327 p    t book,\" La Rochelle, 1677: fifteen engraved plates and essentially…\nb_304 p    length:: fifteen plates attributed_to:: altus\nb_305 h2   Contents  §\nb_306 p    The plates show a couple gathering dew in sheets stretched…\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\nb_308 h2   Status of these notes  §\nb_309 p    Draft. I have not worked through the plates in order…\nb_310 ul\n  b_311 li   ☐ Obtain a facsimile with plate numbering\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\n  b_313 li   ☐ Decide whether the dew operation is literal\n"
           }
         },
         {
@@ -1360,7 +1360,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_303\nb_314\nb_315\n",
+            "stdout": "b_303\nb_327\nb_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -1830,12 +1830,12 @@
           "argv": [
             "log",
             "--cursor",
-            "18",
+            "20",
             "--ids"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "c_18\n"
+            "stdout": "c_20\n"
           }
         },
         {
@@ -1845,7 +1845,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#19 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+            "stdout": "#21 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
           }
         }
       ]
@@ -2013,7 +2013,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#19 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
+            "stdout": "#21 edited (1.00) api 2026-09-27T00:00:00.000Z\n#18 inserted observed 2026-09-27T00:00:00.000Z\n"
           }
         }
       ]
@@ -2230,7 +2230,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "b_315\n",
+            "stdout": "b_328\n",
             "stderr": "  ok committed · 1 document touched\n"
           }
         },
@@ -2248,12 +2248,12 @@
           "argv": [
             "log",
             "--cursor",
-            "18",
+            "20",
             "--json"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"95eef8f1ce839377679f504647efa5234911e873e7f32c704016029ea4734ca0\"}]}],\"cursor\":19,\"truncated\":false,\"head\":19}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited, 1 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"95eef8f1ce839377679f504647efa5234911e873e7f32c704016029ea4734ca0\"}]}],\"cursor\":21,\"truncated\":false,\"head\":21}\n"
           }
         }
       ]
@@ -2339,7 +2339,7 @@
       "stdin": "{\"ops\":[{\"op\":\"insert\",\"to\":{\"parent\":\"b_310\",\"at\":\"end\"},\"markdown\":\"- [ ] One\"},{\"op\":\"update\",\"block\":\"$0.ids[0]\",\"attrs\":{\"checked\":true}}]}",
       "expect": {
         "exit": 0,
-        "stdout": "{\"results\":[{\"ids\":[\"b_315\"]},{\"ids\":[\"b_315\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
+        "stdout": "{\"results\":[{\"ids\":[\"b_328\"]},{\"ids\":[\"b_328\"]}],\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"committed\":true}\n"
       }
     },
     {

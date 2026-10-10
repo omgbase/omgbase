@@ -535,7 +535,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "d_18\n",
+            "stdout": "d_20\n",
             "stderr": "  ok created q.md\n"
           }
         },
@@ -547,7 +547,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"text\":\"b_314 h1   Q  §\\nb_315 p    A fence:\\nb_316 code select $path values from docs where type == \\\"text\\\"\",\"truncated\":false}\n"
+            "stdout": "{\"text\":\"b_327 h1   Q  §\\nb_328 p    A fence:\\nb_329 code select $path values from docs where type == \\\"text\\\"\",\"truncated\":false}\n"
           }
         },
         {
@@ -574,7 +574,7 @@
         {
           "argv": [
             "run",
-            "b_316"
+            "b_329"
           ],
           "expect": {
             "exit": 0,
@@ -584,12 +584,12 @@
         {
           "argv": [
             "run",
-            "b_314"
+            "b_327"
           ],
           "expect": {
             "exit": 1,
             "stdout": "",
-            "stderr": "error[opaque_block]: block b_314 is not an omg fence\n"
+            "stderr": "error[opaque_block]: block b_327 is not an omg fence\n"
           }
         },
         {
@@ -642,7 +642,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "d_18\n",
+            "stdout": "d_20\n",
             "stderr": "  ok created q.md\n"
           }
         },
@@ -670,22 +670,22 @@
         {
           "argv": [
             "run",
-            "b_315"
+            "b_328"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "19\n"
+            "stdout": "21\n"
           }
         },
         {
           "argv": [
             "run",
-            "b_315",
+            "b_328",
             "--json"
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"count\",\"count\":19}\n"
+            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"count\",\"count\":21}\n"
           }
         }
       ]
@@ -706,7 +706,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "d_18\n",
+            "stdout": "d_20\n",
             "stderr": "  ok created q.md\n"
           }
         },

@@ -166,7 +166,7 @@ describe("surface spec fixtures (spec/surface/cases)", () => {
 
   it("every corpus-backed suite embeds the alchemy corpus exactly as it is on disk (README §6)", () => {
     const disk = readCorpusFromDisk();
-    expect(Object.keys(disk).length).toBe(18);
+    expect(Object.keys(disk).length).toBe(20);
     for (const [file, fixture] of loaded) {
       if (!carriesCorpus(suiteKind(fixture.suite))) continue;
       expect((fixture as QuerySuite).corpus, `${file}: corpus drifted from corpus/oqx/fixtures/alchemy — run SURFACE_SPEC_UPDATE=1`).toEqual(disk);

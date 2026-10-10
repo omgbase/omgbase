@@ -48,6 +48,8 @@ use oqx::{
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
+use crate::planner;
+
 /// The hidden column tagging a store row with its target.
 pub const TAG_KEY: &str = "__oqx_target";
 const REPO_TAG: &str = "$repo";
@@ -335,6 +337,60 @@ impl<'a> StoreContext<'a> {
         };
         self.scans.borrow_mut().insert(t, Rc::clone(&rows));
         Ok(rows)
+    }
+
+    /// `refs(x)` (`spec/surface` §1.3, 1.5): the live documents the document
+    /// references held in a property name. `x` is a string, a list, or absent;
+    /// every string element that names a live document of this repo — a doc
+    /// id (`d_…`), a repo-root-absolute path (`/a/b.md`) or a bare
+    /// repo-relative path (`a/b.md`) — resolves to that document's row;
+    /// anything else (a dangling reference, a non-string element) is dropped.
+    /// Order preserved, duplicates kept. Port of the reference's `refs`.
+    fn refs(&self, x: &Value) -> oqx::Result<Value> {
+        let items: Vec<&Value> = match x {
+            Value::Undefined | Value::Null => Vec::new(),
+            Value::Array(a) => a.iter().collect(),
+            other => vec![other],
+        };
+        let mut out = Vec::new();
+        for item in items {
+            if let Value::Str(s) = item
+                && let Some(row) = self.ref_doc(s)?
+            {
+                out.push(row);
+            }
+        }
+        Ok(Value::Array(out))
+    }
+
+    /// One document reference resolved: by `path` after stripping one leading
+    /// `/`, else — when it begins with `d_` — by `doc_id`. Each is one indexed
+    /// lookup under the root scan's guards, columns and order
+    /// ([`crate::planner`]), so the row is indistinguishable from a scanned one
+    /// and the docs root is never read.
+    fn ref_doc(&self, r: &str) -> oqx::Result<Option<Value>> {
+        let t = Target::Docs;
+        let lookup = |column: &str, value: &str| -> oqx::Result<Option<Value>> {
+            let sql = format!(
+                "SELECT {} FROM {} WHERE {} AND d.{column} = ? ORDER BY {}",
+                planner::columns(t),
+                planner::from_clause(t),
+                planner::guards(t),
+                planner::order_clause(t)
+            );
+            let params = [
+                SqlValue::Text(self.repo_id.clone()),
+                SqlValue::Text(value.to_owned()),
+            ];
+            Ok(self.one(&sql, &params)?.map(|row| tag_row(row, t)))
+        };
+        if let Some(row) = lookup("path", r.strip_prefix('/').unwrap_or(r))? {
+            return Ok(Some(row));
+        }
+        if r.starts_with("d_") {
+            return lookup("doc_id", r);
+        }
+        Ok(None)
     }
 
     /// The tagged rows of one store-index probe statement (`store_index`).
@@ -1375,6 +1431,9 @@ impl DataContext for StoreContext<'_> {
     fn call_function(&self, name: &str, args: &[Value]) -> Option<oqx::Result<Value>> {
         // `size($repo.docs)`, `list(…)`, `has(…)`: the engine has materialized a
         // lazy scan argument into its rows before the call.
+        if name == "refs" {
+            return Some(self.refs(args.first().unwrap_or(&Value::Undefined)));
+        }
         if name == "range" {
             let x = args.first().unwrap_or(&Value::Undefined);
             return Some(Ok(match x {

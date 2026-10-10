@@ -4,11 +4,11 @@
 // keyset pagination, count/exists scalars). Same signature + shape as the former
 // in-tree compiler, so every caller and the corpus are unchanged.
 
-import { parse, PlannedEngine, InMemoryEngine, OqxError, resolveAliases, transform, visit, build } from "@omgbase/oqx";
+import { parse, PlannedEngine, InMemoryEngine, OqxError, resolveAliases, transform, visit, build, semantics } from "@omgbase/oqx";
 import type { Engine } from "@omgbase/oqx";
 import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
-import { SQLiteQueryPlanner } from "./planner.js";
+import { SQLiteQueryPlanner, rootTarget } from "./planner.js";
 import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
@@ -54,6 +54,10 @@ export interface OqxOptions {
 // implicitly reference the current row. `@omgbase/oqx` free functions receive no
 // row, so we rewrite them to `$self.fn(…)` (a method whose receiver is the row)
 // — one `transform` over the AST (spec/oqx/AST.md §5), every block included.
+// `refs(x)` is NOT here: it reads no row (its argument is the value), so it stays
+// a free function served by the context's `callFunction`. The planner treats
+// every call alike (translate declines it; `exprMayRaise` flags it), `has_edge`
+// and `refs` included.
 const ROW_FNS = new Set([
   "text", "semantic", "under", "under_heading", "within", "under_kind",
   "yaml_path", "json_pointer", "has_edge", "has_anchor", "child_count", "parent_type",
@@ -92,6 +96,36 @@ export function collectSemanticPhrases(source: string): string[] {
 
 const ID_ITEM: SelectItem = build.field("__oqx_id", build.ident("$id"));
 const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("$path"));
+// A hit is a store row (spec/surface §1.4, 1.5). The engine's top-level rows
+// are store rows by construction when the source is a bare root scan and
+// nothing re-projects them; a `follow` destination (`follow before` over a
+// frontmatter list of paths), a `from E` re-projection or any other source can
+// reach a scalar, which the injected `$id`/`$path` reads would render as the
+// junk hit `{ id: "undefined", path: "" }`. For those queries the row itself is
+// projected too (`$it`), and `toHit` fails the query when it is not a row. Only
+// then: a row clone per hit is free here but not in the Rust port, and a root
+// scan cannot need it. A `values` projection returns no hits, so it is exempt
+// (`from docs from tags select $it values` is a flat list of tags).
+const SELF_KEY = "__oqx_self";
+const SELF_ITEM: SelectItem = build.field(SELF_KEY, build.ident("$it"));
+function mayReachNonRows(q: Query): boolean {
+  return q.follow !== null || q.from.length > 0 || rootTarget(q.source) === null;
+}
+function describeValue(v: unknown): string {
+  if (v === null || v === undefined) return "an absent value";
+  if (typeof v === "string") return `a string (${JSON.stringify(v)})`;
+  if (typeof v === "number") return `a number (${String(v)})`;
+  if (typeof v === "boolean") return `a boolean (${String(v)})`;
+  if (Array.isArray(v)) return "an array";
+  if (semantics.isRange(v)) return "a range";
+  return "an object";
+}
+function notAStoreRow(v: unknown): FilterInvalid {
+  return new FilterInvalid(
+    `a hit must be a document, block, node or edge row — the query reached ${describeValue(v)}; to follow document references held in a property use refs(<field>)`,
+    "OQX",
+  );
+}
 // The reserved key a top-level `values` projection's single item is renamed to,
 // so it rides through id/path injection, keyset paging, and distinct as an
 // ordinary record field and is peeled off at the end.
@@ -120,7 +154,8 @@ function renderValue(v: unknown): unknown {
 
 function toHit(row: unknown): OqxHit {
   const o = row as Record<string, unknown>;
-  const { __oqx_id, __oqx_path, ...rest } = o;
+  const { __oqx_id, __oqx_path, __oqx_self, ...rest } = o;
+  if (SELF_KEY in o && !rowRef(__oqx_self)) throw notAStoreRow(__oqx_self);
   return { id: String(__oqx_id), path: String(__oqx_path ?? ""), ...(renderValue(rest) as Record<string, unknown>) };
 }
 
@@ -196,7 +231,8 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   // engine's offset-aware cap is exactly right for them.
   const { limit: topLimit, offset: topOffset } = parsed;
   const base = consumer === "collect" ? { ...parsed, limit: null, offset: null } : parsed;
-  const q: Query = { ...base, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...userSelect] };
+  const guard = !topValues && mayReachNonRows(parsed) ? [SELF_ITEM] : [];
+  const q: Query = { ...base, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...guard, ...userSelect] };
   const res = engine.run(q, []);
 
   if (consumer === "first" || consumer === "single") {

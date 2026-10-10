@@ -182,9 +182,27 @@ otherwise). Fields: `predicate`, `provenance`, `dst_kind`, `anchor`,
 
 ### 1.3 Functions
 
-Free: the `spec/oqx` builtins, plus `entries(<source handle>)` (§1.2) and
+Free: the `spec/oqx` builtins, plus `entries(<source handle>)` (§1.2),
 `range(x)` — a range passes through, a string is parsed per
-`spec/properties` §2.2 into a range value, anything else is null. Row
+`spec/properties` §2.2 into a range value, anything else is null — and
+**`refs(x)`** (1.5): the live documents the **document references** held in
+a property name. `x` is a string, a list, or absent (anything else is an
+empty list); each **string** element resolves to the live document of the
+current repo whose `path` equals the element after stripping one leading `/`
+— a repo-root-absolute path (`/a/b.md`) or a bare repo-relative path
+(`a/b.md`) — or, when no path matches and the element begins with `d_`, the
+live document with that id; an element that resolves to nothing (a dangling
+reference, a non-string element) is **dropped** — no phantom row, no error.
+Order is preserved and duplicates are kept (a `follow` step's union dedups
+them anyway). The rows are docs rows exactly as the root scan constructs them,
+each found by one indexed lookup under the scan's guards (`docs` is never read
+whole), so `refs(x)` serves wherever rows do: a source (`from refs("/a.md")`),
+a directive receiver (`refs(see_also) collect { $path }`, `refs(before) exists
+{ where $path == "x" }`), a `follow` destination (`follow refs(before),
+refs(after)` walks a timeline both ways), a nested `from` (`from
+refs(^before)`), or a value (`size(refs(before))`; as a `values` item its rows
+render `{ id, path }`, §1.4). It is the remedy for `follow before` over a
+list of paths, which reaches the list's strings (§1.4). Row
 functions (`text`, `semantic`, `under`, `under_heading`, `within`,
 `under_kind`, `yaml_path`, `json_pointer`, `has_edge`, `has_anchor`,
 `child_count`, `parent_type`) are written as free calls and evaluated
@@ -221,6 +239,22 @@ cursor, consumer, count?, exists?, none?, values? }`:
 - `exists` / `count` / `none` consumers return the scalar and no hits.
 - otherwise every hit is `{ id, path, ...projection }` (`$id`/`$path`
   injected); `first`/`single` return zero or one hit, no cursor.
+- **A hit is a store row (1.5).** Every top-level row of a `collect`, `first`
+  or `single` query must be a docs, blocks, nodes or edges row; a query whose
+  rows reach anything else — `follow before` over a frontmatter list of paths
+  (the strings), a block re-projected to scalars (`$repo.docs collect { select
+  $it from tags }`) — fails as `filter_invalid` with the message `` a hit must
+  be a document, block, node or edge row — the query reached a string
+  ("/timeline/kickoff.md"); to follow document references held in a property
+  use refs(<field>) `` (the value's kind and, for a string, number or boolean,
+  its value: `a string ("…")`, `a number (3)`, `a boolean (true)`, `an absent
+  value`, `an array`, `an object`, `a range`). Before 1.5 such a row rendered
+  as the junk hit `{ id: "undefined", path: "" }` (§9). The rule is about
+  hits only: a `values` projection returns no hits, so its rows may be
+  scalars (`follow before` with `select $it values` yields the seed as `{ id,
+  path }` and then the raw strings; `query-refs::values-mode-over-scalar-rows-is-exempt`),
+  and a nested block's rows are never hits — rows as values below is unchanged
+  (`tags collect { }` is the tag strings).
 - `collect`: a top-level `select distinct` dedups hits by the user
   projection (first wins), the query's own `limit`/`offset` (integer
   literals only, else `filter_invalid`) bound the set after that, then the
@@ -406,7 +440,9 @@ verbs later.
 ## 6. Fixtures
 
 - **corpus-backed query cases**: a suite carries `corpus: { "<path>":
-  "<source>", … }` (the reference's alchemy repository, 18 documents, copied
+  "<source>", … }` (the reference's alchemy repository, 20 documents since
+  1.5 — the two `timeline/` milestones carry the `before` / `after` /
+  `see_also` document references `refs(x)` resolves — copied
   from `packages/core/corpus/oqx/fixtures/alchemy`; a test keeps the
   embedded copy equal to the files) observed into a fresh repo
   (`spec/store` §9.4 minter, one `observe` batch in bytewise path order at
@@ -417,7 +453,7 @@ verbs later.
   case both planned and in-memory and fails on any difference. Suites:
   `query-docs.json`, `query-blocks.json`, `query-nodes.json`,
   `query-edges.json`, `query-follow.json`, `query-functions.json`,
-  `query-errors.json`.
+  `query-refs.json`, `query-errors.json`.
 - **`reads.json`**: observation scripts (`spec/store` §9.4) with `read`
   steps (a `version` read is recorded with every leaf value replaced by its
   type name — `"<string>"`, `"<number>"`, `"<null>"`, `"<boolean>"` — since the
@@ -590,6 +626,13 @@ both and runs both harnesses.
   `expect { parent_children_hash? }` now (§4; `reads::workspace-writes` sends a
   matching and a stale one — the stale one is `stale_expectation` with the
   current hash).
+- **Fixed (1.5) — a non-row hit rendered as `{ id: "undefined", path: "" }`.**
+  The runner injected `$id`/`$path` into every projection and `String()`-ed
+  the results, so a `follow` over a property holding a list of paths (the
+  strings, per `spec/oqx` §3) produced one junk hit per string with no hint of
+  what happened. §1.4 now makes a hit a store row and fails the query
+  otherwise, naming the value reached and `refs(<field>)` as the remedy
+  (`query-errors::hit-not-a-row-follow-property`).
 - **Pinned — `semantic()` without a provider is `filter_invalid` at the
   runner** ("needs an embedding provider"); only the `query` tool pre-checks
   and reports `semantic_unavailable`.
@@ -700,6 +743,29 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-09, surface 1.5: **a hit is a store row, and `refs(x)` resolves
+  document references held in properties** (§1.3, §1.4). The Lit graph demo
+  surfaced it: a timeline note's `before: [/timeline/kickoff.md]` is a list of
+  strings, so `… follow before` walked the strings (OQX coerces them to scalar
+  rows, correctly) and the runner — which injects `$id`/`$path` reads every
+  hit — rendered each as `{ id: "undefined", path: "" }`: silent junk in place
+  of a document. Two changes. A top-level row that is not a docs/blocks/nodes/
+  edges row now fails the query (`filter_invalid`, the message names the
+  value and the remedy; `query-errors::hit-not-a-row-*`); only queries whose
+  rows can be anything but store rows — a `follow`, a `from` re-projection, a
+  source that is not a bare root scan — carry the check (both runners project
+  the row itself alongside `$id`/`$path` for those, so a plain scan pays
+  nothing), `values` mode is exempt (no hits), nested rows are unaffected
+  (§1.4 rows as values). And a free function `refs(x)` resolves a string or
+  list of document references — `/`-rooted paths, bare paths, `d_` ids — to
+  live docs rows by indexed lookup, dropping what resolves to nothing, usable
+  wherever rows are (`follow refs(before), refs(after)`; `query-refs.json`,
+  17 cases; one §7 read). The alchemy corpus grew by two `timeline/`
+  documents (after `texts/` bytewise, so every existing id is unchanged);
+  21 existing aggregate cases, the §7 expectations (minted ids shift by the
+  two documents' revisions, blocks and edges) and `spec/cli`'s alchemy
+  workspace changed accordingly. Migration: `follow before` → `follow
+  refs(before)`. A function added and a junk result made an error: a minor.
 - 2026-10-09, surface 1.4 patch: the query binding follows `spec/oqx` 0.15 —
   the current item is **`$it`** and `$value` is no longer an intrinsic (no
   synonym). `$key` and the recursion intrinsics are unchanged, as is the

@@ -114,8 +114,9 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
 }
 
 /// The root collection a query scans, if it is a bare `docs|blocks|nodes|edges`
-/// or `$repo.<target>` source (else `None` — not a pushable shape).
-fn root_target(source: &Expr) -> Option<Target> {
+/// or `$repo.<target>` source (else `None` — not a pushable shape). The runner
+/// asks too: a bare root scan's rows are store rows by construction.
+pub(crate) fn root_target(source: &Expr) -> Option<Target> {
     match source {
         Expr::Ident { name, .. } => Target::parse(name),
         Expr::Member { recv, name, .. } => match &**recv {

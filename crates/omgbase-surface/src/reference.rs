@@ -45,7 +45,17 @@ score (docs/blocks; needs a provider). Blocks only: under(id),
 under_heading(s), within(doc id | path glob), under_kind(type[, name]),
 yaml_path(p), json_pointer(p), has_anchor(), child_count(), parent_type().
 has_edge(pred[, dst]) on docs and blocks. Free: list, size, has, entries,
-range. Methods: contains, startsWith, endsWith, matches, size, lower, upper.
+range, refs. Methods: contains, startsWith, endsWith, matches, size, lower,
+upper.
+
+refs(x) — the live documents a property's document references name: x is a
+string, a list or absent; each "/a/b.md", "a/b.md" or "d_…" element resolves
+to that doc's row (paths match $path after one leading "/" is stripped);
+dangling and non-string elements are dropped. Yields docs rows, so it is a
+source, a receiver or a follow destination: `follow refs(before), refs(after)`
+walks a timeline both ways. A HIT IS A STORE ROW: a top-level row that is not
+a doc/block/node/edge fails (filter_invalid) — `follow before` over a list of
+paths reaches the STRINGS; write `follow refs(before)`.
 
 ## Directives
 

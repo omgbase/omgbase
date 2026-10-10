@@ -56,7 +56,7 @@ pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query, rewrit
 pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.4";
+pub const SPEC_VERSION: &str = "1.5";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

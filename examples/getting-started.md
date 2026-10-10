@@ -37,6 +37,8 @@ $ find . -type f | sort
 ./substances/sulphur.md
 ./texts/emerald-tablet.md
 ./texts/mutus-liber.md
+./timeline/kickoff.md
+./timeline/review.md
 ```
 
 ## `omg init` — create the workspace
@@ -66,7 +68,7 @@ the "ingest N files?" prompt.
 
 ```console
 $ omg source add . -y --repo alchemy
-  * alchemy ← /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  18 files
+  * alchemy ← /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  20 files
 ```
 
 ## Orient yourself
@@ -76,13 +78,13 @@ counts the engine derived:
 
 ```console
 $ omg repos
-  * alchemy  /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  18 docs  314 blocks
+  * alchemy  /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v  20 docs  327 blocks
 ```
 
 `omg status` is the "where am I" command: the same counts plus sync/watch state.
-Here 64 edges were extracted from the links between documents, everything is
+Here 69 edges were extracted from the links between documents, everything is
 converged (the files match the database), no watcher is running (reads still
-stay fresh — see below), and 58 blocks are long enough to embed but have no
+stay fresh — see below), and 60 blocks are long enough to embed but have no
 vector yet — the embedding queue, which stays queued until a provider is
 configured and `omg embed drain` runs (semantic search is optional).
 
@@ -91,10 +93,10 @@ $ omg status
   omgbase  >  alchemy
   /private/var/folders/m7/8x2p9q1n4t7b/T/tmp.k9Xq2ZaR7v
   ----------------------------------------
-  [D] docs  18            watcher o none
-  [B] blocks  314         synced  ok converged
-  * commits  18           queue   58 queued
-  > edges  64             commit# 18
+  [D] docs  20            watcher o none
+  [B] blocks  327         synced  ok converged
+  * commits  20           queue   60 queued
+  > edges  69             commit# 20
 ```
 
 ## Read a document
@@ -121,6 +123,8 @@ substances/salt.md                  20 blocks  0s ago
 substances/sulphur.md                8 blocks  0s ago
 texts/emerald-tablet.md             13 blocks  0s ago
 texts/mutus-liber.md                12 blocks  0s ago
+timeline/kickoff.md                  7 blocks  0s ago
+timeline/review.md                   6 blocks  0s ago
 ```
 
 `omg cat` prints a document's exact bytes — frontmatter and all — so it composes

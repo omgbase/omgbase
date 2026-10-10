@@ -1141,15 +1141,15 @@ scratch path, canonicalized — macOS's temp dir is a symlink):
 - `empty` — `<tmp>` is a workspace with no repo: `init --yes --no-embedder`
   (equivalently: create `<tmp>/.omgbase/omgbase.db` with the schema).
 - `alchemy` — the alchemy corpus (`packages/core/corpus/oqx/fixtures/alchemy`,
-  18 documents, the same files `spec/surface` §6 embeds) copied to
+  20 documents, the same files `spec/surface` §6 embeds) copied to
   `<tmp>/vault`, then `init --yes --no-embedder` and
   `source add vault --repo fixture -y` under the seams — equivalently, with
   an engine's library: `ensure_repo("fixture", <tmp>/vault)` (`spec/sync` §2:
   repo `rp_0`, source `fixture-fs` = `src_0`), one freshness sweep at the
   spec clock (the walk is depth-first with each directory's entries in
-  bytewise order, `spec/sync` §4.2, so `d_0` is `index.md`, `d_17`
-  `texts/mutus-liber.md`, `b_0`–`b_313` the blocks in document pre-order,
-  `c_0`–`c_17` the commits, `cp_0` the checkpoint), then `rebuild_file_stats`.
+  bytewise order, `spec/sync` §4.2, so `d_0` is `index.md`, `d_19`
+  `timeline/review.md`, `b_0`–`b_326` the blocks in document pre-order,
+  `c_0`–`c_19` the commits, `cp_0` the checkpoint), then `rebuild_file_stats`.
   A harness may build this once and copy it per case, in which case it must
   re-record `file_stats` after the copy (a copy loses nanosecond mtimes and
   the first sweep would otherwise re-hash every file — the ids do not
@@ -1488,8 +1488,9 @@ the reference's, so the allowlist starts empty. `embedder_failed`'s
 `reason` is the OS's spawn error text (Node: `spawn … ENOENT`) — a port's
 will differ; no fixture pins it. Both engines must implement the `mintId`
 redraw of `spec/store` 13.5 for the ids in `mutate.json` to agree (the
-bootstrap leaves `b_0`–`b_313` in use; a fresh process's first block mint is
-`b_314`).
+bootstrap leaves `b_0`–`b_326` in use; a fresh process's first block mint is
+`b_327`; before surface 1.5 grew the corpus by two `timeline/` documents it
+was `b_314`).
 
 - **Fixed — a write on a sourceless repo printed the library's untyped
   message** (`error[repo_not_found]: Error: mutation requires a rootPath or

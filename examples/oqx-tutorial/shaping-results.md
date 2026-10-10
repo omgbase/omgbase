@@ -119,6 +119,7 @@ practitioner
 process
 substance
 text
+milestone
 ```
 
 ## `limit` / `offset` — bound the set in the query

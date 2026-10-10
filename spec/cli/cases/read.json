@@ -10,7 +10,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  * fixture  <workspace>/vault  18 docs  314 blocks\n"
+        "stdout": "  * fixture  <workspace>/vault  20 docs  327 blocks\n"
       }
     },
     {
@@ -59,7 +59,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  omgbase  >  fixture\n  <workspace>/vault\n  ----------------------------------------\n  [D] docs  18            watcher o none\n  [B] blocks  314         synced  ok converged\n  * commits  18           queue   58 queued\n  > edges  64             commit# 18\n"
+        "stdout": "  omgbase  >  fixture\n  <workspace>/vault\n  ----------------------------------------\n  [D] docs  20            watcher o none\n  [B] blocks  327         synced  ok converged\n  * commits  20           queue   60 queued\n  > edges  69             commit# 20\n"
       }
     },
     {
@@ -71,7 +71,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
+        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -84,7 +84,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\n"
+        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n"
       }
     },
     {
@@ -96,7 +96,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\n"
+        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\ntimeline/kickoff.md                  7 blocks  0s ago\ntimeline/review.md                   6 blocks  0s ago\n"
       }
     },
     {
@@ -120,7 +120,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "index.md\nlab/2026-01-notes.md\nlab/2026-02-notes.md\npractitioners/jabir-ibn-hayyan.md\npractitioners/maria-prophetissa.md\npractitioners/newton.md\npractitioners/paracelsus.md\nprocesses/calcination.md\nprocesses/coagulation.md\nprocesses/dissolution.md\nprocesses/magnum-opus.md\nsubstances/mercury.md\nsubstances/philosophers-stone.md\nsubstances/prima-materia.md\nsubstances/salt.md\nsubstances/sulphur.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "index.md\nlab/2026-01-notes.md\nlab/2026-02-notes.md\npractitioners/jabir-ibn-hayyan.md\npractitioners/maria-prophetissa.md\npractitioners/newton.md\npractitioners/paracelsus.md\nprocesses/calcination.md\nprocesses/coagulation.md\nprocesses/dissolution.md\nprocesses/magnum-opus.md\nsubstances/mercury.md\nsubstances/philosophers-stone.md\nsubstances/prima-materia.md\nsubstances/salt.md\nsubstances/sulphur.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\ntimeline/kickoff.md\ntimeline/review.md\n"
       }
     },
     {

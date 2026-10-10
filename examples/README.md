@@ -43,8 +43,9 @@ Not a tutorial, but also here: **[graph-ui/](./graph-ui/README.md)** — a Lit d
 
 ## The corpus
 
-Every session works over the **alchemy corpus** — eighteen interlinked Markdown
-documents (substances, processes, practitioners, texts, and dated lab notes)
+Every session works over the **alchemy corpus** — twenty interlinked Markdown
+documents (substances, processes, practitioners, texts, dated lab notes and two
+timeline milestones whose frontmatter holds document references)
 that live at `packages/core/corpus/oqx/fixtures/alchemy`. Each file is
 **self-contained**: it pulls in a shared bootstrap with a recital `include`
 directive —

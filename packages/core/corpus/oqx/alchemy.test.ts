@@ -67,7 +67,7 @@ const SUBSTANCES = [
 
 describe("alchemy corpus — shape", () => {
   it("ingests the whole repository", () => {
-    expect(paths("from docs").length).toBe(18);
+    expect(paths("from docs").length).toBe(20);
   });
 
   it("projects the node kinds the queries below rely on", () => {
@@ -116,6 +116,7 @@ describe("alchemy corpus — scalar filtering (CEL reused inside OQX)", () => {
       "substances/philosophers-stone.md",
       "substances/prima-materia.md",
       "texts/mutus-liber.md",
+      "timeline/review.md",
     ]);
   });
 
@@ -523,7 +524,7 @@ describe("alchemy corpus — the fixed clause order (ADR-020)", () => {
     expect(() => paths('from docs type == "lab-note" && nodes exists { kind == "md:task" && !attrs.checked }')).toThrow(/no implicit where/);
     // …and the footgun is closed: `from docs count` no longer projects a field called count
     expect(() => hits("from docs count")).toThrow(/`<collection> count { … }`/);
-    expect(hits("$repo.docs count { }").count).toBe(18);
+    expect(hits("$repo.docs count { }").count).toBe(20);
   });
 
   it("clauses out of the fixed order fail naming the order", () => {
@@ -866,7 +867,7 @@ describe("alchemy corpus — order by", () => {
 describe("alchemy corpus — top-level consumers ($repo.<target> <op>)", () => {
   it("repo.count folds the whole matching set to a number", () => {
     // 18 documents total; 5 are substances.
-    expect(hits("$repo.docs count { }").count).toBe(18);
+    expect(hits("$repo.docs count { }").count).toBe(20);
     expect(hits('$repo.docs count { where type == "substance" }').count).toBe(5);
   });
 
@@ -912,9 +913,9 @@ describe("alchemy corpus — pagination", () => {
       expect(pages).toBeLessThan(10); // guard against a non-advancing cursor
     } while (cursor);
 
-    expect(pages).toBe(4); // 5 + 5 + 5 + 3
-    expect(seen.length).toBe(18);
-    expect(new Set(seen).size).toBe(18); // no duplicates across pages
+    expect(pages).toBe(4); // 5 + 5 + 5 + 5
+    expect(seen.length).toBe(20);
+    expect(new Set(seen).size).toBe(20); // no duplicates across pages
     expect(seen).toEqual([...seen].sort()); // path order preserved
   });
 
@@ -1178,7 +1179,7 @@ describe("alchemy corpus — $it and values (scalar collections)", () => {
     expect(p1.truncated).toBe(true);
     const p2 = oqxRun(store, repoId, 'select $path values from docs', { limit: 100, cursor: p1.cursor! });
     expect([...(p1.values as string[]), ...(p2.values as string[])]).toEqual(all);
-    expect(all.length).toBe(18);
+    expect(all.length).toBe(20);
   });
 
   it("first/single with values yield zero-or-one bare value", () => {

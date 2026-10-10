@@ -289,7 +289,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "  @t = 18 rows\nusage: bad reference '@t[x]' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@t..' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@' (use @N, @_, @name, optional [i] and .field)\n"
+        "stderr": "  @t = 20 rows\nusage: bad reference '@t[x]' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@t..' (use @N, @_, @name, optional [i] and .field)\nusage: bad reference '@' (use @N, @_, @name, optional [i] and .field)\n"
       }
     },
     {
@@ -362,7 +362,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "b_315\n- [ ] From the shell\nb_315\n- [x] From the shell\n",
+        "stdout": "b_328\n- [ ] From the shell\nb_328\n- [x] From the shell\n",
         "stderr": "  1 row — address with @1..@1\n  ok committed · 1 document touched\n  1 row — address with @1..@1\n  ok committed · 1 document touched\n"
       }
     },
@@ -435,7 +435,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":18,\"blocks\":314,\"commits\":18,\"openEdges\":64,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":18,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":58}\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n  2 rows — address with @1..@2\n"
       }
     },
@@ -466,7 +466,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "P> texts/emerald-tablet.md\ntexts/mutus-liber.md\nP> 18\nP> ",
+        "stdout": "P> texts/emerald-tablet.md\ntexts/mutus-liber.md\nP> 20\nP> ",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },

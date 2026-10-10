@@ -1035,7 +1035,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\n"
+        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\ntimeline/kickoff.md                  7 blocks  0s ago\ntimeline/review.md                   6 blocks  0s ago\n"
       }
     },
     {
@@ -1213,7 +1213,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  * fixture  <workspace>/vault  18 docs  314 blocks\n  * other    <workspace>/other  1 docs   2 blocks\n"
+            "stdout": "  * fixture  <workspace>/vault  20 docs  327 blocks\n  * other    <workspace>/other  1 docs   2 blocks\n"
           }
         },
         {

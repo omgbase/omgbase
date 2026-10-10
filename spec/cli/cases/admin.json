@@ -624,7 +624,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  * fixture  (no source)  18 docs  314 blocks\n"
+            "stdout": "  * fixture  (no source)  20 docs  327 blocks\n"
           }
         },
         {
@@ -732,7 +732,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  * fixture  (no source)  18 docs  314 blocks\n"
+            "stdout": "  * fixture  (no source)  20 docs  327 blocks\n"
           }
         },
         {
@@ -1106,7 +1106,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+        "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=292 leaves=292\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
       }
     },
     {
@@ -1124,7 +1124,7 @@
           },
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":17,\"candidates\":0,\"changed\":true}\n"
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[],\"suppressed\":[],\"deleted\":[\"texts/mutus-liber.md\"],\"conflicted\":[],\"scanned\":19,\"candidates\":0,\"changed\":true}\n"
           }
         },
         {
@@ -1143,7 +1143,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=270 leaves=270\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
+            "stdout": "{\"ok\":true,\"checks\":[{\"name\":\"convergence\",\"ok\":true,\"detail\":\"0 unconverged\"},{\"name\":\"fts rows == live leaf blocks\",\"ok\":true,\"detail\":\"fts=281 leaves=281\"},{\"name\":\"no dangling current_rev\",\"ok\":true,\"detail\":\"0 dangling\"},{\"name\":\"sqlite integrity\",\"ok\":true,\"detail\":\"ok\"}]}\n"
           }
         },
         {

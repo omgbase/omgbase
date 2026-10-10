@@ -50,7 +50,7 @@ const SKIP_MISSING = process.env.OMGBASE_INTEROP === "skip";
 const EPS = 1e-9;
 
 // Generous: a peer is a cold process (Node + better-sqlite3, or a debug Rust
-// binary) observing 18 documents and answering dozens of calls.
+// binary) observing 20 documents and answering dozens of calls.
 const CONNECT_MS = 60_000;
 const CALL_MS = 60_000;
 const EXIT_MS = 15_000;
