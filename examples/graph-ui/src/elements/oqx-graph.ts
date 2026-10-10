@@ -17,6 +17,16 @@
 //                            `to` the document it refers to; `present` says whether the edge
 //                            is drawn right now. The element never writes anything itself.
 //               graph-state  detail: GraphStateDetail (edges drawn, cycles, layout kind, busy, error)
+//
+// Edit mode: while the modifier is held (tracked on window: keydown/keyup, and
+// mousemove's metaKey/ctrlKey so a key pressed before the pointer arrived counts;
+// reset on blur / hidden) with a selection and an armed relationship, nodes get a
+// crosshair, the selected node a "source" ring, the banner says what a click
+// does, and hovering another node draws a PREVIEW of the toggle (lib/preview.ts
+// decides: add = accent dashed marching line, remove = the drawn edge overlaid in
+// the danger colour with a "remove" label). Hovering a writable edge with the
+// modifier previews its removal too. Pending (in-flight) edges keep their own,
+// static dashed style; a small legend names the three while in edit mode.
 
 import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -27,6 +37,7 @@ import { sequenceEdges } from "../lib/edges.ts";
 import { ownerFor } from "../lib/edit.ts";
 import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, type Point, type Positioned } from "../lib/layout-elk.ts";
 import { forceLayout } from "../lib/layout-force.ts";
+import { isDrawn, midpoint, modified, modifierName, previewFor, type EdgePreview } from "../lib/preview.ts";
 import type { View } from "../lib/view.ts";
 import { relationColor } from "./oqx-relationship-picker.ts";
 
@@ -63,8 +74,6 @@ export function edgeKey(e: Pick<GraphEdge, "src" | "dst" | "rel">): string {
   return `${e.rel} ${e.src}→${e.dst}`;
 }
 
-const modified = (e: MouseEvent): boolean => e.metaKey || e.ctrlKey;
-
 const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward" } };
 const NODE_H = 30;
 const elk = new ELK();
@@ -93,16 +102,43 @@ export class OqxGraph extends LitElement {
     .edge.removing { stroke-dasharray: 3 5; opacity: 0.35; }
     .hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; }
     g.edge-g.writable:hover .edge { stroke-width: 2.6; opacity: 1; }
-    svg.arming .node, svg.editing g.edge-g.writable { cursor: crosshair; }
+    .node { cursor: pointer; }
+    /* edit mode: the modifier is held with a selection and an armed relationship */
+    svg.editmode .node, svg.modifier g.edge-g.writable { cursor: crosshair; }
     .node.target rect { stroke: #ef6c00; stroke-dasharray: 5 3; }
+    .node.source rect { stroke: #1565c0; stroke-width: 2; }
+    .node.source .ring { fill: none; stroke: #1565c0; stroke-width: 1.5; stroke-dasharray: 4 3; opacity: 0.8; animation: march 0.8s linear infinite; }
+    /* the preview: what a ⌘-click would do right now (never confused with pending —
+       different colours, thicker, marching + pulsing, labelled) */
+    .edge.preview { stroke-width: 2.6; stroke-dasharray: 8 6; opacity: 1; pointer-events: none; animation: march 0.5s linear infinite, pulse 1.1s ease-in-out infinite; }
+    .edge.preview.add { stroke: #1565c0; }
+    .edge.preview.remove { stroke: #c62828; }
+    .preview-label { font: 600 11px system-ui, sans-serif; pointer-events: none; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; animation: pulse 1.1s ease-in-out infinite; }
+    .preview-label.add { fill: #1565c0; }
+    .preview-label.remove { fill: #c62828; }
+    @keyframes march { to { stroke-dashoffset: -28; } }
+    @keyframes pulse { 50% { opacity: 0.45; } }
+    @media (prefers-reduced-motion: reduce) {
+      .edge.preview, .preview-label, .node.source .ring { animation: none; }
+    }
     .banner { position: absolute; left: 8px; right: 8px; top: 8px; padding: 6px 10px; border-radius: 4px; background: #fff3e0; color: #7a4a00; border: 1px solid #ffcc80; }
     .banner code { font-family: ui-monospace, monospace; }
     .banner.edit { top: auto; bottom: 40px; background: #fff8e1; color: #6d4c00; border-color: #ffe082; }
+    .banner.edit.active { background: #e3f2fd; color: #0d47a1; border-color: #64b5f6; font-weight: 500; }
+    .banner.edit.active.remove { background: #ffebee; color: #b71c1c; border-color: #ef9a9a; }
+    .banner.edit.hint { background: rgba(255,255,255,0.92); color: #5a6270; border-color: #e3e6ec; font-weight: normal; }
+    .banner kbd { font: inherit; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; opacity: 0.8; }
     .overlay { position: absolute; right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,0.9); color: #5a6270; border: 1px solid #e3e6ec; }
     .error { position: absolute; left: 8px; right: 8px; bottom: 8px; padding: 6px 10px; border-radius: 4px; background: #fff5f5; color: #c62828; border: 1px solid #ef9a9a; }
     .empty { position: absolute; inset: 0; display: grid; place-items: center; color: #7a8290; }
     .legend { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 10px; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,0.9); border: 1px solid #e3e6ec; }
     .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
+    /* the three edge styles, bottom-right while in edit mode (it takes the overlay's corner) */
+    .legend.styles { left: auto; right: 8px; color: #5a6270; }
+    .legend.styles i { height: 0; border-top: 2px dashed; }
+    .legend.styles .add i { border-color: #1565c0; }
+    .legend.styles .remove i { border-color: #c62828; }
+    .legend.styles .pending i { border-color: #8a94a6; border-top-style: dotted; }
   `;
 
   @property({ attribute: false }) nodes: GraphNode[] = [];
@@ -121,11 +157,48 @@ export class OqxGraph extends LitElement {
   @state() private busy = false;
   @state() private error: string | null = null;
   @state() private hovered: string | null = null;
+  @state() private hoveredEdge: GraphEdge | null = null;
+  /** The platform modifier (⌘ / Ctrl) is held right now — see `trackModifier`. */
+  @state() private modifier = false;
   @state() private transform = { x: 0, y: 0, k: 1 };
 
   private generation = 0;
   private edgeCache = new Map<string, Promise<GraphEdge[]>>();
   private drag: { x: number; y: number; tx: number; ty: number } | null = null;
+
+  // ---- the modifier ---------------------------------------------------------------
+
+  /** keydown/keyup carry the modifier state of every key event (a Meta keyup has
+   * metaKey false), and mousemove carries it too, so a key pressed before the
+   * pointer entered the window registers on the first move. */
+  private readonly trackModifier = (e: KeyboardEvent | MouseEvent): void => {
+    const held = modified(e);
+    if (held !== this.modifier) this.modifier = held;
+  };
+
+  /** Keyups are lost when the window loses focus or the tab is hidden. */
+  private readonly resetModifier = (): void => {
+    if (document.visibilityState === "hidden" || !document.hasFocus()) this.modifier = false;
+  };
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    window.addEventListener("keydown", this.trackModifier);
+    window.addEventListener("keyup", this.trackModifier);
+    window.addEventListener("mousemove", this.trackModifier);
+    window.addEventListener("blur", this.resetModifier);
+    document.addEventListener("visibilitychange", this.resetModifier);
+  }
+
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    window.removeEventListener("keydown", this.trackModifier);
+    window.removeEventListener("keyup", this.trackModifier);
+    window.removeEventListener("mousemove", this.trackModifier);
+    window.removeEventListener("blur", this.resetModifier);
+    document.removeEventListener("visibilitychange", this.resetModifier);
+    this.modifier = false;
+  }
 
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
     if (changed.has("nodes") || changed.has("view") || changed.has("candidates") || changed.has("fetchEdges")) {
@@ -238,7 +311,21 @@ export class OqxGraph extends LitElement {
   }
 
   private isDrawn(rel: string, src: string, dst: string): boolean {
-    return this.edges.some((e) => e.rel === rel && e.src === src && e.dst === dst);
+    return isDrawn(this.edges, rel, src, dst);
+  }
+
+  /** The edge a ⌘-click would toggle right now, if the pointer is over one. */
+  private preview(): EdgePreview<GraphNode> | null {
+    return previewFor({
+      modifier: this.modifier,
+      nodes: this.nodes,
+      selected: this.selected,
+      armed: this.armed,
+      hovered: this.hovered,
+      hoveredEdge: this.hoveredEdge,
+      writable: this.writable,
+      edges: this.edges,
+    });
   }
 
   private emitToggle(detail: EdgeToggleDetail): void {
@@ -307,15 +394,21 @@ export class OqxGraph extends LitElement {
     const previews = this.pending.filter((p) => p.action === "add" && !drawnKeys.has(edgeKey(p)));
     const rels = [...new Set([...this.edges, ...previews].map((e) => e.rel))];
     const arming = this.armed !== null && this.selected !== null;
+    // Edit mode: the modifier is held with a selection and an armed relationship.
+    const editMode = this.modifier && arming;
+    const preview = this.preview();
+    const mod = modifierName();
     const { x, y, k } = this.transform;
     return html`
       ${this.nodes.length === 0 ? html`<div class="empty">no rows</div>` : nothing}
-      <svg class="${arming ? "arming" : ""} ${this.writable.length ? "editing" : ""}"
+      <svg class="${arming ? "arming" : ""} ${this.writable.length ? "editing" : ""} ${editMode ? "editmode" : ""} ${this.modifier ? "modifier" : ""}"
         @wheel=${this.onWheel} @pointerdown=${this.onPointerDown} @pointermove=${this.onPointerMove} @pointerup=${this.onPointerUp} @pointerleave=${this.onPointerUp}
         viewBox="0 0 ${Math.max(pos?.width ?? 0, 10)} ${Math.max(pos?.height ?? 0, 10)}" preserveAspectRatio="xMidYMid meet">
         <defs>
           ${rels.map((rel) => svg`<marker id="arrow-${cssId(rel)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill=${relationColor(this.candidates, rel)}></path></marker>`)}
+          ${preview ? svg`<marker id="arrow-preview-${preview.kind}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill=${preview.kind === "add" ? "#1565c0" : "#c62828"}></path></marker>` : nothing}
         </defs>
         <g transform="translate(${x} ${y}) scale(${k})">
           ${pos ? this.edges.map((e) => {
@@ -327,12 +420,13 @@ export class OqxGraph extends LitElement {
             const removing = pendingByKey.get(edgeKey(e)) === "remove";
             const writable = this.writable.includes(e.rel);
             const points = pts.map((p) => `${p.x},${p.y}`).join(" ");
-            return svg`<g class="edge-g ${writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}>
+            return svg`<g class="edge-g ${writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
+              @pointerenter=${() => { this.hoveredEdge = e; }} @pointerleave=${() => { if (this.hoveredEdge === e) this.hoveredEdge = null; }}>
               <polyline class="edge ${e.rel === axis ? "axis" : ""} ${lit ? "lit" : ""} ${dim ? "dim" : ""} ${removing ? "removing" : ""}"
                 points=${points} stroke=${relationColor(this.candidates, e.rel)}
                 marker-end="url(#arrow-${cssId(e.rel)})"></polyline>
               ${writable ? svg`<polyline class="hit" points=${points}></polyline>` : nothing}
-              <title>${e.src} -[${e.rel}]-> ${e.dst}${removing ? " (removing…)" : writable ? " — ⌘-click to remove" : ""}</title>
+              <title>${e.src} -[${e.rel}]-> ${e.dst}${removing ? " (removing…)" : writable ? ` — ${mod}-click to remove` : ""}</title>
             </g>`;
           }) : nothing}
           ${pos ? previews.map((e) => {
@@ -346,30 +440,79 @@ export class OqxGraph extends LitElement {
             if (!p) return nothing;
             const dim = focus !== null && focus !== n.path && !touching.has(n.path);
             const target = arming && this.hovered === n.path && n.path !== this.selected;
-            return svg`<g class="node ${this.selected === n.path ? "selected" : ""} ${inCycle.has(n.path) ? "cycle" : ""} ${dim && !target ? "dim" : ""} ${target ? "target" : ""}"
+            const source = editMode && this.selected === n.path;
+            return svg`<g class="node ${this.selected === n.path ? "selected" : ""} ${inCycle.has(n.path) ? "cycle" : ""} ${dim && !target ? "dim" : ""} ${target ? "target" : ""} ${source ? "source" : ""}"
               transform="translate(${p.x} ${p.y})"
               @pointerenter=${() => { this.hovered = n.path; }} @pointerleave=${() => { this.hovered = null; }}
               @click=${(ev: MouseEvent) => this.onNodeClick(ev, n)}>
+              ${source ? svg`<rect class="ring" x="-4" y="-4" width=${p.width + 8} height=${p.height + 8} rx="8"></rect>` : nothing}
               <rect width=${p.width} height=${p.height}></rect>
               <text x=${p.width / 2} y=${p.height / 2 + 4} text-anchor="middle">${truncate(n.label, p.width)}</text>
-              <title>${n.path}${arming && n.path !== this.selected ? ` — ⌘-click to toggle ${this.armed!.name} with ${this.selected}` : ""}</title>
+              <title>${n.path}${arming && n.path !== this.selected ? ` — ${mod}-click to toggle ${this.armed!.name} with ${this.selected}` : ""}</title>
             </g>`;
           }) : nothing}
+          ${pos && preview ? this.renderPreview(preview, pos, axis) : nothing}
         </g>
       </svg>
-      ${this.armed ? html`<div class="banner edit">
-        editing <b>${this.armed.name}</b>${this.selected
-          ? html`: ⌘-click (Ctrl-click) another node to toggle it with <code>${this.selected}</code>${this.armed.defaults.direction === "backward" ? " — the clicked node's field changes" : " — the selected node's field changes"}`
-          : ": click a node to select it first"}
-      </div>` : nothing}
+      ${this.renderBanner(preview, editMode, mod)}
       ${this.cycles.length > 0 ? html`<div class="banner">
         <b>${axis}</b> is not a strict order among the shown documents — ${this.cycles.length === 1 ? "a cycle" : `${this.cycles.length} cycles`} (elk broke it to lay the rest out):
         ${this.cycles.map((c) => html` <code>${c.join(" -> ")}</code>`)}
       </div>` : nothing}
       ${this.error ? html`<div class="error">${this.error}</div>` : nothing}
       ${rels.length > 0 ? html`<div class="legend">${rels.map((r) => html`<span><i style="background:${relationColor(this.candidates, r)}"></i>${r}${r === axis ? " (axis)" : ""}</span>`)}</div>` : nothing}
-      <div class="overlay">${this.busy ? "laying out…" : `${this.nodes.length} nodes · ${this.edges.length} edges · ${this.layoutKind ?? "—"}`}</div>
+      ${editMode || preview
+        ? html`<div class="legend styles" title="edge styles while editing"><span class="add"><i></i>will add</span><span class="remove"><i></i>will remove</span><span class="pending"><i></i>writing…</span></div>`
+        : html`<div class="overlay">${this.busy ? "laying out…" : `${this.nodes.length} nodes · ${this.edges.length} edges · ${this.layoutKind ?? "—"}`}</div>`}
     `;
+  }
+
+  /** The preview edge: for an add, a fresh segment owner → target; for a remove,
+   * the drawn edge's own route overlaid in the danger colour. Labelled at the midpoint. */
+  private renderPreview(preview: EdgePreview<GraphNode>, pos: Positioned, axis: string | null) {
+    const e: GraphEdge = { src: preview.owner.path, dst: preview.target.path, rel: preview.rel };
+    const pts = (preview.kind === "remove" && e.rel === axis ? pos.routes.get(elkEdgeId(e)) : undefined) ?? this.segment(e);
+    if (!pts) return nothing;
+    const mid = midpoint(pts);
+    const label = preview.kind === "add" ? `+ ${preview.rel}` : `remove ${preview.rel}`;
+    return svg`<g class="preview-g" data-preview=${preview.kind} data-owner=${e.src} data-target=${e.dst} data-rel=${e.rel}>
+      <polyline class="edge preview ${preview.kind}" points=${pts.map((p) => `${p.x},${p.y}`).join(" ")} marker-end="url(#arrow-preview-${preview.kind})"></polyline>
+      ${mid ? svg`<text class="preview-label ${preview.kind}" x=${mid.x} y=${mid.y - 6} text-anchor="middle">${label}</text>` : nothing}
+    </g>`;
+  }
+
+  /** The edit banner, most specific first: the concrete action under the pointer;
+   * edit mode (modifier + selection + armed) saying what a click does; the
+   * modifier held with nothing to act on (a hint, not an error); the armed
+   * relationship's standing instructions. */
+  private renderBanner(preview: EdgePreview<GraphNode> | null, editMode: boolean, mod: string) {
+    if (preview) {
+      return html`<div class="banner edit active ${preview.kind}" data-banner="action">
+        <kbd>${mod}</kbd>-click to <b>${preview.kind === "add" ? "add" : "remove"}</b> <code>${preview.owner.path}</code> <b>-[${preview.rel}]-></b> <code>${preview.target.path}</code>
+        — ${preview.kind === "add" ? "writes" : "edits"} <code>${preview.rel}</code> in <code>${preview.owner.path}</code>
+      </div>`;
+    }
+    if (editMode) {
+      const a = this.armed!;
+      return html`<div class="banner edit active" data-banner="editmode">
+        <kbd>${mod}</kbd>-click a node to add or remove <code>${a.name}</code> between it and <code>${this.selected}</code>${a.defaults.direction === "backward" ? " — the clicked node's field changes" : " — the selected node's field changes"}
+      </div>`;
+    }
+    if (this.modifier && this.writable.length > 0) {
+      return html`<div class="banner edit hint" data-banner="hint">
+        <kbd>${mod}</kbd> held — ${this.armed
+          ? html`click a node to select it, then ${mod}-click another to toggle <code>${this.armed.name}</code>`
+          : "select a node and arm a relationship (the picker's edit column) to edit edges"}
+      </div>`;
+    }
+    if (this.armed) {
+      return html`<div class="banner edit" data-banner="armed">
+        editing <b>${this.armed.name}</b>${this.selected
+          ? html`: hold <kbd>${mod}</kbd> and click another node to toggle it with <code>${this.selected}</code>${this.armed.defaults.direction === "backward" ? " — the clicked node's field changes" : " — the selected node's field changes"}`
+          : ": click a node to select it first"}
+      </div>`;
+    }
+    return nothing;
   }
 }
 

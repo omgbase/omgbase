@@ -243,6 +243,11 @@ fetch — its edges are consecutive result rows.
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction } }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-graph>` | `nodes: GraphNode[]`, `view: View`, `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
 
+The graph's bottom-left legend lists the drawn relationships by colour (the
+axis marked); while the modifier is held in edit mode a second legend,
+bottom-right, names the three edge styles — *will add* (blue dashed), *will
+remove* (red dashed), *writing…* (the in-flight dashed edge).
+
 `src/app.ts` composes them with `@lit-labs/signals`:
 `source → ast → rows → candidates → view`, and the graph element does
 `view → edges → layout` with the fetcher the page hands it. Edge edits flow
@@ -259,6 +264,31 @@ a relationship (one at a time — arming also draws it); then **⌘-click**
 two: the edge is added if absent and removed if present. ⌘-clicking a drawn edge
 of a writable relationship removes it. A dashed edge shows the write in flight;
 on failure it reverts and the error is shown.
+
+**Seeing what a click will do.** The graph tracks whether the modifier is held
+(`keydown`/`keyup` on the window, the pointer's own `metaKey`/`ctrlKey` on
+every move so a key pressed before the pointer arrived still counts; reset when
+the window blurs or the tab hides). Holding it with a node selected and a
+relationship armed puts the graph in *edit mode*: nodes get a crosshair, the
+selected node a dashed blue "source" ring, and the "editing `after`" banner
+turns blue and says what a click does ("⌘-click a node to add or remove
+`after` between it and `timeline/alpha.md`"). Hovering another node then draws
+a **preview** of the toggle — the owner's edge to the referenced document, the
+right way round for the relationship's direction — in one of two styles:
+*will add* (the edge is absent: a blue dashed line, marching and pulsing,
+labelled `+ after`) or *will remove* (the edge is drawn: it is overlaid in red
+with the same pulse and a `remove after` label), and the banner names the
+concrete action and the file whose field changes. Hovering a drawn edge of a
+writable relationship with the modifier held previews its removal the same way.
+Hovering the selected node, empty canvas, or a read-only edge shows nothing,
+and ⌘-clicking empty canvas does nothing. With the modifier held but no
+selection or no armed relationship the banner shows a quiet hint instead.
+Pending (in-flight) edges keep their own static dashed style in the
+relationship's colour so they are never mistaken for a preview; while in edit
+mode a small legend in the bottom-right corner names the three (*will add*,
+*will remove*, *writing…*). Under `prefers-reduced-motion` the previews are
+static dashed lines. The decision — which edge, add or remove, who owns it — is
+`previewFor` in `src/lib/preview.ts`, unit-tested without a DOM.
 
 **Which file changes.** The edge is written where the relationship is stored —
 the document whose frontmatter field names the other one — and the inverse
