@@ -6,7 +6,7 @@
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import { SignalWatcher, computed, signal } from "@lit-labs/signals";
+import { Signal, SignalWatcher, computed, signal } from "@lit-labs/signals";
 import type { Query } from "@omgbase/oqx";
 import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
@@ -26,11 +26,17 @@ import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
 import { LEGACY_SURFACE, docArg, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
 import { defaultQuery, isDefaultQuery } from "./lib/default-query.ts";
+import { MODE_LABEL, headerLabel, modeForBridge } from "./lib/connection.ts";
+import { SAMPLE_REPO, SAMPLE_PROBE_PATH, chooseQuery, existsQuery, isStarterQuery, starterQuery, timelineStarter, type RepositoryShape } from "./lib/starter-query.ts";
+import { emptyStateText, firstWhereText, missingPathLiterals, pathLiterals, type EmptyState } from "./lib/empty-state.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
 const QUERY_KEY = "omgbase-graph-ui.query";
 const PENDING_KEY = "omgbase-graph-ui.oauth.pending";
 const EDIT_KEY = "omgbase-graph-ui.edit";
+const UI_KEY = "omgbase-graph-ui.ui";
+/** How long the query or the edge fetch may be in flight before the graph area says so. */
+const SPINNER_DELAY_MS = 300;
 
 /** How edge edits are written (persisted under EDIT_KEY). */
 interface EditSettings {
@@ -51,11 +57,29 @@ function loadEditSettings(): EditSettings {
   }
 }
 
-/** The stored query, or the default (lib/default-query.ts) in its 1.x form —
- * the server's version is not known before connecting; once it is, the
- * still-the-default swap below rewrites it for that server. A stored query
- * equal to any default (an earlier one, or the other version's) counts as the
- * default too. */
+/** The graph area's own settings (persisted under UI_KEY). */
+interface UiSettings {
+  /** Keep the previous result drawn when a query matches nothing (default: clear it,
+   * so an empty result is never mistaken for a stale graph). */
+  keepLastGraph: boolean;
+}
+
+function loadUiSettings(): UiSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_KEY) ?? "{}") as Partial<UiSettings>;
+    return { keepLastGraph: saved.keepLastGraph === true };
+  } catch {
+    return { keepLastGraph: false };
+  }
+}
+
+/** The stored query, or the sample default (lib/default-query.ts) in its 1.x
+ * form — the server's version and the repository are not known before
+ * connecting; once they are, `chooseQuery` (lib/starter-query.ts) swaps a
+ * preset for the sample default in the server's form or for the starter,
+ * never a user's edit. A stored query equal to any sample default (an earlier
+ * one, or the other version's) counts as the default too; a stored starter is
+ * kept as it is (it has no version). */
 function loadQuery(): string {
   const saved = localStorage.getItem(QUERY_KEY);
   if (saved === null || isDefaultQuery(saved)) return defaultQuery(null);
@@ -64,8 +88,6 @@ function loadQuery(): string {
 
 /** The bridge sits behind Vite's proxy at the same origin; `pnpm dev` starts both. */
 const DEFAULT_SETTINGS: McpSettings = { mode: "local", bridgeUrl: "/mcp", directUrl: "", repo: "" };
-
-const MODE_LABEL: Record<McpMode, string> = { local: "local sample", proxy: "via local proxy", direct: "direct" };
 
 function loadSettings(): McpSettings {
   try {
@@ -121,6 +143,16 @@ const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   return { id: String(row.id ?? path), path, label: title ?? unrooted(path).replace(/\.md$/, ""), row };
 }));
 const graphState = signal<GraphStateDetail | null>(null);
+/** The query is in flight (the spinner and the empty state key off it). */
+const querying = signal(false);
+/** The last run matched nothing: what to tell the user (null while rows are shown or the query failed). */
+const emptyResult = signal<EmptyState | null>(null);
+/** Set once the query or the edges have been in flight for SPINNER_DELAY_MS. */
+const showSpinner = signal(false);
+const uiSettings = signal<UiSettings>(loadUiSettings());
+/** Which repository the connection is looking at (the sample, or not) — null
+ * until probed; decides the preset query (lib/starter-query.ts). */
+const repoShape = signal<RepositoryShape | null>(null);
 
 // ---- edge editing -----------------------------------------------------------------
 
@@ -192,6 +224,11 @@ async function refreshBridge(): Promise<BridgeInfo | null> {
     const info = await fetchBridgeInfo(s.bridgeUrl);
     bridge.set(info);
     bridgeError.set(null);
+    // The mode follows the bridge: it knows whether it proxies a remote or
+    // serves the sample; a persisted label must not contradict it (direct mode
+    // is the user's choice and never touched).
+    const mode = modeForBridge(settings.get().mode, info);
+    if (mode !== settings.get().mode) settings.set({ ...settings.get(), mode });
     return info;
   } catch (e) {
     bridge.set(null);
@@ -286,6 +323,8 @@ function disconnect(): void {
   identity.set(null);
   repos.set([]);
   rows.set([]);
+  emptyResult.set(null);
+  repoShape.set(null);
   tools.set(null);
   serverSurface.set(null);
   connection.set("idle");
@@ -318,6 +357,26 @@ async function finishSignIn(): Promise<boolean> {
   }
 }
 
+/** Does `path` exist in the current repository? null when the probe failed. */
+async function docExists(path: string): Promise<boolean | null> {
+  try {
+    const r = await clientFor(serverUrl.get()).query(existsQuery(serverSurface.get(), path), { repo: settings.get().repo, limit: 1 });
+    return r.hits.length > 0;
+  } catch {
+    return null;
+  }
+}
+
+let probeGeneration = 0;
+/** Which repository this is: the sample (its slug AND its timeline start
+ * document present — one `limit 1` query) or another one. */
+async function detectRepository(repo: string): Promise<void> {
+  const gen = ++probeGeneration;
+  const hasProbeDoc = repo === SAMPLE_REPO ? await docExists(SAMPLE_PROBE_PATH) : false;
+  if (gen !== probeGeneration) return;
+  repoShape.set({ slug: repo, hasProbeDoc });
+}
+
 let runGeneration = 0;
 async function runQuery(): Promise<void> {
   const q = ast.get();
@@ -327,15 +386,28 @@ async function runQuery(): Promise<void> {
   if (!q || !s.repo || !url) return;
   const gen = ++runGeneration;
   queryError.set(null);
+  querying.set(true);
+  let empty: EmptyState | null = null;
   try {
     const result = await clientFor(url).query(text, { repo: s.repo, limit: 200 });
     if (gen !== runGeneration) return;
-    rows.set(result.hits);
     truncated.set(result.truncated);
+    // An empty result clears the graph (an empty result must not look like a
+    // stale one) unless the user asked to keep the last graph.
+    if (result.hits.length > 0 || !uiSettings.get().keepLastGraph) rows.set(result.hits);
+    empty = result.hits.length === 0 ? { where: firstWhereText(text, q), missing: [] } : null;
+    emptyResult.set(empty);
   } catch (e) {
     if (gen !== runGeneration || e instanceof AuthRequiredError) return;
     queryError.set(describeError(e));
+    emptyResult.set(null);
+  } finally {
+    if (gen === runGeneration) querying.set(false);
   }
+  if (!empty) return;
+  // Then say WHY, when the query names a document: probe its `$path == "…"` literals.
+  const missing = await missingPathLiterals(pathLiterals(q), docExists);
+  if (gen === runGeneration && missing.length > 0) emptyResult.set({ ...empty, missing });
 }
 
 /** The graph's edge source: generated OQX over the `edges` target via the `query` tool. */
@@ -435,25 +507,49 @@ void (async () => {
   effect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings.get())); });
   effect(() => { localStorage.setItem(QUERY_KEY, source.get()); });
   effect(() => { localStorage.setItem(EDIT_KEY, JSON.stringify(editSettings.get())); });
+  effect(() => { localStorage.setItem(UI_KEY, JSON.stringify(uiSettings.get())); });
   let last = "";
   effect(() => {
-    const key = `${settings.get().mode} ${serverUrl.get()}`;
+    // `local` and `proxy` are the same bridge (the bridge decides which it is),
+    // so flipping between them is not a new connection.
+    const key = `${settings.get().mode === "direct" ? "direct" : "bridge"} ${serverUrl.get()}`;
     if (key === last) return;
     last = key;
     discovery.set(null);
     serverSurface.set(null); // unknown until the new server answers `version`
     void refreshRepos();
   });
-  // The default query is written for the connected server's path form; when
-  // the version becomes known (or changes with the connection) and the editor
-  // still holds a default — never a user's edit — swap it for that server's.
-  // Nothing else is version-keyed and persisted: no cursor is ever stored.
+  // Which repository: re-probed whenever the repo or the connection changes.
+  effect(() => {
+    const repo = settings.get().repo;
+    const surface = serverSurface.get();
+    repoShape.set(null);
+    if (!repo || surface === null) return;
+    void detectRepository(repo);
+  });
+  // The preset query follows the server and the repository: the sample default
+  // in the server's path form for the sample workspace, the starter elsewhere —
+  // only while the editor holds a preset (any version's default, an earlier
+  // one, or the starter), never a user's edit. It runs when the connection or
+  // the repository changes, not on edits (`source` is read untracked): a
+  // sample query PASTED into the editor later stays, and the empty state says
+  // why it matches nothing. Nothing else is version-keyed and persisted: no
+  // cursor is ever stored.
   effect(() => {
     const surface = serverSurface.get();
-    if (surface === null) return;
-    const current = source.get();
-    const want = defaultQuery(surface);
-    if (current !== want && isDefaultQuery(current)) source.set(want);
+    const repo = repoShape.get();
+    if (surface === null || repo === null) return;
+    const want = chooseQuery(Signal.subtle.untrack(() => source.get()), surface, repo);
+    if (want !== null) source.set(want);
+  });
+  // Loading feedback: the spinner appears once the query or the edge fetch has
+  // been in flight for SPINNER_DELAY_MS, and goes the moment both settle.
+  let spinnerTimer: ReturnType<typeof setTimeout> | null = null;
+  effect(() => {
+    const busy = querying.get() || (graphState.get()?.busy ?? false);
+    if (spinnerTimer) { clearTimeout(spinnerTimer); spinnerTimer = null; }
+    if (busy) spinnerTimer = setTimeout(() => showSpinner.set(true), SPINNER_DELAY_MS);
+    else showSpinner.set(false);
   });
   effect(() => {
     const q = ast.get();
@@ -478,7 +574,26 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     main { display: grid; grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr); gap: 12px; padding: 12px 14px; min-height: 0; }
     .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
     .left h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #5a6270; margin: 0 0 6px; }
+    .graph-area { position: relative; min-height: 420px; display: grid; }
     oqx-graph { height: 100%; min-height: 420px; }
+    .try { font-size: 12px; color: #5a6270; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+    .try pre { margin: 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 4px; padding: 6px 8px; }
+    .try button { font: inherit; align-self: flex-start; }
+    .empty-state { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: min(560px, 90%); display: flex; flex-direction: column; gap: 8px; padding: 14px 18px; border-radius: 8px; background: #fff; border: 1px solid #d0d4dc; box-shadow: 0 4px 18px rgba(30, 36, 48, 0.08); color: #1e2430; font-size: 13px; }
+    .empty-state.banner { top: 8px; transform: translate(-50%, 0); max-width: min(720px, 94%); background: #fff8e1; border-color: #ffe082; color: #6d4c00; }
+    .empty-state b { font-size: 14px; }
+    .empty-state code.where { display: block; font: 12px ui-monospace, monospace; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 4px; padding: 4px 8px; white-space: pre-wrap; word-break: break-all; color: #1e2430; }
+    .empty-state .missing { color: #c62828; }
+    .empty-state .missing code { font-family: ui-monospace, monospace; }
+    .empty-state .note { color: #5a6270; font-size: 12px; }
+    .empty-state .actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 12px; color: #5a6270; }
+    .empty-state .actions button { font: inherit; }
+    .empty-state .actions label { display: inline-flex; gap: 4px; align-items: center; }
+    .loading { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: inline-flex; gap: 8px; align-items: center; padding: 5px 12px; border-radius: 16px; background: rgba(255,255,255,0.95); border: 1px solid #d0d4dc; color: #1e2430; font-size: 12px; box-shadow: 0 2px 10px rgba(30, 36, 48, 0.08); }
+    .loading .spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #c5cbd6; border-top-color: #1565c0; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .loading .spinner { animation: none; border-top-color: #c5cbd6; } }
+    footer .empty { color: #b26a00; }
     footer { padding: 6px 14px; border-top: 1px solid #e3e6ec; font-size: 12px; color: #5a6270; display: flex; gap: 14px; flex-wrap: wrap; }
     footer .err { color: #c62828; }
     footer .err code { font-family: ui-monospace, monospace; color: #1e2430; background: #f7f8fa; padding: 0 3px; border-radius: 3px; }
@@ -521,7 +636,12 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
 
   private setMode(mode: McpMode): void {
     this.urlDraft = null;
-    if (mode !== settings.get().mode) settings.set({ ...settings.get(), mode }); // the URL effect reconnects
+    const s = settings.get();
+    if (mode === s.mode) return;
+    settings.set({ ...s, mode }); // to or from direct: the URL effect reconnects
+    // local ↔ proxy is the same bridge: ask it again who it is — the mode
+    // follows its answer, so picking the wrong one of the two snaps back.
+    if (mode !== "direct" && s.mode !== "direct") void refreshRepos();
   }
 
   private connect(): void {
@@ -539,13 +659,6 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
       return html`<div class="hint warn">no bridge answered <code>/whoami</code>${err ? ` (${err})` : ""} — start it with
         <code>pnpm --filter graph-ui dev${mode === "proxy" ? " --remote &lt;mcp-url&gt;" : ""}</code></div>`;
     }
-    if (mode === "proxy" && info.mode !== "remote") {
-      return html`<div class="hint warn">the bridge is serving the local sample (<code>${info.upstream}</code>) — restart it with
-        <code>pnpm --filter graph-ui dev --remote &lt;mcp-url&gt;</code> (or <code>GRAPH_UI_REMOTE=&lt;mcp-url&gt;</code>)</div>`;
-    }
-    if (mode === "local" && info.mode !== "local") {
-      return html`<div class="hint warn">the bridge is proxying <code>${info.upstream}</code>, not the local sample — pick <i>via local proxy</i>, or restart it without <code>--remote</code></div>`;
-    }
     if (info.mode === "remote") {
       const who = info.identity;
       const a = info.auth;
@@ -557,6 +670,43 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         ${info.tokenFile ? html` · tokens in <code>${info.tokenFile}</code> (<code>pnpm --filter graph-ui logout</code> forgets them)` : nothing}</div>`;
     }
     return html`<div class="hint">bridge serving <code>${info.upstream}</code> · no sign-in</div>`;
+  }
+
+  /** Under the editor while it holds the starter: the timeline suggestion,
+   * rooted at the first shown document (or a placeholder). */
+  private renderStarterHint() {
+    if (!isStarterQuery(source.get())) return nothing;
+    const first = rows.get().find((r) => typeof r.path === "string");
+    const suggestion = timelineStarter(serverSurface.get(), typeof first?.path === "string" ? first.path : null);
+    return html`<div class="try" data-starter-hint>
+      <span>for a timeline, start from one document and walk its <code>before</code> / <code>after</code> frontmatter:</span>
+      <pre>${suggestion}</pre>
+      <button type="button" @click=${() => source.set(suggestion)}>use this query</button>
+    </div>`;
+  }
+
+  /** The graph area's empty state: a query ran and matched nothing — say so,
+   * quote its first `where`, name the path literals that are not in the
+   * repository, and offer the starter. */
+  private renderEmptyState() {
+    const es = emptyResult.get();
+    if (!es || querying.get()) return nothing;
+    const s = settings.get();
+    const t = emptyStateText(es, s.repo);
+    const ui = uiSettings.get();
+    const stale = ui.keepLastGraph && rows.get().length > 0;
+    return html`<div class="empty-state ${stale ? "banner" : ""}" role="status" data-empty-state>
+      <b>${t.title}</b>
+      ${es.where
+        ? html`<code class="where">${es.where}</code>`
+        : html`<span>the query has no <code>where</code> clause — the repository seems to hold no documents</span>`}
+      ${t.details.map((d) => html`<div class="missing" data-missing>${d}</div>`)}
+      ${stale ? html`<div class="note">the graph below is the previous result</div>` : nothing}
+      <div class="actions">
+        ${isStarterQuery(source.get()) ? nothing : html`<button type="button" data-action="starter" @click=${() => source.set(starterQuery())}>show recent documents</button>`}
+        <label><input type="checkbox" .checked=${ui.keepLastGraph} @change=${(e: Event) => uiSettings.set({ ...ui, keepLastGraph: (e.target as HTMLInputElement).checked })}> keep the last graph when a query matches nothing</label>
+      </div>
+    </div>`;
   }
 
   /** The edge-editing panel: the confirm strip, the last message, the two settings. */
@@ -601,12 +751,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const who = identity.get();
     const disc = discovery.get();
     const info = bridge.get();
+    const es = emptyResult.get();
     const shownUrl = s.mode === "direct" ? s.directUrl : s.bridgeUrl;
     const connText = conn === "ok" ? connectionMessage.get() : conn === "error" ? `error: ${connectionMessage.get()}` : conn === "sign-in" ? connectionMessage.get() : conn;
     return html`
       <header>
         <h1>omgbase graph UI</h1>
-        <span class="conn ${conn === "error" ? "error" : conn === "sign-in" ? "sign-in" : ""}">${MODE_LABEL[s.mode]} · ${s.mode === "proxy" && info?.mode === "remote" ? info.upstream : shownUrl} · ${connText}${who?.email ? ` · ${who.email}` : ""}</span>
+        <span class="conn ${conn === "error" ? "error" : conn === "sign-in" ? "sign-in" : ""}">${headerLabel(s.mode, info, shownUrl)} · ${connText}${who?.email ? ` · ${who.email}` : ""}</span>
         <span class="spacer"></span>
         <label>repo
           <select .value=${s.repo} @change=${(e: Event) => settings.set({ ...settings.get(), repo: (e.target as HTMLSelectElement).value })}>
@@ -619,6 +770,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
           <section>
             <h2>query</h2>
             <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} .serverSurface=${serverSurface.get()} @query-change=${this.onQueryChange}></oqx-query-editor>
+            ${this.renderStarterHint()}
           </section>
           <section>
             <h2>relationships</h2>
@@ -657,14 +809,18 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             </form>
           </details>
         </div>
-        <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
-          .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()}
-          @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
-          @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
-          @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
+        <div class="graph-area">
+          <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
+            .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()}
+            @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
+            @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
+            @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
+          ${this.renderEmptyState()}
+          ${showSpinner.get() ? html`<div class="loading" role="status" data-loading><span class="spinner"></span>${querying.get() ? "running the query…" : "fetching edges and laying out…"}</div>` : nothing}
+        </div>
       </main>
       <footer>
-        <span>${r.length} row${r.length === 1 ? "" : "s"}${truncated.get() ? " (truncated at 200)" : ""}</span>
+        <span class=${es ? "empty" : ""}>${r.length} row${r.length === 1 ? "" : "s"}${truncated.get() ? " (truncated at 200)" : ""}${es && !querying.get() ? ` · ${emptyStateText(es, s.repo).footer}` : ""}</span>
         <span>${cands.length} candidate${cands.length === 1 ? "" : "s"}</span>
         <span>edges: ${v.edges.length ? v.edges.join(", ") : "none"}</span>
         <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction})` : "force"}</span>

@@ -38,10 +38,16 @@
 //        list of doc paths (`*.md`, `/`-rooted) is a frontmatter relation;
 //        a name in the "looks-backward" vocabulary (`after`, `prev`, `parent`,
 //        `depends_on`, …) defaults to `backward`.
+//   4. builtin — a query WITHOUT a `follow` always gets the authored link graph
+//        to choose from: `doc.out` (links) and `doc.in` (backlinks), so a query
+//        that projects no relationship (the starter: `select $path, $title …`)
+//        still has edges to draw and relationships in the picker.
 // Edge default: every `follow` candidate is drawn; inferred path fields are drawn
-// only when the query has no `follow`; sequence candidates are never drawn by
-// default. Layout default: the first follow candidate, else the first sequence
-// key, else the first inferred field (timeline words first), else none (force).
+// only when the query has no `follow`; the builtin `doc.out` is drawn only when
+// nothing else is (no follow, no inferred field); `doc.in` and sequence
+// candidates are never drawn by default. Layout default: the first follow
+// candidate, else the first sequence key, else the first inferred field
+// (timeline words first), else none (force) — a builtin is never the axis.
 //
 // A `refs(before)` candidate IS the `before` candidate: same name, same kind,
 // merged with the inferred one from the rows, written the same way (lib/edit.ts
@@ -50,7 +56,7 @@
 import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
 
 export type Direction = "forward" | "backward";
-export type CandidateSource = "follow" | "order by" | "inferred";
+export type CandidateSource = "follow" | "order by" | "inferred" | "builtin";
 export type CandidateKind =
   | "frontmatter" // a frontmatter relation: edges rows with src_field == name
   | "links" // doc.out — authored links
@@ -105,6 +111,11 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = []):
       direction: BACKWARD_WORDS.test(name) ? "backward" : "forward",
     });
   }
+  if (!query?.follow) {
+    // No walk: the authored link graph is always there to draw.
+    mentions.push({ name: "doc.out", kind: "links", source: "builtin", span: [0, 0], direction: "forward" });
+    mentions.push({ name: "doc.in", kind: "backlinks", source: "builtin", span: [0, 0], direction: "backward" });
+  }
   return roleDefaults(merge(mentions));
 }
 
@@ -129,8 +140,11 @@ function merge(mentions: Mention[]): Candidate[] {
 
 function roleDefaults(candidates: Candidate[]): Candidate[] {
   const hasFollow = candidates.some((c) => c.sources.includes("follow"));
+  const hasInferred = candidates.some((c) => c.sources.includes("inferred"));
   for (const c of candidates) {
-    c.defaults.edge = c.sources.includes("follow") || (!hasFollow && c.sources.includes("inferred"));
+    c.defaults.edge = c.sources.includes("follow")
+      || (!hasFollow && c.sources.includes("inferred"))
+      || (!hasFollow && !hasInferred && c.kind === "links" && c.sources.includes("builtin"));
   }
   const axis =
     candidates.find((c) => c.sources.includes("follow")) ??

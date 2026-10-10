@@ -49,8 +49,23 @@ describe("inferCandidates", () => {
 
   it("turns a non-intrinsic order by key into a sequence candidate", () => {
     const c = inferCandidates(parse(`$path, date from docs order by date desc, $path`), []);
-    expect(c).toHaveLength(1);
+    expect(c.map((x) => x.name)).toEqual(["date", "doc.out", "doc.in"]); // + the builtin links (no follow)
     expect(c[0]).toMatchObject({ name: "date", kind: "sequence", sources: ["order by"], defaults: { edge: false, layout: true, direction: "backward" } });
+    expect(c.find((x) => x.name === "doc.out")!.defaults.edge).toBe(true); // nothing else is drawn
+  });
+
+  it("offers the builtin link graph when the query has no follow: doc.out drawn only when nothing else is, never the axis", () => {
+    const bare = inferCandidates(parse(`select $path, $title from docs order by $updated_at desc limit 40`), []);
+    expect(bare.map((x) => [x.name, x.kind, x.sources, x.defaults])).toEqual([
+      ["doc.out", "links", ["builtin"], { edge: true, layout: false, direction: "forward" }],
+      ["doc.in", "backlinks", ["builtin"], { edge: false, layout: false, direction: "backward" }],
+    ]);
+    // With an inferred field the field is drawn and lays out; the links stay offered, undrawn.
+    const withField = inferCandidates(parse(`$path, before from docs`), [{ id: "d_1", path: "a.md", before: ["/b.md"] }]);
+    expect(withField.map((x) => [x.name, x.defaults.edge, x.defaults.layout])).toEqual([["before", true, true], ["doc.out", false, false], ["doc.in", false, false]]);
+    // With a follow there is no builtin pair; a `follow doc.out` is the follow candidate itself.
+    expect(inferCandidates(parse(`$path from docs follow refs(before)`), []).map((x) => x.name)).toEqual(["before"]);
+    expect(inferCandidates(parse(`$path from docs follow doc.out`), []).map((x) => [x.name, x.sources])).toEqual([["doc.out", ["follow"]]]);
   });
 
   it("infers path-valued fields from rows, drawn only when the query has no follow", () => {
@@ -58,7 +73,7 @@ describe("inferCandidates", () => {
       { id: "d_1", path: "a.md", before: ["/b.md"], owner: "/people/ada.md", title: "A" },
       { id: "d_2", path: "b.md", before: [], after: ["/a.md"] },
     ];
-    const c = inferCandidates(parse(`$path, before, after, owner, title from docs`), rows);
+    const c = inferCandidates(parse(`$path, before, after, owner, title from docs`), rows).filter((x) => !x.sources.includes("builtin"));
     expect(c.map((x) => x.name).sort()).toEqual(["after", "before", "owner"]);
     for (const x of c) expect(x.sources).toEqual(["inferred"]);
     expect(c.find((x) => x.name === "before")!.defaults).toEqual({ edge: true, layout: true, direction: "forward" });
@@ -170,8 +185,8 @@ order by $ordinal`;
   });
 
   it("works without an AST (unparsable source) from rows alone", () => {
-    expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next"]);
-    expect(inferCandidates(null, [])).toEqual([]);
+    expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "doc.out", "doc.in"]);
+    expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["doc.out", "doc.in"]);
   });
 });
 

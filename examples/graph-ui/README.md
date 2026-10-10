@@ -21,8 +21,46 @@ pnpm --filter graph-ui dev --remote https://mcp.example.com/omg
 ```
 
 (`GRAPH_UI_REMOTE=<mcp-url>` is the same as `--remote`.) Open
-<http://localhost:5173> and pick **via local proxy** in *MCP settings* (the
-page defaults to the bridge either way).
+<http://localhost:5173>; the page talks to the bridge either way and the
+*MCP settings* mode **follows the bridge**: when `GET /whoami` says `mode:
+"remote"` the header reads `via local proxy → <upstream host>` with the
+identity the bridge signed in as, and the setting is switched to *via local
+proxy* (persisted); a bridge serving the sample switches it back to *local
+sample*. Only *direct* is yours to choose and is never overridden.
+
+**First run against a real repository.** The sample's default query walks
+`/timeline/kickoff.md`, which your repository does not have, so the page does
+not use it there: once connected it asks `repos` for the slug and, for the
+sample slug only, probes `/timeline/kickoff.md` with one `limit 1` query
+(`lib/starter-query.ts`); any repository that is not the sample gets the
+**starter** instead — while the editor still holds a preset (the sample default
+in any of its versions, or the starter itself), never a query you edited:
+
+```oqx
+select $path, $title
+from docs
+order by $updated_at desc
+limit 40
+```
+
+The starter has no `follow`, so the picker offers the builtin link graph —
+`doc.out` (links, drawn by default) and `doc.in` (backlinks) — and a force
+layout; under the editor a second suggestion shows the timeline walk rooted at
+the first shown document (`select $path, $title, before, after from docs where
+$path == "/…" follow distinct refs(before), $it.in collect { where ^$path in
+list(after) }`; `"/" + ^$path` against a 1.x server) with a *use this query*
+button. When any query matches nothing, the graph area says so instead of
+drawing an empty canvas: *the query matched nothing in repo notes*, the first
+`where` clause as written, and — when the query compares `$path` with a
+literal that is not in the repository (each literal is probed with the same
+`limit 1` query) — `/timeline/kickoff.md is not in repo notes`, with a *show
+recent documents* button (the starter) and a *keep the last graph when a query
+matches nothing* checkbox (off by default: an empty result clears the graph so
+it is never mistaken for a stale one; on, the previous graph stays and the
+panel becomes a banner). The footer repeats it (`0 rows · matched nothing —
+/timeline/kickoff.md is not in this repo`). While the query or the edge fetch
+has been in flight for more than 300 ms a *running the query…* / *fetching
+edges and laying out…* pill shows at the top of the graph area.
 
 **What happens on the first run.** The dev bridge (`scripts/dev-mcp.mjs`) is
 itself the OAuth client. It sends the gateway one unauthenticated `initialize`,
@@ -96,9 +134,13 @@ pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample
 
 Open <http://localhost:5173>. Vite proxies `/mcp` and `/whoami` to the bridge
 (port 8787, `GRAPH_UI_MCP_PORT`), so the page's default server URL is just
-`/mcp` and *MCP settings* starts in **local sample** mode. The default query walks the sample's release
+`/mcp` and *MCP settings* starts in **local sample** mode (the bridge reports
+`mode: "local"`). In the sample workspace — the `sample` slug with
+`/timeline/kickoff.md` present — the default query walks the sample's release
 timeline from `kickoff.md` both ways — back through each document's own
-`before`, forward through the documents whose `after` names it:
+`before`, forward through the documents whose `after` names it (any other
+repository starts with the generic starter instead — see [First run against a
+real repository](#try-it-against-a-remote-omgbase)):
 
 ```oqx
 select $path, title, phase, before, after
@@ -225,7 +267,10 @@ The *MCP settings* panel offers three ways to reach a server:
   omgbase](#try-it-against-a-remote-omgbase)). The panel shows the upstream URL
   and the identity the bridge reports on `GET /whoami` (`{ mode, upstream,
   identity, auth: { state, issuer, authorizationUrl?, error? }, tokenFile,
-  sessions }`), and warns when the bridge is actually serving the local sample.
+  sessions }`). *local sample* and *via local proxy* are the same bridge, so
+  the page sets whichever the bridge reports (`lib/connection.ts`:
+  `modeForBridge`, `headerLabel`) rather than warning about a mismatch;
+  picking the other one just asks the bridge again.
 - **direct** — for hosted deployments: the page connects to the remote itself
   and the *browser* is the OAuth client. This needs CORS on the gateway and web
   origins in Auth0 — see [Direct mode: the browser as the OAuth
@@ -338,7 +383,12 @@ The editor's status area also carries the hints from `src/lib/hints.ts` (see
 
 `src/app.ts` composes them with `@lit-labs/signals`:
 `source → ast → rows → candidates → view`, and the graph element does
-`view → edges → layout` with the fetcher the page hands it. Edge edits flow
+`view → edges → layout` with the fetcher the page hands it. The page owns what
+sits around the graph: the empty-state panel (`src/lib/empty-state.ts` — the
+first `where` as text, the `$path == "…"` literals, which of them the
+repository lacks, the words) and the delayed loading pill; the preset query
+and the sample-or-not decision are `src/lib/starter-query.ts`; the mode and
+header label that follow the bridge are `src/lib/connection.ts`. Edge edits flow
 the other way: `edge-toggle` → `src/lib/edit.ts` (the plan) →
 `src/lib/mutations.ts` (`docs_set_meta`) → re-run the query.
 
@@ -466,12 +516,18 @@ module becomes the fallback.
    list of doc paths (`*.md`, optionally `/`-rooted). Names in a small
    "looks-backward" vocabulary (`after`, `prev`, `parent`, `depends_on`, …)
    default to *backward*.
+4. **Builtin**: a query without a `follow` always gets the authored link graph
+   to choose from — `doc.out` (links) and `doc.in` (backlinks) — so a query
+   that projects no relationship (the starter) still has edges to draw. A
+   `follow doc.out` is the follow candidate itself, not a second entry.
 
 Defaults: every `follow` candidate is drawn; inferred fields are drawn only
-when the query has no `follow`; sequences are never drawn by default. The layout
-axis is the first `follow` candidate, else the first sequence key, else the
-first inferred field (timeline words first), else none. Overrides live beside
-the view (`src/lib/view.ts`); an override naming a vanished candidate is dropped.
+when the query has no `follow`; the builtin `doc.out` is drawn only when
+nothing else is (no `follow`, no inferred field); `doc.in` and sequences are
+never drawn by default. The layout axis is the first `follow` candidate, else
+the first sequence key, else the first inferred field (timeline words first),
+else none (force) — a builtin is never the axis. Overrides live beside the
+view (`src/lib/view.ts`); an override naming a vanished candidate is dropped.
 
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
 AST reading drives the non-blocking messages. Under the editor: when a `follow`

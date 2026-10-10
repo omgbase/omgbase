@@ -48,6 +48,7 @@ export class OqxRelationshipPicker extends LitElement {
     .badge.follow { background: #e3f2fd; color: #0d47a1; }
     .badge.inferred { background: #fff8e1; color: #8d6e00; }
     .badge.orderby { background: #ede7f6; color: #4a148c; }
+    .badge.builtin { background: #e8f5e9; color: #1b5e20; }
     .foot { display: flex; align-items: center; gap: 12px; padding: 6px 8px; color: #5a6270; }
     .foot select, .foot button { font: inherit; }
     .empty { padding: 8px; color: #7a8290; }
