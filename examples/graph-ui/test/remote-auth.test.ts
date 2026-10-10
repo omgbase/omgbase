@@ -8,7 +8,7 @@ import {
 } from "../scripts/lib/remote-auth.mjs";
 import { normalizeServerUrl } from "../src/lib/oauth-shared.mjs";
 
-const SERVER = "https://hmm-ph.zocomputer.io/omg";
+const SERVER = "https://mcp.example.com/omg";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "graph-ui-auth-")); });
@@ -18,8 +18,8 @@ describe("token file path", () => {
   it("hashes the normalized server URL (trailing slash and case of the host do not matter)", () => {
     expect(serverUrlHash(SERVER)).toMatch(/^[0-9a-f]{16}$/);
     expect(serverUrlHash(`${SERVER}/`)).toBe(serverUrlHash(SERVER));
-    expect(serverUrlHash("https://HMM-PH.zocomputer.io/omg")).toBe(serverUrlHash(SERVER));
-    expect(serverUrlHash("https://hmm-ph.zocomputer.io/other")).not.toBe(serverUrlHash(SERVER));
+    expect(serverUrlHash("https://MCP.example.com/omg")).toBe(serverUrlHash(SERVER));
+    expect(serverUrlHash("https://mcp.example.com/other")).not.toBe(serverUrlHash(SERVER));
     expect(normalizeServerUrl(`${SERVER}/`)).toBe(SERVER);
   });
   it("lives under $XDG_CONFIG_HOME or ~/.config, unless GRAPH_UI_TOKEN_FILE overrides it", () => {

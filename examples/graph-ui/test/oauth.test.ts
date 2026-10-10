@@ -4,7 +4,7 @@ import {
   discover, identityFromTokens, parseWwwAuthenticate, protectedResourceMetadataUrls, storageKey, type StorageLike,
 } from "../src/lib/oauth.ts";
 
-const SERVER = "https://hmm-ph.zocomputer.io/omg";
+const SERVER = "https://mcp.example.com/omg";
 const ISSUER = "https://example.us.auth0.com/";
 
 function memoryStorage(): StorageLike & { map: Map<string, string> } {
@@ -19,10 +19,10 @@ function jwt(claims: Record<string, unknown>): string {
 
 describe("parseWwwAuthenticate", () => {
   it("reads scheme, resource_metadata, scope and error (quoted or bare)", () => {
-    const h = `Bearer resource_metadata="https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg", scope="openid email offline_access", error=invalid_token`;
+    const h = `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/omg", scope="openid email offline_access", error=invalid_token`;
     expect(parseWwwAuthenticate(h)).toEqual({
       scheme: "Bearer",
-      resourceMetadataUrl: "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg",
+      resourceMetadataUrl: "https://mcp.example.com/.well-known/oauth-protected-resource/omg",
       scope: "openid email offline_access",
       error: "invalid_token",
     });
@@ -36,8 +36,8 @@ describe("parseWwwAuthenticate", () => {
 describe("metadata URLs", () => {
   it("derives the path-aware protected-resource URL first, then the origin's", () => {
     expect(protectedResourceMetadataUrls(SERVER)).toEqual([
-      "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg",
-      "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource",
+      "https://mcp.example.com/.well-known/oauth-protected-resource/omg",
+      "https://mcp.example.com/.well-known/oauth-protected-resource",
     ]);
     expect(protectedResourceMetadataUrls("http://localhost:8787/")).toEqual(["http://localhost:8787/.well-known/oauth-protected-resource"]);
   });
@@ -68,17 +68,17 @@ describe("discover", () => {
   it("follows WWW-Authenticate → protected resource → the issuer's OpenID metadata", async () => {
     const calls: string[] = [];
     const fetch = fetchMock({
-      "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg": prm,
+      "https://mcp.example.com/.well-known/oauth-protected-resource/omg": prm,
       "https://example.us.auth0.com/.well-known/openid-configuration": asMeta,
     }, calls);
-    const d = await discover(SERVER, { fetch, wwwAuthenticate: `Bearer resource_metadata="https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg"` });
+    const d = await discover(SERVER, { fetch, wwwAuthenticate: `Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource/omg"` });
     expect(d.authorizationServerUrl).toBe(ISSUER);
     expect(d.authorizationServer.registration_endpoint).toBe(`${ISSUER}oidc/register`);
     expect(d.scope).toBe("openid email offline_access");
-    expect(d.resourceMetadataUrl).toBe("https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg");
+    expect(d.resourceMetadataUrl).toBe("https://mcp.example.com/.well-known/oauth-protected-resource/omg");
     // RFC 8414 was tried before OpenID discovery.
     expect(calls).toEqual([
-      "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource/omg",
+      "https://mcp.example.com/.well-known/oauth-protected-resource/omg",
       "https://example.us.auth0.com/.well-known/oauth-authorization-server",
       "https://example.us.auth0.com/.well-known/openid-configuration",
     ]);
@@ -86,20 +86,20 @@ describe("discover", () => {
 
   it("without a header, probes the well-known locations and prefers the header's scope", async () => {
     const fetch = fetchMock({
-      "https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource": prm,
+      "https://mcp.example.com/.well-known/oauth-protected-resource": prm,
       "https://example.us.auth0.com/.well-known/oauth-authorization-server": asMeta,
     });
     const d = await discover(SERVER, { fetch });
-    expect(d.resourceMetadataUrl).toBe("https://hmm-ph.zocomputer.io/.well-known/oauth-protected-resource");
+    expect(d.resourceMetadataUrl).toBe("https://mcp.example.com/.well-known/oauth-protected-resource");
     expect(d.scope).toBe("openid email offline_access");
     const d2 = await discover(SERVER, { fetch, wwwAuthenticate: parseWwwAuthenticate('Bearer scope="openid"') });
     expect(d2.scope).toBe("openid");
   });
 
   it("falls back to the server's own origin as the issuer, and fails loudly when nothing is there", async () => {
-    const fetch = fetchMock({ "https://hmm-ph.zocomputer.io/.well-known/openid-configuration": asMeta });
+    const fetch = fetchMock({ "https://mcp.example.com/.well-known/openid-configuration": asMeta });
     const d = await discover(SERVER, { fetch });
-    expect(d.authorizationServerUrl).toBe("https://hmm-ph.zocomputer.io");
+    expect(d.authorizationServerUrl).toBe("https://mcp.example.com");
     expect(d.resource).toBeNull();
     await expect(discover(SERVER, { fetch: fetchMock({}) })).rejects.toThrow(/no authorization server metadata/);
   });
