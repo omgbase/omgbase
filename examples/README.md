@@ -39,6 +39,8 @@ carry it.
 4. **[interactive-shell.md](./interactive-shell.md)** — `omg shell`: a persistent session with `@`-addressable results.
 5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts, aggregates, full-text, and graph traversal (seven pages).
 
+Not a tutorial, but also here: **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
+
 ## The corpus
 
 Every session works over the **alchemy corpus** — eighteen interlinked Markdown

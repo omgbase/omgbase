@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "examples/graph-ui"
 
 allowBuilds:
   better-sqlite3: true

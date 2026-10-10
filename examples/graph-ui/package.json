@@ -1,0 +1,41 @@
+{
+  "name": "graph-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "omgbase graph-UI demo: an OQX query rendered as a graph, with the relationships that draw edges and lay the graph out chosen by reflection over the query (Lit 3 + signals, CodeMirror 6, elkjs / d3-force, MCP over Streamable HTTP)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:workspace": "node scripts/dev-workspace.mjs",
+    "dev:mcp": "node scripts/dev-mcp.mjs",
+    "dev:vite": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.0",
+    "@lezer/highlight": "^1.2.4",
+    "@lit-labs/signals": "^0.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@omgbase/oqx": "workspace:^",
+    "@omgbase/oqx-syntax": "workspace:^",
+    "d3-force": "^3.0.0",
+    "elkjs": "^0.12.0",
+    "lit": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/d3-force": "^3.0.10",
+    "vite": "^7.1.0"
+  }
+}
