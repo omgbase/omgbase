@@ -24,6 +24,8 @@ import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Id
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
+import { LEGACY_SURFACE, docArg, rooted, surfaceOf, unrooted } from "./lib/paths.ts";
+import { defaultQuery, isDefaultQuery } from "./lib/default-query.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
 const QUERY_KEY = "omgbase-graph-ui.query";
@@ -49,30 +51,14 @@ function loadEditSettings(): EditSettings {
   }
 }
 
-// `refs(before)` (surface 1.5) resolves the frontier's `before` references to
-// the documents themselves; the backward hop is the frontier's backlinks
-// (`$it.in`) — frontmatter references are extracted as edges, so every doc whose
-// `after` names the frontier is already among them — narrowed to the ones whose
-// `after` really says so. The `"/" +` goes away once `$path` is `/`-rooted.
-export const DEFAULT_QUERY = `select $path, title, phase, before, after
-from docs
-where $path == "timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }
-order by $ordinal`;
-
-/** Earlier defaults, still persisted in some browsers: a stored query equal to
- * one of these is upgraded to the current default. */
-const PREVIOUS_DEFAULT_QUERIES = [
-  `select $path, title, phase, before, after
-from docs
-where $path == "timeline/kickoff.md"
-follow $repo.docs collect { where after.contains("/" + ^$path) }
-order by $ordinal`,
-];
-
+/** The stored query, or the default (lib/default-query.ts) in its 1.x form —
+ * the server's version is not known before connecting; once it is, the
+ * still-the-default swap below rewrites it for that server. A stored query
+ * equal to any default (an earlier one, or the other version's) counts as the
+ * default too. */
 function loadQuery(): string {
   const saved = localStorage.getItem(QUERY_KEY);
-  if (saved === null || PREVIOUS_DEFAULT_QUERIES.includes(saved)) return DEFAULT_QUERY;
+  if (saved === null || isDefaultQuery(saved)) return defaultQuery(null);
   return saved;
 }
 
@@ -121,12 +107,18 @@ const identity = signal<Identity | null>(null);
 const discovery = signal<Discovery | null>(null);
 const bridge = signal<BridgeInfo | null>(null);
 const bridgeError = signal<string | null>(null);
+/** The connected server's surface version from its `version` tool (`specs.surface`,
+ * "major.minor"); `LEGACY_SURFACE` ("1.x") when the tool is missing; null until
+ * known. Decides the path form everywhere (lib/paths.ts). */
+const serverSurface = signal<string | null>(null);
 const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get()));
 const view = signal<View>(defaultView([]));
+// Nodes are keyed by the `/`-rooted path whatever the server returns (bare on
+// surface 1.x, rooted on 2.0), so one document has one key on either.
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
-  const path = typeof row.path === "string" ? row.path : String(row.id ?? "");
+  const path = typeof row.path === "string" ? rooted(row.path) : String(row.id ?? "");
   const title = typeof row.title === "string" ? row.title : null;
-  return { id: String(row.id ?? path), path, label: title ?? path.replace(/\.md$/, ""), row };
+  return { id: String(row.id ?? path), path, label: title ?? unrooted(path).replace(/\.md$/, ""), row };
 }));
 const graphState = signal<GraphStateDetail | null>(null);
 
@@ -251,7 +243,14 @@ async function refreshRepos(): Promise<void> {
   }
   try {
     const c = clientFor(url);
-    const { repos: list } = await c.repos();
+    // The surface version first (one `version` call per connection; a server
+    // without the tool is 1.x), so the default query and the path literals are
+    // in the server's form before the first run.
+    const [{ repos: list }, surface] = await Promise.all([
+      c.repos(),
+      c.version().then(surfaceOf, () => LEGACY_SURFACE),
+    ]);
+    serverSurface.set(surface);
     repos.set(list.map((r) => r.slug));
     // Which tools the server (or the gateway in front of it) offers decides whether edges can be edited.
     c.tools().then((names) => tools.set(names), () => tools.set(null));
@@ -259,7 +258,7 @@ async function refreshRepos(): Promise<void> {
     if (s.mode === "direct") identity.set(providerFor(url).identity());
     else { const info = await refreshBridge(); if (info?.identity) identity.set(info.identity); }
     connection.set("ok");
-    connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"}`);
+    connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"} · surface ${surface}`);
   } catch (e) {
     if (e instanceof AuthRequiredError) return; // the browser is on its way to the authorization server
     if (s.mode !== "direct") {
@@ -288,6 +287,7 @@ function disconnect(): void {
   repos.set([]);
   rows.set([]);
   tools.set(null);
+  serverSurface.set(null);
   connection.set("idle");
   connectionMessage.set("signed out");
 }
@@ -343,8 +343,19 @@ async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphE
   const s = settings.get();
   const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths)) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
+  for (const q of edgeQueries(candidate, paths, serverSurface.get())) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
   return edgesFromRows(candidate, all, new Set(paths));
+}
+
+/** The edit tools with the `doc` argument in the server's form: the plans and
+ * the graph speak rooted paths; a 1.x server wants them bare (`docArg`). */
+function metaClientFor(url: string) {
+  const c = clientFor(url);
+  const form = (doc: string) => docArg(serverSurface.get(), doc);
+  return {
+    docsRead: (doc: string, repo?: string) => c.docsRead(form(doc), repo),
+    docsSetMeta: (doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string) => c.docsSetMeta(form(doc), patch, repo),
+  };
 }
 
 // ---- edge editing: plan, confirm, write, refresh ----------------------------------------
@@ -362,7 +373,7 @@ async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
   const s = settings.get();
   editBusy.set(true);
   try {
-    const plan = await prepareToggle(clientFor(serverUrl.get()), {
+    const plan = await prepareToggle(metaClientFor(serverUrl.get()), {
       owner: { id: owner.id, path: owner.path },
       target: { id: target.id, path: target.path },
       field: candidate.name,
@@ -394,7 +405,7 @@ async function writeToggle(plan: TogglePlan): Promise<void> {
   pending.set([...pending.get(), preview]);
   editBusy.set(true);
   try {
-    await applyToggle(clientFor(serverUrl.get()), mutations, plan, settings.get().repo || undefined);
+    await applyToggle(metaClientFor(serverUrl.get()), mutations, plan, settings.get().repo || undefined);
     editMessage.set({ kind: "info", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
     settlePending = true;
     await runQuery();
@@ -430,7 +441,19 @@ void (async () => {
     if (key === last) return;
     last = key;
     discovery.set(null);
+    serverSurface.set(null); // unknown until the new server answers `version`
     void refreshRepos();
+  });
+  // The default query is written for the connected server's path form; when
+  // the version becomes known (or changes with the connection) and the editor
+  // still holds a default — never a user's edit — swap it for that server's.
+  // Nothing else is version-keyed and persisted: no cursor is ever stored.
+  effect(() => {
+    const surface = serverSurface.get();
+    if (surface === null) return;
+    const current = source.get();
+    const want = defaultQuery(surface);
+    if (current !== want && isDefaultQuery(current)) source.set(want);
   });
   effect(() => {
     const q = ast.get();
@@ -595,7 +618,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <div class="left">
           <section>
             <h2>query</h2>
-            <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} @query-change=${this.onQueryChange}></oqx-query-editor>
+            <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} .serverSurface=${serverSurface.get()} @query-change=${this.onQueryChange}></oqx-query-editor>
           </section>
           <section>
             <h2>relationships</h2>

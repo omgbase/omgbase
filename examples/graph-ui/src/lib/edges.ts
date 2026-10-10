@@ -9,13 +9,20 @@
 // `doc.out_edges collect { … }` per doc — also works against the engine but
 // returns one row per doc with the edges inlined; the flat edge rows are
 // simpler to merge across chunks and page with the tool's cursor.
+//
+// Paths: the shown nodes are keyed by the `/`-rooted path (lib/paths.ts). The
+// literals are spelled the way the connected server expects (`serverPath`:
+// bare on surface 1.x, rooted on 2.0 — where both forms match) and the rows'
+// `$path`/`$dst_path` are rooted before they are compared with the node keys,
+// so the edges come out the same against either server.
 
 import type { Candidate } from "./candidates.ts";
+import { rooted, serverPath } from "./paths.ts";
 
 export interface GraphEdge {
-  /** Source doc path (as `$path`). */
+  /** Source doc path (`$path`, `/`-rooted). */
   src: string;
-  /** Destination doc path (as `$dst_path`). */
+  /** Destination doc path (`$dst_path`, `/`-rooted). */
   dst: string;
   /** The candidate name this edge belongs to. */
   rel: string;
@@ -38,19 +45,21 @@ export function chunked<T>(items: readonly T[], size = CHUNK): T[][] {
   return out;
 }
 
-/** The queries that fetch one relationship's edges among `paths` (one per chunk). */
-export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: readonly string[]): string[] {
+/** The queries that fetch one relationship's edges among `paths` (one per
+ * chunk), with the path literals in the form `serverSurface` expects. */
+export function edgeQueries(candidate: Pick<Candidate, "name" | "kind">, paths: readonly string[], serverSurface: string | null = null): string[] {
   if (paths.length === 0 || candidate.kind === "sequence") return [];
   const relation =
     candidate.kind === "frontmatter"
       ? `src_field == ${oqxString(candidate.name)} && provenance == "frontmatter"`
       : `provenance == "link" && dst_kind == "document"`;
   return chunked(paths).map(
-    (chunk) => `select src: $path, dst: $dst_path from edges where ${relation} && ${pathDisjunction(chunk)}`,
+    (chunk) => `select src: $path, dst: $dst_path from edges where ${relation} && ${pathDisjunction(chunk.map((p) => serverPath(serverSurface, p)))}`,
   );
 }
 
-/** Rows from the edge queries → edges between SHOWN nodes, deduped; `doc.in`
+/** Rows from the edge queries → edges between SHOWN nodes (`shown` holds the
+ * rooted keys; the rows' paths are rooted before the lookup), deduped; `doc.in`
  * (backlinks) flips direction so an edge points the way the walk goes. */
 export function edgesFromRows(
   candidate: Pick<Candidate, "name" | "kind">,
@@ -60,8 +69,8 @@ export function edgesFromRows(
   const seen = new Set<string>();
   const out: GraphEdge[] = [];
   for (const row of rows) {
-    const src = typeof row.src === "string" ? row.src : null;
-    const dst = typeof row.dst === "string" ? row.dst : null;
+    const src = typeof row.src === "string" ? rooted(row.src) : null;
+    const dst = typeof row.dst === "string" ? rooted(row.dst) : null;
     if (!src || !dst || !shown.has(src) || !shown.has(dst) || src === dst) continue;
     const edge = candidate.kind === "backlinks" ? { src: dst, dst: src } : { src, dst };
     const key = `${edge.src}→${edge.dst}`;

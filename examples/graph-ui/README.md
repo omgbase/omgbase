@@ -103,10 +103,14 @@ timeline from `kickoff.md` both ways — back through each document's own
 ```oqx
 select $path, title, phase, before, after
 from docs
-where $path == "timeline/kickoff.md"
-follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }
+where $path == "/timeline/kickoff.md"
+follow distinct refs(before), $it.in collect { where ^$path in list(after) }
 order by $ordinal
 ```
+
+(That is the query for a surface-2.0 server; against a 1.x server the page
+shows `where $path == "timeline/kickoff.md"` and `("/" + ^$path) in list(after)`
+instead — see [Server versions](#server-versions).)
 
 **Why `refs()`.** `before` holds document *references* — strings like
 `/timeline/alpha.md` — not documents. `follow before` walks the strings, and
@@ -124,18 +128,67 @@ frontmatter reference *is extracted as an edge* (`spec/graph` §3.1,
 `provenance: frontmatter`), so the frontier's backlinks (`$it.in`, the same
 relation as `doc.in`) already contain every document whose `after` — or any
 other field, or a body link — points at it. The destination block narrows those
-to the ones whose `after` really says so (`("/" + ^$path) in list(after)`;
-`list()` makes a scalar and a list read alike). It is an indexed lookup per
-frontier row, unlike the full-scan fallback, which still works:
+to the ones whose `after` really says so (`^$path in list(after)`; `list()`
+makes a scalar and a list read alike). It is an indexed lookup per frontier
+row, unlike the full-scan fallback, which still works:
 
 ```oqx
-follow refs(before), ^docs collect { where after.contains("/" + ^$path) }
+follow refs(before), ^docs collect { where after.contains(^$path) }
 ```
 
 (`^docs` is the root `docs` collection seen from inside the block; `$repo.docs`
-spells the same thing.) The `"/" +` exists because `$path` is bare
-(`timeline/kickoff.md`) while authored references are `/`-rooted; it
-disappears once `$path` becomes `/`-rooted (see [Gaps](#gaps-found-in-the-public-api)).
+spells the same thing.) The comparison works because, since surface 2.0,
+`$path` is `/`-rooted like the authored reference it is compared with; on a
+1.x server `$path` is bare (`timeline/kickoff.md`) and the same block reads
+`("/" + ^$path) in list(after)` — the next section.
+
+### Server versions
+
+The omgbase surface changed its path form in 2.0 (`spec/surface` §1 "Paths"):
+every path a query or a tool **returns** is `/`-rooted (`$path`, `$dst_path`,
+a hit's `path`, `docs_read`'s `path`, …), every path a tool **accepts**
+tolerates both forms, and a string literal compared with `$path` by `==` (or
+passed to `startsWith`) is rooted before evaluation, so `$path == "a.md"` and
+`$path == "/a.md"` both match. A 1.x server (surface 1.5 is what Brendan's
+remote gateway runs today) returns the storage form — `timeline/kickoff.md` —
+and matches only a bare literal. Authored frontmatter references are
+`/`-rooted on both (that is what the repositories hold; only a `/`-rooted
+string becomes a graph edge), so correlating the current row with a reference
+is `"/" + ^$path` on 1.x and plain `^$path` on 2.0. The keyset cursor also
+changed shape and a 1.x cursor is refused by 2.0.
+
+The demo works against both. On connect it calls the `version` tool once and
+reads `specs.surface` (`"major.minor"`); a server without the tool is taken
+as `1.x`. The result is the `serverSurface` signal, shown in the header
+(`· surface 2.0`), and everything path-shaped goes through the adapter
+`src/lib/paths.ts`:
+
+| | |
+| --- | --- |
+| `rooted(p)` / `unrooted(p)` | the two forms (idempotent) |
+| `samePath(a, b)` | equal modulo the leading slash |
+| `pathExpr(surface, ref = "$path")` | the OQX that yields the rooted path of `ref`: `$path` on ≥ 2.0, `"/" + $path` before (`pathOperand` parenthesizes the latter) |
+| `serverPath(surface, p)` | a `$path == "…"` literal in the server's form: bare on 1.x, rooted on 2.0 |
+| `docArg(surface, doc)` | a tool's `doc` argument: a path is de-rooted for 1.x; an id passes through |
+| `surfaceOf(versionResult)` | `specs.surface`, else `"1.x"` |
+
+Nodes are keyed by the rooted path whatever the server returned, so a 1.x hit
+and a 2.0 hit for one document share a key, and the edge fetch roots the rows'
+`$path`/`$dst_path` before matching them to the shown nodes while spelling its
+`$path == "…"` literals in the server's form. The default query is generated
+from `pathExpr` for the connected server and swapped when the version changes
+with the connection — only while the editor still holds a default (any
+version's, or an earlier one), never a user's edit. Candidate inference reads
+`"/" + ^$path` and bare `^$path` alike as the correlation idiom. The value
+form of an edited field is still inferred from the field's existing values
+(leading slash or not), never from `$path`. The page never stores a cursor
+(`queryAll` follows one within a single call), so nothing is left to discard on
+a version change. Two hints under the editor catch the mismatch: on a 2.0
+server a `"/" + ^$path` (or `"/" + $path`) in the query gets "`$path` is
+already `/`-rooted on this server; use `^$path`"; on a 1.x server a bare
+`^$path` compared directly with a property (`^$path in list(after)`,
+`after.contains(^$path)`) gets "this server's `$path` has no leading slash; use
+`"/" + ^$path`". A literal (`$path == "a.md"`) is never flagged.
 
 Try: `select $path, title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
@@ -253,11 +306,12 @@ Requesting `offline_access` needs *Allow Offline Access* on the API that the
 ```oqx
 select src: $path, dst: $dst_path from edges
 where src_field == "after" && provenance == "frontmatter"
-  && ($path == "timeline/kickoff.md" || $path == "timeline/alpha.md" || …)
+  && ($path == "/timeline/kickoff.md" || $path == "/timeline/alpha.md" || …)
 ```
 
-in chunks of 40 paths, then filtered client-side to edges whose both ends are
-shown. OQX has no array literal (`$path in [...]` is a lex error) and `in` only
+in chunks of 40 paths (the literals bare against a 1.x server — see [Server
+versions](#server-versions)), then filtered client-side to edges whose both
+ends are shown. OQX has no array literal (`$path in [...]` is a lex error) and `in` only
 takes a lifted set or a range, hence the disjunction. The nested alternative
 (`select $path, out: doc.out_edges collect { select dst: $dst_path, src_field }
 from docs where …`) also works against the engine; the flat rows were simpler to
@@ -270,7 +324,7 @@ fetch — its edges are consecutive result rows.
 
 | Element | Properties | Events |
 | --- | --- | --- |
-| `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
+| `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `serverSurface` (`"major.minor" \| "1.x" \| null`, for the path-form hints), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
 | `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction } }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-graph>` | `nodes: GraphNode[]`, `view: View`, `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
 
@@ -330,7 +384,7 @@ field is never touched. For a *forward* candidate (`before`) that is the
 selected document (`selected.before` gains the target); for a *backward* one
 (`after`, drawn target → selected) it is the clicked document (`target.after`
 gains the selected one). By default a one-line strip shows the file, the field
-and the new value before anything is written (`write timeline/beta.md · set
+and the new value before anything is written (`write /timeline/beta.md · set
 after: […] via docs_set_meta?`); untick *confirm before writing* to skip it.
 
 **What gets written.** The field's current value comes from the result row when
@@ -350,7 +404,9 @@ not, path or doc id (`d_…`). A field with no values yet borrows the dominant
 form among all reference fields in the rows, else `/path.md`; whether it
 becomes a list or a scalar follows the same inference (ties → list). A field
 whose existing values disagree (`/a.md` next to `b.md`) is refused with a
-message until they agree.
+message until they agree. The server's path form plays no part in this: the
+values are the author's, `/`-rooted in these repositories whether `$path` comes
+back bare (surface 1.x) or rooted (2.0).
 
 **Writable or not.** Writable candidates are exactly the frontmatter relations
 whose sampled values are document references (a `/`-rooted repo path, a bare
@@ -373,8 +429,9 @@ maintained — the engine has no field definitions declaring inverses. In the
 local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
 made by `dev:workspace`; `pnpm --filter graph-ui dev:workspace --force` resets
 it). Try the scalar path with `select $path, title, owner from docs where
-$path.startsWith("timeline/") || $path.startsWith("people/")` (`owner` is a
-scalar `/people/….md`) and the list path with the default query's `after`.
+$path.startsWith("/timeline/") || $path.startsWith("/people/")` (`owner` is a
+scalar `/people/….md`; drop the leading slashes against a 1.x server) and the
+list path with the default query's `after`.
 
 ## Inference rules (`src/lib/candidates.ts`)
 
@@ -394,10 +451,11 @@ module becomes the fallback.
    … }`, `^docs collect { … }`, `$it.in collect { … }`, `refs(before) collect {
    … }`) is read first through its receiver — `refs(<field>)` names `<field>`,
    *forward* — then through its correlated `where`: a bare property of the
-   candidate row compared against an outer reference (`after.contains("/" +
-   ^$path)`, `("/" + ^$path) in list(after)`) names the relation `after` with
+   candidate row compared against an outer reference (`^$path in list(after)`,
+   `after.contains(^$path)`, or the 1.x spellings `("/" + ^$path) in
+   list(after)`, `after.contains("/" + ^$path)`) names the relation `after` with
    direction *backward* (the edge is stored on the successor and points at the
-   frontier); an outer property (`("/" + $path) in ^before`) names `before`,
+   frontier); an outer property (`$path in ^before`) names `before`,
    *forward*; a `refs()` receiver of a nested directive follows the same two
    cases (`refs(after) exists { where $path == ^^$path }` → `after` *backward*,
    `refs(^before) exists { … }` → `before` *forward*); a `src_field == "x"` /
@@ -417,12 +475,14 @@ first inferred field (timeline words first), else none. Overrides live beside
 the view (`src/lib/view.ts`); an override naming a vanished candidate is dropped.
 
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
-AST reading drives two non-blocking messages. Under the editor: when a `follow`
+AST reading drives the non-blocking messages. Under the editor: when a `follow`
 destination is a bare frontmatter-looking field (not `refs(…)`, not a block,
 not `doc.out`/`doc.in`/`in`/`out`/`children`/`subsections`/`$it.…`), the
 status area adds "`before` holds document references; `follow refs(before)`
 walks the documents (a bare field follows the strings)" and dot-underlines the
-destination; the query still runs. In the footer: the server's surface-1.5
+destination; the query still runs. The two path-form hints ([Server
+versions](#server-versions)) appear the same way once the server's version is
+known. In the footer: the server's surface-1.5
 `filter_invalid` ("a hit must be a document, block, node or edge row — the
 query reached a string ("/timeline/beta.md"); … use refs(<field>)") is shown
 with its remedy made concrete from the AST — `try follow refs(before)` — or the
@@ -430,15 +490,13 @@ engine's own `refs(<field>)` when no bare destination names the field.
 
 ## Gaps found in the public API
 
-- **Paths disagree with frontmatter paths.** `$path` is `timeline/kickoff.md`
-  while a `/`-rooted frontmatter value is `/timeline/kickoff.md`, so the
-  natural `("/" + ^$path) in list(after)` needs its `"/" +`. **Closing:** `$path`
-  is about to become `/`-rooted on the surface (surface 2.0 — rooted paths
-  everywhere, both forms accepted as input), after which the `"/" +` idiom goes
-  away here and in the default query. `refs()` already accepts both forms.
+- ~~**Paths disagree with frontmatter paths.**~~ Fixed in surface 2.0: `$path`
+  is `/`-rooted like an authored reference, so `^$path in list(after)` needs
+  no `"/" +`; the demo keeps the 1.x spelling for 1.x servers ([Server
+  versions](#server-versions)).
 - **No inverse of `refs()`.** `refs(before)` walks forward; "the documents whose
   `after` names me" has no function and is spelled as a backlink block
-  (`$it.in collect { where ("/" + ^$path) in list(after) }`) — correct because
+  (`$it.in collect { where ^$path in list(after) }`) — correct because
   frontmatter references are edges, but a `referrers(after)` (or a field
   definition with `inverse_of`) would make the backward hop as short as the
   forward one.
@@ -482,7 +540,8 @@ engine's own `refs(<field>)` when no bare destination names the field.
 
 `sample/` is a 20-document project notebook: a release timeline authored through
 `before`/`after` frontmatter (`/`-rooted paths — only `/`-rooted strings and
-`[[wikilinks]]` become frontmatter edges, see `spec/graph` §3.1), two branches
+`[[wikilinks]]` become frontmatter edges, see `spec/graph` §3.1; the references
+stay rooted whatever surface version serves them), two branches
 (`docs-draft`, `security-audit`) that rejoin at `launch`, a deliberate three-note
 cycle (`loop-a` → `loop-b` → `loop-c` → `loop-a`), `owner` relations into
 `people/`, `see_also` under `topics/`, and ordinary Markdown links.

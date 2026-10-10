@@ -123,6 +123,24 @@ order by $ordinal`;
     expect(c.some((x) => x.kind === "sequence")).toBe(false);
   });
 
+  it("reads the bare `^$path` idiom (surface 2.0: $path is rooted) exactly like the slash-prefixed one", () => {
+    const src = `select $path, title, phase, before, after
+from docs
+where $path == "/timeline/kickoff.md"
+follow distinct refs(before), $it.in collect { where ^$path in list(after) }
+order by $ordinal`;
+    const c = inferCandidates(parse(src), []);
+    expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.defaults.edge, x.defaults.layout])).toEqual([
+      ["before", "frontmatter", "forward", true, true],
+      ["after", "frontmatter", "backward", true, false],
+    ]);
+    expect(src.slice(...c[1]!.spans[0]!)).toBe("^$path in list(after)");
+    for (const follow of [`^docs collect { where after.contains(^$path) }`, `$it.in collect { where ^$path in list(after) }`, `$repo.docs collect { where $path in ^before }`]) {
+      const cands = inferCandidates(parse(`$path from docs where $path == "/a.md" follow ${follow}`), []);
+      expect(cands.map((x) => [x.name, x.defaults.direction]), follow).toEqual([[follow.includes("^before") ? "before" : "after", follow.includes("^before") ? "forward" : "backward"]]);
+    }
+  });
+
   it("still reads the correlated-block forms: ^docs, $repo.docs and $it.in blocks", () => {
     for (const follow of [
       `^docs collect { where after.contains("/" + ^$path) }`,
