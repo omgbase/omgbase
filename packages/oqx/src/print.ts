@@ -1,7 +1,8 @@
 // The canonical printer (spec/oqx/AST.md §6): the one source text of a tree.
 // Single spaces, double-quoted strings with GRAMMAR §1 escapes, the minimal
 // parentheses the precedence table (GRAMMAR §4) needs, `select` written at the
-// top level, every option in its canonical position. The law both spec runners
+// top level, the connectives as the words `and` / `or` (since 0.18; `!` stays
+// `!`), every option in its canonical position. The law both spec runners
 // enforce over every fixture query:
 //
 //   strip(parse(print(parse(q)))) ≡ strip(parse(q))
@@ -181,8 +182,10 @@ function follow(f: Follow): Out {
 
 function where(w: Where): Out {
   switch (w.kind) {
-    case "and": return join(w.parts.map((p) => paren(where(p), p.kind === "or" || p.kind === "and")), " && ");
-    case "or": return join(w.parts.map((p) => paren(where(p), p.kind === "or")), " || ");
+    // The connectives print as the words (`and` / `or`, since 0.18); the symbols
+    // parse to the same nodes.
+    case "and": return join(w.parts.map((p) => paren(where(p), p.kind === "or" || p.kind === "and")), " and ");
+    case "or": return join(w.parts.map((p) => paren(where(p), p.kind === "or")), " or ");
     case "not": {
       const inner = w.expr;
       // The operand of `!` is a consumer test, a group, or a scalar primary —
@@ -221,7 +224,7 @@ function expr(e: Expr): Out {
     }
     case "logical": {
       const p = prec(e);
-      return cat(operand(e.left, p), ` ${e.op} `, operand(e.right, p + 1));
+      return cat(operand(e.left, p), e.op === "&&" ? " and " : " or ", operand(e.right, p + 1));
     }
     case "in": return cat(operand(e.left, CMP + 1), " in ", operand(e.right, CMP + 1));
     case "range":

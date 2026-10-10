@@ -476,7 +476,7 @@ A parsed query is a first-class tree shared by both engines
 evaluation — omgbase's runner does this once, before it injects `$id`/`$path`
 and renames a `values` item). `@omgbase/oqx` exports `visit`/`transform` (one
 child-key table drives both), `print`/`printTemplate` (canonical source, with
-the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.17",
+the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.18",
 "kind": "query", … }`) and `build.*`; the Rust crate mirrors them (`walk`,
 `print`, `build`, serde under `json`). omgbase uses them where it used to
 hand-roll walks: the runner's `$self` rewrite is a `transform`, the

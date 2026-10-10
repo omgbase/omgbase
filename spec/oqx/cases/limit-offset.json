@@ -1451,6 +1451,79 @@
           ]
         }
       }
+    },
+    {
+      "name": "a top-level bound is read in a row-less root scope: ^$it there is absent",
+      "tags": [
+        "bound",
+        "root-object"
+      ],
+      "notes": "SEMANTICS §18: a bound is evaluated in a row-less scope. At the top level that scope is the root scope without its row, so `^$it` reached from a bracket inside the bound is absent — not the root object (0.18). `${0}[^$it == null]` is `${0} first { where ^$it == null }`: the first element, since absent == null.",
+      "roots": {
+        "people": [
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "name from people limit ",
+          "[^$it == null]"
+        ],
+        "values": [
+          [
+            1
+          ]
+        ]
+      },
+      "expect": {
+        "result": [
+          {
+            "name": "a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a top-level bound is read in a row-less root scope: has(^$it) there is false",
+      "tags": [
+        "bound",
+        "root-object",
+        "error"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "a"
+          },
+          {
+            "name": "b"
+          }
+        ]
+      },
+      "template": {
+        "strings": [
+          "name from people limit ",
+          "[has(^$it)]"
+        ],
+        "values": [
+          [
+            1
+          ]
+        ]
+      },
+      "expect": {
+        "error": {
+          "stage": "eval",
+          "includes": [
+            "limit must be a non-negative integer"
+          ]
+        }
+      }
     }
   ]
 }

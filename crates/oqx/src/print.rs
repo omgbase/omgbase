@@ -388,14 +388,14 @@ fn where_tree(w: &Where) -> Out {
                     )
                 })
                 .collect(),
-            " && ",
+            " and ",
         ),
         Where::Or { parts, .. } => join(
             parts
                 .iter()
                 .map(|p| paren(where_tree(p), matches!(p, Where::Or { .. })))
                 .collect(),
-            " || ",
+            " or ",
         ),
         Where::Not { expr: inner, .. } => {
             // The operand of `!` is a consumer test, a group, or a scalar primary —
@@ -455,12 +455,14 @@ fn expr(e: &Expr) -> Out {
         Expr::Logical {
             op, left, right, ..
         } => {
+            // The connectives print as the words (`and` / `or`, since 0.18); the
+            // symbols parse to the same nodes.
             let p = prec(e);
-            cat(vec![
-                operand(left, p),
-                text(format!(" {} ", op.as_str())),
-                operand(right, p + 1),
-            ])
+            let word = match op {
+                LogicalOp::And => " and ",
+                LogicalOp::Or => " or ",
+            };
+            cat(vec![operand(left, p), text(word), operand(right, p + 1)])
         }
         Expr::In { left, right, .. } => cat(vec![
             operand(left, CMP + 1),

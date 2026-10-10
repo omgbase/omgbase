@@ -7497,7 +7497,7 @@
             "frontier": [],
             "truncated": false,
             "queries": [
-              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" || $id == \"d_15\" follow distinct doc.out { depth 8 }"
+              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" or $id == \"d_15\" follow distinct doc.out { depth 8 }"
             ]
           },
           {

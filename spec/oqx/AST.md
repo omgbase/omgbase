@@ -35,7 +35,7 @@ guess the default of.
 | `scalar` | a `where` leaf that is a value expression | `where` |
 | `lit` | a literal: string, number, boolean, `null` | expressions |
 | `ident` | a bare name — a property of the current row/scope | expressions |
-| `outer` | `^name`, `^^name` — a read exactly `levels` scopes out | expressions |
+| `outer` | `^name`, `^^name` — a read exactly `levels` scopes out; also what the absolute `N^name` parses to (since 0.18) | expressions |
 | `binding` | a `${n}` bound value of a template | expressions |
 | `member` | `.name` navigation on `recv` | expressions |
 | `call` | `name(args)` (`recv: null`) or `recv.name(args)` | expressions |
@@ -56,8 +56,13 @@ There is no `index` node and no node for any other sugar: a bracket lookup
 `x[n]` / `x[p]` is parsed straight to the `op` (`first { offset n }`,
 `first { where p }`; `single` under `!`), `x { … }` to a `collect` op, `is x`
 and `not x` to `unary` nodes (GRAMMAR §4). The only shapes 0.17 adds are
-`required` and the `is`/`is not` operators of `binary`. The `Expr.index`
-variant the pre-0.16 types declared was never produced and was removed in 0.16.
+`required` and the `is`/`is not` operators of `binary`. Nor is there a node
+for an **absolute scope reference** (since 0.18): `N^name` is the `outer` node
+with `levels = depth − N` — the parser knows the depth of every position
+(the `depth` of §5) — and `N^name:` at a select item's head is a `field` with
+that `lift`; the tree does not record which spelling was written. The
+`Expr.index` variant the pre-0.16 types declared was never produced and was
+removed in 0.16.
 
 `isExpr` (TypeScript) is true for the scalar expression kinds listed above; an
 `op` is an expression only by position (its `kind` stays `"op"`), so
@@ -151,8 +156,8 @@ last:
   spanning the same range), its `subquery` is the brackets inclusive; both
   `unary` nodes of `is x` span `is x`; the `collect` op of `x { … }` spans `x`
   through `}` as a written directive would;
-- `outer`: the carets through the name; `lit`: a string's quotes inclusive;
-  `binding`: its `${n}` marker;
+- `outer`: the carets (or the `N^`) through the name; `lit`: a string's quotes
+  inclusive; `binding`: its `${n}` marker;
 - a **parenthesized operand** takes the span of its parentheses (`(a + 1) > 2`:
   the `+` node spans `(a + 1)`), so an editor can select exactly what the user
   grouped.
@@ -224,12 +229,15 @@ double-quoted strings with the GRAMMAR §1 escapes; the minimal parentheses
 the precedence table (GRAMMAR §4) requires, and the predicate/scalar group
 rule of GRAMMAR §3 for `where`; `distinct` on a directive spelled
 `<op> distinct { … }`; follow options in the order `where`, `frontier`,
-`depth`, `by`; an empty block as `{ }`. **Sugar prints as the explicit form**
-it parsed to (since 0.17): `x { p }` as `x collect { where p }`, `jobs[0].pay`
-as `jobs first { offset 0 }.pay`, `x[p]!` as `x single { where p }!`, `is x` as
-`!!x`, `not x` as `!x`, `and` / `or` as `&&` / `||`; `x!` prints as written,
-with its operand parenthesized below postfix level (`(a + 1)!`); `x is y` /
-`x is not y` print as written.
+`depth`, `by`; an empty block as `{ }`; the logical connectives as the **words**
+`and` / `or` (since 0.18; `&&` / `||` parse to the same nodes and the JSON
+`op` stays `"&&"` / `"||"`), the prefix negation as `!`. **Sugar prints as the
+explicit form** it parsed to (since 0.17): `x { p }` as `x collect { where p }`,
+`jobs[0].pay` as `jobs first { offset 0 }.pay`, `x[p]!` as `x single { where
+p }!`, `is x` as `!!x`, `not x` as `!x`, an absolute `N^name` as the caret
+form `^…name` (since 0.18); `x!` prints as written, with its operand
+parenthesized below postfix level (`(a + 1)!`); `x is y` / `x is not y` print
+as written.
 
 Form: a `collect` query prints in body form (`select … from S …`) — unless it
 carries body-level `from` re-projections, which only a block can hold, in
@@ -278,3 +286,4 @@ document says which `major.minor` produced it.
 | 0.14 | `follow.receiver` → `follow.destinations` (a list). |
 | 0.16 | `index` expression node removed (never produced). `limit`/`offset`/`countCmp` materialized as `null`, `distinct`/`values` as `false` (they were optional). `kind` added to `query`, `subquery`, `follow`, `order`; `span` added to every node. `where` is no longer alias-inlined at parse time (see §2). |
 | 0.17 | Added (minor): the `required` expression node; `"is"` / `"is not"` as `binary` operators; an `op` may appear in expression position (`member.recv`, operands, `required.expr`, a `field`'s value). Nothing renamed or removed. |
+| 0.18 | No node or field added, renamed or removed: `N^name` parses to the existing `outer` (`levels = depth − N`). The canonical print of `and`/`or` and `logical` nodes changed from the symbols to the words; the JSON `logical.op` is still `"&&"` / `"||"`. |

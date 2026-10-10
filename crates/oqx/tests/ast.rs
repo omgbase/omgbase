@@ -146,7 +146,7 @@ fn transform_maps_every_expression_bottom_up() {
     });
     assert_eq!(
         print_query(&out).unwrap(),
-        "select n: jobs collect { employer: employer where $self.text(\"a\") } from people where $self.text(\"b\") && size(x) > 1 order by $self.text(\"c\")"
+        "select n: jobs collect { employer: employer where $self.text(\"a\") } from people where $self.text(\"b\") and size(x) > 1 order by $self.text(\"c\")"
     );
     // spans survive: the untouched source and the rebuilt root keep theirs
     assert_eq!(out.source.span(), q.source.span());
@@ -158,15 +158,15 @@ fn transform_maps_every_expression_bottom_up() {
 fn print_is_canonical() {
     assert_eq!(
         canon("name,id   from people where (age>=18)&&!(x==1)"),
-        "select name: name, id: id from people where age >= 18 && !(x == 1)"
+        "select name: name, id: id from people where age >= 18 and !(x == 1)"
     );
     assert_eq!(
         canon("from p where (a && b) || c"),
-        "from p where a && b || c"
+        "from p where a and b or c"
     );
     assert_eq!(
         canon("from p where (a || b) && c"),
-        "from p where (a || b) && c"
+        "from p where (a or b) and c"
     );
     assert_eq!(
         canon("select v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: (a.b).c() from p"),
@@ -182,7 +182,7 @@ fn print_is_canonical() {
     );
     assert_eq!(
         canon("from p where n in 1+1..2*3 && (m in ..5) && k in 5.."),
-        "from p where n in 1 + 1..2 * 3 && m in ..5 && k in 5.."
+        "from p where n in 1 + 1..2 * 3 and m in ..5 and k in 5.."
     );
     assert_eq!(
         canon("people count distinct { select employer }"),
@@ -210,7 +210,7 @@ fn print_is_canonical() {
     assert_eq!(canon("distinct from r"), "distinct: distinct from r");
     assert_eq!(
         canon("from p where !jobs count { } > 1 && jobs none { }"),
-        "from p where !jobs count { } > 1 && jobs none { }"
+        "from p where !jobs count { } > 1 and jobs none { }"
     );
     // any node prints
     let q = parse("select n: jobs collect { employer } from people where a > 1 order by name desc");
@@ -253,7 +253,7 @@ fn resolve_aliases_substitutes_once() {
     let r = resolve_aliases(&q).unwrap();
     assert_eq!(
         print_query(&r).unwrap(),
-        "select name: name.upper(), cur: jobs collect { employer: employer where !end } from people where name.upper() == \"BOB\" && jobs collect { employer: employer where !end }"
+        "select name: name.upper(), cur: jobs collect { employer: employer where !end } from people where name.upper() == \"BOB\" and jobs collect { employer: employer where !end }"
     );
     assert_eq!(r.select, q.select);
     let plain = parse("from p where a");
@@ -326,7 +326,7 @@ fn builders_make_empty_span_nodes_that_print() {
     let printed = print_query(&q).unwrap();
     assert_eq!(
         printed,
-        "select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == \"d_0\" || $id == \"d_1\" follow distinct doc.out { depth 2 }"
+        "select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == \"d_0\" or $id == \"d_1\" follow distinct doc.out { depth 2 }"
     );
     assert_eq!(strip_spans(&parse(&printed)), q);
     assert_eq!(

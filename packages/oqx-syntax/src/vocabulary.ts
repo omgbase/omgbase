@@ -10,7 +10,7 @@
 // tests in `test/` pin it to the specification text so it cannot drift silently.
 
 /** The OQX language version (`spec/oqx/VERSION`, `major.minor`) this vocabulary describes. */
-export const LANGUAGE_VERSION = "0.17";
+export const LANGUAGE_VERSION = "0.18";
 
 /** Reserved words: never usable as a bare field name (GRAMMAR §1). `is`, `not`,
  * `and`, `or` are the word operators (GRAMMAR §4, since 0.17). */
@@ -55,8 +55,9 @@ export const OPERATORS = {
   membership: ["in"],
 } as const;
 
-/** Punctuation (GRAMMAR §1). `^` is the outer-reference / lift marker; `[`/`]`
- * are the bracket lookup (since 0.17). */
+/** Punctuation (GRAMMAR §1). `^` is the outer-reference / lift marker (and, as
+ * `N^`, the absolute scope reference — one lexeme, since 0.18); `[`/`]` are the
+ * bracket lookup (since 0.17). */
 export const PUNCTUATION = ["(", ")", "{", "}", "[", "]", ",", ":", ".", "^"] as const;
 
 /** Free functions defined by the language (SEMANTICS §11). */

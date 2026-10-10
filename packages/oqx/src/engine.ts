@@ -47,7 +47,9 @@ export interface Engine {
 }
 
 // One query scope: the row under evaluation plus the chain of enclosing scopes
-// that `^` walks. The root scope (parent === null) has no row; its names are the
+// that `^` walks. The root scope (parent === null) is a row too: its row is the
+// host's root object (`DataContext.rootObject`, since 0.18 — what `$it` is
+// there and `^$it` from a top-level row), while its bare names are the
 // context's named roots. `lifts` holds values bound INTO this scope by `^name:`
 // items in nested blocks; `meta` holds the scope's intrinsics: recursion
 // metadata for a follow occurrence, and `$key` for an entry scope (a row that
@@ -141,7 +143,7 @@ export class InMemoryEngine implements Engine {
       memo: new Map(),
     };
     if (this.trace) run.trace = this.trace;
-    const root: Scope = { row: null, parent: null, bindings, run };
+    const root: Scope = { row: this.ctx.rootObject?.(), parent: null, bindings, run };
     const rows = this.reproject(this.rowsOf(this.evalRaw(query.source, root)), query.from, root);
 
     const bound = this.boundOf(query, root);
@@ -186,11 +188,15 @@ export class InMemoryEngine implements Engine {
   // Evaluate a block's `limit`/`offset`. The bound is part of the block, so it
   // is read in a row-less scope INSIDE it: a bare name is absent (there is no
   // current item yet), `^name` is the enclosing row — exactly as in the block's
-  // body — and literals/bindings are themselves. For a top-level query `scope`
-  // is the root. Each must be a non-negative integer.
+  // body — and literals/bindings are themselves. For a top-level query the
+  // scope is the root scope WITHOUT its row (SEMANTICS §18): bare names are
+  // still the named roots, but `$it` — reached through a bracket inside the
+  // bound — is absent, not the root object. Each must be a non-negative integer.
   private boundOf(b: Pick<Subquery, "limit" | "offset">, enclosing: Scope): Bound {
     if (!b.limit && !b.offset) return UNBOUNDED;
-    const scope: Scope = enclosing.parent === null ? enclosing : rowless(enclosing);
+    const scope: Scope = enclosing.parent === null
+      ? { row: undefined, parent: null, bindings: enclosing.bindings, run: enclosing.run }
+      : rowless(enclosing);
     const read = (e: Expr | null, word: string): number | null => {
       if (!e) return null;
       const v = this.evalExpr(e, scope);
@@ -761,11 +767,14 @@ export class InMemoryEngine implements Engine {
 
   // Resolve a name against ONE scope — never its ancestors. A scope provides,
   // in order: `$it` (the scope's row itself — the current item, whatever its
-  // type, so scalar collections are queryable; absent at the root, which has no
-  // row; `$value`, its pre-0.15 spelling, is an ordinary property name now); `$key` (the property key) when it is an entry scope — see `enter`;
-  // the recursion intrinsics (`$depth`, …) when it is a follow occurrence;
-  // values lifted into it by `^name:` items; then either the row's own property
-  // or, for the root scope (no row), the context's named roots.
+  // type, so scalar collections are queryable; at the root the host's root
+  // object, since 0.18; `$value`, its pre-0.15 spelling, is an ordinary
+  // property name now); `$key` (the property key) when it is an entry scope —
+  // see `enter`; the recursion intrinsics (`$depth`, …) when it is a follow
+  // occurrence; values lifted into it by `^name:` items; then either the row's
+  // own property or, for the root scope, the context's named roots (`root(name)`
+  // — never a property of the root object, so a host with lazy roots is
+  // unaffected by what its root object holds).
   //
   // The two metadata steps apply only where the scope CARRIES that metadata
   // (SEMANTICS §2, since 0.13). Anywhere else — `$key` on an ordinary row,
@@ -781,7 +790,7 @@ export class InMemoryEngine implements Engine {
   // always spelled explicitly as `^name`. Present-but-falsy values (null, false,
   // 0, "") need no special case — there is no "absent, so look outward" rule.
   private resolveIn(name: string, scope: Scope): unknown {
-    if (name === "$it") return scope.parent === null ? undefined : scope.row;
+    if (name === "$it") return scope.row;
     if ((name === KEY || RECUR.has(name)) && scope.meta && Object.hasOwn(scope.meta, name)) return scope.meta[name];
     if (scope.lifts && Object.hasOwn(scope.lifts, name)) return scope.lifts[name];
     if (scope.parent === null) return this.ctx.root(name);
@@ -789,7 +798,8 @@ export class InMemoryEngine implements Engine {
   }
 
   // ` on <identity>` for a required-value error when the scope has a row with a
-  // scalar identity (its `id`, through the context); empty otherwise.
+  // scalar identity (its `id`, through the context); empty otherwise, and at the
+  // root (the root object is not a row of the data).
   private rowIdentity(scope: Scope): string {
     if (scope.parent === null || scope.row == null) return "";
     const id = this.ctx.identity(scope.row);

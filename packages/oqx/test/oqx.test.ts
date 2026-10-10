@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { oqx, execute, parse, run, OqxError, LANGUAGE_VERSION, stripSpans, resolveAliases } from "../src/index.ts";
+import { oqx, execute, parse, run, OqxError, LANGUAGE_VERSION, stripSpans, resolveAliases, DefaultContext } from "../src/index.ts";
+import type { DataContext } from "../src/index.ts";
 import { parseTemplate } from "../src/parser.ts";
 
 // ---- fixtures ---------------------------------------------------------------
@@ -705,9 +706,15 @@ test("$it inside a nested block is the inner item; ^$it is the enclosing row", (
   );
 });
 
-test("$it is absent at the root scope and is never a named root", () => {
+test("$it at the root scope is the host's root object (the roots record), never a named root", () => {
   assert.deepEqual(execute("$it values from xs where has($it)", { xs: [1, null, 2] }), [1, 2]);
-  assert.equal(execute("xs exists { where $it == ^$it }", { xs: [1] }), false); // ^$it from a top-level row is the root: absent
+  // ^$it from a top-level row is the root scope's row: DefaultContext's roots record
+  assert.deepEqual(execute("xs collect { r: ^$it values }", { xs: [1], k: 2 }), [{ xs: [1], k: 2 }]);
+  assert.deepEqual(execute("xs collect { ks: entries(^$it) collect { $key values } }", { xs: [1], k: 2 }), [{ ks: ["xs", "k"] }]);
+  // a context without a root object keeps the pre-0.18 reading: absent
+  const ctx = new DefaultContext({ xs: [1] });
+  const bare: DataContext = { root: (n) => ctx.root(n), get: (r, k) => ctx.get(r, k), toRows: (v) => ctx.toRows(v), identity: (r) => ctx.identity(r) };
+  assert.equal(run(parse("xs exists { where ^$it == null }"), { context: bare }).exists, true);
 });
 
 test("values: a record projection becomes the bare value", () => {

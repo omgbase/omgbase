@@ -558,15 +558,220 @@
       }
     },
     {
-      "name": "$it is absent at the root scope",
+      "name": "^$it from a top-level row is the host's root object: the roots record",
+      "tags": [
+        "root-object"
+      ],
+      "notes": "Since 0.18 the root scope is a row too: its row is the host's root object (SEMANTICS §2), which in the reference `DefaultContext` is the roots record passed to it. Bare names at the root still resolve as named roots.",
       "roots": {
         "xs": [
           1
+        ],
+        "k": 2
+      },
+      "query": "xs collect { r: ^$it values }",
+      "expect": {
+        "result": [
+          {
+            "xs": [
+              1
+            ],
+            "k": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "entries(^$it) enumerates the named roots in insertion order",
+      "tags": [
+        "root-object",
+        "entries"
+      ],
+      "roots": {
+        "b": 1,
+        "a": 2,
+        "xs": [
+          0
         ]
       },
-      "query": "xs exists { where $it == ^$it }",
+      "query": "xs collect { roots: entries(^$it) collect { k: $key, v: $it } }",
       "expect": {
-        "result": false
+        "result": [
+          {
+            "roots": [
+              {
+                "k": "b",
+                "v": 1
+              },
+              {
+                "k": "a",
+                "v": 2
+              },
+              {
+                "k": "xs",
+                "v": [
+                  0
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^$it.people is the named root people",
+      "tags": [
+        "root-object"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ada"
+          },
+          {
+            "name": "Ben"
+          }
+        ]
+      },
+      "query": "name, n: size(^$it.people), same: ^$it.people is ^people from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Ada",
+            "n": 2,
+            "same": true
+          },
+          {
+            "name": "Ben",
+            "n": 2,
+            "same": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "^$it.people as a receiver is the ^people receiver",
+      "tags": [
+        "root-object",
+        "receiver"
+      ],
+      "roots": {
+        "people": [
+          {
+            "name": "Ada"
+          },
+          {
+            "name": "Ben"
+          }
+        ]
+      },
+      "query": "name, peers: ^$it.people collect { name values where name != ^name } from people",
+      "expect": {
+        "result": [
+          {
+            "name": "Ada",
+            "peers": [
+              "Ben"
+            ]
+          },
+          {
+            "name": "Ben",
+            "peers": [
+              "Ada"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^$it in a top-level where reads the root object",
+      "tags": [
+        "root-object",
+        "where"
+      ],
+      "roots": {
+        "xs": [
+          {
+            "a": 1
+          },
+          {
+            "a": 2
+          }
+        ],
+        "k": 2
+      },
+      "query": "a values from xs where a == ^$it.k",
+      "expect": {
+        "result": [
+          2
+        ]
+      }
+    },
+    {
+      "name": "$it at the root scope is the root object, never a named root",
+      "tags": [
+        "root-object",
+        "intrinsics"
+      ],
+      "notes": "Step 1 of §2 is unconditional at the root too: `$it` there is the root object (coerced to one row as a source), and a root literally named `$it` is unreachable by that name — bare names at the root go through `root(name)`, `$it` never does.",
+      "roots": {
+        "$it": [
+          1,
+          2
+        ],
+        "xs": [
+          3
+        ]
+      },
+      "query": "$it values from $it",
+      "expect": {
+        "result": [
+          {
+            "$it": [
+              1,
+              2
+            ],
+            "xs": [
+              3
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "^^$it from a nested block is the root object; past it is absent",
+      "tags": [
+        "root-object",
+        "nested"
+      ],
+      "roots": {
+        "rows": [
+          {
+            "items": [
+              1
+            ]
+          }
+        ]
+      },
+      "query": "r: items collect { root: ^^$it, gone: ^^^$it } from rows",
+      "expect": {
+        "result": [
+          {
+            "r": [
+              {
+                "root": {
+                  "rows": [
+                    {
+                      "items": [
+                        1
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       }
     },
     {

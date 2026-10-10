@@ -92,7 +92,7 @@ fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<S
 ///
 /// ```text
 /// select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
-/// from docs where $id == <root> || … follow distinct doc.<dir> { depth <depth> }
+/// from docs where $id == <root> or … follow distinct doc.<dir> { depth <depth> }
 /// ```
 fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
     let mut edges_body = build::subquery();
@@ -418,12 +418,13 @@ mod tests {
         );
         assert!(q.ends_with("from docs where $id == \"d_0\" follow distinct doc.out { depth 2 }"));
         assert!(oqx::parse_string(&q).is_ok());
-        // several roots: an `||` seed; the generated text is exactly the macro's
-        // pinned shape (spec/surface `reads.json`)
+        // several roots: an `or` seed (the canonical print of the `or` node since
+        // oqx 0.18); the generated text is exactly the macro's pinned shape
+        // (spec/surface `reads.json`)
         let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
         assert_eq!(
             q,
-            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" || $id == \"d_15\" follow distinct doc.in { depth 8 }"
+            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" or $id == \"d_15\" follow distinct doc.in { depth 8 }"
         );
     }
 

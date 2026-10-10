@@ -23,6 +23,18 @@ pub trait DataContext {
     /// Unknown names are `Value::Undefined`.
     fn root(&self, name: &str) -> Value;
 
+    /// The root scope's row — the host's root object: what `$it` is at the
+    /// root scope and `^$it` from a top-level row (SEMANTICS §2, since 0.18),
+    /// so `^$it.people` navigates it through [`DataContext::get`] and
+    /// `entries(^$it)` enumerates it. Bare names at the root still resolve
+    /// through [`DataContext::root`], so a host with lazy roots is unaffected.
+    /// The default is `Value::Undefined` — the root has no row, `$it` there is
+    /// absent (the pre-0.18 behavior); [`DefaultContext`] returns its roots
+    /// record.
+    fn root_object(&self) -> Value {
+        Value::Undefined
+    }
+
     /// Read a property/relation off a row: a bare identifier (`field`), a
     /// `.field` segment, or a `^field` outer reference all come through here,
     /// each against exactly the row of the scope it names. An absent property
@@ -106,7 +118,8 @@ pub trait DataContext {
 }
 
 /// The default context: plain [`Value`]s. Named roots come from an [`Object`]
-/// map; properties are object keys (and array indices spelled as integers);
+/// map, which is also the root object (`^$it` from a top-level row);
+/// properties are object keys (and array indices spelled as integers);
 /// identity is the `id` property when present, else the row itself
 /// (structural identity — the spec's rule; the reference uses reference
 /// identity for id-less objects, which has no portable meaning).
@@ -174,6 +187,10 @@ impl DefaultContext {
 impl DataContext for DefaultContext {
     fn root(&self, name: &str) -> Value {
         self.roots.get(name).cloned().unwrap_or(Value::Undefined)
+    }
+
+    fn root_object(&self) -> Value {
+        Value::Object(self.roots.clone())
     }
 
     fn get(&self, row: &Value, key: &str) -> Result<Value> {

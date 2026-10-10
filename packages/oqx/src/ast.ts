@@ -39,7 +39,7 @@ export type LogicalOp = "&&" | "||";
 export type Expr =
   | { kind: "lit"; span: Span; value: string | number | boolean | null }
   | { kind: "ident"; span: Span; name: string } // bare property of the CURRENT row/scope only (never climbs); `$it` is the row itself
-  | { kind: "outer"; span: Span; levels: number; name: string } // `^name` — read from exactly `levels` scopes out
+  | { kind: "outer"; span: Span; levels: number; name: string } // `^name` — read from exactly `levels` scopes out (also what `N^name` parses to, since 0.18)
   | { kind: "binding"; span: Span; index: number } // a ${…} interpolated host value
   | { kind: "member"; span: Span; recv: Expr; name: string } // .prop navigation on the value to its left
   | { kind: "call"; span: Span; recv: Expr | null; name: string; args: Expr[] } // fn / method

@@ -28,6 +28,14 @@ export interface CallResult {
 export interface DataContext {
   /** Resolve a named root collection (the `from <name>` / directive receiver). */
   root(name: string): unknown;
+  /** The root scope's row — the host's root object: what `$it` is at the root
+   * scope and `^$it` from a top-level row (SEMANTICS §2, since 0.18), so
+   * `^$it.people` navigates it through `get` and `entries(^$it)` enumerates it.
+   * Bare names at the root still resolve through `root(name)`, so a host with
+   * lazy roots is unaffected. Optional: a context without it (or returning
+   * `undefined`) has no root row — `$it` at the root is absent, the pre-0.18
+   * behavior. `DefaultContext` returns its roots record. */
+  rootObject?(): unknown;
   /** Read a property/relation off a row: a bare identifier (`field`), a
    * `.field` segment, or a `^field` outer reference all come through here, each
    * against exactly the row of the scope it names. An absent property is
@@ -82,9 +90,10 @@ export interface DefaultContextOptions {
 }
 
 /** The default context: ordinary JavaScript objects. Named roots come from a
- * plain `{ name: collection }` map; properties are OWN keys only (an array
- * exposes only its integer indices, a primitive has none); identity is `.id`
- * when present, else the row itself (the engine keys it structurally). */
+ * plain `{ name: collection }` map, which is also the root object (`^$it` from
+ * a top-level row); properties are OWN keys only (an array exposes only its
+ * integer indices, a primitive has none); identity is `.id` when present, else
+ * the row itself (the engine keys it structurally). */
 export class DefaultContext implements DataContext {
   private roots: Record<string, unknown>;
   readonly regexDialect: RegexDialect;
@@ -96,6 +105,10 @@ export class DefaultContext implements DataContext {
 
   root(name: string): unknown {
     return Object.hasOwn(this.roots, name) ? this.roots[name] : undefined;
+  }
+
+  rootObject(): unknown {
+    return this.roots;
   }
 
   get(row: unknown, key: string): unknown {

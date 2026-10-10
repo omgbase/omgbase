@@ -11,8 +11,8 @@ owned by neither of them.
 
 The spec is four artifacts, versioned together by `VERSION`:
 
-- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`, and the 0.17 sugar (implicit `collect`, where-first bodies, brackets, postfix `!`, `is`/`not`).
-- `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
+- `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`, the 0.17 sugar (implicit `collect`, where-first bodies, brackets, postfix `!`, `is`/`not`), and the 0.18 absolute scope references (`0^docs`, `1^$path`).
+- `SEMANTICS.md` — the scalar and collection rules: scopes (the root scope's row is the host's root object, since 0.18), equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
 - `AST.md` — the abstract syntax tree as a contract (since 0.16): the node and field tables, spans, the JSON shape both implementations produce, the traversal and canonical-printer laws.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.
 
@@ -116,6 +116,8 @@ accident. `SEMANTICS.md` states each as a rule; this is the short list.
 - **`matches(pattern, flags?)` compiles the OQX regex baseline** (SEMANTICS §11), a fixed grammar with spec-defined meanings: `\d` `\w` `\b` are ASCII, `\s` is one listed set, the line terminator is `\n` alone, flags are the second argument. Every construct outside it is rejected by name; a fixture relying on an engine's native behavior (Unicode `\d`, inline `(?i)`, lookaround) is a spec bug.
 - **Object property order is insertion order**, observed by `entries()` and by projection.
 - **Identity** for `follow` dedup and `distinct` over unprojected rows is the row's `id` property when present, else the row's structural value.
+- **The root object is host-defined** (SEMANTICS §2, since 0.18): the root scope's row — `$it` there, `^$it` from a top-level row — is whatever the host's `DataContext` returns as its root object; the reference `DefaultContext` returns the roots record, which is what the fixtures assume (`entries(^$it)` lists the roots in insertion order; `^$it.people` is `^people`). Bare names at the root are always `root(name)`, never a property of that object. A host with no root object leaves the root row absent.
+- **Canonical print writes `and` / `or`** (AST.md §6, since 0.18); the symbols parse to the same nodes and the JSON operator words stay `&&` / `||`.
 
 ## Running
 

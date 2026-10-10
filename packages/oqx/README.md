@@ -174,7 +174,10 @@ oqx`employee: $it from ${people} where name == "Bob"`;         // [{ employee: <
 ```
 
 Inside a nested block `$it` is the inner item; the enclosing row is `^$it`
-(§3). At the root scope (before any row) it is absent. `$it` is the only name
+(§3). At the root scope `$it` is the context's **root object** (language 0.18;
+`DataContext.rootObject()` — `DefaultContext` returns the roots record, so
+`^$it` from a top-level row is `{ people, … }` and `entries(^$it)` lists the
+named roots). `$it` is the only name
 for the current item (language 0.15; through 0.14 it was spelled `$value`, and
 there is no synonym): `$value` is now an ordinary property read, like any other
 non-metadata `$name` — a row `{ "$value": 3 }` projects `3`, a row without one
@@ -284,7 +287,11 @@ an alias. `order by` is not rewritten — it reads row fields (§8).
 against the **current row only**. If the row lacks that property the value is
 absent — it never falls through to an enclosing row. To correlate with an
 enclosing scope you say so explicitly with `^name` ("exactly one scope out";
-`^^name` for two, and so on):
+`^^name` for two, and so on) — or by **depth** with `N^name` (language 0.18):
+`0^people` is the root scope's `people` from any depth, `1^name` the top-level
+row's `name`, `0^$it` the root object. `N^` is an integer touching a caret
+(`1 ^x` is not one); it is pure sugar for the caret form with `levels = depth −
+N`, and `N ≥ the current depth` is a parse error.
 
 ```js
 const accounts = [
@@ -679,6 +686,7 @@ oqx`select id!, title from ${docs}`           // insist on an identity before a 
 oqx`name from ${people} where manager is null`            // absent (same as == null)
 oqx`${people} count { ^people exists { $it is ^$it } }`   // rows compare; `==` leaves that unspecified
 // `and` / `or` are exact synonyms of `&&` / `||`: `title or path` coalesces.
+// `print` writes the words (language 0.18); `!` stays `!`.
 
 // A select item may use the items to its left (inlined like a `where` alias):
 oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
@@ -828,8 +836,10 @@ than approximate it. The conformance suite verifies this.
 
 The engine never touches host objects directly; it asks a `DataContext` to
 resolve named roots, read properties/relations, coerce results to rows, and
-compute identity. Implement it to query an ORM graph, a remote API, or lazily
-loaded relations — the query *semantics* stay in OQX. Name resolution is simple
+compute identity (and, optionally, to supply a `rootObject()` — the root
+scope's row, what `$it` is at the root and `^$it` from a top-level row; without
+one the root row is absent). Implement it to query an ORM graph, a remote API,
+or lazily loaded relations — the query *semantics* stay in OQX. Name resolution is simple
 for a context: a bare `field`, a `.field` segment, and a `^field` outer
 reference each become one `get(row, key)` against exactly the row of the scope
 they name, so a computed relation only needs `get` to know about it:

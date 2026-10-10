@@ -41,6 +41,15 @@
 //! block alias inside an expression is a parse error) but keeps the surface
 //! form; [`crate::resolve::resolve_aliases`] substitutes them before evaluation.
 //!
+//! Absolute scope references (0.18) desugar HERE too: `N^name` — an unsigned
+//! integer literal immediately followed by `^` — is the `outer` reference (or
+//! the lift) reaching scope N, i.e. `levels = depth − N`, where `depth` is the
+//! syntactic scope depth of the position being parsed (SEMANTICS §2: the root
+//! is 0, a top-level row 1, a block's body one deeper than its receiver, a
+//! follow `where` one deeper than the frontier row). The parser tracks that
+//! depth (`self.depth`) exactly as the `visit` walk computes it; `N >= depth`
+//! is a parse error. There is no new node: `print` writes the carets back.
+//!
 //! Every node carries its [`Span`] — `[start, end)` in code points over the raw
 //! source, from the first token that produced it to the end of the last; a
 //! parenthesized operand's span includes its parentheses (`spec/oqx/AST.md`).
@@ -209,6 +218,11 @@ struct Parser {
     /// `first`/`single` leaf is not rejected on sight: the body decides after
     /// the run is classified (`reject_bare_lookups`).
     defer_lookup: bool,
+    /// The scope depth (SEMANTICS §2) at which the construct being parsed is
+    /// evaluated: 0 at the root (the top-level source and bounds), 1 for a
+    /// top-level row's clauses, one deeper per block body and per follow
+    /// `where`. An absolute reference `N^name` reads `depth − N` scopes out.
+    depth: usize,
 }
 
 /// The keyword-less run that opens a body: a `where`-first predicate or the
@@ -225,7 +239,18 @@ impl Parser {
             tokens,
             pos: 0,
             defer_lookup: false,
+            depth: 0,
         }
+    }
+
+    /// Run `f` with the scope depth set to `d`, restoring it afterwards (also on
+    /// the error path, so a speculative read that fails leaves the depth intact).
+    fn with_depth<T>(&mut self, d: usize, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        let saved = self.depth;
+        self.depth = d;
+        let out = f(self);
+        self.depth = saved;
+        out
     }
 
     // ---- cursor helpers -------------------------------------------------------
@@ -387,6 +412,10 @@ impl Parser {
     fn parse_body(&mut self, ctx: BodyCtx) -> Result<BodyClauses> {
         let mut body = BodyClauses::default();
         let mut stage: Option<Clause> = None;
+        // A top-level body's row clauses (select/where/follow/order by) are read
+        // at depth 1, its source and bounds at the root (0); a block's clauses
+        // are all at the block's depth, which `parse_consumer_block` set.
+        let row_depth = if ctx == BodyCtx::Top { 1 } else { self.depth };
 
         while !self.at(TokType::Eof) && !self.at(TokType::RBrace) {
             if self.at_word(TokType::Kw, "select") {
@@ -396,7 +425,7 @@ impl Parser {
                     self.next();
                     body.distinct = true;
                 }
-                let (items, values) = self.parse_projection(ctx)?;
+                let (items, values) = self.with_depth(row_depth, |p| p.parse_projection(ctx))?;
                 body.select = items;
                 body.values = values;
                 continue;
@@ -411,19 +440,19 @@ impl Parser {
             if self.at_word(TokType::Kw, "where") {
                 self.enter(&mut stage, Clause::Where)?;
                 self.next();
-                body.r#where = Some(self.parse_where()?);
+                body.r#where = Some(self.with_depth(row_depth, |p| p.parse_where())?);
                 continue;
             }
             if self.at_follow() {
                 self.enter(&mut stage, Clause::Follow)?;
-                body.follow = Some(self.parse_follow()?);
+                body.follow = Some(self.with_depth(row_depth, |p| p.parse_follow())?);
                 continue;
             }
             if self.at_order_by() {
                 self.enter(&mut stage, Clause::OrderBy)?;
                 self.next(); // `order`
                 self.next(); // `by`
-                body.order_by = Some(self.parse_order_specs()?);
+                body.order_by = Some(self.with_depth(row_depth, |p| p.parse_order_specs())?);
                 continue;
             }
             if self.at_bound() {
@@ -461,7 +490,7 @@ impl Parser {
                     || self.at(TokType::Caret)
                     || self.can_start_value())
             {
-                match self.parse_leading_run(ctx)? {
+                match self.with_depth(row_depth, |p| p.parse_leading_run(ctx))? {
                     LeadingRun::Where(w) => {
                         self.enter(&mut stage, Clause::Where)?;
                         body.r#where = Some(w);
@@ -651,6 +680,56 @@ impl Parser {
         })
     }
 
+    /// Whether the token `n` ahead can head a scope reference: a `^` run, or
+    /// the `N^` of an absolute reference.
+    fn at_scope_ref_at(&self, n: usize) -> bool {
+        self.peek_at(n).is_some_and(|t| t.kind == TokType::Caret) || self.at_absolute_ref_at(n)
+    }
+
+    /// `N^` — an unsigned integer literal (digits only) immediately followed by
+    /// a caret, no whitespace between: an absolute scope reference (GRAMMAR §4).
+    /// `1 ^x` is not one (the `^` then fails as a stray token), nor is `1.0^x`.
+    fn at_absolute_ref(&self) -> bool {
+        self.at_absolute_ref_at(0)
+    }
+    fn at_absolute_ref_at(&self, n: usize) -> bool {
+        let (Some(t), Some(nx)) = (self.peek_at(n), self.peek_at(n + 1)) else {
+            return false;
+        };
+        t.kind == TokType::Number
+            && !t.value.is_empty()
+            && t.value.bytes().all(|b| b.is_ascii_digit())
+            && nx.kind == TokType::Caret
+            && nx.pos == t.end
+    }
+
+    /// The head of an outer reference or a lift: a run of carets (one scope out
+    /// per caret), or an absolute reference `N^` (scope N, GRAMMAR §4), both as
+    /// the number of scopes out from the current depth. Returns 0 when there is
+    /// none. The absolute form is checked before anything is consumed, so a
+    /// failing lookahead (`try_op`) leaves the cursor on the integer.
+    fn parse_scope_ref(&mut self) -> Result<usize> {
+        if self.at_absolute_ref() {
+            let n = self.peek().clone();
+            let target: usize = n.value.parse().unwrap_or(usize::MAX);
+            if target >= self.depth {
+                return self.fail(format!(
+                    "scope {} does not enclose this block (the current scope is depth {})",
+                    n.value, self.depth
+                ));
+            }
+            self.next(); // the integer
+            self.next(); // the caret
+            return Ok(self.depth - target);
+        }
+        Ok(self.parse_carets())
+    }
+
+    /// Whether the cursor is at something that can begin a `follow` destination.
+    fn at_destination_start(&self) -> bool {
+        matches!(self.peek().kind, TokType::Ident | TokType::Binding) || self.at_scope_ref_at(0)
+    }
+
     fn at_order_by(&self) -> bool {
         self.at_word(TokType::Ident, "order")
             && self
@@ -662,9 +741,10 @@ impl Parser {
     // `distinct`, an outer reference) follows; otherwise it is a field name.
     fn at_follow(&self) -> bool {
         self.at_word(TokType::Ident, "follow")
-            && self.peek_at(1).is_some_and(|nx| {
-                matches!(nx.kind, TokType::Ident | TokType::Binding | TokType::Caret)
-            })
+            && (self
+                .peek_at(1)
+                .is_some_and(|nx| matches!(nx.kind, TokType::Ident | TokType::Binding))
+                || self.at_scope_ref_at(1))
     }
 
     // ---- follow ---------------------------------------------------------------
@@ -678,10 +758,7 @@ impl Parser {
         if self.at_word(TokType::Ident, "distinct") {
             self.next();
             distinct = true;
-            if !matches!(
-                self.peek().kind,
-                TokType::Ident | TokType::Binding | TokType::Caret
-            ) {
+            if !self.at_destination_start() {
                 return self.fail(
                     "expected a relation after `follow distinct` (`follow distinct <relation>`)",
                 );
@@ -690,10 +767,7 @@ impl Parser {
         let mut destinations = vec![self.parse_follow_destination()?];
         while self.at(TokType::Comma) {
             self.next();
-            if !matches!(
-                self.peek().kind,
-                TokType::Ident | TokType::Binding | TokType::Caret
-            ) {
+            if !self.at_destination_start() {
                 return self
                     .fail("expected a relation after ',' (`follow <relation>, <relation>`)");
             }
@@ -718,7 +792,9 @@ impl Parser {
                     return self.fail("duplicate `where` in follow clause");
                 }
                 self.next();
-                follow.r#where = Some(self.parse_value_expr()?);
+                // Read in the successor's scope, one deeper than the frontier row.
+                let depth = self.depth + 1;
+                follow.r#where = Some(self.with_depth(depth, |p| p.parse_value_expr())?);
             } else if self.at_word(TokType::Ident, "frontier") {
                 if follow.frontier.is_some() {
                     return self.fail("duplicate `frontier` in follow clause");
@@ -763,7 +839,7 @@ impl Parser {
     // outer reference (`^people collect { … }`) is recognized before the plain-form
     // rule — a relation of the current row, never `^rel` — rejects the caret.
     fn parse_follow_destination(&mut self) -> Result<FollowDestination> {
-        let outer = self.at(TokType::Caret);
+        let outer = self.at_scope_ref_at(0);
         let receiver = self.parse_receiver()?;
         if let Some(op) = self.at_consumer_block() {
             if !matches!(op, Consumer::Collect | Consumer::First | Consumer::Single) {
@@ -793,7 +869,7 @@ impl Parser {
             return Ok(binding_node(&self.next()));
         }
         let start = self.start();
-        let levels = self.parse_carets();
+        let levels = self.parse_scope_ref()?;
         if !self.at(TokType::Ident) {
             return self.fail("expected a collection navigation (a property/relation name)");
         }
@@ -934,8 +1010,8 @@ impl Parser {
         // lift is bound by a `collect { … }` in where position and nowhere else — at
         // the top level, in a select-position block, or in an exists/none/count
         // block it would silently do nothing (or act as a plain field), so it is an
-        // error there.
-        let lift = self.parse_carets();
+        // error there. `N^name:` is the lift into scope N (GRAMMAR §4).
+        let lift = self.parse_scope_ref()?;
         if !self.at(TokType::Ident) && !self.can_start_value() {
             return self.fail("expected a projection name");
         }
@@ -1320,10 +1396,25 @@ impl Parser {
     fn try_op(&mut self, in_where: bool) -> Result<Option<OpNode>> {
         let start = self.pos;
         let start_pos = self.start();
+        // An absolute reference that does not enclose this scope is an error only
+        // if the tokens do form a directive (`0^docs collect { }` at the root);
+        // otherwise the expression grammar gets to read them (a top-level
+        // `0^name` item is a lift, with the lift's own error), so the failure is
+        // held back until the lookahead has decided.
+        let mut scope_err: Option<OqxError> = None;
         let receiver = if self.at(TokType::Binding) {
             binding_node(&self.next())
-        } else if self.at(TokType::Ident) || self.at(TokType::Caret) {
-            let levels = self.parse_carets();
+        } else if self.at(TokType::Ident) || self.at_scope_ref_at(0) {
+            let levels = match self.parse_scope_ref() {
+                Ok(levels) => levels,
+                Err(e) if e.stage == crate::errors::Stage::Parse => {
+                    scope_err = Some(e);
+                    self.next(); // the integer and the caret, as if it had parsed
+                    self.next();
+                    1
+                }
+                Err(e) => return Err(e),
+            };
             if !self.at(TokType::Ident) {
                 self.pos = start;
                 return Ok(None);
@@ -1340,6 +1431,9 @@ impl Parser {
             self.at_consumer_block()
         };
         if let Some(op) = op {
+            if let Some(e) = scope_err {
+                return Err(e);
+            }
             if let Expr::Ident { name, .. } = &receiver {
                 if LITERAL_WORDS.contains(&name.as_str()) {
                     return self.fail(format!("`{name}` is a literal, not a collection"));
@@ -1407,7 +1501,9 @@ impl Parser {
         } else {
             let defer = self.defer_lookup;
             self.defer_lookup = false;
-            let w = self.parse_where();
+            // The predicate is the block's `where`: read in the rows' scope, one deeper.
+            let depth = self.depth + 1;
+            let w = self.with_depth(depth, |p| p.parse_where());
             self.defer_lookup = defer;
             r#where = Some(w?);
         }
@@ -1508,7 +1604,9 @@ impl Parser {
         };
         let defer = self.defer_lookup;
         self.defer_lookup = false;
-        let body = self.parse_body(ctx);
+        // The receiver was read at the enclosing depth; the block's rows are one deeper.
+        let depth = self.depth + 1;
+        let body = self.with_depth(depth, |p| p.parse_body(ctx));
         self.defer_lookup = defer;
         let body = body?;
         if !self.at(TokType::RBrace) {
@@ -1865,12 +1963,14 @@ impl Parser {
     fn parse_primary(&mut self) -> Result<Expr> {
         let t = self.peek().clone();
         match t.kind {
-            // `^name` / `^^name` — an outer reference reading `levels` scopes out. (As a
-            // select-item head `^name:` is a lift, handled in parse_select_item; here, in
-            // expression position, `^` reads an enclosing row's field even when the
-            // current row shadows the name.)
-            TokType::Caret => {
-                let levels = self.parse_carets();
+            // `^name` / `^^name` — an outer reference reading `levels` scopes out — or
+            // the absolute `N^name` (0.18). (As a select-item head `^name:` is a lift,
+            // handled in parse_select_item; here, in expression position, `^` reads an
+            // enclosing row's field even when the current row shadows the name.)
+            TokType::Caret | TokType::Number
+                if t.kind == TokType::Caret || self.at_absolute_ref() =>
+            {
+                let levels = self.parse_scope_ref()?;
                 if !self.at(TokType::Ident) {
                     return self.fail("expected an identifier after '^' (an outer reference)");
                 }

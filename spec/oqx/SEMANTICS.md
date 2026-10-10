@@ -38,7 +38,8 @@ objects, plus two engine-internal value kinds (ranges, entries).
 
 ## 2. Scopes and names
 
-Evaluation proceeds in a chain of **scopes**. The **root scope** has no row; its
+Evaluation proceeds in a chain of **scopes**. The **root scope**'s row is the
+**host's root object** (since 0.18; before, the root had no row) and its bare
 names are the named roots. Every row under evaluation gets a child scope whose
 parent is the scope that produced it (the root for top-level rows; the enclosing
 row's scope for a nested block's rows).
@@ -46,8 +47,9 @@ row's scope for a nested block's rows).
 A **bare identifier** resolves against exactly **one** scope — the current one —
 and never climbs:
 
-1. `$it` — the scope's row itself (absent at the root). Unconditional: a
-   row property literally named `$it` is unreachable by bare name.
+1. `$it` — the scope's row itself (at the root, the host's root object).
+   Unconditional: a row property literally named `$it` is unreachable by bare
+   name, and so is a named root called `$it`.
 2. `$key` — the property key, in an entry scope (§21).
 3. `$depth`, `$stop`, `$leaf`, `$frontier`, `$ordinal` — the recursion
    intrinsics, on a `follow` occurrence (§20).
@@ -67,12 +69,39 @@ nested block, and in an entry scope (where it is a property of the entry's
 *value*) — so `{ "$value": 3 }` projects `3` and a row without it reads absent.
 [`intrinsics`]
 
+**The root object** (since 0.18). The root scope is a row like any other: its
+row is a value the host defines — `DataContext.rootObject()` in the reference,
+`DataContext::root_object()` in the Rust crate — and the reference
+`DefaultContext` returns the **roots record** it was constructed with (`{
+people, orders }`). So from a top-level row `^$it` is that record,
+`entries(^$it)` enumerates the named roots in insertion order, `^$it.people`
+is `^people` (a property read through `get`, usable as a receiver too), and
+`$it` at the root itself (`from $it`) is the record coerced to one row. Step 5
+at the root is unchanged — a bare name there is `root(name)`, **never** a
+property of the root object — so a host whose roots are lazy handles is
+unaffected by what its root object holds, and a host may answer a root-level
+name of its own from `root(name)` (omgbase exposes the repository id as `$id`)
+to make it readable as `^$id` from depth one and `^^$id` from depth two. A host
+without a root object leaves the root row absent, the pre-0.18 reading. The
+root object is host-defined and not portable; the fixtures assume only the
+reference's roots record. [`outer-refs`, `absolute-refs`]
+
 A name the scope lacks is **absent**. Present-but-falsy values are ordinary
 values. `^name` reads from exactly one scope out per caret; past the root it is
 absent. `.name` navigates the value to its left; navigating from absent yields
 absent, never an error (`a.b.c` on `{}` is absent). `^$it` is the enclosing
 row; `^people` from a top-level row is the named root `people`.
 [`outer-refs`, `projection`]
+
+**Absolute scope references** (since 0.18). Scopes have a syntactic **depth**:
+the root is 0, a top-level row 1, a block's rows one deeper than the block's
+receiver, a `follow` destination block's rows one below the frontier row, a
+follow `where` one deeper than the frontier row. `N^name` names the scope at
+depth N instead of counting carets: it is the outer reference with `levels =
+currentDepth − N`, desugared by the parser (GRAMMAR §4), so `0^docs` from any
+depth is the named root `docs`, `0^$it` the root object, `1^$path` the
+top-level row's `$path`, and `1^tasks: text` the lift into the top-level row.
+`N ≥ currentDepth` is a parse error. [`absolute-refs`]
 
 **Properties are own properties** (portability). Every property read — a bare
 identifier, `.field`, `^field`, `has(x)`, `"k" in obj`, `entries(obj)`, a lift
@@ -186,7 +215,8 @@ not appear in a fixture. [`arithmetic`]
 Outside the `where` tree, `&&` and `||` are value-producing: `a && b` yields
 `a` when `a` is falsy, else `b`; `a || b` yields `a` when `a` is truthy, else
 `b`. The words `and` / `or` are exact synonyms of the symbols (since 0.17) —
-one operator each, so `title or $path` coalesces. `!x` yields a boolean. Evaluation is **strictly left to right and
+one operator each, so `title or $path` coalesces; the canonical printer writes
+the words (AST.md §6, since 0.18). `!x` yields a boolean. Evaluation is **strictly left to right and
 short-circuits**: the right operand is never evaluated when the left decides,
 so `false && foo()` is `false` even though `foo` is unknown. [`projection`,
 `logical`]
@@ -461,15 +491,20 @@ the second row, `exists { offset 2 }` needs a third row, `none { limit 0 }` is
 true. The operand is evaluated in a row-less scope inside the block — a literal
 or binding is itself, `^n` is the enclosing row's `n` — and must be a
 **non-negative integer**, else an eval error (`limit must be a non-negative
-integer …`), raised even when the block has no rows. [`limit-offset`,
-`errors-eval`]
+integer …`), raised even when the block has no rows. A **top-level** bound is
+evaluated in the root scope **without its row** (since 0.18 the root has one,
+§2): its bare names are still the named roots, but `$it` there — reachable
+only through a bracket inside the bound, `limit ${xs}[^$it == null]` — is
+absent, not the root object, because the bound is read "inside the block" like
+every other. [`limit-offset`, `errors-eval`]
 
 ## 19. Outer references and lifts
 
 `^name` **reads** exactly N scopes out (§2). A `^name: expr` item inside a
 `collect { … }` in `where` **binds**: for every matched row the value of `expr`
 is appended to a list named `name` in the scope N carets out (`^` = the row the
-`where` belongs to), flatten-appending as intermediate blocks fan out. The bound
+`where` belongs to; `1^name: expr` names that scope by depth instead, §2),
+flatten-appending as intermediate blocks fan out. The bound
 name is then read there like a row property (`name, currentEmployers from …`).
 A where-position `collect` with no matches is false, so the row is filtered out
 rather than receiving an empty list. An unaliased `^name` item lifts the field

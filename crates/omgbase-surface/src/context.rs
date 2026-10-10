@@ -1333,6 +1333,12 @@ impl DataContext for StoreContext<'_> {
         Target::parse(name).map_or(Value::Undefined, scan_marker)
     }
 
+    /// The root scope's row (oqx 0.18): the repository root, so `^$it` from a
+    /// top-level row is `$repo` and `^$it.docs` the docs scan.
+    fn root_object(&self) -> Value {
+        self.repo_root()
+    }
+
     fn get(&self, row: &Value, key: &str) -> oqx::Result<Value> {
         if row.is_absent() {
             return Ok(Value::Undefined);

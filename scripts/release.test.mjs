@@ -206,6 +206,20 @@ test("spec-tracking: a minor that matches the moved spec passes; both implementa
   rmSync(root, { recursive: true, force: true });
 });
 
+test("spec-tracking: a minor snaps to a spec that moved more than one minor (two language bumps in one release)", () => {
+  const root = fixture({
+    specs: { oqx: "0.15", store: "13.5", sync: "1.2" },
+    notes: { x: NOTE('crates:\n  oqx: minor\nnpm:\n  "@omgbase/oqx": minor') },
+  });
+  const ws = loadWorkspace(root);
+  const plan = computePlan(ws, loadNotes(ws).notes);
+  assert.deepEqual(plan.errors, []);
+  const by = Object.fromEntries(plan.entries.map((e) => [e.key, e]));
+  assert.equal(by["crate:oqx"].next, "0.15.0");
+  assert.equal(by["npm:@omgbase/oqx"].next, "0.15.0");
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("spec-tracking: the spec moved but no note bumps the crate → fail naming the missing note; a patch does not satisfy it", () => {
   const root = fixture({ specs: { oqx: "0.13", store: "13.6", sync: "1.2" } });
   const ws = loadWorkspace(root);

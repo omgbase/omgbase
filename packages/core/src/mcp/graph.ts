@@ -10,7 +10,7 @@
 // bound is `follow`'s; nothing here re-implements BFS/DFS.
 //
 // Mapping (args → follow query):
-//   roots      → the seed `where $id == … || …` (refs resolved to doc ids first; literals in the AST, never spliced text)
+//   roots      → the seed `where $id == … or …` (refs resolved to doc ids first; literals in the AST, never spliced text)
 //   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
 //   direction  → `follow doc.out` | `doc.in` | both (two walks, unioned)
 //   predicate  → restricts the neighborhood to docs reachable via that predicate
@@ -158,7 +158,7 @@ const EDGE_FIELDS: [name: string, expr: string][] = [
 // strings: the seed ids are literals, the caller's projections parsed items.
 //
 //   select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
-//   from docs where $id == <root> || … follow distinct doc.<dir> { depth <depth> }
+//   from docs where $id == <root> or … follow distinct doc.<dir> { depth <depth> }
 function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number, userSelect: SelectItem[]): string {
   const edges = build.op(build.path("doc", `${dir}_edges`), "collect", build.subquery({
     select: EDGE_FIELDS.map(([name, expr]) => build.field(name, build.ident(expr))),

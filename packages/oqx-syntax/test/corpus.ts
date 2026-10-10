@@ -215,4 +215,18 @@ export const CORPUS: Sample[] = [
     tokens:
       "alias(xs) colon(:) identifier(items) consumer(collect) braceOpen({) identifier(name) clause(limit) lift(^) identifier(n) braceClose(}) keyword(from) identifier(r)",
   },
+  {
+    name: "absolute scope references (0^root, 1^row) and a numbered lift",
+    valid: true,
+    source: "id, t: tasks collect { text, doc: 1^path, n: size(0^docs) } from docs where tasks collect { 1^open: text }",
+    tokens:
+      "identifier(id) comma(,) alias(t) colon(:) identifier(tasks) consumer(collect) braceOpen({) identifier(text) comma(,) alias(doc) colon(:) lift(1^) identifier(path) comma(,) alias(n) colon(:) builtinFunction(size) parenOpen(() lift(0^) identifier(docs) parenClose()) braceClose(}) keyword(from) identifier(docs) keyword(where) identifier(tasks) consumer(collect) braceOpen({) lift(1^) alias(open) colon(:) identifier(text) braceClose(})",
+  },
+  {
+    name: "a spaced `1 ^k` is a number then a caret (a parse error, lexically fine)",
+    valid: false,
+    source: "id from docs where 1 ^k == 2",
+    tokens:
+      "identifier(id) keyword(from) identifier(docs) keyword(where) number(1) lift(^) identifier(k) operator(==) number(2)",
+  },
 ];

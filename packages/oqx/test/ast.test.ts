@@ -118,7 +118,7 @@ test("transform maps every expression bottom-up and keeps untouched nodes by ref
   const q = parse("select n: jobs collect { employer where text(\"a\") } from people where text(\"b\") && size(x) > 1 order by text(\"c\")");
   const self: Expr = build.ident("$self");
   const out = transform(q, (e) => (e.kind === "call" && e.recv === null && e.name === "text" ? { ...e, recv: self } : e));
-  assert.equal(print(out), 'select n: jobs collect { employer: employer where $self.text("a") } from people where $self.text("b") && size(x) > 1 order by $self.text("c")');
+  assert.equal(print(out), 'select n: jobs collect { employer: employer where $self.text("a") } from people where $self.text("b") and size(x) > 1 order by $self.text("c")');
   assert.notEqual(out, q);
   // the source and the select item's `employer` field were not touched
   assert.equal(out.source, q.source);
@@ -136,14 +136,14 @@ test("transform maps every expression bottom-up and keeps untouched nodes by ref
 
 test("print is canonical: keyword, spacing, quotes, minimal parentheses", () => {
   const canon = (src: string): string => print(parse(src));
-  assert.equal(canon("name,id   from people where (age>=18)&&!(x==1)"), "select name: name, id: id from people where age >= 18 && !(x == 1)");
-  assert.equal(canon("from p where a && (b || c)"), "from p where a && (b || c)");
-  assert.equal(canon("from p where (a && b) || c"), "from p where a && b || c");
-  assert.equal(canon("from p where (a || b) && c"), "from p where (a || b) && c");
+  assert.equal(canon("name,id   from people where (age>=18)&&!(x==1)"), "select name: name, id: id from people where age >= 18 and !(x == 1)");
+  assert.equal(canon("from p where a && (b || c)"), "from p where a and (b or c)");
+  assert.equal(canon("from p where (a && b) || c"), "from p where a and b or c");
+  assert.equal(canon("from p where (a || b) && c"), "from p where (a or b) and c");
   assert.equal(canon("select v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: (a.b).c() from p"), "select v: (a + b) * c - (d - e), w: a - (b - c), x: -(a + 1), y: a.b.c() from p");
   assert.equal(canon("select s: 'it\\'s', t: \"a\\nb\\\"c\" from p"), 'select s: "it\'s", t: "a\\nb\\"c" from p');
   assert.equal(canon("select a: 'q', b: 1e3, c: 2.50, d: true, e: null from p"), 'select a: "q", b: 1000, c: 2.5, d: true, e: null from p');
-  assert.equal(canon("from p where n in 1+1..2*3 && (m in ..5) && k in 5.."), "from p where n in 1 + 1..2 * 3 && m in ..5 && k in 5..");
+  assert.equal(canon("from p where n in 1+1..2*3 && (m in ..5) && k in 5.."), "from p where n in 1 + 1..2 * 3 and m in ..5 and k in 5..");
   assert.equal(canon("people count distinct { select employer }"), "people count distinct { employer: employer }");
   assert.equal(canon("select n: jobs collect { select distinct employer } from p"), "select n: jobs collect distinct { employer: employer } from p");
   assert.equal(canon("people collect { name }"), "select name: name from people");
@@ -151,7 +151,7 @@ test("print is canonical: keyword, spacing, quotes, minimal parentheses", () => 
   assert.equal(canon("x: (1).size() from r"), "select x: (1).size() from r");
   assert.equal(canon("id from t follow distinct a, ^t collect { where p == ^id } { depth 3 by id where x frontier y }"), "select id: id from t follow distinct a, ^t collect { where p == ^id } { where x frontier y depth 3 by id }");
   assert.equal(canon("select name, adult: age >= 18 from people where adult"), "select name: name, adult: age >= 18 from people where adult");
-  assert.equal(canon("from p where !jobs count { } > 1 && jobs none { }"), "from p where !jobs count { } > 1 && jobs none { }");
+  assert.equal(canon("from p where !jobs count { } > 1 and jobs none { }"), "from p where !jobs count { } > 1 and jobs none { }");
   assert.equal(canon("distinct from r"), "distinct: distinct from r");
   assert.equal(canon("name, employers from p where jobs collect { ^employers: employer where !end }"), "select name: name, employers: employers from p where jobs collect { ^employers: employer where !end }");
 });
@@ -180,7 +180,7 @@ test("print throws on a binding; printTemplate emits fragments and the binding o
 test("resolveAliases substitutes once, keeps untouched nodes, and is what the entry points apply", () => {
   const q = parse("select name: name.upper(), cur: jobs collect { employer where !end } from people where name == \"BOB\" && cur");
   const r = resolveAliases(q);
-  assert.equal(print(r), 'select name: name.upper(), cur: jobs collect { employer: employer where !end } from people where name.upper() == "BOB" && jobs collect { employer: employer where !end }');
+  assert.equal(print(r), 'select name: name.upper(), cur: jobs collect { employer: employer where !end } from people where name.upper() == "BOB" and jobs collect { employer: employer where !end }');
   assert.equal(r.select, q.select);
   const plain = parse("from p where a");
   assert.equal(resolveAliases(plain), plain); // nothing to resolve: the same object
@@ -199,7 +199,7 @@ test("toJSON stamps the language version on the plain-data tree", () => {
   const j = toJSON(q);
   assert.equal(j.oqx, LANGUAGE_VERSION);
   assert.equal(j.kind, "query");
-  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.17", ...q });
+  assert.deepEqual(JSON.parse(JSON.stringify(j)), { oqx: "0.18", ...q });
 });
 
 test("builders make nodes with the empty span and materialized fields, and print them", () => {
@@ -213,6 +213,6 @@ test("builders make nodes with the empty span and materialized fields, and print
   });
   assert.deepEqual(q.span, [0, 0]);
   assert.equal(q.limit, null);
-  assert.equal(print(q), 'select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == "d_0" || $id == "d_1" follow distinct doc.out { depth 2 }');
+  assert.equal(print(q), 'select _depth: $depth, _edges: doc.out_edges collect { id: $id } from docs where $id == "d_0" or $id == "d_1" follow distinct doc.out { depth 2 }');
   assert.deepEqual(stripSpans(parse(print(q))), stripSpans(q));
 });

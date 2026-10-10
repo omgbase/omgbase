@@ -70,6 +70,10 @@ export const RULES: readonly Rule[] = [
   // ---- literals with internal structure ------------------------------------
   { name: "binding", regex: "\\$\\{[^}]*\\}", groups: ["binding"] },
 
+  // `N^` — an unsigned integer touching a caret — is an absolute scope reference
+  // (GRAMMAR §4, since 0.18): one outer-reference lexeme, before the number rules.
+  { name: "absolute-ref", regex: "[0-9]+\\^", groups: ["lift"] },
+
   // Malformed numbers are lex errors (GRAMMAR §1); they are matched before the
   // number rule so `1.` / `1e` / `.5` are marked rather than split.
   { name: "number-trailing-dot", regex: "[0-9]+\\.(?![.0-9])", groups: ["numberInvalid"] },

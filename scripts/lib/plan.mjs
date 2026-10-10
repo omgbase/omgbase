@@ -116,6 +116,13 @@ export function computePlan(ws, notes) {
     const cur = majorMinor(e.current);
     const bumped = e.level === "minor" || e.level === "major";
     if (bumped) {
+      // The spec may have moved more than one minor since the last release
+      // (two language changes folded into one release): a minor/major snaps the
+      // package to the spec's major.minor rather than incrementing by one. A
+      // minor may not cross a spec major jump, and the spec must have moved.
+      if (compareMajorMinor(spec, cur) > 0 && (e.level === "major" || spec.split(".")[0] === cur.split(".")[0])) {
+        e.next = `${spec}.0`;
+      }
       const next = majorMinor(e.next);
       if (compareMajorMinor(next, spec) !== 0) {
         const hint = compareMajorMinor(spec, cur) > 0 ? `use ${spec.split(".")[0] !== cur.split(".")[0] ? "major" : "minor"}` : "bump the spec or use patch";

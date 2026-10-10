@@ -17,9 +17,9 @@ Tokens:
 | --- | --- |
 | identifier | `[A-Za-z_$][A-Za-z0-9_$]*` — `$it`, `$key`, `$depth` are ordinary identifiers with intrinsic meaning |
 | keyword | `from`, `where`, `select`, `is`, `not`, `and`, `or` — **reserved**; never usable as a bare field name (`select where from r` is a parse error). `is`, `not`, `and`, `or` are operators (§4, since 0.17) |
-| number | `digits [ "." digits ] [ ("e"\|"E") ["+"\|"-"] digits ]`. A `.` is a decimal point only when a digit follows, so `1..5` lexes as `1`, `..`, `5` and `1.5..2` as `1.5`, `..`, `2`. A **malformed number is a lex error** whose message names `malformed number`: a trailing decimal point (`1.`, `1.x`), an exponent without digits (`1e`, `1e+`), and a leading-dot numeral (`.5` — write `0.5`; `xs.0` is the same error, since a property name cannot be a digit and there is no index access) [`errors-lex`, `lexing`] |
+| number | `digits [ "." digits ] [ ("e"\|"E") ["+"\|"-"] digits ]`. A `.` is a decimal point only when a digit follows, so `1..5` lexes as `1`, `..`, `5` and `1.5..2` as `1.5`, `..`, `2`. A **malformed number is a lex error** whose message names `malformed number`: a trailing decimal point (`1.`, `1.x`), an exponent without digits (`1e`, `1e+`), and a leading-dot numeral (`.5` — write `0.5`; `xs.0` is the same error, since a property name cannot be a digit and there is no index access) [`errors-lex`, `lexing`]. A digits-only number **immediately** followed by `^` (no whitespace) heads an absolute scope reference (`0^docs`, §4; since 0.18) |
 | string | `"…"` or `'…'`, the two quotes interchangeable. Escapes: `\n` `\t` `\r` `\0` and `\<c>` for any other character `<c>` itself (`\"`, `\'`, `\\`). An unterminated string is a lex error |
-| punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4) |
+| punctuation | `(` `)` `{` `}` `[` `]` `,` `:` `.` `^` — `[`/`]` since 0.17 (brackets, §4); `^` is the outer-reference / lift marker, relative (`^^name`) or, after an integer, absolute (`0^name`, §4) |
 | range | `..` (inclusive) and `...` (exclusive high end), scanned before `.` |
 | operator | `==` `!=` `<=` `>=` `<` `>` `&&` `\|\|` `!` `+` `-` `*` `/` `%` — `!=` is one token, so `a! == b` (a required value compared) needs the space: `a!==b` lexes as `a`, `!=`, `=` |
 | binding | a `${…}` interpolation of the tagged-template form; index `n` names the n-th bound value |
@@ -146,13 +146,17 @@ select  from  where  follow  order by  limit  offset
 
 ```
 projection = item { "," item } [ "values" ]
-item       = { "^" } ident ":" ( directive | expr )      ; alias (carets = lift)
-           | { "^" } expr                               ; unaliased
+item       = [ scoperef ] ident ":" ( directive | expr )   ; alias (a scope reference = lift)
+           | [ scoperef ] expr                            ; unaliased
+scoperef   = "^" { "^" }                                  ; relative: one scope out per caret
+           | integer "^"                                  ; absolute: scope N (§4, since 0.18)
 ```
 
 - An unaliased item must be a plain navigation (`name`, `meta.slug`, `$it`),
   optionally required (`name!`, `jobs[0].employer`, §4); its key is the **last
-  segment** of the navigation. Any other unaliased expression (a call,
+  segment** of the navigation. (An unaliased item that *begins* with a scope
+  reference is a lift, below — `x: ^name` / `x: 0^name` is how an outer
+  reference is projected.) Any other unaliased expression (a call,
   arithmetic, a comparison, a bare bracket lookup `jobs[0]`) is a parse error
   `… needs an alias …` unless the projection is in `values` mode.
 - **An item may reference the aliases of the items to its left** (since 0.17):
@@ -177,8 +181,9 @@ item       = { "^" } ident ":" ( directive | expr )      ; alias (carets = lift)
   are parse errors `duplicate projection name '<name>'` — the record would
   silently keep one value. (Lifts are keyed per depth: `^x` and `^^x` bind
   different rows and do not collide.)
-- Leading carets on an item make it a **lift** (`^name: expr`, `^^name: expr`,
-  or unaliased `^name`). A lift is **legal only in the `select` of a
+- A leading scope reference on an item makes it a **lift** (`^name: expr`,
+  `^^name: expr`, or unaliased `^name`; the absolute `1^name: expr` lifts into
+  scope 1, §4). A lift is **legal only in the `select` of a
   `collect { … }` in where position** (see SEMANTICS §lifts); at the top level,
   in a select-position block, in a whole-query directive, or in an
   `exists`/`none`/`count` block it is a parse error (`a lift (^x) … is only valid
@@ -254,8 +259,8 @@ destination = receiver                                                      ; a 
 option      = "where" expr | "frontier" expr | "depth" integer | "by" expr
 ```
 
-`follow` is a clause when an identifier, a binding, or a `^` follows the word;
-otherwise it is a field name (`select follow from r`). **The implicit-`collect`
+`follow` is a clause when an identifier, a binding, or a scope reference (`^`,
+`0^`) follows the word; otherwise it is a field name (`select follow from r`). **The implicit-`collect`
 sugar does not apply to destinations:** a `{` after the last destination always
 opens the **options block** — `follow children { depth 2 }` is a depth cap, and
 `follow children { age > 1 }` is the options error (`… expected
@@ -277,8 +282,9 @@ null`). A **destination block** is a receiver immediately followed by `collect`,
 `first` or `single` (optionally `distinct`) and `{`: an ordinary select-position
 block (§`select`), re-read per frontier row with `^` bound to that row. Its
 receiver **may** be an outer reference — `follow ^people collect { where
-manager == ^id }` reads the named root `people` from a top-level walk — since
-the block, not the receiver, is what varies per row. `exists`, `none` and
+manager == ^id }` (or `follow 0^people collect { … }`, §4) reads the named root
+`people` from a top-level walk — since the block, not the receiver, is what
+varies per row. `exists`, `none` and
 `count` are not destinations (`` a follow destination must use
 collect/first/single, not `exists` … ``). A comma not followed by a destination
 is a parse error (`` expected a relation after ',' ``). The options block, when
@@ -298,18 +304,22 @@ Recognized only as the two-word sequence. [`order-by`]
 ### `limit` / `offset`
 
 ```
-bound    = ( "limit" | "offset" ) ( number | binding | { "^" } ident )
+bound    = ( "limit" | "offset" ) ( number | binding | scoperef ident )
 ```
 
 The word is a bound only when followed by a number literal, a binding, or an
-outer reference (`^n`); otherwise it is an ordinary identifier (so `limit -1`
+outer reference (`^n`, `1^n`); otherwise it is an ordinary identifier (so `limit -1`
 and `limit x` are parse errors that read `limit` as a stray name and say what a
 bound may be). **At the top level `^n` is a parse error** (`… has no enclosing
 scope`): a top-level bound is evaluated at the root scope itself, so there is
 nothing for `^` to reach — unlike a top-level `where`/`select`, where a row's
 enclosing scope is the root scope and `^k` reads the named root `k`
-[`outer-refs`]. Inside a block `^n` reads the enclosing row. The value is
-checked at evaluation time (SEMANTICS §bounds). [`limit-offset`]
+[`outer-refs`]; for the same reason `limit 0^n` there is the absolute
+reference's own error (`scope 0 does not enclose this block (the current scope
+is depth 0)`, §4) [`absolute-refs`]. Inside a block `^n` reads the enclosing
+row (the block's own depth is the bound's: `limit 1^n` in a block under a
+top-level row is `limit ^n`). The value is checked at evaluation time
+(SEMANTICS §bounds). [`limit-offset`]
 
 ## 4. Expressions
 
@@ -318,15 +328,15 @@ options) accepts the full grammar. Precedence, loosest to tightest:
 
 | Level | Operators | Notes |
 | --- | --- | --- |
-| or | `\|\|` `or` | left-assoc; yields an operand (SEMANTICS §logical). `or` is an exact synonym of `\|\|` (since 0.17): the same node, the same short-circuit, the same value (`title or $path` coalesces); `print` writes `\|\|` |
-| and | `&&` `and` | left-assoc; `and` is an exact synonym of `&&` (since 0.17) |
+| or | `\|\|` `or` | left-assoc; yields an operand (SEMANTICS §logical). `or` is an exact synonym of `\|\|` (since 0.17): the same node, the same short-circuit, the same value (`title or $path` coalesces); `print` writes `or` (since 0.18) |
+| and | `&&` `and` | left-assoc; `and` is an exact synonym of `&&` (since 0.17); `print` writes `and` (since 0.18) |
 | cmp | `== != < <= > >=` `in` `is` `is not` | **non-associative**: a second comparison in a row is a parse error `comparisons do not chain` (`a == b == c`, `a == b in c`, `a is b is c`). `x is y` is identity, `x is not y` its negation (SEMANTICS §5; since 0.17) |
 | range | `lo..hi` `lo...hi` `..hi` `lo..` | binds looser than arithmetic, tighter than comparison: `n in 1+1..2*3` is `n in (2..6)`. At least one bound is required |
 | add | `+ -` | left-assoc |
 | mul | `* / %` | left-assoc |
 | unary | `!` `-` `is` `not` | prefix, right-assoc (`--5`); `!` has this same precedence in `where` (§3). `is x` ≡ `!!x`, `not x` ≡ `!x` — pure sugar, desugared in the parser (since 0.17) |
 | postfix | `.name` `.name(args)` `name(args)` `x!` `x[…]` `x <consumer> { … }` | navigation, method call, free-function call, the required operator, a bracket lookup, a value-position directive — left to right, tightest of all: `refs(c)[0]!.name` requires the lookup, `refs(c)[0].name!` the name |
-| primary | literal, identifier, `^…name`, binding, `( expr )` | |
+| primary | literal, identifier, `^…name`, `N^name`, binding, `( expr )` | `N^name` is the absolute spelling of an outer reference (below; since 0.18) |
 
 ```
 expr     = or
@@ -349,7 +359,8 @@ bracket  = "[" ( integer | binding ) "]" [ "!" ]            ; positional
          | "[" where "]" [ "!" ]                             ; predicate
 primary  = number | string | "true" | "false" | "null"
          | ident                                     ; a property of the CURRENT scope only
-         | "^" { "^" } ident                         ; an outer reference, exactly N scopes out
+         | scoperef ident                            ; an outer reference: `^^name` exactly N scopes out,
+                                                     ; `N^name` the scope at depth N (below)
          | binding
          | "(" expr ")"
 args     = [ expr { "," expr } ]
@@ -365,6 +376,39 @@ not begin a value, so `where age in 18.. order by name` parses as intended and
 
 There is no array or object literal; bound values (bindings) and named roots
 are how collections enter a query.
+
+### Outer references: relative `^…name` and absolute `N^name` (since 0.18)
+
+An outer reference names a scope other than the current one (SEMANTICS §2).
+The relative form counts carets: `^name` reads one scope out, `^^name` two.
+The absolute form names the scope by its **depth**: `N^name` is an unsigned
+integer literal (digits only) **immediately** followed by `^` — no whitespace —
+and then the name. Scope depth is syntactic: the root scope is 0, a top-level
+row 1, a block's rows one deeper than the block's receiver, a `follow`
+destination block's rows one below the frontier row, and a follow `where` one
+deeper than the frontier row it tests successors of — exactly the `depth` the
+`visit` traversal computes (AST.md §5).
+
+```
+scoperef = "^" { "^" }          ; relative: levels = the caret count
+         | integer "^"          ; absolute: levels = currentDepth − N
+```
+
+`N^name` **desugars in the parser** to the `outer` node of the relative form
+with `levels = currentDepth − N` (and `N^name:` at a select item's head to the
+lift with that many carets); there is no new AST node and `print` writes the
+carets. So from a top-level row `0^docs` is `^docs` and `0^$it` is `^$it` (the
+root object, SEMANTICS §2); inside a block under it `1^$path` is `^$path` and
+`0^docs` is `^^docs`; as a lift target `1^tasks: text` is `^tasks: text`; as a
+destination block's receiver `follow 0^people collect { … }` is `follow ^people
+collect { … }`. It composes with everything a caret form does: `x[0^y]`,
+`0^docs[0]`, `entries(0^$it)`, `0^$it.docs collect { … }`.
+
+`N ≥ currentDepth` is a parse error: `scope N does not enclose this block (the
+current scope is depth D)` — `1^k` in a top-level `where` (depth 1), `from
+0^docs` or `limit 0^n` at the top level (depth 0). The integer and the caret
+must touch and the integer must be digits only: `1 ^k` and `1.0^k` are the
+stray-token parse error the `^` was before. [`absolute-refs`]
 
 ### Postfix `!` — required (since 0.17)
 
@@ -420,11 +464,12 @@ is deliberately narrower than an expression:
 
 ```
 receiver = binding
-         | { "^" } ident [ "(" args ")" ] { "." ident }
+         | [ scoperef ] ident [ "(" args ")" ] { "." ident }
 ```
 
 That is: a binding; or a dotted navigation whose head is a bare name, an outer
-reference (`^people`, `^^root.rel`), or a free-function call (`entries(prefs)`).
+reference (`^people`, `^^root.rel`, `0^people`, `0^$it.docs`), or a
+free-function call (`entries(prefs)`).
 Method calls, operators, and the literal words `true`/`false`/`null` are not
 receivers. A directive is recognized only when the receiver is immediately
 followed by a consumer word and then `{` (or `distinct {`); otherwise the tokens
@@ -441,8 +486,9 @@ Every failure is an `OqxError` with a `stage`:
   duplicates, missing `where`, projection naming (unnamed and duplicate items),
   a comma after a where-first predicate, misplaced lifts, alias cycles and
   forward references, `follow` options, chained comparisons, a top-level
-  `limit ^n`, `count` comparisons, a negative or fractional index, a bare
-  `first`/`single` in `where`.
+  `limit ^n`, an absolute reference to a scope that does not enclose the
+  block (`scope N does not enclose this block …`), `count` comparisons, a
+  negative or fractional index, a bare `first`/`single` in `where`.
 - `eval` — unknown functions/methods, `single` matching several rows, a required
   value that is absent (`` `x!` is absent ``), an invalid `limit`/`offset` value
   (including a bracket index binding), `follow` inside a where-position

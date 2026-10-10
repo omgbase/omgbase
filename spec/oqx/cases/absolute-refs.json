@@ -1,0 +1,393 @@
+{
+  "suite": "absolute-refs",
+  "cases": [
+    {
+      "name": "0^docs from a top-level row is the named root (≡ ^docs)",
+      "tags": ["absolute", "outer"],
+      "notes": "Scope depth is syntactic (GRAMMAR §4): the root is 0, a top-level row 1. `N^name` desugars in the parser to the `outer` reference reaching scope N, here `^docs`.",
+      "roots": {
+        "docs": [
+          { "id": "d1", "path": "a.md", "tasks": [ { "text": "t1", "done": true }, { "text": "t2", "done": false } ] },
+          { "id": "d2", "path": "b.md", "tasks": [ { "text": "t3", "done": false } ] }
+        ]
+      },
+      "query": "id, n: size(0^docs), same: 0^docs is ^docs from docs",
+      "expect": {
+        "result": [ { "id": "d1", "n": 2, "same": true }, { "id": "d2", "n": 2, "same": true } ]
+      }
+    },
+    {
+      "name": "0^$it from a top-level row is the root object (≡ ^$it)",
+      "tags": ["absolute", "root-object"],
+      "roots": {
+        "docs": [ { "id": "d1" }, { "id": "d2" } ],
+        "k": 2
+      },
+      "query": "id, k: 0^$it.k, same: 0^$it is ^$it from docs",
+      "expect": {
+        "result": [ { "id": "d1", "k": 2, "same": true }, { "id": "d2", "k": 2, "same": true } ]
+      }
+    },
+    {
+      "name": "0^k in a top-level where",
+      "tags": ["absolute", "where"],
+      "roots": {
+        "docs": [ { "id": "d1", "n": 1 }, { "id": "d2", "n": 2 } ],
+        "k": 2
+      },
+      "query": "id values from docs where n == 0^k",
+      "expect": { "result": [ "d2" ] }
+    },
+    {
+      "name": "two deep: 0^docs is the root and 1^path the top-level row",
+      "tags": ["absolute", "nested"],
+      "notes": "Inside a select-position block under a top-level row the body is depth 2, so `1^path` is `^path` and `0^docs` is `^^docs`.",
+      "roots": {
+        "docs": [
+          { "id": "d1", "path": "a.md", "tasks": [ { "text": "t1" }, { "text": "t2" } ] },
+          { "id": "d2", "path": "b.md", "tasks": [ { "text": "t3" } ] }
+        ]
+      },
+      "query": "id, t: tasks collect { text, doc: 1^path, same: 1^path is ^path, all: size(0^docs) } from docs",
+      "expect": {
+        "result": [
+          { "id": "d1", "t": [
+            { "text": "t1", "doc": "a.md", "same": true, "all": 2 },
+            { "text": "t2", "doc": "a.md", "same": true, "all": 2 }
+          ] },
+          { "id": "d2", "t": [
+            { "text": "t3", "doc": "b.md", "same": true, "all": 2 }
+          ] }
+        ]
+      }
+    },
+    {
+      "name": "three deep: every enclosing scope by number",
+      "tags": ["absolute", "nested"],
+      "notes": "The leaf block's body is depth 3: `2^v` is the mid row, `1^v` the top row, `0^rows` the named root, `0^$it` the root object.",
+      "roots": {
+        "rows": [
+          { "v": "top", "mid": [ { "v": "mid", "leaf": [ { "v": "leaf" } ] } ] }
+        ]
+      },
+      "query": "m: mid collect { l: leaf collect { own: v, one: 2^v, two: 1^v, n: size(0^rows), root: 0^$it.rows[0].v } } from rows",
+      "expect": {
+        "result": [
+          { "m": [ { "l": [ { "own": "leaf", "one": "mid", "two": "top", "n": 1, "root": "top" } ] } ] }
+        ]
+      }
+    },
+    {
+      "name": "the caret form and the numbered form are one tree",
+      "tags": ["absolute", "nested"],
+      "roots": {
+        "rows": [
+          { "v": "top", "mid": [ { "v": "mid", "leaf": [ { "v": "leaf" } ] } ] }
+        ]
+      },
+      "query": "m: mid collect { l: leaf collect { a: 2^v is ^v, b: 1^v is ^^v, c: 0^rows is ^^^rows } } from rows",
+      "expect": {
+        "result": [ { "m": [ { "l": [ { "a": true, "b": true, "c": true } ] } ] } ]
+      }
+    },
+    {
+      "name": "0^docs as a where receiver",
+      "tags": ["absolute", "receiver"],
+      "roots": {
+        "docs": [ { "id": "d1", "ref": "d2" }, { "id": "d2", "ref": "d2" } ]
+      },
+      "query": "id values from docs where 0^docs exists { where id == ^ref && id != ^id }",
+      "expect": { "result": [ "d1" ] }
+    },
+    {
+      "name": "0^$it.docs as a select receiver, entries(0^$it) as a source",
+      "tags": ["absolute", "receiver", "root-object"],
+      "roots": {
+        "docs": [ { "id": "d1" }, { "id": "d2" } ],
+        "k": 2
+      },
+      "query": "id, others: 0^$it.docs collect { id values where id != ^id }, roots: entries(0^$it) collect { $key values } from docs",
+      "expect": {
+        "result": [
+          { "id": "d1", "others": [ "d2" ], "roots": [ "docs", "k" ] },
+          { "id": "d2", "others": [ "d1" ], "roots": [ "docs", "k" ] }
+        ]
+      }
+    },
+    {
+      "name": "composes with brackets: 0^docs[0] and x[p == 0^flag]",
+      "tags": ["absolute", "brackets"],
+      "roots": {
+        "docs": [
+          { "id": "d1", "tasks": [ { "text": "t1", "done": true }, { "text": "t2", "done": false } ] },
+          { "id": "d2", "tasks": [ { "text": "t3", "done": false } ] }
+        ],
+        "flag": false
+      },
+      "query": "id, head: 0^docs[0].id, second: 0^$it.docs[1].id, open: tasks[done == 0^flag].text from docs",
+      "expect": {
+        "result": [
+          { "id": "d1", "head": "d1", "second": "d2", "open": "t2" },
+          { "id": "d2", "head": "d1", "second": "d2", "open": "t3" }
+        ]
+      }
+    },
+    {
+      "name": "as a lift target: 1^open: text binds into the top-level row",
+      "tags": ["absolute", "lift"],
+      "notes": "A where-position collect's body is depth 2; `1^open:` is the lift `^open:` into the depth-1 row.",
+      "roots": {
+        "docs": [
+          { "id": "d1", "tasks": [ { "text": "t1", "done": true }, { "text": "t2", "done": false } ] },
+          { "id": "d2", "tasks": [ { "text": "t3", "done": false } ] },
+          { "id": "d3", "tasks": [ { "text": "t4", "done": true } ] }
+        ]
+      },
+      "query": "id, open from docs where tasks collect { 1^open: text where !done }",
+      "expect": {
+        "result": [ { "id": "d1", "open": [ "t2" ] }, { "id": "d2", "open": [ "t3" ] } ]
+      }
+    },
+    {
+      "name": "inside a follow destination block: the receiver and the frontier row by number",
+      "tags": ["absolute", "follow"],
+      "notes": "The destination's receiver is read in the frontier row's scope (depth 1), so `0^people` is `^people`; its body is depth 2, so `1^id` is `^id`, the frontier row.",
+      "roots": {
+        "people": [
+          { "id": 1, "name": "a", "manager": null },
+          { "id": 2, "name": "b", "manager": 1 },
+          { "id": 3, "name": "c", "manager": 2 }
+        ]
+      },
+      "query": "name values from people where id == 1 follow 0^people collect { where manager == 1^id } order by $ordinal",
+      "expect": { "result": [ "a", "b", "c" ] }
+    },
+    {
+      "name": "inside follow where: 1^id is the frontier row, 0^k the root",
+      "tags": ["absolute", "follow"],
+      "notes": "A follow `where` reads the successor's scope hung off the frontier row (SEMANTICS §20), depth 2 under a top-level walk: `1^id` is `^id`, `0^k` is `^^k`.",
+      "roots": {
+        "chain": [ { "id": 1, "next": [ { "id": 2, "prev": 1 }, { "id": 3, "prev": 99 } ] } ],
+        "k": 2
+      },
+      "query": "id values from chain where id == 1 follow next { where prev == 1^id && 0^k == 2 } order by $ordinal",
+      "expect": { "result": [ 1, 2 ] }
+    },
+    {
+      "name": "inside follow where: a root comparison that fails prunes every successor",
+      "tags": ["absolute", "follow"],
+      "roots": {
+        "chain": [ { "id": 1, "next": [ { "id": 2, "prev": 1 } ] } ],
+        "k": 2
+      },
+      "query": "id values from chain where id == 1 follow next { where prev == 1^id && 0^k == 3 }",
+      "expect": { "result": [ 1 ] }
+    },
+    {
+      "name": "inside a bound: 1^n in a block's limit is the enclosing row",
+      "tags": ["absolute", "limit"],
+      "notes": "A block's bound is read in the row-less scope inside the block (SEMANTICS §18), the block's own depth (2 here), so `1^n` is `^n`.",
+      "roots": {
+        "r": [ { "name": "a", "n": 1, "scores": [ 3, 2, 1 ] }, { "name": "b", "n": 2, "scores": [ 3, 2, 1 ] } ]
+      },
+      "query": "name, top: scores collect { $it values limit 1^n } from r",
+      "expect": {
+        "result": [ { "name": "a", "top": [ 3 ] }, { "name": "b", "top": [ 3, 2 ] } ]
+      }
+    },
+    {
+      "name": "N must be below the current depth: 1^ at depth 1",
+      "tags": ["absolute", "error"],
+      "roots": { "docs": [ { "id": "d1" } ], "k": 2 },
+      "query": "id from docs where 1^k == 2",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [ "scope 1 does not enclose this block", "the current scope is depth 1" ]
+        }
+      }
+    },
+    {
+      "name": "N must be below the current depth: 2^ at depth 2",
+      "tags": ["absolute", "error"],
+      "roots": { "docs": [ { "id": "d1", "tasks": [] } ] },
+      "query": "id, t: tasks collect { x: 2^text } from docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [ "scope 2 does not enclose this block", "the current scope is depth 2" ]
+        }
+      }
+    },
+    {
+      "name": "the top-level source is read at the root: 0^ has nothing to reach",
+      "tags": ["absolute", "error"],
+      "roots": { "docs": [ { "id": "d1" } ] },
+      "query": "id from 0^docs",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [ "scope 0 does not enclose this block", "the current scope is depth 0" ]
+        }
+      }
+    },
+    {
+      "name": "a top-level bound is read at the root: limit 0^n is the same error",
+      "tags": ["absolute", "error", "limit"],
+      "roots": { "docs": [ { "id": "d1" } ], "n": 1 },
+      "query": "id from docs limit 0^n",
+      "expect": {
+        "error": {
+          "stage": "parse",
+          "includes": [ "scope 0 does not enclose this block", "the current scope is depth 0" ]
+        }
+      }
+    },
+    {
+      "name": "the integer and the caret must touch: `1 ^k` is not a scope reference",
+      "tags": ["absolute", "error"],
+      "roots": { "docs": [ { "id": "d1" } ], "k": 2 },
+      "query": "id from docs where 1 ^k == 2",
+      "expect": {
+        "error": { "stage": "parse", "includes": [ "unexpected '^'" ] }
+      }
+    },
+    {
+      "name": "only an unsigned integer literal: `1.0^k` is not a scope reference",
+      "tags": ["absolute", "error"],
+      "roots": { "docs": [ { "id": "d1" } ], "k": 2 },
+      "query": "id from docs where 1.0^k == 2",
+      "expect": {
+        "error": { "stage": "parse", "includes": [ "unexpected '^'" ] }
+      }
+    },
+    {
+      "name": "at a select item's head N^ is a lift, with the lift's own rules",
+      "tags": ["absolute", "lift", "error"],
+      "roots": { "docs": [ { "id": "d1", "name": "x" } ] },
+      "query": "0^name from docs",
+      "expect": {
+        "error": { "stage": "parse", "includes": [ "a lift (^name)", "where position" ] }
+      }
+    },
+    {
+      "name": "AST: 1^$path inside a nested block parses to outer { levels: 1 }",
+      "tags": ["absolute", "ast"],
+      "query": "docs collect { t: tasks collect { p: 1^$path } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "docs" },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "t",
+              "op": {
+                "kind": "op",
+                "receiver": { "kind": "ident", "name": "tasks" },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    { "kind": "field", "name": "p", "expr": { "kind": "outer", "levels": 1, "name": "$path" }, "lift": 0 }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "AST: 0^k at depth 1 is outer { levels: 1 } in select and where alike",
+      "tags": ["absolute", "ast"],
+      "query": "select k: 0^k from docs where 0^k == 2",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "docs" },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": { "kind": "outer", "levels": 1, "name": "k" },
+              "right": { "kind": "lit", "value": 2 }
+            }
+          },
+          "select": [
+            { "kind": "field", "name": "k", "expr": { "kind": "outer", "levels": 1, "name": "k" }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "AST: 1^open: in a where-position collect is the lift { lift: 1 }",
+      "tags": ["absolute", "ast", "lift"],
+      "query": "docs collect { open where tasks collect { 1^open: text } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": { "kind": "ident", "name": "docs" },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": { "kind": "ident", "name": "tasks" },
+            "op": "collect",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": null,
+              "select": [
+                { "kind": "field", "name": "open", "expr": { "kind": "ident", "name": "text" }, "lift": 1 }
+              ],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [
+            { "kind": "field", "name": "open", "expr": { "kind": "ident", "name": "open" }, "lift": 0 }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    }
+  ]
+}

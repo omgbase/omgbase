@@ -164,7 +164,9 @@ impl Row {
 }
 
 /// One query scope: the row under evaluation plus the chain of enclosing scopes
-/// that `^` walks. The root scope (`parent == None`) has no row; its names are
+/// that `^` walks. The root scope (`parent == None`) is a row too: its row is
+/// the host's root object ([`DataContext::root_object`], since 0.18 — what
+/// `$it` is there and `^$it` from a top-level row), while its bare names are
 /// the context's named roots. `lifts` holds values bound INTO this scope by
 /// `^name:` items in nested blocks (a `RefCell` because the binding happens
 /// while the scope is borrowed by the `where` being evaluated); `meta` holds
@@ -178,9 +180,10 @@ struct Scope<'p> {
 }
 
 impl<'p> Scope<'p> {
-    fn root() -> Self {
+    /// The root scope with `row` as the host's root object.
+    fn root(row: Value) -> Self {
         Scope {
-            row: Value::Undefined,
+            row,
             parent: None,
             lifts: RefCell::new(Object::new()),
             meta: None,
@@ -359,7 +362,7 @@ struct Exec<'e, C: DataContext> {
 
 impl<'e, C: DataContext> Exec<'e, C> {
     fn run(&self, query: &Query) -> Result<OqxResult> {
-        let root = Scope::root();
+        let root = Scope::root(self.ctx.root_object());
         let mut rows = self.rows_of_expr(&query.source, &root)?;
         for proj in &query.from {
             rows = self.reproject(rows, proj, &root)?;
@@ -437,7 +440,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
     // is read in a row-less scope INSIDE it: a bare name is absent (there is no
     // current item yet), `^name` is the enclosing row — exactly as in the
     // block's body — and literals/bindings are themselves. For a top-level
-    // query `enclosing` is the root, which is used as-is. Each must be a
+    // query the scope is the root scope WITHOUT its row (SEMANTICS §18): bare
+    // names are still the named roots, but `$it` — reached through a bracket
+    // inside the bound — is absent, not the root object. Each must be a
     // non-negative integer.
     fn bound_of(
         &self,
@@ -448,13 +453,12 @@ impl<'e, C: DataContext> Exec<'e, C> {
         if limit.is_none() && offset.is_none() {
             return Ok(UNBOUNDED);
         }
-        let inner;
-        let scope: &Scope<'_> = if enclosing.is_root() {
-            enclosing
+        let inner = if enclosing.is_root() {
+            Scope::root(Value::Undefined)
         } else {
-            inner = rowless(enclosing);
-            &inner
+            rowless(enclosing)
         };
+        let scope: &Scope<'_> = &inner;
         let read = |e: Option<&Expr>, word: &str| -> Result<Option<usize>> {
             let Some(e) = e else { return Ok(None) };
             let v = self.eval_expr(e, scope)?;
@@ -1560,11 +1564,14 @@ impl<'e, C: DataContext> Exec<'e, C> {
 
     // Resolve a name against ONE scope — never its ancestors. A scope provides,
     // in order: `$it` (the scope's row itself — the current item, whatever
-    // its type, so scalar collections are queryable; absent at the root, which
-    // has no row; `$value`, its pre-0.15 spelling, is an ordinary property); `$key` (the property key) when it is an entry scope; the
+    // its type, so scalar collections are queryable; at the root the host's
+    // root object, since 0.18; `$value`, its pre-0.15 spelling, is an ordinary
+    // property); `$key` (the property key) when it is an entry scope; the
     // recursion intrinsics (`$depth`, …) when it is a follow occurrence; values
     // lifted into it by `^name:` items; then either the row's own property or,
-    // for the root scope (no row), the context's named roots.
+    // for the root scope, the context's named roots (`root(name)` — never a
+    // property of the root object, so a host with lazy roots is unaffected by
+    // what its root object holds).
     //
     // The two metadata steps apply only where the scope CARRIES that metadata
     // (SEMANTICS §2, since 0.13). Anywhere else — `$key` on an ordinary row,
@@ -1597,11 +1604,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
 
     fn resolve_in(&self, name: &str, scope: &Scope<'_>) -> Result<Value> {
         if name == "$it" {
-            return Ok(if scope.is_root() {
-                Value::Undefined
-            } else {
-                scope.row.clone()
-            });
+            return Ok(scope.row.clone());
         }
         if name == KEY || RECUR.contains(&name) {
             if let Some(v) = scope.meta.as_ref().and_then(|m| m.get(name)) {
@@ -2243,17 +2246,18 @@ mod tests {
                    { "name": "Alice", "peers": [] },
                    { "name": "Carol", "peers": [{ "name": "Bob" }] }]),
         );
-        // ^ past the root is absent; ^$it is the enclosing row; $it at root is absent.
-        // `^$it` from a top-level row names the root scope, which has no row.
+        // ^ past the root is absent; ^$it is the enclosing row; at the root `$it`
+        // is the host's root object (0.18): `^$it` from a top-level row names the
+        // root scope, whose row is DefaultContext's roots record.
         check(
             "x: ^^^nope, y: ^$it, z: ^r from r",
             json!({ "r": [1] }),
-            json!([{ "z": [1] }]),
+            json!([{ "y": { "r": [1] }, "z": [1] }]),
         );
         check(
             "r collect { a: $it, b: ^$it, c: ^^r }",
             json!({ "r": [1] }),
-            json!([{ "a": 1 }]),
+            json!([{ "a": 1, "b": { "r": [1] } }]),
         );
         check(
             "n: jobs collect { e: employer, who: ^name, root: ^^people } from people where name == \"Carol\"",

@@ -44,6 +44,15 @@
 // block alias inside an expression is a parse error) but keeps the surface
 // form; `resolveAliases` (resolve.ts) substitutes them before evaluation.
 //
+// Absolute scope references (0.18) desugar HERE too: `N^name` — an unsigned
+// integer literal immediately followed by `^` — is the `outer` reference (or the
+// lift) reaching scope N, i.e. `levels = depth − N`, where `depth` is the
+// syntactic scope depth of the position being parsed (SEMANTICS §2: the root is
+// 0, a top-level row 1, a block's body one deeper than its receiver, a follow
+// `where` one deeper than the frontier row). The parser tracks that depth
+// (`this.depth`) exactly as the `visit` walk computes it; `N >= depth` is a
+// parse error. There is no new node: `print` writes the carets back.
+//
 // Every node carries its `span` — `[start, end)` in code points over the raw
 // source, from the first token that produced it to the end of the last; a
 // parenthesized operand's span includes its parentheses (spec/oqx/AST.md).
@@ -132,9 +141,22 @@ class Parser {
    * `first`/`single` leaf is not rejected on sight: the body decides after the
    * run is classified (`rejectBareLookups`). */
   private deferLookup = false;
+  /** The scope depth (SEMANTICS §2) at which the construct being parsed is
+   * evaluated: 0 at the root (the top-level source and bounds), 1 for a
+   * top-level row's clauses, one deeper per block body and per follow `where`.
+   * An absolute reference `N^name` reads `depth − N` scopes out. */
+  private depth = 0;
 
   constructor(tokens: Token[]) {
     this.tokens = tokens;
+  }
+
+  /** Run `f` with the scope depth set to `d`, restoring it afterwards (also on
+   * the error path, so a speculative read that fails leaves the depth intact). */
+  private atDepth<T>(d: number, f: () => T): T {
+    const saved = this.depth;
+    this.depth = d;
+    try { return f(); } finally { this.depth = saved; }
   }
 
   // ---- cursor helpers -------------------------------------------------------
@@ -247,6 +269,10 @@ class Parser {
     let limit: Expr | null = null;
     let offset: Expr | null = null;
     let stage = -1;
+    // A top-level body's row clauses (select/where/follow/order by) are read at
+    // depth 1, its source and bounds at the root (0); a block's clauses are all
+    // at the block's depth, which `parseConsumerBlock` set.
+    const rowDepth = ctx.top ? 1 : this.depth;
 
     const enter = (clause: Clause): void => {
       const idx = CLAUSE_ORDER.indexOf(clause);
@@ -262,7 +288,7 @@ class Parser {
         enter("select");
         this.next();
         if (this.at("ident", "distinct")) { this.next(); distinct = true; }
-        ({ items: select, values } = this.parseProjection(ctx));
+        ({ items: select, values } = this.atDepth(rowDepth, () => this.parseProjection(ctx)));
         continue;
       }
       if (this.at("kw", "from")) {
@@ -274,18 +300,18 @@ class Parser {
       if (this.at("kw", "where")) {
         enter("where");
         this.next();
-        where = this.parseWhere();
+        where = this.atDepth(rowDepth, () => this.parseWhere());
         continue;
       }
       if (this.atFollow()) {
         enter("follow");
-        follow = this.parseFollow();
+        follow = this.atDepth(rowDepth, () => this.parseFollow());
         continue;
       }
       if (this.atOrderBy()) {
         enter("order by");
         this.next(); this.next(); // `order` `by`
-        orderBy = this.parseOrderSpecs();
+        orderBy = this.atDepth(rowDepth, () => this.parseOrderSpecs());
         continue;
       }
       if (this.atBound()) {
@@ -306,7 +332,7 @@ class Parser {
       // in a block, a leading predicate that opens a `where`-first body. After
       // any clause it is an error.
       if (stage === -1 && (this.at("ident") || this.at("binding") || this.at("caret") || this.canStartValue())) {
-        const lead = this.parseLeadingRun(ctx);
+        const lead = this.atDepth(rowDepth, () => this.parseLeadingRun(ctx));
         if (lead.where) {
           enter("where");
           where = lead.where;
@@ -421,6 +447,41 @@ class Parser {
     return !!nx && (nx.type === "number" || nx.type === "binding" || nx.type === "caret");
   }
 
+  // Whether the token `n` ahead can head a scope reference: a `^` run, or the
+  // `N^` of an absolute reference.
+  private atScopeRefAt(n: number): boolean {
+    return this.peekAt(n)?.type === "caret" || this.atAbsoluteRefAt(n);
+  }
+
+  // `N^` — an unsigned integer literal (digits only) immediately followed by a
+  // caret, no whitespace between: an absolute scope reference (GRAMMAR §4).
+  // `1 ^x` is not one (the `^` then fails as a stray token), nor is `1.0^x`.
+  private atAbsoluteRef(): boolean { return this.atAbsoluteRefAt(0); }
+  private atAbsoluteRefAt(n: number): boolean {
+    const t = this.peekAt(n);
+    const nx = this.peekAt(n + 1);
+    return t?.type === "number" && /^\d+$/.test(t.value) && nx?.type === "caret" && nx.pos === t.end;
+  }
+
+  // The head of an outer reference or a lift: a run of carets (one scope out
+  // per caret), or an absolute reference `N^` (scope N, GRAMMAR §4), both as the
+  // number of scopes out from the current depth. Returns 0 when there is none.
+  // The absolute form is checked before anything is consumed, so a failing
+  // lookahead (`tryOp`) leaves the cursor on the integer.
+  private parseScopeRef(): number {
+    if (this.atAbsoluteRef()) {
+      const n = this.peek();
+      const target = Number(n.value);
+      if (target >= this.depth) {
+        this.fail(`scope ${n.value} does not enclose this block (the current scope is depth ${this.depth})`);
+      }
+      this.next(); // the integer
+      this.next(); // the caret
+      return this.depth - target;
+    }
+    return this.parseCarets();
+  }
+
   private atOrderBy(): boolean {
     const t = this.peek();
     const nx = this.peekAt(1);
@@ -432,7 +493,12 @@ class Parser {
   private atFollow(): boolean {
     if (!this.at("ident", "follow")) return false;
     const nx = this.peekAt(1);
-    return !!nx && (nx.type === "ident" || nx.type === "binding" || nx.type === "caret");
+    return !!nx && (nx.type === "ident" || nx.type === "binding" || this.atScopeRefAt(1));
+  }
+
+  // Whether the cursor is at something that can begin a `follow` destination.
+  private atDestinationStart(): boolean {
+    return this.at("ident") || this.at("binding") || this.atScopeRefAt(0);
   }
 
   // ---- follow ---------------------------------------------------------------
@@ -445,14 +511,14 @@ class Parser {
     if (this.at("ident", "distinct")) {
       this.next();
       distinct = true;
-      if (!this.at("ident") && !this.at("binding") && !this.at("caret")) {
+      if (!this.atDestinationStart()) {
         this.fail("expected a relation after `follow distinct` (`follow distinct <relation>`)");
       }
     }
     const destinations: FollowDestination[] = [this.parseFollowDestination()];
     while (this.at("comma")) {
       this.next();
-      if (!this.at("ident") && !this.at("binding") && !this.at("caret")) {
+      if (!this.atDestinationStart()) {
         this.fail("expected a relation after ',' (`follow <relation>, <relation>`)");
       }
       destinations.push(this.parseFollowDestination());
@@ -464,7 +530,8 @@ class Parser {
       if (this.at("kw", "where")) {
         if (follow.where) this.fail("duplicate `where` in follow clause");
         this.next();
-        follow.where = this.parseValueExpr();
+        // Read in the successor's scope, one deeper than the frontier row.
+        follow.where = this.atDepth(this.depth + 1, () => this.parseValueExpr());
       } else if (this.at("ident", "frontier")) {
         if (follow.frontier) this.fail("duplicate `frontier` in follow clause");
         this.next();
@@ -502,9 +569,9 @@ class Parser {
     const start = this.pos;
     let isReceiver = false;
     if (this.at("binding")) { this.next(); isReceiver = true; }
-    else if (this.at("ident") || this.at("caret")) {
+    else if (this.at("ident") || this.atScopeRefAt(0)) {
       const startPos = this.start();
-      this.parseCarets();
+      this.parseScopeRef();
       if (this.at("ident")) { this.parseNavFrom(this.next(), 0, startPos); isReceiver = true; }
     }
     if (isReceiver && this.at("ident") && CONSUMERS.has(this.peek().value)) {
@@ -523,7 +590,7 @@ class Parser {
       }
     }
     this.pos = start;
-    if (this.at("caret")) {
+    if (this.atScopeRefAt(0)) {
       this.fail("`follow` takes a relation of the current row (`follow <relation>`); an outer reference `^name` is not allowed there — it may only head a destination block (`follow ^name collect { … }`)");
     }
     return this.parseReceiver();
@@ -537,7 +604,7 @@ class Parser {
   private parseReceiver(): Expr {
     if (this.at("binding")) return this.bindingNode(this.next());
     const start = this.start();
-    const levels = this.parseCarets();
+    const levels = this.parseScopeRef();
     if (!this.at("ident")) this.fail("expected a collection navigation (a property/relation name)");
     if (LITERAL_WORDS.has(this.peek().value)) this.fail(`\`${this.peek().value}\` is a literal, not a collection`);
     return this.parseNavFrom(this.next(), levels, start).expr;
@@ -618,8 +685,8 @@ class Parser {
     // lift is bound by a `collect { … }` in where position and nowhere else — at
     // the top level, in a select-position block, or in an exists/none/count
     // block it would silently do nothing (or act as a plain field), so it is an
-    // error there.
-    const lift = this.parseCarets();
+    // error there. `N^name:` is the lift into scope N (GRAMMAR §4).
+    const lift = this.parseScopeRef();
     if (!this.at("ident") && !this.canStartValue()) this.fail("expected a projection name");
     if (lift > 0 && !ctx.liftsAllowed) {
       const what = this.at("ident") ? `^${this.peek().value}` : "^name";
@@ -825,15 +892,30 @@ class Parser {
     const start = this.pos;
     const startPos = this.start();
     let receiver: Expr;
+    // An absolute reference that does not enclose this scope is an error only
+    // if the tokens do form a directive (`0^docs collect { }` at the root);
+    // otherwise the expression grammar gets to read them (a top-level `0^name`
+    // item is a lift, with the lift's own error), so the failure is held back
+    // until the lookahead has decided.
+    let scopeErr: OqxError | null = null;
     if (this.at("binding")) receiver = this.bindingNode(this.next());
-    else if (this.at("ident") || this.at("caret")) {
-      const levels = this.parseCarets();
+    else if (this.at("ident") || this.atScopeRefAt(0)) {
+      let levels = 0;
+      try {
+        levels = this.parseScopeRef();
+      } catch (err) {
+        if (!(err instanceof OqxError)) throw err;
+        scopeErr = err;
+        this.next(); this.next(); // the integer and the caret, as if it had parsed
+        levels = 1;
+      }
       if (!this.at("ident")) { this.pos = start; return null; }
       receiver = this.parseNavFrom(this.next(), levels, startPos).expr;
     } else return null;
 
     const op = this.at("lbrace") ? "collect" : this.atConsumerBlock();
     if (op) {
+      if (scopeErr) throw scopeErr;
       if (receiver.kind === "ident" && LITERAL_WORDS.has(receiver.name)) this.fail(`\`${receiver.name}\` is a literal, not a collection`);
       // `count { }` with nothing before it: the consumer word is not a receiver.
       if (op === "collect" && receiver.kind === "ident" && CONSUMERS.has(receiver.name)) {
@@ -865,7 +947,8 @@ class Parser {
     const lbrace = this.next().pos; // '{'
     const defer = this.deferLookup;
     this.deferLookup = false;
-    const body = this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect" });
+    // The receiver was read at the enclosing depth; the block's rows are one deeper.
+    const body = this.atDepth(this.depth + 1, () => this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect" }));
     this.deferLookup = defer;
     if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
     this.next();
@@ -906,7 +989,8 @@ class Parser {
     } else {
       const defer = this.deferLookup;
       this.deferLookup = false;
-      where = this.parseWhere();
+      // The predicate is the block's `where`: read in the rows' scope, one deeper.
+      where = this.atDepth(this.depth + 1, () => this.parseWhere());
       this.deferLookup = defer;
     }
     if (!this.at("rbracket")) this.fail("expected ']' to close the bracket");
@@ -1114,8 +1198,8 @@ class Parser {
     // select-item head `^name:` is a lift, handled in parseSelectItem; here, in
     // expression position, `^` reads an enclosing row's field even when the
     // current row shadows the name.)
-    if (t.type === "caret") {
-      const levels = this.parseCarets();
+    if (t.type === "caret" || this.atAbsoluteRef()) {
+      const levels = this.parseScopeRef();
       if (!this.at("ident")) this.fail("expected an identifier after '^' (an outer reference)");
       const name = this.next();
       return { kind: "outer", span: [t.pos, name.end], levels, name: name.value };

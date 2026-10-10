@@ -5,7 +5,7 @@
   "fileTypes": [
     "oqx"
   ],
-  "version": "0.17",
+  "version": "0.18",
   "patterns": [
     {
       "include": "#expression"
@@ -63,6 +63,11 @@
       "comment": "binding",
       "match": "\\$\\{[^}]*\\}",
       "name": "variable.other.binding.oqx"
+    },
+    "absolute-ref": {
+      "comment": "absolute-ref",
+      "match": "[0-9]+\\^",
+      "name": "keyword.operator.lift.oqx"
     },
     "number-trailing-dot": {
       "comment": "number-trailing-dot",
@@ -316,6 +321,9 @@
         },
         {
           "include": "#binding"
+        },
+        {
+          "include": "#absolute-ref"
         },
         {
           "include": "#number-trailing-dot"

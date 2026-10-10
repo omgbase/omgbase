@@ -619,6 +619,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       if (name === "$repo") return repoRoot;
       return rootFns[name] ? rootFns[name]!() : undefined;
     },
+    // The root scope's row (oqx 0.18): the repository root, so `^$it` from a
+    // top-level row is `$repo` and `^$it.docs` the docs scan.
+    rootObject(): unknown {
+      return repoRoot;
+    },
     get: getFrom,
     toRows(value: unknown): Iterable<unknown> {
       if (value == null) return [];

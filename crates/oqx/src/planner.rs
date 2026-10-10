@@ -150,6 +150,10 @@ impl DataContext for Overlay<'_> {
         }
     }
 
+    fn root_object(&self) -> Value {
+        self.inner.root_object()
+    }
+
     fn get(&self, row: &Value, key: &str) -> Result<Value> {
         self.inner.get(row, key)
     }
