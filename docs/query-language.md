@@ -74,8 +74,8 @@ aliases is a parse error; each block rewrites only against its own `select`.
 `order by` is not rewritten — it reads row fields.
 
 Consumers (oqx ≥ 0.9): `collect` (rows, the default), `exists` (≥ 1 row),
-`none` (0 rows — exactly `!… exists { … }`, and the way to say "every":
-`nodes none { where kind == "md:task" && !checked }`), `count`, `first`,
+`none` (0 rows — exactly `not … exists { … }`, and the way to say "every":
+`nodes none { where kind == "md:task" and not checked }`), `count`, `first`,
 `single`. There is deliberately no `all { … }`: its block would have to mean
 something different from every other consumer's.
 
@@ -182,8 +182,9 @@ a scalar expression evaluated by `@omgbase/oqx`'s `semantics.ts`.
 
 ### 3.1 Grammar
 Comparisons (`== != < <= > >=`), identity (`is`, `is not`; §3.6), boolean
-`&& || !` + grouping (`and`/`or` are synonyms of `&&`/`||`; prefix `is x` ≡ `!!x`,
-`not x` ≡ `!x`), `in`, arithmetic (`+ - * / %`), Ruby-style range literals
+`and or not` + grouping (the canonical spelling, and what `print` writes since
+0.18; `&& || !` are accepted synonyms; prefix `is x` ≡ `!!x`, `not x` ≡ `!x`),
+`in`, arithmetic (`+ - * / %`), Ruby-style range literals
 (`lo..hi`, `lo...hi`, `..hi`, `lo..`; §3.5), method calls (`x.contains("s")`),
 free functions (`list(x)`, `size(x)`, `has(x)` + omgbase's domain functions §5),
 field/intrinsic access with `.` navigation, bracket lookups (`refs(x)[0]`,
@@ -253,7 +254,7 @@ parser** (the AST, `print`, the planner and the optimizer see the explicit form)
 | `title!` | required: `title`, or `filter_invalid` naming the expression (`` `title!` is absent on "d_…" ``). Never a filter, never a coercion (`0!`, `""!` are values); tightest precedence (`refs(c)[0]!.name` vs `refs(c)[0].name!`). `select $id!, status from docs` insists on identity before a write. |
 | `is x`, `not x` | `!!x`, `!x` (truthiness) |
 | `x is y`, `x is not y` | identity: a row's `id` when present, else structural — so `$it is ^$it` compares rows (which `==` leaves unspecified); `owner is null` is absent; for scalars `is` ≡ `==`. Comparison precedence, no chaining. Never pushed down (residual). |
-| `a and b`, `a or b` | exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or $path` coalesces) |
+| `a and b`, `a or b` | the connectives — exactly `a && b`, `a || b` (precedence, short-circuit, value: `title or $path` coalesces); the words are canonical |
 | `boss: ^docs[$path == ^manager], bossName: boss.$title` | a `select` item may use the items to its left (inlined like a `where` alias; a reference to an item to its right is a parse error) |
 
 The top level is unchanged: `type == "x" from docs` stays the parse error it was
@@ -510,19 +511,19 @@ projected-query fence (ADR-011, deferred).
 | Intent | OQX |
 |---|---|
 | Working-layer docs | `from docs where layer == "working"` |
-| Guides, recently touched | `from docs where $path.startsWith("/guides/") && $updated_at >= "2026-08-01"` |
+| Guides, recently touched | `from docs where $path.startsWith("/guides/") and $updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
 | Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
 | Distinct doc types | `select distinct type from docs` |
 | Distinct doc types as bare strings | `select distinct type values from docs` |
-| Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
+| Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" and not checked }` |
 | A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "/x.md"` |
 | Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $it > 1600 }` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
 | Each substance's tags minus one | `select tags: tags collect { $it values where $it != "substance" } from docs where type == "substance"` |
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
-| Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
+| Unchecked tasks under a heading (working docs) | `from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
 | Everything a note transitively cites | `from docs where $path == "/index.md" follow doc.out` |
 | The documents whose `after` names this one | `select next: ^docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |

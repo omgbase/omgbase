@@ -10,7 +10,7 @@ matches whatever id the CLI actually mints, and a value that recurs (an id reuse
 in a later command) stays consistent — with no `{{…}}` tokens and no
 per-document lists of ids.
 
-- `doc_id` / `block_id` / `node_id` — document / block / node ids (`d_…`, `b_…`, `n_…`)
+- `doc_id` / `block_id` / `node_id` / `repo_id` — document / block / node / repository ids (`d_…`, `b_…`, `n_…`, `rp_…`)
 - `ts` — an ISO-8601 timestamp (millisecond precision, `Z`)
 - `tmp_path` — a `mktemp` working-directory path
 - `dur` — a short relative duration like `0s` (the `omg ls` "… ago" column)
@@ -22,6 +22,7 @@ per-document lists of ids.
 doc_id: "d_[a-z0-9]{7}"
 block_id: "b_[a-z0-9]{7}"
 node_id: "n_[0-9a-f]{12}"
+repo_id: "rp_[a-z0-9]{7}"
 ts: "\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z"
 tmp_path: "/[^\\s]*/tmp\\.[^\\s]+"
 dur: "[0-9]+s"
@@ -31,6 +32,7 @@ cursor: "Wy[A-Za-z0-9+/=]{10,}"
 <!-- recital bind: { type: doc_id } -->
 <!-- recital bind: { type: block_id } -->
 <!-- recital bind: { type: node_id } -->
+<!-- recital bind: { type: repo_id } -->
 <!-- recital bind: { type: ts } -->
 <!-- recital bind: { type: tmp_path } -->
 <!-- recital bind: { type: dur } -->

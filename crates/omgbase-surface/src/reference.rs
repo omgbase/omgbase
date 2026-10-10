@@ -4,40 +4,51 @@
 /// The agent-facing OQX syntax reference the `query_syntax` tool returns.
 pub const QUERY_SYNTAX: &str = r#"# query — OQX syntax reference
 
-The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`).
+The `query` tool takes ONE plain OQX string (+ optional `limit`/`cursor`). There
+is no {from, filter, order} envelope: every concern is a clause of the string.
 
   [select <items>] from <target> [where <pred>] [follow <dest>, … [{ … }]]
                    [order by <expr> [asc|desc], …] [limit N] [offset N]
   <target> count|exists|none|first|single { <block> }     (scalar/one-row form: a bare target at the root scope)
 
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
-each at most once. Only `select` may drop its keyword, and only as the first
-clause; a block may instead LEAD with a predicate (see Sugar). `where` and later
-`select` items may use the body's `select` aliases.
+each at most once; an out-of-order clause is a parse error naming the order.
+Only `select` may drop its keyword, and only as the first clause
+(`$path, era from docs where …`). A top-level predicate needs `where`, because
+`where` follows `from` (`era > 1600 from docs` is the clause-order error); a
+block may LEAD with a predicate (see Sugar), but a predicate after a projection
+still needs the keyword (`{ name where kind == "md:task" }`, not
+`{ name, kind == "md:task" }`); `from docs count` is an error (write
+`docs count { … }`). `where` and later `select` items may use the same body's
+`select` aliases (`select $path, old: era < 1000 from docs where old`; an alias
+shadows a same-named field there). `and` / `or` / `not` are the connectives;
+the symbols `&&` / `||` / `!` are accepted synonyms (the words are canonical and
+what `print` writes).
 
 ## Sugar (OQX 0.17)
 
-Every form is shorthand for an explicit directive (the AST is the explicit form):
-  nodes { kind == "md:task" }     ≡ nodes collect { where kind == "md:task" } — a receiver block
-                                    with no consumer is collect; a block whose LEADING expression is a
-                                    predicate (comparison, call, !/is/not, in, literal, (…), a consumer
-                                    test — anything but a bare name, a dotted path or a ^lift) is
-                                    where-first. Bare names still project (nodes { name }); filter a bare
-                                    field with nodes { is checked }. Not after follow: a brace there is options.
-  refs(x)[0]                       ≡ refs(x) first { offset 0 } (integer literal or ${binding}; out of
-                                    range ⇒ absent); refs(x)[0].$path navigates the row
-  ^docs[$path == ^company]         ≡ ^docs first { where $path == ^company } — first match or absent
-  ^docs[$path == ^company]!        ≡ … single { … } required: exactly one, else filter_invalid
-  title!                           required: title, or an error naming the expression (and the row's $id);
-                                    never a filter or a coercion; tightest (a!.b vs a.b!)
-  is x / not x                     ≡ !!x / !x;   x is y / x is not y  = identity (row id, else structural;
-                                    x is null = absent; scalars: is ≡ ==); comparison precedence, no chaining
-  a and b / a or b                 ≡ a && b / a || b (same precedence, short-circuit, value semantics)
+Every form here is shorthand for an explicit directive (the AST is the explicit form):
+  nodes { kind == "md:task" }        ≡ nodes collect { where kind == "md:task" } — a receiver block with
+                                       no consumer is collect; a block whose LEADING expression is a predicate
+                                       (comparison, call, !/is/not, in, literal, (…), a consumer test — anything
+                                       but a bare name, a dotted path or a ^lift) is where-first. Bare names still
+                                       project: nodes { name } ≡ nodes collect { name }; filter a bare field with
+                                       nodes { is checked }. Not after follow: follow children { depth 2 } is options.
+  refs(x)[0]                          ≡ refs(x) first { offset 0 }   positional (integer literal or ${binding});
+                                       out of range ⇒ absent; refs(x)[0].$path navigates the row
+  ^docs[$path == ^company]            ≡ ^docs first { where $path == ^company }   first match or absent
+  ^docs[$path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid
+  title!                              required: title, or an error naming the expression (and the row's $id)
+                                       — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
+  is x / not x                        truthiness of x, and its negation (prefix; `not` ≡ `!`)
+  x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
+                                       x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
+  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: title or $path coalesces)
   boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
 
 Results are LEAN hits — {id, path} + whatever `select` projects (or `values`,
-`count`, `exists`, `none`). Hydrate by id via nodes_get / docs_read.
+`count`, `exists`, `none`). Hydrate full content by id via nodes_get/docs_read.
 
 ## Paths
 

@@ -72,7 +72,7 @@ It composes with ordinary predicates — full-text prunes, the scalar narrows.
 Adding `layer == "canon"` drops the working-layer lab note and Newton:
 
 ```console
-$ omg query 'from docs where text("mercury") && layer == "canon"'
+$ omg query 'from docs where text("mercury") and layer == "canon"'
 d_sz1e8z0  /index.md
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 d_t5nvj1g  /practitioners/paracelsus.md
@@ -86,7 +86,7 @@ And it works **inside** a correlated subquery — "documents with a task node wh
 text mentions recrystallization" (a query the flat search surface can't express):
 
 ```console
-$ omg query 'from docs where nodes exists { where kind == "md:task" && text("recrystallization") }'
+$ omg query 'from docs where nodes exists { where kind == "md:task" and text("recrystallization") }'
 d_w18c2st  /lab/2026-02-notes.md
 d_jtnqxt2  /processes/coagulation.md
 ```

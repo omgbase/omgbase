@@ -168,6 +168,10 @@ https://example.com                  →  b_9 —references→ x_(example.com)  
   table, never mixed into the authored graph (as-built: a reserved stub).
 
 > **Surface:** `query "… follow doc.out"` (traverse the authored graph),
+> `query "… follow refs(before)"` (walk the document references a frontmatter
+> relation holds — `refs(field)` resolves them to live documents; the reverse is
+> `^docs { ^$path in list(before) }`, `^docs` being the repository's documents
+> from inside a row), `from edges where …` (the edges as rows),
 > `links` (`links_stale`), `retarget` (`links_retarget`), `links_repair`. Edges
 > aren't created by an "add edge" call — you write a link/field in a block and the
 > engine extracts the edge.

@@ -86,7 +86,7 @@ query_syntax {}                                              // returns the full
 text_search { q, limit? }                                    // FTS5 bm25 keyword search
 resolve { query, limit? }                                    // hybrid ranker → {id, locator, preview, evidence}
 ```
-`query` takes a single **OQX string** (not a `{from, filter, …}` envelope) — composable structural navigation, correlated subqueries, `select` projection, and bounded recursive traversal (`follow`) in one expression (see graph-and-query.md §4 and 10-oqx). `limit`/`cursor` page the lean hits `{id, path, …projections}`; a `count`/`exists`/`none` consumer returns a scalar; a `select <expr> values` projection returns the bare values as `values` (paged the same way, `hits` empty); a query-level `limit N`/`offset N` bounds the result set that `limit`/`cursor` then page within. `query_syntax` (no args) returns that whole reference — call it before writing a non-trivial filter. `text_search` is a plain-words FTS5 search box (words ANDed, `"quoted phrases"` adjacent, no DSL). `resolve` is the "give me the id of the thing I mean" hybrid ranker (FTS + semantic when a provider is configured); it has no `scope`/`kinds` param.
+`query` takes a single **OQX string** (not a `{from, filter, …}` envelope) — composable structural navigation, correlated subqueries, `select` projection, and bounded recursive traversal (`follow`) in one expression (see graph-and-query.md §4 and 10-oqx). `limit`/`cursor` page the lean hits `{id, path, …projections}`; a `count`/`exists`/`none` consumer returns a scalar; a `select <expr> values` projection returns the bare values as `values` (paged the same way, `hits` empty); a query-level `limit N`/`offset N` bounds the result set that `limit`/`cursor` then page within. The connectives are `and` / `or` / `not` (`&&` / `||` / `!` accepted); sugar (oqx 0.17): a receiver block without a consumer is `collect` (`docs { type == "x" }`), a block may lead with a predicate, brackets `x[p]` / `x[p]!` / `x[n]`, postfix `x!` (required), `x is y` / `x is not y`. The repository is the root row (surface 2.0): `^docs` / `^nodes` / `^blocks` / `^edges` from a top-level row (one caret per enclosing block, or `0^docs` from any depth), `^$id` the repository id, `^$it` the root object; a bare `docs` inside a block and `$repo` are errors naming the replacement. `refs(field)` resolves the document references a property holds (either path form or a `d_` id; dangling dropped) to live rows — a receiver, a source or a `follow` destination. Every path returned is `/`-rooted and every path accepted tolerates both forms (spec/surface §1 "Paths"). `query_syntax` (no args) returns that whole reference — call it before writing a non-trivial query. `text_search` is a plain-words FTS5 search box (words ANDed, `"quoted phrases"` adjacent, no DSL). `resolve` is the "give me the id of the thing I mean" hybrid ranker (FTS + semantic when a provider is configured); it has no `scope`/`kinds` param.
 
 ### Graph
 
@@ -95,7 +95,7 @@ graph { roots[], degrees?, direction?: "in"|"out"|"both", predicate?, select?[],
 ```
 Neighborhood convenience macro: the bounded graph AROUND one or more root documents in ONE call — `{ documents, edges, frontier }`. It is a WRAPPER that compiles its args into an OQX `follow doc.out`/`doc.in` query and runs the same `query` path (the returned `queries` field is the exact follow query generated). `roots` are doc refs (paths and/or ids, depth 0); `degrees` is max hop distance (root = 0, default 1, capped so `degrees+1 ≤ 8`); `direction` defaults `both`; `predicate` restricts the walk to one edge predicate; `select` adds OQX doc projections; `max_documents` caps the set (default 200) with `truncated`.
 
-Traversal proper is the OQX `follow` operator on the `query` tool, not a dedicated tool — reach for `query` directly when you need successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, cross-document correlation, or the `from edges` scan: `query { query: 'from docs where $path == "x.md" follow doc.out' }`. The old structured `graph_traverse`/`graph_path`/`graph_subgraph` tools were removed.
+Traversal proper is the OQX `follow` operator on the `query` tool, not a dedicated tool — reach for `query` directly when you need successor/frontier predicates, `by`-keyed identity, `$ordinal` budgets, cross-document correlation, or the `from edges` scan: `query { query: 'from docs where $path == "/x.md" follow doc.out' }`. The old structured `graph_traverse`/`graph_path`/`graph_subgraph` tools were removed.
 
 ### Mutate
 
@@ -203,7 +203,7 @@ Column 1: the full block id (`b_…`), emitted inline so it can be dropped strai
 Budget: 2 turns, < 1k tokens total.
 
 **T2 — "Complete deployment-related unchecked tasks under Launch."**
-1. `query { query: 'from nodes where kind == "md:task" && !attrs.checked && semantic("deployment") > 0.6 && section exists { where name == "Launch" }' }`
+1. `query { query: 'from nodes where kind == "md:task" and not checked and semantic("deployment") > 0.6 and section exists { name == "Launch" }' }`
 2. `tasks_complete { blocks: […] }`
 2 turns.
 
@@ -211,7 +211,7 @@ Budget: 2 turns, < 1k tokens total.
 1. `changes_since { cursor: <last seen commit seq> }` — 1 turn. (`changes_since` is cursor-based on the repo commit seq; there is no `since_ts`.)
 
 **T4 — "Which exact paragraphs depend on this document?"**
-1. `query { query: 'from edges where $dst_path == "/x.md" && (predicate == "depends_on" || predicate == "references") select $src, $src_field' }` — 1 turn.
+1. `query { query: 'from edges where $dst_path == "/x.md" and (predicate == "depends_on" or predicate == "references") select $src, $src_field' }` — 1 turn.
 
 **T5 — "Everything downstream of this assumption."**
 1. `query { query: 'from docs where $path == "/assumptions.md" follow doc.in { depth 4 }' }` — 1 turn. (`follow doc.in` walks incoming edges — who depends on / references the seed.)

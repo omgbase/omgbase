@@ -18,13 +18,16 @@ is no {from, filter, order} envelope: every concern is a clause of the string.
 CLAUSE ORDER IS FIXED: select, from, where, follow, order by, limit, offset —
 each at most once; an out-of-order clause is a parse error naming the order.
 Only \`select\` may drop its keyword, and only as the first clause
-(\`$path, era from docs where …\`). Every other clause always carries its keyword:
-a predicate is NEVER implicit (\`nodes exists { where kind == "md:task" }\`, not
-\`{ name, kind == "md:task" }\` — but a block may LEAD with a predicate, see Sugar),
-and \`from docs count\` is an error (write \`docs count { … }\`). \`where\` and
-later \`select\` items may use the same body's \`select\` aliases
-(\`select $path, old: era < 1000 from docs where old\`; an alias shadows a
-same-named field there).
+(\`$path, era from docs where …\`). A top-level predicate needs \`where\`, because
+\`where\` follows \`from\` (\`era > 1600 from docs\` is the clause-order error); a
+block may LEAD with a predicate (see Sugar), but a predicate after a projection
+still needs the keyword (\`{ name where kind == "md:task" }\`, not
+\`{ name, kind == "md:task" }\`); \`from docs count\` is an error (write
+\`docs count { … }\`). \`where\` and later \`select\` items may use the same body's
+\`select\` aliases (\`select $path, old: era < 1000 from docs where old\`; an alias
+shadows a same-named field there). \`and\` / \`or\` / \`not\` are the connectives;
+the symbols \`&&\` / \`||\` / \`!\` are accepted synonyms (the words are canonical and
+what \`print\` writes).
 
 ## Sugar (OQX 0.17)
 
@@ -41,10 +44,10 @@ Every form here is shorthand for an explicit directive (the AST is the explicit 
   ^docs[$path == ^company]!           ≡ … single { … } required: exactly one, else filter_invalid
   title!                              required: title, or an error naming the expression (and the row's $id)
                                        — never a filter, never a coercion (0!, ""! are values); tightest: a!.b vs a.b!
-  is x / not x                        ≡ !!x / !x (truthiness)
+  is x / not x                        truthiness of x, and its negation (prefix; \`not\` ≡ \`!\`)
   x is y / x is not y                 identity (a row's id, else structural) — compares rows, which == does not;
                                        x is null = absent; for scalars is ≡ ==; comparison precedence, no chaining
-  a and b / a or b                    ≡ a && b / a || b (same precedence, short-circuit, value: title or $path coalesces)
+  a and b / a or b                    the connectives (≡ && / ||: same precedence, short-circuit, value: title or $path coalesces)
   boss: ^docs[$path == ^manager], bossName: boss.$title   a select item may use the items to its LEFT
   Reserved words (never a bare field name): from where select is not and or, true false null.
 
@@ -149,7 +152,7 @@ edges:  (the authored link graph as rows — one per open edge)
                Relational (< <= > >=) on an absent operand → FALSE. Bare \`f\` in
                boolean position uses JS truthiness (absent/false/0/"" ⇒ false;
                NOTE: "false", [] and {} are truthy). has(f) = explicit presence.
-  boolean      &&  ||  !    grouping ( … )
+  boolean      and  or  not    grouping ( … )   — && || ! are accepted synonyms
   arithmetic   + - * / %    (+ concatenates if either side is a string)
   membership   x in y       array → typed membership; string → substring;
                             object → key exists; range → coverage. Any list
@@ -212,8 +215,8 @@ edges:  (the authored link graph as rows — one per open edge)
                — the same fixed order as the top level (\`from\` optional; the
                receiver supplies the rows). A leading name/alias list is the
                projection (\`select\` dropped); a predicate always needs \`where\`.
-  exists    ≥1 row      nodes exists { where kind == "md:task" && !checked }
-  none      0 rows      nodes none { where kind == "md:task" && !checked }  ("every task done")
+  exists    ≥1 row      nodes exists { where kind == "md:task" and not checked }
+  none      0 rows      nodes none { where kind == "md:task" and not checked }  ("every task done")
   count     a number    nodes count { where kind == "md:task" } >= 2
   collect   rows (default) — in select for nested results; in where with a lift
   first / single   zero-or-one (single errors on >1) — lookups in select
@@ -222,9 +225,9 @@ edges:  (the authored link graph as rows — one per open edge)
             consumer reduces: nodes exists { offset 1 } = at least two;
             first { … offset 1 } = the second.
   lift      \`^name:\` in a where-collect binds values outward:
-            select $path, open from docs where nodes collect { ^open: value where kind == "md:task" && !checked }
-  joins     ^<t> exists { where slug == ^ref }  semi-join; !… exists  anti-join;
-            ^nodes single { where kind == "person" && attrs.id == ^owner_id }  lookup;
+            select $path, open from docs where nodes collect { ^open: value where kind == "md:task" and not checked }
+  joins     ^<t> exists { where slug == ^ref }  semi-join; not … exists  anti-join;
+            ^nodes single { where kind == "person" and attrs.id == ^owner_id }  lookup;
             x in ^keys  membership over a lifted set.
 
 ## select — projection
@@ -241,7 +244,7 @@ edges:  (the authored link graph as rows — one per open edge)
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
   entries(x)  a record as a collection ($key / $it per entry), key order:
                 select fm: entries(frontmatter) collect { k: $key, v: $it }
-                where entries(frontmatter) exists { where $key == "era" && $it > 1600 }
+                where entries(frontmatter) exists { where $key == "era" and $it > 1600 }
                 entries(inline), entries(attrs), a nested map, or a list (index keys)
   $semantic_score is not a field — project semantic("…") under an alias instead.
 
@@ -277,7 +280,7 @@ edges:  (the authored link graph as rows — one per open edge)
   section.subsections.
   from edges where $dst_path == "/notes/x.md"      inbound edges to a doc, as rows
   from edges where predicate == "depends_on" select $src, $dst_path
-  from docs where !doc.in_edges exists { }         orphans (nothing links in)
+  from docs where not doc.in_edges exists { }      orphans (nothing links in)
   (The \`graph\` tool is a convenience wrapper that compiles to a follow query.)
 
 ## semantic grain
@@ -288,21 +291,23 @@ text()/where prune the candidate set; only order by reweights.
 ## Examples
 
   from docs where layer == "working"
-  from docs where $path.startsWith("/guides/") && $updated_at >= "2026-08-01"
+  from docs where $path.startsWith("/guides/") and $updated_at >= "2026-08-01"
   from docs where "pricing" in list(tags) select layer, tags
   from docs where inline.owner == "alice"
   from docs where $title.lower().contains("q3 plan")
   from docs where format == "yaml"
   from docs where type == "practitioner" order by era desc limit 2
-  from docs where nodes none { where kind == "md:task" && !checked }
+  from docs where nodes none { where kind == "md:task" and not checked }
   from docs where tags exists { where $it == "tria-prima" }
   from docs where $path == "/x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
-  from docs select owner_id, owner: ^nodes single { where kind == "person" && attrs.id == ^owner_id }
-  from blocks where type == "task" && !checked && under_heading("Launch") && doc.layer == "working"
-  from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")
+  from docs select owner_id, owner: ^nodes single { where kind == "person" and attrs.id == ^owner_id }
+  from blocks where type == "task" and not checked and under_heading("Launch") and doc.layer == "working"
+  from blocks where type == "paragraph" and has_edge("references", "d_92aaaaa")
   select $path, $depth from docs where $path == "/timeline/review.md" follow refs(before), refs(after)
   select $path, next: ^docs collect { $path where ^$path in list(before) } from docs where type == "milestone"
-  select $path, n: ^docs count { }, id: ^$id from docs limit 1
+  select $path, n: size(^docs), repo: ^$id from docs limit 1
+  docs { type == "substance" and not verified }
+  select subject, process: ^docs[slug == ^subject]!.$path from docs where type == "lab-note"
   select $path, back: nodes first { select p: 0^docs collect { $path where ^^$path in list(after) } values } from docs where type == "milestone"
   select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10

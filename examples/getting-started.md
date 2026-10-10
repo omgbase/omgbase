@@ -14,8 +14,9 @@ small corpus of alchemy notes from a bare directory to a queryable workspace.
 
 ## The corpus
 
-Eighteen interlinked Markdown documents — substances, processes, practitioners,
-texts, and dated lab notes:
+Twenty interlinked Markdown documents — substances, processes, practitioners,
+texts, dated lab notes, and two timeline milestones whose frontmatter holds
+document references (`before:` / `after:`):
 
 ```console
 $ find . -type f | sort

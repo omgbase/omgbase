@@ -152,7 +152,7 @@ omg query <source> [-n N] [--cursor c] [--ids|--json|--jsonl]
 omg query -f <file|-> [-n N] [--cursor c]
 ```
 
-Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|nodes|edges [where …] [follow …] [order by …] [limit N] [offset N]` — a fixed clause order, ADR-020 — or a top-level `<target> count|exists|none|first|single { … }` — a bare target at the root scope), passed positionally or read from a file / stdin with `-f` — exactly the body of a ```` ```omg ```` fence, so a query authored in a document runs unchanged (`omg run` evaluates it in place). There are **no** query-shaping flags (`--from`, `--text`, `--semantic`, `--select`, `--order` are gone with the CEL layer, ADR-013): full-text is the `text("…")` predicate, semantic ranking is `order by semantic("…") desc` / `where semantic("…") > 0.6` (needs `embedding.provider`, else `semantic_unavailable`), projection is `select`, ordering is `order by`. Human output: one hit per line (`$id  $path`) when nothing is projected, an aligned table (`id`, `path`, then the `select` columns in order — `path` is dropped when `$path` is itself selected; nested lists/records as compact JSON clipped at 60 chars) when it is, the scalar for `count`/`exists`/`none`, bare values for a `values` projection; `--json` is the whole result envelope (`hits`, `truncated`, `cursor`, …). `omg q --help` carries a worked example per feature; `docs/query-language.md` is the reference.
+Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|nodes|edges [where …] [follow …] [order by …] [limit N] [offset N]` — a fixed clause order, ADR-020 — or a top-level `<target> count|exists|none|first|single { … }` — a bare target at the root scope), passed positionally or read from a file / stdin with `-f` — exactly the body of a ```` ```omg ```` fence, so a query authored in a document runs unchanged (`omg run` evaluates it in place). There are **no** query-shaping flags (`--from`, `--text`, `--semantic`, `--select`, `--order` are gone with the CEL layer, ADR-013): full-text is the `text("…")` predicate, semantic ranking is `order by semantic("…") desc` / `where semantic("…") > 0.6` (needs `embedding.provider`, else `semantic_unavailable`), projection is `select`, ordering is `order by`. The connectives are the words `and` / `or` / `not` (`&&` / `||` / `!` are accepted synonyms). Sugar (oqx 0.17): a receiver block without a consumer is `collect` (`docs { type == "substance" }`), a block may lead with a predicate (bare names still project; filter a bare field with `is x`), brackets `x[p]` (first match or absent) / `x[p]!` (exactly one, required) / `x[n]` (positional), postfix `x!` (required), `x is y` / `x is not y` (identity; `x is null` is absence). Inside a row the repository's collections are `^docs` / `^nodes` / `^blocks` / `^edges` — the repository is the root row (surface 2.0): one caret per enclosing block, or `0^docs` from any depth, `^$id` the repository id; `refs(field)` resolves the document references a property holds to live rows (`follow refs(before), refs(after)`); every path the CLI prints is `/`-rooted (`$path == "/x.md"`; inputs accept both forms). Human output: one hit per line (`$id  $path`) when nothing is projected, an aligned table (`id`, `path`, then the `select` columns in order — `path` is dropped when `$path` is itself selected; nested lists/records as compact JSON clipped at 60 chars) when it is, the scalar for `count`/`exists`/`none`, bare values for a `values` projection; `--json` is the whole result envelope (`hits`, `truncated`, `cursor`, …). `omg q --help` carries a worked example per feature; `docs/query-language.md` is the reference.
 
 `omg run <locator|path>` — evaluate the ```` ```omg ```` fence at a locator (or the first fence in a doc) and print its results with the same renderer. Strictly read-and-print: fences stay **inert** in the corpus (ADR-011 §8 reservations hold; nothing is projected, nothing is written). This is the fence-authoring loop: edit fence, `omg run`, repeat.
 
@@ -162,7 +162,7 @@ Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|
 |---|---|
 | `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open edges touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain — one row per open edge with its source block (`references > d_13 (b_307)`; `block` in `--json`). Backlinks = `omg links <node> --in`. `--jsonl` prints the `{ out, in }` object (it is not a list). |
 
-Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "/x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
+Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "/x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, `follow refs(before), refs(after)` walks the document references a frontmatter key holds, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
 
 There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where $path == "/x.md" follow doc.out' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
 
@@ -236,7 +236,7 @@ d_194c  projects/bar.md
 omg> show @1
 omg> @canon = query 'from docs where layer == "canon"'
 omg> show @canon[1]
-omg> query 'from nodes where kind == "md:task" && !attrs.checked'
+omg> query 'from nodes where kind == "md:task" and not attrs.checked'
 omg> done @1
 ```
 
@@ -290,13 +290,13 @@ Two drive modes: an interactive readline REPL on a TTY, and a **script runner** 
 
 **C2 — "complete the unchecked deploy tasks under Launch."**
 ```
-omg q 'type == "task" && !attrs.checked && under_heading("Launch")' --text deploy --ids | omg done -
+omg q 'from blocks where type == "task" and not checked and under_heading("Launch") and text("deploy")' --ids | omg done -
 ```
 1 line. The pipe is the changeset boundary: `done` receives IDs, builds one atomic changeset.
 
 **C3 — "what changed since yesterday?"** `omg log --since 24h` — 1 command; one digest per line.
 
-**C4 — "which paragraphs depend on this doc?"** `omg q 'has_edge("depends_on", "d_92aaaaa") || has_edge("references", "d_92aaaaa")'` — 1 command.
+**C4 — "which paragraphs depend on this doc?"** `omg q 'from blocks where has_edge("depends_on", "d_92aaaaa") or has_edge("references", "d_92aaaaa")'` — 1 command.
 
 **C5 — "fix that one paragraph."** `omg find "stable identity rationale" -1` → `omg edit b_k7z2p9q` — 2 commands; editor round-trip; CAS pinned automatically.
 

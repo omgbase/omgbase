@@ -9,8 +9,22 @@ syntax:
 ```text
 select name, id, title
 from people
-where jobs exists { where employer == "Globocorp" && !end_date }
+where jobs exists { where employer == "Globocorp" and not end_date }
 ```
+
+The connectives are the words `and` / `or` / `not` (`&&` / `||` / `!` are
+accepted synonyms; the canonical printer writes the words). Since 0.17 the
+language carries sugar that desugars in the parser — a receiver block without a
+consumer is `collect` (`jobs { pay > 2 }`), a block may lead with a predicate
+(bare names still project), brackets `x[p]` / `x[p]!` / `x[n]` (first match /
+exactly one, required / positional), postfix `x!` (required), `is x` / `not x`,
+`x is y` / `x is not y` (identity; `x is null` is absence), and a `select` item
+may use the items to its left; after a `follow` destination a brace is still
+the options block. Since 0.18 the root scope is a row (`^$it` from a top-level
+row is the host's root object) and `N^name` is an absolute outer reference
+(`0^people`). The TypeScript README's tutorial (§10 "Sugar") and `spec/oqx`
+(`GRAMMAR.md` §4, `SEMANTICS.md`) are the full account; both implementations
+run the same fixtures.
 
 This crate is the second implementation of the language. The reference
 implementation is the TypeScript package
@@ -22,7 +36,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (1131 cases in 32 files at language version 0.17) and all of them
+`spec/oqx/cases` (1163 cases in 33 files at language version 0.18) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Published on crates.io
 as `oqx`.
 
@@ -98,7 +112,7 @@ applies `Rule`s (`fn(&BlockPlan, &RuleContext) -> Option<BlockPlan>`, a fixpoint
 over `DEFAULT_RULES`), each proven unobservable — same rows, lifts and errors as
 the scan:
 
-- **Correlated equality → hash probe.** A top-level `&&` conjunct `local ==
+- **Correlated equality → hash probe.** A top-level `and` conjunct `local ==
   outer` (`local` an identifier/member chain on the block's row, `outer`
   reading nothing from it and raise-free) is answered from a `HashIndex` on the
   receiver built once per run (keys reproduce `==`: absent ≡ null, `-0` ≡ `0`,
@@ -136,8 +150,8 @@ about to observe the value AS A VALUE — an operand, an argument, a projected
 item, an `order by`/`distinct` key, a `where` scalar, a lift — and never in row
 position (the source, a receiver, a `from`, a `follow` destination), where it
 reaches `to_rows` / `index_for` as handed out; so the language never sees the
-stand-in, and `$repo.docs == $repo.docs`, `"x" in $repo.docs`,
-`entries($repo.docs)` behave as they do over the reference's lazy array. The
+stand-in, and `^docs == ^docs`, `"x" in ^docs`, `entries(^docs)` (omgbase's
+root-row collections) behave as they do over the reference's lazy array. The
 TypeScript package has the same optional `materialize` hook.
 `InMemoryEngine::with_rules(&[])` is the naive engine;
 `tests/spec.rs` proves optimized ≡ naive (result, or error stage and message)

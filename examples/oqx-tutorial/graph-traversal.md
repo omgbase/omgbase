@@ -45,7 +45,7 @@ keep only that hop (`$depth == 2`) to get the documents that *directly* cite the
 magnum opus:
 
 ```console
-$ omg query 'from docs where $path == "/processes/magnum-opus.md" && $depth == 2 follow doc.in { depth 2 }' | awk '{print $2}' | sort
+$ omg query 'from docs where $path == "/processes/magnum-opus.md" and $depth == 2 follow doc.in { depth 2 }' | awk '{print $2}' | sort
 /index.md
 /practitioners/maria-prophetissa.md
 /practitioners/newton.md
@@ -86,7 +86,7 @@ outline one level per hop — the magnum opus's section and its four subsections
 (`$depth` 1 then 2):
 
 ```console
-$ omg query 'select name, depth: $depth, stop: $stop from nodes where kind == "md:section" && name == "The magnum opus" follow section.children order by $depth asc, name asc' --jsonl
+$ omg query 'select name, depth: $depth, stop: $stop from nodes where kind == "md:section" and name == "The magnum opus" follow section.children order by $depth asc, name asc' --jsonl
 {"id":"n_7a874b74b236","path":"/processes/magnum-opus.md","name":"The magnum opus","depth":1,"stop":"interior"}
 {"id":"n_cb7296cac24a","path":"/processes/magnum-opus.md","name":"Open questions","depth":2,"stop":"leaf"}
 {"id":"n_e7364dec9d89","path":"/processes/magnum-opus.md","name":"Operations","depth":2,"stop":"leaf"}
@@ -100,8 +100,6 @@ expression repeats (e.g. `by type` — stop when a document *type* recurs); and
 every walk is capped at depth 8. `block.children` walks a list down to its items
 the same way.
 
----
-
-That's the language end to end — filtering, targets, shaping, correlated
-subqueries, joins & lifts, aggregates, full-text, and traversal. Back to the
-[tutorial index](./README.md).
+Next: **[sugar.md](./sugar.md)** — the shorthand forms (brackets, `!`,
+where-first blocks, `is`) and `refs()` for the document references a frontmatter
+key holds.

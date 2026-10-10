@@ -40,7 +40,7 @@ The practitioners carry an `era:` year. Comparisons are numeric, not textual —
 so `> 1600` finds the one modern practitioner rather than mis-sorting by digits:
 
 ```console
-$ omg query 'from docs where type == "practitioner" && era > 1600'
+$ omg query 'from docs where type == "practitioner" and era > 1600'
 d_rw4ygr0  /practitioners/newton.md
 $ omg query 'from docs where era < 1000'
 d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
@@ -117,12 +117,12 @@ ask for a range.
 
 ## Booleans, and absence
 
-A bare field name is a boolean test; `!` negates it. A **missing** key counts as
-false, so `!verified` returns both the documents that set `verified: false` and
-those that never mention it:
+A bare field name is a boolean test; `not` negates it (`!` is accepted too). A
+**missing** key counts as false, so `not verified` returns both the documents
+that set `verified: false` and those that never mention it:
 
 ```console
-$ omg query 'from docs where !verified'
+$ omg query 'from docs where not verified'
 d_m67jwv8  /processes/magnum-opus.md
 d_1rren8z  /substances/philosophers-stone.md
 d_prj3j7a  /substances/prima-materia.md
@@ -132,11 +132,16 @@ d_3n5zn8a  /timeline/review.md
 
 ## Combine terms
 
-`&&`, `||`, and `!` compose the usual way:
+`and`, `or`, and `not` compose the usual way, with `( … )` for grouping. The
+symbols `&&`, `||`, `!` are accepted as exact synonyms; the words are the
+canonical spelling (and what the engine prints a query back as):
 
 ```console
-$ omg query 'from docs where type == "practitioner" && tradition == "western" && era > 1600'
+$ omg query 'from docs where type == "practitioner" and tradition == "western" and era > 1600'
 d_rw4ygr0  /practitioners/newton.md
+$ omg query 'from docs where type == "practitioner" and (tradition == "islamic" or tradition == "alexandrian")'
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
+d_9px29y1  /practitioners/maria-prophetissa.md
 ```
 
 ## Match on the path
@@ -151,6 +156,23 @@ d_9px29y1  /practitioners/maria-prophetissa.md
 d_rw4ygr0  /practitioners/newton.md
 d_t5nvj1g  /practitioners/paracelsus.md
 ```
+
+Paths on the query surface are **`/`-rooted** — the form a reference is written
+in (`[x](/timeline/kickoff.md)`, `before: [/timeline/kickoff.md]`): every path a
+query returns starts with `/`, and `$path` is that form. Inputs are forgiving —
+a string literal compared with `$path` by `==`/`!=` or passed to its
+`startsWith(…)` is rooted before the comparison, so both spellings match:
+
+```console
+$ omg query 'from docs where $path == "/timeline/kickoff.md"'
+d_q3f4m8t  /timeline/kickoff.md
+$ omg query 'from docs where $path == "timeline/kickoff.md"'
+d_q3f4m8t  /timeline/kickoff.md
+```
+
+Write the rooted form; it is also what a frontmatter reference holds, so the two
+compare directly (see [sugar.md](./sugar.md) for `refs()` and
+`^$path in list(before)`).
 
 ## `list()` — one test for scalar-or-list fields
 
@@ -211,7 +233,7 @@ Keys are queryable too, so you can filter on a key you name at query time
 (here it is the same set as `era > 1600`):
 
 ```console
-$ omg query 'from docs where entries(frontmatter) exists { where $key == "era" && $it > 1600 }'
+$ omg query 'from docs where entries(frontmatter) exists { where $key == "era" and $it > 1600 }'
 d_rw4ygr0  /practitioners/newton.md
 d_f7w5k26  /texts/mutus-liber.md
 ```

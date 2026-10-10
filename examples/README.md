@@ -37,7 +37,7 @@ carry it.
 2. **[search-and-navigation.md](./search-and-navigation.md)** — `find`, `outline`, `show`, and the link/backlink graph.
 3. **[editing-and-history.md](./editing-and-history.md)** — structured edits (completing tasks) and reading history back.
 4. **[interactive-shell.md](./interactive-shell.md)** — `omg shell`: a persistent session with `@`-addressable results.
-5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts, aggregates, full-text, and graph traversal (seven pages).
+5. **[oqx-tutorial/](./oqx-tutorial/README.md)** — the OQX query language, end to end: filtering, targets, shaping, correlated subqueries, joins & lifts (and the repository as the root row), aggregates, full-text, graph traversal, and the sugar forms with `refs()` (eight pages).
 
 Not a tutorial, but also here: **[graph-ui/](./graph-ui/README.md)** — a Lit demo that runs an OQX query over MCP and renders the result as a graph, with the relationships that draw edges and lay the graph out inferred from the query (a probe of the reflection API).
 
@@ -61,7 +61,7 @@ directory when the session ends. Nothing touches your real files or a shared
 database, and there is no external environment to wire up.
 
 The shared fragments live in [`_fragments/`](./_fragments/): `omg-types.md` (the
-value types + bind-by-type above, pulled in by the bootstraps), and the
+value types — `doc_id`, `block_id`, `node_id`, `repo_id`, … — + bind-by-type above, pulled in by the bootstraps), and the
 bootstraps themselves — `attached-alchemy.md` (corpus already attached — used by
 the query/search/edit walkthroughs), `fresh-workspace.md` (un-attached — used by
 getting-started, whose whole point is to demonstrate `init` / `source add` live), and

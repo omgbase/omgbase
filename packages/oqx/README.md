@@ -34,7 +34,7 @@ const company = "Globocorp";
 const employees = oqx`
   name, id, title
   from ${people}
-  where jobs exists { where employer == ${company} && !end_date }
+  where jobs exists { where employer == ${company} and not end_date }
 `;
 // → [{ name: "Bob", id: 124, title: "Engineer" }, …]  (current Globocorp employees)
 ```
@@ -56,7 +56,7 @@ once, and every one is optional except `from` at the top level:
 ```
 [ [select] projection ]    name, id, title: label        (or: select distinct …, … values)
 from <collection>          from ${people}
-[ where <predicate> ]      where age >= 18 && jobs exists { where !end }
+[ where <predicate> ]      where age >= 18 and jobs exists { where not end }
 [ follow <dest>, … ]       follow children { depth 4 }     (or: follow before, after; follow ^people collect { … })
 [ order by <expr> … ]      order by age desc, name
 [ limit N ]                limit 10
@@ -200,7 +200,7 @@ const flags = { beta: { on: true }, legacy: { on: false } };
 oqx`$key values from entries(${flags}) where on`;                    // ["beta"]  (bare `on` reads the value)
 
 oqx`name, on: entries(prefs) collect { $key values where $it } from ${users}`;   // as a nested receiver
-oqx`name from ${users} where entries(prefs) exists { where $key == "dark" && $it }`;
+oqx`name from ${users} where entries(prefs) exists { where $key == "dark" and $it }`;
 ```
 
 `entries(array)` yields numeric index keys, a `Map` yields its entries, and
@@ -212,7 +212,8 @@ ask for one. As a plain value (not a source) `entries(x)` is an array of
 ### 3. Predicates (where)
 
 `where` filters rows. The predicate language has comparisons (`== != < <= > >=`),
-boolean operators (`&& || !`) with grouping `( )`, membership (`in`), arithmetic
+boolean operators — the words `and`, `or`, `not`; the symbols `&& || !` are
+accepted synonyms — with grouping `( )`, membership (`in`), arithmetic
 (`+ - * / %`), and bare truthiness. The `where` keyword is always written — a
 leading expression without it is a projection, and a bare comparison in that
 position is an error that points you at `where`.
@@ -319,7 +320,7 @@ from a row nested one level deeper. A receiver may start with `^` too, which is
 how a nested consumer runs over a named root or an enclosing row's relation:
 
 ```js
-execute("name, peers: ^people collect { name where city == ^city && name != ^name } from people", { people });
+execute("name, peers: ^people collect { name where city == ^city and name != ^name } from people", { people });
 ```
 
 **Correlated subqueries.** Because inner and outer rows often share names, the
@@ -334,7 +335,7 @@ const family = [
 ];
 oqx`
   name,
-  siblings: ${family} collect { name where parent == ^parent && name != ^name }
+  siblings: ${family} collect { name where parent == ^parent and name != ^name }
   from ${family}
 `;
 // [{ name: "Ada", siblings: [{ name: "Ben" }] },
@@ -357,7 +358,7 @@ Methods on a value: `contains`, `startsWith`, `endsWith`, `matches` (regex),
 ```js
 oqx`name from ${people} where title.startsWith("Eng")`;      // → Bob
 oqx`name from ${people} where title.lower() == "director"`;  // → Alice
-oqx`name from ${people} where has(age) && !has(nickname)`;   // present vs absent
+oqx`name from ${people} where has(age) and not has(nickname)`;   // present vs absent
 oqx`name from ${people} where tags.contains("admin")`;       // array membership
 ```
 
@@ -685,8 +686,8 @@ oqx`select id!, title from ${docs}`           // insist on an identity before a 
 // `is` / `is not` compare IDENTITY (a row's id when present, else structurally):
 oqx`name from ${people} where manager is null`            // absent (same as == null)
 oqx`${people} count { ^people exists { $it is ^$it } }`   // rows compare; `==` leaves that unspecified
-// `and` / `or` are exact synonyms of `&&` / `||`: `title or path` coalesces.
-// `print` writes the words (language 0.18); `!` stays `!`.
+// `and` / `or` / `not` are the canonical connectives; `&&` / `||` / `!` are exact
+// synonyms (`title or path` coalesces). `print` writes the words (language 0.18); `!` stays `!`.
 
 // A select item may use the items to its left (inlined like a `where` alias):
 oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
@@ -694,7 +695,10 @@ oqx`boss: ^people[id == ^manager], bossName: boss.name from ${people}`
 
 Reserved words, never a bare field name: `from where select is not and or` and
 the literal words `true false null`. The top level is unchanged — `age > 15
-from ${people}` stays an error, because `where` would precede `from`.
+from ${people}` stays an error, because `where` would precede `from`. One
+carve-out: after the last `follow` destination a brace is still the **options**
+block (`follow children { depth 2 }`), never a collect; a destination block keeps
+its consumer (`follow ^people collect { … }`).
 
 ### Cheat-sheet
 
@@ -702,7 +706,7 @@ from ${people}` stays an error, because `where` would precede `from`.
 select … from … where … follow … order by … limit N offset N   the fixed clause order (each at most once)
 name, alias: expr, nested: rel collect { … }   projection (`select` may be dropped only here, in first position)
 from ${source}                                  source collection (required at the top level)
-where a == b && rel exists { where … } || !c    predicate tree + nested ops (`and`/`or` ≡ `&&`/`||`)
+where a == b and rel exists { where … } or not c  predicate tree + nested ops (`&&`/`||`/`!` are accepted synonyms)
 rel { pay > 2 }  /  rel { employer }            a block without a consumer is collect; a leading predicate is where-first, a bare name projects
 rel[p]  /  rel[p]!  /  rel[0]  /  rel[0]!       first match / exactly one (required) / positional / required positional
 x!                                               required: the value, or an error when absent (tightest; `a!.b` vs `a.b!`)
@@ -884,7 +888,7 @@ const ctx = {
     return builtins.callMethod(name, recv, args);
   },
 };
-run(parse("id from tree where age(born) > 18 && title.slug() == 'x'"), { context: ctx });
+run(parse("id from tree where age(born) > 18 and title.slug() == 'x'"), { context: ctx });
 ```
 
 The simplest route is to `extends DefaultContext` and `super.callFunction(...)`
@@ -910,7 +914,7 @@ import { parse, PlannedEngine } from "@omgbase/oqx";
 import { SqliteTable } from "@omgbase/oqx/sqlite";
 
 const planner = new SqliteTable(db, "emp", { columns: ["id", "name", "dept", "level"] });
-new PlannedEngine(planner).run(parse('name from emp where dept == "eng" && level >= 5'), []);
+new PlannedEngine(planner).run(parse('name from emp where dept == "eng" and level >= 5'), []);
 // → `dept`/`level` pushed to SQL; anything untranslatable finishes in-memory
 ```
 
@@ -941,7 +945,7 @@ results and on errors.
 
 **What is optimized**
 
-- **Correlated equality → hash probe.** A top-level `&&` conjunct of the block's
+- **Correlated equality → hash probe.** A top-level `and` conjunct of the block's
   `where` of the form `local == outer` (either side) — `local` a bare identifier
   or member chain on the block's row (`customer_id`, `meta.id`, `$it`),
   `outer` anything that reads nothing from that row (`^customer_id`, `^^x.id`,
@@ -963,7 +967,7 @@ results and on errors.
   by`) are answered from the bucket's size after the bound without entering a
   row.
 
-**The sound rule.** `&&` is strictly left to right and short-circuiting (§13),
+**The sound rule.** `and` is strictly left to right and short-circuiting (§13),
 so a probe may skip a row only if everything the scan would have evaluated for
 it could neither raise nor bind: an equality is hoisted only when **every
 conjunct to its left is raise-free** — no function or method call, no `single`,
@@ -973,7 +977,7 @@ too. A conjunct that could raise *right* of the equality is simply evaluated
 over the bucket, where the scan would have evaluated it on the same rows. A
 block whose `where` lifts anywhere is never probed (a lift could change what
 the outer side reads between rows). Otherwise the block scans as before, so
-`where nope(x) && id == ^id` still raises `unknown function`.
+`where nope(x) and id == ^id` still raises `unknown function`.
 
 Property reads are treated as total (§23: evaluation is otherwise total). A
 `DataContext.get` that throws is caught where the engine relies on reads it
@@ -1142,7 +1146,7 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   import { parse, run, IndexedCollection, PlannedEngine } from "@omgbase/oqx";
   const planner = new IndexedCollection("people", people, ["city", "title"]);
   const engine = new PlannedEngine(planner, planner.context());
-  run(parse('name from people where city == "NYC" && age > 30'), { engine });
+  run(parse('name from people where city == "NYC" and age > 30'), { engine });
   // city probe from the index; `age > 30` finished in-memory over the candidates
   ```
 

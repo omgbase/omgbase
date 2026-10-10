@@ -21,7 +21,7 @@ than copy-pasting an id:
 
 ```console
 $ omg shell
-omg> query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"'
+omg> query 'from blocks where type == "task" and not attrs.checked and $path == "/lab/2026-02-notes.md"'
   2 rows — address with @1..@2
 b_assay01  /lab/2026-02-notes.md
 b_write02  /lab/2026-02-notes.md
@@ -29,7 +29,7 @@ omg> done @1
   1 row — address with @1..@1
   ok committed · 1 document touched
 b_assay01
-omg> query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"'
+omg> query 'from blocks where type == "task" and not attrs.checked and $path == "/lab/2026-02-notes.md"'
   1 row — address with @1..@1
 b_write02  /lab/2026-02-notes.md
 ```
@@ -45,7 +45,7 @@ ephemeral — a snapshot taken now, not a live query, and gone when the shell
 exits, which `exit` (or Ctrl-D) does, dropping you back at your shell:
 
 ```console
-omg> @open = query 'from blocks where type == "task" && !attrs.checked'
+omg> @open = query 'from blocks where type == "task" and not attrs.checked'
   @open = 17 rows
 omg> bindings
 @open  17 rows

@@ -6,12 +6,13 @@ semantics are tested in `@omgbase/oqx` itself (`packages/oqx/test/`); omgbase's 
 of the SQL pushdown (translator shape) lives in `src/oqx-js/sql/translate.test.ts`,
 and `conformance.test.ts` here proves planned == pure in-memory over every query.
 
-## `fixtures/alchemy/` — 18 markdown documents
+## `fixtures/alchemy/` — 20 markdown documents
 
 A small knowledge repository on the subject of alchemy. Chosen because it
 naturally produces the structure OQX needs to be exercised: a hub document, typed
 entities that cross-reference each other, notes at different levels of
-confidence, and laboratory notebooks with open and completed work.
+confidence, laboratory notebooks with open and completed work, and two timeline
+milestones whose frontmatter holds document references (for `refs()`).
 
 ```
 index.md                  hub, links to everything, no tasks
@@ -20,6 +21,7 @@ processes/                magnum-opus, calcination, dissolution, coagulation
 practitioners/            maria-prophetissa, jabir-ibn-hayyan, paracelsus, newton
 texts/                    emerald-tablet, mutus-liber
 lab/                      2026-01-notes, 2026-02-notes
+timeline/                 kickoff, review  (before/after/see_also hold document references)
 ```
 
 Every file round-trips byte-identically through the parser (asserted in
@@ -29,15 +31,17 @@ Every file round-trips byte-identically through the parser (asserted in
 
 | Key | Cardinality | Values |
 |---|---|---|
-| `type` | scalar | `hub` · `substance` · `process` · `practitioner` · `text` · `lab-note` |
+| `type` | scalar | `hub` · `substance` · `process` · `practitioner` · `text` · `lab-note` · `milestone` |
 | `layer` | scalar | `canon` · `working` · `draft` |
 | `tradition` | scalar | `western` · `islamic` · `alexandrian` |
 | `era` | scalar (number) | 250 · 800 · 1530 · 1677 · 1680 |
-| `verified` | scalar (bool) | 4 documents are `false` |
+| `verified` | scalar (bool) | 5 documents are `false` |
 | `tags` | **list, except `mercury.md` which is scalar** | exercises `list()` polymorphism |
 | `element`, `stage`, `stages`, `month` | scalar | on the documents where they apply |
 | `slug` | scalar | on every substance and process; equals the filename base, and a `[[wikilink]]`'s value IS a slug — so links resolve to documents by `slug == value` (the join key) |
-| `subject` | scalar | on the two lab notes; a process `slug`, naming the notebook's subject for a 1:1 `single(...)` lookup |
+| `subject` | scalar | on the two lab notes; a process `slug`, naming the notebook's subject for a 1:1 `single { … }` / `^docs[slug == ^subject]` lookup |
+| `when` | scalar (ISO date) | on the two milestones |
+| `before`, `after`, `see_also` | scalar or list of **document references** | on the two milestones: `/`-rooted paths (`/timeline/kickoff.md`), bare repo-relative paths (`processes/dissolution.md`), a document id (`d_0` under the spec minter) and dangling references (`/timeline/lost-notes.md`) — the `refs(x)` fixture; `review.before` names `kickoff`, `kickoff.after` names `review` (a 2-cycle for `follow refs(before), refs(after)`) |
 
 ### Where tasks live (a corpus convention, asserted by the tests)
 
@@ -50,7 +54,7 @@ The one exception is `substances/salt.md`, which carries a short **supply** list
 ("buy more salt of tartar") — and every item is checked. That makes it the
 deliberate **discriminator**: it is the only substance page with task nodes, and
 it has no *open* ones, so `nodes exists { where kind == "md:task" }` and
-`nodes exists { where kind == "md:task" && !attrs.checked }` return provably
+`nodes exists { where kind == "md:task" and not attrs.checked }` return provably
 different sets. Several tests depend on this; keep it fully checked.
 
 ### Structure the corpus exercises
@@ -58,7 +62,7 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Task nodes** (`md:task`) — 11 documents carry tasks; 10 have at least one
   open. Distribution: both lab notes (7 and 4), the four process pages, three
   practitioners, `texts/mutus-liber.md`, and salt's checked supply list.
-- **Task-free documents** — seven of them, including `index.md`,
+- **Task-free documents** — nine of them, including `index.md`,
   `substances/mercury.md`, `practitioners/maria-prophetissa.md`, and
   `texts/emerald-tablet.md`. A correlated subquery must never return these; an
   uncorrelated one would.
@@ -82,7 +86,7 @@ different sets. Several tests depend on this; keep it fully checked.
 - **Lifts (`^name`)** — the open tasks distributed across ten documents (both
   lab notes, three practitioners, all four processes, mutus-liber) let a single
   `select $path, open from docs where nodes collect { ^open: value where kind ==
-  "md:task" && !attrs.checked }` both filter to those docs and capture each
+  "md:task" and not attrs.checked }` both filter to those docs and capture each
   one's open-task texts. salt's all-checked supply list is the discriminator
   again: an any-task lift captures salt, an open-task lift drops it.
 - **Correlation & joins (`^name` outer references + the root row's `^docs`/`^nodes` scans)** — the
@@ -107,8 +111,8 @@ different sets. Several tests depend on this; keep it fully checked.
   and `docs first { … order by era desc }` is Newton. Ranking is how `semantic()` /
   bm25 scores become a top-K.
 - **Top-level consumers (`<target> <op> { … }`)** — a postfix directive over
-  a bare root receiver (a target name at the root scope) shapes the whole result, over the 18-document corpus:
-  `docs count` folds a set to a number (18 total, 5 substances),
+  a bare root receiver (a target name at the root scope) shapes the whole result, over the 20-document corpus:
+  `docs count` folds a set to a number (20 total, 5 substances),
   `docs exists` to a boolean, `docs first` to the first document in path
   order (`index.md`, which sorts before every subdirectory), and `docs single`
   to the sole `draft` document (`texts/mutus-liber.md`) — while
@@ -148,6 +152,29 @@ different sets. Several tests depend on this; keep it fully checked.
   element — mercury's scalar-authored `tags: substance` is one element (→ `[]`),
   the list-authored substances keep their extras — and
   `tags exists { where $it == "tria-prima" }` equals `"tria-prima" in list(tags)`.
+- **The root row (`^docs`, `^$id`, `0^docs`; surface 2.0)** — the repository is
+  the root scope's row: from a top-level row `^docs` is the documents scan
+  (`size(^docs)` is 20), `^$id` the repository id, `entries(^$it)` names the four
+  collections `docs`/`blocks`/`nodes`/`edges`; from a block's rows `^^docs` or the
+  absolute `0^docs`. A bare `docs` inside a block is the loud "did you mean
+  `^docs`" error, never an empty read.
+- **Sugar (oqx 0.17)** — `docs { type == "substance" }` is the collect with a
+  where-first body (the five substances); `docs count { is verified }` filters a
+  bare boolean (15); `^docs[slug == ^subject].$path` is the bracket form of the
+  lab notes' 1:1 `single` lookup and `^docs[type == "practitioner" and era >
+  1600]!` the required-single form (Newton; four matches without the era bound
+  is the `single` error); `refs(before)[0]` is positional; `era!` is the required
+  value (an error on a substance, which has no era); `era is not null` /
+  `era is null` the identity-based absence test; `hub: ^docs[type == "hub"],
+  hub_path: hub.$path` reuses a select alias to its left.
+- **`refs(x)` (surface 1.5)** — the milestones' `before`/`after`/`see_also`
+  resolve to live document rows in either path form or by id, dangling
+  references dropped: `refs(before) collect { $path, when }` on `review` yields
+  kickoff and dissolution (not `lost-notes`); `follow refs(before), refs(after)`
+  from `review` walks review → {dissolution, kickoff} → review (a cycle, admitted
+  once); the reverse join is `^docs { ^$path in list(before) }` — live because
+  `$path` is the `/`-rooted reference form; `follow before` (the strings) is the
+  "a hit must be a document, block, node or edge row" error.
 - **`none`, `limit`, `offset`** (oqx ≥ 0.9) — `nodes none { where kind ==
   "md:task" }` excludes salt (its checked supply list *is* a task) while `none`
   over the open-task complement admits all five substances ("every task done");
@@ -158,7 +185,7 @@ different sets. Several tests depend on this; keep it fully checked.
   `count { … } >= 4`; a non-literal bound is `filter_invalid`.
 - **`entries()` / `$key`** (oqx ≥ 0.10) — salt's frontmatter comes back as seven
   `{k, v}` entries in key order, valued exactly like the bare reads (`tags` →
-  the array); `entries(frontmatter) exists { where $key == "era" && $it >
+  the array); `entries(frontmatter) exists { where $key == "era" and $it >
   1600 }` equals `era > 1600` (Newton, mutus-liber); `entries(inline)` is
   non-empty for exactly the docs with `md:inline_field` nodes (Jabir's keys:
   `century`, `known_for`); `entries(attrs)` on task nodes inspects the attrs
@@ -177,5 +204,9 @@ will fail tests by design — that is the point. If you add a document:
   tests pin exact resolved sets (the graph is extracted to `references` edges by
   the `processCheckpoint` ingest), including `prima-materia.md`'s deliberately
   dangling `[[nigredo]]`;
+- keep the timeline milestones' `before`/`after`/`see_also` as they are (a rooted
+  path, a bare path, an id and a dangling reference each) — the `refs()`, root-row
+  and sugar tests, the `spec/surface` `query-refs`/`query-root` cases and the
+  tutorial's `sugar.md` pin their exact resolutions;
 - update the affected expectations, and re-check the task counts in the
   `collect` and blocks-target tests.
