@@ -36,7 +36,7 @@ prints the authorization URL and opens your browser **once**:
 [mcp-bridge] sign-in required for https://mcp.example.com/omg
 [mcp-bridge] issuer: https://dev-….us.auth0.com/
 [mcp-bridge] open this URL in your browser if it does not open by itself:
-[mcp-bridge]   https://dev-….us.auth0.com/authorize?response_type=code&client_id=…&redirect_uri=http%3A%2F%2F127.0.0.1%3A51763%2Fcallback&scope=offline_access&prompt=consent&resource=https%3A%2F%2Fhmm-ph.zocomputer.io%2Fomg
+[mcp-bridge]   https://dev-….us.auth0.com/authorize?response_type=code&client_id=…&redirect_uri=http%3A%2F%2F127.0.0.1%3A51763%2Fcallback&scope=offline_access&prompt=consent&resource=https%3A%2F%2Fmcp.example.com%2Fomg
 [mcp-bridge] waiting for the sign-in to finish (listening on http://127.0.0.1:51763/callback)…
 ```
 
