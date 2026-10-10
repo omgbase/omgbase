@@ -2,10 +2,16 @@
 // about) with their two roles — `edge` (drawn) and `layout` (the axis) — and
 // the user's overrides. Emits the resolved view record.
 //
-//   properties: candidates (Candidate[]), overrides (Overrides)
+//   properties: candidates (Candidate[]), overrides (Overrides),
+//               editable (Record<name, Editability> — which candidates can be
+//               written and why not), armed (name | null — the one armed for editing)
 //   events:     view-change      detail: { view: View, overrides: Overrides }
 //               candidate-hover  detail: { candidate: Candidate | null }
+//               armed-change     detail: { candidate: Candidate | null }
 //   methods:    reset()
+//
+// Arming a candidate also draws it (its edge override is switched on), so the
+// edges being toggled are visible.
 //
 // The candidates come from lib/candidates.ts today; when omgbase's
 // `query_analyze` tool ships, the page feeds its candidates in here unchanged.
@@ -13,9 +19,11 @@
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Candidate, Direction } from "../lib/candidates.ts";
+import { describeForm, type Editability } from "../lib/edit.ts";
 import { NO_OVERRIDES, resolveView, sameView, withAxis, withDirection, withEdge, type Overrides, type View } from "../lib/view.ts";
 
 export interface ViewChangeDetail { view: View; overrides: Overrides }
+export interface ArmedChangeDetail { candidate: Candidate | null }
 
 export const RELATION_COLORS = ["#1565c0", "#c62828", "#2e7d32", "#6a1b9a", "#ef6c00", "#00838f", "#ad1457", "#4e342e"];
 
@@ -44,12 +52,18 @@ export class OqxRelationshipPicker extends LitElement {
     .foot select, .foot button { font: inherit; }
     .empty { padding: 8px; color: #7a8290; }
     .over { color: #ad1457; font-size: 11px; margin-left: 4px; }
+    .ro { color: #9aa1ad; font-size: 11px; cursor: help; }
+    tr.armed { background: #fff8e1; }
+    .form { color: #7a8290; font-size: 11px; margin-left: 4px; font-family: ui-monospace, monospace; }
   `;
 
   @property({ attribute: false }) candidates: Candidate[] = [];
   @property({ attribute: false }) overrides: Overrides = NO_OVERRIDES;
+  @property({ attribute: false }) editable: Record<string, Editability> = {};
+  @property() armed: string | null = null;
 
   private lastView: View | null = null;
+  private lastArmed: string | null = null;
 
   /** The resolved view (defaults + overrides). */
   get view(): View {
@@ -60,13 +74,29 @@ export class OqxRelationshipPicker extends LitElement {
     this.overrides = NO_OVERRIDES;
   }
 
+  protected override willUpdate(): void {
+    // An armed candidate that vanished (or became read-only) is disarmed.
+    if (this.armed !== null && !(this.editable[this.armed]?.writable && this.candidates.some((c) => c.name === this.armed))) this.armed = null;
+  }
+
   protected override updated(): void {
+    if (this.armed !== this.lastArmed) {
+      this.lastArmed = this.armed;
+      const candidate = this.candidates.find((c) => c.name === this.armed) ?? null;
+      this.dispatchEvent(new CustomEvent<ArmedChangeDetail>("armed-change", { detail: { candidate }, bubbles: true, composed: true }));
+    }
     const view = this.view;
     if (this.lastView && sameView(this.lastView, view)) return;
     this.lastView = view;
     this.dispatchEvent(new CustomEvent<ViewChangeDetail>("view-change", {
       detail: { view, overrides: this.overrides }, bubbles: true, composed: true,
     }));
+  }
+
+  /** Arm `name` for editing (null disarms); an armed relationship is also drawn. */
+  arm(name: string | null): void {
+    this.armed = name;
+    if (name !== null && !this.view.edges.includes(name)) this.overrides = withEdge(this.overrides, name, true);
   }
 
   private hover(candidate: Candidate | null): void {
@@ -83,14 +113,16 @@ export class OqxRelationshipPicker extends LitElement {
     return html`
       <table @mouseleave=${() => this.hover(null)}>
         <thead>
-          <tr><th>relationship</th><th>from</th><th class="center">edge</th><th class="center">layout</th></tr>
+          <tr><th>relationship</th><th>from</th><th class="center">edge</th><th class="center">layout</th><th class="center">edit</th></tr>
         </thead>
         <tbody>
           ${this.candidates.map((c) => {
             const drawn = view.edges.includes(c.name);
             const edgeOverridden = c.name in this.overrides.edges && this.overrides.edges[c.name] !== c.defaults.edge;
+            const ed = this.editable[c.name];
+            const armed = this.armed === c.name;
             return html`
-              <tr class="cand" @mouseenter=${() => this.hover(c)}>
+              <tr class="cand ${armed ? "armed" : ""}" @mouseenter=${() => this.hover(c)}>
                 <td><span class="swatch" style="background:${relationColor(this.candidates, c.name)}"></span><span class="name">${c.name}</span>
                   <span class="badge">${c.kind}</span></td>
                 <td>${c.sources.map((s) => html`<span class="badge ${s.replace(" ", "")}">${s}</span>`)}</td>
@@ -103,12 +135,21 @@ export class OqxRelationshipPicker extends LitElement {
                   <input type="radio" name="axis" .checked=${axisName === c.name} title="lay the graph out along ${c.name}"
                     @change=${() => { this.overrides = withAxis(this.overrides, c.name); }}>
                 </td>
+                <td class="center">
+                  ${ed?.writable
+                    ? html`<input type="radio" name="armed" .checked=${armed}
+                        title="arm ${c.name} for editing: select a node, then ⌘-click (Ctrl-click) another to toggle it; values written as ${describeForm(ed.form)} (${ed.shape}${ed.formSource === "field" ? "" : `, form from ${ed.formSource}`})"
+                        @click=${() => this.arm(armed ? null : c.name)}>
+                      ${armed ? html`<span class="form">${describeForm(ed.form)}</span>` : nothing}`
+                    : html`<span class="ro" title=${ed ? ed.reason : "read-only"}>read-only</span>`}
+                </td>
               </tr>`;
           })}
           <tr>
             <td colspan="3" style="color:#7a8290">none — force layout</td>
             <td class="center"><input type="radio" name="axis" .checked=${axisName === null}
               @change=${() => { this.overrides = withAxis(this.overrides, null); }}></td>
+            <td></td>
           </tr>
         </tbody>
       </table>

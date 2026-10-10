@@ -12,11 +12,13 @@ import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
 import "./elements/oqx-graph.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
-import type { ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
-import type { GraphNode, GraphStateDetail } from "./elements/oqx-graph.ts";
+import type { ArmedChangeDetail, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
+import type { EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { defaultView, type View } from "./lib/view.ts";
 import { edgeQueries, edgesFromRows, type GraphEdge } from "./lib/edges.ts";
+import { describePatch, editability, projectedFields, type Editability, type EmptyListBehavior } from "./lib/edit.ts";
+import { PerKeyQueue, applyToggle, describeMutationError, prepareToggle, type TogglePlan } from "./lib/mutations.ts";
 import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSettings } from "./lib/mcp-client.ts";
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
@@ -26,6 +28,26 @@ import type { OqxErrorInfo } from "./lib/errors.ts";
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
 const QUERY_KEY = "omgbase-graph-ui.query";
 const PENDING_KEY = "omgbase-graph-ui.oauth.pending";
+const EDIT_KEY = "omgbase-graph-ui.edit";
+
+/** How edge edits are written (persisted under EDIT_KEY). */
+interface EditSettings {
+  /** Show the confirm strip (which file and field change) before every write. */
+  confirm: boolean;
+  /** What a list that lost its last member becomes. */
+  emptyListBehavior: EmptyListBehavior;
+}
+
+const DEFAULT_EDIT: EditSettings = { confirm: true, emptyListBehavior: "unset" };
+
+function loadEditSettings(): EditSettings {
+  try {
+    const saved = JSON.parse(localStorage.getItem(EDIT_KEY) ?? "{}") as Partial<EditSettings>;
+    return { confirm: saved.confirm ?? DEFAULT_EDIT.confirm, emptyListBehavior: saved.emptyListBehavior === "keep" ? "keep" : "unset" };
+  } catch {
+    return DEFAULT_EDIT;
+  }
+}
 
 export const DEFAULT_QUERY = `select $path, title, phase, before, after
 from docs
@@ -86,6 +108,26 @@ const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   return { id: String(row.id ?? path), path, label: title ?? path.replace(/\.md$/, ""), row };
 }));
 const graphState = signal<GraphStateDetail | null>(null);
+
+// ---- edge editing -----------------------------------------------------------------
+
+/** The server's tool names (null until listed, or when listing failed — then assume the full set). */
+const tools = signal<string[] | null>(null);
+const canWrite = computed<boolean>(() => tools.get()?.includes("docs_set_meta") ?? true);
+const editable = computed<Record<string, Editability>>(() =>
+  Object.fromEntries(candidates.get().map((c) => [c.name, editability(c, rows.get(), canWrite.get())])));
+const writable = computed<string[]>(() => Object.entries(editable.get()).filter(([, e]) => e.writable).map(([name]) => name));
+const armed = signal<Candidate | null>(null);
+const editSettings = signal<EditSettings>(loadEditSettings());
+/** Optimistic edges while a write is in flight. */
+const pending = signal<PendingEdge[]>([]);
+/** The toggle waiting for the user's confirmation. */
+const proposal = signal<TogglePlan | null>(null);
+const editMessage = signal<{ kind: "error" | "info"; text: string } | null>(null);
+const editBusy = signal(false);
+const mutations = new PerKeyQueue();
+/** Set after a write: the next settled graph layout clears the optimistic edges. */
+let settlePending = false;
 
 // ---- MCP client + OAuth -----------------------------------------------------------
 
@@ -190,6 +232,8 @@ async function refreshRepos(): Promise<void> {
     const c = clientFor(url);
     const { repos: list } = await c.repos();
     repos.set(list.map((r) => r.slug));
+    // Which tools the server (or the gateway in front of it) offers decides whether edges can be edited.
+    c.tools().then((names) => tools.set(names), () => tools.set(null));
     if (!list.some((r) => r.slug === s.repo)) settings.set({ ...settings.get(), repo: list[0]?.slug ?? "" });
     if (s.mode === "direct") identity.set(providerFor(url).identity());
     else { const info = await refreshBridge(); if (info?.identity) identity.set(info.identity); }
@@ -222,6 +266,7 @@ function disconnect(): void {
   identity.set(null);
   repos.set([]);
   rows.set([]);
+  tools.set(null);
   connection.set("idle");
   connectionMessage.set("signed out");
 }
@@ -281,12 +326,83 @@ async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphE
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
+// ---- edge editing: plan, confirm, write, refresh ----------------------------------------
+
+/** A ⌘-click arrived: work out the exact patch (reading the owner if the query
+ * did not project the field), then either show it for confirmation or write it. */
+async function proposeToggle(detail: EdgeToggleDetail): Promise<void> {
+  const { candidate, from: owner, to: target, present } = detail;
+  const ed = editable.get()[candidate.name];
+  editMessage.set(null);
+  if (!ed?.writable) {
+    editMessage.set({ kind: "error", text: `${candidate.name} is read-only: ${ed?.reason ?? "unknown relationship"}` });
+    return;
+  }
+  const s = settings.get();
+  editBusy.set(true);
+  try {
+    const plan = await prepareToggle(clientFor(serverUrl.get()), {
+      owner: { id: owner.id, path: owner.path },
+      target: { id: target.id, path: target.path },
+      field: candidate.name,
+      present,
+      form: ed.form,
+      options: { shape: ed.shape, emptyListBehavior: editSettings.get().emptyListBehavior },
+      row: owner.row,
+      projected: projectedFields(ast.get()).includes(candidate.name),
+      ...(s.repo ? { repo: s.repo } : {}),
+    });
+    if (plan.patch.kind === "noop" || plan.patch.kind === "refuse") {
+      editMessage.set({ kind: plan.patch.kind === "noop" ? "info" : "error", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
+      if (plan.patch.kind === "noop") void runQuery(); // the drawing was stale — refresh it
+      return;
+    }
+    if (editSettings.get().confirm) proposal.set(plan);
+    else await writeToggle(plan);
+  } catch (e) {
+    editMessage.set({ kind: "error", text: describeMutationError(e, "docs_read") });
+  } finally {
+    editBusy.set(false);
+  }
+}
+
+/** Write the plan with an optimistic dashed edge; on failure revert and say why. */
+async function writeToggle(plan: TogglePlan): Promise<void> {
+  proposal.set(null);
+  const preview: PendingEdge = { src: plan.owner.path, dst: plan.target.path, rel: plan.field, action: plan.present ? "remove" : "add" };
+  pending.set([...pending.get(), preview]);
+  editBusy.set(true);
+  try {
+    await applyToggle(clientFor(serverUrl.get()), mutations, plan, settings.get().repo || undefined);
+    editMessage.set({ kind: "info", text: describePatch(plan.owner, plan.field, plan.patch, plan.previous) });
+    settlePending = true;
+    await runQuery();
+    // The graph refetches edges for the new rows and reports a settled layout; if
+    // that never comes (the query failed, rows unchanged), drop the preview anyway.
+    setTimeout(() => { if (settlePending) { settlePending = false; pending.set([]); } }, 4000);
+  } catch (e) {
+    pending.set(pending.get().filter((p) => p !== preview));
+    editMessage.set({ kind: "error", text: describeMutationError(e) });
+  } finally {
+    editBusy.set(false);
+  }
+}
+
+function onGraphState(detail: GraphStateDetail): void {
+  graphState.set(detail);
+  if (settlePending && !detail.busy) {
+    settlePending = false;
+    pending.set([]);
+  }
+}
+
 // Boot: finish a pending sign-in first, then install the effects (persist
 // settings + query; reconnect on URL change; re-run on ast/repo).
 void (async () => {
   await finishSignIn();
   effect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings.get())); });
   effect(() => { localStorage.setItem(QUERY_KEY, source.get()); });
+  effect(() => { localStorage.setItem(EDIT_KEY, JSON.stringify(editSettings.get())); });
   let last = "";
   effect(() => {
     const key = `${settings.get().mode} ${serverUrl.get()}`;
@@ -333,6 +449,15 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     .settings code { font-family: ui-monospace, monospace; }
     .selection { font-size: 12px; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 6px; padding: 8px 10px; max-height: 200px; overflow: auto; }
     .selection pre { margin: 4px 0 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; }
+    .edit { font-size: 12px; color: #5a6270; display: flex; flex-direction: column; gap: 6px; }
+    .edit .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    .edit .opts label { display: inline-flex; gap: 4px; align-items: center; }
+    .edit select { font: inherit; }
+    .strip { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 6px 10px; border-radius: 6px; border: 1px solid #ffe082; background: #fff8e1; color: #6d4c00; }
+    .strip code, .msg code { font-family: ui-monospace, monospace; word-break: break-all; }
+    .strip button { font: inherit; }
+    .msg { padding: 6px 10px; border-radius: 6px; border: 1px solid #e3e6ec; background: #f7f8fa; }
+    .msg.error { border-color: #ef9a9a; background: #fff5f5; color: #c62828; }
   `;
 
   @state() private highlights: [number, number][] = [];
@@ -389,6 +514,34 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     return html`<div class="hint">bridge serving <code>${info.upstream}</code> · no sign-in</div>`;
   }
 
+  /** The edge-editing panel: the confirm strip, the last message, the two settings. */
+  private renderEdit() {
+    const a = armed.get();
+    const p = proposal.get();
+    const m = editMessage.get();
+    const es = editSettings.get();
+    const busy = editBusy.get();
+    if (!a && !p && !m && Object.keys(editable.get()).length === 0) return nothing;
+    return html`<section class="edit">
+      ${p ? html`<div class="strip">
+        <span>write <code>${describePatch(p.owner, p.field, p.patch, p.previous)}</code> via <code>docs_set_meta</code>?</span>
+        <button ?disabled=${busy} @click=${() => { void writeToggle(p); }}>apply</button>
+        <button ?disabled=${busy} @click=${() => proposal.set(null)}>cancel</button>
+      </div>` : nothing}
+      ${m ? html`<div class="msg ${m.kind}">${m.text} <button @click=${() => editMessage.set(null)}>dismiss</button></div>` : nothing}
+      <div class="opts">
+        <span>${busy ? "writing…" : a ? html`editing <code>${a.name}</code>` : "arm a relationship (edit column) to toggle edges"}</span>
+        <label><input type="checkbox" .checked=${es.confirm} @change=${(e: Event) => editSettings.set({ ...es, confirm: (e.target as HTMLInputElement).checked })}> confirm before writing</label>
+        <label>emptied list
+          <select .value=${es.emptyListBehavior} @change=${(e: Event) => editSettings.set({ ...es, emptyListBehavior: (e.target as HTMLSelectElement).value as EmptyListBehavior })}>
+            <option value="unset">unset the field</option>
+            <option value="keep">keep []</option>
+          </select>
+        </label>
+      </div>
+    </section>`;
+  }
+
   protected override render() {
     const s = settings.get();
     const url = serverUrl.get();
@@ -423,10 +576,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
           </section>
           <section>
             <h2>relationships</h2>
-            <oqx-relationship-picker .candidates=${cands} @view-change=${this.onViewChange}
+            <oqx-relationship-picker .candidates=${cands} .editable=${editable.get()} .armed=${armed.get()?.name ?? null}
+              @view-change=${this.onViewChange}
+              @armed-change=${(e: CustomEvent<ArmedChangeDetail>) => { armed.set(e.detail.candidate); proposal.set(null); }}
               @candidate-hover=${(e: CustomEvent<{ candidate: Candidate | null }>) => { this.highlights = e.detail.candidate?.spans ?? []; }}>
             </oqx-relationship-picker>
           </section>
+          ${this.renderEdit()}
           ${this.selected ? html`<section class="selection">
             <b>${this.selected.path}</b>
             <pre>${JSON.stringify(this.selected.row, null, 1)}</pre>
@@ -456,8 +612,10 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
           </details>
         </div>
         <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
-          @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; }}
-          @graph-state=${(e: CustomEvent<GraphStateDetail>) => graphState.set(e.detail)}></oqx-graph>
+          .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()}
+          @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
+          @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
+          @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
       </main>
       <footer>
         <span>${r.length} row${r.length === 1 ? "" : "s"}${truncated.get() ? " (truncated at 200)" : ""}</span>

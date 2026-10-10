@@ -91,7 +91,7 @@ MCP-conformant gateway with these three behaves the same.)
 
 ```sh
 pnpm install && pnpm build          # at the repository root (the demo spawns the built `omg`)
-pnpm --filter graph-ui dev          # builds ./sample into .dev-workspace, starts the MCP bridge, starts Vite
+pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample and indexes it, starts the MCP bridge, starts Vite
 ```
 
 Open <http://localhost:5173>. Vite proxies `/mcp` and `/whoami` to the bridge
@@ -122,7 +122,8 @@ anything else goes to Vite), `dev:workspace [--force]` (just the workspace),
 ### Data access
 
 The browser only ever speaks MCP: `@modelcontextprotocol/sdk`'s `Client` over
-the **Streamable HTTP** transport, calling the `repos` and `query` tools.
+the **Streamable HTTP** transport, calling the `repos` and `query` tools (plus
+`tools/list`, `docs_read` and `docs_set_meta` for [editing edges](#editing-edges)).
 Nothing imports `@omgbase/core`.
 
 The *MCP settings* panel offers three ways to reach a server:
@@ -239,12 +240,77 @@ fetch — its edges are consecutive result rows.
 | Element | Properties | Events |
 | --- | --- | --- |
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
-| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`; getter `view`; `reset()` | `view-change` `{ view: { edges: string[], layout: { axis, direction } }, overrides }`, `candidate-hover` `{ candidate \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]`, `view: View`, `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected` | `node-select` `{ node \| null }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
+| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction } }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
+| `<oqx-graph>` | `nodes: GraphNode[]`, `view: View`, `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
 
 `src/app.ts` composes them with `@lit-labs/signals`:
 `source → ast → rows → candidates → view`, and the graph element does
-`view → edges → layout` with the fetcher the page hands it.
+`view → edges → layout` with the fetcher the page hands it. Edge edits flow
+the other way: `edge-toggle` → `src/lib/edit.ts` (the plan) →
+`src/lib/mutations.ts` (`docs_set_meta`) → re-run the query.
+
+## Editing edges
+
+Relationships stored in frontmatter can be edited from the graph.
+
+**The gesture.** Click a node to select it; in the picker's **edit** column arm
+a relationship (one at a time — arming also draws it); then **⌘-click**
+(Ctrl-click off macOS) another node to toggle that relationship between the
+two: the edge is added if absent and removed if present. ⌘-clicking a drawn edge
+of a writable relationship removes it. A dashed edge shows the write in flight;
+on failure it reverts and the error is shown.
+
+**Which file changes.** The edge is written where the relationship is stored —
+the document whose frontmatter field names the other one — and the inverse
+field is never touched. For a *forward* candidate (`before`) that is the
+selected document (`selected.before` gains the target); for a *backward* one
+(`after`, drawn target → selected) it is the clicked document (`target.after`
+gains the selected one). By default a one-line strip shows the file, the field
+and the new value before anything is written (`write timeline/beta.md · set
+after: […] via docs_set_meta?`); untick *confirm before writing* to skip it.
+
+**What gets written.** The field's current value comes from the result row when
+the query projected the field under its own name (`select … after`), else from
+`docs_read` of the owner, so a toggle never clobbers values the query did not
+select. A scalar field is set to the reference (or unset on remove); a list is
+appended to / filtered, order preserved, duplicates (by identity, in any
+spelling) dropped; a list that loses its last member is unset (the *emptied
+list* setting can keep `[]` instead). The call is `docs_set_meta { doc, set: {
+field: value } }` or `{ unset: [field] }`; writes to one document are queued so
+two quick toggles cannot race (there is no CAS on `docs_set_meta`). Then the
+query re-runs and the edges are refetched.
+
+**Value form.** New references are spelled the way the field already spells
+them, inferred from its values across the rows: leading `/` or not, `.md` or
+not, path or doc id (`d_…`). A field with no values yet borrows the dominant
+form among all reference fields in the rows, else `/path.md`; whether it
+becomes a list or a scalar follows the same inference (ties → list). A field
+whose existing values disagree (`/a.md` next to `b.md`) is refused with a
+message until they agree.
+
+**Writable or not.** Writable candidates are exactly the frontmatter relations
+whose sampled values are document references (a `/`-rooted repo path, a bare
+repo path, or a doc id — scalar or list). The rest show *read-only* with a
+reason: `doc.out` / `doc.in` ("links live in the body"), an `order by` key
+("derived from order by …"), a frontmatter field holding something else
+("values are not document references"), or a server that does not offer the
+tool.
+
+**Gateway allowlist.** Through a gateway (proxy or direct mode) the gateway's
+tool allowlist must include `docs_set_meta` (and `docs_read`, used when the
+field was not projected). The page lists the server's tools on connect and
+shows every relationship read-only when `docs_set_meta` is missing; a refusal at
+write time is reported with the same hint.
+
+**Limits.** Body links (`doc.out`, `doc.in`) and derived sequences are
+read-only. Nested property paths (`meta.rel`) are not edited. Edits are per
+document: the inverse relation (e.g. `before` when you edit `after`) is not
+maintained — the engine has no field definitions declaring inverses. In the
+local sample the writes land in `.dev-workspace/sample/` (a copy of `sample/`
+made by `dev:workspace`; `pnpm --filter graph-ui dev:workspace --force` resets
+it). Try the scalar path with `select $path, title, owner from docs where
+$path.startsWith("timeline/") || $path.startsWith("people/")` (`owner` is a
+scalar `/people/….md`) and the list path with the default query's `after`.
 
 ## Inference rules (`src/lib/candidates.ts`)
 
@@ -306,6 +372,16 @@ the view (`src/lib/view.ts`); an override naming a vanished candidate is dropped
   kinder to tools.
 - **`@omgbase/fs-adapter` crashes on `EPIPE`** when its parent `omg mcp` exits
   (noise in the bridge log, not a UI gap).
+- **No CAS on `docs_set_meta`.** The patch is merged into whatever the file
+  holds when it lands; the UI serializes its own writes per document but cannot
+  detect a concurrent edit (an `expect: { rev }` like the block ops' `expect`
+  would). There is also no server-side list toggle (`add`/`remove` a member),
+  so the client reads the whole value, edits it, and writes it back.
+- **No inverse-field knowledge.** Editing `after` does not maintain `before`;
+  a field definition with `inverse_of` would let the UI (or the engine) keep both.
+- **Projected-but-absent is indistinguishable from not projected** in a hit:
+  a document without `after` yields a row without the key, so whether a row's
+  value is authoritative has to be read off the AST (`projectedFields`).
 
 ## Sample data
 

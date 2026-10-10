@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // Build the demo's omgbase workspace from ./sample with the omg CLI from
-// packages/cli (run `pnpm build` at the repo root first). Idempotent: an
-// existing workspace is kept unless --force. Prints the workspace path.
+// packages/cli (run `pnpm build` at the repo root first). The sample is COPIED
+// to <workspace>/sample and that copy is the repo's source, so edge edits made
+// in the UI (`docs_set_meta`) land in the copy, not in the checked-in sample.
+// Idempotent: an existing workspace is kept unless --force (which also resets
+// the copy). Prints the workspace path.
 //
 //   node scripts/dev-workspace.mjs [--force]
 //   env: OMG (path to omg's main.js), GRAPH_UI_WORKSPACE (target dir)
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,10 +39,13 @@ export function ensureWorkspace({ force = false, log = () => {} } = {}) {
   }
   rmSync(WORKSPACE, { recursive: true, force: true });
   mkdirSync(WORKSPACE, { recursive: true });
+  const copy = resolve(WORKSPACE, "sample");
+  log(`copy ${SAMPLE} → ${copy}`);
+  cpSync(SAMPLE, copy, { recursive: true });
   log(`omg init ${WORKSPACE}`);
   omg(["init", WORKSPACE, "--yes", "--no-embedder"], PACKAGE_ROOT);
-  log(`omg source add ${SAMPLE} --repo sample`);
-  omg(["-C", WORKSPACE, "source", "add", SAMPLE, "--repo", "sample", "-y"], PACKAGE_ROOT);
+  log(`omg source add ${copy} --repo sample`);
+  omg(["-C", WORKSPACE, "source", "add", copy, "--repo", "sample", "-y"], PACKAGE_ROOT);
   log(`workspace built  ${WORKSPACE}`);
   return WORKSPACE;
 }

@@ -134,6 +134,28 @@ export class OmgClient {
     return this.call("repos", {});
   }
 
+  /** The tool names the server (or the gateway in front of it) offers. */
+  async tools(): Promise<string[]> {
+    const client = await this.connect();
+    try {
+      const { tools } = await client.listTools();
+      return tools.map((t) => t.name);
+    } catch (e) {
+      if (e instanceof UnauthorizedError) throw new AuthRequiredError(e.message);
+      throw e;
+    }
+  }
+
+  /** `docs_read`: the whole document; `properties.frontmatter` is the parsed fence. */
+  docsRead(doc: string, repo?: string): Promise<{ path: string; docId: string; properties?: { frontmatter?: Record<string, unknown> } }> {
+    return this.call("docs_read", repo ? { doc, repo } : { doc });
+  }
+
+  /** `docs_set_meta`: set and/or unset frontmatter keys on one document (re-ingested server-side; no CAS). */
+  docsSetMeta(doc: string, patch: { set?: Record<string, unknown>; unset?: string[] }, repo?: string): Promise<{ docId: string; path: string; committed: boolean }> {
+    return this.call("docs_set_meta", { doc, ...patch, ...(repo ? { repo } : {}) });
+  }
+
   version(): Promise<Record<string, unknown>> {
     return this.call("version", {});
   }
