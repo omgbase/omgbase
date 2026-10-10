@@ -40,7 +40,7 @@ export class OqxRelationshipPicker extends LitElement {
     table { border-collapse: collapse; width: 100%; }
     th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e8eaef; white-space: nowrap; }
     th { font-weight: 600; color: #5a6270; font-size: 12px; }
-    td.center, th.center { text-align: center; }
+    td.center, th.center { text-align: center; width: 56px; }
     tr.cand:hover { background: #f4f6fa; }
     .name { font-family: ui-monospace, monospace; }
     .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
@@ -52,7 +52,8 @@ export class OqxRelationshipPicker extends LitElement {
     .foot { display: flex; align-items: center; gap: 12px; padding: 6px 8px; color: #5a6270; }
     .foot select, .foot button { font: inherit; }
     .empty { padding: 8px; color: #7a8290; }
-    .over { color: #ad1457; font-size: 11px; margin-left: 4px; }
+    /* an overridden edge toggle: a cue that cannot move anything — the name's dotted underline and its title */
+    .name.overridden { text-decoration: underline dotted #ad1457; text-underline-offset: 3px; cursor: help; }
     .ro { color: #9aa1ad; font-size: 11px; cursor: help; }
     tr.armed { background: #fff8e1; }
     .form { color: #7a8290; font-size: 11px; margin-left: 4px; font-family: ui-monospace, monospace; }
@@ -124,13 +125,12 @@ export class OqxRelationshipPicker extends LitElement {
             const armed = this.armed === c.name;
             return html`
               <tr class="cand ${armed ? "armed" : ""}" @mouseenter=${() => this.hover(c)}>
-                <td><span class="swatch" style="background:${relationColor(this.candidates, c.name)}"></span><span class="name">${c.name}</span>
+                <td><span class="swatch" style="background:${relationColor(this.candidates, c.name)}"></span><span class="name ${edgeOverridden ? "overridden" : ""}" title=${edgeOverridden ? `overridden — inferred default was ${c.defaults.edge ? "drawn" : "not drawn"}` : c.name}>${c.name}</span>
                   <span class="badge">${c.kind}</span></td>
                 <td>${c.sources.map((s) => html`<span class="badge ${s.replace(" ", "")}">${s}</span>`)}</td>
                 <td class="center">
                   <input type="checkbox" .checked=${drawn} title="draw ${c.name} as edges"
                     @change=${(e: Event) => { this.overrides = withEdge(this.overrides, c.name, (e.target as HTMLInputElement).checked); }}>
-                  ${edgeOverridden ? html`<span class="over">*</span>` : nothing}
                 </td>
                 <td class="center">
                   <input type="radio" name="axis" .checked=${axisName === c.name} title="lay the graph out along ${c.name}"

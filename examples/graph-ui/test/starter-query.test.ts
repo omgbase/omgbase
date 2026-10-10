@@ -28,7 +28,7 @@ limit 40`);
       ["doc.out", "links", ["builtin"], true],
       ["doc.in", "backlinks", ["builtin"], false],
     ]);
-    expect(defaultView(c)).toEqual({ edges: ["doc.out"], layout: { axis: null, direction: "forward" } });
+    expect(defaultView(c)).toEqual({ edges: ["doc.out"], layout: { axis: null, direction: "forward" }, projection: { label: null, shown: [] } });
   });
 
   it("is a preset, like every sample default, and nothing the user wrote", () => {

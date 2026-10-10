@@ -1,10 +1,23 @@
-// <oqx-graph>: the query hits as nodes, the view's relationships as edges.
+// <oqx-graph>: the query hits as node cards, the view's relationships as edges.
 // Fetches edges through the provided `fetchEdges` (the page wires it to the
 // MCP `query` tool — this element never talks to a server itself), lays the
 // graph out with elkjs along the axis (direction honoured, cycles reported in a
 // banner) or with d3-force when there is no axis, and renders SVG.
 //
-//   properties: nodes (GraphNode[]), view (View), candidates (Candidate[]),
+// Cards: `view.projection` says which projected field is the title line (null =
+// the node's fallback label, the de-rooted path) and which fields are listed
+// under it as `key: value` lines (lib/cards.ts formats values compactly and
+// sizes the card); the layout runs over the card sizes, so a projection change
+// recomputes the layout and edges keep attaching to the card border.
+//
+// Pan / zoom: one `<g transform="translate(x y) scale(k)">`; the pointer is read
+// in the SVG's own rect and mapped through the viewBox (lib/viewport.ts), so a
+// wheel zooms about the pointer and a drag — pointer-captured, so it survives
+// leaving the element — moves the picture exactly as far as the pointer;
+// double-click resets the view.
+//
+//   properties: nodes (GraphNode[] — `label` is the fallback title line, `row` the projected row),
+//               view (View — edges, layout, projection), candidates (Candidate[]),
 //               fetchEdges ((candidate, paths) => Promise<GraphEdge[]>), selected (path | null),
 //               armed (Candidate | null — the relationship being edited),
 //               writable (string[] — relationships whose drawn edges can be ⌘-clicked away),
@@ -38,13 +51,17 @@ import { ownerFor } from "../lib/edit.ts";
 import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, type Point, type Positioned } from "../lib/layout-elk.ts";
 import { forceLayout } from "../lib/layout-force.ts";
 import { isDrawn, midpoint, modified, modifierName, previewFor, type EdgePreview } from "../lib/preview.ts";
-import type { View } from "../lib/view.ts";
+import { NO_PROJECTION, type View } from "../lib/view.ts";
+import { cardFor, cardTooltip, type Card } from "../lib/cards.ts";
+import { IDENTITY, panBy, toViewBox, viewBoxMapping, wheelDeltaPx, zoomAbout, zoomFactor, type Transform, type ViewBoxMapping } from "../lib/viewport.ts";
 import { relationColor } from "./oqx-relationship-picker.ts";
 
 export interface GraphNode {
   id: string;
   path: string;
+  /** The fallback title line (the de-rooted path) when the projection names no label field or the row lacks it. */
   label: string;
+  /** The whole projected row — the cards read their fields from it. */
   row: Record<string, unknown>;
 }
 
@@ -74,13 +91,8 @@ export function edgeKey(e: Pick<GraphEdge, "src" | "dst" | "rel">): string {
   return `${e.rel} ${e.src}→${e.dst}`;
 }
 
-const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward" } };
-const NODE_H = 30;
+const EMPTY_VIEW: View = { edges: [], layout: { axis: null, direction: "forward" }, projection: NO_PROJECTION };
 const elk = new ELK();
-
-function nodeWidth(label: string): number {
-  return Math.max(60, Math.min(240, 18 + label.length * 7));
-}
 
 @customElement("oqx-graph")
 export class OqxGraph extends LitElement {
@@ -90,6 +102,9 @@ export class OqxGraph extends LitElement {
     svg.dragging { cursor: grabbing; }
     .node rect { fill: #fff; stroke: #8a94a6; stroke-width: 1; rx: 5; }
     .node text { font: 12px system-ui, sans-serif; fill: #1e2430; pointer-events: none; }
+    .node text.line { font-size: 11px; fill: #3a4250; }
+    .node text.line .key { fill: #7a8290; }
+    .node .rule { stroke: #e3e6ec; stroke-width: 1; }
     .node:hover rect { stroke: #1565c0; stroke-width: 1.5; }
     .node.selected rect { fill: #e3f2fd; stroke: #1565c0; stroke-width: 2; }
     .node.cycle rect { stroke: #c62828; stroke-dasharray: 4 2; }
@@ -152,6 +167,8 @@ export class OqxGraph extends LitElement {
 
   @state() private edges: GraphEdge[] = [];
   @state() private positioned: Positioned | null = null;
+  /** The cards as laid out (by path), from the nodes and `view.projection`. */
+  @state() private cards: Map<string, Card> = new Map();
   @state() private cycles: string[][] = [];
   @state() private layoutKind: "elk" | "force" | null = null;
   @state() private busy = false;
@@ -160,11 +177,14 @@ export class OqxGraph extends LitElement {
   @state() private hoveredEdge: GraphEdge | null = null;
   /** The platform modifier (⌘ / Ctrl) is held right now — see `trackModifier`. */
   @state() private modifier = false;
-  @state() private transform = { x: 0, y: 0, k: 1 };
+  @state() private transform: Transform = IDENTITY;
 
   private generation = 0;
   private edgeCache = new Map<string, Promise<GraphEdge[]>>();
-  private drag: { x: number; y: number; tx: number; ty: number } | null = null;
+  /** A drag in progress: the last pointer position (client px) — deltas accumulate from it. */
+  private drag: { pointerId: number; x: number; y: number } | null = null;
+  /** `@wheel` with `passive: false`, so `preventDefault` keeps the page from scrolling while zooming. */
+  private readonly wheelListener = { handleEvent: (e: WheelEvent) => this.onWheel(e), passive: false };
 
   // ---- the modifier ---------------------------------------------------------------
 
@@ -245,7 +265,8 @@ export class OqxGraph extends LitElement {
       );
       if (gen !== this.generation) return;
       const all = perRel.flat();
-      const layoutNodes = nodes.map((n) => ({ id: n.path, width: nodeWidth(n.label), height: NODE_H }));
+      const cards = new Map(nodes.map((n) => [n.path, cardFor(n, view.projection)] as const));
+      const layoutNodes = nodes.map((n) => { const c = cards.get(n.path)!; return { id: n.path, width: c.width, height: c.height }; });
       let positioned: Positioned;
       let cycles: string[][] = [];
       if (view.layout.axis) {
@@ -262,8 +283,9 @@ export class OqxGraph extends LitElement {
       }
       this.edges = all.filter((e) => view.edges.includes(e.rel));
       this.cycles = cycles;
+      this.cards = cards;
       this.positioned = positioned;
-      this.transform = { x: 0, y: 0, k: 1 };
+      this.transform = IDENTITY;
     } catch (e) {
       if (gen !== this.generation) return;
       this.error = e instanceof Error ? e.message : String(e);
@@ -277,32 +299,52 @@ export class OqxGraph extends LitElement {
 
   // ---- interaction ------------------------------------------------------------
 
+  /** The SVG's rect and its viewBox → client mapping right now. */
+  private mapping(): { rect: DOMRect; m: ViewBoxMapping } {
+    const svgEl = this.renderRoot.querySelector("svg")!;
+    const rect = svgEl.getBoundingClientRect();
+    const pos = this.positioned;
+    return { rect, m: viewBoxMapping(rect.width, rect.height, Math.max(pos?.width ?? 0, 10), Math.max(pos?.height ?? 0, 10)) };
+  }
+
+  /** Zoom about the pointer: the content under it stays under it. */
   private onWheel(e: WheelEvent): void {
     e.preventDefault();
-    const k = Math.min(4, Math.max(0.2, this.transform.k * (e.deltaY < 0 ? 1.1 : 0.9)));
-    const svgEl = this.renderRoot.querySelector("svg")!;
-    const r = svgEl.getBoundingClientRect();
-    const mx = e.clientX - r.left;
-    const my = e.clientY - r.top;
-    const { x, y, k: k0 } = this.transform;
-    this.transform = { k, x: mx - ((mx - x) * k) / k0, y: my - ((my - y) * k) / k0 };
+    const { rect, m } = this.mapping();
+    const p = toViewBox(e.clientX - rect.left, e.clientY - rect.top, m);
+    this.transform = zoomAbout(this.transform, zoomFactor(wheelDeltaPx(e)), p);
   }
 
   private onPointerDown(e: PointerEvent): void {
     if ((e.target as Element).closest(".node")) return;
     if (modified(e) && (e.target as Element).closest(".edge-g")) return;
-    this.drag = { x: e.clientX, y: e.clientY, tx: this.transform.x, ty: this.transform.y };
-    (e.currentTarget as Element).classList.add("dragging");
+    if (e.button !== 0) return;
+    this.drag = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+    const svgEl = e.currentTarget as Element;
+    svgEl.classList.add("dragging");
+    // Captured: the drag keeps moving at pointer rate when the pointer leaves the element.
+    try { svgEl.setPointerCapture(e.pointerId); } catch { /* not a pointer that can be captured (synthetic) */ }
   }
 
   private onPointerMove(e: PointerEvent): void {
-    if (!this.drag) return;
-    this.transform = { ...this.transform, x: this.drag.tx + e.clientX - this.drag.x, y: this.drag.ty + e.clientY - this.drag.y };
+    if (!this.drag || e.pointerId !== this.drag.pointerId) return;
+    const { m } = this.mapping();
+    this.transform = panBy(this.transform, e.clientX - this.drag.x, e.clientY - this.drag.y, m);
+    this.drag = { ...this.drag, x: e.clientX, y: e.clientY };
   }
 
   private onPointerUp(e: PointerEvent): void {
+    if (this.drag && e.pointerId !== this.drag.pointerId) return;
     this.drag = null;
-    (e.currentTarget as Element).classList.remove("dragging");
+    const svgEl = e.currentTarget as Element;
+    svgEl.classList.remove("dragging");
+    if (svgEl.hasPointerCapture?.(e.pointerId)) svgEl.releasePointerCapture(e.pointerId);
+  }
+
+  /** Double-click on the canvas: back to the fitted view. */
+  private onDoubleClick(e: MouseEvent): void {
+    if ((e.target as Element).closest(".node, .edge-g")) return;
+    this.transform = IDENTITY;
   }
 
   private select(node: GraphNode | null): void {
@@ -402,7 +444,7 @@ export class OqxGraph extends LitElement {
     return html`
       ${this.nodes.length === 0 ? html`<div class="empty">no rows</div>` : nothing}
       <svg class="${arming ? "arming" : ""} ${this.writable.length ? "editing" : ""} ${editMode ? "editmode" : ""} ${this.modifier ? "modifier" : ""}"
-        @wheel=${this.onWheel} @pointerdown=${this.onPointerDown} @pointermove=${this.onPointerMove} @pointerup=${this.onPointerUp} @pointerleave=${this.onPointerUp}
+        @wheel=${this.wheelListener} @pointerdown=${this.onPointerDown} @pointermove=${this.onPointerMove} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @dblclick=${this.onDoubleClick}
         viewBox="0 0 ${Math.max(pos?.width ?? 0, 10)} ${Math.max(pos?.height ?? 0, 10)}" preserveAspectRatio="xMidYMid meet">
         <defs>
           ${rels.map((rel) => svg`<marker id="arrow-${cssId(rel)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -441,14 +483,18 @@ export class OqxGraph extends LitElement {
             const dim = focus !== null && focus !== n.path && !touching.has(n.path);
             const target = arming && this.hovered === n.path && n.path !== this.selected;
             const source = editMode && this.selected === n.path;
+            const card = this.cards.get(n.path) ?? cardFor(n, this.view.projection);
+            const labelY = card.lines.length === 0 ? p.height / 2 + 4 : 20;
             return svg`<g class="node ${this.selected === n.path ? "selected" : ""} ${inCycle.has(n.path) ? "cycle" : ""} ${dim && !target ? "dim" : ""} ${target ? "target" : ""} ${source ? "source" : ""}"
-              transform="translate(${p.x} ${p.y})"
+              transform="translate(${p.x} ${p.y})" data-lines=${card.lines.length}
               @pointerenter=${() => { this.hovered = n.path; }} @pointerleave=${() => { this.hovered = null; }}
               @click=${(ev: MouseEvent) => this.onNodeClick(ev, n)}>
               ${source ? svg`<rect class="ring" x="-4" y="-4" width=${p.width + 8} height=${p.height + 8} rx="8"></rect>` : nothing}
               <rect width=${p.width} height=${p.height}></rect>
-              <text x=${p.width / 2} y=${p.height / 2 + 4} text-anchor="middle">${truncate(n.label, p.width)}</text>
-              <title>${n.path}${arming && n.path !== this.selected ? ` — ${mod}-click to toggle ${this.armed!.name} with ${this.selected}` : ""}</title>
+              <text class="label" x=${p.width / 2} y=${labelY} text-anchor="middle">${card.label}</text>
+              ${card.lines.length > 0 ? svg`<line class="rule" x1="6" x2=${p.width - 6} y1="26" y2="26"></line>` : nothing}
+              ${card.lines.map((l, i) => svg`<text class="line" x="9" y=${38 + i * 15} data-key=${l.key}><tspan class="key">${l.key}:</tspan> ${l.text}</text>`)}
+              <title>${cardTooltip(n.path, card, this.view.projection)}${arming && n.path !== this.selected ? `\n${mod}-click to toggle ${this.armed!.name} with ${this.selected}` : ""}</title>
             </g>`;
           }) : nothing}
           ${pos && preview ? this.renderPreview(preview, pos, axis) : nothing}
@@ -518,11 +564,6 @@ export class OqxGraph extends LitElement {
 
 function cssId(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-function truncate(label: string, width: number): string {
-  const max = Math.max(4, Math.floor((width - 14) / 7));
-  return label.length > max ? `${label.slice(0, max - 1)}…` : label;
 }
 
 declare global {

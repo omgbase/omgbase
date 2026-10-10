@@ -1,5 +1,6 @@
-// The page: composes the three elements with signals —
-//   source → ast → rows → candidates → view → (edges → layout inside <oqx-graph>)
+// The page: composes the four elements with signals —
+//   source → ast → rows → candidates ─┬→ view → (edges → layout inside <oqx-graph>)
+//                      └→ projection ─┘   (which fields the node cards show)
 // — plus the MCP settings (three ways to reach omgbase: the local bridge over
 // the sample, the local bridge proxying a remote it signed in to, or the remote
 // directly with the browser as the OAuth client) and a status line.
@@ -10,12 +11,15 @@ import { Signal, SignalWatcher, computed, signal } from "@lit-labs/signals";
 import type { Query } from "@omgbase/oqx";
 import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
+import "./elements/oqx-projection-picker.ts";
 import "./elements/oqx-graph.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
 import type { ArmedChangeDetail, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
+import type { FieldHoverDetail, ProjectionChangeDetail } from "./elements/oqx-projection-picker.ts";
 import type { EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
-import { defaultView, type View } from "./lib/view.ts";
+import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
+import { projectionOf, type Projection } from "./lib/projection.ts";
 import { edgeQueries, edgesFromRows, type GraphEdge } from "./lib/edges.ts";
 import { describePatch, editability, projectedFields, type Editability, type EmptyListBehavior } from "./lib/edit.ts";
 import { PerKeyQueue, applyToggle, describeMutationError, prepareToggle, type TogglePlan } from "./lib/mutations.ts";
@@ -134,13 +138,24 @@ const bridgeError = signal<string | null>(null);
  * known. Decides the path form everywhere (lib/paths.ts). */
 const serverSurface = signal<string | null>(null);
 const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get()));
-const view = signal<View>(defaultView([]));
+/** The relationship picker's resolved view (edges + layout); the projection joins it below. */
+const relationshipView = signal<View>(defaultView([]));
+/** The projected fields, by reflection over the query (or the rows for an empty projection). */
+const projection = computed<Projection>(() => projectionOf(ast.get(), rows.get()));
+/** The user's card choices (label radio, show checkboxes); vanished fields are dropped on resolve. */
+const projectionOverrides = signal<ProjectionOverrides>(NO_PROJECTION_OVERRIDES);
+/** The view record the graph draws: `{ edges, layout, projection }`. */
+const view = computed<View>(() => {
+  const p = projection.get();
+  return { ...relationshipView.get(), projection: resolveProjection(p.fields, p.defaults, projectionOverrides.get()) };
+});
 // Nodes are keyed by the `/`-rooted path whatever the server returns (bare on
-// surface 1.x, rooted on 2.0), so one document has one key on either.
+// surface 1.x, rooted on 2.0), so one document has one key on either. The
+// node's `label` is the FALLBACK title line (the de-rooted path); the card's
+// actual title comes from the projection's label field (lib/cards.ts).
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
   const path = typeof row.path === "string" ? rooted(row.path) : String(row.id ?? "");
-  const title = typeof row.title === "string" ? row.title : null;
-  return { id: String(row.id ?? path), path, label: title ?? unrooted(path).replace(/\.md$/, ""), row };
+  return { id: String(row.id ?? path), path, label: unrooted(path).replace(/\.md$/, ""), row };
 }));
 const graphState = signal<GraphStateDetail | null>(null);
 /** The query is in flight (the spinner and the empty state key off it). */
@@ -631,7 +646,11 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
   }
 
   private onViewChange(e: CustomEvent<ViewChangeDetail>): void {
-    view.set(e.detail.view);
+    relationshipView.set(e.detail.view);
+  }
+
+  private onProjectionChange(e: CustomEvent<ProjectionChangeDetail>): void {
+    projectionOverrides.set(e.detail.overrides);
   }
 
   private setMode(mode: McpMode): void {
@@ -743,6 +762,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const conn = connection.get();
     const cands = candidates.get();
     const v = view.get();
+    const proj = projection.get();
     const gs = graphState.get();
     const r = rows.get();
     const pe = parseError.get();
@@ -779,6 +799,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
               @armed-change=${(e: CustomEvent<ArmedChangeDetail>) => { armed.set(e.detail.candidate); proposal.set(null); }}
               @candidate-hover=${(e: CustomEvent<{ candidate: Candidate | null }>) => { this.highlights = e.detail.candidate?.spans ?? []; }}>
             </oqx-relationship-picker>
+          </section>
+          <section>
+            <h2>cards</h2>
+            <oqx-projection-picker .fields=${proj.fields} .defaults=${proj.defaults} .overrides=${projectionOverrides.get()}
+              @projection-change=${this.onProjectionChange}
+              @field-hover=${(e: CustomEvent<FieldHoverDetail>) => { this.highlights = e.detail.field?.span ? [e.detail.field.span] : []; }}>
+            </oqx-projection-picker>
           </section>
           ${this.renderEdit()}
           ${this.selected ? html`<section class="selection">
@@ -824,6 +851,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <span>${cands.length} candidate${cands.length === 1 ? "" : "s"}</span>
         <span>edges: ${v.edges.length ? v.edges.join(", ") : "none"}</span>
         <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction})` : "force"}</span>
+        <span>cards: ${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}</span>
         ${gs ? html`<span>${gs.busy ? "laying out…" : `${gs.edges} edges drawn${gs.cycles.length ? `, ${gs.cycles.length} cycle(s)` : ""}`}</span>` : nothing}
         ${pe ? html`<span class="err">parse: ${pe.message}</span>` : nothing}
         ${qe ? html`<span class="err" data-query-error>query: ${qe.message}${qe.suggestion ? html` · try <code>${qe.suggestion}</code>` : nothing}</span>` : nothing}

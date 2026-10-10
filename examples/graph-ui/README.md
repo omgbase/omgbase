@@ -9,6 +9,11 @@ roles the user can override:
 - **layout** — lay the graph out along this relationship (a layered DAG layout,
   so `before`/`after` frontmatter reads as a timeline). No axis → force layout.
 
+The fields the query *projects* are read off it the same way and offered in a
+second panel, **cards**, where each projected field can be **shown** on the
+node cards and one of them is the card's **label** — see [Choosing what a card
+shows](#choosing-what-a-card-shows).
+
 It is also a probe of the reflection API being built next door: whatever the
 UI wanted and could not get from `@omgbase/oqx`'s public `parse` or omgbase's
 MCP tools is listed under [Gaps](#gaps-found-in-the-public-api).
@@ -370,8 +375,9 @@ fetch — its edges are consecutive result rows.
 | Element | Properties | Events |
 | --- | --- | --- |
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `serverSurface` (`"major.minor" \| "1.x" \| null`, for the path-form hints), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
-| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction } }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]`, `view: View`, `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
+| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
+| `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
+| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
 
 The graph's bottom-left legend lists the drawn relationships by colour (the
 axis marked); while the modifier is held in edit mode a second legend,
@@ -382,8 +388,10 @@ The editor's status area also carries the hints from `src/lib/hints.ts` (see
 [Inference rules](#inference-rules-srclibcandidatests)).
 
 `src/app.ts` composes them with `@lit-labs/signals`:
-`source → ast → rows → candidates → view`, and the graph element does
-`view → edges → layout` with the fetcher the page hands it. The page owns what
+`source → ast → rows → candidates → view` and, beside it,
+`ast + rows → projection → view.projection`; the graph element does
+`view → edges → layout` with the fetcher the page hands it, over cards sized
+from `view.projection` (`src/lib/cards.ts`). The page owns what
 sits around the graph: the empty-state panel (`src/lib/empty-state.ts` — the
 first `where` as text, the `$path == "…"` literals, which of them the
 repository lacks, the words) and the delayed loading pill; the preset query
@@ -391,6 +399,68 @@ and the sample-or-not decision are `src/lib/starter-query.ts`; the mode and
 header label that follow the bridge are `src/lib/connection.ts`. Edge edits flow
 the other way: `edge-toggle` → `src/lib/edit.ts` (the plan) →
 `src/lib/mutations.ts` (`docs_set_meta`) → re-run the query.
+
+## Choosing what a card shows
+
+A node card has a **label** line (its title) and, under it, one `key: value`
+line per **shown** field. Which fields are on offer is read off the query by
+reflection (`src/lib/projection.ts`) — **the query is the contract**: the
+panel lists exactly the `select` items, so adding a field to `select` adds it
+to the panel (and removing one drops it, along with any choice made about it).
+
+**Reflection rules.** Each `select` item, in order, keyed by the name the row
+carries (the alias, or a navigation's last segment):
+
+- a bare `$`-intrinsic (`$path`, `$title`, `$id`, `$updated_at`, …, aliased or
+  not) is an **intrinsic**;
+- any other scalar item — a frontmatter field, a navigation (`meta.slug` →
+  `slug`), an aliased expression (`n: size(before)`) — is a **field**;
+- a `collect` / `first` / `single` block (`jobs: jobs collect { … }`) is
+  **nested** and renders as `n items`;
+- under `values` the row is one unnamed value — a single **values** field;
+- an empty projection (`from docs where …`, "the row itself") has no items to
+  read, so the fields are the keys the returned rows actually carry, in
+  first-seen order (badge *from rows*), kinded by their values.
+
+**Defaults.** The label is the first of `$title`, `title`, `name` that is
+projected; otherwise the card is labelled with the de-rooted document path,
+which is always offered as the **fallback** row. Only the label is shown by
+default — scalars other than the label start **off**, so cards stay as small as
+they were until a field is asked for. The starter query (`select $path,
+$title …`) therefore shows the title alone; the sample timeline (`select
+$path, title, phase, before, after`) shows `title` with `phase`, `before` and
+`after` unchecked.
+
+**The panel.** One row per field with a *show* checkbox and a *label* radio
+(exactly one — a field or the path). The label field is always shown (its
+checkbox is on and disabled: it *is* the title line); switching the label to
+another field keeps the old one as a line, so nothing vanishes by surprise. An
+overridden row's name is dotted-underlined and says in its tooltip what the
+inferred default was; *reset to inferred* clears every override. Hovering a
+row highlights its `select` item in the editor.
+
+**Values on cards** (`src/lib/cards.ts`): strings as they are, numbers and
+booleans as text, arrays as `a, b, c`, a list of records as `n items`, a
+record as `{…}`, an absent value as `—` — never a JSON wall. Long values are
+truncated with `…` to the card's width (the key is kept whole); the card's
+tooltip carries the path and every shown value in full. The card's width and
+height follow the shown lines, and the layout (elk or force) runs over those
+sizes, so changing the projection re-lays the graph out and edges keep
+attaching to the card border.
+
+**The view record.** The projection's overrides live beside the relationship
+overrides (`src/lib/view.ts`): the resolved view is
+`{ edges, layout: { axis, direction }, projection: { label, shown } }`, so a
+saved view is `{ query, edges, layout, projection }`. A choice naming a field
+the query no longer projects is dropped on resolve, as a vanished candidate's
+is; a pinned label that vanished falls back to the inferred one.
+
+**Pan and zoom.** The wheel zooms about the pointer (the content under the
+cursor stays put) and a drag moves the picture exactly as far as the pointer,
+whatever the zoom or the fit — the pointer is read in the SVG's own rectangle
+and mapped through the viewBox (`src/lib/viewport.ts`, unit-tested). The drag
+is pointer-captured, so it keeps going when the pointer leaves the graph;
+double-click the canvas to reset the view.
 
 ## Editing edges
 
@@ -527,7 +597,9 @@ nothing else is (no `follow`, no inferred field); `doc.in` and sequences are
 never drawn by default. The layout axis is the first `follow` candidate, else
 the first sequence key, else the first inferred field (timeline words first),
 else none (force) — a builtin is never the axis. Overrides live beside the
-view (`src/lib/view.ts`); an override naming a vanished candidate is dropped.
+view (`src/lib/view.ts`), as the projection's do ([Choosing what a card
+shows](#choosing-what-a-card-shows)); an override naming a vanished candidate
+is dropped.
 
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
 AST reading drives the non-blocking messages. Under the editor: when a `follow`
@@ -587,6 +659,12 @@ engine's own `refs(<field>)` when no bare destination names the field.
   so the client reads the whole value, edits it, and writes it back.
 - **No inverse-field knowledge.** Editing `after` does not maintain `before`;
   a field definition with `inverse_of` would let the UI (or the engine) keep both.
+- **An empty projection is not "the row itself".** `from docs where …` with no
+  `select` returns hits carrying only `id` and `path`, so the cards panel's
+  *from rows* fallback can offer just those two; the frontmatter has to be
+  named in `select` to reach a card (a `select *`, or hits that carry the
+  frontmatter bag when nothing is projected, would make the empty projection
+  mean what it says).
 - **Projected-but-absent is indistinguishable from not projected** in a hit:
   a document without `after` yields a row without the key, so whether a row's
   value is authoritative has to be read off the AST (`projectedFields`).
