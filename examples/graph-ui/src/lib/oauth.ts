@@ -15,7 +15,9 @@
 // module supplies the persistence (localStorage keyed by server URL), the
 // redirect, and the pure helpers the UI and the tests use (WWW-Authenticate
 // parsing, metadata URL derivation, discovery with an injectable fetch, PKCE
-// S256, the authorization URL, JWT claims for the identity line).
+// S256, the authorization URL, JWT claims for the identity line). The helpers
+// the Node bridge also needs (callback parsing, JWT claims, URL normalisation)
+// live in ./oauth-shared.mjs and are re-exported here.
 
 import type { OAuthClientProvider, OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
@@ -25,6 +27,11 @@ import type {
   OAuthProtectedResourceMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import { callbackParams, decodeJwtClaims, identityFromTokens, normalizeServerUrl } from "./oauth-shared.mjs";
+import type { Identity } from "./oauth-shared.mjs";
+
+export { callbackParams, decodeJwtClaims, identityFromTokens, normalizeServerUrl };
+export type { CallbackParams, Identity } from "./oauth-shared.mjs";
 
 // ---- WWW-Authenticate -----------------------------------------------------------
 
@@ -175,56 +182,9 @@ export function authorizationUrl(meta: Pick<AuthorizationServerMetadata, "author
   return url;
 }
 
-export interface CallbackParams {
-  code: string | null;
-  state: string | null;
-  error: string | null;
-  errorDescription: string | null;
-}
-
-export function callbackParams(href: string | URL): CallbackParams {
-  const q = new URL(href).searchParams;
-  return {
-    code: q.get("code"),
-    state: q.get("state"),
-    error: q.get("error"),
-    errorDescription: q.get("error_description"),
-  };
-}
-
 // ---- identity -----------------------------------------------------------------------
 
-export function decodeJwtClaims(jwt: string | null | undefined): Record<string, unknown> | null {
-  if (!jwt) return null;
-  const parts = jwt.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const payload = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = payload + "=".repeat((4 - (payload.length % 4)) % 4);
-    const json = decodeURIComponent(
-      Array.from(atob(padded), (c) => `%${c.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""),
-    );
-    const claims: unknown = JSON.parse(json);
-    return claims && typeof claims === "object" ? (claims as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-export interface Identity {
-  email: string | null;
-  name: string | null;
-  subject: string | null;
-}
-
-/** Who the tokens say we are: the id_token's claims first, else the access token's (Auth0 JWTs). */
-export function identityFromTokens(tokens: OAuthTokens | undefined | null): Identity | null {
-  const claims = decodeJwtClaims(tokens?.id_token) ?? decodeJwtClaims(tokens?.access_token);
-  if (!claims) return null;
-  const str = (k: string): string | null => (typeof claims[k] === "string" ? (claims[k] as string) : null);
-  const identity = { email: str("email"), name: str("name") ?? str("nickname"), subject: str("sub") };
-  return identity.email || identity.name || identity.subject ? identity : null;
-}
+// `decodeJwtClaims` / `identityFromTokens` are shared with the bridge: see ./oauth-shared.mjs.
 
 // ---- the provider ----------------------------------------------------------------
 
@@ -237,8 +197,7 @@ export interface StorageLike {
 export const OAUTH_STORAGE_PREFIX = "omgbase-graph-ui.oauth.";
 
 export function storageKey(serverUrl: string): string {
-  const u = new URL(serverUrl);
-  return `${OAUTH_STORAGE_PREFIX}${u.origin}${trimSlash(u.pathname)}`;
+  return `${OAUTH_STORAGE_PREFIX}${normalizeServerUrl(serverUrl)}`;
 }
 
 interface Stored {

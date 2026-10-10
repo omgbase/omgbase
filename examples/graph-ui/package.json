@@ -12,6 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:workspace": "node scripts/dev-workspace.mjs",
     "dev:mcp": "node scripts/dev-mcp.mjs",
+    "logout": "node scripts/dev-mcp.mjs --logout",
     "dev:vite": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",

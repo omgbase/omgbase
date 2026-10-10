@@ -7,9 +7,26 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { UnauthorizedError, type OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 
+/** How the page reaches omgbase: the local bridge serving the sample, the local
+ * bridge proxying (and signed in to) a remote, or the remote directly. */
+export type McpMode = "local" | "proxy" | "direct";
+
 export interface McpSettings {
-  url: string;
+  mode: McpMode;
+  /** The bridge's MCP endpoint — a same-origin path through Vite's proxy by default. */
+  bridgeUrl: string;
+  /** The remote gateway, for direct mode (needs CORS on the gateway and web origins in Auth0). */
+  directUrl: string;
   repo: string;
+}
+
+/** The server URL a mode uses, made absolute against the page (`/mcp` → `http://localhost:5173/mcp`). */
+export function serverUrlFor(s: Pick<McpSettings, "mode" | "bridgeUrl" | "directUrl">, base?: string): string {
+  return absoluteServerUrl(s.mode === "direct" ? s.directUrl : s.bridgeUrl, base);
+}
+
+export function absoluteServerUrl(url: string, base: string | undefined = typeof location === "undefined" ? undefined : location.href): string {
+  return new URL(url, base).href;
 }
 
 export interface OmgClientOptions {
@@ -51,7 +68,7 @@ export class OmgClient {
 
   private transport(): StreamableHTTPClientTransport {
     const { url, authProvider } = this.options;
-    return new StreamableHTTPClientTransport(new URL(url), authProvider ? { authProvider } : {});
+    return new StreamableHTTPClientTransport(new URL(absoluteServerUrl(url)), authProvider ? { authProvider } : {});
   }
 
   private async open(transport: StreamableHTTPClientTransport): Promise<Client> {

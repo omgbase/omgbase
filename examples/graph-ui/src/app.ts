@@ -1,7 +1,8 @@
 // The page: composes the three elements with signals —
 //   source → ast → rows → candidates → view → (edges → layout inside <oqx-graph>)
-// — plus the MCP settings (server URL / repo, OAuth sign-in for a remote) and a
-// status line.
+// — plus the MCP settings (three ways to reach omgbase: the local bridge over
+// the sample, the local bridge proxying a remote it signed in to, or the remote
+// directly with the browser as the OAuth client) and a status line.
 
 import { LitElement, css, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
@@ -16,8 +17,9 @@ import type { GraphNode, GraphStateDetail } from "./elements/oqx-graph.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { defaultView, type View } from "./lib/view.ts";
 import { edgeQueries, edgesFromRows, type GraphEdge } from "./lib/edges.ts";
-import { AuthRequiredError, OmgClient, type McpSettings } from "./lib/mcp-client.ts";
+import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSettings } from "./lib/mcp-client.ts";
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
+import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
 import type { OqxErrorInfo } from "./lib/errors.ts";
 
@@ -31,13 +33,27 @@ where $path == "timeline/kickoff.md"
 follow $repo.docs collect { where after.contains("/" + ^$path) }
 order by $ordinal`;
 
-const DEFAULT_SETTINGS: McpSettings = { url: "http://localhost:8787/mcp", repo: "" };
+/** The bridge sits behind Vite's proxy at the same origin; `pnpm dev` starts both. */
+const DEFAULT_SETTINGS: McpSettings = { mode: "local", bridgeUrl: "/mcp", directUrl: "", repo: "" };
+
+const MODE_LABEL: Record<McpMode, string> = { local: "local sample", proxy: "via local proxy", direct: "direct" };
 
 function loadSettings(): McpSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    const saved = raw ? (JSON.parse(raw) as Partial<McpSettings>) : {};
-    return { url: saved.url ?? DEFAULT_SETTINGS.url, repo: saved.repo ?? DEFAULT_SETTINGS.repo };
+    const saved = raw ? (JSON.parse(raw) as Partial<McpSettings> & { url?: string }) : {};
+    const s: McpSettings = {
+      mode: saved.mode ?? DEFAULT_SETTINGS.mode,
+      bridgeUrl: saved.bridgeUrl ?? DEFAULT_SETTINGS.bridgeUrl,
+      directUrl: saved.directUrl ?? DEFAULT_SETTINGS.directUrl,
+      repo: saved.repo ?? DEFAULT_SETTINGS.repo,
+    };
+    // Settings written before modes existed had one `url`.
+    if (saved.url && saved.mode === undefined) {
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(saved.url)) s.bridgeUrl = saved.url;
+      else { s.mode = "direct"; s.directUrl = saved.url; }
+    }
+    return s;
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -46,6 +62,9 @@ function loadSettings(): McpSettings {
 // ---- the dataflow (module-level signals; one page) ---------------------------
 
 const settings = signal<McpSettings>(loadSettings());
+const serverUrl = computed<string>(() => {
+  try { return serverUrlFor(settings.get()); } catch { return ""; }
+});
 const source = signal<string>(localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY);
 const ast = signal<Query | null>(null);
 const parseError = signal<OqxErrorInfo | null>(null);
@@ -57,6 +76,8 @@ const connection = signal<"idle" | "connecting" | "ok" | "error" | "sign-in">("i
 const connectionMessage = signal<string>("");
 const identity = signal<Identity | null>(null);
 const discovery = signal<Discovery | null>(null);
+const bridge = signal<BridgeInfo | null>(null);
+const bridgeError = signal<string | null>(null);
 const candidates = computed<Candidate[]>(() => inferCandidates(ast.get(), rows.get()));
 const view = signal<View>(defaultView([]));
 const nodes = computed<GraphNode[]>(() => rows.get().map((row) => {
@@ -92,10 +113,10 @@ function providerFor(url: string): BrowserOAuthProvider {
 
 let client: OmgClient | null = null;
 
-function clientFor(s: Pick<McpSettings, "url">): OmgClient {
-  if (!client || client.options.url !== s.url) {
+function clientFor(url: string): OmgClient {
+  if (!client || client.options.url !== url) {
     void client?.close();
-    client = new OmgClient({ url: s.url, authProvider: providerFor(s.url) });
+    client = new OmgClient({ url, authProvider: providerFor(url) });
   }
   return client;
 }
@@ -104,30 +125,98 @@ function describeError(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+// ---- the bridge's status (local and proxy modes) ------------------------------------
+
+let bridgePoll: ReturnType<typeof setTimeout> | null = null;
+
+/** Ask the bridge who it is; in proxy mode its sign-in state drives the status line. */
+async function refreshBridge(): Promise<BridgeInfo | null> {
+  const s = settings.get();
+  if (s.mode === "direct") { bridge.set(null); return null; }
+  try {
+    const info = await fetchBridgeInfo(s.bridgeUrl);
+    bridge.set(info);
+    bridgeError.set(null);
+    return info;
+  } catch (e) {
+    bridge.set(null);
+    bridgeError.set(describeError(e));
+    return null;
+  }
+}
+
+/** While the bridge waits for the user's consent in their browser, poll it and reconnect once it is in. */
+function watchBridgeSignIn(): void {
+  if (bridgePoll) clearTimeout(bridgePoll);
+  bridgePoll = setTimeout(async () => {
+    bridgePoll = null;
+    const info = await refreshBridge();
+    if (!info || settings.get().mode === "direct") return;
+    if (info.auth.state === "waiting") {
+      connection.set("sign-in");
+      connectionMessage.set("waiting for sign-in in your browser");
+      watchBridgeSignIn();
+    } else if (info.auth.state === "error") {
+      connection.set("error");
+      connectionMessage.set(`bridge sign-in failed: ${info.auth.error ?? "unknown error"}`);
+    } else if (connection.get() !== "ok") {
+      void refreshRepos();
+    }
+  }, 1500);
+}
+
 async function refreshRepos(): Promise<void> {
   const s = settings.get();
+  const url = serverUrl.get();
+  if (!url) {
+    connection.set("error");
+    connectionMessage.set(s.mode === "direct" ? "enter the remote server URL" : "enter the bridge URL");
+    return;
+  }
   connection.set("connecting");
-  identity.set(providerFor(s.url).identity());
+  connectionMessage.set("");
+  identity.set(s.mode === "direct" ? providerFor(url).identity() : null);
+  if (s.mode !== "direct") {
+    const info = await refreshBridge();
+    if (info?.auth.state === "waiting") {
+      connection.set("sign-in");
+      connectionMessage.set("waiting for sign-in in your browser");
+      watchBridgeSignIn();
+      return;
+    }
+    if (info?.identity) identity.set(info.identity);
+  }
   try {
-    const c = clientFor(s);
+    const c = clientFor(url);
     const { repos: list } = await c.repos();
     repos.set(list.map((r) => r.slug));
-    if (!list.some((r) => r.slug === s.repo)) settings.set({ ...s, repo: list[0]?.slug ?? "" });
-    identity.set(providerFor(s.url).identity());
+    if (!list.some((r) => r.slug === s.repo)) settings.set({ ...settings.get(), repo: list[0]?.slug ?? "" });
+    if (s.mode === "direct") identity.set(providerFor(url).identity());
+    else { const info = await refreshBridge(); if (info?.identity) identity.set(info.identity); }
     connection.set("ok");
     connectionMessage.set(`${list.length} repo${list.length === 1 ? "" : "s"}`);
   } catch (e) {
     if (e instanceof AuthRequiredError) return; // the browser is on its way to the authorization server
+    if (s.mode !== "direct") {
+      // The bridge may have opened the user's browser while our request waited; keep polling it.
+      const info = await refreshBridge();
+      if (info?.auth.state === "waiting") {
+        connection.set("sign-in");
+        connectionMessage.set("waiting for sign-in in your browser");
+        watchBridgeSignIn();
+        return;
+      }
+    }
     connection.set("error");
     connectionMessage.set(describeError(e));
     // Show what sign-in would involve (issuer, scopes) — harmless if there is none.
-    discover(s.url).then((d) => discovery.set(d), () => discovery.set(null));
+    if (s.mode === "direct") discover(url).then((d) => discovery.set(d), () => discovery.set(null));
   }
 }
 
 function disconnect(): void {
-  const s = settings.get();
-  providerFor(s.url).clear();
+  const url = serverUrl.get();
+  if (url) providerFor(url).clear();
   void client?.close();
   client = null;
   identity.set(null);
@@ -137,7 +226,7 @@ function disconnect(): void {
   connectionMessage.set("signed out");
 }
 
-/** Back from the authorization server with `?code=…&state=…` (or `?error=…`). */
+/** Back from the authorization server with `?code=…&state=…` (or `?error=…`) — direct mode only. */
 async function finishSignIn(): Promise<boolean> {
   const cb = callbackParams(location.href);
   if (!cb.code && !cb.error) return false;
@@ -145,15 +234,15 @@ async function finishSignIn(): Promise<boolean> {
   localStorage.removeItem(PENDING_KEY);
   history.replaceState(null, "", location.pathname);
   const pending = pendingRaw ? (JSON.parse(pendingRaw) as { serverUrl?: string }) : {};
-  const serverUrl = pending.serverUrl ?? settings.get().url;
-  const provider = providerFor(serverUrl);
+  const url = pending.serverUrl ?? serverUrl.get();
+  const provider = providerFor(url);
   const expectedState = provider.consumeState();
   connection.set("connecting");
   try {
     if (cb.error) throw new Error(`${cb.error}${cb.errorDescription ? `: ${cb.errorDescription}` : ""}`);
     if (expectedState && cb.state !== expectedState) throw new Error("OAuth state mismatch — the sign-in did not start from this page");
-    await clientFor({ url: serverUrl }).finishAuth(cb.code!);
-    settings.set({ ...settings.get(), url: serverUrl });
+    await clientFor(url).finishAuth(cb.code!);
+    settings.set({ ...settings.get(), mode: "direct", directUrl: url });
     identity.set(provider.identity());
     return true;
   } catch (e) {
@@ -167,12 +256,13 @@ let runGeneration = 0;
 async function runQuery(): Promise<void> {
   const q = ast.get();
   const s = settings.get();
+  const url = serverUrl.get();
   const text = source.get();
-  if (!q || !s.repo) return;
+  if (!q || !s.repo || !url) return;
   const gen = ++runGeneration;
   queryError.set(null);
   try {
-    const result = await clientFor(s).query(text, { repo: s.repo, limit: 200 });
+    const result = await clientFor(url).query(text, { repo: s.repo, limit: 200 });
     if (gen !== runGeneration) return;
     rows.set(result.hits);
     truncated.set(result.truncated);
@@ -185,8 +275,9 @@ async function runQuery(): Promise<void> {
 /** The graph's edge source: generated OQX over the `edges` target via the `query` tool. */
 async function fetchEdges(candidate: Candidate, paths: string[]): Promise<GraphEdge[]> {
   const s = settings.get();
+  const url = serverUrl.get();
   const all: Record<string, unknown>[] = [];
-  for (const q of edgeQueries(candidate, paths)) all.push(...(await clientFor(s).queryAll(q, { repo: s.repo })));
+  for (const q of edgeQueries(candidate, paths)) all.push(...(await clientFor(url).queryAll(q, { repo: s.repo })));
   return edgesFromRows(candidate, all, new Set(paths));
 }
 
@@ -196,11 +287,11 @@ void (async () => {
   await finishSignIn();
   effect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings.get())); });
   effect(() => { localStorage.setItem(QUERY_KEY, source.get()); });
-  let lastUrl = "";
+  let last = "";
   effect(() => {
-    const { url } = settings.get();
-    if (url === lastUrl) return;
-    lastUrl = url;
+    const key = `${settings.get().mode} ${serverUrl.get()}`;
+    if (key === last) return;
+    last = key;
     discovery.set(null);
     void refreshRepos();
   });
@@ -223,6 +314,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     header .spacer { flex: 1; }
     header .conn { font-size: 12px; color: #5a6270; }
     header .conn.error { color: #c62828; }
+    header .conn.sign-in { color: #b26a00; }
     main { display: grid; grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr); gap: 12px; padding: 12px 14px; min-height: 0; }
     .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
     .left h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #5a6270; margin: 0 0 6px; }
@@ -232,10 +324,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     details.settings { font-size: 13px; }
     details.settings summary { cursor: pointer; color: #5a6270; }
     .settings form { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; padding: 8px 0; }
-    .settings input, .settings select, .settings button { font: inherit; padding: 3px 6px; }
-    .settings .row { display: flex; gap: 8px; align-items: center; }
-    .settings .auth { grid-column: 1 / -1; color: #5a6270; font-size: 12px; }
-    .settings .auth code { font-family: ui-monospace, monospace; }
+    .settings input[type="text"], .settings select, .settings button { font: inherit; padding: 3px 6px; }
+    .settings .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .settings .modes { display: flex; gap: 12px; flex-wrap: wrap; }
+    .settings .modes label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+    .settings .auth, .settings .hint { grid-column: 1 / -1; color: #5a6270; font-size: 12px; }
+    .settings .hint.warn { color: #b26a00; }
+    .settings code { font-family: ui-monospace, monospace; }
     .selection { font-size: 12px; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 6px; padding: 8px 10px; max-height: 200px; overflow: auto; }
     .selection pre { margin: 4px 0 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; }
   `;
@@ -254,15 +349,49 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     view.set(e.detail.view);
   }
 
-  private connect(): void {
-    const url = (this.urlDraft ?? settings.get().url).trim();
+  private setMode(mode: McpMode): void {
     this.urlDraft = null;
-    if (url !== settings.get().url) settings.set({ ...settings.get(), url }); // the URL effect reconnects
+    if (mode !== settings.get().mode) settings.set({ ...settings.get(), mode }); // the URL effect reconnects
+  }
+
+  private connect(): void {
+    const s = settings.get();
+    const current = s.mode === "direct" ? s.directUrl : s.bridgeUrl;
+    const url = (this.urlDraft ?? current).trim();
+    this.urlDraft = null;
+    if (url !== current) settings.set(s.mode === "direct" ? { ...s, directUrl: url } : { ...s, bridgeUrl: url }); // the URL effect reconnects
     else void refreshRepos();
+  }
+
+  private renderBridgeHint(info: BridgeInfo | null, mode: McpMode) {
+    const err = bridgeError.get();
+    if (!info) {
+      return html`<div class="hint warn">no bridge answered <code>/whoami</code>${err ? ` (${err})` : ""} — start it with
+        <code>pnpm --filter graph-ui dev${mode === "proxy" ? " --remote &lt;mcp-url&gt;" : ""}</code></div>`;
+    }
+    if (mode === "proxy" && info.mode !== "remote") {
+      return html`<div class="hint warn">the bridge is serving the local sample (<code>${info.upstream}</code>) — restart it with
+        <code>pnpm --filter graph-ui dev --remote &lt;mcp-url&gt;</code> (or <code>GRAPH_UI_REMOTE=&lt;mcp-url&gt;</code>)</div>`;
+    }
+    if (mode === "local" && info.mode !== "local") {
+      return html`<div class="hint warn">the bridge is proxying <code>${info.upstream}</code>, not the local sample — pick <i>via local proxy</i>, or restart it without <code>--remote</code></div>`;
+    }
+    if (info.mode === "remote") {
+      const who = info.identity;
+      const a = info.auth;
+      return html`<div class="hint">upstream <code>${info.upstream}</code>
+        ${a.state === "waiting" ? html` · <b>waiting for sign-in in your browser</b>${a.authorizationUrl ? html` (<a href=${a.authorizationUrl} target="_blank" rel="noopener">open the sign-in page</a>)` : nothing}` : nothing}
+        ${a.state === "error" ? html` · <span class="warn">sign-in failed: ${a.error}</span>` : nothing}
+        ${a.state === "ok" ? html` · signed in${who ? html` as <b>${who.email ?? who.name ?? who.subject}</b>` : ""}` : nothing}
+        ${a.issuer ? html` · issuer <code>${a.issuer}</code>` : nothing}
+        ${info.tokenFile ? html` · tokens in <code>${info.tokenFile}</code> (<code>pnpm --filter graph-ui logout</code> forgets them)` : nothing}</div>`;
+    }
+    return html`<div class="hint">bridge serving <code>${info.upstream}</code> · no sign-in</div>`;
   }
 
   protected override render() {
     const s = settings.get();
+    const url = serverUrl.get();
     const conn = connection.get();
     const cands = candidates.get();
     const v = view.get();
@@ -272,10 +401,13 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const qe = queryError.get();
     const who = identity.get();
     const disc = discovery.get();
+    const info = bridge.get();
+    const shownUrl = s.mode === "direct" ? s.directUrl : s.bridgeUrl;
+    const connText = conn === "ok" ? connectionMessage.get() : conn === "error" ? `error: ${connectionMessage.get()}` : conn === "sign-in" ? connectionMessage.get() : conn;
     return html`
       <header>
         <h1>omgbase graph UI</h1>
-        <span class="conn ${conn === "error" ? "error" : ""}">${s.url} · ${conn === "ok" ? connectionMessage.get() : conn === "error" ? `error: ${connectionMessage.get()}` : conn === "sign-in" ? connectionMessage.get() : conn}${who?.email ? ` · ${who.email}` : ""}</span>
+        <span class="conn ${conn === "error" ? "error" : conn === "sign-in" ? "sign-in" : ""}">${MODE_LABEL[s.mode]} · ${s.mode === "proxy" && info?.mode === "remote" ? info.upstream : shownUrl} · ${connText}${who?.email ? ` · ${who.email}` : ""}</span>
         <span class="spacer"></span>
         <label>repo
           <select .value=${s.repo} @change=${(e: Event) => settings.set({ ...settings.get(), repo: (e.target as HTMLSelectElement).value })}>
@@ -299,19 +431,27 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
             <b>${this.selected.path}</b>
             <pre>${JSON.stringify(this.selected.row, null, 1)}</pre>
           </section>` : nothing}
-          <details class="settings" ?open=${conn === "error"}>
+          <details class="settings" ?open=${conn === "error" || conn === "sign-in"}>
             <summary>MCP settings</summary>
             <form @submit=${(e: Event) => { e.preventDefault(); this.connect(); }}>
-              <label for="url">server</label>
-              <input id="url" .value=${this.urlDraft ?? s.url} @input=${(e: Event) => { this.urlDraft = (e.target as HTMLInputElement).value; }}
-                placeholder="http://localhost:8787/mcp or https://host/omg">
+              <label>mode</label>
+              <span class="modes">
+                ${(["local", "proxy", "direct"] as McpMode[]).map((m) => html`<label title=${MODE_TITLE[m]}>
+                  <input type="radio" name="mode" .checked=${s.mode === m} @change=${() => this.setMode(m)}> ${MODE_LABEL[m]}</label>`)}
+              </span>
+              <label for="url">${s.mode === "direct" ? "server" : "bridge"}</label>
+              <input id="url" type="text" .value=${this.urlDraft ?? shownUrl} @input=${(e: Event) => { this.urlDraft = (e.target as HTMLInputElement).value; }}
+                placeholder=${s.mode === "direct" ? "https://host/omg" : "/mcp or http://localhost:8787/mcp"}>
               <span></span>
               <span class="row">
                 <button type="submit">connect</button>
-                ${who || providerFor(s.url).hasTokens() ? html`<button type="button" @click=${disconnect}>disconnect</button>` : nothing}
-                ${who ? html`<span>signed in as <b>${who.email ?? who.name ?? who.subject}</b></span>` : html`<span>local bridge: no sign-in; a remote that answers 401 starts OAuth (PKCE, dynamic registration)</span>`}
+                ${s.mode === "direct" && url && (who || providerFor(url).hasTokens()) ? html`<button type="button" @click=${disconnect}>disconnect</button>` : nothing}
+                ${s.mode === "direct" ? (who
+                  ? html`<span>signed in as <b>${who.email ?? who.name ?? who.subject}</b></span>`
+                  : html`<span>the browser is the OAuth client: the gateway must send CORS headers for this origin and Auth0 must allow it as a web origin — see the README</span>`) : nothing}
               </span>
-              ${disc ? html`<div class="auth">sign-in would use <code>${disc.authorizationServerUrl}</code>${disc.scope ? html` with scopes <code>${disc.scope}</code>` : nothing}${disc.authorizationServer.registration_endpoint ? " (dynamic registration available)" : " (no dynamic registration!)"}</div>` : nothing}
+              ${s.mode === "direct" && disc ? html`<div class="auth">sign-in would use <code>${disc.authorizationServerUrl}</code>${disc.scope ? html` with scopes <code>${disc.scope}</code>` : nothing}${disc.authorizationServer.registration_endpoint ? " (dynamic registration available)" : " (no dynamic registration!)"}</div>` : nothing}
+              ${s.mode !== "direct" ? this.renderBridgeHint(info, s.mode) : nothing}
             </form>
           </details>
         </div>
@@ -331,6 +471,12 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     `;
   }
 }
+
+const MODE_TITLE: Record<McpMode, string> = {
+  local: "the local bridge serving ./sample over `omg mcp` (pnpm dev)",
+  proxy: "the local bridge signed in to a remote omg MCP on your behalf (pnpm dev --remote <url>); no CORS or Auth0 setup needed",
+  direct: "the browser connects to the remote itself and is the OAuth client; needs CORS on the gateway and web origins in Auth0",
+};
 
 declare global {
   interface HTMLElementTagNameMap { "graph-ui-app": GraphUiApp }
