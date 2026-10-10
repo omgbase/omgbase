@@ -17,6 +17,7 @@ import { tags } from "@lezer/highlight";
 import { oqxStreamParser } from "@omgbase/oqx-syntax/codemirror";
 import { parse, type Query, type Span } from "@omgbase/oqx";
 import { codePointToUtf16, describeOqxError, type OqxErrorInfo } from "../lib/errors.ts";
+import { messageRuns, queryHints, type Hint } from "../lib/hints.ts";
 
 export interface QueryChangeDetail {
   source: string;
@@ -41,6 +42,7 @@ const marks = StateField.define<DecorationSet>({
 
 const errorMark = Decoration.mark({ class: "oqx-error" });
 const candidateMark = Decoration.mark({ class: "oqx-candidate" });
+const hintMark = Decoration.mark({ class: "oqx-hint" });
 
 @customElement("oqx-query-editor")
 export class OqxQueryEditor extends LitElement {
@@ -52,9 +54,12 @@ export class OqxQueryEditor extends LitElement {
     .cm-editor .cm-scroller { font-family: inherit; }
     .oqx-error { text-decoration: underline wavy #c62828; text-decoration-skip-ink: none; background: rgba(198, 40, 40, 0.08); }
     .oqx-candidate { background: rgba(255, 193, 7, 0.35); border-radius: 2px; }
+    .oqx-hint { text-decoration: underline dotted #b26a00; text-decoration-skip-ink: none; }
     .status { display: flex; gap: 8px; align-items: baseline; min-height: 20px; padding: 4px 10px; border-top: 1px solid var(--line, #e3e6ec); font: 12px/1.4 system-ui, sans-serif; color: #5a6270; background: #f7f8fa; }
     .status.error { color: #c62828; background: #fff5f5; }
     .status .where { font-family: ui-monospace, monospace; opacity: 0.8; }
+    .hints { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 6px; border-top: 1px solid var(--line, #e3e6ec); font: 12px/1.4 system-ui, sans-serif; color: #6d4c00; background: #fff8e1; }
+    .hints code { font-family: ui-monospace, monospace; }
   `;
 
   @property() value = "";
@@ -62,6 +67,7 @@ export class OqxQueryEditor extends LitElement {
   @property({ type: Number }) debounce = 150;
 
   @state() private error: OqxErrorInfo | null = null;
+  @state() private hints: Hint[] = [];
 
   private view: EditorView | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -71,7 +77,11 @@ export class OqxQueryEditor extends LitElement {
     // The first parse happens here, before the first render, so the status line
     // renders right the first time — setting @state in firstUpdated() would
     // schedule a second update and Lit (dev mode) warns about it.
-    if (changed.has("value") && !this.view) this.error = this.parseSource(this.value).error;
+    if (changed.has("value") && !this.view) {
+      const parsed = this.parseSource(this.value);
+      this.error = parsed.error;
+      this.hints = queryHints(parsed.query);
+    }
   }
 
   protected override firstUpdated(): void {
@@ -137,7 +147,9 @@ export class OqxQueryEditor extends LitElement {
     const source = this.source;
     const { query, error } = this.parseSource(source);
     if (this.error?.message !== error?.message || this.error?.offset !== error?.offset) this.error = error;
-    this.applyMarks();
+    const hints = queryHints(query);
+    if (hints.map((h) => h.message).join("\n") !== this.hints.map((h) => h.message).join("\n")) this.hints = hints;
+    this.applyMarks(hints);
     if (this.lastEmitted === source) return;
     this.lastEmitted = source;
     this.dispatchEvent(new CustomEvent<QueryChangeDetail>("query-change", {
@@ -145,10 +157,15 @@ export class OqxQueryEditor extends LitElement {
     }));
   }
 
-  private applyMarks(): void {
+  private applyMarks(hints: Hint[] = this.hints): void {
     if (!this.view) return;
     const source = this.view.state.doc.toString();
     const ranges: Range<Decoration>[] = [];
+    for (const h of hints) {
+      const from = codePointToUtf16(source, h.span[0]);
+      const to = codePointToUtf16(source, h.span[1]);
+      if (to > from) ranges.push(hintMark.range(from, to));
+    }
     for (const [a, b] of this.highlights) {
       const from = codePointToUtf16(source, a);
       const to = codePointToUtf16(source, b);
@@ -176,6 +193,9 @@ export class OqxQueryEditor extends LitElement {
           ? html`<span>${e.stage ?? "error"}: ${e.message}</span>${e.offset !== null ? html`<span class="where">@${e.offset}</span>` : null}`
           : html`<span>OQX ok</span>`}
       </div>
+      ${!e && this.hints.length > 0
+        ? html`<div class="hints" role="note">${this.hints.map((h) => html`<div class="hint" data-field=${h.field}>hint: ${messageRuns(h.message).map((run, i) => (i % 2 ? html`<code>${run}</code>` : run))}</div>`)}</div>`
+        : null}
     `;
   }
 }

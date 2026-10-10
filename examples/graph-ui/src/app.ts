@@ -23,7 +23,7 @@ import { AuthRequiredError, OmgClient, serverUrlFor, type McpMode, type McpSetti
 import { BrowserOAuthProvider, callbackParams, discover, type Discovery, type Identity } from "./lib/oauth.ts";
 import { fetchBridgeInfo, type BridgeInfo } from "./lib/bridge-info.ts";
 import { effect } from "./lib/effect.ts";
-import type { OqxErrorInfo } from "./lib/errors.ts";
+import { describeQueryError, type OqxErrorInfo } from "./lib/errors.ts";
 
 const SETTINGS_KEY = "omgbase-graph-ui.settings";
 const QUERY_KEY = "omgbase-graph-ui.query";
@@ -49,11 +49,32 @@ function loadEditSettings(): EditSettings {
   }
 }
 
+// `refs(before)` (surface 1.5) resolves the frontier's `before` references to
+// the documents themselves; the backward hop is the frontier's backlinks
+// (`$it.in`) — frontmatter references are extracted as edges, so every doc whose
+// `after` names the frontier is already among them — narrowed to the ones whose
+// `after` really says so. The `"/" +` goes away once `$path` is `/`-rooted.
 export const DEFAULT_QUERY = `select $path, title, phase, before, after
 from docs
 where $path == "timeline/kickoff.md"
-follow $repo.docs collect { where after.contains("/" + ^$path) }
+follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }
 order by $ordinal`;
+
+/** Earlier defaults, still persisted in some browsers: a stored query equal to
+ * one of these is upgraded to the current default. */
+const PREVIOUS_DEFAULT_QUERIES = [
+  `select $path, title, phase, before, after
+from docs
+where $path == "timeline/kickoff.md"
+follow $repo.docs collect { where after.contains("/" + ^$path) }
+order by $ordinal`,
+];
+
+function loadQuery(): string {
+  const saved = localStorage.getItem(QUERY_KEY);
+  if (saved === null || PREVIOUS_DEFAULT_QUERIES.includes(saved)) return DEFAULT_QUERY;
+  return saved;
+}
 
 /** The bridge sits behind Vite's proxy at the same origin; `pnpm dev` starts both. */
 const DEFAULT_SETTINGS: McpSettings = { mode: "local", bridgeUrl: "/mcp", directUrl: "", repo: "" };
@@ -87,7 +108,7 @@ const settings = signal<McpSettings>(loadSettings());
 const serverUrl = computed<string>(() => {
   try { return serverUrlFor(settings.get()); } catch { return ""; }
 });
-const source = signal<string>(localStorage.getItem(QUERY_KEY) ?? DEFAULT_QUERY);
+const source = signal<string>(loadQuery());
 const ast = signal<Query | null>(null);
 const parseError = signal<OqxErrorInfo | null>(null);
 const rows = signal<Row[]>([]);
@@ -437,6 +458,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     oqx-graph { height: 100%; min-height: 420px; }
     footer { padding: 6px 14px; border-top: 1px solid #e3e6ec; font-size: 12px; color: #5a6270; display: flex; gap: 14px; flex-wrap: wrap; }
     footer .err { color: #c62828; }
+    footer .err code { font-family: ui-monospace, monospace; color: #1e2430; background: #f7f8fa; padding: 0 3px; border-radius: 3px; }
     details.settings { font-size: 13px; }
     details.settings summary { cursor: pointer; color: #5a6270; }
     .settings form { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; padding: 8px 0; }
@@ -551,7 +573,8 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const gs = graphState.get();
     const r = rows.get();
     const pe = parseError.get();
-    const qe = queryError.get();
+    const qeRaw = queryError.get();
+    const qe = qeRaw === null ? null : describeQueryError(qeRaw, ast.get());
     const who = identity.get();
     const disc = discovery.get();
     const info = bridge.get();
@@ -624,7 +647,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction})` : "force"}</span>
         ${gs ? html`<span>${gs.busy ? "laying out…" : `${gs.edges} edges drawn${gs.cycles.length ? `, ${gs.cycles.length} cycle(s)` : ""}`}</span>` : nothing}
         ${pe ? html`<span class="err">parse: ${pe.message}</span>` : nothing}
-        ${qe ? html`<span class="err">query: ${qe}</span>` : nothing}
+        ${qe ? html`<span class="err" data-query-error>query: ${qe.message}${qe.suggestion ? html` · try <code>${qe.suggestion}</code>` : nothing}</span>` : nothing}
       </footer>
     `;
   }

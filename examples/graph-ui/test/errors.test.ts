@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { codePointToUtf16, describeOqxError } from "../src/lib/errors.ts";
+import { codePointToUtf16, describeOqxError, describeQueryError } from "../src/lib/errors.ts";
 
 describe("describeOqxError", () => {
   it("reads the parser's `(at offset N)` suffix", () => {
@@ -33,5 +33,28 @@ describe("codePointToUtf16", () => {
     expect(codePointToUtf16(s, 1)).toBe(1);
     expect(codePointToUtf16(s, 2)).toBe(3);
     expect(codePointToUtf16(s, 99)).toBe(s.length);
+  });
+});
+
+describe("describeQueryError", () => {
+  const HIT = 'a hit must be a document, block, node or edge row — the query reached a string ("/timeline/beta.md"); to follow document references held in a property use refs(<field>)';
+
+  it("makes the hit rule's remedy concrete from the query's bare follow field", () => {
+    const info = describeQueryError(new Error(HIT), parse(`select $path, before from docs where $path == "timeline/alpha.md" follow before`));
+    expect(info).toEqual({
+      message: 'a hit must be a document, block, node or edge row — the query reached a string ("/timeline/beta.md")',
+      reached: 'a string ("/timeline/beta.md")',
+      suggestion: "follow refs(before)",
+    });
+    expect(describeQueryError(HIT, parse(`$path from docs follow before, after`)).suggestion).toBe("follow refs(before), refs(after)");
+  });
+
+  it("keeps the engine's generic remedy when the AST names no bare field", () => {
+    expect(describeQueryError(new Error(HIT), parse(`$path from docs follow $repo.docs collect { select $it from tags }`)).suggestion).toBe("refs(<field>)");
+    expect(describeQueryError(new Error(HIT), null).suggestion).toBe("refs(<field>)");
+  });
+
+  it("passes other errors through", () => {
+    expect(describeQueryError(new Error("unknown field"), null)).toEqual({ message: "unknown field", reached: null, suggestion: null });
   });
 });

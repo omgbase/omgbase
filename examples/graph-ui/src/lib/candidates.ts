@@ -4,21 +4,34 @@
 // about" is derived here from the public `@omgbase/oqx` AST plus the result
 // rows. When omgbase ships a `query_analyze` tool that returns candidates with
 // roles, that tool becomes the data source and `inferCandidates` the fallback;
-// nothing else in the UI reads the AST.
+// nothing else in the UI reads the AST (lib/hints.ts reuses the helpers here).
 //
 // Rules (in priority order of the LAYOUT default):
 //   1. `follow` destinations —
-//        - a plain relation (`before`, `doc.out`, `doc.in`): the relation itself;
-//          `doc.out` is the link graph, `doc.in` the backlink graph (direction
-//          `backward`: stored edges point successor → frontier).
-//        - a destination block (`$repo.docs collect { where … }`): every
-//          frontmatter-looking property its correlated `where` reads —
-//          a bare ident on the candidate row (`after.contains("/" + ^$path)`)
-//          → `after`, direction `backward` (the edge lives on the successor and
-//          points at the frontier); an outer ref (`("/" + $path) in ^before`)
-//          → `before`, direction `forward`; a literal compared with
-//          `src_field` / `predicate` under `doc.in_edges` / `doc.out_edges` /
-//          `edges` → that relation (`in_edges` forward, `out_edges` backward).
+//        - `refs(<field>)` (surface 1.5 — resolves the document references a
+//          property holds to live doc rows; `refs(^<field>)` reads the field one
+//          scope out): the frontmatter relation `<field>`, direction `forward`
+//          (the frontier row owns the field and names its successors).
+//        - a plain relation: `doc.out` / `out` / `$it.out` is the link graph,
+//          `doc.in` / `in` / `$it.in` the backlink graph (direction `backward`:
+//          stored edges point successor → frontier); any other bare name is
+//          taken as a frontmatter relation, although `follow before` over a list
+//          of paths follows the STRINGS (the engine refuses the hit; lib/hints.ts
+//          says so under the editor).
+//        - a destination block (`$repo.docs collect { where … }`, `^docs collect
+//          { … }`, `$it.in collect { … }`, `refs(before) collect { … }`): a
+//          `refs(<field>)` receiver names `<field>` `forward` (the frontier's
+//          field); then every frontmatter-looking property its correlated
+//          `where` reads — a bare ident on the candidate row
+//          (`after.contains("/" + ^$path)`, `("/" + ^$path) in list(after)`) →
+//          `after`, direction `backward` (the edge lives on the successor and
+//          points at the frontier); an outer ref (`("/" + $path) in ^before`) →
+//          `before`, direction `forward`; a `refs(<field>)` receiver of a nested
+//          directive (`refs(after) exists { where $path == ^^$path }`) → the
+//          same two cases (`refs(after)` backward, `refs(^before)` forward); a
+//          literal compared with `src_field` / `predicate` under `doc.in_edges`
+//          / `doc.out_edges` / `edges` → that relation (`in_edges` forward,
+//          `out_edges` backward).
 //   2. `order by` keys — a non-intrinsic key is a SEQUENCE candidate: edges are
 //        consecutive pairs in result order (no fetch), direction forward.
 //   3. inferred from rows — a projected field whose value is a doc path or a
@@ -29,6 +42,10 @@
 // only when the query has no `follow`; sequence candidates are never drawn by
 // default. Layout default: the first follow candidate, else the first sequence
 // key, else the first inferred field (timeline words first), else none (force).
+//
+// A `refs(before)` candidate IS the `before` candidate: same name, same kind,
+// merged with the inferred one from the rows, written the same way (lib/edit.ts
+// looks only at name, kind and the rows).
 
 import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
 
@@ -56,6 +73,10 @@ export type Row = Record<string, unknown>;
 const BACKWARD_WORDS = /^(after|follows?|succeeds?|prev(ious)?|parent|parents|depends?_?on|requires?|derived_?from|sources?|replaces|supersedes)$/i;
 const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succeeds?|then|parent|child(ren)?)$/i;
 const ROW_META = new Set(["id", "path", "$path", "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$id", "$doc_id"]);
+
+/** Relations of a row that yield rows by themselves (spec/surface §1.2) — a
+ * `follow` over one of these is not a frontmatter field, so no `refs()` hint. */
+export const STRUCTURAL_RELATIONS = new Set(["in", "out", "in_edges", "out_edges", "children", "subsections", "nodes", "blocks", "section", "doc"]);
 
 interface Mention {
   name: string;
@@ -125,13 +146,20 @@ function roleDefaults(candidates: Candidate[]): Candidate[] {
 function followMentions(follow: Follow): Mention[] {
   const out: Mention[] = [];
   for (const dest of follow.destinations) {
-    if (dest.kind === "op") out.push(...destinationBlockMentions(dest));
-    else {
-      const path = dottedPath(dest);
-      if (!path) continue;
-      const kind: CandidateKind = path === "doc.out" ? "links" : path === "doc.in" ? "backlinks" : "frontmatter";
-      out.push({ name: path, kind, source: "follow", span: dest.span, direction: kind === "backlinks" ? "backward" : "forward" });
+    if (dest.kind === "op") {
+      out.push(...destinationBlockMentions(dest));
+      continue;
     }
+    const ref = refsField(dest);
+    if (ref) {
+      // `follow refs(before)`: the frontier's own field names its successors.
+      out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: dest.span, direction: "forward" });
+      continue;
+    }
+    const path = dottedPath(dest);
+    if (!path) continue;
+    const kind = relationKind(path);
+    out.push({ name: path, kind, source: "follow", span: dest.span, direction: kind === "backlinks" ? "backward" : "forward" });
   }
   return out;
 }
@@ -140,6 +168,9 @@ function followMentions(follow: Follow): Mention[] {
  * correlated (`^` = the frontier row). Read the relation names off it. */
 function destinationBlockMentions(op: OpNode): Mention[] {
   const out: Mention[] = [];
+  // `refs(before) collect { where … }` — the receiver is the frontier's field.
+  const receiver = refsField(op.receiver);
+  if (receiver) out.push({ name: receiver.name, kind: "frontmatter", source: "follow", span: op.receiver.span, direction: "forward" });
   const where = op.sub.where;
   if (!where) return out;
   forEachScalar(where, (expr) => {
@@ -155,12 +186,20 @@ function destinationBlockMentions(op: OpNode): Mention[] {
       }
     }
   });
-  // `doc.in_edges exists { where src_field == "before" … }` (or out_edges / $repo.edges).
   forEachOp(where, (inner) => {
-    const receiver = dottedPath(inner.receiver) ?? "";
-    const viaIn = receiver.endsWith("in_edges");
-    const viaOut = receiver.endsWith("out_edges");
-    if (!viaIn && !viaOut && !receiver.endsWith("edges")) return;
+    // `refs(after) exists { where $path == ^^$path }` — the candidate row's field
+    // names the frontier (backward); `refs(^before) exists { … }` — the frontier's
+    // field names the candidate (forward).
+    const ref = refsField(inner.receiver);
+    if (ref) {
+      out.push({ name: ref.name, kind: "frontmatter", source: "follow", span: inner.receiver.span, direction: ref.outer ? "forward" : "backward" });
+      return;
+    }
+    // `doc.in_edges exists { where src_field == "before" … }` (or out_edges / $repo.edges).
+    const receiverPath = dottedPath(inner.receiver) ?? "";
+    const viaIn = receiverPath.endsWith("in_edges");
+    const viaOut = receiverPath.endsWith("out_edges");
+    if (!viaIn && !viaOut && !receiverPath.endsWith("edges")) return;
     if (!inner.sub.where) return;
     forEachScalar(inner.sub.where, (expr) => {
       const lit = fieldLiteral(expr, ["src_field", "predicate"]);
@@ -168,6 +207,26 @@ function destinationBlockMentions(op: OpNode): Mention[] {
     });
   });
   return out;
+}
+
+/** What a plain relation path walks: `doc.out`/`out`/`$it.out` the link graph,
+ * `doc.in`/`in`/`$it.in` the backlink graph, anything else a frontmatter field. */
+export function relationKind(path: string): CandidateKind {
+  const bare = path.replace(/^\$it\./, "").replace(/^doc\./, "");
+  if (bare === "out") return "links";
+  if (bare === "in") return "backlinks";
+  return "frontmatter";
+}
+
+/** `refs(<field>)` / `refs(^<field>)`: the field whose document references are
+ * resolved, and whether it is read one scope out. Null for anything else
+ * (another function, a method call, a `$`-intrinsic argument, a literal). */
+export function refsField(expr: Expr): { name: string; outer: boolean } | null {
+  if (expr.kind !== "call" || expr.recv !== null || expr.name !== "refs" || expr.args.length !== 1) return null;
+  const arg = expr.args[0]!;
+  if (arg.kind === "ident" && !arg.name.startsWith("$")) return { name: arg.name, outer: false };
+  if (arg.kind === "outer" && !arg.name.startsWith("$")) return { name: arg.name, outer: true };
+  return null;
 }
 
 // ---- AST helpers (public AST only) -----------------------------------------
@@ -231,7 +290,7 @@ function outerProps(expr: Expr): string[] {
 }
 
 /** `ident` or a `member` chain over idents, as `a.b.c`. */
-function dottedPath(expr: Expr): string | null {
+export function dottedPath(expr: Expr): string | null {
   if (expr.kind === "ident") return expr.name;
   if (expr.kind === "member") {
     const base = dottedPath(expr.recv);

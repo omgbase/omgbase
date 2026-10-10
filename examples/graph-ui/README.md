@@ -97,20 +97,51 @@ pnpm --filter graph-ui dev          # copies ./sample into .dev-workspace/sample
 Open <http://localhost:5173>. Vite proxies `/mcp` and `/whoami` to the bridge
 (port 8787, `GRAPH_UI_MCP_PORT`), so the page's default server URL is just
 `/mcp` and *MCP settings* starts in **local sample** mode. The default query walks the sample's release
-timeline from `kickoff.md` through `after`:
+timeline from `kickoff.md` both ways — back through each document's own
+`before`, forward through the documents whose `after` names it:
 
 ```oqx
 select $path, title, phase, before, after
 from docs
 where $path == "timeline/kickoff.md"
-follow $repo.docs collect { where after.contains("/" + ^$path) }
+follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }
 order by $ordinal
 ```
+
+**Why `refs()`.** `before` holds document *references* — strings like
+`/timeline/alpha.md` — not documents. `follow before` walks the strings, and
+since surface 1.5 the server refuses that (`filter_invalid`: "a hit must be a
+document, block, node or edge row — the query reached a string …"; before 1.5
+it rendered a junk `{ id: "undefined", path: "" }` hit, which this demo drew
+as a phantom node). `refs(before)` resolves each reference (`/`-rooted or bare
+path, or a `d_` id; dangling ones dropped) to the live document, so it is the
+`follow` destination that means "the documents `before` names". The editor
+says so under the query whenever a destination is a bare field.
+
+**Why `$it.in` for the backward hop.** The engine has no `refs⁻¹`: there is no
+function giving "the documents whose `after` names me". But a `/`-rooted
+frontmatter reference *is extracted as an edge* (`spec/graph` §3.1,
+`provenance: frontmatter`), so the frontier's backlinks (`$it.in`, the same
+relation as `doc.in`) already contain every document whose `after` — or any
+other field, or a body link — points at it. The destination block narrows those
+to the ones whose `after` really says so (`("/" + ^$path) in list(after)`;
+`list()` makes a scalar and a list read alike). It is an indexed lookup per
+frontier row, unlike the full-scan fallback, which still works:
+
+```oqx
+follow refs(before), ^docs collect { where after.contains("/" + ^$path) }
+```
+
+(`^docs` is the root `docs` collection seen from inside the block; `$repo.docs`
+spells the same thing.) The `"/" +` exists because `$path` is bare
+(`timeline/kickoff.md`) while authored references are `/`-rooted; it
+disappears once `$path` becomes `/`-rooted (see [Gaps](#gaps-found-in-the-public-api)).
 
 Try: `select $path, title, before from docs where phase == "experiment" || phase == "plan"`
 (no `follow` — the candidates are *inferred* from the projected path-valued
 fields, and the three `loop-*` notes trigger the cycle banner); `follow doc.out`
-for the link graph; `order by phase` for a sequence axis.
+for the link graph; `order by phase` for a sequence axis; `follow before` to
+see the hint and the server's error (with the `refs()` fix) in the status line.
 
 Scripts: `dev [--remote <url>]` (all of it; the bridge's flags are consumed,
 anything else goes to Vite), `dev:workspace [--force]` (just the workspace),
@@ -248,6 +279,9 @@ axis marked); while the modifier is held in edit mode a second legend,
 bottom-right, names the three edge styles — *will add* (blue dashed), *will
 remove* (red dashed), *writing…* (the in-flight dashed edge).
 
+The editor's status area also carries the hints from `src/lib/hints.ts` (see
+[Inference rules](#inference-rules-srclibcandidatests)).
+
 `src/app.ts` composes them with `@lit-labs/signals`:
 `source → ast → rows → candidates → view`, and the graph element does
 `view → edges → layout` with the fetcher the page hands it. Edge edits flow
@@ -348,16 +382,27 @@ The one module that reads the AST. When omgbase ships a `query_analyze` tool
 returning candidates with roles, the page feeds that into the picker and this
 module becomes the fallback.
 
-1. **`follow` destinations.** A plain relation is itself a candidate (`doc.out`
-   = links, `doc.in` = backlinks with direction *backward*, a bare name = a
-   frontmatter relation). A **destination block** (`$repo.docs collect { where … }`)
-   is read through its correlated `where`: a bare property of the candidate row
-   compared against an outer reference (`after.contains("/" + ^$path)`) names
-   the relation `after` with direction *backward* (the edge is stored on the
-   successor and points at the frontier); an outer property (`("/" + $path) in
-   ^before`) names `before`, *forward*; a `src_field == "x"` / `predicate ==
-   "x"` literal under `doc.in_edges` / `doc.out_edges` / `edges` names `x`
-   (*forward* for in_edges, *backward* for out_edges).
+1. **`follow` destinations.** `refs(<field>)` (and `refs(^<field>)`) names the
+   frontmatter relation `<field>` with direction *forward* — the frontier row
+   owns the field and names its successors; it is the same candidate a bare
+   `follow <field>` would give (same name and kind, merged with the inferred one
+   from the rows, written the same way), now meaning the documents. A plain
+   relation is itself a candidate (`doc.out` / `out` / `$it.out` = links,
+   `doc.in` / `in` / `$it.in` = backlinks with direction *backward*, any other
+   bare name = a frontmatter relation — flagged by the editor's hint, since it
+   follows the strings). A **destination block** (`$repo.docs collect { where
+   … }`, `^docs collect { … }`, `$it.in collect { … }`, `refs(before) collect {
+   … }`) is read first through its receiver — `refs(<field>)` names `<field>`,
+   *forward* — then through its correlated `where`: a bare property of the
+   candidate row compared against an outer reference (`after.contains("/" +
+   ^$path)`, `("/" + ^$path) in list(after)`) names the relation `after` with
+   direction *backward* (the edge is stored on the successor and points at the
+   frontier); an outer property (`("/" + $path) in ^before`) names `before`,
+   *forward*; a `refs()` receiver of a nested directive follows the same two
+   cases (`refs(after) exists { where $path == ^^$path }` → `after` *backward*,
+   `refs(^before) exists { … }` → `before` *forward*); a `src_field == "x"` /
+   `predicate == "x"` literal under `doc.in_edges` / `doc.out_edges` / `edges`
+   names `x` (*forward* for in_edges, *backward* for out_edges).
 2. **`order by` keys** that are not `$`-intrinsics become *sequence*
    candidates (edges = consecutive rows; `desc` → backward).
 3. **Inferred from rows**: a projected field whose values are a doc path or a
@@ -371,16 +416,36 @@ axis is the first `follow` candidate, else the first sequence key, else the
 first inferred field (timeline words first), else none. Overrides live beside
 the view (`src/lib/view.ts`); an override naming a vanished candidate is dropped.
 
+**Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
+AST reading drives two non-blocking messages. Under the editor: when a `follow`
+destination is a bare frontmatter-looking field (not `refs(…)`, not a block,
+not `doc.out`/`doc.in`/`in`/`out`/`children`/`subsections`/`$it.…`), the
+status area adds "`before` holds document references; `follow refs(before)`
+walks the documents (a bare field follows the strings)" and dot-underlines the
+destination; the query still runs. In the footer: the server's surface-1.5
+`filter_invalid` ("a hit must be a document, block, node or edge row — the
+query reached a string ("/timeline/beta.md"); … use refs(<field>)") is shown
+with its remedy made concrete from the AST — `try follow refs(before)` — or the
+engine's own `refs(<field>)` when no bare destination names the field.
+
 ## Gaps found in the public API
 
 - **Paths disagree with frontmatter paths.** `$path` is `timeline/kickoff.md`
   while a `/`-rooted frontmatter value is `/timeline/kickoff.md`, so the
-  natural `after.contains(^$path)` matches nothing; the demo writes
-  `"/" + ^$path`. A normalised comparison (or a `$root_path` intrinsic) would
-  make destination blocks over frontmatter relations idiomatic.
-- **`follow <frontmatter list>` yields junk rows.** `follow before` over a list
-  of path strings produces a row with `id: "undefined"` and an empty path
-  instead of an error or a resolution to documents.
+  natural `("/" + ^$path) in list(after)` needs its `"/" +`. **Closing:** `$path`
+  is about to become `/`-rooted on the surface (surface 2.0 — rooted paths
+  everywhere, both forms accepted as input), after which the `"/" +` idiom goes
+  away here and in the default query. `refs()` already accepts both forms.
+- **No inverse of `refs()`.** `refs(before)` walks forward; "the documents whose
+  `after` names me" has no function and is spelled as a backlink block
+  (`$it.in collect { where ("/" + ^$path) in list(after) }`) — correct because
+  frontmatter references are edges, but a `referrers(after)` (or a field
+  definition with `inverse_of`) would make the backward hop as short as the
+  forward one.
+- ~~**`follow <frontmatter list>` yields junk rows.**~~ Fixed in surface 1.5: a
+  hit that is not a store row is a `filter_invalid` naming the value and
+  `refs(<field>)`; `refs(x)` resolves the references. The demo shows the hint
+  before the run and the error after it.
 - **`select frontmatter` leaks the lazy handle** (`{ docId, source }`) rather
   than the bag; `entries(frontmatter) collect { k: $key, v: $it }` is the way
   to read it, which no UI would guess.

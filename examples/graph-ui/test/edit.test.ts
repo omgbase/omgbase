@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import type { Candidate, Row } from "../src/lib/candidates.ts";
+import { inferCandidates, type Candidate, type Row } from "../src/lib/candidates.ts";
 import {
   DEFAULT_FORM, ID_FORM, classifyRef, dedupeRefs, describeForm, describePatch, dominantForm, editability, formatRef, inferRefForm, inferShape,
   isDocId, ownerFor, planToggle, projectedFields, refKey, refValuedFields, sameRef, setMetaArgs, type RefForm,
@@ -209,5 +209,38 @@ describe("planToggle (rule 4)", () => {
     expect(describePatch(beta, "after", { kind: "unset" }, "/x.md")).toBe('timeline/beta.md · unset after (was "/x.md")');
     expect(describePatch(beta, "after", { kind: "noop", reason: "already present" }, undefined)).toBe("timeline/beta.md · after unchanged — already present");
     expect(describePatch(beta, "after", { kind: "refuse", reason: "no" }, undefined)).toBe("timeline/beta.md · after cannot be edited — no");
+  });
+});
+
+describe("editability of refs() candidates", () => {
+  const rows: Row[] = [
+    { id: "d_a", path: "timeline/alpha.md", before: ["/timeline/kickoff.md"], after: ["/timeline/beta.md"] },
+    { id: "d_b", path: "timeline/beta.md", before: ["/timeline/alpha.md"] },
+  ];
+
+  it("treats a candidate from `follow refs(before)` exactly like one from `follow before`", () => {
+    const viaRefs = inferCandidates(parse(`$path, before from docs follow refs(before)`), rows)[0]!;
+    const bare = inferCandidates(parse(`$path, before from docs follow before`), rows)[0]!;
+    expect(viaRefs.name).toBe(bare.name);
+    expect(viaRefs.kind).toBe(bare.kind);
+    expect(editability(viaRefs, rows)).toEqual(editability(bare, rows));
+    expect(editability(viaRefs, rows)).toEqual({ writable: true, form: DEFAULT_FORM, shape: "list", formSource: "field" });
+    // Same owner rules: forward → the selected document's field changes.
+    expect(viaRefs.defaults.direction).toBe(bare.defaults.direction);
+    expect(ownerFor(viaRefs.defaults.direction, alpha, beta)).toEqual(ownerFor(bare.defaults.direction, alpha, beta));
+  });
+
+  it("the backlink block's `after` is writable too, owned by the clicked (successor) document", () => {
+    const c = inferCandidates(parse(`$path, before, after from docs follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(after) }`), rows);
+    const after = c.find((x) => x.name === "after")!;
+    expect(editability(after, rows)).toEqual({ writable: true, form: DEFAULT_FORM, shape: "list", formSource: "field" });
+    expect(ownerFor(after.defaults.direction, alpha, beta)).toEqual({ owner: beta, other: alpha });
+  });
+
+  it("is refused the same way when the sampled values are not references, and without the tool", () => {
+    const bad: Row[] = [{ id: "d_a", path: "a.md", before: "soon" }];
+    const c = inferCandidates(parse(`$path, before from docs follow refs(before)`), bad)[0]!;
+    expect(editability(c, bad)).toEqual({ writable: false, reason: "values are not document references" });
+    expect(editability(c, rows, false).writable).toBe(false);
   });
 });
