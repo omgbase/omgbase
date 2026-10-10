@@ -242,7 +242,7 @@
       "name": "cursor-of-wrong-arity",
       "notes": "a docs_list cursor ([path]) is not a query cursor ([path, id]).",
       "query": "from docs",
-      "cursor": "WyJpbmRleC5tZCJd",
+      "cursor": "WyIvaW5kZXgubWQiXQ",
       "expect": {
         "error": "filter_invalid",
         "message_includes": "cursor"
@@ -300,6 +300,16 @@
       "expect": {
         "error": "filter_invalid",
         "message_includes": "a hit must be a document, block, node or edge row — the query reached a string (\"alchemy\")"
+      }
+    },
+    {
+      "name": "cursor-from-1x-rejected",
+      "notes": "§1.4 (2.0): a cursor issued by a 1.x surface carries a bare path (`[\"index.md\",\"d_0\"]`); its keyset would sort before every rooted hit and replay the first page, so it is refused as `filter_invalid` naming the cause.",
+      "query": "from docs",
+      "cursor": "WyJpbmRleC5tZCIsImRfMCJd",
+      "expect": {
+        "error": "filter_invalid",
+        "message_includes": "not /-rooted"
       }
     }
   ]

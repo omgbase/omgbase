@@ -16,7 +16,7 @@ it, **show** its metadata, and follow its **links**.
 
 ```console
 $ omg find "quicksilver"
-b_qm3p1az  substances/mercury.md#paragraph[1]  Quicksilver: a metal that is liquid at room temperature, and therefore the…
+b_qm3p1az  /substances/mercury.md#paragraph[1]  Quicksilver: a metal that is liquid at room temperature, and therefore the…
 ```
 
 The locator (`substances/mercury.md#paragraph[1]`) is for your eyes; the id is
@@ -38,7 +38,7 @@ document's shape and grab the id of a block to act on:
 
 ```console
 $ omg outline substances/sulphur.md
-  omgbase  >  substances/sulphur.md
+  omgbase  >  /substances/sulphur.md
   ----------------------------------------
 b_s1u1phr h1   Sulphur  §
 b_br1mst0 p    Brimstone: yellow, brittle, and burns with a blue flame and…
@@ -59,7 +59,7 @@ out to other pages:
 
 ```console
 $ omg show substances/mercury.md
-  omgbase  >  substances/mercury.md
+  omgbase  >  /substances/mercury.md
   ----------------------------------------
   properties
     symbol = ☿

@@ -39,6 +39,7 @@ pub mod error;
 pub mod graph;
 pub mod history;
 pub mod links;
+pub mod paths;
 pub mod planner;
 pub mod query;
 pub mod read;
@@ -49,14 +50,15 @@ pub mod version;
 
 pub use catalog::{Surface, ToolOutcome, ToolSpec};
 pub use context::{StoreContext, Target, glob_to_like};
-pub use cursor::{decode_cursor, encode_cursor};
+pub use cursor::{decode_cursor, decode_path_cursor, encode_cursor};
 pub use error::{Result, SurfaceError};
+pub use paths::{reference_path, storage_path};
 pub use planner::SqlitePlanner;
 pub use query::{OqxResult, QueryOptions, collect_semantic_phrases, query, rewrite_query};
 pub use version::{BuildInfo, MCP_PROTOCOL_VERSION, version_info};
 
 /// The `spec/surface/VERSION` this crate implements (`major.minor`).
-pub const SPEC_VERSION: &str = "1.5";
+pub const SPEC_VERSION: &str = "2.0";
 
 /// This crate's own version (`Cargo.toml`), for the surface's `version` tool.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

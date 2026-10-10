@@ -12,6 +12,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
 use crate::error::Result;
+use crate::paths::{reference_path, storage_path};
 use crate::read::find_doc_by_ref;
 
 /// §3 `history_node`: `[{ commitId, seq, ts, origin, kind, confidence, reason }]`,
@@ -388,7 +389,7 @@ pub fn resolve_doc_row(
     Ok(conn
         .query_row(
             "SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ?1 AND path = ?2",
-            params![repo_id, r],
+            params![repo_id, storage_path(r)],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?)
@@ -416,6 +417,8 @@ pub fn docs_history(
         } else {
             "AND deleted_commit IS NULL"
         };
+        // The glob is spelled in either path form; the column holds the storage form.
+        let glob = storage_path(glob);
         let (path_clause, param) = if glob.contains('*') {
             (
                 "path LIKE ?2 ESCAPE '\\'",
@@ -469,7 +472,7 @@ pub fn docs_history(
             .collect::<std::result::Result<_, _>>()?;
         let mut m = Map::new();
         m.insert("docId".to_owned(), json!(doc_id));
-        m.insert("path".to_owned(), json!(path));
+        m.insert("path".to_owned(), json!(reference_path(&path)));
         m.insert("deleted".to_owned(), json!(deleted_commit.is_some()));
         m.insert("currentRev".to_owned(), json!(current_rev));
         m.insert("versions".to_owned(), Json::Array(versions));

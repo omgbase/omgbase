@@ -1,5 +1,6 @@
 import type { Store } from "../core/store/store.js";
 import { canonicalLinkPath, docDirOf, splitDestination } from "./link-destinations.js";
+import { referencePath, storagePath } from "../core/paths.js";
 
 // Stale-link maintenance (the read side). mrplex has links_stale (detect) +
 // links_repair (bulk fix); omgbase had only links_retarget (a targeted rename).
@@ -40,7 +41,8 @@ export interface StaleLink {
   predicate: string;
   provenance: string;
   dstKind: string;
-  /** canonical target PATH (phantom prefix stripped, no leading `/`), e.g. "guides/old.md" */
+  /** the canonical target path in the reference form (phantom prefix stripped,
+   *  rooted), e.g. "/guides/old.md" — spec/surface §1 "Paths" */
   target: string;
   /** the destination exactly as authored in the source block, e.g. "/guides/old.md#Setup"
    * — paste-ready as `links_repair.from`. null when it can't be recovered (frontmatter
@@ -84,11 +86,13 @@ export interface LinkHealthOptions {
 // (search/cel/compile.ts) and docHistory (graph/history.ts): escape %/_ then
 // map `*`→`%`. A glob without `*` is an exact-path match.
 export function globClause(column: string, glob: string): { clause: string; param: string } {
-  if (glob.includes("*")) {
-    const like = glob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
+  // Either path form is accepted; the column holds the storage form.
+  const g = storagePath(glob);
+  if (g.includes("*")) {
+    const like = g.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
     return { clause: `${column} LIKE ? ESCAPE '\\'`, param: like };
   }
-  return { clause: `${column} = ?`, param: glob };
+  return { clause: `${column} = ?`, param: g };
 }
 
 /**
@@ -176,14 +180,16 @@ export function linksStale(store: Store, repoId: string, opts: LinkHealthOptions
   const stale: StaleLink[] = page.map((r) => {
     // Strip the "phantom:" prefix to expose the canonical path.
     const target = r.dstNode.slice("phantom:".length);
+    // The surface speaks the reference form: `srcPath` and `target` rooted;
+    // `authored` stays exactly as written in the source.
     return {
       srcDoc: r.srcDoc,
-      srcPath: r.srcPath,
+      srcPath: referencePath(r.srcPath),
       srcBlock: r.srcBlock,
       predicate: r.predicate,
       provenance: r.provenance,
       dstKind: r.dstKind,
-      target,
+      target: referencePath(target),
       authored: authoredFor(r.srcBlock, r.srcPath, target, r.anchor),
       anchor: r.anchor,
       // All phantom targets are dangling DOCUMENTS in this data model (cross-doc
@@ -224,10 +230,11 @@ export function linksStaleSummary(store: Store, repoId: string, opts: Pick<LinkH
   const byTarget = (store.db
     .prepare(`SELECT e.dst_node AS dstNode, count(*) AS count ${phantom} GROUP BY e.dst_node ORDER BY count DESC, e.dst_node`)
     .all(...params) as { dstNode: string; count: number }[])
-    .map((r) => ({ target: r.dstNode.slice("phantom:".length), count: r.count }));
-  const bySource = store.db
+    .map((r) => ({ target: referencePath(r.dstNode.slice("phantom:".length)), count: r.count }));
+  const bySource = (store.db
     .prepare(`SELECT d.path AS srcPath, count(*) AS count ${phantom} GROUP BY d.path ORDER BY count DESC, d.path`)
-    .all(...params) as { srcPath: string; count: number }[];
+    .all(...params) as { srcPath: string; count: number }[])
+    .map((r) => ({ srcPath: referencePath(r.srcPath), count: r.count }));
   return {
     staleCount: byTarget.reduce((n, t) => n + t.count, 0),
     byTarget,

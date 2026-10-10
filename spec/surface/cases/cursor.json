@@ -5,31 +5,31 @@
       "name": "encode-query-keyset",
       "notes": "§1.4: base64url(JSON [path, id]).",
       "parts": [
-        "practitioners/maria-prophetissa.md",
+        "/practitioners/maria-prophetissa.md",
         "d_4"
       ],
       "expect": {
-        "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0"
+        "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd"
       }
     },
     {
       "name": "encode-list-keyset",
       "notes": "docs_list / docs_tree: a one-part tuple.",
       "parts": [
-        "index.md"
+        "/index.md"
       ],
       "expect": {
-        "cursor": "WyJpbmRleC5tZCJd"
+        "cursor": "WyIvaW5kZXgubWQiXQ"
       }
     },
     {
       "name": "encode-unicode-path",
       "parts": [
-        "notes/café — ☿.md",
+        "/notes/café — ☿.md",
         "d_0"
       ],
       "expect": {
-        "cursor": "WyJub3Rlcy9jYWbDqSDigJQg4pi_Lm1kIiwiZF8wIl0"
+        "cursor": "WyIvbm90ZXMvY2Fmw6kg4oCUIOKYvy5tZCIsImRfMCJd"
       }
     },
     {
@@ -44,32 +44,32 @@
     },
     {
       "name": "decode-query-keyset",
-      "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0",
+      "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd",
       "arity": 2,
       "expect": {
         "parts": [
-          "practitioners/maria-prophetissa.md",
+          "/practitioners/maria-prophetissa.md",
           "d_4"
         ]
       }
     },
     {
       "name": "decode-list-keyset",
-      "cursor": "WyJpbmRleC5tZCJd",
+      "cursor": "WyIvaW5kZXgubWQiXQ",
       "arity": 1,
       "expect": {
         "parts": [
-          "index.md"
+          "/index.md"
         ]
       }
     },
     {
       "name": "decode-unicode-path",
-      "cursor": "WyJub3Rlcy9jYWbDqSDigJQg4pi_Lm1kIiwiZF8wIl0",
+      "cursor": "WyIvbm90ZXMvY2Fmw6kg4oCUIOKYvy5tZCIsImRfMCJd",
       "arity": 2,
       "expect": {
         "parts": [
-          "notes/café — ☿.md",
+          "/notes/café — ☿.md",
           "d_0"
         ]
       }
@@ -77,7 +77,7 @@
     {
       "name": "decode-wrong-arity",
       "notes": "a list cursor handed to query.",
-      "cursor": "WyJpbmRleC5tZCJd",
+      "cursor": "WyIvaW5kZXgubWQiXQ",
       "arity": 2,
       "expect": {
         "error": "filter_invalid"
@@ -99,7 +99,7 @@
     },
     {
       "name": "decode-non-string-part",
-      "cursor": "WyJhLm1kIiwxXQ",
+      "cursor": "WyIvYS5tZCIsMV0",
       "expect": {
         "error": "filter_invalid"
       }
@@ -114,11 +114,11 @@
     {
       "name": "decode-standard-base64-padding-tolerated",
       "notes": "base64url decoding accepts padding and standard alphabet characters; the parts are what count.",
-      "cursor": "WyJpbmRleC5tZCJd==",
+      "cursor": "WyIvaW5kZXgubWQiXQ==",
       "arity": 1,
       "expect": {
         "parts": [
-          "index.md"
+          "/index.md"
         ]
       }
     }

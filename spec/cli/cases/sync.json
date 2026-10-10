@@ -63,7 +63,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   20 files\n  ok ingested  1\n      texts/mutus-liber.md\n"
+            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   20 files\n  ok ingested  1\n      /texts/mutus-liber.md\n"
           }
         },
         {
@@ -84,7 +84,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 observed observed: texts/mutus-liber.md — 11 deleted, 1 inserted\n"
+            "stdout": "#21 observed observed: /texts/mutus-liber.md — 11 deleted, 1 inserted\n"
           }
         },
         {
@@ -145,7 +145,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_327 p    Edited on disk.\n"
+            "stdout": "  omgbase  >  /texts/mutus-liber.md\n  ----------------------------------------\nb_302 h1   Mutus Liber  §\nb_327 p    Edited on disk.\n"
           }
         },
         {
@@ -156,7 +156,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 observed observed: texts/mutus-liber.md — 11 deleted, 1 inserted\n"
+            "stdout": "#21 observed observed: /texts/mutus-liber.md — 11 deleted, 1 inserted\n"
           }
         }
       ]
@@ -186,7 +186,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[\"notes/added.md\"],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":21,\"candidates\":1,\"changed\":true}\n"
+            "stdout": "{\"checkpointId\":\"cp_1\",\"ingested\":[\"/notes/added.md\"],\"suppressed\":[],\"deleted\":[],\"conflicted\":[],\"scanned\":21,\"candidates\":1,\"changed\":true}\n"
           }
         },
         {
@@ -196,7 +196,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "notes/added.md  2 blocks  0s ago\n"
+            "stdout": "/notes/added.md  2 blocks  0s ago\n"
           }
         },
         {
@@ -207,7 +207,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 observed observed: notes/added.md — 2 inserted\n"
+            "stdout": "#21 observed observed: /notes/added.md — 2 inserted\n"
           }
         }
       ]
@@ -237,7 +237,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   19 files\n  x deleted   1\n      texts/mutus-liber.md\n"
+            "stdout": "  omgbase  >  sync\n  ----------------------------------------\n  scanned   19 files\n  x deleted   1\n      /texts/mutus-liber.md\n"
           }
         },
         {
@@ -247,7 +247,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\n"
+            "stdout": "/texts/emerald-tablet.md  13 blocks  0s ago\n"
           }
         },
         {
@@ -279,7 +279,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 observed observed: deleted texts/mutus-liber.md\n"
+            "stdout": "#21 observed observed: deleted /texts/mutus-liber.md\n"
           }
         }
       ]
@@ -355,7 +355,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+            "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
           }
         },
         {

@@ -61,7 +61,7 @@ describe("docsRead — whole-document read", () => {
     const { docId } = ingest(WITH_FM);
     const res = docsRead(store!, docId);
     expect(res?.content).toBe(WITH_FM);
-    expect(res?.path).toBe("a.md");
+    expect(res?.path).toBe("/a.md");
     expect(res?.rev).toMatch(/^r/);
   });
 
@@ -139,7 +139,7 @@ describe("docsReadMany — batch whole-document read", () => {
     const res = docsReadMany(store!, repoId, ["a.md", "b.md"]);
     expect(res.errors).toEqual([]);
     expect(res.truncated).toBe(false);
-    expect(res.items.map((i) => i.path)).toEqual(["a.md", "b.md"]);
+    expect(res.items.map((i) => i.path)).toEqual(["/a.md", "/b.md"]);
     expect(res.items[0]!.content).toBe("# A\n\nalpha body\n");
     expect(res.items[1]!.properties.frontmatter).toEqual({ layer: "canon" });
   });
@@ -157,7 +157,7 @@ describe("docsReadMany — batch whole-document read", () => {
   it("puts unresolvable refs in errors without failing the call", () => {
     const { repoId } = ingestMany([{ path: "a.md", content: "# A\n\nalpha body\n" }]);
     const res = docsReadMany(store!, repoId, ["a.md", "missing.md", "d_0000000"]);
-    expect(res.items.map((i) => i.path)).toEqual(["a.md"]);
+    expect(res.items.map((i) => i.path)).toEqual(["/a.md"]);
     expect(res.errors).toEqual([
       { ref: "missing.md", error: "doc_not_found" },
       { ref: "d_0000000", error: "doc_not_found" },
@@ -170,7 +170,7 @@ describe("docsReadMany — batch whole-document read", () => {
       { path: "b.md", content: "# B\n\nbeta body\n" },
     ]);
     const res = docsReadMany(store!, repoId, ["a.md", "b.md", "a.md", "a.md"]);
-    expect(res.items.map((i) => i.path)).toEqual(["a.md", "b.md"]);
+    expect(res.items.map((i) => i.path)).toEqual(["/a.md", "/b.md"]);
   });
 
   it("caps the ref list and flags truncation", () => {
@@ -196,7 +196,7 @@ describe("docsReadMany — batch whole-document read", () => {
     // spec/surface §2 (1.2): the first item ships even when it alone exceeds the
     // budget (the budget is checked before the second item onward).
     expect(res.items.length).toBe(1);
-    expect(res.items[0]!.path).toBe("a.md");
+    expect(res.items[0]!.path).toBe("/a.md");
   });
 });
 

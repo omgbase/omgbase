@@ -84,6 +84,21 @@ bare first segment colliding with an intrinsic base name
 (`id`/`path`/`repo`/`updated_at`/`content_hash`/`body`) is a loud error (a typo
 guard — use `$path` or `frontmatter.path`).
 
+**Paths (spec/surface 2.0).** omgbase stores a document's path repo-relative
+(`projects/oqx.md`), but every reference an author writes is root-absolute
+(`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`). The surface
+speaks the reference form: `$path` on every target, `$dst_path` on edges, the
+`path` of every hit and of a row rendered as `{ id, path }` are `/`-rooted.
+Every path the surface accepts tolerates both forms — tool arguments, `refs(x)`,
+`within(…)`, and a **string literal** compared with `$path`/`$dst_path` by
+`==`/`!=` or passed to their `.startsWith(…)`, which is rooted before
+evaluation (`$path == "a.md"` and `$path == "/a.md"` both match; write the
+rooted form). Nothing else is rewritten: a property's value is the author's
+(`where customer == ^$path`, `where ^$path in list(after)` — no `"/" + ^$path`
+glue), and `matches`/`contains`/`endsWith` read the string as it is
+(`matches("^/texts/")`). The planner de-roots the literal (or roots the
+column) so pushed SQL and the in-memory engine agree.
+
 ### `docs`
 - **Bare identifiers** = a document **property** (frontmatter + inline `key:: value`,
   unioned), resolved against the indexed `properties` table. Nested maps flatten
@@ -97,8 +112,9 @@ guard — use `$path` or `frontmatter.path`).
   valued by the same scalar-vs-list rule as a bare read, dotted keys folded back
   into a nested value; inside the block `$key` is the key and `$it` the value.
 - **Computed intrinsics:** `$title` (first H1), `$tags` (body `#hashtags`).
-- **Intrinsics:** `$id`, `$path`, `$updated_at` (ISO-8601 UTC, compares
-  lexicographically = chronologically), `$body`, `$content_hash`, `format`.
+- **Intrinsics:** `$id`, `$path` (the **reference form**, `/`-rooted — see
+  "Paths" below), `$updated_at` (ISO-8601 UTC, compares lexicographically =
+  chronologically), `$body`, `$content_hash`, `format`.
 - **`$repo`** (every scope): the repository handle — `$repo.docs` / `$repo.nodes` /
   `$repo.blocks` / `$repo.edges` are the explicit root scans (§3.4), `$repo.$id`
   the repository id. **[was: `$repo` on a doc was the repository id string.]**
@@ -242,16 +258,18 @@ nested/correlated scopes:
   `has_edge(pred[, target])`, `has_anchor()`, `parent_type()`, `child_count()`.
 - **`refs(x)`** (surface 1.5) — the live documents named by the **document
   references** a property holds: `x` is a string, a list, or absent; each
-  string element that is a repo-root-absolute path (`/timeline/kickoff.md`), a
-  bare repo-relative path (`timeline/kickoff.md`) or a doc id (`d_…`) resolves
-  to that document's row (paths match `$path` after stripping one leading
-  `/`; an id is tried when no path matches); anything that resolves to
+  string element that is a path in either form (`/timeline/kickoff.md`,
+  `timeline/kickoff.md`) or a doc id (`d_…`) resolves to that document's row
+  (an id is tried when no path matches); anything that resolves to
   nothing is dropped — no phantom, no error. Order preserved, duplicates kept.
   Index-backed (one lookup per element, never a scan). It yields docs rows, so
   it works wherever rows do: `follow refs(before), refs(after)` walks a
   timeline both ways; `select prior: refs(before) collect { $path }` projects
   the referenced documents; `where refs(see_also) exists { where type == "x" }`
-  filters on them; `from refs("/index.md")` is a source.
+  filters on them; `from refs("/index.md")` is a source. The reverse direction
+  needs no function: `$path` is already the reference form, so
+  `$repo.docs collect { where ^$path in list(after) }` is "the documents whose
+  `after` names me".
 - **A hit is a store row.** Every top-level row of a `collect`/`first`/`single`
   query must be a document, block, node or edge; `follow before` over a list of
   paths reaches the list's *strings* and fails loud — `filter_invalid: a hit
@@ -447,13 +465,13 @@ projected-query fence (ADR-011, deferred).
 | Intent | OQX |
 |---|---|
 | Working-layer docs | `from docs where layer == "working"` |
-| Guides, recently touched | `from docs where $path.startsWith("guides/") && $updated_at >= "2026-08-01"` |
+| Guides, recently touched | `from docs where $path.startsWith("/guides/") && $updated_at >= "2026-08-01"` |
 | Docs tagged pricing (scalar or list) | `from docs where "pricing" in list(tags)` |
 | Case-insensitive title match | `from docs where $title.lower().contains("aurora")` |
 | Distinct doc types | `select distinct type from docs` |
 | Distinct doc types as bare strings | `select distinct type values from docs` |
 | Docs with no open task (every task done) | `from docs where nodes none { where kind == "md:task" && !checked }` |
-| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "x.md"` |
+| A doc's frontmatter as key/value rows | `select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == "/x.md"` |
 | Docs whose frontmatter has any numeric key over 1600 | `select $path from docs where entries(frontmatter) exists { where $it > 1600 }` |
 | Two most recent practitioners | `from docs where type == "practitioner" order by era desc limit 2` |
 | Each doc's first section heading | `select h: nodes first { name values where kind == "md:section" order by first_ordinal } from docs` |
@@ -461,5 +479,6 @@ projected-query fence (ADR-011, deferred).
 | Docs with ≥2 distinct link predicates | `from docs where doc.out_edges count distinct { select predicate } >= 2` |
 | Unchecked tasks under a heading (working docs) | `from blocks where type == "task" && !attrs.checked && under_heading("Launch") && doc.layer == "working"` |
 | Blocks about a concept (semantic top-K) | `from blocks order by semantic("identity preservation across edits") desc` |
-| Everything a note transitively cites | `from docs where $path == "index.md" follow doc.out` |
+| Everything a note transitively cites | `from docs where $path == "/index.md" follow doc.out` |
+| The documents whose `after` names this one | `select next: $repo.docs collect { $path where ^$path in list(after) } from docs where $path == "/timeline/kickoff.md"` |
 | Every `depends_on` edge, both endpoints | `select $src, $dst_path from edges where predicate == "depends_on"` |

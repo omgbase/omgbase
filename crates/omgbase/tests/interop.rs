@@ -572,9 +572,11 @@ fn check_seed(outcome: &Json, paths: &[&String], writer: Engine) -> Result<(), S
         )));
     }
     for (i, (o, path)) in items.iter().zip(paths).enumerate() {
-        if o.get("path").and_then(Json::as_str) != Some(path.as_str()) {
+        // Every path a tool returns is the reference form (spec/surface §1 "Paths", 2.0).
+        let want = format!("/{path}");
+        if o.get("path").and_then(Json::as_str) != Some(want.as_str()) {
             return Err(bad(format!(
-                "outcome {i} is for {}, expected {path}",
+                "outcome {i} is for {}, expected {want}",
                 o["path"]
             )));
         }

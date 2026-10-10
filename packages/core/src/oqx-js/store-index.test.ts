@@ -101,8 +101,8 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     const probes = sql.filter((s) => /FROM properties p CROSS JOIN docs d ON d\.doc_id = p\.doc_id WHERE p\.repo_id = \? AND p\.key = \? AND p\.type = 'string' AND p\.val_text = \?/.test(s));
     expect(probes).toHaveLength(1);
     // substances see the other four substances, in (path, id) order
-    const salt = rows.find((r) => (r as { $path: string }).$path === "substances/salt.md") as { same_type: string[] };
-    expect(salt.same_type).toEqual(["substances/mercury.md", "substances/philosophers-stone.md", "substances/prima-materia.md", "substances/sulphur.md"]);
+    const salt = rows.find((r) => (r as { $path: string }).$path === "/substances/salt.md") as { same_type: string[] };
+    expect(salt.same_type).toEqual(["/substances/mercury.md", "/substances/philosophers-stone.md", "/substances/prima-materia.md", "/substances/sulphur.md"]);
     // and the whole thing equals the naive engine
     expect(out.result).toEqual(engineRun(store, repoId, q, { naive: true }).result);
   });
@@ -129,18 +129,20 @@ describe("store-backed indexes for correlated blocks over a root scan", () => {
     const docs = ctx.get(ctx.root("$repo"), "docs");
     const era = ctx.indexFor!(docs, ["era"])!;
     const paths = (rows: Iterable<unknown>): unknown[] => Array.from(rows, (r) => ctx.get(r, "$path"));
-    expect(paths(era.lookupRows!(800))).toEqual(["practitioners/jabir-ibn-hayyan.md", "texts/emerald-tablet.md"]);
+    expect(paths(era.lookupRows!(800))).toEqual(["/practitioners/jabir-ibn-hayyan.md", "/texts/emerald-tablet.md"]);
     expect(paths(era.lookupRows!(-0))).toEqual([]);
     expect(paths(era.lookupRows!("800"))).toEqual([]); // §5: a string never equals a number
     expect(paths(era.lookupRows!(NaN))).toEqual([]);
     expect(paths(era.lookupRows!(true))).toEqual([]);
     expect(paths(era.lookupRows!({}))).toEqual([]);
     const type = ctx.indexFor!(docs, ["type"])!;
-    expect(paths(type.lookupRows!("text"))).toEqual(["texts/emerald-tablet.md", "texts/mutus-liber.md"]);
+    expect(paths(type.lookupRows!("text"))).toEqual(["/texts/emerald-tablet.md", "/texts/mutus-liber.md"]);
     expect(paths(type.lookupRows!(1))).toEqual([]);
-    // a column probe: only strings
+    // a column probe: only strings — and for `$path` only the reference form
+    // (spec/surface §1 "Paths"): `$path` reads `/index.md`, so a bare probe equals no row
     const path = ctx.indexFor!(docs, ["$path"])!;
-    expect(paths(path.lookupRows!("index.md"))).toEqual(["index.md"]);
+    expect(paths(path.lookupRows!("/index.md"))).toEqual(["/index.md"]);
+    expect(paths(path.lookupRows!("index.md"))).toEqual([]);
     expect(paths(path.lookupRows!(5))).toEqual([]);
     // the absent probe is the fallback: the documents LACKING the key (and null scalars)
     const all = Array.from(ctx.toRows(docs));
@@ -182,7 +184,7 @@ describe.skipIf(!!process.env.CI)("perf: a correlated block over ~5k documents",
         const customer = i % 10 === 0;
         const body = customer
           ? `---\ntype: customer\nname: Customer ${i}\n---\n\n# Customer ${i}\n`
-          : `---\ntype: order\ncustomer: customers/c${i - (i % 10)}.md\nseq: ${i}\n---\n\n# Order ${i}\n`;
+          : `---\ntype: order\ncustomer: /customers/c${i - (i % 10)}.md\nseq: ${i}\n---\n\n# Order ${i}\n`;
         ingestFile(store, repoId, customer ? `customers/c${i}.md` : `orders/o${i}.md`, body);
       }
     })();

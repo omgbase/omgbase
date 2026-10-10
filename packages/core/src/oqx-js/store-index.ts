@@ -44,6 +44,7 @@ import type Database from "better-sqlite3";
 import type { Target } from "./sql/translate.js";
 import { NON_PROPERTY_NAMES, RESERVED_DOC_BASENAMES } from "./sql/translate.js";
 import { COLS, FROM, FROM_BY_DOC, ORDER, guards, guardsByDoc } from "./sql/scan.js";
+import { storagePath } from "../core/paths.js";
 
 /** What the context lends an index: the store, the repo, how it tags rows, how
  * it reads a field off a row, and the materialized rows of the root scan the
@@ -120,7 +121,14 @@ class StoreIndex implements RowIndex {
   lookupRows(value: unknown): Iterable<unknown> {
     const v = value === undefined ? null : value;
     if (v === null) return this.fallback(null);
-    if (this.probe.kind === "column") return typeof v === "string" ? this.column(v) : [];
+    if (this.probe.kind === "column") {
+      if (typeof v !== "string") return [];
+      // `$path` / `$dst_path` are the reference form in memory (`/a.md`,
+      // spec/surface §1 "Paths"); the column holds the storage form. A rooted
+      // probe is de-rooted; a bare one can equal no rooted path — no row.
+      if (this.path === "$path" || this.path === "$dst_path") return v.startsWith("/") ? this.column(storagePath(v)) : [];
+      return this.column(v);
+    }
     switch (typeof v) {
       case "string": return this.property("p.type = 'string' AND p.val_text = ?", v);
       case "number": return Number.isNaN(v) ? [] : this.property("p.type = 'number' AND p.val_num = ?", v);

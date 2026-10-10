@@ -66,6 +66,20 @@ impl SurfaceError {
         )
     }
 
+    /// A cursor refused for a named cause (§1.4, 2.0: a 1.x cursor whose path
+    /// is not `/`-rooted): the message carries the reason, so does `data`.
+    #[must_use]
+    pub fn cursor_invalid_reason(reason: &str) -> Self {
+        Self::with_data(
+            "filter_invalid",
+            format!("invalid cursor: {reason}"),
+            json!({
+                "reason": reason,
+                "hint": "resume only with a `cursor` returned by a truncated page of the same tool",
+            }),
+        )
+    }
+
     /// `repo_not_found` — also the catch-all (§9).
     #[must_use]
     pub fn other(message: impl Into<String>) -> Self {

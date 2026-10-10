@@ -4,6 +4,13 @@
 //! JSON result or the error envelope. Transport-agnostic — a server wraps
 //! each outcome in one text content item. Port of
 //! `packages/core/src/mcp/server.ts`.
+//!
+//! Paths (`spec/surface` §1 "Paths", 2.0): every path a tool returns is the
+//! reference form (`/a/b.md`) and every path argument accepts either form.
+//! The surface's own readers root their results; the results another spec
+//! pins in the storage form — the store's apply / document-operation /
+//! observe outcomes, opsets, change digests, search hits — are re-shaped
+//! here, exactly as the reference's `surface-paths.ts` re-shapes them.
 
 use std::path::Path;
 
@@ -25,6 +32,7 @@ use crate::error::{Result, SurfaceError};
 use crate::graph::{GraphArgs, graph_neighborhood};
 use crate::history;
 use crate::links;
+use crate::paths::{reference_keyed, reference_path, root_field, storage_path};
 use crate::query::{QueryOptions, query};
 use crate::read::{self, Resolution, ResolvedRef};
 use crate::reference::QUERY_SYNTAX;
@@ -1381,7 +1389,7 @@ impl Surface {
                         .text_search(&repo, &q, arg_usize(args, "limit")?.unwrap_or(50))?;
                 Ok(json!({
                     "hits": res.hits.iter().map(|h| json!({
-                        "blockId": h.block_id, "docId": h.doc_id, "path": h.path, "type": h.block_type, "text": h.text, "score": h.score,
+                        "blockId": h.block_id, "docId": h.doc_id, "path": reference_path(&h.path), "type": h.block_type, "text": h.text, "score": h.score,
                     })).collect::<Vec<_>>(),
                     "truncated": res.truncated,
                 }))
@@ -1401,8 +1409,14 @@ impl Surface {
                 let hits = self
                     .store
                     .resolve(&repo, &q, vector, arg_usize(args, "limit")?)?;
+                // The locator is `<path>#<type>[<ordinal>]`: its path half is rooted
+                // (one without `#` names no path and is left alone).
+                let locator = |l: &str| match l.find('#') {
+                    Some(i) => format!("{}{}", reference_path(&l[..i]), &l[i..]),
+                    None => l.to_owned(),
+                };
                 Ok(Json::Array(hits.iter().map(|h| json!({
-                    "id": h.id, "locator": h.locator, "preview": h.preview, "evidence": evidence_json(&h.evidence),
+                    "id": h.id, "locator": locator(&h.locator), "preview": h.preview, "evidence": evidence_json(&h.evidence),
                 })).collect()))
             }
             "apply" => {
@@ -1727,7 +1741,7 @@ impl Surface {
                 let mut m = Map::new();
                 m.insert(
                     "hits".to_owned(),
-                    Json::Array(plan.hits.iter().map(|h| json!({ "block": h.block, "path": h.path, "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
+                    Json::Array(plan.hits.iter().map(|h| json!({ "block": h.block, "path": reference_path(&h.path), "oldRaw": h.old_raw, "newRaw": h.new_raw })).collect()),
                 );
                 m.insert(
                     "pairs".to_owned(),
@@ -1792,17 +1806,23 @@ impl Surface {
                 // reference spreads the planned/moved record before the link report.
                 let mut m = Map::new();
                 m.insert("docId".to_owned(), json!(res.doc_id));
-                m.insert("path".to_owned(), json!(res.path));
+                m.insert("path".to_owned(), json!(reference_path(&res.path)));
                 m.insert("committed".to_owned(), json!(res.committed));
                 if let Some(diffs) = &res.diffs {
-                    m.insert("diffs".to_owned(), diffs_json(diffs));
+                    m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
                 }
+                // Each dangling link's source `path` is rooted; its `target` stays
+                // as authored — that is what the link says.
                 m.insert(
                     "dangling".to_owned(),
                     Json::Array(
                         res.dangling
                             .iter()
-                            .map(omgbase_store::InboundLink::to_json)
+                            .map(|l| {
+                                let mut j = l.to_json();
+                                root_field(&mut j, "path");
+                                j
+                            })
                             .collect(),
                     ),
                 );
@@ -1891,7 +1911,7 @@ impl Surface {
             }
             "observe" => {
                 let (repo, _) = self.scope(args)?;
-                let path = arg_string(args, "path")?;
+                let path = storage_path(&arg_string(args, "path")?).to_owned();
                 let content = arg_string(args, "content")?;
                 let ts = self.now();
                 let config = self.config.clone();
@@ -1912,7 +1932,7 @@ impl Surface {
                     .iter()
                     .map(|f| {
                         Ok(omgbase_store::BatchItem::observed(
-                            &arg_string(f, "path")?,
+                            storage_path(&arg_string(f, "path")?),
                             &arg_string(f, "content")?,
                         ))
                     })
@@ -1938,11 +1958,13 @@ impl Surface {
             }
             "observe_delete" => {
                 let (repo, _) = self.scope(args)?;
-                let path = arg_string(args, "path")?;
+                let path = storage_path(&arg_string(args, "path")?).to_owned();
                 let ts = self.now();
                 let out = self.store.observe_delete(&repo, &path, &ts)?;
                 self.notify();
-                Ok(json!({ "docId": out.doc_id, "path": out.path, "deleted": out.deleted() }))
+                Ok(
+                    json!({ "docId": out.doc_id, "path": reference_path(&out.path), "deleted": out.deleted() }),
+                )
             }
             "history_node" => history::history_node(
                 &self.store,
@@ -1988,7 +2010,7 @@ impl Surface {
                     .optional()?;
                 let diff = history::diff_unified_text(&self.store, &doc_id, &from, &to)?;
                 Ok(
-                    json!({ "doc": doc_id, "path": path.unwrap_or_default(), "from": from, "to": to, "diff": diff }),
+                    json!({ "doc": doc_id, "path": path.as_deref().map_or_else(String::new, reference_path), "from": from, "to": to, "diff": diff }),
                 )
             }
             "docs_read_at" => {
@@ -2044,7 +2066,7 @@ impl Surface {
                     arg_usize(args, "limit")?.unwrap_or(50),
                     arg_str(args, "origin").filter(|o| !o.is_empty()),
                 )?;
-                Ok(page.to_json())
+                Ok(root_changes_page(page.to_json()))
             }
             "repos_status" => {
                 let (repo, root) = self.scope(args)?;
@@ -2099,12 +2121,13 @@ pub fn apply_json(res: &ApplyResult) -> Json {
                 .collect(),
         ),
     );
+    // §1 Paths: `revisions[].path` and the dry-run `diffs` keys in the reference form.
     m.insert(
         "revisions".to_owned(),
         Json::Array(
             res.revisions
                 .iter()
-                .map(|r| json!({ "doc": r.doc, "path": r.path }))
+                .map(|r| json!({ "doc": r.doc, "path": reference_path(&r.path) }))
                 .collect(),
         ),
     );
@@ -2112,7 +2135,7 @@ pub fn apply_json(res: &ApplyResult) -> Json {
         let mut d = Map::new();
         for (path, diff) in diffs {
             d.insert(
-                path.clone(),
+                reference_path(path),
                 json!({ "before": diff.before, "after": diff.after }),
             );
         }
@@ -2127,12 +2150,69 @@ pub fn apply_json(res: &ApplyResult) -> Json {
 fn doc_op_json(res: &omgbase_store::DocOpResult) -> Json {
     let mut m = Map::new();
     m.insert("docId".to_owned(), json!(res.doc_id));
-    m.insert("path".to_owned(), json!(res.path));
+    m.insert("path".to_owned(), json!(reference_path(&res.path)));
     m.insert("committed".to_owned(), json!(res.committed));
     if let Some(diffs) = &res.diffs {
-        m.insert("diffs".to_owned(), diffs_json(diffs));
+        m.insert("diffs".to_owned(), reference_keyed(&diffs_json(diffs)));
     }
     Json::Object(m)
+}
+
+/// `changes_since` on the wire (§1 Paths, 2.0): the store renders its digests
+/// in the storage form; every revision `path` is rooted here, and so is the
+/// summary's subject — the reference composes `renderSummary` from rooted
+/// paths, so the same line reads `observed: /a.md — 3 inserted`,
+/// `api(human:spec): deleted /a.md`, `api(human:spec): moved /a.md → /b.md`.
+/// The subject is the text between the first `: ` and the ` — ` detail (or
+/// the end): a comma-joined path list, `deleted <paths>` or `moved <from> → <to>`.
+fn root_changes_page(mut page: Json) -> Json {
+    let Some(digests) = page.get_mut("digests").and_then(Json::as_array_mut) else {
+        return page;
+    };
+    for d in digests.iter_mut() {
+        if let Some(revs) = d.get_mut("revisions").and_then(Json::as_array_mut) {
+            for r in revs.iter_mut() {
+                root_field(r, "path");
+            }
+        }
+        if let Some(summary) = d.get("summary").and_then(Json::as_str) {
+            let rooted = root_summary(summary);
+            d["summary"] = Json::String(rooted);
+        }
+    }
+    page
+}
+
+/// The summary's subject paths in the reference form (see [`root_changes_page`]).
+fn root_summary(summary: &str) -> String {
+    let Some(colon) = summary.find(": ") else {
+        return summary.to_owned();
+    };
+    let (head, rest) = summary.split_at(colon + 2);
+    let (subject, detail) = match rest.find(" — ") {
+        Some(i) => rest.split_at(i),
+        None => (rest, ""),
+    };
+    let root_list = |s: &str| -> String {
+        if s.is_empty() {
+            return String::new();
+        }
+        s.split(", ")
+            .map(reference_path)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let subject = if let Some(paths) = subject.strip_prefix("deleted ") {
+        format!("deleted {}", root_list(paths))
+    } else if let Some(mv) = subject.strip_prefix("moved ") {
+        match mv.split_once(" → ") {
+            Some((from, to)) => format!("moved {} → {}", reference_path(from), reference_path(to)),
+            None => format!("moved {mv}"),
+        }
+    } else {
+        root_list(subject)
+    };
+    format!("{head}{subject}{detail}")
 }
 
 /// `spec/mutate` §7's opset on the wire (camelCase precondition keys and
@@ -2142,15 +2222,16 @@ pub fn opset_json(opset: &Opset) -> Json {
     let mut m = Map::new();
     m.insert("version".to_owned(), json!(1));
     m.insert("kind".to_owned(), json!("doc_update"));
+    // §1 Paths: the target's and the precondition's path in the reference form.
     m.insert(
         "target".to_owned(),
-        json!({ "doc": opset.target_doc, "path": opset.target_path }),
+        json!({ "doc": opset.target_doc, "path": reference_path(&opset.target_path) }),
     );
     m.insert(
         "precondition".to_owned(),
         json!({
             "doc": opset.precondition.doc,
-            "path": opset.precondition.path,
+            "path": reference_path(&opset.precondition.path),
             "baseRevision": opset.precondition.base_revision,
             "baseContentHash": opset.precondition.base_content_hash,
         }),
@@ -2219,7 +2300,7 @@ fn evidence_json(e: &omgbase_store::Evidence) -> Json {
 fn observe_json(o: &omgbase_store::ObserveOutcome) -> Json {
     json!({
         "docId": o.doc_id,
-        "path": o.path,
+        "path": reference_path(&o.path),
         "rev": o.rev,
         "commitId": o.commit_id,
         "converged": o.converged,
@@ -2365,7 +2446,16 @@ mod tests {
         assert_eq!(out.body["echo"], false);
         let read = s.call("docs_read", json!({ "doc": "a.md", "include_ids": true }));
         assert!(!read.is_error);
-        assert_eq!(read.body["path"], "a.md");
+        assert_eq!(read.body["path"], "/a.md");
+        // either form names the document (§1 Paths)
+        assert_eq!(
+            s.call("docs_read", json!({ "doc": "/a.md" })).body["path"],
+            "/a.md"
+        );
+        assert_eq!(
+            s.call("docs_read", json!({ "path": "//a.md" })).body["docId"],
+            "d_0"
+        );
         assert_eq!(read.body["properties"]["frontmatter"]["layer"], "canon");
         assert!(read.body["ids"].as_array().unwrap().len() >= 3);
         let q = s.call("query", json!({ "query": "select $title, layer, t: nodes collect { value where kind == \"md:task\" } from docs where layer == \"canon\" && nodes count { where kind == \"md:task\" } == 1" }));
@@ -2475,7 +2565,7 @@ mod tests {
             "{}",
             many.body
         );
-        assert_eq!(many.body["items"][0]["path"], "a.md");
+        assert_eq!(many.body["items"][0]["path"], "/a.md");
         assert_eq!(many.body["truncated"], true);
         let one = s.call(
             "docs_get_many",
@@ -2586,7 +2676,7 @@ mod tests {
         assert!(!c.is_error, "{}", c.body);
         assert_eq!(
             serde_json::to_string(&c.body).unwrap(),
-            r#"{"docId":"d_2","path":"c.md","committed":false,"diffs":{"c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
+            r#"{"docId":"d_2","path":"/c.md","committed":false,"diffs":{"/c.md":{"before":"","after":"---\ntitle: C\n---\n\n# C\n"}}}"#,
             "the reference's key order, byte for byte"
         );
 
@@ -2602,7 +2692,7 @@ mod tests {
         // over the same two documents under the sequential minter.
         assert_eq!(
             serde_json::to_string(&m.body).unwrap(),
-            r##"{"docId":"d_0","path":"notes/b.md","committed":false,"diffs":{"b.md":{"before":"# B\n\nTarget.\n","after":""},"notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
+            r##"{"docId":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"},"/a.md":{"before":"# A\n\nSee [b](b.md).\n","after":"# A\n\nSee [b](notes/b.md).\n"}},"dangling":[],"retargeted":{"blocks":["b_3"],"docs":["d_1"]}}"##
         );
         assert_eq!(
             keys(&m.body),
@@ -2615,9 +2705,9 @@ mod tests {
                 "retargeted"
             ]
         );
-        assert_eq!(keys(&m.body["diffs"]), ["b.md", "notes/b.md", "a.md"]);
+        assert_eq!(keys(&m.body["diffs"]), ["/b.md", "/notes/b.md", "/a.md"]);
         assert_eq!(
-            m.body["diffs"]["a.md"],
+            m.body["diffs"]["/a.md"],
             json!({ "before": a_src, "after": "# A\n\nSee [b](notes/b.md).\n" })
         );
         // … and with `retarget_inbound: false` (mutate 1.3 retargets by default):
@@ -2628,7 +2718,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_string(&plain.body).unwrap(),
-            r##"{"docId":"d_0","path":"notes/b.md","committed":false,"diffs":{"b.md":{"before":"# B\n\nTarget.\n","after":""},"notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc":"d_1","path":"a.md","block":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
+            r##"{"docId":"d_0","path":"/notes/b.md","committed":false,"diffs":{"/b.md":{"before":"# B\n\nTarget.\n","after":""},"/notes/b.md":{"before":"","after":"# B\n\nTarget.\n"}},"dangling":[{"doc":"d_1","path":"/a.md","block":"b_3","target":"b.md","anchor":null}],"retargeted":null}"##
         );
 
         // docs_delete: the file → `""`.
@@ -2636,7 +2726,7 @@ mod tests {
         assert!(!d.is_error, "{}", d.body);
         assert_eq!(
             d.body,
-            json!({ "docId": "d_1", "path": "a.md", "committed": false, "diffs": { "a.md": { "before": a_src, "after": "" } } })
+            json!({ "docId": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "" } } })
         );
         assert_eq!(keys(&d.body), ["docId", "path", "committed", "diffs"]);
 
@@ -2648,7 +2738,7 @@ mod tests {
         assert!(!sm.is_error, "{}", sm.body);
         assert_eq!(
             sm.body,
-            json!({ "docId": "d_1", "path": "a.md", "committed": false, "diffs": { "a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
+            json!({ "docId": "d_1", "path": "/a.md", "committed": false, "diffs": { "/a.md": { "before": a_src, "after": "---\nstatus: open\n---\n\n# A\n\nSee [b](b.md).\n" } } })
         );
 
         // Nothing committed, no hook, no row changed; the checks still run.
@@ -2656,7 +2746,7 @@ mod tests {
         assert_eq!(snapshot(&s), before);
         assert_eq!(
             s.call("docs_read", json!({ "doc": "d_0" })).body["path"],
-            "b.md"
+            "/b.md"
         );
         assert_eq!(
             s.call("docs_read", json!({ "doc": "d_1" })).body["content"],
@@ -2676,8 +2766,33 @@ mod tests {
         );
         assert_eq!(
             real.body,
-            json!({ "docId": "d_3", "path": "c.md", "committed": true })
+            json!({ "docId": "d_3", "path": "/c.md", "committed": true })
         );
         assert_eq!(fired.get(), 3);
+    }
+
+    #[test]
+    fn change_summaries_are_rooted_like_the_reference_renders_them() {
+        assert_eq!(
+            root_summary("observed: a.md, b/c.md — 3 inserted, 1 edited"),
+            "observed: /a.md, /b/c.md — 3 inserted, 1 edited"
+        );
+        assert_eq!(
+            root_summary("observed: deleted a.md"),
+            "observed: deleted /a.md"
+        );
+        assert_eq!(
+            root_summary("api(human:spec): moved a.md → b/a.md"),
+            "api(human:spec): moved /a.md → /b/a.md"
+        );
+        assert_eq!(root_summary("api(?): x.md"), "api(?): /x.md");
+        assert_eq!(root_summary("observed: "), "observed: ");
+        assert_eq!(root_summary("nonsense"), "nonsense");
+        let page = root_changes_page(json!({
+            "digests": [{ "summary": "observed: a.md", "revisions": [{ "doc": "d_0", "path": "a.md", "contentHash": "ff" }] }],
+            "cursor": 1, "truncated": false, "head": 1
+        }));
+        assert_eq!(page["digests"][0]["revisions"][0]["path"], "/a.md");
+        assert_eq!(page["digests"][0]["summary"], "observed: /a.md");
     }
 }

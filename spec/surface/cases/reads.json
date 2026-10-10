@@ -56,7 +56,7 @@
             "tool": "docs_tree",
             "args": {
               "limit": 1,
-              "cursor": "WyJndWlkZS5tZCJd"
+              "cursor": "WyIvZ3VpZGUubWQiXQ"
             }
           }
         },
@@ -103,7 +103,7 @@
             "tool": "docs_list",
             "args": {
               "limit": 1,
-              "cursor": "WyJndWlkZS5tZCJd"
+              "cursor": "WyIvZ3VpZGUubWQiXQ"
             }
           }
         },
@@ -274,7 +274,7 @@
             }
           ],
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 1,
             "total": {
               "docs": 2,
@@ -282,14 +282,14 @@
             },
             "entries": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 17,
                 "ts": "2026-09-27T10:00:00.000Z"
               },
               {
-                "path": "notes/",
+                "path": "/notes/",
                 "kind": "dir",
                 "docs": 1,
                 "blocks": 4,
@@ -300,7 +300,7 @@
             "cursor": null
           },
           {
-            "prefix": "notes/",
+            "prefix": "/notes/",
             "depth": 1,
             "total": {
               "docs": 1,
@@ -308,7 +308,7 @@
             },
             "entries": [
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 4,
@@ -319,7 +319,7 @@
             "cursor": null
           },
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 2,
             "total": {
               "docs": 2,
@@ -327,14 +327,14 @@
             },
             "entries": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 17,
                 "ts": "2026-09-27T10:00:00.000Z"
               },
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 4,
@@ -345,7 +345,7 @@
             "cursor": null
           },
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 1,
             "total": {
               "docs": 2,
@@ -353,7 +353,7 @@
             },
             "entries": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 17,
@@ -361,10 +361,10 @@
               }
             ],
             "truncated": true,
-            "cursor": "WyJndWlkZS5tZCJd"
+            "cursor": "WyIvZ3VpZGUubWQiXQ"
           },
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 1,
             "total": {
               "docs": 2,
@@ -372,7 +372,7 @@
             },
             "entries": [
               {
-                "path": "notes/",
+                "path": "/notes/",
                 "kind": "dir",
                 "docs": 1,
                 "blocks": 4,
@@ -383,7 +383,7 @@
             "cursor": null
           },
           {
-            "prefix": "nowhere/",
+            "prefix": "/nowhere/",
             "depth": 1,
             "total": {
               "docs": 0,
@@ -396,12 +396,12 @@
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 17,
                 "ts": "2026-09-27T10:00:00.000Z"
               },
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "blocks": 4,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
@@ -412,7 +412,7 @@
           {
             "items": [
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "blocks": 4,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
@@ -428,18 +428,18 @@
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 17,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
             ],
             "truncated": true,
-            "cursor": "WyJndWlkZS5tZCJd"
+            "cursor": "WyIvZ3VpZGUubWQiXQ"
           },
           {
             "items": [
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "blocks": 4,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
@@ -450,13 +450,13 @@
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 17,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
             ],
             "truncated": true,
-            "cursor": "WyJndWlkZS5tZCJd"
+            "cursor": "WyIvZ3VpZGUubWQiXQ"
           },
           {
             "text": "b_0 h1   Guide  §\nb_1 p    Intro paragraph with a [link](/notes/one.md) and [[two]].\nb_2 p    owner:: bb\nb_3 h2   Setup  §\nb_4 ul\n  b_5 li   first item\n  b_6 li   second item\nb_7 h2   Tasks  §\nb_8 ul\n  b_9 li   ☐ open task\n  b_10 li   ☑ done task\nb_11 bq\n  b_12 p    a quote\nb_13 code echo hi\nb_14 tbl\n  b_15 tr   a b\n  b_16 tr   1 2",
@@ -475,7 +475,7 @@
             "truncated": true
           },
           {
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_0",
             "properties": {
@@ -496,7 +496,7 @@
             "content": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
           },
           {
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_0",
             "properties": {
@@ -574,7 +574,7 @@
             }
           },
           {
-            "path": "notes/one.md",
+            "path": "/notes/one.md",
             "docId": "d_1",
             "rev": "r_1",
             "properties": {
@@ -589,7 +589,7 @@
           {
             "items": [
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "docId": "d_1",
                 "rev": "r_1",
                 "properties": {
@@ -602,7 +602,7 @@
                 "content": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n"
               },
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "docId": "d_1",
                 "rev": "r_1",
                 "properties": {
@@ -615,7 +615,7 @@
                 "content": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n"
               },
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "docId": "d_0",
                 "rev": "r_0",
                 "properties": {
@@ -651,7 +651,7 @@
           {
             "items": [
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "docId": "d_1",
                 "rev": "r_1",
                 "properties": {
@@ -1262,7 +1262,7 @@
           },
           {
             "kind": "document",
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_0",
             "properties": {
@@ -1284,7 +1284,7 @@
           },
           {
             "kind": "document",
-            "path": "notes/one.md",
+            "path": "/notes/one.md",
             "docId": "d_1",
             "rev": "r_1",
             "properties": {
@@ -1812,21 +1812,21 @@
           },
           {
             "doc": "d_0",
-            "path": "guide.md",
+            "path": "/guide.md",
             "from": "r_0",
             "to": "r_2",
             "diff": "@@ -5,7 +5,7 @@\n \n # Guide\n \n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n \n owner:: bb\n \n@@ -19,8 +19,6 @@\n - [ ] open task\n - [x] done task\n \n-> a quote\n-\n ```sh\n echo hi\n ```\n@@ -29,3 +27,5 @@\n |---|---|\n | 1 | 2 |\n \n+A closing paragraph.\n+"
           },
           {
             "doc": "d_0",
-            "path": "guide.md",
+            "path": "/guide.md",
             "from": "r_0",
             "to": "r_2",
             "diff": "@@ -5,7 +5,7 @@\n \n # Guide\n \n-Intro paragraph with a [link](/notes/one.md) and [[two]].\n+Intro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n \n owner:: bb\n \n@@ -19,8 +19,6 @@\n - [ ] open task\n - [x] done task\n \n-> a quote\n-\n ```sh\n echo hi\n ```\n@@ -29,3 +27,5 @@\n |---|---|\n | 1 | 2 |\n \n+A closing paragraph.\n+"
           },
           {
             "doc": "d_0",
-            "path": "guide.md",
+            "path": "/guide.md",
             "from": "r_2",
             "to": "r_2",
             "diff": ""
@@ -1839,7 +1839,7 @@
             }
           },
           {
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_0",
             "content": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
@@ -1862,7 +1862,7 @@
             "propertiesAreCurrent": true
           },
           {
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_2",
             "content": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph, edited, with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nA closing paragraph.\n",
@@ -1896,7 +1896,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_2",
                 "versions": [
@@ -1929,7 +1929,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_2",
                 "versions": [
@@ -1962,7 +1962,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_2",
                 "versions": [
@@ -1995,7 +1995,7 @@
             "docs": [
               {
                 "docId": "d_1",
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "deleted": true,
                 "currentRev": "r_1",
                 "versions": [
@@ -2018,7 +2018,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_2",
                 "versions": [
@@ -2055,7 +2055,7 @@
             "docs": [
               {
                 "docId": "d_1",
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "deleted": true,
                 "currentRev": "r_1",
                 "versions": [
@@ -2089,7 +2089,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "4e6281be3f1fabebb2a0a9b9f20b827c260a261ea01cee8181396ce5f3c86e2b"
                   }
                 ]
@@ -2103,7 +2103,7 @@
                 "revisions": [
                   {
                     "doc": "d_1",
-                    "path": "notes/one.md",
+                    "path": "/notes/one.md",
                     "contentHash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
                   }
                 ]
@@ -2117,7 +2117,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d"
                   }
                 ]
@@ -2146,7 +2146,7 @@
                 "revisions": [
                   {
                     "doc": "d_1",
-                    "path": "notes/one.md",
+                    "path": "/notes/one.md",
                     "contentHash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
                   }
                 ]
@@ -2160,7 +2160,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "7a202de4338a315c36631ee8e902aee2c985490ad5025c1584715781bb630e0d"
                   }
                 ]
@@ -2200,7 +2200,7 @@
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 16,
                 "ts": "2026-09-27T10:01:00.000Z"
               }
@@ -2328,7 +2328,7 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "log.md"
+                "path": "/log.md"
               }
             ],
             "committed": true
@@ -2344,13 +2344,13 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "log.md"
+                "path": "/log.md"
               }
             ],
             "committed": true
           },
           {
-            "path": "log.md",
+            "path": "/log.md",
             "docId": "d_0",
             "rev": "r_1",
             "content": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n",
@@ -2367,7 +2367,7 @@
             "propertiesAreCurrent": true
           },
           {
-            "path": "log.md",
+            "path": "/log.md",
             "docId": "d_0",
             "rev": "r_2",
             "content": "---\ntitle: Log\n---\n\n# Log\n\nA journal.\n\n## Log\n\n- item a\n\n- item b\n\n- item c\n\n- item d\n- item e\n\n- item f\n",
@@ -2385,14 +2385,14 @@
           },
           {
             "doc": "d_0",
-            "path": "log.md",
+            "path": "/log.md",
             "from": "r_1",
             "to": "r_2",
             "diff": "@@ -17,3 +17,5 @@\n - item d\n - item e\n \n+- item f\n+"
           },
           {
             "doc": "d_0",
-            "path": "log.md",
+            "path": "/log.md",
             "from": "r_0",
             "to": "r_2",
             "diff": "@@ -14,3 +14,8 @@\n \n - item c\n \n+- item d\n+- item e\n+\n+- item f\n+"
@@ -2487,7 +2487,7 @@
           "read": {
             "tool": "docs_tree",
             "args": {
-              "cursor": "WyJhLm1kIiwiZF8wIl0"
+              "cursor": "WyIvYS5tZCIsImRfMCJd"
             }
           }
         },
@@ -2798,7 +2798,7 @@
             "hits": [
               {
                 "id": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "truncated": false,
@@ -2868,7 +2868,7 @@
           },
           {
             "docId": "d_1",
-            "path": "new.md",
+            "path": "/new.md",
             "rev": "r_1",
             "commitId": "c_1",
             "converged": true,
@@ -2883,7 +2883,7 @@
           },
           {
             "docId": "d_1",
-            "path": "new.md",
+            "path": "/new.md",
             "rev": null,
             "commitId": null,
             "converged": true,
@@ -2894,7 +2894,7 @@
           [
             {
               "docId": "d_1",
-              "path": "new.md",
+              "path": "/new.md",
               "rev": "r_2",
               "commitId": "c_2",
               "converged": true,
@@ -2917,7 +2917,7 @@
             },
             {
               "docId": "d_2",
-              "path": "other.md",
+              "path": "/other.md",
               "rev": "r_3",
               "commitId": "c_3",
               "converged": true,
@@ -2933,23 +2933,23 @@
           ],
           {
             "docId": "d_2",
-            "path": "other.md",
+            "path": "/other.md",
             "deleted": true
           },
           {
             "docId": null,
-            "path": "other.md",
+            "path": "/other.md",
             "deleted": false
           },
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 5,
                 "ts": "2026-09-27T10:00:00.000Z"
               },
               {
-                "path": "new.md",
+                "path": "/new.md",
                 "blocks": 2,
                 "ts": "2026-09-27T10:07:00.000Z"
               }
@@ -2968,7 +2968,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "6abdec03027fcc6c831ee477cc7966dfc855a2e3f34d00b68fcf7ddac4b04cba"
                   }
                 ]
@@ -2982,7 +2982,7 @@
                 "revisions": [
                   {
                     "doc": "d_1",
-                    "path": "new.md",
+                    "path": "/new.md",
                     "contentHash": "90dd49e97e52b83a3a242a34dccf76a7f0a9e8a92f18f5d4a76b907d1c77beeb"
                   }
                 ]
@@ -2996,7 +2996,7 @@
                 "revisions": [
                   {
                     "doc": "d_1",
-                    "path": "new.md",
+                    "path": "/new.md",
                     "contentHash": "ef8bc0606ce2a50fd288190c0f3d69b818d81703b47b85401ebcd069aa3d1efa"
                   }
                 ]
@@ -3010,7 +3010,7 @@
                 "revisions": [
                   {
                     "doc": "d_2",
-                    "path": "other.md",
+                    "path": "/other.md",
                     "contentHash": "b5b79e2b70a4030a0d207081f0982cccc59a5d906d506d1975b1dfc91cb4bc0c"
                   }
                 ]
@@ -3032,7 +3032,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_0",
                 "versions": [
@@ -3050,7 +3050,7 @@
               },
               {
                 "docId": "d_1",
-                "path": "new.md",
+                "path": "/new.md",
                 "deleted": false,
                 "currentRev": "r_2",
                 "versions": [
@@ -3078,7 +3078,7 @@
               },
               {
                 "docId": "d_2",
-                "path": "other.md",
+                "path": "/other.md",
                 "deleted": true,
                 "currentRev": "r_3",
                 "versions": [
@@ -3215,7 +3215,7 @@
           {
             "items": [
               {
-                "path": "a.md",
+                "path": "/a.md",
                 "docId": "d_0",
                 "rev": "r_0",
                 "properties": {
@@ -3234,7 +3234,7 @@
           {
             "items": [
               {
-                "path": "a.md",
+                "path": "/a.md",
                 "docId": "d_0",
                 "rev": "r_0",
                 "properties": {
@@ -3277,16 +3277,16 @@
           {
             "items": [
               {
-                "path": "a.md",
+                "path": "/a.md",
                 "blocks": 2,
                 "ts": "2026-09-27T09:00:00.000Z"
               }
             ],
             "truncated": true,
-            "cursor": "WyJhLm1kIl0"
+            "cursor": "WyIvYS5tZCJd"
           },
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 1,
             "total": {
               "docs": 2,
@@ -3294,7 +3294,7 @@
             },
             "entries": [
               {
-                "path": "a.md",
+                "path": "/a.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 2,
@@ -3302,7 +3302,7 @@
               }
             ],
             "truncated": true,
-            "cursor": "WyJhLm1kIl0"
+            "cursor": "WyIvYS5tZCJd"
           }
         ]
       }
@@ -3909,11 +3909,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -3931,11 +3931,11 @@
             "revisions": [
               {
                 "doc": "d_1",
-                "path": "notes/one.md"
+                "path": "/notes/one.md"
               }
             ],
             "diffs": {
-              "notes/one.md": {
+              "/notes/one.md": {
                 "before": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n",
                 "after": "# One\n\nBack to [guide](/guide.md).\n\n## Setup\n\nAlso a setup section.\n\nAppended.\n"
               }
@@ -3953,11 +3953,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\nAppended.\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -3990,11 +3990,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n## New\n\nPara.\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4012,11 +4012,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- third item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4055,11 +4055,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4086,11 +4086,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n- third item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4119,11 +4119,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n- [ ] open task\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4158,11 +4158,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4181,11 +4181,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph \n\nwith a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4206,11 +4206,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4231,11 +4231,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]]. owner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4271,11 +4271,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nReplaced via node ref.\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4293,11 +4293,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/two.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4320,12 +4320,12 @@
             "stale": [
               {
                 "srcDoc": "d_0",
-                "srcPath": "guide.md",
+                "srcPath": "/guide.md",
                 "srcBlock": "b_1",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
-                "target": "two",
+                "target": "/two",
                 "authored": "two",
                 "anchor": null,
                 "reason": "dangling_doc"
@@ -4339,13 +4339,13 @@
             "staleCount": 1,
             "byTarget": [
               {
-                "target": "two",
+                "target": "/two",
                 "count": 1
               }
             ],
             "bySource": [
               {
-                "srcPath": "guide.md",
+                "srcPath": "/guide.md",
                 "count": 1
               }
             ],
@@ -4356,7 +4356,7 @@
             "hits": [
               {
                 "block": "b_1",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
                 "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
               }
@@ -4379,11 +4379,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4394,7 +4394,7 @@
             "hits": [
               {
                 "block": "b_1",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "oldRaw": "Intro paragraph with a [link](/notes/one.md) and [[two]].",
                 "newRaw": "Intro paragraph with a [link](/notes/one.md) and [[notes/one.md]]."
               }
@@ -4422,11 +4422,11 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "diffs": {
-              "guide.md": {
+              "/guide.md": {
                 "before": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[two]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
                 "after": "---\ntitle: Guide\ntags: [a, b]\n---\n\n# Guide\n\nIntro paragraph with a [link](/notes/one.md) and [[notes/one.md]].\n\nowner:: bb\n\n## Setup\n\n- first item\n- second item\n\n## Tasks\n\n- [ ] open task\n- [x] done task\n\n> a quote\n\n```sh\necho hi\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
               }
@@ -4443,11 +4443,11 @@
               "kind": "doc_update",
               "target": {
                 "doc": "d_1",
-                "path": "notes/one.md"
+                "path": "/notes/one.md"
               },
               "precondition": {
                 "doc": "d_1",
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "baseRevision": "r_1",
                 "baseContentHash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
               },
@@ -4537,11 +4537,11 @@
               "kind": "doc_update",
               "target": {
                 "doc": "d_1",
-                "path": "notes/one.md"
+                "path": "/notes/one.md"
               },
               "precondition": {
                 "doc": "d_1",
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "baseRevision": "r_1",
                 "baseContentHash": "8d3da64ec85becf7eba0ca7dc2798451da1134d194d999b7856e4824f8efa1b4"
               },
@@ -4641,7 +4641,7 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "committed": true
@@ -4657,7 +4657,7 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "committed": true
@@ -4673,13 +4673,13 @@
             "revisions": [
               {
                 "doc": "d_0",
-                "path": "guide.md"
+                "path": "/guide.md"
               }
             ],
             "committed": true
           },
           {
-            "path": "guide.md",
+            "path": "/guide.md",
             "docId": "d_0",
             "rev": "r_4",
             "properties": {
@@ -4741,7 +4741,7 @@
             "docs": [
               {
                 "docId": "d_0",
-                "path": "guide.md",
+                "path": "/guide.md",
                 "deleted": false,
                 "currentRev": "r_4",
                 "versions": [
@@ -4792,7 +4792,7 @@
           },
           {
             "docId": "d_2",
-            "path": "new.md",
+            "path": "/new.md",
             "committed": true
           },
           {
@@ -4802,18 +4802,18 @@
           },
           {
             "docId": "d_2",
-            "path": "new.md",
+            "path": "/new.md",
             "committed": true
           },
           {
             "docId": "d_2",
-            "path": "moved/new.md",
+            "path": "/moved/new.md",
             "committed": true,
             "dangling": [],
             "retargeted": null
           },
           {
-            "path": "moved/new.md",
+            "path": "/moved/new.md",
             "docId": "d_2",
             "rev": "r_6",
             "properties": {
@@ -4829,7 +4829,7 @@
           },
           {
             "docId": "d_2",
-            "path": "moved/new.md",
+            "path": "/moved/new.md",
             "committed": true
           },
           {
@@ -4848,7 +4848,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "c50d718d83c07e5ecfa1fc293f1f6c81faf3e56830c5fcbfba127574205b9b37"
                   }
                 ]
@@ -4862,7 +4862,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "26a50d576b27a1e9b17b496aa7a4866caef3f657c67a9ffa505893f1c1a53b1f"
                   }
                 ]
@@ -4876,7 +4876,7 @@
                 "revisions": [
                   {
                     "doc": "d_0",
-                    "path": "guide.md",
+                    "path": "/guide.md",
                     "contentHash": "7f015b40588e946b0fa368db4321b01c50bd4e3329831a6b61cfac69d3423150"
                   }
                 ]
@@ -4890,7 +4890,7 @@
                 "revisions": [
                   {
                     "doc": "d_2",
-                    "path": "new.md",
+                    "path": "/new.md",
                     "contentHash": "8a5144dfbeb20f1012aaaf63a4a648fbe3ffa68bf0d698083a7f0dd4e56604cc"
                   }
                 ]
@@ -4904,7 +4904,7 @@
                 "revisions": [
                   {
                     "doc": "d_2",
-                    "path": "moved/new.md",
+                    "path": "/moved/new.md",
                     "contentHash": "d1bfb0daa528a849ed1ea93fbc64bc662f996fb7994e39128bd9f0c9d8dabb67"
                   }
                 ]
@@ -4933,12 +4933,12 @@
           {
             "items": [
               {
-                "path": "guide.md",
+                "path": "/guide.md",
                 "blocks": 18,
                 "ts": "2026-09-27T10:07:00.000Z"
               },
               {
-                "path": "notes/one.md",
+                "path": "/notes/one.md",
                 "blocks": 4,
                 "ts": "2026-09-27T10:00:00.000Z"
               }
@@ -4951,7 +4951,7 @@
     },
     {
       "name": "alchemy",
-      "notes": "§4: the `graph` macro (degrees / direction / predicate / select / max_documents / clamping) and the query, search and enumeration tools over the 18-document alchemy corpus (the same repository the query suites embed; ids match them).",
+      "notes": "§4: the `graph` macro (degrees / direction / predicate / select / max_documents / clamping) and the query, search and enumeration tools over the 18-document alchemy corpus (the same repository the query suites embed; ids match them). Since 2.0 (§1 Paths) every path a tool returns is `/`-rooted and every path argument accepts either form: the trailing steps read the same document through both spellings, scope `docs_tree`/`docs_list`/`links_stale` with rooted arguments, and hand `docs_list` a 1.x cursor (a bare path), which is refused.",
       "steps": [
         {
           "observe": {
@@ -5167,7 +5167,7 @@
             "args": {
               "query": "select $path values from docs",
               "limit": 5,
-              "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0"
+              "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd"
             }
           }
         },
@@ -5219,7 +5219,7 @@
             "args": {
               "depth": 2,
               "limit": 4,
-              "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIl0"
+              "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCJd"
             }
           }
         },
@@ -5260,6 +5260,104 @@
           "read": {
             "tool": "repos_status",
             "args": {}
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "path": "/index.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_read",
+            "args": {
+              "doc": "index.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_get_many",
+            "args": {
+              "docs": [
+                "/substances/salt.md",
+                "substances/salt.md",
+                "d_14"
+              ]
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "read_ref",
+            "args": {
+              "ref": "/texts/mutus-liber.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_outline",
+            "args": {
+              "doc": "//processes/magnum-opus.md",
+              "resolution": "skeleton"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_tree",
+            "args": {
+              "path": "/substances",
+              "depth": 1
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_list",
+            "args": {
+              "path_glob": "/processes/*"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_list",
+            "args": {
+              "limit": 3,
+              "cursor": "WyIvaW5kZXgubWQiXQ"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "docs_history",
+            "args": {
+              "doc": "/timeline/review.md"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "links_stale",
+            "args": {
+              "path_glob": "/timeline/*"
+            }
+          }
+        },
+        {
+          "read": {
+            "tool": "graph",
+            "args": {
+              "roots": [
+                "/index.md"
+              ],
+              "degrees": 0
+            }
           }
         }
       ],
@@ -5492,79 +5590,79 @@
             "documents": [
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_4",
-                "path": "practitioners/maria-prophetissa.md",
+                "path": "/practitioners/maria-prophetissa.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_6",
-                "path": "practitioners/paracelsus.md",
+                "path": "/practitioners/paracelsus.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_7",
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_17",
-                "path": "texts/mutus-liber.md",
+                "path": "/texts/mutus-liber.md",
                 "degree": 1,
                 "frontier": true
               }
@@ -5598,7 +5696,7 @@
                 "id": "e_10",
                 "src": "d_0",
                 "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_path": "/practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5610,7 +5708,7 @@
                 "id": "e_11",
                 "src": "d_0",
                 "dst": "d_6",
-                "dst_path": "practitioners/paracelsus.md",
+                "dst_path": "/practitioners/paracelsus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5622,7 +5720,7 @@
                 "id": "e_12",
                 "src": "d_0",
                 "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst_path": "/practitioners/newton.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5634,7 +5732,7 @@
                 "id": "e_13",
                 "src": "d_0",
                 "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
+                "dst_path": "/texts/emerald-tablet.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5646,7 +5744,7 @@
                 "id": "e_14",
                 "src": "d_0",
                 "dst": "d_17",
-                "dst_path": "texts/mutus-liber.md",
+                "dst_path": "/texts/mutus-liber.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5670,7 +5768,7 @@
                 "id": "e_3",
                 "src": "d_0",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5682,7 +5780,7 @@
                 "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5694,7 +5792,7 @@
                 "id": "e_5",
                 "src": "d_0",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5706,7 +5804,7 @@
                 "id": "e_6",
                 "src": "d_0",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5718,7 +5816,7 @@
                 "id": "e_7",
                 "src": "d_0",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5730,7 +5828,7 @@
                 "id": "e_8",
                 "src": "d_0",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5742,7 +5840,7 @@
                 "id": "e_9",
                 "src": "d_0",
                 "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
+                "dst_path": "/practitioners/maria-prophetissa.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5754,7 +5852,7 @@
                 "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5766,7 +5864,7 @@
                 "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5778,7 +5876,7 @@
                 "id": "e_35",
                 "src": "d_10",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5790,7 +5888,7 @@
                 "id": "e_36",
                 "src": "d_10",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5802,7 +5900,7 @@
                 "id": "e_37",
                 "src": "d_10",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5814,7 +5912,7 @@
                 "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5826,7 +5924,7 @@
                 "id": "e_44",
                 "src": "d_12",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5862,7 +5960,7 @@
                 "id": "e_47",
                 "src": "d_13",
                 "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
+                "dst_path": "/texts/emerald-tablet.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5874,7 +5972,7 @@
                 "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5886,7 +5984,7 @@
                 "id": "e_49",
                 "src": "d_13",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5910,7 +6008,7 @@
                 "id": "e_59",
                 "src": "d_16",
                 "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_path": "/practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5922,7 +6020,7 @@
                 "id": "e_60",
                 "src": "d_16",
                 "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst_path": "/practitioners/newton.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5934,7 +6032,7 @@
                 "id": "e_61",
                 "src": "d_16",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5946,7 +6044,7 @@
                 "id": "e_62",
                 "src": "d_16",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5958,7 +6056,7 @@
                 "id": "e_63",
                 "src": "d_17",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -5994,7 +6092,7 @@
                 "id": "e_22",
                 "src": "d_3",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6006,7 +6104,7 @@
                 "id": "e_23",
                 "src": "d_4",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6018,7 +6116,7 @@
                 "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6042,7 +6140,7 @@
                 "id": "e_26",
                 "src": "d_6",
                 "dst": "d_0",
-                "dst_path": "index.md",
+                "dst_path": "/index.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6102,7 +6200,7 @@
                 "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6114,62 +6212,62 @@
             "frontier": [
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
                 "degree": 1
               },
               {
                 "id": "d_4",
-                "path": "practitioners/maria-prophetissa.md",
+                "path": "/practitioners/maria-prophetissa.md",
                 "degree": 1
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1
               },
               {
                 "id": "d_6",
-                "path": "practitioners/paracelsus.md",
+                "path": "/practitioners/paracelsus.md",
                 "degree": 1
               },
               {
                 "id": "d_7",
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "degree": 1
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "degree": 1
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 1
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 1
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 1
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 1
               },
               {
                 "id": "d_17",
-                "path": "texts/mutus-liber.md",
+                "path": "/texts/mutus-liber.md",
                 "degree": 1
               }
             ],
@@ -6187,37 +6285,37 @@
             "documents": [
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_4",
-                "path": "practitioners/maria-prophetissa.md",
+                "path": "/practitioners/maria-prophetissa.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 1,
                 "frontier": true
               }
@@ -6227,7 +6325,7 @@
                 "id": "e_12",
                 "src": "d_0",
                 "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst_path": "/practitioners/newton.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6239,7 +6337,7 @@
                 "id": "e_3",
                 "src": "d_0",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6251,7 +6349,7 @@
                 "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6263,7 +6361,7 @@
                 "id": "e_5",
                 "src": "d_0",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6275,7 +6373,7 @@
                 "id": "e_9",
                 "src": "d_0",
                 "dst": "d_4",
-                "dst_path": "practitioners/maria-prophetissa.md",
+                "dst_path": "/practitioners/maria-prophetissa.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6287,7 +6385,7 @@
                 "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6299,7 +6397,7 @@
                 "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6311,7 +6409,7 @@
                 "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6323,7 +6421,7 @@
                 "id": "e_44",
                 "src": "d_12",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6335,7 +6433,7 @@
                 "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6347,7 +6445,7 @@
                 "id": "e_23",
                 "src": "d_4",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6359,7 +6457,7 @@
                 "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6371,27 +6469,27 @@
             "frontier": [
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 1
               },
               {
                 "id": "d_4",
-                "path": "practitioners/maria-prophetissa.md",
+                "path": "/practitioners/maria-prophetissa.md",
                 "degree": 1
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 1
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 1
               }
             ],
@@ -6409,7 +6507,7 @@
             "documents": [
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 0,
                 "frontier": true
               }
@@ -6455,7 +6553,7 @@
             "frontier": [
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 0
               }
             ],
@@ -6474,31 +6572,31 @@
             "documents": [
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_2",
-                "path": "lab/2026-02-notes.md",
+                "path": "/lab/2026-02-notes.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 1,
                 "frontier": false
               }
@@ -6508,7 +6606,7 @@
                 "id": "e_4",
                 "src": "d_0",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6520,7 +6618,7 @@
                 "id": "e_5",
                 "src": "d_0",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6532,7 +6630,7 @@
                 "id": "e_8",
                 "src": "d_0",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6544,7 +6642,7 @@
                 "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6556,7 +6654,7 @@
                 "id": "e_37",
                 "src": "d_10",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6568,7 +6666,7 @@
                 "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6604,7 +6702,7 @@
                 "id": "e_18",
                 "src": "d_2",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6616,7 +6714,7 @@
                 "id": "e_19",
                 "src": "d_2",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6628,7 +6726,7 @@
                 "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6640,7 +6738,7 @@
                 "id": "e_32",
                 "src": "d_8",
                 "dst": "d_2",
-                "dst_path": "lab/2026-02-notes.md",
+                "dst_path": "/lab/2026-02-notes.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6665,7 +6763,7 @@
             "documents": [
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 0,
                 "frontier": false,
                 "type": "text",
@@ -6673,7 +6771,7 @@
               },
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
                 "degree": 1,
                 "frontier": true,
                 "type": "practitioner",
@@ -6681,7 +6779,7 @@
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1,
                 "frontier": true,
                 "type": "practitioner",
@@ -6689,7 +6787,7 @@
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1,
                 "frontier": true,
                 "type": "process",
@@ -6697,7 +6795,7 @@
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "degree": 1,
                 "frontier": true,
                 "type": "process",
@@ -6709,7 +6807,7 @@
                 "id": "e_59",
                 "src": "d_16",
                 "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_path": "/practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6721,7 +6819,7 @@
                 "id": "e_60",
                 "src": "d_16",
                 "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst_path": "/practitioners/newton.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6733,7 +6831,7 @@
                 "id": "e_61",
                 "src": "d_16",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6745,7 +6843,7 @@
                 "id": "e_62",
                 "src": "d_16",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6781,7 +6879,7 @@
                 "id": "e_22",
                 "src": "d_3",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6805,22 +6903,22 @@
             "frontier": [
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
                 "degree": 1
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 1
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "degree": 1
               }
             ],
@@ -6838,7 +6936,7 @@
             "documents": [
               {
                 "id": "d_0",
-                "path": "index.md",
+                "path": "/index.md",
                 "degree": 0,
                 "frontier": false
               }
@@ -6861,79 +6959,79 @@
             "documents": [
               {
                 "id": "d_14",
-                "path": "substances/salt.md",
+                "path": "/substances/salt.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_15",
-                "path": "substances/sulphur.md",
+                "path": "/substances/sulphur.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_1",
-                "path": "lab/2026-01-notes.md",
+                "path": "/lab/2026-01-notes.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md",
+                "path": "/practitioners/jabir-ibn-hayyan.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_7",
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "degree": 1,
                 "frontier": false
               },
               {
                 "id": "d_2",
-                "path": "lab/2026-02-notes.md",
+                "path": "/lab/2026-02-notes.md",
                 "degree": 2,
                 "frontier": false
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "degree": 2,
                 "frontier": false
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "degree": 2,
                 "frontier": false
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 3,
                 "frontier": false
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 3,
                 "frontier": false
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 4,
                 "frontier": false
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "degree": 5,
                 "frontier": false
               }
@@ -6943,7 +7041,7 @@
                 "id": "e_15",
                 "src": "d_1",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6979,7 +7077,7 @@
                 "id": "e_33",
                 "src": "d_10",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -6991,7 +7089,7 @@
                 "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7003,7 +7101,7 @@
                 "id": "e_35",
                 "src": "d_10",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7015,7 +7113,7 @@
                 "id": "e_36",
                 "src": "d_10",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7027,7 +7125,7 @@
                 "id": "e_37",
                 "src": "d_10",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7039,7 +7137,7 @@
                 "id": "e_43",
                 "src": "d_12",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7051,7 +7149,7 @@
                 "id": "e_44",
                 "src": "d_12",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7087,7 +7185,7 @@
                 "id": "e_47",
                 "src": "d_13",
                 "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
+                "dst_path": "/texts/emerald-tablet.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7099,7 +7197,7 @@
                 "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7111,7 +7209,7 @@
                 "id": "e_49",
                 "src": "d_13",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7159,7 +7257,7 @@
                 "id": "e_53",
                 "src": "d_14",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7171,7 +7269,7 @@
                 "id": "e_54",
                 "src": "d_14",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7207,7 +7305,7 @@
                 "id": "e_57",
                 "src": "d_15",
                 "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_path": "/practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7219,7 +7317,7 @@
                 "id": "e_58",
                 "src": "d_15",
                 "dst": "d_1",
-                "dst_path": "lab/2026-01-notes.md",
+                "dst_path": "/lab/2026-01-notes.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7231,7 +7329,7 @@
                 "id": "e_59",
                 "src": "d_16",
                 "dst": "d_3",
-                "dst_path": "practitioners/jabir-ibn-hayyan.md",
+                "dst_path": "/practitioners/jabir-ibn-hayyan.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7243,7 +7341,7 @@
                 "id": "e_60",
                 "src": "d_16",
                 "dst": "d_5",
-                "dst_path": "practitioners/newton.md",
+                "dst_path": "/practitioners/newton.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7255,7 +7353,7 @@
                 "id": "e_61",
                 "src": "d_16",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7267,7 +7365,7 @@
                 "id": "e_62",
                 "src": "d_16",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7279,7 +7377,7 @@
                 "id": "e_18",
                 "src": "d_2",
                 "dst": "d_8",
-                "dst_path": "processes/coagulation.md",
+                "dst_path": "/processes/coagulation.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7291,7 +7389,7 @@
                 "id": "e_19",
                 "src": "d_2",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7327,7 +7425,7 @@
                 "id": "e_22",
                 "src": "d_3",
                 "dst": "d_9",
-                "dst_path": "processes/dissolution.md",
+                "dst_path": "/processes/dissolution.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7339,7 +7437,7 @@
                 "id": "e_24",
                 "src": "d_5",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7375,7 +7473,7 @@
                 "id": "e_31",
                 "src": "d_8",
                 "dst": "d_12",
-                "dst_path": "substances/philosophers-stone.md",
+                "dst_path": "/substances/philosophers-stone.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7387,7 +7485,7 @@
                 "id": "e_32",
                 "src": "d_8",
                 "dst": "d_2",
-                "dst_path": "lab/2026-02-notes.md",
+                "dst_path": "/lab/2026-02-notes.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7411,25 +7509,25 @@
             "documents": [
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md",
+                "path": "/substances/prima-materia.md",
                 "degree": 0,
                 "frontier": false
               },
               {
                 "id": "d_7",
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 1,
                 "frontier": true
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 1,
                 "frontier": true
               }
@@ -7439,7 +7537,7 @@
                 "id": "e_34",
                 "src": "d_10",
                 "dst": "d_13",
-                "dst_path": "substances/prima-materia.md",
+                "dst_path": "/substances/prima-materia.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7451,7 +7549,7 @@
                 "id": "e_35",
                 "src": "d_10",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7463,7 +7561,7 @@
                 "id": "e_47",
                 "src": "d_13",
                 "dst": "d_16",
-                "dst_path": "texts/emerald-tablet.md",
+                "dst_path": "/texts/emerald-tablet.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7475,7 +7573,7 @@
                 "id": "e_48",
                 "src": "d_13",
                 "dst": "d_10",
-                "dst_path": "processes/magnum-opus.md",
+                "dst_path": "/processes/magnum-opus.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7487,7 +7585,7 @@
                 "id": "e_49",
                 "src": "d_13",
                 "dst": "d_7",
-                "dst_path": "processes/calcination.md",
+                "dst_path": "/processes/calcination.md",
                 "dst_uri": null,
                 "dst_kind": "document",
                 "predicate": "references",
@@ -7523,17 +7621,17 @@
             "frontier": [
               {
                 "id": "d_7",
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "degree": 1
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "degree": 1
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md",
+                "path": "/texts/emerald-tablet.md",
                 "degree": 1
               }
             ],
@@ -7553,23 +7651,23 @@
             "hits": [
               {
                 "id": "d_11",
-                "path": "substances/mercury.md"
+                "path": "/substances/mercury.md"
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md"
+                "path": "/substances/philosophers-stone.md"
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md"
+                "path": "/substances/prima-materia.md"
               },
               {
                 "id": "d_14",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               },
               {
                 "id": "d_15",
-                "path": "substances/sulphur.md"
+                "path": "/substances/sulphur.md"
               }
             ],
             "truncated": false,
@@ -7579,27 +7677,27 @@
           {
             "hits": [],
             "truncated": true,
-            "cursor": "WyJwcmFjdGl0aW9uZXJzL21hcmlhLXByb3BoZXRpc3NhLm1kIiwiZF80Il0",
+            "cursor": "WyIvcHJhY3RpdGlvbmVycy9tYXJpYS1wcm9waGV0aXNzYS5tZCIsImRfNCJd",
             "consumer": "collect",
             "values": [
-              "index.md",
-              "lab/2026-01-notes.md",
-              "lab/2026-02-notes.md",
-              "practitioners/jabir-ibn-hayyan.md",
-              "practitioners/maria-prophetissa.md"
+              "/index.md",
+              "/lab/2026-01-notes.md",
+              "/lab/2026-02-notes.md",
+              "/practitioners/jabir-ibn-hayyan.md",
+              "/practitioners/maria-prophetissa.md"
             ]
           },
           {
             "hits": [],
             "truncated": true,
-            "cursor": "WyJwcm9jZXNzZXMvZGlzc29sdXRpb24ubWQiLCJkXzkiXQ",
+            "cursor": "WyIvcHJvY2Vzc2VzL2Rpc3NvbHV0aW9uLm1kIiwiZF85Il0",
             "consumer": "collect",
             "values": [
-              "practitioners/newton.md",
-              "practitioners/paracelsus.md",
-              "processes/calcination.md",
-              "processes/coagulation.md",
-              "processes/dissolution.md"
+              "/practitioners/newton.md",
+              "/practitioners/paracelsus.md",
+              "/processes/calcination.md",
+              "/processes/coagulation.md",
+              "/processes/dissolution.md"
             ]
           },
           {
@@ -7614,7 +7712,7 @@
               {
                 "blockId": "b_177",
                 "docId": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "type": "code_fence",
                 "text": "nitre + vitriol → aqua fortis (nitric acid) aqua fortis + sal → aqua regia (dissolves gold)",
                 "score": 10.759606688298451
@@ -7622,7 +7720,7 @@
               {
                 "blockId": "b_185",
                 "docId": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "type": "task",
                 "text": "Prepare aqua regia and test on gold leaf",
                 "score": 9.995991114078926
@@ -7630,7 +7728,7 @@
               {
                 "blockId": "b_178",
                 "docId": "d_9",
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "type": "paragraph",
                 "text": "*Aqua regia* — royal water, because it dissolves the royal metal — is the single most consequential thing to come out of the laboratory tradition. It is a real reagent, it does something no other liquid does, and its discovery was driven entirely by the transmutation programme.",
                 "score": 4.146952390513383
@@ -7641,7 +7739,7 @@
           [
             {
               "id": "b_261",
-              "locator": "substances/salt.md#heading[0]",
+              "locator": "/substances/salt.md#heading[0]",
               "preview": "Salt",
               "evidence": {
                 "rrf": 0.01639344262295082,
@@ -7655,7 +7753,7 @@
             },
             {
               "id": "b_279",
-              "locator": "substances/salt.md#task[0]",
+              "locator": "/substances/salt.md#task[0]",
               "preview": "Buy more salt of tartar",
               "evidence": {
                 "rrf": 0.015625,
@@ -7669,7 +7767,7 @@
             },
             {
               "id": "b_265",
-              "locator": "substances/salt.md#paragraph[4]",
+              "locator": "/substances/salt.md#paragraph[4]",
               "preview": "Salt is the third of the tria prima: the body that gives…",
               "evidence": {
                 "rrf": 0.014925373134328358,
@@ -7683,7 +7781,7 @@
             }
           ],
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 1,
             "total": {
               "docs": 18,
@@ -7691,42 +7789,42 @@
             },
             "entries": [
               {
-                "path": "index.md",
+                "path": "/index.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 31,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "lab/",
+                "path": "/lab/",
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 51,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "practitioners/",
+                "path": "/practitioners/",
                 "kind": "dir",
                 "docs": 4,
                 "blocks": 56,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/",
+                "path": "/processes/",
                 "kind": "dir",
                 "docs": 4,
                 "blocks": 71,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "substances/",
+                "path": "/substances/",
                 "kind": "dir",
                 "docs": 5,
                 "blocks": 80,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "texts/",
+                "path": "/texts/",
                 "kind": "dir",
                 "docs": 2,
                 "blocks": 25,
@@ -7737,7 +7835,7 @@
             "cursor": null
           },
           {
-            "prefix": "substances/",
+            "prefix": "/substances/",
             "depth": 1,
             "total": {
               "docs": 5,
@@ -7745,14 +7843,14 @@
             },
             "entries": [
               {
-                "path": "substances/mercury.md",
+                "path": "/substances/mercury.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 17,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "substances/philosophers-stone.md",
+                "path": "/substances/philosophers-stone.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 21,
@@ -7760,10 +7858,10 @@
               }
             ],
             "truncated": true,
-            "cursor": "WyJzdWJzdGFuY2VzL3BoaWxvc29waGVycy1zdG9uZS5tZCJd"
+            "cursor": "WyIvc3Vic3RhbmNlcy9waGlsb3NvcGhlcnMtc3RvbmUubWQiXQ"
           },
           {
-            "prefix": "",
+            "prefix": "/",
             "depth": 2,
             "total": {
               "docs": 18,
@@ -7771,28 +7869,28 @@
             },
             "entries": [
               {
-                "path": "practitioners/newton.md",
+                "path": "/practitioners/newton.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 14,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "practitioners/paracelsus.md",
+                "path": "/practitioners/paracelsus.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 16,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 20,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "kind": "doc",
                 "docs": 1,
                 "blocks": 14,
@@ -7800,27 +7898,27 @@
               }
             ],
             "truncated": true,
-            "cursor": "WyJwcm9jZXNzZXMvY29hZ3VsYXRpb24ubWQiXQ"
+            "cursor": "WyIvcHJvY2Vzc2VzL2NvYWd1bGF0aW9uLm1kIl0"
           },
           {
             "items": [
               {
-                "path": "processes/calcination.md",
+                "path": "/processes/calcination.md",
                 "blocks": 20,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/coagulation.md",
+                "path": "/processes/coagulation.md",
                 "blocks": 14,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/dissolution.md",
+                "path": "/processes/dissolution.md",
                 "blocks": 15,
                 "ts": "2026-09-27T00:00:00.000Z"
               },
               {
-                "path": "processes/magnum-opus.md",
+                "path": "/processes/magnum-opus.md",
                 "blocks": 22,
                 "ts": "2026-09-27T00:00:00.000Z"
               }
@@ -7836,69 +7934,69 @@
             "staleCount": 21,
             "byTarget": [
               {
-                "target": "mercury",
+                "target": "/mercury",
                 "count": 8
               },
               {
-                "target": "salt",
+                "target": "/salt",
                 "count": 6
               },
               {
-                "target": "sulphur",
+                "target": "/sulphur",
                 "count": 5
               },
               {
-                "target": "magnum-opus",
+                "target": "/magnum-opus",
                 "count": 1
               },
               {
-                "target": "nigredo",
+                "target": "/nigredo",
                 "count": 1
               }
             ],
             "bySource": [
               {
-                "srcPath": "index.md",
+                "srcPath": "/index.md",
                 "count": 3
               },
               {
-                "srcPath": "practitioners/paracelsus.md",
+                "srcPath": "/practitioners/paracelsus.md",
                 "count": 3
               },
               {
-                "srcPath": "lab/2026-01-notes.md",
+                "srcPath": "/lab/2026-01-notes.md",
                 "count": 2
               },
               {
-                "srcPath": "practitioners/jabir-ibn-hayyan.md",
+                "srcPath": "/practitioners/jabir-ibn-hayyan.md",
                 "count": 2
               },
               {
-                "srcPath": "substances/mercury.md",
+                "srcPath": "/substances/mercury.md",
                 "count": 2
               },
               {
-                "srcPath": "substances/philosophers-stone.md",
+                "srcPath": "/substances/philosophers-stone.md",
                 "count": 2
               },
               {
-                "srcPath": "substances/salt.md",
+                "srcPath": "/substances/salt.md",
                 "count": 2
               },
               {
-                "srcPath": "substances/sulphur.md",
+                "srcPath": "/substances/sulphur.md",
                 "count": 2
               },
               {
-                "srcPath": "practitioners/newton.md",
+                "srcPath": "/practitioners/newton.md",
                 "count": 1
               },
               {
-                "srcPath": "processes/calcination.md",
+                "srcPath": "/processes/calcination.md",
                 "count": 1
               },
               {
-                "srcPath": "substances/prima-materia.md",
+                "srcPath": "/substances/prima-materia.md",
                 "count": 1
               }
             ],
@@ -7909,24 +8007,24 @@
             "stale": [
               {
                 "srcDoc": "d_11",
-                "srcPath": "substances/mercury.md",
+                "srcPath": "/substances/mercury.md",
                 "srcBlock": "b_213",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
-                "target": "salt",
+                "target": "/salt",
                 "authored": "salt",
                 "anchor": null,
                 "reason": "dangling_doc"
               },
               {
                 "srcDoc": "d_11",
-                "srcPath": "substances/mercury.md",
+                "srcPath": "/substances/mercury.md",
                 "srcBlock": "b_213",
                 "predicate": "references",
                 "provenance": "link",
                 "dstKind": "document",
-                "target": "sulphur",
+                "target": "/sulphur",
                 "authored": "sulphur",
                 "anchor": null,
                 "reason": "dangling_doc"
@@ -7951,6 +8049,340 @@
               "untracked": 0,
               "checked": false
             }
+          },
+          {
+            "path": "/index.md",
+            "docId": "d_0",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "type": "hub",
+                "layer": "canon",
+                "title": "Alchemy",
+                "tags": [
+                  "alchemy",
+                  "index"
+                ],
+                "verified": true
+              },
+              "inline": {},
+              "computed": {
+                "$title": "Alchemy"
+              }
+            },
+            "content": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
+          },
+          {
+            "path": "/index.md",
+            "docId": "d_0",
+            "rev": "r_0",
+            "properties": {
+              "frontmatter": {
+                "type": "hub",
+                "layer": "canon",
+                "title": "Alchemy",
+                "tags": [
+                  "alchemy",
+                  "index"
+                ],
+                "verified": true
+              },
+              "inline": {},
+              "computed": {
+                "$title": "Alchemy"
+              }
+            },
+            "content": "---\ntype: hub\nlayer: canon\ntitle: Alchemy\ntags: [alchemy, index]\nverified: true\n---\n\n# Alchemy\n\nThe art of transformation — part proto-chemistry, part philosophy, part\ncontemplative practice. This repository collects notes on its substances,\nprocesses, practitioners, and primary texts.\n\n## The tria prima\n\nParacelsus reduced the material world to three principles:\n\n- [[mercury]] — the volatile spirit\n- [[sulphur]] — the combustible soul\n- [[salt]] — the fixed body\n\n## Substances\n\n- [prima materia](/substances/prima-materia.md) — the undifferentiated first matter\n- [the philosophers' stone](/substances/philosophers-stone.md) — the goal of the Great Work\n\n## Processes\n\nThe [magnum opus](/processes/magnum-opus.md) organizes the operations into\nstages. Individual operations are documented separately:\n\n- [calcination](/processes/calcination.md)\n- [dissolution](/processes/dissolution.md)\n- [coagulation](/processes/coagulation.md)\n\n## Practitioners\n\n| Practitioner | Tradition | Approximate era |\n|---|---|---|\n| [Maria Prophetissa](/practitioners/maria-prophetissa.md) | Alexandrian | 3rd century |\n| [Jabir ibn Hayyan](/practitioners/jabir-ibn-hayyan.md) | Islamic | 8th century |\n| [Paracelsus](/practitioners/paracelsus.md) | Western | 16th century |\n| [Isaac Newton](/practitioners/newton.md) | Western | 17th century |\n\n## Texts\n\n- [The Emerald Tablet](/texts/emerald-tablet.md)\n- [Mutus Liber](/texts/mutus-liber.md)\n\n## Laboratory\n\nWorking notes live under `lab/`.\n"
+          },
+          {
+            "items": [
+              {
+                "path": "/substances/salt.md",
+                "docId": "d_14",
+                "rev": "r_14",
+                "properties": {
+                  "frontmatter": {
+                    "type": "substance",
+                    "slug": "salt",
+                    "layer": "canon",
+                    "tradition": "western",
+                    "element": "salt",
+                    "tags": [
+                      "substance",
+                      "tria-prima"
+                    ],
+                    "verified": true
+                  },
+                  "inline": {
+                    "symbol": "🜔",
+                    "soluble": "yes",
+                    "toxic": "no"
+                  },
+                  "computed": {
+                    "$title": "Salt"
+                  }
+                },
+                "content": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+              },
+              {
+                "path": "/substances/salt.md",
+                "docId": "d_14",
+                "rev": "r_14",
+                "properties": {
+                  "frontmatter": {
+                    "type": "substance",
+                    "slug": "salt",
+                    "layer": "canon",
+                    "tradition": "western",
+                    "element": "salt",
+                    "tags": [
+                      "substance",
+                      "tria-prima"
+                    ],
+                    "verified": true
+                  },
+                  "inline": {
+                    "symbol": "🜔",
+                    "soluble": "yes",
+                    "toxic": "no"
+                  },
+                  "computed": {
+                    "$title": "Salt"
+                  }
+                },
+                "content": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+              },
+              {
+                "path": "/substances/salt.md",
+                "docId": "d_14",
+                "rev": "r_14",
+                "properties": {
+                  "frontmatter": {
+                    "type": "substance",
+                    "slug": "salt",
+                    "layer": "canon",
+                    "tradition": "western",
+                    "element": "salt",
+                    "tags": [
+                      "substance",
+                      "tria-prima"
+                    ],
+                    "verified": true
+                  },
+                  "inline": {
+                    "symbol": "🜔",
+                    "soluble": "yes",
+                    "toxic": "no"
+                  },
+                  "computed": {
+                    "$title": "Salt"
+                  }
+                },
+                "content": "---\ntype: substance\nslug: salt\nlayer: canon\ntradition: western\nelement: salt\ntags: [substance, tria-prima]\nverified: true\n---\n\n# Salt\n\nWhat remains. Burn a plant to ash and leach the ash with water, and the residue\nthat crystallizes out is the salt — the incombustible, fixed body.\n\nsymbol:: 🜔\nsoluble:: yes\ntoxic:: no\n\n## As a principle\n\nSalt is the third of the tria prima: the body that gives a substance its\npersistence and form. Where [[mercury]] flies off and [[sulphur]] burns, salt\nstays behind.\n\nThe operation that produces it is straightforward and repeatable, which gave the\nprinciple an evidential weight the other two lacked. You can *show* someone the\nsalt of a plant.\n\n## Practical extraction\n\nThe standard route, still sound:\n\n1. Incinerate the material completely — see [calcination](/processes/calcination.md).\n2. Leach the ash with distilled water.\n3. Filter, then evaporate slowly to crystallize.\n\n[Coagulation](/processes/coagulation.md) is the general name for step 3.\n\n## Note\n\nThe alchemical \"salt\" is not sodium chloride but the mixed carbonates and\npotash left after combustion. The terminology predates the distinction.\n\n## Supplies\n\nBench stock for the leaching work. Nothing outstanding.\n\n- [x] Buy more salt of tartar\n- [x] Replace the leaching filter papers\n"
+              }
+            ],
+            "errors": [],
+            "truncated": false
+          },
+          {
+            "kind": "document",
+            "path": "/texts/mutus-liber.md",
+            "docId": "d_17",
+            "rev": "r_17",
+            "properties": {
+              "frontmatter": {
+                "type": "text",
+                "layer": "draft",
+                "tradition": "western",
+                "era": 1677,
+                "tags": [
+                  "text",
+                  "images"
+                ],
+                "verified": false
+              },
+              "inline": {
+                "length": "fifteen plates",
+                "attributed_to": "altus"
+              },
+              "computed": {
+                "$title": "Mutus Liber"
+              }
+            },
+            "content": "---\ntype: text\nlayer: draft\ntradition: western\nera: 1677\ntags: [text, images]\nverified: false\n---\n\n# Mutus Liber\n\nThe \"silent book,\" La Rochelle, 1677: fifteen engraved plates and essentially no\ntext. The entire Great Work, allegedly, in pictures.\n\nlength:: fifteen plates\nattributed_to:: altus\n\n## Contents\n\nThe plates show a couple gathering dew in sheets stretched between poles,\nprocessing it through vessels, and attending a furnace, framed by angels and\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\n\nThe dew-gathering is the one concretely readable operation, and it connects to a\nreal strand of practice: dew was held to be a celestial condensate and a candidate\n[prima materia](/substances/prima-materia.md).\n\n## Status of these notes\n\nDraft. I have not worked through the plates in order against a commentary, and\nthe secondary literature disagrees about even the number of stages depicted.\n\n- [ ] Obtain a facsimile with plate numbering\n- [ ] Compare the 1677 and 1702 plate sequences\n- [ ] Decide whether the dew operation is literal\n"
+          },
+          {
+            "text": "b_187 h1     §\nb_188 p\nb_189 h2     §\nb_190 tbl\n  b_191 tr\n  b_192 tr\n  b_193 tr\n  b_194 tr\n  b_195 tr\nb_196 p\nb_197 h2     §\nb_198 p\nb_199 h2     §\nb_200 p\nb_201 ul\n  b_202 li\n  b_203 li\n  b_204 li\nb_205 h2     §\nb_206 ul\n  b_207 li\n  b_208 li",
+            "truncated": false
+          },
+          {
+            "prefix": "/substances/",
+            "depth": 1,
+            "total": {
+              "docs": 5,
+              "blocks": 80
+            },
+            "entries": [
+              {
+                "path": "/substances/mercury.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 17,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/substances/philosophers-stone.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 21,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/substances/prima-materia.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 14,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/substances/salt.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 20,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/substances/sulphur.md",
+                "kind": "doc",
+                "docs": 1,
+                "blocks": 8,
+                "ts": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "items": [
+              {
+                "path": "/processes/calcination.md",
+                "blocks": 20,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/processes/coagulation.md",
+                "blocks": 14,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/processes/dissolution.md",
+                "blocks": 15,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/processes/magnum-opus.md",
+                "blocks": 22,
+                "ts": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": false,
+            "cursor": null
+          },
+          {
+            "items": [
+              {
+                "path": "/lab/2026-01-notes.md",
+                "blocks": 28,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/lab/2026-02-notes.md",
+                "blocks": 23,
+                "ts": "2026-09-27T00:00:00.000Z"
+              },
+              {
+                "path": "/practitioners/jabir-ibn-hayyan.md",
+                "blocks": 13,
+                "ts": "2026-09-27T00:00:00.000Z"
+              }
+            ],
+            "truncated": true,
+            "cursor": "WyIvcHJhY3RpdGlvbmVycy9qYWJpci1pYm4taGF5eWFuLm1kIl0"
+          },
+          {
+            "error": "doc_missing",
+            "retriable": false
+          },
+          {
+            "stale": [],
+            "externalCount": 0,
+            "totalOpenEdges": 0,
+            "truncated": false
+          },
+          {
+            "roots": [
+              "d_0"
+            ],
+            "degrees": 0,
+            "direction": "both",
+            "documents": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "degree": 0,
+                "frontier": true
+              }
+            ],
+            "edges": [
+              {
+                "id": "e_0",
+                "src": "d_0",
+                "dst": "phantom:mercury",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_1",
+                "src": "d_0",
+                "dst": "phantom:sulphur",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              },
+              {
+                "id": "e_2",
+                "src": "d_0",
+                "dst": "phantom:salt",
+                "dst_path": null,
+                "dst_uri": null,
+                "dst_kind": "document",
+                "predicate": "references",
+                "provenance": "link",
+                "anchor": null,
+                "src_field": null
+              }
+            ],
+            "frontier": [
+              {
+                "id": "d_0",
+                "path": "/index.md",
+                "degree": 0
+              }
+            ],
+            "truncated": false,
+            "queries": [
+              "select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_0\" follow distinct doc.out { depth 1 }",
+              "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_0\" follow distinct doc.in { depth 1 }"
+            ]
           }
         ]
       }

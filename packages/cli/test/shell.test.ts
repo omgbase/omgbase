@@ -266,7 +266,7 @@ describe("errors", () => {
     });
     const stdout = r.stdout ?? "";
     // Prompt up front, and it precedes the command's row output (not the reverse).
-    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}hub\.md/);
+    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}\/hub\.md/);
     // One prompt initially, then one after each of the two commands.
     expect((stdout.match(/omg> /g) ?? []).length).toBe(3);
   });
@@ -278,7 +278,7 @@ describe("errors", () => {
       env: { ...process.env, NO_COLOR: "1", OMG_SHELL_PROMPT: "omg> " },
     });
     const stdout = r.stdout ?? "";
-    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}hub\.md/);
+    expect(stdout).toMatch(/^omg> b_[a-z0-9]+ {2}\/hub\.md/);
     // initial prompt + one after the query (exit ends the session, no prompt).
     expect((stdout.match(/omg> /g) ?? []).length).toBe(2);
   });

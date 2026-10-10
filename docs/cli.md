@@ -53,7 +53,7 @@ A global flag whose value is missing (`-C`, `--repo`, `--server`, `-H`) and a st
 
 ### 2.3 Arguments: IDs, paths, stdin
 
-Anywhere a node is named, the CLI accepts what the API accepts (`resolveRef`, `core/read/refs.ts`): a bare ID — block `b_k7z2p9q`, document `d_7f31k2m`, or projected node `n_…` (dereferenced to its block) — or a repo-relative document path (`projects/foo.md`). In-doc anchor **locators** (`projects/foo.md#Risks/p[2]`) are a design notion that is **not implemented**: nothing parses them, so such an argument is an unknown path (`doc_missing`). Locators appear only in *output*, paired with the ID (§4.2); use the ID for the follow-up. `omg cat`'s `--resolution` applies to block refs; a document ref is always its exact bytes, and asking for another resolution on one prints a warning on stderr rather than being silently ignored.
+Anywhere a node is named, the CLI accepts what the API accepts (`resolveRef`, `core/read/refs.ts`): a bare ID — block `b_k7z2p9q`, document `d_7f31k2m`, or projected node `n_…` (dereferenced to its block) — or a document path in either form (`/projects/foo.md` or `projects/foo.md`). Every path the CLI *prints* — a hit's locator, `ls` rows, headers, confirmations, diff headers, `--json` documents — is the `/`-rooted reference form (`spec/surface` §1 "Paths", 2.0; `spec/cli` §3.1a). In-doc anchor **locators** (`projects/foo.md#Risks/p[2]`) are a design notion that is **not implemented**: nothing parses them, so such an argument is an unknown path (`doc_missing`). Locators appear only in *output*, paired with the ID (§4.2); use the ID for the follow-up. `omg cat`'s `--resolution` applies to block refs; a document ref is always its exact bytes, and asking for another resolution on one prints a warning on stderr rather than being silently ignored.
 
 Commands that take a list of nodes — the mutators (`move`, `rm`, `done`, `merge`) and the readers `cat` and `show` — accept `-` meaning "read refs from stdin, one per line" — the counterpart of `--ids`, so `omg q … --ids | omg cat -` (or `| omg show -`, `| omg done -`) is the pipeline. One helper (`expandBlockArgs` in `cmd/_mutate.ts`) implements it everywhere; a `-` with empty stdin is a usage error (exit 2).
 
@@ -162,9 +162,9 @@ Alias `omg q`. The source is one OQX expression (`[select …] from docs|blocks|
 |---|---|
 | `omg links <node> [--in\|--out] [--pred p,p] [--blocks]` | Open edges touching the node; default both directions, grouped; doc-grain by default (`doc_edges`), `--blocks` for block-grain — one row per open edge with its source block (`references > d_13 (b_307)`; `block` in `--json`). Backlinks = `omg links <node> --in`. `--jsonl` prints the `{ out, in }` object (it is not a list). |
 
-Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
+Traversal is OQX `follow`, not a dedicated `graph` command: `omg q 'from docs where $path == "/x.md" follow doc.out'` walks the outgoing citation graph, `follow doc.in` walks backlinks, and `follow block.children` / `section.children` / `section.subsections` walk structure — all with `$depth`/`$stop`/`$ordinal` metadata and a depth cap of 8 (see 10, OQX `follow`). The structured `graph_traverse`/`graph_path`/`graph_subgraph` API was removed.
 
-There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where $path == "x.md" follow doc.out' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
+There is no `pipeline` command: **the pipeline is the pipe.** `omg q 'from docs where $path == "/x.md" follow doc.out' --ids | omg show -` covers seed → expand → hydrate; in-process `pipeline` remains an MCP-only round-trip optimization.
 
 ### 5.5 History
 

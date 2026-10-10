@@ -7,6 +7,7 @@ import {
   observeDelete,
   changesSince,
   docsRead,
+  storagePath,
 } from "@omgbase/core";
 
 // EngineClient (ADR-014 §7): the coordinator's view of "the omgbase side" of a
@@ -72,7 +73,7 @@ export class InProcessEngineClient implements EngineClient {
   readDoc(path: string): Promise<DocBytes | null> {
     const row = this.store.db
       .prepare("SELECT doc_id, file_hash FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL")
-      .get(this.repoId, path) as { doc_id: string; file_hash: Buffer | null } | undefined;
+      .get(this.repoId, storagePath(path)) as { doc_id: string; file_hash: Buffer | null } | undefined;
     if (!row) return Promise.resolve(null);
     const res = docsRead(this.store, row.doc_id);
     if (!res) return Promise.resolve(null);

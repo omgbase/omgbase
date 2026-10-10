@@ -221,6 +221,18 @@ source — nothing to sync`), and errors. Every line ends in `\n`; a command
 that prints a string not ending in `\n` gets one appended. There are no
 exceptions: an empty result leaves stdout empty in every verb.
 
+### 3.1a Paths (cli 2.0)
+
+Every document path a verb prints — a hit's locator, `ls`/`docs_tree` rows,
+the `outline`/`show` header, `new`/`mv`/`rm --doc`/`meta` confirmations, the
+dry-run diff headers, `log` summaries, `find` locators, `sync`'s ingested /
+deleted / conflicted lists, and every path inside a `--json` document — is the
+**reference form**, `/`-rooted (`/projects/oqx.md`): `spec/surface` §1
+"Paths". Every path a verb accepts — a ref, a glob, `new`'s path, `mv`'s
+destination, `retarget`'s targets, `--doc` — tolerates both forms (`omg cat
+/index.md` and `omg cat index.md` read one document). A `--cursor` issued by a
+1.x `omg` is refused as `filter_invalid` (§3.5), the message naming the cause.
+
 ### 3.2 Modes
 
 Four modes, chosen by the global flags; `human` is the default.
@@ -492,7 +504,7 @@ with the op's payload (`op_index`, …).
 ### `cat`
 
 `cat <node…|-> [--resolution raw|text|outline|skeleton|full]` — `read_ref`.
-Each ref (a block id, doc id, node id or repo-relative path; `-` reads refs
+Each ref (a block id, doc id, node id or document path in either form; `-` reads refs
 from stdin one per line, a `-` with empty stdin is
 `usage: cat requires a <node> (or - to read refs from stdin)`) prints, in
 order: a document → its exact bytes (`docs_read`); a block → its raw
@@ -705,8 +717,8 @@ line plus the footer; `--ids` the commit ids plus the footer.
 ### `ls`
 
 `ls [<glob>] [--ids|--json|--jsonl]` — `docs_list`, every page walked. The
-glob is a path pattern with `*` matching any run of characters. Human: a
-column table of `<path>`, `<n> blocks` (right-aligned), the relative time
+glob is a path pattern with `*` matching any run of characters, in either
+path form. Human: a column table of `<path>` (rooted), `<n> blocks` (right-aligned), the relative time
 (§4, right-aligned); none → stderr `  no documents`. `--ids` the paths;
 `--json` the row array `[{ path, blocks, ts }]`; `--jsonl` one row per
 line.
@@ -1514,6 +1526,15 @@ was `b_314`).
 
 ## 10. Decisions
 
+- 2026-10-10, cli 2.0: paths print in the reference form (§3.1a), following
+  `spec/surface` 2.0 — the same decision, rendered: every `<path>` cell, header,
+  confirmation, diff header, `log` subject and `--json` path is `/`-rooted; every
+  path argument accepts both forms; a 1.x `--cursor` is refused. The `cat`/`show`
+  cards and the `query` card's examples say so. Every path-bearing expectation
+  changed spelling (and the tables re-aligned by one column); nothing else did.
+  An output changed in meaning: a major (`query::path-literal-rooted`,
+  `path-literal-bare`, `cursor-from-1x`, `read::cat-doc-rooted-path`,
+  `ls-glob-rooted`, `outline-rooted-path`, `docs::new-rooted-path`).
 - 2026-09-28, cli 1.2: `mv --no-retarget`. `docs_move` retargets the
   inbound links by default (`spec/mutate` 1.3), so `mv` does too and says
   how many; the flag is the opt-out and the old dangling note is what it

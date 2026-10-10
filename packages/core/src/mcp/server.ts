@@ -25,12 +25,24 @@ import { reposStatus, syncStatus, reposList } from "../sync/admin.js";
 import { observeFile, observeMany, observeDelete } from "../sync/observe.js";
 import { QUERY_SYNTAX } from "./reference.js";
 import { versionInfo, type HostInfo } from "../version.js";
+import { storagePath } from "../core/paths.js";
+import {
+  surfaceApplyResult, surfaceDocOpResult, surfaceDocMoveResult, surfaceObserveResult, surfaceObserveDeleteResult,
+  surfaceTextSearch, surfaceResolveHits, surfaceRetargetHits, surfaceOpset, surfaceDocsUpdate,
+} from "../surface-paths.js";
 
 // MCP server (mcp-api). The full tool surface wired to the engine: read
 // (docs_tree, docs_list, docs_outline, nodes_get(_many), query, text_search, resolve), mutate (apply
 // + macros), graph (traverse, path), history (history_node, diff,
 // changes_since), admin (repos_status, sync_status). Uniform truncated+cursor
 // on lists; stable error-code mapping.
+//
+// Paths (spec/surface §1 "Paths", 2.0): every path a tool returns is the
+// reference form (`/a/b.md`) and every path argument accepts either form. The
+// surface-owned readers root their own results; the results another spec pins
+// in the storage form (apply, the document operations, observe, search) are
+// re-shaped here through `surface-paths.ts` — the same functions the `omg`
+// verbs call, so the two clients cannot drift.
 
 export interface ServerContext {
   store: Store;
@@ -254,7 +266,7 @@ export function buildServer(ctx: ServerContext): McpServer {
   // Apply an already-built op list, honoring dry_run (preview, no drain) — the
   // shared tail of every block-level tool below.
   function applyOps(repoId: string, rootPath: string, ops: Op[], reason: string, dryRun?: boolean) {
-    const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...(dryRun !== undefined ? { dryRun } : {}) });
+    const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason }, ...(dryRun !== undefined ? { dryRun } : {}) }));
     return dryRun ? ok(res) : okMutated(res);
   }
   // Guard shared by every mutating tool: a sourceless (headless-only) repo has no
@@ -405,7 +417,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "read_ref",
     {
       description:
-        "Read ANY ref — a document (`d_…` id or repo-relative path) OR a block (`b_…` id, or an `n_…` node id which dereferences to its block) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", content, path, docId, … }` (complete file bytes; `resolution` does not apply); a block ref returns `{ kind:\"block\", … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
+        "Read ANY ref — a document (`d_…` id or path, with or without its leading `/`) OR a block (`b_…` id, or an `n_…` node id which dereferences to its block) — and get its content, classified. Resolves the ref server-side (the polymorphic `omg cat`): a document ref returns `{ kind:\"document\", content, path, docId, … }` (complete file bytes; `resolution` does not apply); a block ref returns `{ kind:\"block\", … }` — the block subtree at `resolution` (raw|text|outline|skeleton|full, default raw). Use this when you hold a ref and want its bytes WITHOUT first knowing whether it names a document or a block. Contrast: docs_read needs a doc; nodes_get needs a block id.",
       inputSchema: {
         ref: z.string(),
         resolution: z.enum(["skeleton", "outline", "text", "raw", "full"]).optional(),
@@ -467,7 +479,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_list",
     {
       description:
-        "ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ path, blocks, ts }], truncated, cursor }` — repo-relative path, live block count, last-commit timestamp (ISO, or null) — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default " + DOCS_LIST_DEFAULT_LIMIT + ") caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `resolve`.",
+        "ENUMERATE live documents (the `omg ls` operation) as a page: `{ items: [{ path, blocks, ts }], truncated, cursor }` — the document's path (`/`-rooted, as every path the surface returns), live block count, last-commit timestamp (ISO, or null) — ordered by path. This is a flat `ls`, not an orientation primitive: unscoped on a large repo it is hundreds of rows, and the engine has no directory concept here — `path_glob` is a simple LIKE match where `*` matches ANY run INCLUDING `/` (so `projects/*` is the whole subtree; there is no 'immediate children only'). To learn a repo's shape, call docs_tree first, then scope this with a `path_glob` once you know where to look. Paged under the uniform list contract: `limit` (default " + DOCS_LIST_DEFAULT_LIMIT + ") caps rows, `cursor` (from a truncated page) resumes after the last row returned, `budget_tokens` caps the page's estimated size (at least one row is always returned), and `truncated` is honest — when true you have NOT seen everything. For structured/ranked discovery use `query` or `resolve`.",
       inputSchema: {
         path_glob: z.string().optional(),
         limit: z.number().int().optional(),
@@ -572,7 +584,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return ok(textSearch(store, repoId, args.q, args.limit !== undefined ? { limit: args.limit } : {}));
+        return ok(surfaceTextSearch(textSearch(store, repoId, args.q, args.limit !== undefined ? { limit: args.limit } : {})));
       } catch (e) {
         return fail(e);
       }
@@ -592,7 +604,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // Hybrid: fuse the query vector into the ranking when a provider is
         // configured (mirrors CLI `omg find`). Absent ⇒ FTS-only.
         if (ctx.embedQuery) input.vector = await ctx.embedQuery(args.query);
-        return ok(resolveThing(store, input));
+        return ok(surfaceResolveHits(resolveThing(store, input)));
       } catch (e) {
         return fail(e);
       }
@@ -615,12 +627,12 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const res = apply(store, {
+        const res = surfaceApplyResult(apply(store, {
           repoId, rootPath,
           ops: args.ops as Op[],
           origin: { actor: "agent:mcp", ...(args.reason ? { reason: args.reason } : {}) },
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
-        });
+        }));
         // A dry run previews without writing — don't schedule a drain for it.
         return args.dry_run ? ok(res) : okMutated(res);
       } catch (e) {
@@ -678,7 +690,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           ? { ...(args.checked !== undefined ? { checked: args.checked } : {}), ...(args.attrs ?? {}) }
           : undefined;
         const ops: Op[] = [{ op: "update", block, ...(args.markdown !== undefined ? { markdown: args.markdown } : {}), ...(attrs ? { attrs } : {}), ...(expect ? { expect } : {}) } as Op];
-        const res = apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) });
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath: root, ops, origin: { actor: "agent:mcp", reason: "blocks_update" }, ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}) }));
         // `ids` lists every resulting block (the target first, then any siblings
         // minted from multi-block content); `id` keeps the target for convenience.
         const ids = res.results[0]?.ids ?? [block];
@@ -851,7 +863,7 @@ export function buildServer(ctx: ServerContext): McpServer {
         // their ids; only the appended blocks are minted).
         const docId = resolveDocId(repoId, { ...(args.doc ? { doc: args.doc } : {}), ...(args.path ? { path: args.path } : {}) });
         const ops = docsAppend(docId, args.text);
-        return okMutated(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } }));
+        return okMutated(surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "docs_append" } })));
       } catch (e) {
         return fail(e);
       }
@@ -868,9 +880,10 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const { ops, hits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const { ops, hits: rawHits, pairs } = linksRetarget(store, repoId, args.from_target, args.to_target, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const hits = surfaceRetargetHits(rawHits);
         const dryRun = args.dry_run !== false;
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, dryRun });
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_retarget" }, dryRun }));
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
@@ -883,7 +896,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     "links_stale",
     {
       description:
-        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the canonical missing path WITHOUT a leading `/` (e.g. `guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{srcPath,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
+        "READ-ONLY link health: surfaces DANGLING internal links — links whose target path has NO live document (stored as a `phantom:` edge; a doc created at that path auto-resolves them). Returns `stale[]` (each with srcPath, srcBlock, predicate, provenance, `target` = the canonical missing path, `/`-rooted like every path the surface returns (e.g. `/guides/old.md`), `authored` = the destination text exactly as written in the source block (e.g. `/guides/old.md#Setup`; null for frontmatter edges), `anchor`, and reason `dangling_doc`), plus `externalCount` (http(s) links — UNVERIFIABLE here, never marked broken, since reachability needs network I/O the engine won't do), `totalOpenEdges`, and `truncated` (capped by `limit`, default 500). `summary:true` returns counts only — `staleCount`, `byTarget[{target,count}]`, `bySource[{srcPath,count}]`, `externalCount`, `totalOpenEdges` — for a repo-wide audit in one small call. Scope the SOURCE docs with `path_glob` (e.g. \"journal/*\"; `*` matches across `/`). Fix the reported targets with `links_repair` (batch) or `links_retarget` (single): either `target` or `authored` works as `from`. Anchors (#heading/^ref) into an existing doc are NOT verified in v1. Contrast docs_read/query which answer 'what does this doc say', not 'which of its links are broken'.",
       inputSchema: { path_glob: z.string().optional(), limit: z.number().int().optional(), summary: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
@@ -926,11 +939,12 @@ export function buildServer(ctx: ServerContext): McpServer {
         if (!repairs || repairs.length === 0) {
           throw new EngineError("target_missing", "links_repair requires `repairs` (array of {from,to}) or a `from_target`+`to_target` pair");
         }
-        const { ops, hits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const { ops, hits: rawHits, pairs } = linksRepair(store, repoId, repairs, args.path_glob ? { pathGlob: args.path_glob } : {});
+        const hits = surfaceRetargetHits(rawHits);
         // The dry run plans through the same kernel path (dryRun: no write, no
         // drain) so a preview surfaces exactly the failure an apply would hit.
         const dryRun = args.dry_run !== false;
-        const res = apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, dryRun });
+        const res = surfaceApplyResult(apply(store, { repoId, rootPath, ops, origin: { actor: "agent:mcp", reason: "links_repair" }, dryRun }));
         if (dryRun) return ok({ hits, pairs, applied: false, ...res });
         return okMutated({ hits, pairs, applied: true, ...res });
       } catch (e) {
@@ -958,7 +972,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return docResult(docsCreate(store, docCtx(repoScope(args.repo), args.dry_run), args.path, args.markdown, args.frontmatter), args.dry_run);
+        return docResult(surfaceDocOpResult(docsCreate(store, docCtx(repoScope(args.repo), args.dry_run), args.path, args.markdown, args.frontmatter)), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -969,12 +983,12 @@ export function buildServer(ctx: ServerContext): McpServer {
     "docs_move",
     {
       description:
-        "Rename a document to a new repo-relative path; block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked changeset, so a move never leaves the graph broken. Fails path_taken if the destination exists. The result carries `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc, path, block, target, anchor, field?} per occurrence) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus the rewritten sources) — without renaming or committing.",
+        "Rename a document to a new path (`/`-rooted or bare; the result reports the rooted form); block identity and history are preserved, and the inbound links FOLLOW it: every link written against the old path (Markdown links/images, wikilinks, bare-path inline fields — anchors, link text, titles and code spans preserved, absolute vs relative style kept) is rewritten to the new path in the same call as one CAS-checked changeset, so a move never leaves the graph broken. Fails path_taken if the destination exists. The result carries `retargeted` (the touched blocks/docs) and `dangling` — what could NOT be rewritten, i.e. frontmatter relations (block null; fix with docs_set_meta). Pass `retarget_inbound:false` to opt out for the rarer intent that the old path become unbound: the links are left as written, listed in `dangling` ({doc, path, block, target, anchor, field?} per occurrence) and reported by links_stale (their edges become `phantom:<old path>`); links already written against the new path start resolving to this doc either way. dry_run:true validates and returns the plan — `dangling`, `retargeted`, and the per-file `diffs` (the old path emptied, the new path filled, plus the rewritten sources) — without renaming or committing.",
       inputSchema: { doc: z.string(), to_path: z.string(), retarget_inbound: z.boolean().optional(), dry_run: z.boolean().optional(), ...REPO_ARG },
     },
     async (args) => {
       try {
-        return docResult(docsMove(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, args.to_path, { retargetInbound: args.retarget_inbound !== false }), args.dry_run);
+        return docResult(surfaceDocMoveResult(docsMove(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, args.to_path, { retargetInbound: args.retarget_inbound !== false })), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -989,7 +1003,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return docResult(docsDelete(store, docCtx(repoScope(args.repo), args.dry_run), args.doc), args.dry_run);
+        return docResult(surfaceDocOpResult(docsDelete(store, docCtx(repoScope(args.repo), args.dry_run), args.doc)), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1004,10 +1018,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        return docResult(docsSetMeta(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, {
+        return docResult(surfaceDocOpResult(docsSetMeta(store, docCtx(repoScope(args.repo), args.dry_run), args.doc, {
           ...(args.set ? { set: args.set } : {}),
           ...(args.unset ? { unset: args.unset } : {}),
-        }), args.dry_run);
+        })), args.dry_run);
       } catch (e) {
         return fail(e);
       }
@@ -1025,7 +1039,7 @@ export function buildServer(ctx: ServerContext): McpServer {
       try {
         const { repoId, rootPath } = repoScope(args.repo);
         if (!rootPath) throw new EngineError("repo_not_found", "repo has no filesystem source; mutation disabled");
-        const opset = planUpdate(store, repoId, rootPath, args.doc, args.content);
+        const opset = surfaceOpset(planUpdate(store, repoId, rootPath, args.doc, args.content));
         return ok({ opset, plan: renderOpsetPlan(opset) });
       } catch (e) {
         return fail(e);
@@ -1042,10 +1056,10 @@ export function buildServer(ctx: ServerContext): McpServer {
     },
     async (args) => {
       try {
-        const { opset, result } = docsUpdate(store, docCtx(repoScope(args.repo)), args.doc, args.content, {
+        const { opset, result } = surfaceDocsUpdate(docsUpdate(store, docCtx(repoScope(args.repo)), args.doc, args.content, {
           ...(args.dry_run !== undefined ? { dryRun: args.dry_run } : {}),
           ...(args.reason !== undefined ? { reason: args.reason } : {}),
-        });
+        }));
         const payload = { opset, plan: renderOpsetPlan(opset), result };
         return args.dry_run ? ok(payload) : okMutated(payload);
       } catch (e) {
@@ -1064,7 +1078,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return okMutated(observeFile(store, repoId, args.path, args.content));
+        return okMutated(surfaceObserveResult(observeFile(store, repoId, storagePath(args.path), args.content)));
       } catch (e) {
         return fail(e);
       }
@@ -1081,7 +1095,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return okMutated(observeMany(store, repoId, args.files));
+        return okMutated(observeMany(store, repoId, args.files.map((f) => ({ ...f, path: storagePath(f.path) }))).map(surfaceObserveResult));
       } catch (e) {
         return fail(e);
       }
@@ -1098,7 +1112,7 @@ export function buildServer(ctx: ServerContext): McpServer {
     async (args) => {
       try {
         const { repoId } = repoScope(args.repo);
-        return okMutated(observeDelete(store, repoId, args.path));
+        return okMutated(surfaceObserveDeleteResult(observeDelete(store, repoId, storagePath(args.path))));
       } catch (e) {
         return fail(e);
       }
@@ -1209,7 +1223,7 @@ export function buildServer(ctx: ServerContext): McpServer {
           const info = findDocByRef(store, repoId, args.doc);
           const asId = isValidId(args.doc, "d");
           const known = info || (args.include_deleted
-            ? store.db.prepare(asId ? "SELECT 1 FROM docs WHERE doc_id = ?" : "SELECT 1 FROM docs WHERE repo_id = ? AND path = ?").get(...(asId ? [args.doc] : [repoId, args.doc]))
+            ? store.db.prepare(asId ? "SELECT 1 FROM docs WHERE doc_id = ?" : "SELECT 1 FROM docs WHERE repo_id = ? AND path = ?").get(...(asId ? [args.doc] : [repoId, storagePath(args.doc)]))
             : undefined);
           if (!known) throw new EngineError("doc_missing", `no document for ${JSON.stringify(args.doc)}`);
         }

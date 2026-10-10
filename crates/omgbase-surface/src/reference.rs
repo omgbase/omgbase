@@ -18,6 +18,18 @@ clause. A predicate is never implicit: blocks filter with `where`
 Results are LEAN hits — {id, path} + whatever `select` projects (or `values`,
 `count`, `exists`, `none`). Hydrate by id via nodes_get / docs_read.
 
+## Paths
+
+Every path the surface returns is `/`-rooted — the form a reference is
+written in (`[x](/projects/oqx.md)`, `before: [/timeline/kickoff.md]`): a
+hit's `path`, `$path`, `$dst_path`, every tool's paths. Every path it
+accepts tolerates both forms (`/a.md` or `a.md`): tool arguments, `refs(x)`,
+`within(...)`, and a string LITERAL compared with `$path`/`$dst_path` by
+`==`/`!=` or passed to their `.startsWith(...)` (it is rooted first, so
+`$path == "a.md"` and `$path == "/a.md"` both match). A property holding a
+reference compares directly: `where ^$path in list(after)`,
+`where customer == ^$path` — no `"/" + ...` glue.
+
 ## Targets & field namespaces
 
 `$`-prefixed names are engine intrinsics; BARE identifiers are your content.
@@ -50,10 +62,12 @@ upper.
 
 refs(x) — the live documents a property's document references name: x is a
 string, a list or absent; each "/a/b.md", "a/b.md" or "d_…" element resolves
-to that doc's row (paths match $path after one leading "/" is stripped);
-dangling and non-string elements are dropped. Yields docs rows, so it is a
-source, a receiver or a follow destination: `follow refs(before), refs(after)`
-walks a timeline both ways. A HIT IS A STORE ROW: a top-level row that is not
+to that doc's row; dangling and non-string elements are dropped. Yields docs
+rows, so it is a source, a receiver or a follow destination:
+`follow refs(before), refs(after)` walks a timeline both ways. The reverse
+direction needs no function: a document's $path is already the reference
+form, so `$repo.docs collect { where ^$path in list(after) }` is "the
+documents whose `after` names me". A HIT IS A STORE ROW: a top-level row that is not
 a doc/block/node/edge fails (filter_invalid) — `follow before` over a list of
 paths reaches the STRINGS; write `follow refs(before)`.
 
@@ -69,7 +83,7 @@ $ordinal): each <dest> is a relation of the current row or a
 `<recv> collect|first|single [distinct] { … }` block re-evaluated per frontier
 row; one step's successors are unioned by identity. Inside the follow-local
 `where` and inside a destination block `^` is the row being expanded (`^^`
-the walk's enclosing scope): `follow doc.in { where before.contains(^$path) }`,
-`follow doc.out, $repo.docs collect { where after.contains(^$path) }`.
+the walk's enclosing scope): `follow doc.in { where ^$path in list(before) }`,
+`follow doc.out, $repo.docs collect { where ^$path in list(after) }`.
 A custom `order by` disables the keyset cursor.
 "#;

@@ -13,14 +13,15 @@ use std::collections::HashMap;
 
 use omgbase_search::{EmbeddingProvider, f32_to_blob};
 use omgbase_store::Store;
-use oqx::ast::{Expr, Query, SelectItem};
+use oqx::ast::{BinaryOp, Expr, Query, SelectItem};
 use oqx::walk::{Clause, Node, VisitContext, Visitor, transform, visit};
 use oqx::{Consumer, Engine, InMemoryEngine, Value, build, resolve_aliases};
 use serde_json::{Map, Value as Json};
 
 use crate::context::{SemanticVec, StoreContext, render_row_values, target_of};
-use crate::cursor::{decode_cursor, encode_cursor};
+use crate::cursor::{decode_path_cursor, encode_cursor};
 use crate::error::{Result, SurfaceError};
+use crate::paths::reference_path;
 use crate::planner::{SqlitePlanner, root_target};
 
 /// The default page size.
@@ -139,8 +140,91 @@ impl OqxResult {
 
 // ---- the `$self` rewrite -----------------------------------------------------------
 
-/// Rewrite every row function in a parsed query to a `$self` method call — one
-/// `transform` over the AST (`spec/oqx/AST.md` §5), every block included.
+/// Paths on the surface are the reference form (`spec/surface` §1 "Paths",
+/// 2.0): `$path` and `$dst_path` read `/a/b.md`. A string literal a query
+/// compares with one of them — `$path == "a.md"`, `"a.md" != $dst_path`,
+/// `$path.startsWith("lab/")` — is rooted first, so both spellings match; a
+/// property or binding compared with a path is never touched (it is the
+/// author's value). The planner sees the rewritten tree too, so the pushed
+/// SQL and the in-memory engine agree by construction.
+const PATH_INTRINSICS: [&str; 2] = ["$path", "$dst_path"];
+
+fn is_path_read(e: &Expr) -> bool {
+    match e {
+        Expr::Ident { name, .. } | Expr::Outer { name, .. } | Expr::Member { name, .. } => {
+            PATH_INTRINSICS.contains(&name.as_str())
+        }
+        _ => false,
+    }
+}
+
+fn root_literal(e: Expr) -> Expr {
+    match e {
+        Expr::Lit {
+            value: Value::Str(s),
+            span,
+        } => Expr::Lit {
+            value: Value::Str(reference_path(&s)),
+            span,
+        },
+        other => other,
+    }
+}
+
+/// The literal-rooting rewrite of one expression (see [`rewrite_query`]).
+#[must_use]
+pub fn root_path_literals(e: Expr) -> Expr {
+    match e {
+        Expr::Binary {
+            op: op @ (BinaryOp::Eq | BinaryOp::Ne),
+            left,
+            right,
+            span,
+        } => {
+            if is_path_read(&left) {
+                Expr::Binary {
+                    op,
+                    left,
+                    right: Box::new(root_literal(*right)),
+                    span,
+                }
+            } else if is_path_read(&right) {
+                Expr::Binary {
+                    op,
+                    left: Box::new(root_literal(*left)),
+                    right,
+                    span,
+                }
+            } else {
+                Expr::Binary {
+                    op,
+                    left,
+                    right,
+                    span,
+                }
+            }
+        }
+        Expr::Call {
+            recv: Some(recv),
+            name,
+            mut args,
+            span,
+        } if name == "startsWith" && args.len() == 1 && is_path_read(&recv) => {
+            let arg = root_literal(args.remove(0));
+            Expr::Call {
+                recv: Some(recv),
+                name,
+                args: vec![arg],
+                span,
+            }
+        }
+        other => other,
+    }
+}
+
+/// Rewrite every row function in a parsed query to a `$self` method call, and
+/// root every string literal compared with a path intrinsic — one `transform`
+/// over the AST (`spec/oqx/AST.md` §5), every block included.
 #[must_use]
 pub fn rewrite_query(q: &Query) -> Query {
     transform(q, &mut |e, _| match e {
@@ -155,7 +239,7 @@ pub fn rewrite_query(q: &Query) -> Query {
             args,
             span,
         },
-        other => other,
+        other => root_path_literals(other),
     })
 }
 
@@ -623,7 +707,8 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     let cap = opts.limit.unwrap_or(DEFAULT_LIMIT);
     let mut page = rows;
     if let Some(cursor) = cursor {
-        let parts = decode_cursor(cursor, "query", 2)?;
+        // The cursor carries the hit's (rooted) path; a 1.x cursor is refused (§1.4).
+        let parts = decode_path_cursor(cursor, "query", 2)?;
         let (path, id) = (&parts[0], &parts[1]);
         page.retain(|h| {
             let hp = hit_str(h, "path");
@@ -684,6 +769,31 @@ mod tests {
         assert!(
             matches!(expr, Expr::Binary { left, .. } if matches!(&**left, Expr::Call { recv: None, name, .. } if name == "size"))
         );
+    }
+
+    #[test]
+    fn path_literals_are_rooted_only_against_path_reads() {
+        let q = oqx::parse_string(
+            "select n: $repo.docs collect { $path where $path == ^after || \"x.md\" != $dst_path } from docs where $path.startsWith(\"lab/\") && doc.$path == \"a.md\" && type == \"a.md\" && ^$path == \"b.md\"",
+        )
+        .unwrap();
+        let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
+        assert!(printed.contains("$path.startsWith(\"/lab/\")"), "{printed}");
+        assert!(printed.contains("doc.$path == \"/a.md\""), "{printed}");
+        assert!(printed.contains("type == \"a.md\""), "{printed}");
+        assert!(printed.contains("^$path == \"/b.md\""), "{printed}");
+        assert!(printed.contains("\"/x.md\" != $dst_path"), "{printed}");
+        // a property compared with a path is the author's value: untouched
+        assert!(printed.contains("$path == ^after"), "{printed}");
+        // `contains`/`endsWith`/`matches` and the empty string are literal
+        let q = oqx::parse_string(
+            "from docs where $path.contains(\"a/\") && $path.endsWith(\".md\") && $path == \"\"",
+        )
+        .unwrap();
+        let printed = oqx::print_query(&rewrite_query(&q)).unwrap();
+        assert!(printed.contains("$path.contains(\"a/\")"), "{printed}");
+        assert!(printed.contains("$path.endsWith(\".md\")"), "{printed}");
+        assert!(printed.contains("$path == \"/\""), "{printed}");
     }
 
     #[test]

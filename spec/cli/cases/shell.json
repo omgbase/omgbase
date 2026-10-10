@@ -12,7 +12,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n  omgbase  >  texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n",
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n  omgbase  >  /texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -26,7 +26,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -41,7 +41,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -70,7 +70,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -85,7 +85,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 1,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "error[doc_missing]: no node nope.md\n  2 rows — address with @1..@2\n"
       }
     },
@@ -114,7 +114,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n{\"path\":\"texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n  omgbase  >  texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n{\"path\":\"texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n  omgbase  >  /texts/emerald-tablet.md\n  ----------------------------------------\n  properties\n    length = short\n    attributed_to = hermes\n    type = text\n    layer = canon\n    tradition = islamic\n    era = 800\n    tags = [\"text\",\"hermetic\"]\n    verified = true\n    $title = The Emerald Tablet\n  out edges\n    references > d_3 ×1\n    references > d_5 ×1\n    references > d_8 ×1\n    references > d_9 ×1\n  backlinks\n    d_0 > references ×1\n    d_13 > references ×1\n{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -128,7 +128,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 2,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n",
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\nusage: @9 out of range (2 rows)\n"
       }
     },
@@ -157,7 +157,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 2,
-        "stdout": "{\"kind\":\"document\",\"path\":\"texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\ntexts/mutus-liber.md\n",
+        "stdout": "{\"kind\":\"document\",\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n/texts/mutus-liber.md\n",
         "stderr": "usage: cannot read .kind of a non-object\nusage: cannot read .nope of a non-object\n"
       }
     },
@@ -201,7 +201,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 2,
-        "stdout": "@t  2 rows\n{\"path\":\"texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\ntexts/emerald-tablet.md\nd_16\n",
+        "stdout": "@t  2 rows\n{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n/texts/emerald-tablet.md\nd_16\n",
         "stderr": "  @t = 2 rows\nusage: [3] out of range (2 items)\nusage: reference is a collection; select one with [i]\n  unset @t\n  no binding @t\n  no bindings\nusage: no binding @t\n"
       }
     },
@@ -215,7 +215,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\nd_16\n{\"path\":\"texts/emerald-tablet.md\",\"docId\":\"d_16\",\"rev\":\"r_16\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"canon\",\"tradition\":\"islamic\",\"era\":800,\"tags\":[\"text\",\"hermetic\"],\"verified\":true},\"inline\":{\"length\":\"short\",\"attributed_to\":\"hermes\"},\"computed\":{\"$title\":\"The Emerald Tablet\"}},\"content\":\"---\\ntype: text\\nlayer: canon\\ntradition: islamic\\nera: 800\\ntags: [text, hermetic]\\nverified: true\\n---\\n\\n# The Emerald Tablet\\n\\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\\nearliest surviving in Arabic around the 8th century, and the most quoted text in\\nthe entire tradition.\\n\\nlength:: short\\nattributed_to:: hermes\\n\\n## The text\\n\\n> That which is above is from that which is below, and that which is below is\\n> from that which is above, working the miracles of one.\\n\\n> And as all things have been and arose from one by the mediation of one, so all\\n> things have their birth from this one thing by adaptation.\\n\\n## Why it dominated\\n\\nIt is short enough to memorize, concrete enough to sound like instructions, and\\nvague enough to support any reading. Every practitioner from\\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\\nproduced a commentary, and the commentaries agree on nothing.\\n\\nNewton's translation survives in his own hand. He read it, plausibly, as\\ndescribing distillation and condensation — the below rising and the above\\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\\n[coagulation](/processes/coagulation.md).\\n\\n## Assessment\\n\\nRead as chemistry it says nothing operational. Read as a statement that the same\\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\\nto be true, arrived at for no good reason.\\n\"}\n---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\nd_16\n{\"path\":\"/texts/emerald-tablet.md\",\"docId\":\"d_16\",\"rev\":\"r_16\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"canon\",\"tradition\":\"islamic\",\"era\":800,\"tags\":[\"text\",\"hermetic\"],\"verified\":true},\"inline\":{\"length\":\"short\",\"attributed_to\":\"hermes\"},\"computed\":{\"$title\":\"The Emerald Tablet\"}},\"content\":\"---\\ntype: text\\nlayer: canon\\ntradition: islamic\\nera: 800\\ntags: [text, hermetic]\\nverified: true\\n---\\n\\n# The Emerald Tablet\\n\\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\\nearliest surviving in Arabic around the 8th century, and the most quoted text in\\nthe entire tradition.\\n\\nlength:: short\\nattributed_to:: hermes\\n\\n## The text\\n\\n> That which is above is from that which is below, and that which is below is\\n> from that which is above, working the miracles of one.\\n\\n> And as all things have been and arose from one by the mediation of one, so all\\n> things have their birth from this one thing by adaptation.\\n\\n## Why it dominated\\n\\nIt is short enough to memorize, concrete enough to sound like instructions, and\\nvague enough to support any reading. Every practitioner from\\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\\nproduced a commentary, and the commentaries agree on nothing.\\n\\nNewton's translation survives in his own hand. He read it, plausibly, as\\ndescribing distillation and condensation — the below rising and the above\\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\\n[coagulation](/processes/coagulation.md).\\n\\n## Assessment\\n\\nRead as chemistry it says nothing operational. Read as a statement that the same\\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\\nto be true, arrived at for no good reason.\\n\"}\n---\ntype: text\nlayer: canon\ntradition: islamic\nera: 800\ntags: [text, hermetic]\nverified: true\n---\n\n# The Emerald Tablet\n\n*Tabula Smaragdina.* A few hundred words attributed to Hermes Trismegistus,\nearliest surviving in Arabic around the 8th century, and the most quoted text in\nthe entire tradition.\n\nlength:: short\nattributed_to:: hermes\n\n## The text\n\n> That which is above is from that which is below, and that which is below is\n> from that which is above, working the miracles of one.\n\n> And as all things have been and arose from one by the mediation of one, so all\n> things have their birth from this one thing by adaptation.\n\n## Why it dominated\n\nIt is short enough to memorize, concrete enough to sound like instructions, and\nvague enough to support any reading. Every practitioner from\n[Jabir](/practitioners/jabir-ibn-hayyan.md) to [Newton](/practitioners/newton.md)\nproduced a commentary, and the commentaries agree on nothing.\n\nNewton's translation survives in his own hand. He read it, plausibly, as\ndescribing distillation and condensation — the below rising and the above\nreturning — which maps onto [dissolution](/processes/dissolution.md) and\n[coagulation](/processes/coagulation.md).\n\n## Assessment\n\nRead as chemistry it says nothing operational. Read as a statement that the same\nlaws hold at every scale, it is a decent piece of natural philosophy that happens\nto be true, arrived at for no good reason.\n",
         "stderr": "  2 rows — address with @1..@2\n  @first = d_16\n  @all = \"---\ntype: text\nlayer: canon\ntradition: islami…\"\n"
       }
     },
@@ -274,7 +274,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "[1] d_16  texts/emerald-tablet.md\n[2] d_17  texts/mutus-liber.md\n{\"path\":\"texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
+        "stdout": "[1] d_16  /texts/emerald-tablet.md\n[2] d_17  /texts/mutus-liber.md\n{\"path\":\"/texts/mutus-liber.md\",\"docId\":\"d_17\",\"rev\":\"r_17\",\"properties\":{\"frontmatter\":{\"type\":\"text\",\"layer\":\"draft\",\"tradition\":\"western\",\"era\":1677,\"tags\":[\"text\",\"images\"],\"verified\":false},\"inline\":{\"length\":\"fifteen plates\",\"attributed_to\":\"altus\"},\"computed\":{\"$title\":\"Mutus Liber\"}},\"content\":\"---\\ntype: text\\nlayer: draft\\ntradition: western\\nera: 1677\\ntags: [text, images]\\nverified: false\\n---\\n\\n# Mutus Liber\\n\\nThe \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and essentially no\\ntext. The entire Great Work, allegedly, in pictures.\\n\\nlength:: fifteen plates\\nattributed_to:: altus\\n\\n## Contents\\n\\nThe plates show a couple gathering dew in sheets stretched between poles,\\nprocessing it through vessels, and attending a furnace, framed by angels and\\nzodiacal signs. A sequence is clearly intended. What it instructs is not clear.\\n\\nThe dew-gathering is the one concretely readable operation, and it connects to a\\nreal strand of practice: dew was held to be a celestial condensate and a candidate\\n[prima materia](/substances/prima-materia.md).\\n\\n## Status of these notes\\n\\nDraft. I have not worked through the plates in order against a commentary, and\\nthe secondary literature disagrees about even the number of stages depicted.\\n\\n- [ ] Obtain a facsimile with plate numbering\\n- [ ] Compare the 1677 and 1702 plate sequences\\n- [ ] Decide whether the dew operation is literal\\n\"}\n",
         "stderr": "  @t = 2 rows\n  2 rows\n"
       }
     },
@@ -303,7 +303,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "b_289  texts/emerald-tablet.md#heading[0]  The Emerald Tablet\nb_27  index.md#list_item[0]  [The Emerald Tablet](/texts/emerald-tablet.md)\n- [The Emerald Tablet](/texts/emerald-tablet.md)\nb_27\nindex.md#list_item[0]\n",
+        "stdout": "b_289  /texts/emerald-tablet.md#heading[0]  The Emerald Tablet\nb_27  /index.md#list_item[0]  [The Emerald Tablet](/texts/emerald-tablet.md)\n- [The Emerald Tablet](/texts/emerald-tablet.md)\nb_27\n/index.md#list_item[0]\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -318,7 +318,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n",
+        "stdout": "/texts/emerald-tablet.md  13 blocks  0s ago\n/texts/mutus-liber.md     12 blocks  0s ago\n{\"text\":\"b_302 h1   Mutus Liber  §\\nb_303 p    The \\\"silent book,\\\" La Rochelle, 1677: fifteen engraved plates and…\\nb_304 p    length:: fifteen plates attributed_to:: altus\\nb_305 h2   Contents  §\\nb_306 p    The plates show a couple gathering dew in sheets stretched…\\nb_307 p    The dew-gathering is the one concretely readable operation, and it…\\nb_308 h2   Status of these notes  §\\nb_309 p    Draft. I have not worked through the plates in order…\\nb_310 ul\\n  b_311 li   ☐ Obtain a facsimile with plate numbering\\n  b_312 li   ☐ Compare the 1677 and 1702 plate sequences\\n  b_313 li   ☐ Decide whether the dew operation is literal\",\"truncated\":false}\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -332,7 +332,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n{\"path\":\"substances/prima-materia.md\",\"docId\":\"d_13\",\"rev\":\"r_13\",\"properties\":{\"frontmatter\":{\"type\":\"substance\",\"slug\":\"prima-materia\",\"layer\":\"canon\",\"tradition\":\"western\",\"tags\":[\"substance\",\"theory\"],\"verified\":false},\"inline\":{\"state\":\"undifferentiated\",\"obtainable\":\"no\"},\"computed\":{\"$title\":\"Prima materia\"}},\"content\":\"---\\ntype: substance\\nslug: prima-materia\\nlayer: canon\\ntradition: western\\ntags: [substance, theory]\\nverified: false\\n---\\n\\n# Prima materia\\n\\nThe *prima materia* is the formless first matter from which all substances are\\ncomposed — not a reagent you can order, but the state a substance is reduced to\\nbefore it can be rebuilt.\\n\\nstate:: undifferentiated\\nobtainable:: no\\n\\n## Descriptions\\n\\nThe texts are deliberately evasive. It is called the dragon, the chaos, the\\nlead of the philosophers, the vile black earth. Practitioners took this\\nmultiplicity as proof that the *prima materia* is a condition rather than an\\ningredient.\\n\\n> That which is below is like that which is above.\\n\\nThe [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing\\nthis reduction and return.\\n\\n## Relation to the Great Work\\n\\nReduction to the *prima materia* is the purpose of [[nigredo]], the blackening\\nthat opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md)\\nis the usual first operation.\\n\\n## Open questions\\n\\n- Whether the \\\"chaos\\\" and the \\\"lead of the philosophers\\\" readings can be\\n  reconciled, or whether they simply belong to different schools.\\n- How far the term can honestly be traced back through the Alexandrian corpus\\n  before it becomes a later retrojection.\\n\"}\n",
+        "stdout": "  out\n    references > d_13 ×1\n  in (backlinks)\n    d_0 > references ×1\n{\"path\":\"/substances/prima-materia.md\",\"docId\":\"d_13\",\"rev\":\"r_13\",\"properties\":{\"frontmatter\":{\"type\":\"substance\",\"slug\":\"prima-materia\",\"layer\":\"canon\",\"tradition\":\"western\",\"tags\":[\"substance\",\"theory\"],\"verified\":false},\"inline\":{\"state\":\"undifferentiated\",\"obtainable\":\"no\"},\"computed\":{\"$title\":\"Prima materia\"}},\"content\":\"---\\ntype: substance\\nslug: prima-materia\\nlayer: canon\\ntradition: western\\ntags: [substance, theory]\\nverified: false\\n---\\n\\n# Prima materia\\n\\nThe *prima materia* is the formless first matter from which all substances are\\ncomposed — not a reagent you can order, but the state a substance is reduced to\\nbefore it can be rebuilt.\\n\\nstate:: undifferentiated\\nobtainable:: no\\n\\n## Descriptions\\n\\nThe texts are deliberately evasive. It is called the dragon, the chaos, the\\nlead of the philosophers, the vile black earth. Practitioners took this\\nmultiplicity as proof that the *prima materia* is a condition rather than an\\ningredient.\\n\\n> That which is below is like that which is above.\\n\\nThe [Emerald Tablet](/texts/emerald-tablet.md) is usually read as describing\\nthis reduction and return.\\n\\n## Relation to the Great Work\\n\\nReduction to the *prima materia* is the purpose of [[nigredo]], the blackening\\nthat opens the [magnum opus](/processes/magnum-opus.md). [Calcination](/processes/calcination.md)\\nis the usual first operation.\\n\\n## Open questions\\n\\n- Whether the \\\"chaos\\\" and the \\\"lead of the philosophers\\\" readings can be\\n  reconciled, or whether they simply belong to different schools.\\n- How far the term can honestly be traced back through the Alexandrian corpus\\n  before it becomes a later retrojection.\\n\"}\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -347,7 +347,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n#1 observed observed: index.md — 31 inserted\ntexts/emerald-tablet.md\n#18 inserted observed 2026-09-27T00:00:00.000Z\ntexts/emerald-tablet.md\n",
+        "stdout": "/texts/emerald-tablet.md  13 blocks  0s ago\n/texts/mutus-liber.md     12 blocks  0s ago\n#1 observed observed: /index.md — 31 inserted\n/texts/emerald-tablet.md\n#18 inserted observed 2026-09-27T00:00:00.000Z\n/texts/emerald-tablet.md\n",
         "stderr": "  2 rows — address with @1..@2\n… truncated; continue with --cursor 1\n"
       }
     },
@@ -377,7 +377,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "id              path                  $id             checked\nn_5ebb7234aa44  texts/mutus-liber.md  n_5ebb7234aa44  false\nn_cb80a4290986  texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  texts/mutus-liber.md  n_d547e97aa408  false\n- [ ] Obtain a facsimile with plate numbering\nb_311\nid              path                  $id             checked\nn_5ebb7234aa44  texts/mutus-liber.md  n_5ebb7234aa44  true\nn_cb80a4290986  texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  texts/mutus-liber.md  n_d547e97aa408  false\n",
+        "stdout": "id              path                   $id             checked\nn_5ebb7234aa44  /texts/mutus-liber.md  n_5ebb7234aa44  false\nn_cb80a4290986  /texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  /texts/mutus-liber.md  n_d547e97aa408  false\n- [ ] Obtain a facsimile with plate numbering\nb_311\nid              path                   $id             checked\nn_5ebb7234aa44  /texts/mutus-liber.md  n_5ebb7234aa44  true\nn_cb80a4290986  /texts/mutus-liber.md  n_cb80a4290986  false\nn_d547e97aa408  /texts/mutus-liber.md  n_d547e97aa408  false\n",
         "stderr": "  3 rows — address with @1..@3\n  1 row — address with @1..@1\n  ok committed · 1 document touched\n  3 rows — address with @1..@3\n"
       }
     },
@@ -406,7 +406,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 2,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "usage: unterminated single quote\nusage: unterminated double quote\n  2 rows — address with @1..@2\n"
       }
     },
@@ -435,7 +435,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\ntexts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "{\"repoId\":\"rp_0\",\"slug\":\"fixture\",\"rootPath\":\"<workspace>/vault\",\"docs\":20,\"blocks\":327,\"commits\":20,\"openEdges\":69,\"unconverged\":0,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true},\"sync\":{\"lastCommitSeq\":20,\"lastCheckpoint\":\"cp_0\",\"convergent\":true,\"diskChecked\":true,\"disk\":{\"changed\":0,\"deleted\":0,\"untracked\":0,\"checked\":true}},\"watcher\":\"none\",\"embedQueue\":60}\n/texts/emerald-tablet.md\n/texts/mutus-liber.md\n/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n  2 rows — address with @1..@2\n"
       }
     },
@@ -466,7 +466,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "P> texts/emerald-tablet.md\ntexts/mutus-liber.md\nP> 20\nP> ",
+        "stdout": "P> /texts/emerald-tablet.md\n/texts/mutus-liber.md\nP> 20\nP> ",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -483,7 +483,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "omg> texts/emerald-tablet.md\ntexts/mutus-liber.md\nomg> ",
+        "stdout": "omg> /texts/emerald-tablet.md\n/texts/mutus-liber.md\nomg> ",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -502,7 +502,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "flag> texts/emerald-tablet.md\ntexts/mutus-liber.md\nflag> ",
+        "stdout": "flag> /texts/emerald-tablet.md\n/texts/mutus-liber.md\nflag> ",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },
@@ -519,7 +519,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n",
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n",
         "stderr": "  2 rows — address with @1..@2\n"
       }
     },

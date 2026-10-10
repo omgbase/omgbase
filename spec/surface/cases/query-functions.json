@@ -31,7 +31,7 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -46,7 +46,7 @@
         "hits": [
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -61,13 +61,13 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "a": true,
             "b": false
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "a": false,
             "b": true
           }
@@ -94,7 +94,7 @@
         "hits": [
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "a": true,
             "b": true,
             "c": false
@@ -112,15 +112,15 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_16",
-            "path": "texts/emerald-tablet.md"
+            "path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -135,22 +135,22 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "r": null
           },
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md",
+            "path": "/practitioners/maria-prophetissa.md",
             "r": null
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
             "r": null
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
             "r": null
           }
         ],
@@ -166,23 +166,23 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_16",
-            "path": "texts/emerald-tablet.md"
+            "path": "/texts/emerald-tablet.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -197,19 +197,19 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_16",
-            "path": "texts/emerald-tablet.md"
+            "path": "/texts/emerald-tablet.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -224,11 +224,11 @@
         "hits": [
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -243,7 +243,7 @@
         "hits": [
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md"
+            "path": "/practitioners/maria-prophetissa.md"
           }
         ],
         "truncated": false,
@@ -258,27 +258,27 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "n": 9
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "n": 3
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
             "n": 2
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "n": 2
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md",
+            "path": "/substances/sulphur.md",
             "n": 2
           }
         ],
@@ -307,7 +307,7 @@
         "hits": [
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
             "l": [
               "practitioner",
               "transmutation"
@@ -318,7 +318,7 @@
           },
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "l": [
               "substance"
             ],
@@ -338,49 +338,49 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "h": true,
             "s": false
           },
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md",
+            "path": "/practitioners/maria-prophetissa.md",
             "h": true,
             "s": false
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
             "h": true,
             "s": false
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
             "h": true,
             "s": false
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md",
+            "path": "/processes/calcination.md",
             "h": false,
             "s": true
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md",
+            "path": "/processes/coagulation.md",
             "h": false,
             "s": true
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md",
+            "path": "/processes/dissolution.md",
             "h": false,
             "s": true
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "h": false,
             "s": false
           }
@@ -474,7 +474,7 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "t": "hub"
           }
         ],
@@ -490,7 +490,7 @@
         "hits": [
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           }
         ],
         "truncated": false,
@@ -507,7 +507,7 @@
         "cursor": null,
         "consumer": "first",
         "values": [
-          "practitioners/jabir-ibn-hayyan.md"
+          "/practitioners/jabir-ibn-hayyan.md"
         ]
       }
     },
@@ -539,7 +539,7 @@
         "hits": [
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -567,47 +567,47 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md"
+            "path": "/processes/calcination.md"
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -622,43 +622,43 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md"
+            "path": "/processes/calcination.md"
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -673,19 +673,19 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           }
         ],
         "truncated": false,
@@ -700,43 +700,43 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md"
+            "path": "/processes/calcination.md"
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md"
+            "path": "/texts/mutus-liber.md"
           }
         ],
         "truncated": false,
@@ -751,23 +751,23 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md"
+            "path": "/practitioners/maria-prophetissa.md"
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           },
           {
             "id": "d_16",
-            "path": "texts/emerald-tablet.md"
+            "path": "/texts/emerald-tablet.md"
           }
         ],
         "truncated": false,
@@ -782,19 +782,19 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md"
+            "path": "/substances/mercury.md"
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md"
+            "path": "/substances/philosophers-stone.md"
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md"
+            "path": "/substances/prima-materia.md"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md"
+            "path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -809,23 +809,23 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md"
+            "path": "/substances/mercury.md"
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md"
+            "path": "/substances/philosophers-stone.md"
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md"
+            "path": "/substances/prima-materia.md"
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md"
+            "path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -840,11 +840,11 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           }
         ],
         "truncated": false,
@@ -859,7 +859,7 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "open": [
               {
                 "text": "Repeat the series with copper"
@@ -874,7 +874,7 @@
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "open": [
               {
                 "text": "Assay cycle 1 and cycle 4 crops for iron"
@@ -897,22 +897,22 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "tasks": []
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "tasks": []
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
             "tasks": []
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "tasks": [
               {
                 "value": "Buy more salt of tartar"
@@ -924,7 +924,7 @@
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md",
+            "path": "/substances/sulphur.md",
             "tasks": []
           }
         ],
@@ -941,15 +941,15 @@
         "hits": [
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "tasks": [
               {
                 "id": "n_0ddcacdef653",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               },
               {
                 "id": "n_6d35d6b1d52b",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               }
             ]
           }
@@ -967,10 +967,10 @@
         "hits": [
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "latest": {
               "id": "n_0ddcacdef653",
-              "path": "substances/salt.md"
+              "path": "/substances/salt.md"
             },
             "none": null
           }
@@ -988,15 +988,15 @@
         "hits": [
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "tasks": [
               {
                 "id": "n_0ddcacdef653",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               },
               {
                 "id": "n_6d35d6b1d52b",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               }
             ]
           }
@@ -1013,7 +1013,7 @@
         "hits": [
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "kinds": [
               {
                 "kind": "md:section"
@@ -1040,7 +1040,7 @@
         "hits": [
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "h": [
               "The magnum opus",
               "The four stages"
@@ -1059,26 +1059,26 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "subject": "calcination",
             "process": {
-              "p": "processes/calcination.md",
+              "p": "/processes/calcination.md",
               "layer": "canon"
             },
             "mate": {
-              "p": "practitioners/newton.md"
+              "p": "/practitioners/newton.md"
             }
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "subject": "coagulation",
             "process": {
-              "p": "processes/coagulation.md",
+              "p": "/processes/coagulation.md",
               "layer": "working"
             },
             "mate": {
-              "p": "practitioners/newton.md"
+              "p": "/practitioners/newton.md"
             }
           }
         ],
@@ -1094,7 +1094,7 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "era": 1,
             "open": [
               {
@@ -1110,7 +1110,7 @@
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "era": 2,
             "open": [
               {
@@ -1134,12 +1134,12 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "tags": []
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "tags": [
               "goal",
               "legendary"
@@ -1147,21 +1147,21 @@
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
             "tags": [
               "theory"
             ]
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "tags": [
               "tria-prima"
             ]
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md",
+            "path": "/substances/sulphur.md",
             "tags": [
               "tria-prima"
             ]
@@ -1179,11 +1179,11 @@
         "hits": [
           {
             "id": "d_14",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md"
+            "path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1198,23 +1198,23 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md"
+            "path": "/substances/mercury.md"
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md"
+            "path": "/substances/philosophers-stone.md"
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md"
+            "path": "/substances/prima-materia.md"
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md"
+            "path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1229,8 +1229,8 @@
         "hits": [
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
-            "p": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
+            "p": "/lab/2026-01-notes.md",
             "open": [
               "Repeat the series with copper",
               "Plot mass gain against heating time",
@@ -1239,8 +1239,8 @@
           },
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md",
-            "p": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
+            "p": "/lab/2026-02-notes.md",
             "open": [
               "Assay cycle 1 and cycle 4 crops for iron",
               "Write the plateau result up for the coagulation note"
@@ -1248,16 +1248,16 @@
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
-            "p": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "p": "/practitioners/jabir-ibn-hayyan.md",
             "open": [
               "Separate the Jabirian corpus into strata by vocabulary"
             ]
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
-            "p": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
+            "p": "/practitioners/newton.md",
             "open": [
               "Read the Index Chemicus entries on [[mercury]]",
               "Cross-check the furnace dates against the Principia years"
@@ -1265,16 +1265,16 @@
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
-            "p": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
+            "p": "/practitioners/paracelsus.md",
             "open": [
               "Check which mineral remedies survived into the 18th-century pharmacopoeia"
             ]
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md",
-            "p": "processes/calcination.md",
+            "path": "/processes/calcination.md",
+            "p": "/processes/calcination.md",
             "open": [
               "Repeat with copper and record the colour sequence",
               "Chase down the earliest recorded weight-gain measurement"
@@ -1282,24 +1282,24 @@
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md",
-            "p": "processes/coagulation.md",
+            "path": "/processes/coagulation.md",
+            "p": "/processes/coagulation.md",
             "open": [
               "Measure purity gain per cycle to find where it plateaus"
             ]
           },
           {
             "id": "d_9",
-            "path": "processes/dissolution.md",
-            "p": "processes/dissolution.md",
+            "path": "/processes/dissolution.md",
+            "p": "/processes/dissolution.md",
             "open": [
               "Write up the alkahest arguments and their rebuttals"
             ]
           },
           {
             "id": "d_10",
-            "path": "processes/magnum-opus.md",
-            "p": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
+            "p": "/processes/magnum-opus.md",
             "open": [
               "Map the twelve gates onto the four stages across three sources",
               "Decide whether citrinitas is dropped or absorbed"
@@ -1307,8 +1307,8 @@
           },
           {
             "id": "d_17",
-            "path": "texts/mutus-liber.md",
-            "p": "texts/mutus-liber.md",
+            "path": "/texts/mutus-liber.md",
+            "p": "/texts/mutus-liber.md",
             "open": [
               "Obtain a facsimile with plate numbering",
               "Compare the 1677 and 1702 plate sequences",
@@ -1328,8 +1328,8 @@
         "hits": [
           {
             "id": "d_14",
-            "path": "substances/salt.md",
-            "p": "substances/salt.md",
+            "path": "/substances/salt.md",
+            "p": "/substances/salt.md",
             "t": [
               "Buy more salt of tartar",
               "Replace the leaching filter papers"
@@ -1358,137 +1358,137 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
-            "p": "index.md",
+            "path": "/index.md",
+            "p": "/index.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               },
               {
-                "target": "substances/sulphur.md"
+                "target": "/substances/sulphur.md"
               }
             ]
           },
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
-            "p": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
+            "p": "/lab/2026-01-notes.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               }
             ]
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
-            "p": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "p": "/practitioners/jabir-ibn-hayyan.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/sulphur.md"
+                "target": "/substances/sulphur.md"
               }
             ]
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
-            "p": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
+            "p": "/practitioners/newton.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               }
             ]
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
-            "p": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
+            "p": "/practitioners/paracelsus.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               },
               {
-                "target": "substances/sulphur.md"
+                "target": "/substances/sulphur.md"
               }
             ]
           },
           {
             "id": "d_7",
-            "path": "processes/calcination.md",
-            "p": "processes/calcination.md",
+            "path": "/processes/calcination.md",
+            "p": "/processes/calcination.md",
             "cites": [
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               }
             ]
           },
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
-            "p": "substances/mercury.md",
+            "path": "/substances/mercury.md",
+            "p": "/substances/mercury.md",
             "cites": [
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               },
               {
-                "target": "substances/sulphur.md"
+                "target": "/substances/sulphur.md"
               }
             ]
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md",
-            "p": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
+            "p": "/substances/philosophers-stone.md",
             "cites": [
               {
-                "target": "processes/magnum-opus.md"
+                "target": "/processes/magnum-opus.md"
               },
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               }
             ]
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md",
-            "p": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
+            "p": "/substances/prima-materia.md",
             "cites": []
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md",
-            "p": "substances/salt.md",
+            "path": "/substances/salt.md",
+            "p": "/substances/salt.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/sulphur.md"
+                "target": "/substances/sulphur.md"
               }
             ]
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md",
-            "p": "substances/sulphur.md",
+            "path": "/substances/sulphur.md",
+            "p": "/substances/sulphur.md",
             "cites": [
               {
-                "target": "substances/mercury.md"
+                "target": "/substances/mercury.md"
               },
               {
-                "target": "substances/salt.md"
+                "target": "/substances/salt.md"
               }
             ]
           }
@@ -1505,17 +1505,17 @@
         "hits": [
           {
             "id": "d_11",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "slug": "mercury"
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "slug": "salt"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md",
+            "path": "/substances/sulphur.md",
             "slug": "sulphur"
           }
         ],
@@ -1531,12 +1531,12 @@
         "hits": [
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "slug": "philosophers-stone"
           },
           {
             "id": "d_13",
-            "path": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
             "slug": "prima-materia"
           }
         ],
@@ -1552,37 +1552,37 @@
         "hits": [
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
-            "me": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
+            "me": "/practitioners/jabir-ibn-hayyan.md",
             "tradition": "islamic",
             "peers": []
           },
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md",
-            "me": "practitioners/maria-prophetissa.md",
+            "path": "/practitioners/maria-prophetissa.md",
+            "me": "/practitioners/maria-prophetissa.md",
             "tradition": "alexandrian",
             "peers": []
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
-            "me": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
+            "me": "/practitioners/newton.md",
             "tradition": "western",
             "peers": [
               {
-                "p": "practitioners/paracelsus.md"
+                "p": "/practitioners/paracelsus.md"
               }
             ]
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
-            "me": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
+            "me": "/practitioners/paracelsus.md",
             "tradition": "western",
             "peers": [
               {
-                "p": "practitioners/newton.md"
+                "p": "/practitioners/newton.md"
               }
             ]
           }
@@ -1600,27 +1600,27 @@
         "hits": [
           {
             "id": "n_7d73d8ff9294",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "value": "Repeat the series with copper"
           },
           {
             "id": "n_95a191326d69",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "value": "Plot mass gain against heating time"
           },
           {
             "id": "n_6647b1c32a15",
-            "path": "lab/2026-01-notes.md",
+            "path": "/lab/2026-01-notes.md",
             "value": "Tabulate the metal sulphides by colour"
           },
           {
             "id": "n_3f352718a47e",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Assay cycle 1 and cycle 4 crops for iron"
           },
           {
             "id": "n_1b6ff200b17c",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Write the plateau result up for the coagulation note"
           }
         ],
@@ -1636,25 +1636,25 @@
         "hits": [
           {
             "id": "d_4",
-            "path": "practitioners/maria-prophetissa.md",
+            "path": "/practitioners/maria-prophetissa.md",
             "n": 251,
             "s": "practitioner!"
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "n": 801,
             "s": "practitioner!"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
             "n": 1531,
             "s": "practitioner!"
           },
           {
             "id": "d_5",
-            "path": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
             "n": 1681,
             "s": "practitioner!"
           }
@@ -1671,7 +1671,7 @@
         "hits": [
           {
             "id": "d_9",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           }
         ],
         "truncated": false,
@@ -1686,31 +1686,31 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "d_3",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "d_6",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "d_11",
-            "path": "substances/mercury.md"
+            "path": "/substances/mercury.md"
           },
           {
             "id": "d_12",
-            "path": "substances/philosophers-stone.md"
+            "path": "/substances/philosophers-stone.md"
           },
           {
             "id": "d_14",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "d_15",
-            "path": "substances/sulphur.md"
+            "path": "/substances/sulphur.md"
           }
         ],
         "truncated": false,
@@ -1725,11 +1725,11 @@
         "hits": [
           {
             "id": "d_2",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "d_8",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           }
         ],
         "truncated": false,
@@ -1745,87 +1745,87 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "all": [
               {
                 "id": "d_0",
-                "path": "index.md"
+                "path": "/index.md"
               },
               {
                 "id": "d_1",
-                "path": "lab/2026-01-notes.md"
+                "path": "/lab/2026-01-notes.md"
               },
               {
                 "id": "d_2",
-                "path": "lab/2026-02-notes.md"
+                "path": "/lab/2026-02-notes.md"
               },
               {
                 "id": "d_3",
-                "path": "practitioners/jabir-ibn-hayyan.md"
+                "path": "/practitioners/jabir-ibn-hayyan.md"
               },
               {
                 "id": "d_4",
-                "path": "practitioners/maria-prophetissa.md"
+                "path": "/practitioners/maria-prophetissa.md"
               },
               {
                 "id": "d_5",
-                "path": "practitioners/newton.md"
+                "path": "/practitioners/newton.md"
               },
               {
                 "id": "d_6",
-                "path": "practitioners/paracelsus.md"
+                "path": "/practitioners/paracelsus.md"
               },
               {
                 "id": "d_7",
-                "path": "processes/calcination.md"
+                "path": "/processes/calcination.md"
               },
               {
                 "id": "d_8",
-                "path": "processes/coagulation.md"
+                "path": "/processes/coagulation.md"
               },
               {
                 "id": "d_9",
-                "path": "processes/dissolution.md"
+                "path": "/processes/dissolution.md"
               },
               {
                 "id": "d_10",
-                "path": "processes/magnum-opus.md"
+                "path": "/processes/magnum-opus.md"
               },
               {
                 "id": "d_11",
-                "path": "substances/mercury.md"
+                "path": "/substances/mercury.md"
               },
               {
                 "id": "d_12",
-                "path": "substances/philosophers-stone.md"
+                "path": "/substances/philosophers-stone.md"
               },
               {
                 "id": "d_13",
-                "path": "substances/prima-materia.md"
+                "path": "/substances/prima-materia.md"
               },
               {
                 "id": "d_14",
-                "path": "substances/salt.md"
+                "path": "/substances/salt.md"
               },
               {
                 "id": "d_15",
-                "path": "substances/sulphur.md"
+                "path": "/substances/sulphur.md"
               },
               {
                 "id": "d_16",
-                "path": "texts/emerald-tablet.md"
+                "path": "/texts/emerald-tablet.md"
               },
               {
                 "id": "d_17",
-                "path": "texts/mutus-liber.md"
+                "path": "/texts/mutus-liber.md"
               },
               {
                 "id": "d_18",
-                "path": "timeline/kickoff.md"
+                "path": "/timeline/kickoff.md"
               },
               {
                 "id": "d_19",
-                "path": "timeline/review.md"
+                "path": "/timeline/review.md"
               }
             ]
           }
@@ -1843,7 +1843,7 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "same": true,
             "other": false,
             "ne": false
@@ -1862,7 +1862,7 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "hit": false,
             "self": false
           }
@@ -1891,13 +1891,13 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
-            "$path": "index.md"
+            "path": "/index.md",
+            "$path": "/index.md"
           },
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
-            "$path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md",
+            "$path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,
@@ -1913,7 +1913,7 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "n": 20,
             "m": 20,
             "e": 20
@@ -1932,9 +1932,9 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
+            "path": "/index.md",
             "k": 0,
-            "p": "index.md"
+            "p": "/index.md"
           }
         ],
         "truncated": false,
@@ -1950,13 +1950,13 @@
         "hits": [
           {
             "id": "d_0",
-            "path": "index.md",
-            "$path": "index.md"
+            "path": "/index.md",
+            "$path": "/index.md"
           },
           {
             "id": "d_1",
-            "path": "lab/2026-01-notes.md",
-            "$path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md",
+            "$path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": false,

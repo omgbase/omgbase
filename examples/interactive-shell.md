@@ -21,17 +21,17 @@ than copy-pasting an id:
 
 ```console
 $ omg shell
-omg> query 'from blocks where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md"'
+omg> query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"'
   2 rows — address with @1..@2
-b_assay01  lab/2026-02-notes.md
-b_write02  lab/2026-02-notes.md
+b_assay01  /lab/2026-02-notes.md
+b_write02  /lab/2026-02-notes.md
 omg> done @1
   1 row — address with @1..@1
   ok committed · 1 document touched
 b_assay01
-omg> query 'from blocks where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md"'
+omg> query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"'
   1 row — address with @1..@1
-b_write02  lab/2026-02-notes.md
+b_write02  /lab/2026-02-notes.md
 ```
 
 `done @1` resolved `@1` to the first row's block and completed it in one commit;

@@ -77,34 +77,34 @@ describe("cross-format graph: markdown → yaml → json", () => {
   });
 
   it("follow doc.out crosses markdown → yaml boundary", () => {
-    expect(reachable("docs/readme.md", "out")).toContain("config/database.yaml");
+    expect(reachable("docs/readme.md", "out")).toContain("/config/database.yaml");
   });
 
   it("follow doc.out crosses yaml → yaml (extends)", () => {
     const paths = reachable("docs/readme.md", "out");
-    expect(paths).toContain("config/database.yaml");
-    expect(paths).toContain("config/base.yaml");
+    expect(paths).toContain("/config/database.yaml");
+    expect(paths).toContain("/config/base.yaml");
   });
 
   it("follow doc.out crosses yaml → json (schema)", () => {
     const paths = reachable("docs/readme.md", "out");
-    expect(paths).toContain("config/database.yaml");
-    expect(paths).toContain("config/schemas/db.json");
+    expect(paths).toContain("/config/database.yaml");
+    expect(paths).toContain("/config/schemas/db.json");
   });
 
   it("full traversal: md → yaml → yaml + json", () => {
     const paths = new Set(reachable("docs/readme.md", "out"));
-    expect(paths.has("config/database.yaml")).toBe(true);
-    expect(paths.has("config/base.yaml")).toBe(true);
-    expect(paths.has("config/schemas/db.json")).toBe(true);
+    expect(paths.has("/config/database.yaml")).toBe(true);
+    expect(paths.has("/config/base.yaml")).toBe(true);
+    expect(paths.has("/config/schemas/db.json")).toBe(true);
   });
 
   it("follow doc.in: who references the YAML config?", () => {
-    expect(reachable("config/database.yaml", "in")).toContain("docs/readme.md");
+    expect(reachable("config/database.yaml", "in")).toContain("/docs/readme.md");
   });
 
   it("follow doc.in: who extends base.yaml?", () => {
-    expect(reachable("config/base.yaml", "in")).toContain("config/database.yaml");
+    expect(reachable("config/base.yaml", "in")).toContain("/config/database.yaml");
   });
 });
 
@@ -125,7 +125,7 @@ describe("cross-format graph: json $ref chains", () => {
 
   it("follows json $ref chain across files", () => {
     const paths = reachable("schemas/main.json", "out");
-    expect(paths).toContain("schemas/types.json");
-    expect(paths).toContain("schemas/primitives.json");
+    expect(paths).toContain("/schemas/types.json");
+    expect(paths).toContain("/schemas/primitives.json");
   });
 });

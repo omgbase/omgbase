@@ -29,6 +29,7 @@ use std::sync::mpsc::RecvTimeoutError;
 use std::time::Duration;
 
 use omgbase_search::create_external_provider;
+use omgbase_surface::reference_path;
 use omgbase_sync::registry::FS_ADAPTER_COMMAND;
 use omgbase_sync::{
     CheckpointResult, Coordinator, ExternalSource, McpEngineClient, Readiness, RealFileSystem,
@@ -101,11 +102,20 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
         &omgbase_store::Config::default(),
     )?;
     let cp = &result.checkpoint;
+    // The paths the sweep names print in the reference form (spec/surface §1 "Paths").
+    let rooted =
+        |paths: &[String]| -> Vec<String> { paths.iter().map(|p| reference_path(p)).collect() };
+    let (ingested, suppressed, deleted, conflicted) = (
+        rooted(&cp.ingested),
+        rooted(&cp.suppressed),
+        rooted(&cp.deleted),
+        rooted(&cp.conflicted),
+    );
     if cli.machine() {
         // The `SweepResult` as the reference spells it (camelCase).
         cli.io.out(&js_json(&json!({
-            "checkpointId": cp.checkpoint_id, "ingested": cp.ingested, "suppressed": cp.suppressed,
-            "deleted": cp.deleted, "conflicted": cp.conflicted, "scanned": result.scanned,
+            "checkpointId": cp.checkpoint_id, "ingested": ingested, "suppressed": suppressed,
+            "deleted": deleted, "conflicted": conflicted, "scanned": result.scanned,
             "candidates": result.candidates, "changed": result.changed,
         })));
         return Ok(EXIT_OK);
@@ -118,33 +128,33 @@ fn run_one_shot(cli: &mut Cli, repo: &RepoRow) -> Result<i32> {
         style.dim("scanned"),
         result.scanned
     ));
-    if !cp.ingested.is_empty() {
+    if !ingested.is_empty() {
         cli.io.out(&format!(
             "  {} ingested  {}",
             style.ok(g.ok),
-            cp.ingested.len()
+            ingested.len()
         ));
-        for p in &cp.ingested {
+        for p in &ingested {
             cli.io.out(&format!("      {}", style.accent(p)));
         }
     }
-    if !cp.deleted.is_empty() {
+    if !deleted.is_empty() {
         cli.io.out(&format!(
             "  {} deleted   {}",
             style.err(g.err),
-            cp.deleted.len()
+            deleted.len()
         ));
-        for p in &cp.deleted {
+        for p in &deleted {
             cli.io.out(&format!("      {}", style.dim(p)));
         }
     }
-    if !cp.conflicted.is_empty() {
+    if !conflicted.is_empty() {
         cli.io.out(&format!(
             "  {} conflicts {}",
             style.warn(g.warn),
-            cp.conflicted.len()
+            conflicted.len()
         ));
-        for p in &cp.conflicted {
+        for p in &conflicted {
             cli.io.out(&format!("      {}", style.warn(p)));
         }
     }

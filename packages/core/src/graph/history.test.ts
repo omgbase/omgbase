@@ -187,7 +187,7 @@ describe("changes_since (change feed)", () => {
     expect(digests.length).toBe(2);
     expect(truncated).toBe(false);
     expect(digests[0]!.summary).toContain("observed");
-    expect(digests[0]!.revisions[0]!.path).toBe("a.md");
+    expect(digests[0]!.revisions[0]!.path).toBe("/a.md");
   });
 
   it("advances the cursor for incremental polling", () => {
@@ -195,7 +195,7 @@ describe("changes_since (change feed)", () => {
     const first = changesSince(store, repoId, { cursor: 0 });
     save("b.md", "# B\n");
     const second = changesSince(store, repoId, { cursor: first.cursor });
-    expect(second.digests.map((d) => d.revisions[0]!.path)).toEqual(["b.md"]);
+    expect(second.digests.map((d) => d.revisions[0]!.path)).toEqual(["/b.md"]);
   });
 });
 
@@ -212,9 +212,9 @@ describe("docHistory (version-history listing)", () => {
 
     const { docs, truncated } = docHistory(store, repoId, { pathGlob: "journal/*" });
     expect(truncated).toBe(false);
-    expect(docs.map((d) => d.path)).toEqual(["journal/2026/a.md", "journal/2026/b.md"]);
+    expect(docs.map((d) => d.path)).toEqual(["/journal/2026/a.md", "/journal/2026/b.md"]);
 
-    const a = docs.find((d) => d.path === "journal/2026/a.md")!;
+    const a = docs.find((d) => d.path === "/journal/2026/a.md")!;
     expect(a.versions.length).toBe(2);
     // seq ascending (chronological).
     expect(a.versions[0]!.seq).toBeLessThan(a.versions[1]!.seq);
@@ -232,7 +232,7 @@ describe("docHistory (version-history listing)", () => {
     save("other/c.md", "# C\n");
     const star = docHistory(store, repoId, { pathGlob: "journal/*" }).docs.map((d) => d.path);
     const dstar = docHistory(store, repoId, { pathGlob: "journal/**" }).docs.map((d) => d.path);
-    expect(star).toEqual(["journal/2026/a.md", "journal/2026/b.md"]);
+    expect(star).toEqual(["/journal/2026/a.md", "/journal/2026/b.md"]);
     expect(dstar).toEqual(star);
   });
 
@@ -255,7 +255,7 @@ describe("docHistory (version-history listing)", () => {
     docsDelete(store, { repoId, rootPath: dir }, "journal/a.md");
 
     const live = docHistory(store, repoId, { pathGlob: "journal/*" });
-    expect(live.docs.map((d) => d.path)).toEqual(["journal/b.md"]);
+    expect(live.docs.map((d) => d.path)).toEqual(["/journal/b.md"]);
 
     const all = docHistory(store, repoId, { pathGlob: "journal/*", includeDeleted: true });
     const deletedDoc = all.docs.find((d) => d.docId === delId)!;
@@ -272,7 +272,7 @@ describe("docHistory (version-history listing)", () => {
     save("journal/b.md", "# B\n");
     save("journal/c.md", "# C\n");
     const { docs, truncated } = docHistory(store, repoId, { pathGlob: "journal/*", limit: 2 });
-    expect(docs.map((d) => d.path)).toEqual(["journal/a.md", "journal/b.md"]);
+    expect(docs.map((d) => d.path)).toEqual(["/journal/a.md", "/journal/b.md"]);
     expect(truncated).toBe(true);
   });
 });
@@ -282,6 +282,6 @@ describe("exit gate: backlinks via OQX follow doc.in", () => {
     save("target.md", "# Target\n");
     save("src.md", "# Src\n\nrefers to [target](/target.md)\n");
     const hits = oqxRun(store, repoId, 'from docs where $path == "target.md" follow doc.in', { limit: 100 }).hits;
-    expect(hits.map((h) => h.path)).toContain("src.md");
+    expect(hits.map((h) => h.path)).toContain("/src.md");
   });
 });

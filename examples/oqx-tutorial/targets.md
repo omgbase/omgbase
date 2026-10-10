@@ -19,22 +19,22 @@ and the process pages:
 
 ```console
 $ omg query 'from blocks where type == "code_fence"'
-b_3v5jvfy  lab/2026-01-notes.md
-b_s7h330r  lab/2026-02-notes.md
-b_sjsr2r8  processes/calcination.md
-b_czj5j84  processes/coagulation.md
-b_wj8swzf  processes/dissolution.md
+b_3v5jvfy  /lab/2026-01-notes.md
+b_s7h330r  /lab/2026-02-notes.md
+b_sjsr2r8  /processes/calcination.md
+b_czj5j84  /processes/coagulation.md
+b_wj8swzf  /processes/dissolution.md
 ```
 
 Blockquotes — sources being quoted — sit on a different set of pages:
 
 ```console
 $ omg query 'from blocks where type == "blockquote"'
-b_cehq7cv  practitioners/maria-prophetissa.md
-b_rayqtht  practitioners/paracelsus.md
-b_3e22t5y  substances/prima-materia.md
-b_1g0x8bk  texts/emerald-tablet.md
-b_mhgthb4  texts/emerald-tablet.md
+b_cehq7cv  /practitioners/maria-prophetissa.md
+b_rayqtht  /practitioners/paracelsus.md
+b_3e22t5y  /substances/prima-materia.md
+b_1g0x8bk  /texts/emerald-tablet.md
+b_mhgthb4  /texts/emerald-tablet.md
 ```
 
 ## Reaching the owning document with `doc.`
@@ -44,10 +44,10 @@ so "task nodes on practitioner pages" is one expression:
 
 ```console
 $ omg query 'from nodes where kind == "md:task" && !attrs.checked && doc.type == "practitioner"'
-n_b6f7b0df318d  practitioners/jabir-ibn-hayyan.md
-n_0c223e24f758  practitioners/newton.md
-n_fa003dd8042f  practitioners/newton.md
-n_cafa6b6cd406  practitioners/paracelsus.md
+n_b6f7b0df318d  /practitioners/jabir-ibn-hayyan.md
+n_0c223e24f758  /practitioners/newton.md
+n_fa003dd8042f  /practitioners/newton.md
+n_cafa6b6cd406  /practitioners/paracelsus.md
 ```
 
 ## Nodes
@@ -61,9 +61,9 @@ an "Open questions" section:
 
 ```console
 $ omg query 'from nodes where kind == "md:section" && name == "Open questions"'
-n_cb7296cac24a  processes/magnum-opus.md
-n_db021d23b241  substances/philosophers-stone.md
-n_3b1ccbd927ba  substances/prima-materia.md
+n_cb7296cac24a  /processes/magnum-opus.md
+n_db021d23b241  /substances/philosophers-stone.md
+n_3b1ccbd927ba  /substances/prima-materia.md
 ```
 
 Inline `key:: value` fields become `md:inline_field` nodes; only the lab notes
@@ -71,8 +71,8 @@ record an `operator::`:
 
 ```console
 $ omg query 'from nodes where kind == "md:inline_field" && name == "operator"'
-n_929fa29b9710  lab/2026-01-notes.md
-n_6fbacec068c2  lab/2026-02-notes.md
+n_929fa29b9710  /lab/2026-01-notes.md
+n_6fbacec068c2  /lab/2026-02-notes.md
 ```
 
 ## `--ids` — bare ids for piping
@@ -82,7 +82,7 @@ command. Here are the February note's open tasks, the input to a bulk
 `omg done -` (see [editing-and-history.md](../editing-and-history.md)):
 
 ```console
-$ omg query 'from blocks where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md"' --ids
+$ omg query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"' --ids
 b_46t8ere
 b_dkgxmxr
 ```

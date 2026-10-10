@@ -13,7 +13,8 @@ import type { Store } from "../core/store/store.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import type { SemanticVec } from "../search/cel/compile.js";
 import { float32ToBlob } from "../core/vec.js";
-import { encodeCursor as encodeKeyset, decodeCursor as decodeKeyset } from "../core/cursor.js";
+import { encodeCursor as encodeKeyset, decodePathCursor } from "../core/cursor.js";
+import { referencePath } from "../core/paths.js";
 
 export type OqxConsumer = "collect" | "count" | "exists" | "none" | "first" | "single";
 
@@ -63,8 +64,33 @@ const ROW_FNS = new Set([
   "yaml_path", "json_pointer", "has_edge", "has_anchor", "child_count", "parent_type",
 ]);
 
+// Paths on the surface are the reference form (spec/surface §1 "Paths", 2.0):
+// `$path` and `$dst_path` read `/a/b.md`. A string literal a query compares
+// with one of them — `$path == "a.md"`, `"a.md" != $dst_path`,
+// `$path.startsWith("lab/")` — is rooted first, so both spellings match; a
+// property or binding compared with a path is never touched (it is the
+// author's value). The planner sees the rewritten tree too, so the pushed SQL
+// and the in-memory engine agree by construction.
+const PATH_INTRINSICS = new Set(["$path", "$dst_path"]);
+function isPathRead(e: Expr): boolean {
+  return (e.kind === "ident" || e.kind === "outer" || e.kind === "member") && PATH_INTRINSICS.has(e.name);
+}
+function rootLiteral(e: Expr): Expr {
+  return e.kind === "lit" && typeof e.value === "string" ? { ...e, value: referencePath(e.value) } : e;
+}
+export function rootPathLiterals(e: Expr): Expr {
+  if (e.kind === "binary" && (e.op === "==" || e.op === "!=")) {
+    if (isPathRead(e.left)) return { ...e, right: rootLiteral(e.right) };
+    if (isPathRead(e.right)) return { ...e, left: rootLiteral(e.left) };
+  }
+  if (e.kind === "call" && e.recv !== null && e.name === "startsWith" && e.args.length === 1 && isPathRead(e.recv)) {
+    return { ...e, args: [rootLiteral(e.args[0]!)] };
+  }
+  return e;
+}
+
 function rewriteQuery(q: Query): Query {
-  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : e));
+  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : rootPathLiterals(e)));
 }
 
 // A top-level `limit`/`offset` on the collect path is applied by the runner (see
@@ -278,14 +304,17 @@ export async function oqxRunAsync(
   return oqxRun(store, repoId, source, { ...opts, semanticVectors });
 }
 
-// The collect page's keyset is (path, id): the kernel's shared cursor encoding
-// (core/cursor.ts) with a two-part tuple. A malformed cursor is CursorInvalid,
-// which the MCP layer maps to filter_invalid.
+// The collect page's keyset is (path, id) — the hit's path, so the reference
+// form (`/a.md`): the kernel's shared cursor encoding (core/cursor.ts) with a
+// two-part tuple. A malformed cursor is CursorInvalid, which the MCP layer maps
+// to filter_invalid; so is a cursor whose path is not rooted — one issued by a
+// 1.x surface, whose keyset would otherwise sort before every rooted hit and
+// silently replay the first page (spec/surface §1.4, 2.0).
 function encodeCursor(path: string, id: string): string {
   return encodeKeyset([path, id]);
 }
 function decodeCursor(cursor: string): { path: string; id: string } {
-  const [path, id] = decodeKeyset(cursor, "query", 2);
+  const [path, id] = decodePathCursor(cursor, "query", 2);
   return { path: path!, id: id! };
 }
 

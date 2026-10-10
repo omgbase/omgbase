@@ -11,7 +11,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n"
       }
     },
     {
@@ -23,7 +23,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n"
       }
     },
     {
@@ -36,7 +36,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id   path                                $title             era\nd_4  practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  practitioners/paracelsus.md         Paracelsus         1530\nd_5  practitioners/newton.md             Isaac Newton       1680\n"
+        "stdout": "id   path                                 $title             era\nd_4  /practitioners/maria-prophetissa.md  Maria Prophetissa  250\nd_3  /practitioners/jabir-ibn-hayyan.md   Jabir ibn Hayyan   800\nd_6  /practitioners/paracelsus.md         Paracelsus         1530\nd_5  /practitioners/newton.md             Isaac Newton       1680\n"
       }
     },
     {
@@ -49,7 +49,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                    era\nd_16  texts/emerald-tablet.md  800\nd_17  texts/mutus-liber.md     1677\n"
+        "stdout": "id    $path                     era\nd_16  /texts/emerald-tablet.md  800\nd_17  /texts/mutus-liber.md     1677\n"
       }
     },
     {
@@ -62,7 +62,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                  text                                                          tags  nope\nb_303  texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
+        "stdout": "id     path                   text                                                          tags  nope\nb_303  /texts/mutus-liber.md  The \"silent book,\" La Rochelle, 1677: fifteen engraved plat…\nb_304  /texts/mutus-liber.md  length:: fifteen plates attributed_to:: altus\nb_306  /texts/mutus-liber.md  The plates show a couple gathering dew in sheets stretched …\nb_307  /texts/mutus-liber.md  The dew-gathering is the one concretely readable operation,…\nb_309  /texts/mutus-liber.md  Draft. I have not worked through the plates in order agains…\n"
       }
     },
     {
@@ -74,7 +74,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id     path                  type  $ordinal  $depth  checked\nb_311  texts/mutus-liber.md  task  0         1       false\nb_312  texts/mutus-liber.md  task  1         1       false\nb_313  texts/mutus-liber.md  task  2         1       false\n"
+        "stdout": "id     path                   type  $ordinal  $depth  checked\nb_311  /texts/mutus-liber.md  task  0         1       false\nb_312  /texts/mutus-liber.md  task  1         1       false\nb_313  /texts/mutus-liber.md  task  2         1       false\n"
       }
     },
     {
@@ -138,7 +138,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -164,7 +164,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "\"texts/emerald-tablet.md\"\n\"texts/mutus-liber.md\"\n"
+        "stdout": "\"/texts/emerald-tablet.md\"\n\"/texts/mutus-liber.md\"\n"
       }
     },
     {
@@ -190,7 +190,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_16\",\"path\":\"texts/emerald-tablet.md\"}\n{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}\n"
+        "stdout": "{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"}\n{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}\n"
       }
     },
     {
@@ -203,7 +203,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
+        "stdout": "{\"hits\":[{\"id\":\"d_16\",\"path\":\"/texts/emerald-tablet.md\"},{\"id\":\"d_17\",\"path\":\"/texts/mutus-liber.md\"}],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\"}\n"
       }
     },
     {
@@ -246,8 +246,8 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "d_0  index.md\nd_1  lab/2026-01-notes.md\n",
-        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+        "stdout": "d_0  /index.md\nd_1  /lab/2026-01-notes.md\n",
+        "stderr": "… truncated; continue with --cursor WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\n"
       }
     },
     {
@@ -264,7 +264,7 @@
       "expect": {
         "exit": 0,
         "stdout": "d_0\nd_1\n",
-        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+        "stderr": "… truncated; continue with --cursor WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\n"
       }
     },
     {
@@ -280,8 +280,8 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"id\":\"d_0\",\"path\":\"index.md\"}\n{\"id\":\"d_1\",\"path\":\"lab/2026-01-notes.md\"}\n",
-        "stderr": "… truncated; continue with --cursor WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\n"
+        "stdout": "{\"id\":\"d_0\",\"path\":\"/index.md\"}\n{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}\n",
+        "stderr": "… truncated; continue with --cursor WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\n"
       }
     },
     {
@@ -298,7 +298,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"hits\":[{\"id\":\"d_0\",\"path\":\"index.md\"},{\"id\":\"d_1\",\"path\":\"lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd\",\"consumer\":\"collect\"}\n",
+        "stdout": "{\"hits\":[{\"id\":\"d_0\",\"path\":\"/index.md\"},{\"id\":\"d_1\",\"path\":\"/lab/2026-01-notes.md\"}],\"truncated\":true,\"cursor\":\"WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ\",\"consumer\":\"collect\"}\n",
         "stderr": ""
       }
     },
@@ -311,13 +311,13 @@
         "-n",
         "2",
         "--cursor",
-        "WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsImRfMSJd"
+        "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJkXzEiXQ"
       ],
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "d_2  lab/2026-02-notes.md\nd_3  practitioners/jabir-ibn-hayyan.md\n",
-        "stderr": "… truncated; continue with --cursor WyJwcmFjdGl0aW9uZXJzL2phYmlyLWlibi1oYXl5YW4ubWQiLCJkXzMiXQ\n"
+        "stdout": "d_2  /lab/2026-02-notes.md\nd_3  /practitioners/jabir-ibn-hayyan.md\n",
+        "stderr": "… truncated; continue with --cursor WyIvcHJhY3RpdGlvbmVycy9qYWJpci1pYm4taGF5eWFuLm1kIiwiZF8zIl0\n"
       }
     },
     {
@@ -462,7 +462,7 @@
       "stdin": "from docs where type == \"text\"\n",
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n"
       }
     },
     {
@@ -478,7 +478,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -491,7 +491,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                        d  s\nd_17  texts/mutus-liber.md         1  interior\nd_13  substances/prima-materia.md  2  depth\n"
+        "stdout": "id    $path                         d  s\nd_17  /texts/mutus-liber.md         1  interior\nd_13  /substances/prima-materia.md  2  depth\n"
       }
     },
     {
@@ -503,7 +503,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    path                  predicate   to\ne_63  texts/mutus-liber.md  references  substances/prima-materia.md\n"
+        "stdout": "id    path                   predicate   to\ne_63  /texts/mutus-liber.md  references  /substances/prima-materia.md\n"
       }
     },
     {
@@ -515,7 +515,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "id    $path                 open\nd_17  texts/mutus-liber.md  [{\"$id\":\"n_5ebb7234aa44\"},{\"$id\":\"n_cb80a4290986\"},{\"$id\":\"…\n"
+        "stdout": "id    $path                  open\nd_17  /texts/mutus-liber.md  [{\"$id\":\"n_5ebb7234aa44\"},{\"$id\":\"n_cb80a4290986\"},{\"$id\":\"…\n"
       }
     },
     {
@@ -536,7 +536,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created q.md\n"
+            "stderr": "  ok created /q.md\n"
           }
         },
         {
@@ -557,7 +557,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+            "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
           }
         },
         {
@@ -568,7 +568,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"values\":[\"texts/emerald-tablet.md\",\"texts/mutus-liber.md\"]}\n"
+            "stdout": "{\"hits\":[],\"truncated\":false,\"cursor\":null,\"consumer\":\"collect\",\"values\":[\"/texts/emerald-tablet.md\",\"/texts/mutus-liber.md\"]}\n"
           }
         },
         {
@@ -578,7 +578,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+            "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
           }
         },
         {
@@ -643,7 +643,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created q.md\n"
+            "stderr": "  ok created /q.md\n"
           }
         },
         {
@@ -653,7 +653,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+            "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n"
           }
         },
         {
@@ -707,7 +707,7 @@
           "expect": {
             "exit": 0,
             "stdout": "d_20\n",
-            "stderr": "  ok created q.md\n"
+            "stderr": "  ok created /q.md\n"
           }
         },
         {
@@ -722,6 +722,48 @@
           }
         }
       ]
+    },
+    {
+      "name": "path-literal-rooted",
+      "notes": "spec/surface §1 Paths (cli 2.0): hits print the rooted path; a rooted literal matches it.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where $path == \"/texts/mutus-liber.md\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_17  /texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "path-literal-bare",
+      "notes": "spec/surface §1 Paths: a bare literal compared with `$path` is rooted first — the 1.x spelling keeps working.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs where $path == \"texts/mutus-liber.md\""
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "d_17  /texts/mutus-liber.md\n"
+      }
+    },
+    {
+      "name": "cursor-from-1x",
+      "notes": "§3.5 / spec/surface §1.4 (2.0): a cursor from a 1.x surface (a bare path) is `filter_invalid` naming the cause.",
+      "workspace": "alchemy",
+      "argv": [
+        "q",
+        "from docs",
+        "--cursor",
+        "WyJpbmRleC5tZCIsImRfMCJd"
+      ],
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "error[filter_invalid]: invalid cursor: cursor was issued before surface 2.0 (its path \"index.md\" is not /-rooted); start the page sequence again without a cursor\n  {\n    \"reason\": \"cursor was issued before surface 2.0 (its path \\\"index.md\\\" is not /-rooted); start the page sequence again without a cursor\",\n    \"hint\": \"resume only with a `cursor` returned by a truncated page of the same tool\"\n  }\n"
+      }
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { resolve as resolveThing, type ResolveInput } from "@omgbase/core";
+import { resolve as resolveThing, surfaceResolveHits, type ResolveInput } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -64,7 +64,7 @@ async function runFind(cli: Cli, args: string[]): Promise<number> {
         }
       }
     }
-    hits = resolveThing(ws.store, input);
+    hits = surfaceResolveHits(resolveThing(ws.store, input)); // locators in the reference form
   }
   cli.capture?.(hits); // shell: the ranked hits become the addressable frame
 

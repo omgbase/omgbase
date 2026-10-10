@@ -114,7 +114,7 @@ describe("changesSince contentHash enrichment", () => {
     const feed = changesSince(store, repoId, {});
     const digest = feed.digests.find((d) => d.commit === res.commitId);
     expect(digest).toBeDefined();
-    const rev = digest!.revisions.find((r) => r.path === "a.md");
+    const rev = digest!.revisions.find((r) => r.path === "/a.md"); // the feed speaks the reference form
     expect(rev).toBeDefined();
     expect(rev!.contentHash).toMatch(/^[0-9a-f]{64}$/);
 

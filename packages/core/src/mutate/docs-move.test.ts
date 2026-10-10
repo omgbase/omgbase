@@ -48,7 +48,7 @@ describe("docsMove — edge index follows the path", () => {
     save("a.md", "# A\n\nSee [new](/new.md) soon.\n");
     save("old.md", "# Old\n");
     expect(openEdgesTo("phantom:new.md")).toHaveLength(1);
-    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["new.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["/new.md"]);
 
     const res = docsMove(store, ctx(), "old.md", "new.md");
     expect(res.path).toBe("new.md");
@@ -88,8 +88,8 @@ describe("docsMove — edge index follows the path", () => {
     // (c.md's wikilink sits in a list item, so the list AND the item each carry
     // an edge — one stale row per edge, both dangling.)
     expect(stale).toHaveLength(inboundBefore);
-    expect(new Set(stale.map((s) => s.srcPath))).toEqual(new Set(["b.md", "c.md", "sub/d.md"]));
-    expect(stale.every((s) => s.target === "old.md")).toBe(true);
+    expect(new Set(stale.map((s) => s.srcPath))).toEqual(new Set(["/b.md", "/c.md", "/sub/d.md"]));
+    expect(stale.every((s) => s.target === "/old.md")).toBe(true);
     // The moved doc itself is fine on disk and in the DB.
     expect(existsSync(join(dir, "moved/new.md"))).toBe(true);
     expect(existsSync(join(dir, "old.md"))).toBe(false);
@@ -137,7 +137,7 @@ describe("docsMove — edge index follows the path", () => {
     }));
     expect(leftover).toEqual([]);
     expect(new Set(openEdgesTo(oldId).map((e) => e.src_doc))).toEqual(new Set([oldId, docId("b.md"), docId("c.md"), docId("sub/d.md")]));
-    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["old.md.bak"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["/old.md.bak"]);
     // The rewritten links are now the moved doc's inbound set at its new path.
     const after = inboundLinksTo(store, repoId, oldId, "moved/new.md");
     expect(new Set(after.map((l) => l.path))).toEqual(new Set(["b.md", "c.md", "moved/new.md", "sub/d.md"]));
@@ -154,7 +154,7 @@ describe("docsMove — edge index follows the path", () => {
     expect(res.dangling).toEqual([{ doc: docId("fm.md"), path: "fm.md", block: null, target: "old.md", anchor: null, field: "depends_on" }]);
     // The rewrite ran and touched nothing: empty lists, not null (null = opted out or nothing linked in).
     expect(res.retargeted).toEqual({ blocks: [], docs: [] });
-    expect(linksStale(store, repoId).stale.map((s) => s.srcPath)).toEqual(["fm.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.srcPath)).toEqual(["/fm.md"]);
   });
 });
 

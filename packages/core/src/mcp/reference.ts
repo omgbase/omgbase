@@ -28,6 +28,18 @@ same-named field there).
 Results are LEAN hits — {id, path} + whatever \`select\` projects (or \`values\`,
 \`count\`, \`exists\`, \`none\`). Hydrate full content by id via nodes_get/docs_read.
 
+## Paths
+
+Every path the surface returns is \`/\`-rooted — the form a reference is
+written in (\`[x](/projects/oqx.md)\`, \`before: [/timeline/kickoff.md]\`): a
+hit's \`path\`, \`$path\`, \`$dst_path\`, every tool's paths. Every path it
+accepts tolerates both forms (\`/a.md\` or \`a.md\`): tool arguments, \`refs(x)\`,
+\`within(...)\`, and a string LITERAL compared with \`$path\`/\`$dst_path\` by
+\`==\`/\`!=\` or passed to their \`.startsWith(...)\` (it is rooted first, so
+\`$path == "a.md"\` and \`$path == "/a.md"\` both match). A property holding a
+reference compares directly: \`where ^$path in list(after)\`,
+\`where customer == ^$path\` — no \`"/" + ...\` glue.
+
 ## Targets & field namespaces
 
 The sigil rule: \`$\`-prefixed names are engine intrinsics; BARE identifiers are
@@ -47,8 +59,8 @@ docs:
                        (the doc's format — "markdown"/"yaml"/"json"; a bare
                        computed field, present on EVERY doc, so has(format) is
                        always true and \`format == "yaml"\` is the filter).
-  - intrinsics       = $id, $path, $updated_at (ISO-8601, sorts chronologically),
-                       $body (whole file), $content_hash.
+  - intrinsics       = $id, $path (/-rooted, see Paths), $updated_at (ISO-8601,
+                       sorts chronologically), $body (whole file), $content_hash.
   - relations        = nodes, blocks, doc.out / doc.in (citation graph),
                        doc.out_edges / doc.in_edges (a doc's edges as rows).
 
@@ -73,10 +85,10 @@ edges:  (the authored link graph as rows — one per open edge)
   - bare fields      = predicate ("references"/"embeds"/freeform), provenance
                        ("link"/"frontmatter"/"inline_field"/…), dst_kind
                        ("document"/"external"/"collection"), anchor, src_field
-  - intrinsics       = $id, $src, $dst, $dst_path (target doc path; NULL when
-                       dangling/external), $dst_uri (external URL; NULL
-                       otherwise), $src_block, $via, $from_commit; $path and
-                       doc.<key> reach the SOURCE document.
+  - intrinsics       = $id, $src, $dst, $dst_path (target doc path, /-rooted;
+                       NULL when dangling/external), $dst_uri (external URL;
+                       NULL otherwise), $src_block, $via, $from_commit; $path
+                       and doc.<key> reach the SOURCE document.
   - text()/semantic() are N/A on edges.
 
 ## Scoping (ADR-015): bare names are LOCAL
@@ -135,7 +147,8 @@ edges:  (the authored link graph as rows — one per open edge)
     under_heading("Launch")   an ancestor section heading contains the text (ci)
     under_kind(type[, name])  an ancestor block has that type (name: its text
                               contains / its key equals name)
-    within("path" | "d_..")   containing doc = id, exact path, or path glob (*)
+    within("path" | "d_..")   containing doc = id, exact path, or path glob (*);
+                              either path form
     yaml_path("a.b")          YAML docs: the block at that key path
     json_pointer("#/a/b")     JSON docs: the block at that pointer
     has_edge("pred"[, target])  an open authored edge with that predicate leaves here
@@ -144,11 +157,14 @@ edges:  (the authored link graph as rows — one per open edge)
     child_count() > 0         number of direct children (must be compared)
   refs(x)              the live documents a property's document references name:
                        x is a string, a list or absent; each "/a/b.md", "a/b.md"
-                       or "d_…" element resolves to that doc's row (paths match
-                       $path after one leading "/" is stripped); dangling and
+                       or "d_…" element resolves to that doc's row; dangling and
                        non-string elements are dropped. Yields docs rows, so it is
                        a source, a receiver or a follow destination:
                        follow refs(before), refs(after) walks a timeline both ways.
+                       The reverse direction needs no function: a document's
+                       $path is already the reference form, so
+                       $repo.docs collect { where ^$path in list(after) } is
+                       "the documents whose \`after\` names me".
   A HIT IS A STORE ROW: a top-level row that is not a doc/block/node/edge fails
                        (filter_invalid). \`follow before\` over a list of paths
                        reaches the STRINGS — write \`follow refs(before)\`.
@@ -186,6 +202,7 @@ edges:  (the authored link graph as rows — one per open edge)
   distinct    select distinct type   (dedup hits by projected value)
   values      select <ONE item> values → bare values instead of records:
                 from docs select distinct type values          → values: ["hub","lab-note",…]
+                select $path values from docs                  → values: ["/index.md", …]
                 tags: tags collect { $it values }             → a plain array
                 h: nodes first { name values where kind == "md:section" order by first_ordinal }
   entries(x)  a record as a collection ($key / $it per entry), key order:
@@ -208,7 +225,7 @@ edges:  (the authored link graph as rows — one per open edge)
   from docs where <seed> follow doc.in             backlinks
     follow doc.out { depth 3 }                     bound (1..8, default 8)
     follow doc.out { where layer == "canon" }      keep only matching successors
-    follow doc.in { where before.contains(^$path) }   ^ = the row being expanded
+    follow doc.in { where ^$path in list(before) }    ^ = the row being expanded
                                                    (^^ = the walk's enclosing scope)
     follow doc.out, doc.in                         several destinations: their union
                                                    (one step dedups by identity)
@@ -223,7 +240,7 @@ edges:  (the authored link graph as rows — one per open edge)
   where/frontier read.
   Type-preserving relations: doc.out/doc.in, block.children, section.children,
   section.subsections.
-  from edges where $dst_path == "notes/x.md"       inbound edges to a doc, as rows
+  from edges where $dst_path == "/notes/x.md"      inbound edges to a doc, as rows
   from edges where predicate == "depends_on" select $src, $dst_path
   from docs where !doc.in_edges exists { }         orphans (nothing links in)
   (The \`graph\` tool is a convenience wrapper that compiles to a follow query.)
@@ -236,7 +253,7 @@ text()/where prune the candidate set; only order by reweights.
 ## Examples
 
   from docs where layer == "working"
-  from docs where $path.startsWith("guides/") && $updated_at >= "2026-08-01"
+  from docs where $path.startsWith("/guides/") && $updated_at >= "2026-08-01"
   from docs where "pricing" in list(tags) select layer, tags
   from docs where inline.owner == "alice"
   from docs where $title.lower().contains("q3 plan")
@@ -244,11 +261,12 @@ text()/where prune the candidate set; only order by reweights.
   from docs where type == "practitioner" order by era desc limit 2
   from docs where nodes none { where kind == "md:task" && !checked }
   from docs where tags exists { where $it == "tria-prima" }
-  from docs where $path == "x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
+  from docs where $path == "/x.md" select fm: entries(frontmatter) collect { k: $key, v: $it }
   from docs select owner_id, owner: $repo.nodes single { where kind == "person" && attrs.id == ^owner_id }
   from blocks where type == "task" && !checked && under_heading("Launch") && doc.layer == "working"
   from blocks where type == "paragraph" && has_edge("references", "d_92aaaaa")
-  select $path, $depth from docs where $path == "timeline/review.md" follow refs(before), refs(after)
+  select $path, $depth from docs where $path == "/timeline/review.md" follow refs(before), refs(after)
+  select $path, next: $repo.docs collect { $path where ^$path in list(before) } from docs where type == "milestone"
   select $path, prior: refs(before) collect { $path, when } from docs where type == "milestone"
   from blocks order by semantic("identity preservation across edits") desc limit 10
   from edges where dst_kind == "external" select $dst_uri

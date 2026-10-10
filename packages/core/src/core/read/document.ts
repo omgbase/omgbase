@@ -3,6 +3,7 @@ import type { Store } from "../store/store.js";
 import { findDoc, findDocByRef, loadDocBlocks, type BlockNode } from "./reader.js";
 import { docPropertiesGrouped } from "../store/properties.js";
 import { sha256 } from "../hash.js";
+import { referencePath } from "../paths.js";
 
 // Whole-document read (06 §3). The one-shot cold-start read: reconstruct a
 // document's full file bytes in a single call, so an agent can "read the guide
@@ -25,6 +26,7 @@ import { sha256 } from "../hash.js";
 // round-trips the file byte-for-byte (03 §2.1 coverage invariant).
 
 export interface DocsReadResult {
+  /** The reference form (`/a/b.md`, spec/surface §1 "Paths"). */
   path: string;
   docId: string;
   rev: string | null;
@@ -122,7 +124,7 @@ export function docsRead(store: Store, docId: string, opts: DocsReadOptions = {}
   if (content === null) return null;
 
   const result: DocsReadResult = {
-    path: info.path,
+    path: referencePath(info.path),
     docId: info.docId,
     rev: info.currentRev,
     properties: docPropertiesGrouped(store.db, docId),
@@ -309,7 +311,7 @@ export function readDocumentAtRevision(store: Store, docId: string, revId: strin
 
   return {
     // The revision records the path as of that revision (docs may be moved).
-    path: rev.path,
+    path: referencePath(rev.path),
     docId,
     rev: revId,
     content,

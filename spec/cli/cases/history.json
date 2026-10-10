@@ -10,7 +10,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n#3 observed observed: lab/2026-02-notes.md — 23 inserted\n#4 observed observed: practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: practitioners/newton.md — 14 inserted\n#7 observed observed: practitioners/paracelsus.md — 16 inserted\n#8 observed observed: processes/calcination.md — 20 inserted\n#9 observed observed: processes/coagulation.md — 14 inserted\n#10 observed observed: processes/dissolution.md — 15 inserted\n#11 observed observed: processes/magnum-opus.md — 22 inserted\n#12 observed observed: substances/mercury.md — 17 inserted\n#13 observed observed: substances/philosophers-stone.md — 21 inserted\n#14 observed observed: substances/prima-materia.md — 14 inserted\n#15 observed observed: substances/salt.md — 20 inserted\n#16 observed observed: substances/sulphur.md — 8 inserted\n#17 observed observed: texts/emerald-tablet.md — 13 inserted\n#18 observed observed: texts/mutus-liber.md — 12 inserted\n#19 observed observed: timeline/kickoff.md — 7 inserted\n#20 observed observed: timeline/review.md — 6 inserted\n"
+        "stdout": "#1 observed observed: /index.md — 31 inserted\n#2 observed observed: /lab/2026-01-notes.md — 28 inserted\n#3 observed observed: /lab/2026-02-notes.md — 23 inserted\n#4 observed observed: /practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: /practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: /practitioners/newton.md — 14 inserted\n#7 observed observed: /practitioners/paracelsus.md — 16 inserted\n#8 observed observed: /processes/calcination.md — 20 inserted\n#9 observed observed: /processes/coagulation.md — 14 inserted\n#10 observed observed: /processes/dissolution.md — 15 inserted\n#11 observed observed: /processes/magnum-opus.md — 22 inserted\n#12 observed observed: /substances/mercury.md — 17 inserted\n#13 observed observed: /substances/philosophers-stone.md — 21 inserted\n#14 observed observed: /substances/prima-materia.md — 14 inserted\n#15 observed observed: /substances/salt.md — 20 inserted\n#16 observed observed: /substances/sulphur.md — 8 inserted\n#17 observed observed: /texts/emerald-tablet.md — 13 inserted\n#18 observed observed: /texts/mutus-liber.md — 12 inserted\n#19 observed observed: /timeline/kickoff.md — 7 inserted\n#20 observed observed: /timeline/review.md — 6 inserted\n"
       }
     },
     {
@@ -25,7 +25,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n",
+        "stdout": "#1 observed observed: /index.md — 31 inserted\n#2 observed observed: /lab/2026-01-notes.md — 28 inserted\n",
         "stderr": "… truncated; continue with --cursor 2\n"
       }
     },
@@ -58,7 +58,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}\n",
+        "stdout": "{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"/index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}\n",
         "stderr": "… truncated; continue with --cursor 1\n"
       }
     },
@@ -73,7 +73,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"digests\":[{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}],\"cursor\":1,\"truncated\":true,\"head\":20}\n"
+        "stdout": "{\"digests\":[{\"commit\":\"c_0\",\"seq\":1,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /index.md — 31 inserted\",\"revisions\":[{\"doc\":\"d_0\",\"path\":\"/index.md\",\"contentHash\":\"74252946d208ad5c5e7f3b1a75d9e2feee6d8dfd06386fb09c47f23b797d0bed\"}]}],\"cursor\":1,\"truncated\":true,\"head\":20}\n"
       }
     },
     {
@@ -86,7 +86,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "#18 observed observed: texts/mutus-liber.md — 12 inserted\n#19 observed observed: timeline/kickoff.md — 7 inserted\n#20 observed observed: timeline/review.md — 6 inserted\n"
+        "stdout": "#18 observed observed: /texts/mutus-liber.md — 12 inserted\n#19 observed observed: /timeline/kickoff.md — 7 inserted\n#20 observed observed: /timeline/review.md — 6 inserted\n"
       }
     },
     {
@@ -100,7 +100,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"digests\":[{\"commit\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: texts/mutus-liber.md — 12 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}]},{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: timeline/kickoff.md — 7 inserted\",\"revisions\":[{\"doc\":\"d_18\",\"path\":\"timeline/kickoff.md\",\"contentHash\":\"be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141\"}]},{\"commit\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: timeline/review.md — 6 inserted\",\"revisions\":[{\"doc\":\"d_19\",\"path\":\"timeline/review.md\",\"contentHash\":\"291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701\"}]}],\"cursor\":20,\"truncated\":false,\"head\":20}\n"
+        "stdout": "{\"digests\":[{\"commit\":\"c_17\",\"seq\":18,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /texts/mutus-liber.md — 12 inserted\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"contentHash\":\"ccd682da7c3f643751e4aee291b18b75995ef9f883ececc5f925031bb319f4b5\"}]},{\"commit\":\"c_18\",\"seq\":19,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/kickoff.md — 7 inserted\",\"revisions\":[{\"doc\":\"d_18\",\"path\":\"/timeline/kickoff.md\",\"contentHash\":\"be02e5d0c7b12d980c95181613db581ce4563d1bcf23ff01bc180840a9b1e141\"}]},{\"commit\":\"c_19\",\"seq\":20,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"observed\",\"actor\":null,\"summary\":\"observed: /timeline/review.md — 6 inserted\",\"revisions\":[{\"doc\":\"d_19\",\"path\":\"/timeline/review.md\",\"contentHash\":\"291498bbafd37e417d70f374e620346c879b1d72fdf6f0cdce5f8b8a88d11701\"}]}],\"cursor\":20,\"truncated\":false,\"head\":20}\n"
       }
     },
     {
@@ -117,7 +117,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "#1 observed observed: index.md — 31 inserted\n",
+        "stdout": "#1 observed observed: /index.md — 31 inserted\n",
         "stderr": "… truncated; continue with --cursor 1\n"
       }
     },
@@ -150,7 +150,7 @@
       "pin_stderr": true,
       "expect": {
         "exit": 0,
-        "stdout": "#1 observed observed: index.md — 31 inserted\n",
+        "stdout": "#1 observed observed: /index.md — 31 inserted\n",
         "stderr": "… truncated; continue with --cursor 1\n"
       }
     },
@@ -201,7 +201,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "#17 observed observed: texts/emerald-tablet.md — 13 inserted\n"
+        "stdout": "#17 observed observed: /texts/emerald-tablet.md — 13 inserted\n"
       }
     },
     {
@@ -247,7 +247,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "#21 api      api(human:spec): texts/mutus-liber.md — 12 edited\n#22 api      api(human:spec): texts/mutus-liber.md — 12 edited\n"
+            "stdout": "#21 api      api(human:spec): /texts/mutus-liber.md — 12 edited\n#22 api      api(human:spec): /texts/mutus-liber.md — 12 edited\n"
           }
         },
         {
@@ -259,7 +259,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}]},{\"commit\":\"c_21\",\"seq\":22,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"contentHash\":\"b37b7d543115d4630871628739402dba87cf6137a4029d213124045838358240\"}]}],\"cursor\":22,\"truncated\":false,\"head\":22}\n"
+            "stdout": "{\"digests\":[{\"commit\":\"c_20\",\"seq\":21,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"contentHash\":\"ff981464d3f8e6ba3e8b031b2d0471498b9fd6fdb374ca8bdf639c8612a4268f\"}]},{\"commit\":\"c_21\",\"seq\":22,\"ts\":\"2026-09-27T00:00:00.000Z\",\"origin\":\"api\",\"actor\":\"human:spec\",\"summary\":\"api(human:spec): /texts/mutus-liber.md — 12 edited\",\"revisions\":[{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"contentHash\":\"b37b7d543115d4630871628739402dba87cf6137a4029d213124045838358240\"}]}],\"cursor\":22,\"truncated\":false,\"head\":22}\n"
           }
         },
         {
@@ -283,7 +283,7 @@
           "pin_stderr": true,
           "expect": {
             "exit": 0,
-            "stdout": "#1 observed observed: index.md — 31 inserted\n#2 observed observed: lab/2026-01-notes.md — 28 inserted\n#3 observed observed: lab/2026-02-notes.md — 23 inserted\n#4 observed observed: practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: practitioners/newton.md — 14 inserted\n#7 observed observed: practitioners/paracelsus.md — 16 inserted\n#8 observed observed: processes/calcination.md — 20 inserted\n#9 observed observed: processes/coagulation.md — 14 inserted\n#10 observed observed: processes/dissolution.md — 15 inserted\n#11 observed observed: processes/magnum-opus.md — 22 inserted\n#12 observed observed: substances/mercury.md — 17 inserted\n#13 observed observed: substances/philosophers-stone.md — 21 inserted\n#14 observed observed: substances/prima-materia.md — 14 inserted\n#15 observed observed: substances/salt.md — 20 inserted\n#16 observed observed: substances/sulphur.md — 8 inserted\n#17 observed observed: texts/emerald-tablet.md — 13 inserted\n#18 observed observed: texts/mutus-liber.md — 12 inserted\n#19 observed observed: timeline/kickoff.md — 7 inserted\n#20 observed observed: timeline/review.md — 6 inserted\n#21 api      api(human:spec): texts/mutus-liber.md — 12 edited\n#22 api      api(human:spec): texts/mutus-liber.md — 12 edited\n",
+            "stdout": "#1 observed observed: /index.md — 31 inserted\n#2 observed observed: /lab/2026-01-notes.md — 28 inserted\n#3 observed observed: /lab/2026-02-notes.md — 23 inserted\n#4 observed observed: /practitioners/jabir-ibn-hayyan.md — 13 inserted\n#5 observed observed: /practitioners/maria-prophetissa.md — 13 inserted\n#6 observed observed: /practitioners/newton.md — 14 inserted\n#7 observed observed: /practitioners/paracelsus.md — 16 inserted\n#8 observed observed: /processes/calcination.md — 20 inserted\n#9 observed observed: /processes/coagulation.md — 14 inserted\n#10 observed observed: /processes/dissolution.md — 15 inserted\n#11 observed observed: /processes/magnum-opus.md — 22 inserted\n#12 observed observed: /substances/mercury.md — 17 inserted\n#13 observed observed: /substances/philosophers-stone.md — 21 inserted\n#14 observed observed: /substances/prima-materia.md — 14 inserted\n#15 observed observed: /substances/salt.md — 20 inserted\n#16 observed observed: /substances/sulphur.md — 8 inserted\n#17 observed observed: /texts/emerald-tablet.md — 13 inserted\n#18 observed observed: /texts/mutus-liber.md — 12 inserted\n#19 observed observed: /timeline/kickoff.md — 7 inserted\n#20 observed observed: /timeline/review.md — 6 inserted\n#21 api      api(human:spec): /texts/mutus-liber.md — 12 edited\n#22 api      api(human:spec): /texts/mutus-liber.md — 12 edited\n",
             "stderr": ""
           }
         }
@@ -489,7 +489,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_17\",\"to\":\"r_17\",\"diff\":\"\"}\n"
+        "stdout": "{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_17\",\"to\":\"r_17\",\"diff\":\"\"}\n"
       }
     },
     {
@@ -572,7 +572,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         },
         {
@@ -622,7 +622,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "{\"doc\":\"d_17\",\"path\":\"texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
+            "stdout": "{\"doc\":\"d_17\",\"path\":\"/texts/mutus-liber.md\",\"from\":\"r_20\",\"to\":\"r_21\",\"diff\":\"@@ -27,7 +27,7 @@\\n \\n ## Status of these notes\\n \\n-Draft, revised.\\n+From the second write.\\n \\n - [ ] Obtain a facsimile with plate numbering\\n - [ ] Compare the 1677 and 1702 plate sequences\"}\n"
           }
         }
       ]

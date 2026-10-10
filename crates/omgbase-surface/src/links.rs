@@ -11,12 +11,15 @@ use serde_json::{Value as Json, json};
 
 use crate::context::glob_to_like;
 use crate::error::Result;
+use crate::paths::{reference_path, storage_path};
 
 const PHANTOM: &str = "phantom:";
 
 /// `(clause, param)` for a path glob: `LIKE` with `*` → `%` when it has a
-/// `*`, else an exact match.
+/// `*`, else an exact match. Either path form is accepted; the column holds
+/// the storage form.
 fn glob_clause(column: &str, glob: &str) -> (String, String) {
+    let glob = storage_path(glob);
     if glob.contains('*') {
         (
             format!("{column} LIKE ? ESCAPE '\\'"),
@@ -161,14 +164,16 @@ pub fn links_stale(
             &target,
             anchor.as_deref(),
         )?;
+        // The surface speaks the reference form: `srcPath` and `target` rooted;
+        // `authored` stays exactly as written in the source.
         stale.push(json!({
             "srcDoc": src_doc,
-            "srcPath": src_path,
+            "srcPath": reference_path(&src_path),
             "srcBlock": src_block,
             "predicate": predicate,
             "provenance": provenance,
             "dstKind": dst_kind,
-            "target": target,
+            "target": reference_path(&target),
             "authored": authored,
             "anchor": anchor,
             "reason": "dangling_doc",
@@ -216,8 +221,8 @@ pub fn links_stale_summary(store: &Store, repo_id: &str, path_glob: Option<&str>
     let stale_count: i64 = by_target.iter().map(|(_, n)| n).sum();
     Ok(json!({
         "staleCount": stale_count,
-        "byTarget": by_target.iter().map(|(t, n)| json!({ "target": &t[PHANTOM.len()..], "count": n })).collect::<Vec<_>>(),
-        "bySource": by_source.iter().map(|(p, n)| json!({ "srcPath": p, "count": n })).collect::<Vec<_>>(),
+        "byTarget": by_target.iter().map(|(t, n)| json!({ "target": reference_path(&t[PHANTOM.len()..]), "count": n })).collect::<Vec<_>>(),
+        "bySource": by_source.iter().map(|(p, n)| json!({ "srcPath": reference_path(p), "count": n })).collect::<Vec<_>>(),
         "externalCount": external,
         "totalOpenEdges": total,
     }))

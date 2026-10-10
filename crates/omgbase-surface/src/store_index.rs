@@ -48,6 +48,7 @@ use oqx::{DataContext, RowIndex, Value};
 use rusqlite::types::Value as SqlValue;
 
 use crate::context::{StoreContext, Target};
+use crate::paths::storage_path;
 use crate::planner::{columns, from_by_doc, from_clause, guards, guards_by_doc, order_clause};
 use crate::translate::{RESERVED_DOC_BASENAMES, non_property_handles};
 
@@ -177,6 +178,13 @@ impl StoreIndex<'_, '_> {
             return self.fallback(value);
         }
         match &self.probe {
+            // `$path` / `$dst_path` are the reference form in memory (`/a.md`,
+            // `spec/surface` §1 "Paths"); the column holds the storage form. A
+            // rooted probe is de-rooted; a bare one can equal no rooted path.
+            Probe::Column(sql) if self.path == "$path" || self.path == "$dst_path" => match value {
+                Value::Str(s) if s.starts_with('/') => self.column(sql, storage_path(s)),
+                _ => Ok(Vec::new()),
+            },
             Probe::Column(sql) => match value {
                 Value::Str(s) => self.column(sql, s),
                 _ => Ok(Vec::new()),

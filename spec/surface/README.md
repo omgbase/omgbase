@@ -40,6 +40,34 @@ pushdown planner may pre-filter in SQL; it must be invisible (planned ==
 in-memory, the reference proves it by a differential suite), so this spec
 describes the in-memory semantics only.
 
+**Paths (2.0).** omgbase has two path forms. Storage — `docs.path`, the
+filesystem adapters, every store/sync spec — uses git's repo-relative form
+(`projects/oqx.md`); a reference an author writes — a Markdown link, a
+wikilink, a frontmatter relation — is root-absolute (`/projects/oqx.md`, the
+graph layer resolves it). **The surface speaks the reference form**: every
+path a query, a tool or the CLI RETURNS is `/`-rooted — `$path` and
+`$dst_path` on every target, the `path` of every hit and of a row rendered as
+a value (§1.4), `docs_list`/`docs_tree` rows and the tree's `prefix` (`/` for
+the root), `docs_read`/`docs_read_at`/`docs_get_many`/`read_ref`, every
+history, link-health, search, document-operation, `apply`, `observe` and
+`changes_since` path (the digest's `revisions`, deletions and moves, the
+`summary` included) — and every path they ACCEPT tolerates both forms: a
+missing leading `/` is added, an extra one is stripped (`docs_read` of
+`/a.md`, `a.md` or `//a.md` is one document; a `path_glob`, a `docs_tree`
+prefix, `roots`, `docs[]`, `refs(x)`, `within(…)` likewise). In a query, a
+**string literal** compared with `$path`/`$dst_path` by `==` or `!=`, or
+passed to their `.startsWith(…)`, is rooted before evaluation, so `$path ==
+"a.md"` and `$path == "/a.md"` both match and `$path.startsWith("dir/")`
+keeps working; nothing else is rewritten — a property's value is the
+author's (`where customer == ^$path` compares the authored reference
+directly, `where ^$path in list(after)` is the reverse of `refs(after)`), a
+regex (`matches("^/texts/")`), `contains`, `endsWith` and a binding read the
+string as it is. Storage is unchanged: `docs.path` stays repo-relative, no
+migration, and the pushed SQL and the store-index probes de-root the literal
+(or root the column) so planned and in-memory agree (`query-docs::path-*`,
+`query-edges::dst-path-*`, `query-refs::reverse-reference-by-path-membership`,
+`reads::alchemy`).
+
 Both implementations run the same tier-3 planner (the pushable top-level
 `&&`-conjuncts of a bare root scan become one SQL statement; the residual
 finishes in memory over the produced rows). Both also answer a **nested
@@ -54,7 +82,10 @@ type == "x" }` — is served by one indexed statement per probe (docs `$id`,
 `type`, `$path`; nodes `$id`, `$doc_id`, `kind`, `name`, `$path`; edges
 `$id`, `$src`, `$dst`, `$path`, `$dst_path`) under the root scan's guards and
 order, so the root is never read whole; an absent probe or an unindexed path
-reads it once. Results are unchanged — the §6 fixtures and the conformance
+reads it once. A `$path`/`$dst_path` probe de-roots a rooted value before the
+statement and answers no row for a bare one (the intrinsic is the reference
+form, 2.0), as the translator renders the column `'/' || d.path` and takes
+the indexed `d.path IS ?` fast path only for a rooted constant. Results are unchanged — the §6 fixtures and the conformance
 lists are the gate — only the work is. Invisibility is kept by
 **declining** rather than by cleverness; since the 1.1 patch of 2026-09-26
 (§9) the planner declines, in both translators:
@@ -124,7 +155,8 @@ row.
 
 ### 1.2 Fields, intrinsics, reach-through, relations
 
-**docs.** Intrinsics: `$id` (doc id), `$path`, `$content_hash` (hex of
+**docs.** Intrinsics: `$id` (doc id), `$path` (the reference form, `/a/b.md`
+— §1 Paths), `$content_hash` (hex of
 `file_hash`, null when none), `$updated_at` (the current revision's commit
 `ts`, null when none), `$body` (the reconstructed file, `spec/store` §6.1),
 `$title`/`$tags` (the computed properties, null when absent). `format` is
@@ -176,8 +208,8 @@ order).
 
 **edges.** Intrinsics: `$id`, `$src`, `$dst`, `$src_block`, `$via`,
 `$from_commit`, `$path` (the source doc's path), `$dst_path` (the target
-doc's path, null when not a doc), `$dst_uri` (the external node's URI, null
-otherwise). Fields: `predicate`, `provenance`, `dst_kind`, `anchor`,
+doc's path, null when not a doc; both the reference form), `$dst_uri` (the
+external node's URI, null otherwise). Fields: `predicate`, `provenance`, `dst_kind`, `anchor`,
 `src_field`. `doc` reaches the source doc. No relations.
 
 ### 1.3 Functions
@@ -188,9 +220,8 @@ Free: the `spec/oqx` builtins, plus `entries(<source handle>)` (§1.2),
 **`refs(x)`** (1.5): the live documents the **document references** held in
 a property name. `x` is a string, a list, or absent (anything else is an
 empty list); each **string** element resolves to the live document of the
-current repo whose `path` equals the element after stripping one leading `/`
-— a repo-root-absolute path (`/a/b.md`) or a bare repo-relative path
-(`a/b.md`) — or, when no path matches and the element begins with `d_`, the
+current repo at that path in either form (§1 Paths: `/a/b.md` or `a/b.md`)
+— or, when no path matches and the element begins with `d_`, the
 live document with that id; an element that resolves to nothing (a dangling
 reference, a non-string element) is **dropped** — no phantom row, no error.
 Order is preserved and duplicates are kept (a `follow` step's union dedups
@@ -258,10 +289,11 @@ cursor, consumer, count?, exists?, none?, values? }`:
 - `collect`: a top-level `select distinct` dedups hits by the user
   projection (first wins), the query's own `limit`/`offset` (integer
   literals only, else `filter_invalid`) bound the set after that, then the
-  page: with the default order the keyset cursor `(path, id)` skips rows at
-  or before the cursor, `cap = limit`, `truncated` = more remained, `cursor`
-  = the last hit's `(path, id)` when truncated; a custom `order by` disables
-  the cursor (the top `cap` is returned, `truncated` still honest).
+  page: with the default order the keyset cursor `(path, id)` — the hit's
+  path, so the reference form — skips rows at or before the cursor, `cap =
+  limit`, `truncated` = more remained, `cursor` = the last hit's `(path, id)`
+  when truncated; a custom `order by` disables the cursor (the top `cap` is
+  returned, `truncated` still honest).
 - `values`: the single projected item is returned as `values: [...]` with
   `hits` empty.
 - **Rows as values (1.2).** Wherever a row surfaces as a *value* rather
@@ -275,15 +307,22 @@ cursor, consumer, count?, exists?, none?, values? }`:
   malformed cursor is `filter_invalid` naming the surface.
 
 Cursors are `base64url(JSON [parts...])`: `[path, id]` for `query`,
-`[path]` for `docs_list`/`docs_tree`.
+`[path]` for `docs_list`/`docs_tree`, the path in the reference form. **A
+cursor from a 1.x surface is not honoured** (2.0): its path is bare, so its
+keyset would sort before every rooted row and silently replay the first page;
+a decoded first part that does not begin with `/` is `filter_invalid` with the
+message `invalid cursor: cursor was issued before surface 2.0 (its path "…" is
+not /-rooted); start the page sequence again without a cursor` (and the same
+text as `data.reason`; `query-errors::cursor-from-1x-rejected`, `reads::alchemy`).
+The generic decoder (`cursor.json`) is unchanged.
 
 ## 2. Reads
 
 - **`resolve_ref(ref)`**: an `n_` + 12 hex node id → its block when the block
   is live, else its doc; a `b_` id → its live block; a `d_` id → the live doc;
   anything else → the live doc at that path; null when nothing matches.
-- **`docs_read(doc, include_ids?)`**: `{ path, doc_id, rev, properties
-  (grouped, spec/properties §5), content (spec/store §6.1) }` + with ids
+- **`docs_read(doc, include_ids?)`**: `{ path (reference form), doc_id, rev,
+  properties (grouped, spec/properties §5), content (spec/store §6.1) }` + with ids
   `ids` (pre-order), `hashes` (id → hex `raw_hash`), `parents` (id → parent
   id or null). `docs_read_many(refs, include_ids?, budget_tokens?)`:
   first-seen dedup, cap 100 (`truncated`), a miss → `errors: [{ ref, error:
@@ -311,14 +350,15 @@ Cursors are `base64url(JSON [parts...])`: `[path, id]` for `query`,
   ten words, others ten words (`…` when cut), `skeleton` none; `depth`
   limits nesting; the budget (`ceil(line length / 4)`) truncates.
 - **`docs_list(path_glob?, limit = 200, cursor?, budget_tokens?)`**: live
-  docs by path, `path LIKE glob` (`*` → `%`, `%`/`_`/`\` escaped), rows
-  `{ path, blocks (live count), ts (current revision's commit ts or null) }`,
-  fetched `limit + 1`, keyset cursor `[path]`, budget as above (at least one
-  row). **`docs_tree(path?, depth = 1, …)`**: the prefix normalized (no
-  leading `/`, trailing `/` unless empty); every live doc under it collapsed
-  at `depth` segments into `dir` entries (`path` ending `/`, summed `docs`
-  and `blocks`, max `ts`) or `doc` entries; `total` over everything under
-  the prefix; ordered by path and paged the same way.
+  docs by path, `path LIKE glob` (`*` → `%`, `%`/`_`/`\` escaped; the glob
+  in either form), rows `{ path (reference form), blocks (live count), ts
+  (current revision's commit ts or null) }`, fetched `limit + 1`, keyset
+  cursor `[path]`, budget as above (at least one row). **`docs_tree(path?,
+  depth = 1, …)`**: the prefix normalized (either form accepted; reported
+  rooted — `/` for the repo root, else `/<dir>/`); every live doc under it
+  collapsed at `depth` segments into `dir` entries (a rooted `path` ending
+  `/`, summed `docs` and `blocks`, max `ts`) or `doc` entries; `total` over
+  everything under the prefix; ordered by path and paged the same way.
 
 ## 3. History
 
@@ -357,12 +397,13 @@ verbatim, and this prose uses snake_case only as a naming convention.
   joined by `\n`, no file header; identical texts yield `""`. Lines are
   compared as exact strings.
 - **`changes_since`**: `spec/sync` §6 (the digest shape and paging;
-  `summary` unpinned).
+  `summary` unpinned) — every path in a digest, the `summary`'s subject
+  included, in the reference form (2.0).
 - **`docs_history(path_glob | doc, include_deleted?, limit = 50)`**: docs by
   path (glob as `docs_list`; a glob without `*` is an exact path), live only
   unless `include_deleted`, `limit + 1` for `truncated`; each `{ doc_id,
-  path, deleted, current_rev, versions: [{ rev, seq, commit, ts, origin,
-  actor, content_hash, is_current }] }` oldest first.
+  path (reference form), deleted, current_rev, versions: [{ rev, seq, commit,
+  ts, origin, actor, content_hash, is_current }] }` oldest first.
 
 ## 4. The MCP tool catalog
 
@@ -381,7 +422,7 @@ root is derived (`spec/sync` §1); a mutating tool on a sourceless repo fails
 `repo_not_found` ("mutation disabled").
 
 **Ref resolution (server side).** `doc` fields accept an id or a path;
-`path` fields a path; a block-level tool's `block`/`blocks`/`to`/`at` refs go
+`path` fields a path (every path argument in either form, §1 Paths); a block-level tool's `block`/`blocks`/`to`/`at` refs go
 through `resolve_ref` (a doc ref as `to` means the document's top level);
 `heading` accepts a heading block id or heading text (an ATX-looking text
 loses its hashes; matched against the normalized heading text repo-wide or
@@ -401,9 +442,9 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `query_syntax` | — | `{ syntax }` (reference text, unpinned) |
 | `query` | `query`, `limit?`, `cursor?` | §1.4; `semantic(...)` with no provider → `semantic_unavailable` |
 | `graph` | `roots[]`, `degrees? = 1`, `direction? = both`, `predicate?`, `select?[]`, `max_documents? = 200` | `{ documents: [{ id, path, degree, frontier, ...select }], edges: [{ id, src, dst, dst_path, dst_uri, predicate, provenance, dst_kind, anchor, src_field }], frontier, truncated, queries, degrees }` — compiled to `follow doc.out`/`doc.in` with `depth = degrees + 1` (≤ 8, so `degrees` clamps to 7 and the result reports the clamped value), roots depth 0; documents ordered bytewise by path (§9); a `$path` projection collapses onto the existing `path` key |
-| `text_search` | `q`, `limit?` | `spec/search` §1.3 |
-| `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists) |
-| `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"` |
+| `text_search` | `q`, `limit?` | `spec/search` §1.3, hit `path` in the reference form |
+| `resolve` | `query`, `limit?` | `spec/search` §4 (vector fused when a provider exists), the `locator`'s path half in the reference form (`/a.md#paragraph[2]`) |
+| `apply` | `ops[]`, `reason?`, `dry_run?` | `spec/mutate` §4, `origin.actor = "agent:mcp"`; `revisions[].path` and the `diffs` keys in the reference form |
 | `blocks_insert` | `to`, `markdown`, `at? = end`, `expect? { parent_children_hash? }`, `dry_run?` | the apply result; `expect` is the destination-parent CAS of `spec/mutate` §1.2 (1.2) |
 | `blocks_update` | `block`, `markdown?`, `checked?`, `attrs?`, `expect?`, `dry_run?` | `{ id, ids, ...apply result }` (`checked` folds into attrs) |
 | `blocks_move` | `blocks[]`, `to`, `at?`, `expect? { parent_children_hash? }`, `dry_run?` | a doc ref as `to` must be the blocks' own document, else `target_missing`; `expect` is the destination-parent CAS, checked once (1.2) |
@@ -415,12 +456,12 @@ within `doc`/`path`; zero → `parent_missing`, several →
 | `sections_append` | `heading`, `markdown`, `doc?`, `path?`, `dry_run?` | |
 | `docs_append` | `doc?`, `path?`, `text` | (no dry run) |
 | `links_retarget` | `from_target`, `to_target`, `path_glob?`, `dry_run? = true` | `{ hits, pairs, applied, ...apply result }` |
-| `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6 shapes |
+| `links_stale` | `path_glob?`, `limit? = 500`, `summary?` | `spec/graph` §6 shapes; `srcPath`, `target`, `bySource[].srcPath`, `byTarget[].target` in the reference form (`authored` stays as written) |
 | `links_repair` | `repairs[]` or `from_target`+`to_target`, `path_glob?`, `dry_run? = true` | as retarget; neither given → `target_missing` |
-| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
-| `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text) |
+| `docs_create` / `docs_move` / `docs_delete` / `docs_set_meta` | `spec/mutate` §6 args, `dry_run?` (1.3) | its results, every path (`path`, the `diffs` keys, `dangling[].path`; not `dangling[].target`, which is as authored) in the reference form; with `dry_run` nothing commits and the result carries `committed: false` and `diffs` (`{ <path>: { before, after } }` — create `"" → bytes`, delete `bytes → ""`, move two entries, meta before → after; a move — which retargets the inbound links unless `retarget_inbound: false`, `spec/mutate` 1.3 — also previews the rewritten sources and `retargeted`/`dangling`); a dry-run create still mints its `d_` id (`apply`'s rule) |
+| `docs_plan_update` | `doc`, `content` | `{ opset, plan }` (`plan` = the rendered one-line-per-op text; the opset's `target.path` and `precondition.path` in the reference form) |
 | `docs_update` | `doc`, `content`, `reason?`, `dry_run?` | `{ opset, plan, result }` |
-| `observe` / `observe_many` / `observe_delete` | `spec/store` §5 | its outcomes (`observe` sweeps the pool) |
+| `observe` / `observe_many` / `observe_delete` | `spec/store` §5 (`path` in either form) | its outcomes (`observe` sweeps the pool), `path` in the reference form |
 | `history_node` | `id`, `limit?` | §3 (not repo-scoped) |
 | `diff` / `diff_unified` / `docs_read_at` / `docs_history` / `changes_since` | §3 | §3 |
 | `repos_status` / `sync_status` | `repo?` | `spec/sync` §4.4 |
@@ -723,6 +764,21 @@ both and runs both harnesses.
   block-grain `diff` keeps the all-depths id → raw map: it compares blocks
   by id, where a container and its children are distinct entries. No field,
   tool or result key changed: a patch.
+- **Fixed (2.0) — the surface reported paths in the storage form.** `$path`,
+  every hit, every tool answered `projects/oqx.md` while every reference an
+  author writes is `/projects/oqx.md`, so correlating a document with the
+  references that name it needed `"/" + ^$path` glue and a `links_stale`
+  `target` could not be pasted where an `authored` destination could. §1
+  "Paths" now makes the reference form the surface's one form, both forms
+  accepted on input, literals compared with `$path` rooted for the author
+  (`query-docs::path-literal-bare`), and refuses a 1.x cursor. The storage
+  layer and every lower spec are untouched; the other-spec result shapes
+  (`spec/mutate`, `spec/store`, `spec/search`) are re-shaped at the surface
+  boundary — one function per shape in both engines (`surface-paths.ts`,
+  `omgbase_surface::paths`). The one place the two engines compose a path
+  differently: the Rust store renders a change digest's `summary` in the
+  storage form and the catalog re-roots its subject (`root_summary`), where
+  the reference composes it from rooted paths.
 - **Pinned — the catch-all error is `repo_not_found`.** An unexpected
   exception in a tool is reported under that code with its message.
 - **Pinned — `history_node` is not repo-scoped**; block ids are global.
@@ -743,6 +799,22 @@ both and runs both harnesses.
 
 ## Decisions
 
+- 2026-10-10, surface 2.0: **paths on the surface are `/`-rooted** (Brendan's
+  decision, §1 "Paths"). Every path a query, a tool or the CLI returns is the
+  reference form; every path they accept tolerates both forms; a string
+  literal compared with `$path`/`$dst_path` by `==`/`!=` or passed to their
+  `startsWith` is rooted first; the keyset cursor carries the rooted path and
+  a 1.x cursor is refused. Storage is unchanged — `docs.path`, `spec/store`,
+  `spec/sync`, the adapters and the store/sync crates keep the repo-relative
+  form; no migration. Every path-bearing expectation of every suite changed
+  spelling and nothing else (the `+`/`~` report of the regeneration is
+  paths-only: the 1.x cursor inputs were re-encoded, `query-docs::string-methods`
+  anchors its regex at `^/texts/`). **Migration:** add the slash — `$path ==
+  "x.md"` still matches but `"/x.md"` is the spelling; `$path.startsWith("projects/")`
+  → `"/projects/"`; `$path.matches("^texts/")` → `"^/texts/"`; `"/" + ^$path`
+  → `^$path`; a `links_stale` `target` is now paste-ready as a `from`; a
+  client that parsed `docs_tree`'s `prefix` as a bare directory reads `/` for
+  the root; discard stored cursors. A result key changed in meaning: a major.
 - 2026-10-09, surface 1.5: **a hit is a store row, and `refs(x)` resolves
   document references held in properties** (§1.3, §1.4). The Lit graph demo
   surfaced it: a timeline note's `before: [/timeline/kickoff.md]` is a list of

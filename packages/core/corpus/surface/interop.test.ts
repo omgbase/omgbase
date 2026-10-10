@@ -298,7 +298,8 @@ function checkSeed(outcome: unknown, paths: string[], engine: Engine): void {
   if (outcome.length !== paths.length) return bad(`returned ${outcome.length} outcomes for ${paths.length} files`);
   outcome.forEach((o: unknown, i: number) => {
     const rec = (typeof o === "object" && o !== null ? o : {}) as Record<string, unknown>;
-    if (rec.path !== paths[i]) bad(`outcome ${i} is for ${JSON.stringify(rec.path)}, expected ${paths[i]}`);
+    // Every path a tool returns is the reference form (spec/surface §1 "Paths", 2.0).
+    if (rec.path !== `/${paths[i]}`) bad(`outcome ${i} is for ${JSON.stringify(rec.path)}, expected /${paths[i]}`);
     if (rec.docId !== `d_${i}`) bad(`outcome ${i} minted ${JSON.stringify(rec.docId)}, expected d_${i} (is the minter seam active?)`);
     if (rec.echo !== false) bad(`outcome ${i} has echo ${JSON.stringify(rec.echo)}`);
   });

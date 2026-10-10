@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { docsUpdate, renderOpsetPlan, type DocsUpdateContext } from "@omgbase/core";
+import { docsUpdate, renderOpsetPlan, surfaceDocsUpdate, type DocsUpdateContext } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
@@ -78,10 +78,10 @@ async function runDocUpdate(cli: Cli, args: string[]): Promise<number> {
       ...(ws.omgbaseDir ? { omgbaseDir: ws.omgbaseDir } : {}),
       ...(values.actor ? { actor: values.actor } : {}),
     };
-    ({ opset, result } = docsUpdate(ws.store, ctx, doc, bytes, {
+    ({ opset, result } = surfaceDocsUpdate(docsUpdate(ws.store, ctx, doc, bytes, {
       dryRun,
       ...(values.reason ? { reason: values.reason } : {}),
-    }));
+    })));
   }
 
   if (cli.flags.mode !== "human") {

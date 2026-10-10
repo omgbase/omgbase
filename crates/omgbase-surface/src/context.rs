@@ -48,6 +48,7 @@ use oqx::{
 use rusqlite::types::{Value as SqlValue, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
+use crate::paths::{reference_path, storage_path};
 use crate::planner;
 
 /// The hidden column tagging a store row with its target.
@@ -255,9 +256,10 @@ pub fn strip_tags(v: Value) -> Value {
 /// §1.4 rows as values (1.2): a store row that surfaces as a VALUE in a result
 /// tree — a nested `collect { }` / `first { }` / `single { }` with an empty
 /// projection, or a `values` item that is a row — renders as `{ id, path }`
-/// (the target's id column as a string; the owning document's path: a docs
-/// row's `path`, every other row's `__path` join column), never the store
-/// row. Everything else recurses, dropping the hidden tag as [`strip_tags`].
+/// (the target's id column as a string; the owning document's path in the
+/// reference form, §1 "Paths": a docs row's `path`, every other row's
+/// `__path` join column, rooted), never the store row. Everything else
+/// recurses, dropping the hidden tag as [`strip_tags`].
 #[must_use]
 pub fn render_row_values(v: Value) -> Value {
     match v {
@@ -272,7 +274,11 @@ pub fn render_row_values(v: Value) -> Value {
                 };
                 let mut out = Object::with_capacity(2);
                 out.insert("id", Value::Str(col_str(&row, id_col)));
-                out.insert("path", Value::Str(col_str(&row, path_col)));
+                let path = match col(&row, path_col) {
+                    Value::Undefined | Value::Null => String::new(),
+                    v => reference_path(&js_string(v)),
+                };
+                out.insert("path", Value::Str(path));
                 return Value::Object(out);
             }
             let Value::Object(o) = row else {
@@ -384,7 +390,7 @@ impl<'a> StoreContext<'a> {
             ];
             Ok(self.one(&sql, &params)?.map(|row| tag_row(row, t)))
         };
-        if let Some(row) = lookup("path", r.strip_prefix('/').unwrap_or(r))? {
+        if let Some(row) = lookup("path", storage_path(r))? {
             return Ok(Some(row));
         }
         if r.starts_with("d_") {
@@ -902,14 +908,19 @@ impl<'a> StoreContext<'a> {
         if v.is_absent() { Value::Null } else { v }
     }
 
+    /// `$path` / `$dst_path` are the REFERENCE form (`/a/b.md`, §1 "Paths",
+    /// 2.0): the rows carry the storage form (`path`, the `__path` join column)
+    /// and the intrinsic roots it on read, so nothing below the binding
+    /// changes. The runner roots the string literals a query compares them with.
     fn intrinsic(&self, row: &Value, t: Target, name: &str) -> oqx::Result<Value> {
         if name == "$self" {
             return Ok(row.clone());
         }
         let c = |k: &str| col(row, k).clone();
+        let rooted = |k: &str| Value::Str(reference_path(&col_str(row, k)));
         Ok(match (t, name) {
             (Target::Docs, "$id") => c("doc_id"),
-            (Target::Docs, "$path") => c("path"),
+            (Target::Docs, "$path") => rooted("path"),
             (Target::Docs, "$content_hash") => Self::null_if_absent(c("file_hash")),
             (Target::Docs, "$updated_at") => Self::null_if_absent(self.scalar(
                 "SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?1",
@@ -930,7 +941,7 @@ impl<'a> StoreContext<'a> {
             }
             (Target::Blocks, "$id") => c("block_id"),
             (Target::Blocks, "$doc") => c("doc_id"),
-            (Target::Blocks, "$path") => c("__path"),
+            (Target::Blocks, "$path") => rooted("__path"),
             (Target::Blocks, "$ordinal") => c("ordinal"),
             (Target::Blocks, "$depth") => c("depth"),
             (Target::Blocks, "$body") => c("text"),
@@ -942,18 +953,21 @@ impl<'a> StoreContext<'a> {
             (Target::Nodes, "$id" | "$node_id") => c("node_id"),
             (Target::Nodes, "$doc_id") => c("doc_id"),
             (Target::Nodes, "$block_id") => c("block_id"),
-            (Target::Nodes, "$path") => c("__path"),
+            (Target::Nodes, "$path") => rooted("__path"),
             (Target::Edges, "$id") => c("edge_id"),
             (Target::Edges, "$src") => c("src_doc"),
             (Target::Edges, "$dst") => c("dst_node"),
             (Target::Edges, "$src_block") => c("src_block"),
             (Target::Edges, "$via") => c("via_node"),
             (Target::Edges, "$from_commit") => c("from_commit"),
-            (Target::Edges, "$path") => c("__path"),
-            (Target::Edges, "$dst_path") => Self::null_if_absent(self.scalar(
+            (Target::Edges, "$path") => rooted("__path"),
+            (Target::Edges, "$dst_path") => match self.scalar(
                 "SELECT path FROM docs WHERE doc_id = ?1",
                 &[to_sql(&c("dst_node"))],
-            )?),
+            )? {
+                Value::Undefined | Value::Null => Value::Null,
+                p => Value::Str(reference_path(&js_string(&p))),
+            },
             (Target::Edges, "$dst_uri") => Self::null_if_absent(self.scalar(
                 "SELECT uri FROM external_nodes WHERE node_id = ?1",
                 &[to_sql(&c("dst_node"))],
@@ -1052,11 +1066,14 @@ impl<'a> StoreContext<'a> {
                     &[to_sql(&c("doc_id")), SqlValue::Text(text), top.clone(), top],
                 )))
             }),
+            // `within(t)`: a doc id, else a path in either form (`/texts/*`,
+            // `texts/*`, `texts/x.md`) matched against the storage path.
             "within" => Self::require_target(t, Target::Blocks, name).or_else(|| {
                 let target = js_string(args.first().unwrap_or(&Value::Undefined));
                 if target.starts_with("d_") {
                     return Some(Ok(Value::Bool(col_str(row, "doc_id") == target)));
                 }
+                let target = storage_path(&target).to_owned();
                 if target.contains('*') {
                     let like = glob_to_like(&target, false);
                     return Some(Self::sql_result(self.exists(
@@ -1538,7 +1555,7 @@ mod tests {
         );
         assert_eq!(
             tasks[0].as_object().unwrap().get("path"),
-            Some(&Value::Str("a.md".into()))
+            Some(&Value::Str("/a.md".into()))
         );
         assert_eq!(keys(&tasks[1]), ["id", "path"]);
         assert_eq!(

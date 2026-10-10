@@ -66,7 +66,7 @@ describe("budget_tokens + cursor audit", () => {
     expect(skip.truncated).toBe(false);
 
     const docs = docsReadMany(store, repoId, ["big.md", "second.md"], { budgetTokens: 1 });
-    expect(docs.items.map((d) => d.path)).toEqual(["big.md"]);
+    expect(docs.items.map((d) => d.path)).toEqual(["/big.md"]);
     expect(docs.truncated).toBe(true);
     const single = docsReadMany(store, repoId, ["big.md"], { budgetTokens: 1 });
     expect(single.items.length).toBe(1);
@@ -124,7 +124,7 @@ describe("budget_tokens + cursor audit", () => {
     expect(page.cursor).not.toBeNull();
     expect(page.total.docs).toBe(6);
     const next = docsTree(store, repoId, { limit: 4, cursor: page.cursor });
-    expect(next.entries.map((e) => e.path)).toEqual(["d4/", "d5/"]);
+    expect(next.entries.map((e) => e.path)).toEqual(["/d4/", "/d5/"]);
     expect(next.truncated).toBe(false);
     const tight = docsTree(store, repoId, { budgetTokens: 5 });
     expect(tight.truncated).toBe(true);

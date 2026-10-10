@@ -13,8 +13,8 @@ import { expandBlockArgs } from "./_mutate.js";
 // convention as the mutators) are cat'ed in order, like unix cat. `--json` is
 // the mapped tool's result: `docs_read` for a document, `nodes_get` for a block.
 //
-// Refs are what `resolveRef` accepts: a block/doc/node id or a repo-relative
-// document path. `--resolution` is a block-level notion (nodes_get); a document
+// Refs are what `resolveRef` accepts: a block/doc/node id or a document path
+// in either form (`/notes/x.md`, `notes/x.md`). `--resolution` is a block-level notion (nodes_get); a document
 // is always its exact bytes (docs_read has no resolution ladder), so asking for
 // another resolution on a document ref is warned about, not silently ignored.
 
@@ -84,7 +84,7 @@ async function runCat(cli: Cli, args: string[]): Promise<number> {
       summary: "Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)",
       usage: "cat <node…|-> [--resolution raw|text|outline|skeleton|full]",
       options: [
-        ["<node…>", "one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path (`notes/x.md`)"],
+        ["<node…>", "one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a doc path (`/notes/x.md`; the leading `/` is optional)"],
         ["-", `read refs from stdin, one per line (\`${cli.prog} q … --ids | ${cli.prog} cat -\`)`],
         ["--resolution <r>", "block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)"],
       ],

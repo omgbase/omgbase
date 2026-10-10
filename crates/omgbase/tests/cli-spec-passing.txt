@@ -91,6 +91,7 @@ docs::new-from-file
 docs::new-from-stdin
 docs::new-json
 docs::new-no-path
+docs::new-rooted-path
 docs::rm-doc
 docs::rm-doc-dry-run
 docs::rm-doc-json
@@ -332,6 +333,7 @@ query::alias-q
 query::count
 query::count-json
 query::cursor-continue
+query::cursor-from-1x
 query::cursor-invalid
 query::cursor-invalid-json
 query::edges
@@ -349,6 +351,8 @@ query::no-source
 query::none
 query::parse-error
 query::parse-error-json
+query::path-literal-bare
+query::path-literal-rooted
 query::run
 query::run-empty-fence
 query::run-hits-and-count
@@ -373,6 +377,7 @@ read::cat-block-json
 read::cat-doc
 read::cat-doc-id
 read::cat-doc-json
+read::cat-doc-rooted-path
 read::cat-many
 read::cat-many-json
 read::cat-many-jsonl
@@ -398,6 +403,7 @@ read::find-verbose
 read::find-words-are-joined
 read::ls
 read::ls-glob
+read::ls-glob-rooted
 read::ls-ids
 read::ls-json-glob
 read::ls-jsonl-glob
@@ -411,6 +417,7 @@ read::outline-ids-is-json
 read::outline-json
 read::outline-missing
 read::outline-no-arg
+read::outline-rooted-path
 read::outline-section-is-ignored
 read::outline-skeleton
 read::repos

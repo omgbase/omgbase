@@ -3,6 +3,7 @@
 //! last five changes.
 
 use omgbase_surface::read::{ResolvedRef, find_doc_by_id, resolve_ref};
+use omgbase_surface::reference_path;
 use serde_json::{Value as Json, json};
 
 use crate::cli::argv::{Opt, expand_dash, parse_args};
@@ -47,7 +48,12 @@ fn show_one(cli: &mut Cli, r: &str, include_history: bool) -> Result<Card> {
                 let info = find_doc_by_id(store.conn(), &doc_id)?
                     .ok_or_else(|| CliError::engine("doc_missing", format!("no node {r}")))?;
                 let links = doc_links(store.conn(), &doc_id, &LinksQuery::default())?;
-                (info.path, store.properties_merged(&doc_id)?, links)
+                // The wordmark names the rooted path (spec/surface §1 "Paths").
+                (
+                    reference_path(&info.path),
+                    store.properties_merged(&doc_id)?,
+                    links,
+                )
             };
             // §9 Fixed: `--json` is the `read_ref` result.
             let payload = cli.call("read_ref", json!({ "ref": doc_id }))?;

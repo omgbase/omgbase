@@ -89,11 +89,13 @@ describe("OQX conformance — type changed across revisions (planned == in-memor
 
   it("a flipped doc matches only its CURRENT type, regardless of the surrounding predicate", () => {
     const wide = both(`from docs where $path.startsWith("creative/") && type == "${PROJECT}"`);
-    expect(wide.planned).toEqual(["creative/proj.md"]);
-    expect(wide.memory).toEqual(["creative/proj.md"]);
+    // Hits carry the reference form (spec/surface §1 "Paths"); the bare literals
+    // in the queries still match (a literal compared with `$path` is rooted first).
+    expect(wide.planned).toEqual(["/creative/proj.md"]);
+    expect(wide.memory).toEqual(["/creative/proj.md"]);
     for (const p of ["creative/flip-observed.md", "creative/flip-api.md", "creative/list-to-scalar.md"]) {
       expect(both(`from docs where $path == "${p}" && type == "${PROJECT}"`)).toEqual({ planned: [], memory: [] });
-      expect(both(`from docs where $path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: [p], memory: [p] });
+      expect(both(`from docs where $path == "${p}" && type == "${IDEA}"`)).toEqual({ planned: ["/" + p], memory: ["/" + p] });
     }
     // The wide and narrowed forms agree doc-by-doc.
     const all = paths('from docs where $path.startsWith("creative/")');

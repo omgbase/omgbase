@@ -1,12 +1,12 @@
 import { parseArgs } from "node:util";
-import { linksRetarget } from "@omgbase/core";
+import { linksRetarget, surfaceRetargetHits } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
 import { runOps, unifiedDiffLines } from "./_mutate.js";
 import { remoteCall } from "./_remote.js";
 
-interface RetargetHit { block: string; oldRaw: string; newRaw: string; }
+interface RetargetHit { block: string; path?: string; oldRaw: string; newRaw: string; }
 
 // `omg retarget <from> <to> [--scope glob] [--apply]` (11 §5.6) — plan-by-default.
 // Without --apply it runs the dry-run and prints, per hit block, the unified
@@ -50,7 +50,8 @@ async function runRetarget(cli: Cli, args: string[]): Promise<number> {
 
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const { ops, hits } = linksRetarget(ws.store, repo.repoId, from, to, values.scope ? { pathGlob: values.scope } : {});
+  const { ops, hits: rawHits } = linksRetarget(ws.store, repo.repoId, from, to, values.scope ? { pathGlob: values.scope } : {});
+  const hits = surfaceRetargetHits(rawHits); // the hits' document paths in the reference form
 
   // --apply → commit via the shared helper (honors --dry-run too, if combined).
   if (values.apply) {

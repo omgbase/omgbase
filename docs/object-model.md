@@ -37,7 +37,7 @@ result, or a write target (ADR-003).
 ## Documents
 
 A **document** is one file the engine tracks: a Markdown note, a YAML config, a
-JSON file. It has a repo-relative `path`, a `format` (which adapter parses it),
+JSON file. It has a repo-relative `path` in storage (the surface reports it `/`-rooted, `spec/surface` §1 "Paths"), a `format` (which adapter parses it),
 optional frontmatter, and a linear chain of **revisions** (its history).
 
 The file on disk is canonical for *content* (ADR-004); the database is canonical

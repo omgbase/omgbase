@@ -68,18 +68,18 @@ describe("MCP server skeleton", () => {
     const { payload } = (await call("docs_tree", {})) as {
       payload: { prefix: string; depth: number; total: { docs: number; blocks: number }; entries: { path: string; kind: string; docs: number }[]; truncated: boolean; cursor: string | null };
     };
-    expect(payload.prefix).toBe("");
+    expect(payload.prefix).toBe("/");
     expect(payload.depth).toBe(1);
     expect(payload.total.docs).toBe(3);
-    expect(payload.entries.map((e) => [e.path, e.kind, e.docs])).toEqual([["notes.md", "doc", 1], ["projects/", "dir", 2]]);
+    expect(payload.entries.map((e) => [e.path, e.kind, e.docs])).toEqual([["/notes.md", "doc", 1], ["/projects/", "dir", 2]]);
     expect(payload.truncated).toBe(false);
     expect(payload.cursor).toBeNull();
 
     const { payload: scoped } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1 })) as { payload: { entries: { path: string }[]; truncated: boolean; cursor: string | null } };
-    expect(scoped.entries.map((e) => e.path)).toEqual(["projects/a.md"]);
+    expect(scoped.entries.map((e) => e.path)).toEqual(["/projects/a.md"]);
     expect(scoped.truncated).toBe(true);
     const { payload: rest } = (await call("docs_tree", { path: "projects", depth: 1, limit: 1, cursor: scoped.cursor })) as { payload: { entries: { path: string; kind: string }[]; truncated: boolean } };
-    expect(rest.entries.map((e) => [e.path, e.kind])).toEqual([["projects/deep/", "dir"]]);
+    expect(rest.entries.map((e) => [e.path, e.kind])).toEqual([["/projects/deep/", "dir"]]);
     expect(rest.truncated).toBe(false);
   });
 
@@ -87,11 +87,11 @@ describe("MCP server skeleton", () => {
     ingestFile(store, repoId, "b.md", "# b\n");
     ingestFile(store, repoId, "c.md", "# c\n");
     const { payload } = (await call("docs_list", { limit: 2 })) as { payload: { items: { path: string; blocks: number; ts: string | null }[]; truncated: boolean; cursor: string | null } };
-    expect(payload.items.map((r) => r.path)).toEqual(["b.md", "c.md"]);
+    expect(payload.items.map((r) => r.path)).toEqual(["/b.md", "/c.md"]);
     expect(payload.truncated).toBe(true);
     expect(payload.cursor).not.toBeNull();
     const { payload: next } = (await call("docs_list", { limit: 2, cursor: payload.cursor })) as { payload: { items: { path: string }[]; truncated: boolean; cursor: string | null } };
-    expect(next.items.map((r) => r.path)).toEqual(["notes.md"]);
+    expect(next.items.map((r) => r.path)).toEqual(["/notes.md"]);
     expect(next.truncated).toBe(false);
     expect(next.cursor).toBeNull();
 
@@ -111,7 +111,7 @@ describe("MCP server skeleton", () => {
     const { payload } = (await call("docs_read", { path: "notes.md" })) as {
       payload: { path: string; content: string; properties: Record<string, Record<string, unknown>>; rev: string; ids?: unknown };
     };
-    expect(payload.path).toBe("notes.md");
+    expect(payload.path).toBe("/notes.md");
     expect(payload.content).toBe("---\nlayer: working\n---\n\n# Risks\n\nStable identity is hard.\n\n- [ ] decide write-back\n");
     expect(payload.properties.frontmatter).toEqual({ layer: "working" });
     expect(payload.ids).toBeUndefined();
@@ -138,7 +138,7 @@ describe("MCP server skeleton", () => {
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.items.map((i) => i.path)).toEqual(["notes.md", "guide.md"]);
+    expect(payload.items.map((i) => i.path)).toEqual(["/notes.md", "/guide.md"]);
     expect(payload.items[1]!.content).toBe("# Guide\n\nread me first\n");
     expect(payload.errors).toEqual([{ ref: "nope.md", error: "doc_not_found" }]);
     expect(payload.truncated).toBe(false);
@@ -148,7 +148,7 @@ describe("MCP server skeleton", () => {
     const { payload } = (await call("docs_get_many", { docs: ["notes.md", "notes.md"], include_ids: true })) as {
       payload: { items: { path: string; ids: string[] }[] };
     };
-    expect(payload.items.map((i) => i.path)).toEqual(["notes.md"]);
+    expect(payload.items.map((i) => i.path)).toEqual(["/notes.md"]);
     expect(payload.items[0]!.ids.length).toBeGreaterThan(0);
   });
 
@@ -175,14 +175,14 @@ describe("MCP server skeleton", () => {
   it("docs_read / docs_outline accept a d_ id in the `doc` field", async () => {
     const docId = (store.db.prepare("SELECT doc_id FROM docs WHERE path='notes.md'").get() as { doc_id: string }).doc_id;
     const { payload: read } = (await call("docs_read", { doc: docId })) as { payload: { path: string } };
-    expect(read.path).toBe("notes.md");
+    expect(read.path).toBe("/notes.md");
     const { payload: outline } = (await call("docs_outline", { doc: docId })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
 
   it("docs_read / docs_outline accept a PATH in the `doc` field (id-or-path symmetry)", async () => {
     const { payload: read } = (await call("docs_read", { doc: "notes.md" })) as { payload: { path: string } };
-    expect(read.path).toBe("notes.md");
+    expect(read.path).toBe("/notes.md");
     const { payload: outline } = (await call("docs_outline", { doc: "notes.md" })) as { payload: { text: string } };
     expect(outline.text).toContain("§");
   });
@@ -225,8 +225,8 @@ describe("MCP server skeleton", () => {
     const { payload } = (await call("docs_history", { path_glob: "journal/*" })) as {
       payload: { docs: { path: string; versions: { seq: number; isCurrent: boolean }[] }[]; truncated: boolean };
     };
-    expect(payload.docs.map((d) => d.path)).toEqual(["journal/x.md", "journal/y.md"]);
-    const x = payload.docs.find((d) => d.path === "journal/x.md")!;
+    expect(payload.docs.map((d) => d.path)).toEqual(["/journal/x.md", "/journal/y.md"]);
+    const x = payload.docs.find((d) => d.path === "/journal/x.md")!;
     expect(x.versions.length).toBe(2);
     expect(x.versions[0]!.seq).toBeLessThan(x.versions[1]!.seq);
     expect(x.versions.filter((v) => v.isCurrent)).toHaveLength(1);
@@ -249,7 +249,7 @@ describe("MCP server skeleton", () => {
 
   it("query returns projected hits with truncated + cursor", async () => {
     const { payload } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[]; truncated: boolean } };
-    expect(payload.hits.map((h) => h.path)).toEqual(["notes.md"]);
+    expect(payload.hits.map((h) => h.path)).toEqual(["/notes.md"]);
     expect(payload.truncated).toBe(false);
   });
 
@@ -371,9 +371,9 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
       frontmatter: { title: "Fresh", status: "draft" },
     })) as { payload: { docId: string; path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("sub/fresh.md");
+    expect(payload.path).toBe("/sub/fresh.md");
     const { payload: q } = (await call("query", { query: 'from docs where status == "draft"' })) as { payload: { hits: { path: string }[] } };
-    expect(q.hits.map((h) => h.path)).toContain("sub/fresh.md");
+    expect(q.hits.map((h) => h.path)).toContain("/sub/fresh.md");
   });
 
   it("docs_create fails path_taken on an existing path", async () => {
@@ -386,15 +386,15 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     const { isError } = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active", priority: 2 } })) as { isError: boolean };
     expect(isError).toBe(false);
     const { payload } = (await call("query", { query: 'from docs where layer == "working" && status == "active"' })) as { payload: { hits: { path: string }[] } };
-    expect(payload.hits.map((h) => h.path)).toContain("notes.md");
+    expect(payload.hits.map((h) => h.path)).toContain("/notes.md");
   });
 
   it("docs_move renames the document", async () => {
     const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("moved/notes.md");
+    expect(payload.path).toBe("/moved/notes.md");
     const { payload: q } = (await call("query", { query: 'from docs where layer == "working"' })) as { payload: { hits: { path: string }[] } };
-    expect(q.hits.map((h) => h.path)).toContain("moved/notes.md");
+    expect(q.hits.map((h) => h.path)).toContain("/moved/notes.md");
   });
 
   it("docs_move with retarget_inbound:false reports dangling inbound links; the default rewrites them; destination phantoms are adopted", async () => {
@@ -403,7 +403,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     writeFileSync(join(root, "a.md"), "# A\n\nSoon [moved](/moved/notes.md).\n");
     processCheckpoint(store, repoId, root, [{ path: "notes.md" }, { path: "b.md" }, { path: "a.md" }]);
     const staleBefore = (await call("links_stale", {})) as { payload: { stale: { target: string }[] } };
-    expect(staleBefore.payload.stale.map((s) => s.target)).toEqual(["moved/notes.md"]);
+    expect(staleBefore.payload.stale.map((s) => s.target)).toEqual(["/moved/notes.md"]);
 
     // Opted-out move: b's link dangles and is reported; a's phantom resolves.
     const { payload, isError } = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", retarget_inbound: false })) as {
@@ -411,13 +411,13 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
       isError: boolean;
     };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("moved/notes.md");
+    expect(payload.path).toBe("/moved/notes.md");
     expect(payload.dangling).toHaveLength(1);
-    expect(payload.dangling[0]).toMatchObject({ path: "b.md", target: "/notes.md", anchor: "Risks" });
+    expect(payload.dangling[0]).toMatchObject({ path: "/b.md", target: "/notes.md", anchor: "Risks" });
     expect(payload.retargeted).toBeNull();
     const staleAfter = (await call("links_stale", {})) as { payload: { stale: { srcPath: string; target: string }[] } };
     expect(staleAfter.payload.stale).toHaveLength(1);
-    expect(staleAfter.payload.stale[0]).toMatchObject({ srcPath: "b.md", target: "notes.md" });
+    expect(staleAfter.payload.stale[0]).toMatchObject({ srcPath: "/b.md", target: "/notes.md" });
 
     // Move again with the default (retarget_inbound omitted): zero dangling, file rewritten, code span untouched.
     const { payload: p2 } = (await call("docs_move", { doc: "moved/notes.md", to_path: "final/notes.md" })) as {
@@ -429,32 +429,32 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(a.content).toBe("# A\n\nSoon [moved](/final/notes.md).\n");
     const staleEnd = (await call("links_stale", {})) as { payload: { stale: { srcPath: string; target: string }[] } };
     // b's link was dangling at notes.md (not the moved-from path), so it stays stale — only what pointed at the moved doc is retargeted.
-    expect(staleEnd.payload.stale.map((s) => `${s.srcPath}→${s.target}`)).toEqual(["b.md→notes.md"]);
+    expect(staleEnd.payload.stale.map((s) => `${s.srcPath}→${s.target}`)).toEqual(["/b.md→/notes.md"]);
   });
 
   it("dry_run on the document tools validates and returns diffs without writing", async () => {
     const created = (await call("docs_create", { path: "sub/fresh.md", markdown: "# Fresh\n", dry_run: true })) as { payload: { docId: string; committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
     expect(created.isError).toBe(false);
     expect(created.payload.committed).toBe(false);
-    expect(created.payload.diffs).toEqual({ "sub/fresh.md": { before: "", after: "# Fresh\n" } });
+    expect(created.payload.diffs).toEqual({ "/sub/fresh.md": { before: "", after: "# Fresh\n" } });
     expect(existsSync(join(root, "sub/fresh.md"))).toBe(false);
 
     const meta = (await call("docs_set_meta", { doc: "notes.md", set: { status: "active" }, dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { before: string; after: string }> }; isError: boolean };
     expect(meta.isError).toBe(false);
     expect(meta.payload.committed).toBe(false);
-    expect(meta.payload.diffs["notes.md"]!.after).toContain("status: active");
+    expect(meta.payload.diffs["/notes.md"]!.after).toContain("status: active");
     expect(readFileSync(join(root, "notes.md"), "utf8")).not.toContain("status: active");
 
     const moved = (await call("docs_move", { doc: "notes.md", to_path: "moved/notes.md", dry_run: true })) as { payload: { committed: boolean; path: string; diffs: Record<string, unknown> }; isError: boolean };
     expect(moved.isError).toBe(false);
     expect(moved.payload.committed).toBe(false);
-    expect(Object.keys(moved.payload.diffs).sort()).toEqual(["moved/notes.md", "notes.md"]);
+    expect(Object.keys(moved.payload.diffs).sort()).toEqual(["/moved/notes.md", "/notes.md"]);
     expect(existsSync(join(root, "notes.md"))).toBe(true);
 
     const deleted = (await call("docs_delete", { doc: "notes.md", dry_run: true })) as { payload: { committed: boolean; diffs: Record<string, { after: string }> }; isError: boolean };
     expect(deleted.isError).toBe(false);
     expect(deleted.payload.committed).toBe(false);
-    expect(deleted.payload.diffs["notes.md"]!.after).toBe("");
+    expect(deleted.payload.diffs["/notes.md"]!.after).toBe("");
     expect(existsSync(join(root, "notes.md"))).toBe(true);
     // A dry run is still validated.
     const taken = (await call("docs_create", { path: "notes.md", markdown: "# x\n", dry_run: true })) as { payload: { error: string }; isError: boolean };
@@ -475,7 +475,7 @@ describe("doc-level MCP tools (docs_create/move/delete/set_meta)", () => {
     expect(metaErr).toBe(false);
     const { payload, isError } = (await call("docs_move", { doc: docId, to_path: "moved/byid.md" })) as { payload: { path: string }; isError: boolean };
     expect(isError).toBe(false);
-    expect(payload.path).toBe("moved/byid.md");
+    expect(payload.path).toBe("/moved/byid.md");
   });
 });
 
@@ -504,8 +504,8 @@ describe("link health MCP tools (links_stale / links_repair)", () => {
     };
     expect(isError).toBe(false);
     expect(payload.stale).toHaveLength(1);
-    expect(payload.stale[0]!.target).toBe("b.md");
-    expect(payload.stale[0]!.srcPath).toBe("a.md");
+    expect(payload.stale[0]!.target).toBe("/b.md");
+    expect(payload.stale[0]!.srcPath).toBe("/a.md");
     expect(payload.stale[0]!.reason).toBe("dangling_doc");
     expect(payload.externalCount).toBeGreaterThanOrEqual(1);
     expect(payload.truncated).toBe(false);
@@ -712,7 +712,7 @@ describe("apply op schema + sections_append heading resolution", () => {
     expect(isError).toBe(false);
     expect(payload.committed).toBe(true);
     // sibling-macro shape: revision(s) + the single inserted block id
-    expect(payload.revisions[0]!.path).toBe("notes.md");
+    expect(payload.revisions[0]!.path).toBe("/notes.md");
     expect(payload.results[0]!.ids).toHaveLength(1);
     const newId = payload.results[0]!.ids[0]!;
 
@@ -958,11 +958,11 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     expect(isError).toBe(false);
     expect(dry.applied).toBe(false);
     expect(dry.committed).toBe(false);
-    const after = dry.diffs!["list.md"]!.after;
+    const after = dry.diffs!["/list.md"]!.after;
     expect(after).toContain("- item [b](/c.md) here");
     expect(after).toContain("[b](/c.md#Top) and `[b](/b.md)`.");
     // list (its item hit collapsed) + paragraph; the inline-code mention is not a hit
-    expect(dry.hits.map((h) => h.path)).toEqual(["list.md", "list.md"]);
+    expect(dry.hits.map((h) => h.path)).toEqual(["/list.md", "/list.md"]);
     expect(dry.pairs).toEqual([{ from: "b.md", to: "/c.md", hits: 2 }]);
     expect(readFileSync(join(root, "list.md"), "utf8")).not.toContain("/c.md");
 
@@ -984,9 +984,9 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     const { payload } = (await call("links_retarget", { from_target: "/b.md", to_target: "/c.md", path_glob: "other.md" })) as { payload: Repair };
     expect(payload.applied).toBe(false);
     expect(payload.committed).toBe(false);
-    expect(payload.hits.map((h) => h.path)).toEqual(["other.md"]);
+    expect(payload.hits.map((h) => h.path)).toEqual(["/other.md"]);
     expect(payload.pairs).toEqual([{ from: "/b.md", to: "/c.md", hits: 1 }]);
-    expect(Object.keys(payload.diffs!)).toEqual(["other.md"]);
+    expect(Object.keys(payload.diffs!)).toEqual(["/other.md"]);
   });
 
   it("links_stale rows carry `authored`; summary:true returns counts grouped by target and source", async () => {
@@ -994,15 +994,15 @@ describe("link maintenance tools: honest dry run, authored targets, summary, sco
     const authored = payload.stale.map((s) => s.authored).sort();
     expect(authored).toContain("/b.md");
     expect(authored).toContain("/b.md#Top");
-    for (const s of payload.stale) expect(s.target).toBe("b.md");
+    for (const s of payload.stale) expect(s.target).toBe("/b.md");
 
     const { payload: sum } = (await call("links_stale", { summary: true })) as {
       payload: { staleCount: number; byTarget: { target: string; count: number }[]; bySource: { srcPath: string; count: number }[]; externalCount: number; totalOpenEdges: number; stale?: unknown };
     };
     expect(sum.stale).toBeUndefined();
     expect(sum.staleCount).toBe(payload.stale.length);
-    expect(sum.byTarget).toEqual([{ target: "b.md", count: payload.stale.length }]);
-    expect(sum.bySource).toEqual([{ srcPath: "list.md", count: payload.stale.length }]);
+    expect(sum.byTarget).toEqual([{ target: "/b.md", count: payload.stale.length }]);
+    expect(sum.bySource).toEqual([{ srcPath: "/list.md", count: payload.stale.length }]);
     expect(sum.externalCount).toBe(0);
   });
 

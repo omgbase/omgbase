@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { parse as parseYamlScalar } from "yaml";
-import { docsCreate, docsMove, docsDelete, docsSetMeta, type DocOpContext, type DocOpResult, type DocMoveResult } from "@omgbase/core";
+import { docsCreate, docsMove, docsDelete, docsSetMeta, surfaceDocOpResult, surfaceDocMoveResult, referencePath, type DocOpContext, type DocOpResult, type DocMoveResult } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { Command } from "../commands.js";
 import { CliUsageError, EXIT_OK, renderHelp } from "../output.js";
@@ -11,6 +11,9 @@ import { remoteCall } from "./_remote.js";
 // over the core doc ops, which own the file-write + commit + flock protocol.
 // The global --dry-run rides as the op's `dryRun` (spec/cli §3.6): the op
 // validates and returns the per-file diffs it would make, committing nothing.
+// Every path printed is the reference form (spec/surface §1 "Paths"): the
+// library's result is re-shaped through `surfaceDocOpResult` — the same
+// function the MCP server applies — before it is rendered.
 
 function ctxOf(cli: Cli, ws: ReturnType<Cli["workspace"]>, repoId: string, rootPath: string | null, actor?: string): DocOpContext {
   return {
@@ -55,14 +58,14 @@ function reportMove(cli: Cli, from: string, res: DocMoveResult): number {
   const where = res.dangling.map((l) => (l.block ? `${l.path} ${l.block}` : `${l.path} (frontmatter)`)).join(", ");
   const n = res.dangling.length;
   io.err(style.warn(`  ${style.warn(cli.render.g.warn)} ${n} inbound link${n === 1 ? "" : "s"} still name${n === 1 ? "s" : ""} the old path: ${where}`));
-  if (res.dangling.some((l) => l.block)) io.err(style.dim(`  fix: ${cli.prog} retarget /${from} /${res.path} --apply`));
+  if (res.dangling.some((l) => l.block)) io.err(style.dim(`  fix: ${cli.prog} retarget ${from} ${res.path} --apply`));
   const seen = new Set<string>();
   for (const l of res.dangling) {
     if (l.block || !l.field) continue;
     const key = `${l.path}\u0000${l.field}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    io.err(style.dim(`  fix: ${cli.prog} meta ${l.path} --set ${l.field}=/${res.path}`));
+    io.err(style.dim(`  fix: ${cli.prog} meta ${l.path} --set ${l.field}=${res.path}`));
   }
   return code;
 }
@@ -97,7 +100,7 @@ async function runNew(cli: Cli, args: string[]): Promise<number> {
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = docsCreate(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), path, bytes);
+  const res = surfaceDocOpResult(docsCreate(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), path, bytes));
   return report(cli, "created", res);
 }
 
@@ -130,7 +133,7 @@ async function runMv(cli: Cli, args: string[]): Promise<number> {
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath, noRetarget ? { retargetInbound: false } : {});
+  const res = surfaceDocMoveResult(docsMove(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, toPath, noRetarget ? { retargetInbound: false } : {}));
   return reportMove(cli, fromPathOf(res, doc), res);
 }
 
@@ -142,7 +145,7 @@ export async function runRmDoc(cli: Cli, doc: string, actor?: string): Promise<n
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = docsDelete(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, actor), doc);
+  const res = surfaceDocOpResult(docsDelete(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, actor), doc));
   return report(cli, "deleted", res);
 }
 
@@ -203,7 +206,7 @@ async function runMeta(cli: Cli, args: string[]): Promise<number> {
   }
   const ws = cli.workspace();
   const repo = cli.repo(ws);
-  const res = docsSetMeta(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, { set, unset });
+  const res = surfaceDocOpResult(docsSetMeta(ws.store, ctxOf(cli, ws, repo.repoId, repo.rootPath, values.actor), doc, { set, unset }));
   return report(cli, "patched", res);
 }
 
@@ -211,12 +214,12 @@ function dryRunArg(cli: Cli): { dry_run?: true } {
   return cli.flags.dryRun ? { dry_run: true } : {};
 }
 
-// The path a move left behind, for the retarget hint: the dangling links name
-// it as written (`target`), which is the canonical spelling with a leading `/`;
-// fall back to the ref the user typed when nothing dangles.
+// The path a move left behind, for the retarget hint, in the reference form:
+// the dangling links name it as written (`target`, the canonical spelling with
+// a leading `/`); fall back to the ref the user typed when nothing dangles.
 function fromPathOf(res: DocMoveResult, ref: string): string {
   const named = res.dangling.find((l) => l.target)?.target;
-  return (named ?? ref).replace(/^\/+/, "");
+  return referencePath(named ?? ref);
 }
 
 export const cmdNew: Command = { name: "new", summary: "Create a document", run: (c, a) => runNew(c, a) };

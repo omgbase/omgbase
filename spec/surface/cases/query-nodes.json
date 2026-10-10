@@ -59,7 +59,7 @@
         "hits": [
           {
             "id": "n_c8938748c6bc",
-            "path": "practitioners/jabir-ibn-hayyan.md",
+            "path": "/practitioners/jabir-ibn-hayyan.md",
             "kind": "md:inline_field",
             "name": "known_for",
             "value": "mercury-sulphur theory",
@@ -67,7 +67,7 @@
           },
           {
             "id": "n_ccd1a2e55dde",
-            "path": "practitioners/maria-prophetissa.md",
+            "path": "/practitioners/maria-prophetissa.md",
             "kind": "md:inline_field",
             "name": "known_for",
             "value": "balneum mariae",
@@ -75,7 +75,7 @@
           },
           {
             "id": "n_99628e4624a0",
-            "path": "practitioners/newton.md",
+            "path": "/practitioners/newton.md",
             "kind": "md:inline_field",
             "name": "known_for",
             "value": "unpublished alchemical corpus",
@@ -83,7 +83,7 @@
           },
           {
             "id": "n_4907bf2dff57",
-            "path": "practitioners/paracelsus.md",
+            "path": "/practitioners/paracelsus.md",
             "kind": "md:inline_field",
             "name": "known_for",
             "value": "tria prima",
@@ -103,7 +103,7 @@
         "hits": [
           {
             "id": "n_de68e55098c0",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "i": "n_de68e55098c0",
             "n": "n_de68e55098c0",
             "d": "d_14",
@@ -122,35 +122,35 @@
         "hits": [
           {
             "id": "n_57b863562c5f",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 5,
             "l": 6
           },
           {
             "id": "n_650d0569f2a8",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "level": 1,
             "f": 0,
             "l": 11
           },
           {
             "id": "n_7dd6472a3b76",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 7,
             "l": 9
           },
           {
             "id": "n_d9f53e34d1f8",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 10,
             "l": 11
           },
           {
             "id": "n_fae9f964b318",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "level": 2,
             "f": 2,
             "l": 4
@@ -168,11 +168,11 @@
         "hits": [
           {
             "id": "n_0ddcacdef653",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "n_6d35d6b1d52b",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -187,7 +187,7 @@
         "hits": [
           {
             "id": "n_de68e55098c0",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -202,19 +202,19 @@
         "hits": [
           {
             "id": "n_15a04ea1e3a1",
-            "path": "practitioners/jabir-ibn-hayyan.md"
+            "path": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "n_a66412ae8a33",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "n_de814ec1a223",
-            "path": "practitioners/newton.md"
+            "path": "/practitioners/newton.md"
           },
           {
             "id": "n_b4cb245daced",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           }
         ],
         "truncated": false,
@@ -229,19 +229,19 @@
         "hits": [
           {
             "id": "n_2b97e0669ebf",
-            "path": "index.md",
+            "path": "/index.md",
             "bt": "list_item",
             "bx": "[[sulphur]] — the combustible soul"
           },
           {
             "id": "n_9e25b3a6f1e2",
-            "path": "index.md",
+            "path": "/index.md",
             "bt": "list_item",
             "bx": "[[mercury]] — the volatile spirit"
           },
           {
             "id": "n_a3da662b7b99",
-            "path": "index.md",
+            "path": "/index.md",
             "bt": "list_item",
             "bx": "[[salt]] — the fixed body"
           }
@@ -258,25 +258,25 @@
         "hits": [
           {
             "id": "n_1b6ff200b17c",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Write the plateau result up for the coagulation note",
             "checked": false
           },
           {
             "id": "n_2e8a5838db6b",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Note crystal quality per cycle",
             "checked": true
           },
           {
             "id": "n_3f352718a47e",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Assay cycle 1 and cycle 4 crops for iron",
             "checked": false
           },
           {
             "id": "n_5a13cfab2180",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Four recrystallization cycles with weights",
             "checked": true
           }
@@ -293,12 +293,12 @@
         "hits": [
           {
             "id": "n_3747edffcbc9",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "value": "mercury"
           },
           {
             "id": "n_4e111a41e73c",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "value": "magnum-opus"
           }
         ],
@@ -314,25 +314,25 @@
         "hits": [
           {
             "id": "n_61739bf1dc49",
-            "path": "texts/emerald-tablet.md",
+            "path": "/texts/emerald-tablet.md",
             "name": "dissolution",
             "value": "/processes/dissolution.md"
           },
           {
             "id": "n_865466f87c70",
-            "path": "texts/emerald-tablet.md",
+            "path": "/texts/emerald-tablet.md",
             "name": "Jabir",
             "value": "/practitioners/jabir-ibn-hayyan.md"
           },
           {
             "id": "n_98cb2af27d5e",
-            "path": "texts/emerald-tablet.md",
+            "path": "/texts/emerald-tablet.md",
             "name": "Newton",
             "value": "/practitioners/newton.md"
           },
           {
             "id": "n_c278d7c5021b",
-            "path": "texts/emerald-tablet.md",
+            "path": "/texts/emerald-tablet.md",
             "name": "coagulation",
             "value": "/processes/coagulation.md"
           }
@@ -349,19 +349,19 @@
         "hits": [
           {
             "id": "n_4f9fa959500f",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "name": "melting_point",
             "value": "-38.8"
           },
           {
             "id": "n_6693c8b54920",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "name": "symbol",
             "value": "☿"
           },
           {
             "id": "n_adcc9beaf658",
-            "path": "substances/mercury.md",
+            "path": "/substances/mercury.md",
             "name": "toxic",
             "value": "yes"
           }
@@ -378,15 +378,15 @@
         "hits": [
           {
             "id": "n_d9f53e34d1f8",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           },
           {
             "id": "n_3275c6657f79",
-            "path": "substances/philosophers-stone.md"
+            "path": "/substances/philosophers-stone.md"
           },
           {
             "id": "n_567d150d3910",
-            "path": "substances/prima-materia.md"
+            "path": "/substances/prima-materia.md"
           }
         ],
         "truncated": false,
@@ -402,12 +402,12 @@
         "hits": [
           {
             "id": "n_d9f53e34d1f8",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "items": []
           },
           {
             "id": "n_3275c6657f79",
-            "path": "substances/philosophers-stone.md",
+            "path": "/substances/philosophers-stone.md",
             "items": [
               {
                 "t": "The surviving transmutation claims have never been gathered in one place with dates and provenance attached."
@@ -419,7 +419,7 @@
           },
           {
             "id": "n_567d150d3910",
-            "path": "substances/prima-materia.md",
+            "path": "/substances/prima-materia.md",
             "items": [
               {
                 "t": "Whether the \"chaos\" and the \"lead of the philosophers\" readings can be reconciled, or whether they simply belong to different schools."
@@ -442,7 +442,7 @@
         "hits": [
           {
             "id": "n_de68e55098c0",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "b": [
               {
                 "type": "heading",
@@ -481,7 +481,7 @@
         "hits": [
           {
             "id": "n_650d0569f2a8",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "s": [
               {
                 "name": "The four stages",
@@ -514,7 +514,7 @@
         "hits": [
           {
             "id": "n_650d0569f2a8",
-            "path": "processes/magnum-opus.md",
+            "path": "/processes/magnum-opus.md",
             "c": [
               "The four stages",
               "Why colour",
@@ -535,7 +535,7 @@
         "hits": [
           {
             "id": "n_7dd6472a3b76",
-            "path": "processes/magnum-opus.md"
+            "path": "/processes/magnum-opus.md"
           }
         ],
         "truncated": false,
@@ -551,15 +551,15 @@
         "hits": [
           {
             "id": "n_2b97e0669ebf",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_9e25b3a6f1e2",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_a3da662b7b99",
-            "path": "index.md"
+            "path": "/index.md"
           }
         ],
         "truncated": false,
@@ -574,55 +574,55 @@
         "hits": [
           {
             "id": "n_76ca98c76e72",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "n_8ba7a99b8dc8",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "n_a38c158ec928",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "n_a529ba23cf73",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           },
           {
             "id": "n_2e8a5838db6b",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "n_5a13cfab2180",
-            "path": "lab/2026-02-notes.md"
+            "path": "/lab/2026-02-notes.md"
           },
           {
             "id": "n_357046fac2d7",
-            "path": "practitioners/paracelsus.md"
+            "path": "/practitioners/paracelsus.md"
           },
           {
             "id": "n_8de6e5be907a",
-            "path": "processes/calcination.md"
+            "path": "/processes/calcination.md"
           },
           {
             "id": "n_be4921dc65fb",
-            "path": "processes/coagulation.md"
+            "path": "/processes/coagulation.md"
           },
           {
             "id": "n_5748b042ed66",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "n_97bfcde79e87",
-            "path": "processes/dissolution.md"
+            "path": "/processes/dissolution.md"
           },
           {
             "id": "n_0ddcacdef653",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           },
           {
             "id": "n_6d35d6b1d52b",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -637,7 +637,7 @@
         "hits": [
           {
             "id": "n_de68e55098c0",
-            "path": "substances/salt.md",
+            "path": "/substances/salt.md",
             "ks": [
               "level",
               "first_ordinal",
@@ -657,12 +657,12 @@
         "hits": [
           {
             "id": "n_5a13cfab2180",
-            "path": "lab/2026-02-notes.md",
+            "path": "/lab/2026-02-notes.md",
             "value": "Four recrystallization cycles with weights"
           },
           {
             "id": "n_be4921dc65fb",
-            "path": "processes/coagulation.md",
+            "path": "/processes/coagulation.md",
             "value": "Recrystallize alum three times and weigh each crop"
           }
         ],
@@ -679,7 +679,7 @@
         "hits": [
           {
             "id": "n_de68e55098c0",
-            "path": "substances/salt.md"
+            "path": "/substances/salt.md"
           }
         ],
         "truncated": false,
@@ -695,39 +695,39 @@
         "hits": [
           {
             "id": "n_02a726d87530",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_954c2a2e7827",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_9a4ee5d86524",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_ae30b4dd2bc4",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_af1ccbb7f166",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_e8c37ec9c6b9",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_f6c01f1f689a",
-            "path": "index.md"
+            "path": "/index.md"
           },
           {
             "id": "n_029183976096",
-            "path": "lab/2026-01-notes.md"
+            "path": "/lab/2026-01-notes.md"
           }
         ],
         "truncated": true,
-        "cursor": "WyJsYWIvMjAyNi0wMS1ub3Rlcy5tZCIsIm5fMDI5MTgzOTc2MDk2Il0",
+        "cursor": "WyIvbGFiLzIwMjYtMDEtbm90ZXMubWQiLCJuXzAyOTE4Mzk3NjA5NiJd",
         "consumer": "collect"
       }
     }

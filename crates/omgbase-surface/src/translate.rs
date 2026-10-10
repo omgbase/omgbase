@@ -55,6 +55,7 @@ use oqx::ast::{BinaryOp, Expr, LogicalOp};
 use rusqlite::types::Value as SqlValue;
 
 use crate::context::{Target, to_sql};
+use crate::paths::storage_path;
 
 /// The SQL aliases the planner assigned to the current scope's row (`self`)
 /// and its owning document (`doc`); on the `docs` target both are the same
@@ -238,19 +239,20 @@ pub fn non_property_handles(t: Target) -> &'static [&'static str] {
 /// `$tags`, computed; blocks `$updated_at`; nodes `$locator`) returns `None`
 /// → residual. `$updated_at` / `$dst_path` / `$dst_uri` are correlated
 /// subqueries. Only `$ordinal` / `$depth` are integers; every other mapped
-/// intrinsic is text.
+/// intrinsic is text. `$path` is rendered by [`Operand::path_col`] (the
+/// rooted read, `spec/surface` §1 "Paths"); `$dst_path` roots its subquery.
 fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
     let (s, d) = (ctx.self_alias, ctx.doc_alias);
     let sql = match (ctx.target, name) {
         (Target::Docs, "$id") => format!("{s}.doc_id"),
-        (Target::Docs, "$path") => format!("{d}.path"),
+        (Target::Docs, "$path") => format!("('/' || {d}.path)"),
         (Target::Docs, "$content_hash") => format!("lower(hex({s}.file_hash))"),
         (Target::Docs, "$updated_at") => format!(
             "(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = {s}.current_rev)"
         ),
         (Target::Blocks, "$id") => format!("{s}.block_id"),
         (Target::Blocks, "$doc") => format!("{s}.doc_id"),
-        (Target::Blocks, "$path") => format!("{d}.path"),
+        (Target::Blocks, "$path") => format!("('/' || {d}.path)"),
         (Target::Blocks, "$ordinal") => return Some((format!("{s}.ordinal"), Ty::Int)),
         (Target::Blocks, "$depth") => return Some((format!("{s}.depth"), Ty::Int)),
         (Target::Blocks, "$body") => format!("{s}.text"),
@@ -258,16 +260,16 @@ fn intrinsic_sql(name: &str, ctx: &TranslateCtx<'_>) -> Option<(String, Ty)> {
         (Target::Nodes, "$id" | "$node_id") => format!("{s}.node_id"),
         (Target::Nodes, "$doc_id") => format!("{s}.doc_id"),
         (Target::Nodes, "$block_id") => format!("{s}.block_id"),
-        (Target::Nodes, "$path") => format!("{d}.path"),
+        (Target::Nodes, "$path") => format!("('/' || {d}.path)"),
         (Target::Edges, "$id") => format!("{s}.edge_id"),
         (Target::Edges, "$src") => format!("{s}.src_doc"),
         (Target::Edges, "$dst") => format!("{s}.dst_node"),
         (Target::Edges, "$src_block") => format!("{s}.src_block"),
         (Target::Edges, "$via") => format!("{s}.via_node"),
         (Target::Edges, "$from_commit") => format!("{s}.from_commit"),
-        (Target::Edges, "$path") => format!("{d}.path"),
+        (Target::Edges, "$path") => format!("('/' || {d}.path)"),
         (Target::Edges, "$dst_path") => {
-            format!("(SELECT dd.path FROM docs dd WHERE dd.doc_id = {s}.dst_node)")
+            format!("(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = {s}.dst_node)")
         }
         (Target::Edges, "$dst_uri") => {
             format!("(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = {s}.dst_node)")
@@ -335,6 +337,10 @@ fn json_path(segs: &[&str]) -> Option<String> {
 enum Shape {
     /// A plain SQL scalar: a column, an intrinsic, `lower()` / `upper()`.
     Plain,
+    /// The rooted path read over a storage path column (`'/' || d.path`,
+    /// `spec/surface` §1 "Paths"): the bare, indexed column is kept for the
+    /// equality fast path ([`path_equality`]).
+    PathCol(String),
     /// A literal or binding, bound as `?`.
     Const(Value),
     /// `json_extract(col, 'path')`.
@@ -363,6 +369,17 @@ impl Operand {
 
     fn text(sql: String) -> Option<Self> {
         Some(Self::plain(sql, Ty::Text))
+    }
+
+    /// `$path` / `doc.$path`: the reference form over the storage column, so
+    /// every comparison, `startsWith`, `contains`, `lower()`… sees exactly the
+    /// string the in-memory intrinsic yields.
+    fn path_col(col: String) -> Option<Self> {
+        Some(Self {
+            frag: Frag::bare(format!("('/' || {col})")),
+            ty: Ty::Text,
+            shape: Shape::PathCol(col),
+        })
     }
 
     /// `None` for a non-scalar (an array, an object, a range), which has no
@@ -436,6 +453,9 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
             Operand::constant(ctx.params.get(*index).unwrap_or(&Value::Undefined))
         }
         Expr::Ident { name, .. } => {
+            if name == "$path" {
+                return Operand::path_col(format!("{d}.path"));
+            }
             if name.starts_with('$') {
                 return intrinsic_sql(name, ctx).map(|(sql, ty)| Operand::plain(sql, ty));
             }
@@ -500,7 +520,7 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
                 }
                 let k = rest[0];
                 if k == "$path" {
-                    return Operand::text(format!("{d}.path"));
+                    return Operand::path_col(format!("{d}.path"));
                 }
                 if k == "format" {
                     return Operand::text(format!("{d}.format"));
@@ -656,6 +676,29 @@ fn typed_compare(op: BinaryOp, sql_op: &str, l: &Operand, r: &Operand) -> Option
     })
 }
 
+/// The path equality fast path (`spec/surface` §1 "Paths"): `$path == "/a.md"`
+/// (or `!=`, either side) against a ROOTED text constant is `d.path IS ?` with
+/// the constant's storage form, so the `(repo_id, path)` index serves it;
+/// `'/' || d.path IS ?` — what the general form emits — is the same predicate
+/// without the index. Only a rooted constant qualifies (the runner roots every
+/// literal compared with a path read, so that is every literal); a bare
+/// binding stays on the general form, where `'/' || d.path` can never equal
+/// it — exactly the in-memory answer.
+fn path_equality(op: BinaryOp, l: &Operand, r: &Operand) -> Option<Frag> {
+    if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+        return None;
+    }
+    let (col, konst) = match (&l.shape, &r.shape) {
+        (Shape::PathCol(c), Shape::Const(Value::Str(s))) if s.starts_with('/') => (c, s),
+        (Shape::Const(Value::Str(s)), Shape::PathCol(c)) if s.starts_with('/') => (c, s),
+        _ => return None,
+    };
+    Some(Frag {
+        sql: format!("({col} {} ?)", is_op(op)?),
+        params: vec![SqlValue::Text(storage_path(konst).to_owned())],
+    })
+}
+
 /// Translate an expression used as a boolean PREDICATE to a SQL boolean, or
 /// `None` if it cannot be pushed faithfully. Only positive, AND-safe forms
 /// are handled: `unary` (`!`), `in`, bare truthy idents and member
@@ -681,6 +724,9 @@ pub fn translate_predicate(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
             let sql_op = is_op(*op)?;
             let l = operand(left, ctx)?;
             let r = operand(right, ctx)?;
+            if let Some(fast) = path_equality(*op, &l, &r) {
+                return Some(fast);
+            }
             // The operand-typing gate (§1): the pairs SQLite would compare
             // with less type than the engine has stay residual.
             if !comparable(*op, l.ty, r.ty) {
@@ -814,7 +860,31 @@ mod tests {
     fn equality_is_null_safe_is() {
         assert_eq!(
             translate_predicate(&pred("$path == \"index.md\""), &DOCS),
+            frag("(('/' || d.path) IS ?)", &[text("index.md")])
+        );
+    }
+
+    // `spec/surface` §1 "Paths" (2.0): `$path` is the reference form,
+    // `'/' || d.path` in SQL; a ROOTED text constant under `==`/`!=` takes the
+    // indexed fast path on the bare column with its storage form bound, a bare
+    // one (never equal to a rooted path) stays on the general form.
+    #[test]
+    fn a_rooted_path_literal_is_the_indexed_fast_path() {
+        assert_eq!(
+            translate_predicate(&pred("$path == \"/index.md\""), &DOCS),
             frag("(d.path IS ?)", &[text("index.md")])
+        );
+        assert_eq!(
+            translate_predicate(&pred("\"/x.md\" != $path"), &DOCS),
+            frag("(d.path IS NOT ?)", &[text("x.md")])
+        );
+        assert_eq!(
+            translate_predicate(&pred("$path < \"/m\""), &DOCS),
+            frag("(('/' || d.path) < ?)", &[text("/m")])
+        );
+        assert_eq!(
+            translate_predicate(&pred("$path == \"index.md\""), &DOCS),
+            frag("(('/' || d.path) IS ?)", &[text("index.md")])
         );
     }
 
@@ -822,7 +892,7 @@ mod tests {
     fn inequality_is_null_safe_is_not() {
         assert_eq!(
             translate_predicate(&pred("$path != \"x\""), &DOCS),
-            frag("(d.path IS NOT ?)", &[text("x")])
+            frag("(('/' || d.path) IS NOT ?)", &[text("x")])
         );
     }
 
@@ -840,11 +910,11 @@ mod tests {
     fn relational_ops_are_plain_comparisons() {
         assert_eq!(
             translate_predicate(&pred("$path < \"m\""), &DOCS),
-            frag("(d.path < ?)", &[text("m")])
+            frag("(('/' || d.path) < ?)", &[text("m")])
         );
         assert_eq!(
             translate_predicate(&pred("$path >= \"m\""), &DOCS),
-            frag("(d.path >= ?)", &[text("m")])
+            frag("(('/' || d.path) >= ?)", &[text("m")])
         );
         // arithmetic in predicate position → residual
         assert_eq!(translate_predicate(&pred("$path + 1"), &DOCS), None);
@@ -857,7 +927,7 @@ mod tests {
         assert_eq!(
             translate_predicate(&pred("$path.startsWith(\"lab/\")"), &DOCS),
             frag(
-                "(substr(d.path, 1, length(?)) = ?)",
+                "(substr(('/' || d.path), 1, length(?)) = ?)",
                 &[text("lab/"), text("lab/")]
             )
         );
@@ -868,7 +938,7 @@ mod tests {
         assert_eq!(
             translate_predicate(&pred("$path.lower().startsWith(\"lab/\")"), &DOCS),
             frag(
-                "(substr(lower(d.path), 1, length(?)) = ?)",
+                "(substr(lower(('/' || d.path)), 1, length(?)) = ?)",
                 &[text("lab/"), text("lab/")]
             )
         );
@@ -878,7 +948,7 @@ mod tests {
     fn contains_is_instr() {
         assert_eq!(
             translate_predicate(&pred("$path.contains(\"notes\")"), &DOCS),
-            frag("(instr(d.path, ?) > 0)", &[text("notes")])
+            frag("(instr(('/' || d.path), ?) > 0)", &[text("notes")])
         );
     }
 
@@ -887,7 +957,7 @@ mod tests {
         assert_eq!(
             translate_predicate(&pred("$path.endsWith(\".md\")"), &DOCS),
             frag(
-                "(substr(d.path, -length(?)) = ?)",
+                "(substr(('/' || d.path), -length(?)) = ?)",
                 &[text(".md"), text(".md")]
             )
         );
@@ -897,7 +967,7 @@ mod tests {
     fn upper_wraps_the_receiver_in_value_position() {
         assert_eq!(
             translate_value(&pred("$path.upper()"), &DOCS),
-            frag("upper(d.path)", &[])
+            frag("upper(('/' || d.path))", &[])
         );
     }
 
@@ -1162,7 +1232,7 @@ mod tests {
         );
         assert_eq!(
             translate_predicate(&pred("$path > \"m\""), &DOCS),
-            frag("(d.path > ?)", &[text("m")])
+            frag("(('/' || d.path) > ?)", &[text("m")])
         );
         // two reads carry no type at plan time; a boolean equals only text/null
         assert_eq!(
@@ -1734,7 +1804,7 @@ mod tests {
         assert_eq!(
             translate_predicate(&e, &DOCS),
             frag(
-                "((d.path IS ?) AND (d.doc_id IS NOT ?))",
+                "((('/' || d.path) IS ?) AND (d.doc_id IS NOT ?))",
                 &[text("a"), text("d_2")]
             )
         );
@@ -1768,12 +1838,12 @@ mod tests {
         };
         assert_eq!(
             translate_predicate(&e, &ctx),
-            frag("(d.path IS ?)", &[text("from-binding.md")])
+            frag("(('/' || d.path) IS ?)", &[text("from-binding.md")])
         );
         // A binding past the end reads as absent → NULL.
         assert_eq!(
             translate_predicate(&e, &DOCS),
-            frag("(d.path IS ?)", &[SqlValue::Null])
+            frag("(('/' || d.path) IS ?)", &[SqlValue::Null])
         );
     }
 
@@ -1857,6 +1927,12 @@ mod tests {
         );
         assert_eq!(
             translate_predicate(&pred("doc.$path == \"a.md\""), &blocks),
+            frag("(('/' || d.path) IS ?)", &[text("a.md")])
+        );
+        // a rooted literal (what the runner's rewrite always produces) takes
+        // the indexed fast path on the storage column
+        assert_eq!(
+            translate_predicate(&pred("doc.$path == \"/a.md\""), &blocks),
             frag("(d.path IS ?)", &[text("a.md")])
         );
         assert_eq!(
@@ -1904,7 +1980,7 @@ mod tests {
         assert_eq!(
             translate_predicate(&pred("$dst_path == \"index.md\""), &edges),
             frag(
-                "((SELECT dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
+                "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
                 &[text("index.md")]
             )
         );

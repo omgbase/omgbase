@@ -1,6 +1,7 @@
 //! `outline` / `ol` (§6): `docs_outline`, the wire format under the wordmark.
 
 use omgbase_surface::read::find_doc_by_ref;
+use omgbase_surface::reference_path;
 use serde_json::{Value as Json, json};
 
 use crate::cli::argv::{Mode, Opt, number, parse_args};
@@ -22,14 +23,21 @@ pub fn outline(cli: &mut Cli, args: &[String]) -> Result<i32> {
     let depth = number(&a, "depth")?;
     let skeleton = a.flag("skeleton");
     // §2.3: the tool resolves the ref; the header shows the ref as passed
-    // (no local path lookup), as the reference's remote branch does.
+    // (no local path lookup), as the reference's remote branch does — a path
+    // ref rooted (spec/surface §1 "Paths"), a `d_` id verbatim.
     let (doc, header) = if cli.remote_mode() {
-        (r.to_owned(), r.to_owned())
+        let header = if r.starts_with("d_") {
+            r.to_owned()
+        } else {
+            reference_path(r)
+        };
+        (r.to_owned(), header)
     } else {
         let repo = cli.repo()?;
         let info = find_doc_by_ref(cli.store()?.conn(), &repo.repo_id, r)?
             .ok_or_else(|| CliError::engine("doc_missing", format!("no document {r}")))?;
-        (info.doc_id, info.path)
+        // The header is the rooted path (spec/surface §1 "Paths").
+        (info.doc_id, reference_path(&info.path))
     };
     let mut req = serde_json::Map::new();
     req.insert("doc".to_owned(), json!(doc));

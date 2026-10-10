@@ -146,16 +146,16 @@ describe("query (oqx)", () => {
     const { stdout } = omg(["query", 'select title, status, layer from docs where $path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("id         path    title  status  layer");
+    expect(lines[0]).toBe("id         path     title  status  layer");
     // hub.md sets no layer → empty last cell, trailing whitespace trimmed.
-    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md  Hub    active$/);
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub    active$/);
   });
 
   it("a projected $path takes the path column's place (never printed twice)", () => {
     const { stdout } = omg(["query", 'select $path, title from docs where $path == "hub.md"']);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         $path   title");
-    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md  Hub$/);
+    expect(lines[0]).toBe("id         $path    title");
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md  Hub$/);
     expect(lines[1]!.split("hub.md")).toHaveLength(2);
   });
 
@@ -165,10 +165,10 @@ describe("query (oqx)", () => {
       'select title, open: blocks collect { select t: text where type == "task" && !attrs.checked } from docs order by $path asc',
     ]);
     const lines = stdout.trimEnd().split("\n");
-    expect(lines[0]).toBe("id         path       title  open");
-    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  hub\.md     Hub    \[\{"t":"wire the deploy pipeline"\}\]$/);
+    expect(lines[0]).toBe("id         path        title  open");
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md     Hub    \[\{"t":"wire the deploy pipeline"\}\]$/);
     // target.md has no frontmatter title → empty title cell; empty collect → [].
-    expect(lines[2]).toMatch(/^d_[a-z0-9]{7}  target\.md         \[\]$/);
+    expect(lines[2]).toMatch(/^d_[a-z0-9]{7}  \/target\.md         \[\]$/);
   });
 
   it("a long cell is clipped at 60 chars with an ellipsis", () => {
@@ -187,8 +187,8 @@ describe("query (oqx)", () => {
     const { stdout } = omg(["query", 'from docs order by $path asc']);
     const lines = stdout.trimEnd().split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/^d_[a-z0-9]{7}  hub\.md$/);
-    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  target\.md$/);
+    expect(lines[0]).toMatch(/^d_[a-z0-9]{7}  \/hub\.md$/);
+    expect(lines[1]).toMatch(/^d_[a-z0-9]{7}  \/target\.md$/);
   });
 
   it("--ids is unaffected by a projection", () => {
@@ -390,7 +390,7 @@ describe("stdin refs: `-` on cat / show (the README idiom `q … --ids | cat -`)
     expect(Array.isArray(many)).toBe(true);
     expect(many).toHaveLength(n);
     const one = JSON.parse(omg(["cat", "hub.md", "--json"]).stdout) as { path: string; content: string };
-    expect(one.path).toBe("hub.md");
+    expect(one.path).toBe("/hub.md");
     expect(one.content).toContain("# Hub");
   });
 

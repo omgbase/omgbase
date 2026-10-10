@@ -1,4 +1,4 @@
-import type { SyncSource, SourceWatch } from "@omgbase/core";
+import { storagePath, type SyncSource, type SourceWatch } from "@omgbase/core";
 import type { EngineClient } from "./engine-client.js";
 
 // Coordinator (ADR-014): the standalone reconcile loop between a SyncSource (an
@@ -53,10 +53,13 @@ export class Coordinator {
 
     const summary: SyncInSummary = { ingested: [], suppressed: [], conflicted: [], deleted: [] };
     if (files.length > 0) {
+      // The engine answers in the surface's reference form (`/a.md`,
+      // spec/surface §1 "Paths"); a source speaks storage paths.
       for (const r of await this.engine.observeMany(files)) {
-        if (r.echo) summary.suppressed.push(r.path);
-        else if (r.conflicted) summary.conflicted.push(r.path);
-        else summary.ingested.push(r.path);
+        const path = storagePath(r.path);
+        if (r.echo) summary.suppressed.push(path);
+        else if (r.conflicted) summary.conflicted.push(path);
+        else summary.ingested.push(path);
       }
     }
     for (const path of gonePaths) {
@@ -84,13 +87,15 @@ export class Coordinator {
       for (const digest of page.digests) {
         if (digest.origin === "observed") continue; // came from a source; don't echo back
         for (const rev of digest.revisions) {
-          const doc = await this.engine.readDoc(rev.path);
+          // `changes_since` reports the reference form; the source takes storage paths.
+          const path = storagePath(rev.path);
+          const doc = await this.engine.readDoc(path);
           if (doc) {
-            await this.source.write(rev.path, doc.content);
-            written.push(rev.path);
+            await this.source.write(path, doc.content);
+            written.push(path);
           } else if (this.source.remove) {
-            await this.source.remove(rev.path);
-            removed.push(rev.path);
+            await this.source.remove(path);
+            removed.push(path);
           }
         }
       }

@@ -674,7 +674,7 @@ fn every_read_over_the_reference_server_renders_like_local() {
     // path lookup): a `d_` id shows as the id, where the local run shows the path.
     let (l, r) = p.both(&server, &["outline", &a_doc], None);
     let (lo, ro) = (text(&l.stdout), text(&r.stdout));
-    assert!(lo.starts_with("  omgbase  >  notes/a.md\n"), "{lo}");
+    assert!(lo.starts_with("  omgbase  >  /notes/a.md\n"), "{lo}");
     assert!(ro.starts_with(&format!("  omgbase  >  {a_doc}\n")), "{ro}");
     assert_eq!(
         lo.lines().skip(1).collect::<Vec<_>>(),
@@ -1138,7 +1138,7 @@ fn sync_server_mirrors_a_directory_into_the_reference_engine() {
         .iter()
         .filter_map(|i| i["path"].as_str())
         .collect();
-    assert_eq!(paths, ["sub/y.md", "x.md"]);
+    assert_eq!(paths, ["/sub/y.md", "/x.md"]);
     // Again: everything echoes.
     let out = run(
         OMGBASE,

@@ -72,7 +72,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }");
     cli.io.out("       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)");
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)");
-    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
+    cli.io.out("       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)");
     cli.io.out("       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)");
     cli.io.out("       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)");
     cli.io.out("       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)");
@@ -81,7 +81,7 @@ async function runOqx(cli: Cli, args: string[]): Promise<number> {
     cli.io.out("       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]");
     cli.io.out("       query 'select t: text, d: $depth, s: $stop from blocks where $id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)");
     cli.io.out("       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]");
-    cli.io.out("       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
+    cli.io.out("       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)");
     cli.io.out("       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk");
     cli.io.out("       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri");
     return EXIT_OK;

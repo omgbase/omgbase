@@ -41,6 +41,7 @@
 // are deliberately declined here and left residual for now.
 
 import type { Expr } from "@omgbase/oqx";
+import { storagePath } from "../../core/paths.js";
 
 /** SQL row domain, matching the store's tables. */
 export type Target = "docs" | "blocks" | "nodes" | "edges";
@@ -90,6 +91,11 @@ export interface Operand extends Frag {
   json?: { col: string; path: string };
   prop?: { docAlias: string; key: string };
   value?: unknown;
+  /** The storage-form path column behind a `$path` / `doc.$path` read
+   * (`d.path`): the operand's SQL is the rooted `'/' || <col>`, and an
+   * equality against a rooted text constant is re-shaped onto the bare,
+   * indexed column (`pathEquality`). */
+  pathCol?: string;
 }
 
 // ---- names that are never property reads ------------------------------------
@@ -115,21 +121,29 @@ export const NON_PROPERTY_NAMES: Readonly<Record<Target, ReadonlySet<string>>> =
 // A `$`-namespaced intrinsic → a param-free SQL scalar, per target, with its kind.
 // Anything not mapped (e.g. docs `$body`, reconstructed; `$title`/`$tags`,
 // computed) returns null → residual. `$updated_at`/`$dst_path`/`$dst_uri` are
-// correlated subqueries.
+// correlated subqueries. `$path` and `$dst_path` are the REFERENCE form on the
+// surface (spec/surface §1 "Paths", 2.0) — `'/' || <storage column>` in SQL —
+// so every comparison, `startsWith`, `contains`, `lower()`… sees exactly the
+// string the in-memory intrinsic yields; `pathColumn` keeps the bare indexed
+// column at hand for the equality fast path.
+/** The rooted path read over a storage path column. */
+export function pathColumn(col: string): Operand {
+  return { sql: `('/' || ${col})`, params: [], kind: "text", pathCol: col };
+}
 function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
   const { self, doc, target } = ctx;
   const text = (sql: string): Operand => ({ sql, params: [], kind: "text" });
   const int = (sql: string): Operand => ({ sql, params: [], kind: "int" });
   if (target === "docs") switch (name) {
     case "$id": return text(`${self}.doc_id`);
-    case "$path": return text(`${doc}.path`);
+    case "$path": return pathColumn(`${doc}.path`);
     case "$content_hash": return text(`lower(hex(${self}.file_hash))`);
     case "$updated_at": return text(`(SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ${self}.current_rev)`);
   }
   else if (target === "blocks") switch (name) {
     case "$id": return text(`${self}.block_id`);
     case "$doc": return text(`${self}.doc_id`);
-    case "$path": return text(`${doc}.path`);
+    case "$path": return pathColumn(`${doc}.path`);
     case "$ordinal": return int(`${self}.ordinal`);
     case "$depth": return int(`${self}.depth`);
     case "$body": return text(`${self}.text`);
@@ -139,7 +153,7 @@ function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
     case "$id": case "$node_id": return text(`${self}.node_id`);
     case "$doc_id": return text(`${self}.doc_id`);
     case "$block_id": return text(`${self}.block_id`);
-    case "$path": return text(`${doc}.path`);
+    case "$path": return pathColumn(`${doc}.path`);
   }
   else if (target === "edges") switch (name) {
     case "$id": return text(`${self}.edge_id`);
@@ -148,8 +162,8 @@ function intrinsicSql(name: string, ctx: TranslateCtx): Operand | null {
     case "$src_block": return text(`${self}.src_block`);
     case "$via": return text(`${self}.via_node`);
     case "$from_commit": return text(`${self}.from_commit`);
-    case "$path": return text(`${doc}.path`);
-    case "$dst_path": return text(`(SELECT dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
+    case "$path": return pathColumn(`${doc}.path`);
+    case "$dst_path": return text(`(SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = ${self}.dst_node)`);
     case "$dst_uri": return text(`(SELECT xn.uri FROM external_nodes xn WHERE xn.node_id = ${self}.dst_node)`);
   }
   return null;
@@ -270,7 +284,7 @@ export function translateOperand(e: Expr, ctx: TranslateCtx): Operand | null {
       if (head === "doc") {
         if (rest.length !== 1) return null;
         const k = rest[0]!;
-        if (k === "$path") return text(`${doc}.path`);
+        if (k === "$path") return pathColumn(`${doc}.path`);
         if (k === "format") return text(`${doc}.format`);
         if (k.startsWith("$")) return null;
         if (RESERVED_DOC_BASENAMES.has(k)) return null;
@@ -415,6 +429,8 @@ function translateComparison(e: Extract<Expr, { kind: "binary" }>, ctx: Translat
   const l = translateOperand(e.left, ctx);
   const r = translateOperand(e.right, ctx);
   if (!l || !r) return null;
+  const fast = pathEquality(e.op, l, r);
+  if (fast) return fast;
   if (plainComparable(e.op, l.kind, r.kind)) {
     // `==`/`!=` → null-safe IS / IS NOT (absence-normalized equality, faithful in
     // any context). Relational ops → plain SQL: a NULL operand yields NULL, which
@@ -430,6 +446,22 @@ function translateComparison(e: Extract<Expr, { kind: "binary" }>, ctx: Translat
 }
 
 const FLIP: Record<string, string> = { "<": ">", "<=": ">=", ">": "<", ">=": "<=" };
+
+/**
+ * The path equality fast path: `$path == "/a.md"` (or `!=`, either side) against
+ * a rooted text constant is `d.path IS ?` with the constant's storage form, so
+ * the `(repo_id, path)` index serves it; `'/' || d.path IS ?` — what the general
+ * form would emit — is the same predicate without the index. Only a constant
+ * that IS rooted qualifies (run.ts roots every literal compared with a path
+ * read, so that is every literal); a bare binding stays on the general form,
+ * where `'/' || d.path` can never equal it — exactly the in-memory answer.
+ */
+function pathEquality(op: string, l: Operand, r: Operand): Frag | null {
+  if (op !== "==" && op !== "!=") return null;
+  const [col, konst] = l.pathCol ? [l, r] : r.pathCol ? [r, l] : [null, null];
+  if (!col || !konst || konst.kind !== "text" || typeof konst.value !== "string" || !konst.value.startsWith("/")) return null;
+  return { sql: `(${col.pathCol} ${IS_OP[op]} ?)`, params: [storagePath(konst.value)] };
+}
 
 /**
  * The typed push (spec/surface §1, 1.2 patch): `read <op> constant` where the

@@ -16,16 +16,34 @@ function pred(src: string): Expr {
 }
 
 describe("translate — equality is absence-normalized (IS / IS NOT)", () => {
+  // spec/surface §1 "Paths" (2.0): `$path` is the reference form, `'/' || d.path`
+  // in SQL; a ROOTED text constant under `==`/`!=` takes the indexed fast path on
+  // the bare column with its storage form bound, a bare one (never equal to a
+  // rooted path) stays on the general form and matches nothing.
+  it("a rooted path literal under == / != is the indexed fast path on the storage column", () => {
+    expect(translatePredicate(pred('$path == "/index.md"'), DOCS)).toEqual({ sql: "(d.path IS ?)", params: ["index.md"] });
+    expect(translatePredicate(pred('"/x.md" != $path'), DOCS)).toEqual({ sql: "(d.path IS NOT ?)", params: ["x.md"] });
+    expect(translatePredicate(pred('doc.$path == "/a.md"'), DOCS)).toEqual({ sql: "(d.path IS ?)", params: ["a.md"] });
+    // not under a relational op, not for a bare literal, not for `$dst_path` (a subquery)
+    expect(translatePredicate(pred('$path < "/m"'), DOCS)).toEqual({ sql: "(('/' || d.path) < ?)", params: ["/m"] });
+    expect(translatePredicate(pred('$path == "index.md"'), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: ["index.md"] });
+    const edges: TranslateCtx = { target: "edges", self: "e", doc: "d", params: [] };
+    expect(translatePredicate(pred('$dst_path == "/a.md"'), edges)).toEqual({
+      sql: "((SELECT '/' || dd.path FROM docs dd WHERE dd.doc_id = e.dst_node) IS ?)",
+      params: ["/a.md"],
+    });
+  });
+
   it("== → null-safe IS (both-absent equal, strict typed)", () => {
     expect(translatePredicate(pred('$path == "index.md"'), DOCS)).toEqual({
-      sql: "(d.path IS ?)",
+      sql: "(('/' || d.path) IS ?)",
       params: ["index.md"],
     });
   });
 
   it("!= → null-safe IS NOT (so absent != v is true, matching oqx-js)", () => {
     expect(translatePredicate(pred('$path != "x"'), DOCS)).toEqual({
-      sql: "(d.path IS NOT ?)",
+      sql: "(('/' || d.path) IS NOT ?)",
       params: ["x"],
     });
   });
@@ -41,7 +59,7 @@ describe("translate — equality is absence-normalized (IS / IS NOT)", () => {
 describe("translate — relational ops (plain SQL; NULL excluded in positive AND context)", () => {
   it("< → plain comparison", () => {
     expect(translatePredicate(pred('$path < "m"'), DOCS)).toEqual({
-      sql: "(d.path < ?)",
+      sql: "(('/' || d.path) < ?)",
       params: ["m"],
     });
   });
@@ -50,35 +68,35 @@ describe("translate — relational ops (plain SQL; NULL excluded in positive AND
 describe("translate — string ops are case-sensitive (substr/instr, never LIKE)", () => {
   it("startsWith → first length(arg) chars equal arg", () => {
     expect(translatePredicate(pred('$path.startsWith("lab/")'), DOCS)).toEqual({
-      sql: "(substr(d.path, 1, length(?)) = ?)",
+      sql: "(substr(('/' || d.path), 1, length(?)) = ?)",
       params: ["lab/", "lab/"],
     });
   });
 
   it("the marquee case: $path.lower().startsWith('lab/') pushes down with explicit lower()", () => {
     expect(translatePredicate(pred('$path.lower().startsWith("lab/")'), DOCS)).toEqual({
-      sql: "(substr(lower(d.path), 1, length(?)) = ?)",
+      sql: "(substr(lower(('/' || d.path)), 1, length(?)) = ?)",
       params: ["lab/", "lab/"],
     });
   });
 
   it("contains → instr > 0", () => {
     expect(translatePredicate(pred('$path.contains("notes")'), DOCS)).toEqual({
-      sql: "(instr(d.path, ?) > 0)",
+      sql: "(instr(('/' || d.path), ?) > 0)",
       params: ["notes"],
     });
   });
 
   it("endsWith → last length(arg) chars equal arg", () => {
     expect(translatePredicate(pred('$path.endsWith(".md")'), DOCS)).toEqual({
-      sql: "(substr(d.path, -length(?)) = ?)",
+      sql: "(substr(('/' || d.path), -length(?)) = ?)",
       params: [".md", ".md"],
     });
   });
 
   it("upper() wraps the receiver in value position", () => {
     const e = pred('$path.upper()'); // a bare method-call predicate leaf
-    expect(translateValue(e, DOCS)).toEqual({ sql: "upper(d.path)", params: [] });
+    expect(translateValue(e, DOCS)).toEqual({ sql: "upper(('/' || d.path))", params: [] });
   });
 });
 
@@ -143,7 +161,7 @@ describe("translate — conjunction and bindings via constructed AST", () => {
       right: { kind: "binary", span: [0, 0], op: "!=", left: { kind: "ident", span: [0, 0], name: "$id" }, right: { kind: "lit", span: [0, 0], value: "d_2" } },
     };
     expect(translatePredicate(e, DOCS)).toEqual({
-      sql: "((d.path IS ?) AND (d.doc_id IS NOT ?))",
+      sql: "((('/' || d.path) IS ?) AND (d.doc_id IS NOT ?))",
       params: ["a", "d_2"],
     });
   });
@@ -163,7 +181,7 @@ describe("translate — conjunction and bindings via constructed AST", () => {
   it("resolves a ${…} binding to its param value", () => {
     const e: Expr = { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "binding", span: [0, 0], index: 0 } };
     expect(translatePredicate(e, { ...DOCS, params: ["from-binding.md"] })).toEqual({
-      sql: "(d.path IS ?)",
+      sql: "(('/' || d.path) IS ?)",
       params: ["from-binding.md"],
     });
   });
@@ -259,9 +277,9 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(translatePredicate(predOn("docs", '$path.lower() > 5'), DOCS)).toBeNull();
     // equality across the same kinds stays pushable (IS is typed), and same-kind relational too
     expect(translatePredicate(predOn("blocks", '$ordinal == "3"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["3"] });
-    expect(translatePredicate(predOn("docs", "$path != 5"), DOCS)).toEqual({ sql: "(d.path IS NOT ?)", params: [5] });
+    expect(translatePredicate(predOn("docs", "$path != 5"), DOCS)).toEqual({ sql: "(('/' || d.path) IS NOT ?)", params: [5] });
     expect(translatePredicate(predOn("blocks", "$ordinal < 3"), BLOCKS)).toEqual({ sql: "(b.ordinal < ?)", params: [3] });
-    expect(translatePredicate(predOn("docs", '$path > "m"'), DOCS)).toEqual({ sql: "(d.path > ?)", params: ["m"] });
+    expect(translatePredicate(predOn("docs", '$path > "m"'), DOCS)).toEqual({ sql: "(('/' || d.path) > ?)", params: ["m"] });
     expect(translatePredicate(predOn("blocks", 'checked > "x"'), BLOCKS)).toBeNull(); // json × text relational: JSON integers order before text in SQLite
     expect(translatePredicate(predOn("blocks", 'level < "x"'), BLOCKS)).toBeNull();
     expect(translatePredicate(predOn("blocks", "$ordinal <= 1.5"), BLOCKS)).toEqual({ sql: "(b.ordinal <= ?)", params: [1.5] }); // int × num relational pushes
@@ -370,8 +388,8 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
     expect(translatePredicate(predOn("docs", 'layer == "canon"'), DOCS)).not.toBeNull();
     expect(translatePredicate(predOn("docs", 'doc.layer != "canon"'), DOCS)).not.toBeNull();
     expect(translatePredicate(predOn("blocks", '$ordinal == "1"'), BLOCKS)).toEqual({ sql: "(b.ordinal IS ?)", params: ["1"] });
-    expect(translatePredicate(predOn("docs", "$path == 1"), DOCS)).toEqual({ sql: "(d.path IS ?)", params: [1] });
-    expect(translatePredicate(predOn("docs", "$path == true"), DOCS)).toEqual({ sql: "(d.path IS ?)", params: [1] });
+    expect(translatePredicate(predOn("docs", "$path == 1"), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: [1] });
+    expect(translatePredicate(predOn("docs", "$path == true"), DOCS)).toEqual({ sql: "(('/' || d.path) IS ?)", params: [1] });
     expect(translatePredicate(predOn("docs", 'type.lower() == "hub"'), DOCS)).not.toBeNull();
     expect(translatePredicate(predOn("blocks", 'type == "task"'), BLOCKS)).toEqual({ sql: "(b.type IS ?)", params: ["task"] });
   });

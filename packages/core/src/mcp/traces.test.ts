@@ -104,7 +104,7 @@ describe("trace suite", () => {
     await connect();
     // Backlinks via OQX `follow doc.in`: seed the target, walk incoming edges.
     const { payload } = await call("query", { query: 'from docs where $path == "target.md" follow doc.in' });
-    expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("src.md");
+    expect((arr(payload.hits) as { path: string }[]).map((h) => h.path)).toContain("/src.md");
     expect(turns).toBe(1);
   });
 

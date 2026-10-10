@@ -94,7 +94,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path (`notes/x.md`)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
+        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a doc path (`/notes/x.md`; the leading `/` is optional)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
       }
     },
     {
@@ -190,7 +190,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path (`notes/x.md`)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
+        "stdout": "  cat — Content bytes of a node — exact raw bytes by default, pipe-clean (`show` is the metadata card)\n  usage: omg cat <node…|-> [--resolution raw|text|outline|skeleton|full]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a doc path (`/notes/x.md`; the leading `/` is optional)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg cat -`)\n    --resolution <r>  block refs only: raw (default: exact bytes) | text | outline | skeleton | full; a document is always its exact bytes (warns if given)\n    -h, --help        show this help\n"
       }
     },
     {
@@ -202,7 +202,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  show — Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)\n  usage: omg show <node…|-> [--include history]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a repo-relative doc path\n    -                 read refs from stdin, one per line (`omg q … --ids | omg show -`)\n    --include <list>  comma-separated extras; `history` adds the block's last 5 changes\n    -h, --help        show this help\n"
+        "stdout": "  show — Metadata card for a node: attrs, placement, open edges, last change (`cat` is the bytes)\n  usage: omg show <node…|-> [--include history]\n  options:\n    <node…>           one or more refs: a block id (`b_…`), a doc id (`d_…`), a node id (`n_…`), or a doc path (`/notes/x.md`; the leading `/` is optional)\n    -                 read refs from stdin, one per line (`omg q … --ids | omg show -`)\n    --include <list>  comma-separated extras; `history` adds the block's last 5 changes\n    -h, --help        show this help\n"
       }
     },
     {
@@ -226,7 +226,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "  query — Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)\n  usage: omg query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]\n         omg query -f <file|-> [-n <N>] [--cursor <c>]\n  options:\n    <source>      the OQX query text (quote it); `from` may be omitted inside blocks\n    -f <file|->   read the query from a file, or stdin with `-`\n    -n <N>        page size\n    --cursor <c>  continue a truncated result\n    --ids         bare ids, one per line — pipe fuel (`… --ids | omg cat -`)\n    -h, --help    show this help\n\n  semantic ranking: `order by semantic(\"phrase\") desc` or `where semantic(\"phrase\") > 0.6` (needs embedding.provider; see `omg embed --help`).\n  full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.\n  examples:\n  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'\n       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'\n       query 'select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }'\n       query 'select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'\n       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }\n       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)\n       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)\n       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)\n       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)\n       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)\n       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)\n       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune\n       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)\n       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]\n       query 'select t: text, d: $depth, s: $stop from blocks where $id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)\n       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]\n       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)\n       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk\n       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri\n"
+        "stdout": "  query — Composable OQX query: from <docs|blocks|nodes|edges> where … select … [order by …] [follow …] (alias: q)\n  usage: omg query <source> [-n <N>] [--cursor <c>] [--ids|--json|--jsonl]\n         omg query -f <file|-> [-n <N>] [--cursor <c>]\n  options:\n    <source>      the OQX query text (quote it); `from` may be omitted inside blocks\n    -f <file|->   read the query from a file, or stdin with `-`\n    -n <N>        page size\n    --cursor <c>  continue a truncated result\n    --ids         bare ids, one per line — pipe fuel (`… --ids | omg cat -`)\n    -h, --help    show this help\n\n  semantic ranking: `order by semantic(\"phrase\") desc` or `where semantic(\"phrase\") > 0.6` (needs embedding.provider; see `omg embed --help`).\n  full syntax: the examples below, the MCP `query_syntax` tool, and docs/query-language.md.\n  examples:\n  e.g. query 'from docs where nodes count { where kind == \"md:task\" } >= 2'\n       query 'select items: section.blocks collect { where type == \"list_item\" } from nodes where kind == \"md:section\"'\n       query 'select $path, open from docs where nodes collect { ^open: value where kind == \"md:task\" && !attrs.checked }'\n       query 'select owner_id, owner: $repo.nodes single { where kind == \"person\" && attrs.id == ^owner_id } from docs'\n       query '$repo.docs count { where layer == \"canon\" }'   # scalar; also $repo.<target> exists/none/first/single { … }\n       query 'from docs where nodes none { where kind == \"md:task\" && !checked }'   # none = zero rows (≡ !exists; \"every\" = none over the complement)\n       query 'from docs where type == \"practitioner\" order by era desc limit 2 offset 1'   # limit/offset bound the set (after order/distinct, before the consumer)\n       query 'select fm: entries(frontmatter) collect { k: $key, v: $it } from docs where $path == \"/x.md\"'   # a record as a collection ($key/$it); also entries(attrs), entries(inline)\n       query 'select $path values from docs where layer == \"canon\"'   # `values`: bare values, no {id,path} hits (one item only)\n       query 'select $path, tags: tags collect { $it values where $it != \"draft\" } from docs'   # $it = the current item (here: each tag)\n       query '$repo.docs collect { from nodes where kind == \"md:task\" }'   # `from E` re-projects the source (→ nodes)\n       query 'from docs where text(\"philosophers stone\") && layer == \"canon\"'   # full-text prune\n       query 'select s: semantic(\"the great work\") from blocks where semantic(\"the great work\") > 0.6'  # embedding score (needs a provider)\n       query 'from docs where type == \"practitioner\" order by era desc'   # order by <expr> [asc|desc]\n       query 'select t: text, d: $depth, s: $stop from blocks where $id == \"b_x\" follow block.children'   # recursive walk ($depth/$stop metadata)\n       query 'from nodes where name == \"Overview\" follow section.subsections { depth 3 }'   # follow [distinct] <rel> [{ where … frontier … depth n by … }]\n       query 'select p: $path, d: $depth, s: $stop from docs where $path == \"/index.md\" follow doc.out'   # citation graph (cyclic-safe: $stop=cycle)\n       query 'from blocks where type == \"list_item\" && $leaf follow block.children'   # $leaf/$depth/$stop filter the walk result post-walk\n       query 'select src: $src, to: $dst_path from edges where predicate == \"depends_on\"'   # the edges target: predicate/provenance/dst_kind + $src/$dst_path/$dst_uri\n"
       }
     },
     {
@@ -937,7 +937,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -950,7 +950,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -964,7 +964,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md  13 blocks  0s ago\ntexts/mutus-liber.md     12 blocks  0s ago\n"
+        "stdout": "/texts/emerald-tablet.md  13 blocks  0s ago\n/texts/mutus-liber.md     12 blocks  0s ago\n"
       }
     },
     {
@@ -990,7 +990,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "d_16  texts/emerald-tablet.md\nd_17  texts/mutus-liber.md\n"
+        "stdout": "d_16  /texts/emerald-tablet.md\nd_17  /texts/mutus-liber.md\n"
       }
     },
     {
@@ -1006,7 +1006,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -1021,7 +1021,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -1035,7 +1035,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "index.md                            31 blocks  0s ago\nlab/2026-01-notes.md                28 blocks  0s ago\nlab/2026-02-notes.md                23 blocks  0s ago\npractitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\npractitioners/maria-prophetissa.md  13 blocks  0s ago\npractitioners/newton.md             14 blocks  0s ago\npractitioners/paracelsus.md         16 blocks  0s ago\nprocesses/calcination.md            20 blocks  0s ago\nprocesses/coagulation.md            14 blocks  0s ago\nprocesses/dissolution.md            15 blocks  0s ago\nprocesses/magnum-opus.md            22 blocks  0s ago\nsubstances/mercury.md               17 blocks  0s ago\nsubstances/philosophers-stone.md    21 blocks  0s ago\nsubstances/prima-materia.md         14 blocks  0s ago\nsubstances/salt.md                  20 blocks  0s ago\nsubstances/sulphur.md                8 blocks  0s ago\ntexts/emerald-tablet.md             13 blocks  0s ago\ntexts/mutus-liber.md                12 blocks  0s ago\ntimeline/kickoff.md                  7 blocks  0s ago\ntimeline/review.md                   6 blocks  0s ago\n"
+        "stdout": "/index.md                            31 blocks  0s ago\n/lab/2026-01-notes.md                28 blocks  0s ago\n/lab/2026-02-notes.md                23 blocks  0s ago\n/practitioners/jabir-ibn-hayyan.md   13 blocks  0s ago\n/practitioners/maria-prophetissa.md  13 blocks  0s ago\n/practitioners/newton.md             14 blocks  0s ago\n/practitioners/paracelsus.md         16 blocks  0s ago\n/processes/calcination.md            20 blocks  0s ago\n/processes/coagulation.md            14 blocks  0s ago\n/processes/dissolution.md            15 blocks  0s ago\n/processes/magnum-opus.md            22 blocks  0s ago\n/substances/mercury.md               17 blocks  0s ago\n/substances/philosophers-stone.md    21 blocks  0s ago\n/substances/prima-materia.md         14 blocks  0s ago\n/substances/salt.md                  20 blocks  0s ago\n/substances/sulphur.md                8 blocks  0s ago\n/texts/emerald-tablet.md             13 blocks  0s ago\n/texts/mutus-liber.md                12 blocks  0s ago\n/timeline/kickoff.md                  7 blocks  0s ago\n/timeline/review.md                   6 blocks  0s ago\n"
       }
     },
     {
@@ -1050,7 +1050,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -1095,7 +1095,7 @@
       ],
       "expect": {
         "exit": 0,
-        "stdout": "texts/emerald-tablet.md\ntexts/mutus-liber.md\n"
+        "stdout": "/texts/emerald-tablet.md\n/texts/mutus-liber.md\n"
       }
     },
     {
@@ -1179,7 +1179,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "o.md\n"
+            "stdout": "/o.md\n"
           }
         },
         {
@@ -1191,7 +1191,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "o.md\n"
+            "stdout": "/o.md\n"
           }
         },
         {
@@ -1204,7 +1204,7 @@
           ],
           "expect": {
             "exit": 0,
-            "stdout": "lab/2026-01-notes.md\nlab/2026-02-notes.md\n"
+            "stdout": "/lab/2026-01-notes.md\n/lab/2026-02-notes.md\n"
           }
         },
         {

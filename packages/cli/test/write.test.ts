@@ -167,6 +167,6 @@ describe("traversal (OQX follow doc.out)", () => {
     const res = JSON.parse(omg(["query", 'from docs where $path == "hub.md" follow doc.out', "--json"])) as {
       hits: { path: string }[];
     };
-    expect(res.hits.map((h) => h.path)).toContain("old.md");
+    expect(res.hits.map((h) => h.path)).toContain("/old.md");
   });
 });

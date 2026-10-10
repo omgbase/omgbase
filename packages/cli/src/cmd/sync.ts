@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EngineError, type RepoRow, type Workspace } from "@omgbase/core";
+import { Watcher, WatchLease, EmbedDrainer, freshnessSweep, awaitReady, WATCH_READY_PATIENCE_MS, EngineError, surfaceSweepResult, type RepoRow, type Workspace } from "@omgbase/core";
 import { runFsMirror } from "@omgbase/sync";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
@@ -74,7 +74,8 @@ function runOneShot(cli: Cli, ws: Workspace, repo: RepoRow): number {
     cli.io.err(cli.style.dim(`  ${repo.slug} has no filesystem source — nothing to sync`));
     return EXIT_OK;
   }
-  const result = freshnessSweep(ws.store, repo.repoId, repo.rootPath);
+  // The paths the sweep names are printed in the reference form (spec/surface §1 "Paths").
+  const result = surfaceSweepResult(freshnessSweep(ws.store, repo.repoId, repo.rootPath));
 
   // A `SweepResult` is a record (its lists are per-kind): every machine mode is the document.
   if (cli.flags.mode !== "human") return emitMachine(cli, result);

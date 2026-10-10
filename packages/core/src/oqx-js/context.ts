@@ -19,6 +19,7 @@ import { COLS, FROM, ORDER, guards } from "./sql/scan.js";
 import type { Store } from "../core/store/store.js";
 import { detectRange } from "../core/store/properties.js";
 import { docsRead } from "../core/read/document.js";
+import { referencePath, storagePath } from "../core/paths.js";
 import { FilterInvalid } from "../search/cel/parser.js";
 import { sanitizeFtsQuery } from "../search/fts-query.js";
 import { cosineBytes } from "../core/vec.js";
@@ -341,6 +342,10 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     : undefined;
 
   // ---- intrinsics ($-fields) ------------------------------------------------
+  // `$path` / `$dst_path` are the REFERENCE form (`/a/b.md`, spec/surface §1
+  // "Paths", 2.0): the rows carry the storage form (`path`, the `__path` join
+  // column) and the intrinsic roots it on read, so nothing below the binding
+  // changes. run.ts roots the string literals a query compares them with.
   const intrinsic = (row: Row, t: Target, name: string): unknown => {
     // `$self` = the current row: run.ts rewrites row-scoped domain functions
     // (text/semantic/under_*/…) to `$self.fn(…)` so they arrive via callMethod
@@ -348,7 +353,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (name === "$self") return row;
     if (t === "docs") switch (name) {
       case "$id": return row.doc_id;
-      case "$path": return row.path;
+      case "$path": return referencePath(String(row.path));
       case "$content_hash": return row.file_hash == null ? null : hex(row.file_hash);
       case "$updated_at": return scalar(`SELECT c.ts FROM revisions r JOIN commits c ON c.commit_id = r.commit_id WHERE r.rev_id = ?`, row.current_rev) ?? null;
       case "$body": return docsRead(store, String(row.doc_id))?.content ?? null;
@@ -358,7 +363,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
     if (t === "blocks") switch (name) {
       case "$id": return row.block_id;
       case "$doc": return row.doc_id;
-      case "$path": return row.__path;
+      case "$path": return referencePath(String(row.__path));
       case "$ordinal": return row.ordinal;
       case "$depth": return row.depth;
       case "$body": return row.text;
@@ -369,7 +374,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "$id": case "$node_id": return row.node_id;
       case "$doc_id": return row.doc_id;
       case "$block_id": return row.block_id;
-      case "$path": return row.__path;
+      case "$path": return referencePath(String(row.__path));
     }
     if (t === "edges") switch (name) {
       case "$id": return row.edge_id;
@@ -378,8 +383,11 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
       case "$src_block": return row.src_block;
       case "$via": return row.via_node;
       case "$from_commit": return row.from_commit;
-      case "$path": return row.__path;
-      case "$dst_path": return scalar(`SELECT path FROM docs WHERE doc_id = ?`, row.dst_node) ?? null;
+      case "$path": return referencePath(String(row.__path));
+      case "$dst_path": {
+        const p = scalar(`SELECT path FROM docs WHERE doc_id = ?`, row.dst_node);
+        return p == null ? null : referencePath(String(p));
+      }
       case "$dst_uri": return scalar(`SELECT uri FROM external_nodes WHERE node_id = ?`, row.dst_node) ?? null;
     }
     return undefined;
@@ -537,13 +545,16 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
        WHERE s.doc_id = ? AND lower(hb.text) LIKE '%' || lower(?) || '%' AND s.first_ordinal <= ? AND s.last_ordinal >= ? LIMIT 1`,
       r.doc_id, text, top, top);
   };
+  // `within(t)`: a doc id, else a path in either form (`/texts/*`, `texts/*`,
+  // `texts/x.md`) matched against the storage path.
   const within = (r: Row, target: string): boolean => {
     if (target.startsWith("d_")) return r.doc_id === target;
-    if (target.includes("*")) {
-      const like = target.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
+    const path = storagePath(target);
+    if (path.includes("*")) {
+      const like = path.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
       return !!one(`SELECT 1 WHERE ? LIKE ? ESCAPE '\\'`, r.__path, like);
     }
-    return r.__path === target;
+    return r.__path === path;
   };
   const underKind = (r: Row, kind: string, name?: string): boolean => {
     const ap = String(r.ancestor_path ?? "").split("/").filter(Boolean);
@@ -573,7 +584,7 @@ export function makeStoreContext(store: Store, repoId: string, opts: StoreContex
   // are indistinguishable from scanned ones and the docs root is never read.
   const refDoc = (ref: string): Row | undefined => {
     const g = guards("docs", repoId);
-    const path = ref.startsWith("/") ? ref.slice(1) : ref;
+    const path = storagePath(ref);
     const byPath = one(`SELECT ${COLS.docs} FROM ${FROM.docs} WHERE ${g.sql} AND d.path = ?`, ...g.params, path);
     if (byPath) return tag(byPath, "docs");
     if (!ref.startsWith("d_")) return undefined;
@@ -684,7 +695,8 @@ export function tagRows(rows: Record<string, unknown>[], target: Target): unknow
 /**
  * A store row surfacing as a VALUE in a result (spec/surface §1.4, rows as
  * values, 1.2) is rendered as `{ id, path }` — its id column and its document's
- * path, the same two keys every hit carries — never the store row itself.
+ * path in the reference form (`/a.md`, §1 "Paths"), the same two keys every hit
+ * carries — never the store row itself.
  * Returns undefined for anything that is not a tagged row (run.ts leaves those
  * alone).
  */
@@ -694,7 +706,7 @@ export function rowRef(value: unknown): { id: string; path: string } | undefined
   const r = value as Row;
   const id = t === "docs" ? r.doc_id : t === "blocks" ? r.block_id : t === "nodes" ? r.node_id : r.edge_id;
   const path = t === "docs" ? r.path : r.__path;
-  return { id: String(id), path: String(path ?? "") };
+  return { id: String(id), path: path == null ? "" : referencePath(String(path)) };
 }
 
 export { TARGET };

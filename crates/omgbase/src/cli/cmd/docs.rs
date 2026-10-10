@@ -6,6 +6,7 @@
 //! `--json` prints the tool's result. `rm --doc` lives with the block `rm`
 //! in [`super::mutate`].
 
+use omgbase_surface::reference_path;
 use serde_json::{Map, Value as Json, json};
 
 use crate::cli::argv::{Opt, parse_args};
@@ -143,22 +144,24 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
         if n == 1 { "" } else { "s" },
         if n == 1 { "s" } else { "" },
     )));
+    // The result's `path` is already the reference form (spec/surface §1 "Paths").
     let new_path = str_of(&res, "path");
     // Authored links left as written (`--no-retarget`): the retarget that
     // rewrites them. The path the move left behind is as the dangling links
-    // name it (the canonical spelling with a leading `/`), else the ref as typed.
+    // name it (the canonical spelling with a leading `/`), else the ref as
+    // typed — rooted either way.
     if dangling
         .iter()
         .any(|l| l.get("block").is_some_and(Json::is_string))
     {
-        let from = dangling
-            .iter()
-            .find_map(|l| l.get("target").and_then(Json::as_str))
-            .unwrap_or(doc)
-            .trim_start_matches('/')
-            .to_owned();
+        let from = reference_path(
+            dangling
+                .iter()
+                .find_map(|l| l.get("target").and_then(Json::as_str))
+                .unwrap_or(doc),
+        );
         cli.io.err(&style.dim(&format!(
-            "  fix: {} retarget /{from} /{new_path} --apply",
+            "  fix: {} retarget {from} {new_path} --apply",
             cli.prog
         )));
     }
@@ -177,7 +180,7 @@ pub fn mv(cli: &mut Cli, args: &[String]) -> Result<i32> {
             continue;
         }
         cli.io.err(&style.dim(&format!(
-            "  fix: {} meta {} --set {field}=/{new_path}",
+            "  fix: {} meta {} --set {field}={new_path}",
             cli.prog, key.0
         )));
         seen.push(key);

@@ -97,9 +97,46 @@ pub fn decode_cursor(cursor: &str, surface: &str, arity: usize) -> Result<Vec<St
         .collect()
 }
 
+/// [`decode_cursor`] for the keysets whose FIRST part is a document path
+/// (`query`'s `[path, id]`, `docs_list`/`docs_tree`'s `[path]`). Since
+/// `spec/surface` 2.0 the surface speaks the reference form, so an issued
+/// cursor's path is `/`-rooted; a bare path can only come from a 1.x cursor,
+/// whose keyset would sort before every rooted row and silently replay the
+/// first page — it is refused with a reason that names the cause.
+pub fn decode_path_cursor(cursor: &str, surface: &str, arity: usize) -> Result<Vec<String>> {
+    let parts = decode_cursor(cursor, surface, arity)?;
+    if !parts[0].starts_with('/') {
+        return Err(SurfaceError::cursor_invalid_reason(&format!(
+            "cursor was issued before surface 2.0 (its path {} is not /-rooted); start the page sequence again without a cursor",
+            Value::String(parts[0].clone())
+        )));
+    }
+    Ok(parts)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cursor_from_1x_is_refused_by_the_path_decoder() {
+        let rooted = encode_cursor(&["/a.md", "d_1"]);
+        assert_eq!(
+            decode_path_cursor(&rooted, "query", 2).unwrap(),
+            ["/a.md", "d_1"]
+        );
+        let bare = encode_cursor(&["a.md", "d_1"]);
+        let e = decode_path_cursor(&bare, "query", 2).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
+        assert!(e.message.contains("not /-rooted"), "{}", e.message);
+        assert!(e.message.starts_with("invalid cursor: "));
+        assert_eq!(
+            e.data.as_ref().unwrap()["reason"],
+            e.message["invalid cursor: ".len()..]
+        );
+        // the generic decoder is unchanged (the cursor.json suite pins it)
+        assert_eq!(decode_cursor(&bare, "query", 2).unwrap(), ["a.md", "d_1"]);
+    }
 
     #[test]
     fn base64url_round_trips_and_matches_node() {

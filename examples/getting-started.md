@@ -105,26 +105,26 @@ $ omg status
 
 ```console
 $ omg ls
-index.md                            31 blocks  0s ago
-lab/2026-01-notes.md                28 blocks  0s ago
-lab/2026-02-notes.md                23 blocks  0s ago
-practitioners/jabir-ibn-hayyan.md   13 blocks  0s ago
-practitioners/maria-prophetissa.md  13 blocks  0s ago
-practitioners/newton.md             14 blocks  0s ago
-practitioners/paracelsus.md         16 blocks  0s ago
-processes/calcination.md            20 blocks  0s ago
-processes/coagulation.md            14 blocks  0s ago
-processes/dissolution.md            15 blocks  0s ago
-processes/magnum-opus.md            22 blocks  0s ago
-substances/mercury.md               17 blocks  0s ago
-substances/philosophers-stone.md    21 blocks  0s ago
-substances/prima-materia.md         14 blocks  0s ago
-substances/salt.md                  20 blocks  0s ago
-substances/sulphur.md                8 blocks  0s ago
-texts/emerald-tablet.md             13 blocks  0s ago
-texts/mutus-liber.md                12 blocks  0s ago
-timeline/kickoff.md                  7 blocks  0s ago
-timeline/review.md                   6 blocks  0s ago
+/index.md                            31 blocks  0s ago
+/lab/2026-01-notes.md                28 blocks  0s ago
+/lab/2026-02-notes.md                23 blocks  0s ago
+/practitioners/jabir-ibn-hayyan.md   13 blocks  0s ago
+/practitioners/maria-prophetissa.md  13 blocks  0s ago
+/practitioners/newton.md             14 blocks  0s ago
+/practitioners/paracelsus.md         16 blocks  0s ago
+/processes/calcination.md            20 blocks  0s ago
+/processes/coagulation.md            14 blocks  0s ago
+/processes/dissolution.md            15 blocks  0s ago
+/processes/magnum-opus.md            22 blocks  0s ago
+/substances/mercury.md               17 blocks  0s ago
+/substances/philosophers-stone.md    21 blocks  0s ago
+/substances/prima-materia.md         14 blocks  0s ago
+/substances/salt.md                  20 blocks  0s ago
+/substances/sulphur.md                8 blocks  0s ago
+/texts/emerald-tablet.md             13 blocks  0s ago
+/texts/mutus-liber.md                12 blocks  0s ago
+/timeline/kickoff.md                  7 blocks  0s ago
+/timeline/review.md                   6 blocks  0s ago
 ```
 
 `omg cat` prints a document's exact bytes — frontmatter and all — so it composes

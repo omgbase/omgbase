@@ -6,6 +6,13 @@
 
 use std::sync::mpsc::Receiver;
 
+/// The storage form of a path the engine reported (`spec/surface` §1 "Paths",
+/// 2.0: every path a tool returns is `/`-rooted; a source speaks the
+/// repo-relative form). Every leading `/` is stripped.
+fn storage_path(path: &str) -> String {
+    path.trim_start_matches('/').to_owned()
+}
+
 use serde_json::Value;
 
 use crate::engine::{EngineClient, FileBytes};
@@ -94,13 +101,16 @@ impl<'a> Coordinator<'a> {
         }
         let mut summary = SyncInSummary::default();
         if !files.is_empty() {
+            // The engine answers in the surface's reference form (`/a.md`,
+            // `spec/surface` §1 "Paths", 2.0); a source speaks storage paths.
             for r in self.engine.observe_many(&files)? {
+                let path = storage_path(&r.path);
                 if r.echo {
-                    summary.suppressed.push(r.path);
+                    summary.suppressed.push(path);
                 } else if r.conflicted {
-                    summary.conflicted.push(r.path);
+                    summary.conflicted.push(path);
                 } else {
-                    summary.ingested.push(r.path);
+                    summary.ingested.push(path);
                 }
             }
         }
@@ -133,14 +143,16 @@ impl<'a> Coordinator<'a> {
                     continue;
                 }
                 for rev in &digest.revisions {
-                    match self.engine.read_doc(&rev.path)? {
+                    // `changes_since` reports the reference form; the source takes storage paths.
+                    let path = storage_path(&rev.path);
+                    match self.engine.read_doc(&path)? {
                         Some(doc) => {
-                            self.source.write(&rev.path, &doc.content)?;
-                            summary.written.push(rev.path.clone());
+                            self.source.write(&path, &doc.content)?;
+                            summary.written.push(path);
                         }
                         None => {
-                            self.source.remove(&rev.path)?;
-                            summary.removed.push(rev.path.clone());
+                            self.source.remove(&path)?;
+                            summary.removed.push(path);
                         }
                     }
                 }

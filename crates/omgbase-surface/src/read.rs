@@ -12,8 +12,9 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value as Json, json};
 
 use crate::context::glob_to_like;
-use crate::cursor::{decode_cursor, encode_cursor};
+use crate::cursor::{decode_path_cursor, encode_cursor};
 use crate::error::Result;
+use crate::paths::{reference_path, storage_path};
 
 /// Max refs honored per `docs_read_many` / `nodes_get_many` call.
 pub const MANY_CAP: usize = 100;
@@ -33,6 +34,8 @@ pub fn token_cost(v: &Json) -> usize {
 pub struct DocInfo {
     pub doc_id: String,
     pub repo_id: String,
+    /// The STORAGE form (`a/b.md`): the library's handle on a document; the
+    /// surface roots what it returns (`spec/surface` §1 "Paths").
     pub path: String,
     pub format: String,
     pub current_rev: Option<String>,
@@ -63,12 +66,12 @@ pub fn find_doc_by_id(conn: &Connection, doc_id: &str) -> Result<Option<DocInfo>
     )
 }
 
-/// A live doc by repo + path.
+/// A live doc by repo + path, in either form (`spec/surface` §1 "Paths").
 pub fn find_doc_by_path(conn: &Connection, repo_id: &str, path: &str) -> Result<Option<DocInfo>> {
     doc_row(
         conn,
         "SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ?1 AND path = ?2 AND deleted_commit IS NULL",
-        &[&repo_id, &path],
+        &[&repo_id, &storage_path(path)],
     )
 }
 
@@ -297,7 +300,7 @@ pub fn docs_read(store: &Store, doc_id: &str, include_ids: bool) -> Result<Optio
         return Ok(None);
     };
     let mut m = Map::new();
-    m.insert("path".to_owned(), json!(info.path));
+    m.insert("path".to_owned(), json!(reference_path(&info.path)));
     m.insert("docId".to_owned(), json!(info.doc_id));
     m.insert("rev".to_owned(), json!(info.current_rev));
     m.insert("properties".to_owned(), store.properties_grouped(doc_id)?);
@@ -380,7 +383,7 @@ pub fn docs_read_at(store: &Store, doc_id: &str, rev: &str) -> Result<Option<Jso
         return Ok(None);
     };
     Ok(Some(json!({
-        "path": r.path,
+        "path": reference_path(&r.path),
         "docId": doc_id,
         "rev": rev,
         "content": r.content,
@@ -669,7 +672,7 @@ pub fn docs_outline(
 
 // ---- docs_list / docs_tree --------------------------------------------------------------
 
-/// One row of `docs_list`.
+/// One row of `docs_list` (`path` in the storage form; the wire roots it).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DocListRow {
     pub path: String,
@@ -678,8 +681,9 @@ pub struct DocListRow {
 }
 
 impl DocListRow {
+    /// The wire row: the path in the reference form (§1 "Paths").
     fn to_json(&self) -> Json {
-        json!({ "path": self.path, "blocks": self.blocks, "ts": self.ts })
+        json!({ "path": reference_path(&self.path), "blocks": self.blocks, "ts": self.ts })
     }
 }
 
@@ -728,7 +732,8 @@ fn live_doc_rows(
 }
 
 /// Page an already path-ordered row set under a limit + token budget (at
-/// least one row), issuing a `[path]` cursor when it stops early.
+/// least one row), issuing a `[path]` cursor when it stops early; the paths
+/// handed in are the reference form, which the cursor carries.
 fn page_path_ordered(
     rows: Vec<(String, Json)>,
     limit: usize,
@@ -769,10 +774,15 @@ pub fn docs_list(
     cursor: Option<&str>,
     budget_tokens: Option<usize>,
 ) -> Result<Json> {
-    let like = path_glob.map_or_else(|| "%".to_owned(), |g| glob_to_like(g, true));
+    // The glob may be spelled in either form; the column holds the storage form.
+    let like = path_glob.map_or_else(|| "%".to_owned(), |g| glob_to_like(storage_path(g), true));
     let limit = usize::try_from(limit.unwrap_or(LIST_DEFAULT_LIMIT as i64).max(1)).unwrap_or(1);
+    // The cursor carries the reference form (a 1.x cursor is refused); the
+    // keyset predicate runs on the column.
     let after = match cursor.filter(|c| !c.is_empty()) {
-        Some(c) => Some(decode_cursor(c, "docs_list/docs_tree", 1)?.remove(0)),
+        Some(c) => Some(
+            storage_path(&decode_path_cursor(c, "docs_list/docs_tree", 1)?.remove(0)).to_owned(),
+        ),
         None => None,
     };
     let mut rows = live_doc_rows(
@@ -786,7 +796,7 @@ pub fn docs_list(
     rows.truncate(limit);
     let (items, truncated, cursor) = page_path_ordered(
         rows.into_iter()
-            .map(|r| (r.path.clone(), r.to_json()))
+            .map(|r| (reference_path(&r.path), r.to_json()))
             .collect(),
         limit,
         budget_tokens,
@@ -795,13 +805,11 @@ pub fn docs_list(
     Ok(json!({ "items": items, "truncated": truncated, "cursor": cursor }))
 }
 
-/// Normalize a tree prefix: no leading `/`, and either empty or ending in `/`.
+/// Normalize a tree prefix to its storage form: no leading `/`, and either
+/// empty or ending in `/` (either path form is accepted).
 #[must_use]
 pub fn normalize_tree_prefix(path: Option<&str>) -> String {
-    let trimmed = path
-        .unwrap_or("")
-        .trim_start_matches('/')
-        .trim_end_matches('/');
+    let trimmed = storage_path(path.unwrap_or("")).trim_end_matches('/');
     if trimmed.is_empty() {
         String::new()
     } else {
@@ -809,7 +817,10 @@ pub fn normalize_tree_prefix(path: Option<&str>) -> String {
     }
 }
 
-/// §2 `docs_tree`: `{ prefix, depth, total, entries, truncated, cursor }`.
+/// §2 `docs_tree`: `{ prefix, depth, total, entries, truncated, cursor }`. The
+/// tree is built over the storage form and rooted on the way out, so the
+/// prefix (`/` for the root), the entries and the cursor all speak the
+/// reference form (§1 "Paths").
 pub fn docs_tree(
     store: &Store,
     repo_id: &str,
@@ -875,16 +886,17 @@ pub fn docs_tree(
     }
     by_path.sort_by(|a, b| a.path.cmp(&b.path));
     if let Some(c) = cursor.filter(|c| !c.is_empty()) {
-        let after = decode_cursor(c, "docs_list/docs_tree", 1)?.remove(0);
-        by_path.retain(|e| e.path > after);
+        let after = decode_path_cursor(c, "docs_list/docs_tree", 1)?.remove(0);
+        by_path.retain(|e| reference_path(&e.path) > after);
     }
     let entries: Vec<(String, Json)> = by_path
         .into_iter()
         .map(|e| {
+            let path = reference_path(&e.path);
             (
-                e.path.clone(),
+                path.clone(),
                 json!({
-                    "path": e.path,
+                    "path": path,
                     "kind": if e.dir { "dir" } else { "doc" },
                     "docs": e.docs,
                     "blocks": e.blocks,
@@ -895,7 +907,7 @@ pub fn docs_tree(
         .collect();
     let (items, truncated, cursor) = page_path_ordered(entries, limit, budget_tokens, false);
     Ok(json!({
-        "prefix": prefix,
+        "prefix": reference_path(&prefix),
         "depth": depth,
         "total": { "docs": total_docs, "blocks": total_blocks },
         "entries": items,

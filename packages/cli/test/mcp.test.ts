@@ -158,11 +158,11 @@ describe("omg mcp — multi-repo (per-call `repo` slug, ADR-014)", () => {
     };
 
     // No repo → the bound default (alpha).
-    expect(await paths({})).toEqual(["a.md"]);
+    expect(await paths({})).toEqual(["/a.md"]);
     // repo: "beta" → the other repo in the same workspace DB.
-    expect(await paths({ repo: "beta" })).toEqual(["b.md"]);
+    expect(await paths({ repo: "beta" })).toEqual(["/b.md"]);
     // repo: "alpha" explicitly → alpha.
-    expect(await paths({ repo: "alpha" })).toEqual(["a.md"]);
+    expect(await paths({ repo: "alpha" })).toEqual(["/a.md"]);
 
     // `repos` lists both.
     const reposRes = await rpc.send("tools/call", { name: "repos", arguments: {} });

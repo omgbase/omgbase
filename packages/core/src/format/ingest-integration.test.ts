@@ -77,15 +77,15 @@ describe("multiformat ingest integration", () => {
 
     const yamlDocs = oqxRun(store, repoId, 'from docs where format == "yaml"');
     expect(yamlDocs.hits.length).toBe(1);
-    expect(yamlDocs.hits[0]!.path).toBe("config.yaml");
+    expect(yamlDocs.hits[0]!.path).toBe("/config.yaml");
 
     const jsonDocs = oqxRun(store, repoId, 'from docs where format == "json"');
     expect(jsonDocs.hits.length).toBe(1);
-    expect(jsonDocs.hits[0]!.path).toBe("data.json");
+    expect(jsonDocs.hits[0]!.path).toBe("/data.json");
 
     const mdDocs = oqxRun(store, repoId, 'from docs where format == "markdown"');
     expect(mdDocs.hits.length).toBe(1);
-    expect(mdDocs.hits[0]!.path).toBe("readme.md");
+    expect(mdDocs.hits[0]!.path).toBe("/readme.md");
   });
 
   it("queries by block kind across formats", () => {
@@ -134,7 +134,7 @@ describe("multiformat ingest integration", () => {
 
     const debugDocs = oqxRun(store, repoId, 'from docs where logging.level == "debug"');
     expect(debugDocs.hits.length).toBe(1);
-    expect(debugDocs.hits[0]!.path).toBe("config.yaml");
+    expect(debugDocs.hits[0]!.path).toBe("/config.yaml");
   });
 
   it("queries JSON document metadata with CEL filters", () => {
@@ -144,6 +144,6 @@ describe("multiformat ingest integration", () => {
 
     const privateDocs = oqxRun(store, repoId, 'from docs where name == "alpha"');
     expect(privateDocs.hits.length).toBe(1);
-    expect(privateDocs.hits[0]!.path).toBe("a.json");
+    expect(privateDocs.hits[0]!.path).toBe("/a.json");
   });
 });

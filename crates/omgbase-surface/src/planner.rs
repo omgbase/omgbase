@@ -348,7 +348,7 @@ mod tests {
         assert_eq!(c.target, Target::Docs);
         assert_eq!(
             c.sql,
-            "SELECT d.* FROM docs d WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND ((d.path IS ?)) ORDER BY d.path, d.doc_id"
+            "SELECT d.* FROM docs d WHERE d.repo_id = ? AND d.deleted_commit IS NULL AND ((('/' || d.path) IS ?)) ORDER BY d.path, d.doc_id"
         );
         assert_eq!(c.params, vec![text("r_1"), text("index.md")]);
         assert_eq!(
@@ -373,7 +373,7 @@ mod tests {
             b.sql,
             "SELECT b.*, d.path AS __path FROM blocks b JOIN docs d ON d.doc_id = b.doc_id \
              WHERE b.repo_id = ? AND b.deleted_commit IS NULL AND d.deleted_commit IS NULL \
-             AND ((substr(d.path, 1, length(?)) = ?)) ORDER BY d.path, b.block_id"
+             AND ((substr(('/' || d.path), 1, length(?)) = ?)) ORDER BY d.path, b.block_id"
         );
         assert_eq!(b.params, vec![text("r"), text("lab/"), text("lab/")]);
         let n = compile(
@@ -406,7 +406,8 @@ mod tests {
         );
         let c = compile(&q, &[], "r").expect("planned");
         assert!(
-            c.sql.contains("(substr(d.path, 1, length(?)) = ?)"),
+            c.sql
+                .contains("(substr(('/' || d.path), 1, length(?)) = ?)"),
             "{}",
             c.sql
         );

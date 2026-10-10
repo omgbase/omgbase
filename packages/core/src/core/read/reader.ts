@@ -1,6 +1,7 @@
 import type { Store } from "../store/store.js";
 import { isValidId } from "../ids.js";
-import { encodeCursor, decodeCursor } from "../cursor.js";
+import { encodeCursor, decodePathCursor } from "../cursor.js";
+import { referencePath, storagePath } from "../paths.js";
 
 // Read-side reconstruction of current-state blocks (02 §3 blocks table).
 // Rebuilds the containment forest for a document from parent_block + order_key.
@@ -36,9 +37,10 @@ export interface DocListOptions {
 
 export const DOCS_LIST_DEFAULT_LIMIT = 200;
 
-/** Escape a user glob into a LIKE pattern (`*` → `%`; literal `%`/`_` escaped). */
+/** Escape a user glob into a LIKE pattern over the storage path (`*` → `%`;
+ *  literal `%`/`_` escaped); the glob may be spelled in either path form. */
 function globToLike(glob: string): string {
-  return glob.replace(/[%_\\]/g, "\\$&").replace(/\*/g, "%");
+  return storagePath(glob).replace(/[%_\\]/g, "\\$&").replace(/\*/g, "%");
 }
 
 /** Live docs of a repo (path, live block count, last-commit ts) whose path
@@ -56,7 +58,7 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
     tail = " LIMIT ?";
     params.push(limit);
   }
-  return store.db
+  const rows = store.db
     .prepare(
       `SELECT d.path AS path,
               (SELECT count(*) FROM blocks b WHERE b.doc_id = d.doc_id AND b.deleted_commit IS NULL) AS blocks,
@@ -66,15 +68,20 @@ function liveDocRows(store: Store, repoId: string, like: string, after: string |
        ORDER BY d.path${tail}`,
     )
     .all(...params) as DocListRow[];
+  // The surface speaks the reference form (spec/surface §1 "Paths"): rooted on
+  // the way out, the storage form never leaves this module.
+  for (const r of rows) r.path = referencePath(r.path);
+  return rows;
 }
 
 // Path-keyset cursors for the path-ordered list surfaces: the shared kernel
-// encoding (core/cursor.ts) with a one-part tuple.
+// encoding (core/cursor.ts) with a one-part tuple holding the row's (rooted)
+// path; a 1.x cursor (a bare path) is refused (core/cursor.ts).
 function encodePathCursor(path: string): string {
   return encodeCursor([path]);
 }
-function decodePathCursor(cursor: string): string {
-  return decodeCursor(cursor, "docs_list/docs_tree", 1)[0]!;
+function decodeListCursor(cursor: string): string {
+  return decodePathCursor(cursor, "docs_list/docs_tree", 1)[0]!;
 }
 
 /** Page an already path-ordered row set under a limit + token budget, issuing
@@ -114,7 +121,8 @@ function pagePathOrdered<T extends { path: string }>(
 export function docsList(store: Store, repoId: string, opts: DocListOptions = {}): DocListPage {
   const like = opts.pathGlob ? globToLike(opts.pathGlob) : "%";
   const limit = Math.max(1, Math.floor(opts.limit ?? DOCS_LIST_DEFAULT_LIMIT));
-  const after = opts.cursor ? decodePathCursor(opts.cursor) : null;
+  // The cursor carries the reference form; the keyset predicate runs on the column.
+  const after = opts.cursor ? storagePath(decodeListCursor(opts.cursor)) : null;
   // Fetch one past the limit so `truncated` is a fact, not a guess.
   const rows = liveDocRows(store, repoId, like, after, limit + 1);
   const moreBeyond = rows.length > limit;
@@ -134,8 +142,8 @@ export interface DocTreeEntry {
 }
 
 export interface DocTreePage {
-  /** The normalized directory prefix the tree was taken under (`""` = root;
-   *  otherwise ends in `/`). */
+  /** The normalized directory prefix the tree was taken under, in the
+   *  reference form: `/` for the repo root, else `/<dir>/`. */
   prefix: string;
   depth: number;
   /** Totals over EVERYTHING under `prefix`, regardless of paging. */
@@ -159,9 +167,10 @@ export interface DocTreeOptions {
 
 export const DOCS_TREE_DEFAULT_LIMIT = 200;
 
-/** Normalize a tree prefix: no leading `/`, and either empty or ending in `/`. */
+/** Normalize a tree prefix to its storage form: no leading `/`, and either
+ *  empty or ending in `/` (either path form is accepted). */
 export function normalizeTreePrefix(path: string | undefined): string {
-  const trimmed = (path ?? "").replace(/^\/+/, "").replace(/\/+$/, "");
+  const trimmed = storagePath(path ?? "").replace(/\/+$/, "");
   return trimmed === "" ? "" : trimmed + "/";
 }
 
@@ -180,17 +189,21 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
   const like = prefix === "" ? "%" : globToLike(prefix) + "%";
   const rows = liveDocRows(store, repoId, like, null, null);
 
+  // `liveDocRows` hands out reference paths; the tree is built over the storage
+  // form and rooted again on the way out, so the entries, the prefix and the
+  // cursor all speak the reference form.
   const byPath = new Map<string, DocTreeEntry>();
   const total = { docs: 0, blocks: 0 };
   for (const row of rows) {
+    const storage = storagePath(row.path);
     total.docs += 1;
     total.blocks += row.blocks;
-    const segs = row.path.slice(prefix.length).split("/");
+    const segs = storage.slice(prefix.length).split("/");
     if (segs.length <= depth) {
-      byPath.set(row.path, { path: row.path, kind: "doc", docs: 1, blocks: row.blocks, ts: row.ts });
+      byPath.set(storage, { path: row.path, kind: "doc", docs: 1, blocks: row.blocks, ts: row.ts });
       continue;
     }
-    const dir = prefix + segs.slice(0, depth).join("/") + "/";
+    const dir = referencePath(prefix + segs.slice(0, depth).join("/") + "/");
     const cur = byPath.get(dir);
     if (cur) {
       cur.docs += 1;
@@ -203,11 +216,11 @@ export function docsTree(store: Store, repoId: string, opts: DocTreeOptions = {}
 
   let entries = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   if (opts.cursor) {
-    const after = decodePathCursor(opts.cursor);
+    const after = decodeListCursor(opts.cursor);
     entries = entries.filter((e) => e.path > after);
   }
   const { items, truncated, cursor } = pagePathOrdered(entries, limit, opts.budgetTokens, false);
-  return { prefix, depth, total, entries: items, truncated, cursor };
+  return { prefix: referencePath(prefix), depth, total, entries: items, truncated, cursor };
 }
 
 export interface BlockNode {
@@ -288,6 +301,8 @@ export function blockRaw(store: Store, rawHashHex: string): string {
 export interface DocInfo {
   docId: string;
   repoId: string;
+  /** The STORAGE form (`a/b.md`): `DocInfo` is the library's internal handle on
+   *  a document (file writes, SQL); the surface roots what it returns. */
   path: string;
   format: string;
   currentRev: string | null;
@@ -298,7 +313,8 @@ export function findDoc(store: Store, ref: { docId?: string; repoId?: string; pa
   if (ref.docId) {
     row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE doc_id = ? AND deleted_commit IS NULL").get(ref.docId) as Record<string, unknown> | undefined;
   } else if (ref.repoId && ref.path) {
-    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, ref.path) as Record<string, unknown> | undefined;
+    // Either path form is accepted (spec/surface §1 "Paths"); the column holds the storage form.
+    row = store.db.prepare("SELECT doc_id, repo_id, path, format, current_rev FROM docs WHERE repo_id = ? AND path = ? AND deleted_commit IS NULL").get(ref.repoId, storagePath(ref.path)) as Record<string, unknown> | undefined;
   }
   if (!row) return null;
   return {

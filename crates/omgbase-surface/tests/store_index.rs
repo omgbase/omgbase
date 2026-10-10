@@ -162,17 +162,17 @@ fn a_correlated_block_over_repo_docs_probes_sqlite_and_never_runs_the_docs_scan(
     let salt = rows
         .iter()
         .find(|r| {
-            r.as_object().unwrap().get("$path") == Some(&Value::Str("substances/salt.md".into()))
+            r.as_object().unwrap().get("$path") == Some(&Value::Str("/substances/salt.md".into()))
         })
         .unwrap();
     assert_eq!(
         salt.as_object().unwrap().get("same_type"),
         Some(&Value::Array(
             [
-                "substances/mercury.md",
-                "substances/philosophers-stone.md",
-                "substances/prima-materia.md",
-                "substances/sulphur.md"
+                "/substances/mercury.md",
+                "/substances/philosophers-stone.md",
+                "/substances/prima-materia.md",
+                "/substances/sulphur.md"
             ]
             .into_iter()
             .map(|s| Value::Str(s.into()))
@@ -210,8 +210,8 @@ fn typed_equality_per_value_kind_and_the_absent_fallback() {
     assert_eq!(
         paths(&ctx, &rows(Value::Number(800.0))),
         [
-            "practitioners/jabir-ibn-hayyan.md",
-            "texts/emerald-tablet.md"
+            "/practitioners/jabir-ibn-hayyan.md",
+            "/texts/emerald-tablet.md"
         ]
     );
     assert!(rows(Value::Number(-0.0)).is_empty());
@@ -225,7 +225,7 @@ fn typed_equality_per_value_kind_and_the_absent_fallback() {
             &ctx,
             &ty.lookup_rows(&Value::Str("text".into())).unwrap().unwrap()
         ),
-        ["texts/emerald-tablet.md", "texts/mutus-liber.md"]
+        ["/texts/emerald-tablet.md", "/texts/mutus-liber.md"]
     );
     assert!(
         ty.lookup_rows(&Value::Number(1.0))
@@ -233,17 +233,25 @@ fn typed_equality_per_value_kind_and_the_absent_fallback() {
             .unwrap()
             .is_empty()
     );
-    // a column probe: only strings
+    // a column probe: only strings — and for `$path` only the reference form
+    // (spec/surface §1 "Paths"): `$path` reads `/index.md`, so a bare probe
+    // equals no row
     let path = ctx.index_for(&docs, &["$path".to_owned()]).unwrap();
     assert_eq!(
         paths(
             &ctx,
             &path
-                .lookup_rows(&Value::Str("index.md".into()))
+                .lookup_rows(&Value::Str("/index.md".into()))
                 .unwrap()
                 .unwrap()
         ),
-        ["index.md"]
+        ["/index.md"]
+    );
+    assert!(
+        path.lookup_rows(&Value::Str("index.md".into()))
+            .unwrap()
+            .unwrap()
+            .is_empty()
     );
     assert!(
         path.lookup_rows(&Value::Number(5.0))
@@ -311,7 +319,7 @@ fn perf_a_correlated_block_over_two_thousand_documents_runs_no_scan_and_stays_fa
                 (
                     format!("orders/o{i}.md"),
                     format!(
-                        "---\ntype: order\ncustomer: customers/c{}.md\nseq: {i}\n---\n\n# Order {i}\n",
+                        "---\ntype: order\ncustomer: /customers/c{}.md\nseq: {i}\n---\n\n# Order {i}\n",
                         i - (i % 10)
                     ),
                 )

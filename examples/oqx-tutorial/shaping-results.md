@@ -14,11 +14,11 @@ in `select` order (here a frontmatter number and an inline field):
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc'
-id         path                                era   known
-d_9px29y1  practitioners/maria-prophetissa.md  250   balneum mariae
-d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
-d_t5nvj1g  practitioners/paracelsus.md         1530  tria prima
-d_rw4ygr0  practitioners/newton.md             1680  unpublished alchemical corpus
+id         path                                 era   known
+d_9px29y1  /practitioners/maria-prophetissa.md  250   balneum mariae
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800   mercury-sulphur theory
+d_t5nvj1g  /practitioners/paracelsus.md         1530  tria prima
+d_rw4ygr0  /practitioners/newton.md             1680  unpublished alchemical corpus
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
@@ -27,11 +27,11 @@ never printed twice):
 
 ```console
 $ omg query 'select $path, era from docs where type == "practitioner" order by era asc'
-id         $path                               era
-d_9px29y1  practitioners/maria-prophetissa.md  250
-d_nzb61j9  practitioners/jabir-ibn-hayyan.md   800
-d_t5nvj1g  practitioners/paracelsus.md         1530
-d_rw4ygr0  practitioners/newton.md             1680
+id         $path                                era
+d_9px29y1  /practitioners/maria-prophetissa.md  250
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md   800
+d_t5nvj1g  /practitioners/paracelsus.md         1530
+d_rw4ygr0  /practitioners/newton.md             1680
 ```
 
 Cells hold strings and numbers verbatim; a nested `collect` (a list or record)
@@ -41,10 +41,10 @@ path always come along, then your selected fields:
 
 ```console
 $ omg query 'select era, known: known_for from docs where type == "practitioner" order by era asc' --jsonl
-{"id":"d_9px29y1","path":"practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
-{"id":"d_nzb61j9","path":"practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
-{"id":"d_t5nvj1g","path":"practitioners/paracelsus.md","era":1530,"known":"tria prima"}
-{"id":"d_rw4ygr0","path":"practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
+{"id":"d_9px29y1","path":"/practitioners/maria-prophetissa.md","era":250,"known":"balneum mariae"}
+{"id":"d_nzb61j9","path":"/practitioners/jabir-ibn-hayyan.md","era":800,"known":"mercury-sulphur theory"}
+{"id":"d_t5nvj1g","path":"/practitioners/paracelsus.md","era":1530,"known":"tria prima"}
+{"id":"d_rw4ygr0","path":"/practitioners/newton.md","era":1680,"known":"unpublished alchemical corpus"}
 ```
 
 `known: known_for` renames the projected column; a bare `era` keeps its name.
@@ -60,15 +60,15 @@ Sort with `order by <expr> [asc|desc]`. The `era` sort is numeric — 250 before
 
 ```console
 $ omg query 'from docs where type == "practitioner" order by era asc'
-d_9px29y1  practitioners/maria-prophetissa.md
-d_nzb61j9  practitioners/jabir-ibn-hayyan.md
-d_t5nvj1g  practitioners/paracelsus.md
-d_rw4ygr0  practitioners/newton.md
+d_9px29y1  /practitioners/maria-prophetissa.md
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
+d_t5nvj1g  /practitioners/paracelsus.md
+d_rw4ygr0  /practitioners/newton.md
 $ omg query 'from docs where type == "practitioner" order by era desc'
-d_rw4ygr0  practitioners/newton.md
-d_t5nvj1g  practitioners/paracelsus.md
-d_nzb61j9  practitioners/jabir-ibn-hayyan.md
-d_9px29y1  practitioners/maria-prophetissa.md
+d_rw4ygr0  /practitioners/newton.md
+d_t5nvj1g  /practitioners/paracelsus.md
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
+d_9px29y1  /practitioners/maria-prophetissa.md
 ```
 
 ## `-n` and paging with `--cursor`
@@ -79,13 +79,13 @@ CLI says so on stderr and hands you an opaque `--cursor` token for the next page
 
 ```console
 $ omg query 'from docs where type == "substance"' -n 3
-d_0vsapzt  substances/mercury.md
-d_1rren8z  substances/philosophers-stone.md
-d_prj3j7a  substances/prima-materia.md
-… truncated; continue with --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
-$ omg query 'from docs where type == "substance"' -n 3 --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
-d_h73rhv8  substances/salt.md
-d_5zmf9f7  substances/sulphur.md
+d_0vsapzt  /substances/mercury.md
+d_1rren8z  /substances/philosophers-stone.md
+d_prj3j7a  /substances/prima-materia.md
+… truncated; continue with --cursor WyIvc3Vic3RhbmNlcy9wcmltYS1tYXRlcmlhLm1kIiwiZF9wcmozajdhIl0
+$ omg query 'from docs where type == "substance"' -n 3 --cursor WyIvc3Vic3RhbmNlcy9wcmltYS1tYXRlcmlhLm1kIiwiZF9wcmozajdhIl0
+d_h73rhv8  /substances/salt.md
+d_5zmf9f7  /substances/sulphur.md
 ```
 
 ## `values` — bare values instead of hits
@@ -97,10 +97,10 @@ list of numbers:
 
 ```console
 $ omg query 'select $path values from docs where type == "practitioner" order by era asc'
-practitioners/maria-prophetissa.md
-practitioners/jabir-ibn-hayyan.md
-practitioners/paracelsus.md
-practitioners/newton.md
+/practitioners/maria-prophetissa.md
+/practitioners/jabir-ibn-hayyan.md
+/practitioners/paracelsus.md
+/practitioners/newton.md
 $ omg query 'select era values from docs where type == "practitioner" order by era asc'
 250
 800
@@ -130,11 +130,11 @@ two most recent practitioners, then the two after skipping the most recent:
 
 ```console
 $ omg query 'from docs where type == "practitioner" order by era desc limit 2'
-d_rw4ygr0  practitioners/newton.md
-d_t5nvj1g  practitioners/paracelsus.md
+d_rw4ygr0  /practitioners/newton.md
+d_t5nvj1g  /practitioners/paracelsus.md
 $ omg query 'from docs where type == "practitioner" order by era desc limit 2 offset 1'
-d_t5nvj1g  practitioners/paracelsus.md
-d_nzb61j9  practitioners/jabir-ibn-hayyan.md
+d_t5nvj1g  /practitioners/paracelsus.md
+d_nzb61j9  /practitioners/jabir-ibn-hayyan.md
 ```
 
 The page walks *within* the bound: `limit 4` over the five substances, paged
@@ -143,12 +143,12 @@ row — the fifth substance never appears.
 
 ```console
 $ omg query 'from docs where type == "substance" limit 4' -n 3
-d_0vsapzt  substances/mercury.md
-d_1rren8z  substances/philosophers-stone.md
-d_prj3j7a  substances/prima-materia.md
-… truncated; continue with --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
-$ omg query 'from docs where type == "substance" limit 4' -n 3 --cursor WyJzdWJzdGFuY2VzL3ByaW1hLW1hdGVyaWEubWQiLCJkX3ByajNqN2EiXQ
-d_h73rhv8  substances/salt.md
+d_0vsapzt  /substances/mercury.md
+d_1rren8z  /substances/philosophers-stone.md
+d_prj3j7a  /substances/prima-materia.md
+… truncated; continue with --cursor WyIvc3Vic3RhbmNlcy9wcmltYS1tYXRlcmlhLm1kIiwiZF9wcmozajdhIl0
+$ omg query 'from docs where type == "substance" limit 4' -n 3 --cursor WyIvc3Vic3RhbmNlcy9wcmltYS1tYXRlcmlhLm1kIiwiZF9wcmozajdhIl0
+d_h73rhv8  /substances/salt.md
 ```
 
 Next: **[correlated-subqueries.md](./correlated-subqueries.md)** — asking about

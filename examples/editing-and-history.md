@@ -29,7 +29,7 @@ A query counts the open ones directly — a task is a projected node, and
 `attrs.checked` is false while it's open:
 
 ```console
-$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
+$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md" }'
 2
 ```
 
@@ -41,7 +41,7 @@ reads them from stdin and completes them. The pipe is the changeset boundary —
 It echoes the ids it changed:
 
 ```console
-$ omg query 'from blocks where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md"' --ids | omg done -
+$ omg query 'from blocks where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md"' --ids | omg done -
   ok committed · 1 document touched
 b_as1y4cr
 b_wp3t2ax
@@ -56,7 +56,7 @@ $ omg cat lab/2026-02-notes.md | grep '^- \['
 - [x] Note crystal quality per cycle
 - [x] Assay cycle 1 and cycle 4 crops for iron
 - [x] Write the plateau result up for the coagulation note
-$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "lab/2026-02-notes.md" }'
+$ omg query '$repo.blocks count { where type == "task" && !attrs.checked && $path == "/lab/2026-02-notes.md" }'
 0
 ```
 
@@ -79,9 +79,9 @@ reported on stderr, and is not an error):
 
 ```console
 $ omg log -n 3
-#1 observed observed: index.md — 31 inserted
-#2 observed observed: lab/2026-01-notes.md — 28 inserted
-#3 observed observed: lab/2026-02-notes.md — 23 inserted
+#1 observed observed: /index.md — 31 inserted
+#2 observed observed: /lab/2026-01-notes.md — 28 inserted
+#3 observed observed: /lab/2026-02-notes.md — 23 inserted
 … truncated; continue with --cursor 3
 ```
 

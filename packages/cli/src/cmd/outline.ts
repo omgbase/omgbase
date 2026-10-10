@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { findDoc, docsOutline, type OutlineResult } from "@omgbase/core";
+import { findDoc, docsOutline, referencePath, type OutlineResult } from "@omgbase/core";
 import type { Command } from "../commands.js";
 import type { Cli } from "../context.js";
 import { CliUsageError, EngineErrorLike, truncationFooter, EXIT_OK, emitMachine, renderHelp } from "../output.js";
@@ -37,13 +37,14 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
   let header: string;
   if (cli.flags.server) {
     // Remote: the docs_outline tool resolves the ref + returns the same
-    // OutlineResult. The header shows the ref you passed (no local path lookup).
+    // OutlineResult. The header shows the ref you passed (no local path lookup):
+    // a path ref rooted (spec/surface §1 "Paths"), a `d_` id verbatim.
     result = await remoteCall<OutlineResult>(cli, "docs_outline", {
       doc: ref,
       ...(values.depth ? { depth: Number(values.depth) } : {}),
       ...(values.skeleton ? { resolution: "skeleton" } : {}),
     });
-    header = ref;
+    header = ref.startsWith("d_") ? ref : referencePath(ref);
   } else {
     const ws = cli.workspace();
     const repo = cli.repo(ws);
@@ -53,7 +54,7 @@ async function runOutline(cli: Cli, args: string[]): Promise<number> {
     if (values.depth) opts.depth = Number(values.depth);
     if (values.skeleton) opts.resolution = "skeleton";
     result = docsOutline(ws.store, info.docId, opts);
-    header = info.path;
+    header = referencePath(info.path);
   }
 
   // `{ text, truncated }` carries neither a list nor ids: every machine mode is the document.

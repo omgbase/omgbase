@@ -57,7 +57,7 @@ export interface ErrorBody {
 export function errorBody(err: unknown): ErrorBody {
   if (err instanceof EngineError) return { error: err.code, message: err.message, ...(err.data !== undefined ? { data: err.data } : {}), retriable: err.retriable };
   if (err instanceof FilterInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason, hint: err.hint }, retriable: false };
-  if (err instanceof CursorInvalid) return { error: "filter_invalid", message: err.message, data: { reason: `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
+  if (err instanceof CursorInvalid) return { error: "filter_invalid", message: err.message, data: { reason: err.reason ?? `cursor was not issued by ${err.surface}`, hint: "resume only with a `cursor` returned by a truncated page of the same tool" }, retriable: false };
   if (err instanceof MutationError) return { error: err.code, message: err.message, data: err.data, retriable: Boolean((err.data as { retriable?: boolean }).retriable) };
   if (err instanceof RevisionNotFound) return { error: "target_missing", message: err.message, data: { doc: err.docId, rev: err.rev }, retriable: false };
   return { error: "repo_not_found", message: String(err), retriable: false };

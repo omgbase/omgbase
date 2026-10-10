@@ -1,6 +1,6 @@
 import { readFileSync, readSync } from "node:fs";
 import { userInfo } from "node:os";
-import { apply, unifiedDiff, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
+import { apply, unifiedDiff, surfaceApplyResult, type ApplyRequest, type ApplyResult, type Op } from "@omgbase/core";
 import type { Cli } from "../context.js";
 import type { RepoRow } from "@omgbase/core";
 import type { Workspace } from "@omgbase/core";
@@ -134,7 +134,9 @@ export function runOps(cli: Cli, ws: Workspace, repo: RepoRow, ops: Op[], opts: 
     ...(cli.flags.dryRun ? { dryRun: true } : {}),
   };
 
-  const result = apply(ws.store, req);
+  // The reference form on every printed path (spec/surface §1 "Paths"): the
+  // kernel's result is re-shaped exactly as the MCP server re-shapes it.
+  const result = surfaceApplyResult(apply(ws.store, req));
   return renderApply(cli, result);
 }
 

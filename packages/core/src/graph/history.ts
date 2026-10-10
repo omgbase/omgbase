@@ -3,6 +3,7 @@ import { findDocByRef } from "../core/read/reader.js";
 import { readDocumentAtRevision } from "../core/read/document.js";
 import { isValidId } from "../core/ids.js";
 import { EngineError } from "../mcp/errors.js";
+import { referencePath, storagePath } from "../core/paths.js";
 
 // History surface (06 §3, 07 task 4.4): history_node (block/doc biography),
 // diff (block-grain + Myers unified), changes_since (commit digests / change feed).
@@ -136,8 +137,8 @@ export function docDiffUnified(store: Store, docId: string, opts: { fromRev?: st
   const to = opts.toRev ?? revs[0]?.rev_id;
   const from = opts.fromRev ?? revs[1]?.rev_id ?? revs[0]?.rev_id;
   if (!to || !from) throw new EngineError("target_missing", `no revisions to diff for ${opts.label ?? docId}`);
-  const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path ?? "";
-  return { doc: docId, path, from, to, diff: diffUnified(store, docId, from, to) };
+  const path = (store.db.prepare("SELECT path FROM docs WHERE doc_id = ?").get(docId) as { path: string } | undefined)?.path;
+  return { doc: docId, path: path === undefined ? "" : referencePath(path), from, to, diff: diffUnified(store, docId, from, to) };
 }
 
 // ---- unified diff (spec/surface §3) ------------------------------------------
@@ -317,15 +318,18 @@ export function changesSince(store: Store, repoId: string, opts: { cursor?: numb
   const truncated = commits.length > limit;
   const page = commits.slice(0, limit);
 
+  // Every path in a digest — the revisions', a deletion's, a move's two, and
+  // the summary's — is the reference form (spec/surface §1 "Paths").
   const digests: CommitDigest[] = page.map((c) => {
-    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ doc: r.doc, path: r.path, contentHash: r.rendered_hash.toString("hex") }));
+    const revs = (store.db.prepare("SELECT r.doc_id AS doc, r.path AS path, r.rendered_hash AS rendered_hash FROM revisions r WHERE r.commit_id = ?").all(c.commit_id) as { doc: string; path: string; rendered_hash: Buffer }[]).map((r) => ({ doc: r.doc, path: referencePath(r.path), contentHash: r.rendered_hash.toString("hex") }));
     const dispCounts = store.db.prepare("SELECT kind, count(*) n FROM dispositions WHERE commit_id = ? GROUP BY kind").all(c.commit_id) as { kind: string; n: number }[];
     // A deletion or a move writes no revision: the tombstone names the commit
     // (`docs.deleted_commit`), a move only its reason (`move <from> -> <to>`).
     const deleted = revs.length === 0
-      ? (store.db.prepare("SELECT path FROM docs WHERE deleted_commit = ? ORDER BY path").all(c.commit_id) as { path: string }[]).map((r) => r.path)
+      ? (store.db.prepare("SELECT path FROM docs WHERE deleted_commit = ? ORDER BY path").all(c.commit_id) as { path: string }[]).map((r) => referencePath(r.path))
       : [];
-    const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: revs.length === 0 ? parseMove(c.reason) : null });
+    const moved = revs.length === 0 ? parseMove(c.reason) : null;
+    const summary = renderSummary(c.origin, c.actor, revs, dispCounts, { deleted, moved: moved ? { from: referencePath(moved.from), to: referencePath(moved.to) } : null });
     return { commit: c.commit_id, seq: c.seq, ts: c.ts, origin: c.origin, actor: c.actor, summary, revisions: revs };
   });
 
@@ -405,13 +409,15 @@ export function docHistory(
     const deletedClause = includeDeleted ? "" : "AND deleted_commit IS NULL";
     const params: unknown[] = [repoId];
     let pathClause: string;
-    if (opts.pathGlob.includes("*")) {
-      const like = opts.pathGlob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
+    // The glob is spelled in either path form; the column holds the storage form.
+    const glob = storagePath(opts.pathGlob);
+    if (glob.includes("*")) {
+      const like = glob.replace(/[%_]/g, "\\$&").replace(/\*/g, "%");
       pathClause = "path LIKE ? ESCAPE '\\'";
       params.push(like);
     } else {
       pathClause = "path = ?";
-      params.push(opts.pathGlob);
+      params.push(glob);
     }
     params.push(limit + 1);
     docRows = store.db
@@ -445,7 +451,7 @@ export function docHistory(
       contentHash: r.rendered_hash.toString("hex"),
       isCurrent: r.rev === d.current_rev,
     }));
-    return { docId: d.doc_id, path: d.path, deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
+    return { docId: d.doc_id, path: referencePath(d.path), deleted: d.deleted_commit !== null, currentRev: d.current_rev, versions };
   });
 
   return { docs, truncated };
@@ -466,7 +472,7 @@ function resolveDocRow(store: Store, repoId: string, ref: string, includeDeleted
   const stmt = asId
     ? store.db.prepare("SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE doc_id = ?")
     : store.db.prepare("SELECT doc_id, path, current_rev, deleted_commit FROM docs WHERE repo_id = ? AND path = ?");
-  return (asId ? stmt.get(ref) : stmt.get(repoId, ref)) as DocRow | undefined;
+  return (asId ? stmt.get(ref) : stmt.get(repoId, storagePath(ref))) as DocRow | undefined;
 }
 
 /** The `reason` a document move records (`mutate/docs.ts`): `move <from> -> <to>`. */

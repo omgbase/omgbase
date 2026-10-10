@@ -37,8 +37,8 @@ describe("linksStale (dangling internal link detector)", () => {
     let health = linksStale(store, repoId);
     expect(health.stale).toHaveLength(1);
     const s = health.stale[0]!;
-    expect(s.target).toBe("b.md");
-    expect(s.srcPath).toBe("a.md");
+    expect(s.target).toBe("/b.md");
+    expect(s.srcPath).toBe("/a.md");
     expect(s.reason).toBe("dangling_doc");
     expect(s.predicate).toBe("references");
 
@@ -62,11 +62,11 @@ describe("linksStale (dangling internal link detector)", () => {
 
     const scoped = linksStale(store, repoId, { pathGlob: "journal/*" });
     expect(scoped.stale).toHaveLength(1);
-    expect(scoped.stale[0]!.srcPath).toBe("journal/day1.md");
-    expect(scoped.stale[0]!.target).toBe("missing-j.md");
+    expect(scoped.stale[0]!.srcPath).toBe("/journal/day1.md");
+    expect(scoped.stale[0]!.target).toBe("/missing-j.md");
 
     const all = linksStale(store, repoId);
-    expect(all.stale.map((s) => s.target).sort()).toEqual(["missing-g.md", "missing-j.md"]);
+    expect(all.stale.map((s) => s.target).sort()).toEqual(["/missing-g.md", "/missing-j.md"]);
   });
 
   it("truncates and flags when over the limit", () => {
@@ -90,13 +90,13 @@ describe("linksRepair (bulk stale-link fix)", () => {
   it("dry-run previews without committing; a real run rewrites and re-resolves", () => {
     save("c.md", "# C\n");
     save("a.md", "# A\n\nSee [b](/b.md).\n");
-    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["b.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["/b.md"]);
 
     // Dry run: hits present, nothing written yet.
     const { ops, hits } = linksRepair(store, repoId, [{ from: "/b.md", to: "/c.md" }]);
     expect(hits).toHaveLength(1);
     expect(hits[0]!.newRaw).toContain("/c.md");
-    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["b.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.target)).toEqual(["/b.md"]);
 
     // Commit the ops → block raw rewritten, edge re-resolves to the real c.md.
     apply(store, { repoId, rootPath: dir, ops, origin: { actor: "test", reason: "links_repair" } });
@@ -107,7 +107,7 @@ describe("linksRepair (bulk stale-link fix)", () => {
     save("c.md", "# C\n");
     save("d.md", "# D\n");
     save("a.md", "# A\n\nlink [x](/x.md) and [y](/y.md)\n");
-    expect(linksStale(store, repoId).stale.map((s) => s.target).sort()).toEqual(["x.md", "y.md"]);
+    expect(linksStale(store, repoId).stale.map((s) => s.target).sort()).toEqual(["/x.md", "/y.md"]);
 
     const { ops, hits } = linksRepair(store, repoId, [
       { from: "/x.md", to: "/c.md" },
@@ -127,22 +127,23 @@ describe("linksStale reports the destination AS AUTHORED next to the canonical t
     save("a.md", "# A\n\nSee [b](/b.md#Setup) and [[wiki-page]].\n");
     const { stale } = linksStale(store, repoId);
     const byTarget = new Map(stale.map((s) => [s.target, s]));
-    expect(byTarget.get("b.md")).toMatchObject({ target: "b.md", anchor: "Setup", authored: "/b.md#Setup" });
-    expect(byTarget.get("wiki-page")).toMatchObject({ target: "wiki-page", anchor: null, authored: "wiki-page" });
+    expect(byTarget.get("/b.md")).toMatchObject({ target: "/b.md", anchor: "Setup", authored: "/b.md#Setup" });
+    // a wikilink slug resolves by path (spec/graph §3.2), so its phantom target is reported as a (rooted) path too
+    expect(byTarget.get("/wiki-page")).toMatchObject({ target: "/wiki-page", anchor: null, authored: "wiki-page" });
   });
 
   it("a relative destination canonicalizes against the source dir but is reported as written", () => {
     save("sub/a.md", "# A\n\nSee [x](./x.md).\n");
     const { stale } = linksStale(store, repoId);
     expect(stale).toHaveLength(1);
-    expect(stale[0]).toMatchObject({ target: "sub/x.md", authored: "./x.md" });
+    expect(stale[0]).toMatchObject({ target: "/sub/x.md", authored: "./x.md" });
   });
 
   it("either `target` or `authored` is a valid links_repair `from`", () => {
     save("c.md", "# C\n");
     save("a.md", "# A\n\nSee [b](/b.md).\n");
     const s = linksStale(store, repoId).stale[0]!;
-    expect(s.target).toBe("b.md");
+    expect(s.target).toBe("/b.md");
     expect(s.authored).toBe("/b.md");
     const viaTarget = linksRepair(store, repoId, [{ from: s.target, to: "/c.md" }]);
     const viaAuthored = linksRepair(store, repoId, [{ from: s.authored!, to: "/c.md" }]);
@@ -160,14 +161,14 @@ describe("linksStaleSummary (counts only)", () => {
     const s = linksStaleSummary(store, repoId);
     expect(s).not.toHaveProperty("stale");
     expect(s.staleCount).toBe(linksStale(store, repoId).stale.length);
-    expect(s.byTarget).toEqual([{ target: "gone-a.md", count: 3 }, { target: "gone-b.md", count: 1 }]);
-    expect(s.bySource).toEqual([{ srcPath: "j/one.md", count: 3 }, { srcPath: "g/two.md", count: 1 }]);
+    expect(s.byTarget).toEqual([{ target: "/gone-a.md", count: 3 }, { target: "/gone-b.md", count: 1 }]);
+    expect(s.bySource).toEqual([{ srcPath: "/j/one.md", count: 3 }, { srcPath: "/g/two.md", count: 1 }]);
     expect(s.externalCount).toBe(1);
     expect(s.totalOpenEdges).toBe(5);
 
     const scoped = linksStaleSummary(store, repoId, { pathGlob: "g/*" });
     expect(scoped.staleCount).toBe(1);
-    expect(scoped.byTarget).toEqual([{ target: "gone-a.md", count: 1 }]);
-    expect(scoped.bySource).toEqual([{ srcPath: "g/two.md", count: 1 }]);
+    expect(scoped.byTarget).toEqual([{ target: "/gone-a.md", count: 1 }]);
+    expect(scoped.bySource).toEqual([{ srcPath: "/g/two.md", count: 1 }]);
   });
 });

@@ -63,44 +63,44 @@ describe("graph — neighborhood macro over OQX follow", () => {
 
   it("degrees 0 — roots only (no hops); roots are the frontier", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 0, direction: "out" });
-    expect(r.documents.map((d) => d.path)).toEqual(["a.md"]);
+    expect(r.documents.map((d) => d.path)).toEqual(["/a.md"]);
     expect(r.documents[0]!.degree).toBe(0);
     expect(r.documents[0]!.frontier).toBe(true);
-    expect(r.frontier.map((f) => f.path)).toEqual(["a.md"]);
+    expect(r.frontier.map((f) => f.path)).toEqual(["/a.md"]);
     // depth 1 walk ⇒ seed only.
     expect(r.queries[0]).toContain("{ depth 1 }");
   });
 
   it("1-hop out — reaches directly linked docs; frontier is the outer ring", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md"]);
-    const a = r.documents.find((d) => d.path === "a.md")!;
-    const b = r.documents.find((d) => d.path === "b.md")!;
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md"]);
+    const a = r.documents.find((d) => d.path === "/a.md")!;
+    const b = r.documents.find((d) => d.path === "/b.md")!;
     expect(a.degree).toBe(0);
     expect(a.frontier).toBe(false);
     expect(b.degree).toBe(1);
     expect(b.frontier).toBe(true);
-    expect(r.frontier.map((f) => f.path)).toEqual(["b.md"]);
+    expect(r.frontier.map((f) => f.path)).toEqual(["/b.md"]);
   });
 
   it("2-hop out — walks the citation chain a → b → c", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 2, direction: "out" });
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md", "c.md"]);
-    expect(r.documents.find((d) => d.path === "c.md")!.degree).toBe(2);
-    expect(r.frontier.map((f) => f.path)).toEqual(["c.md"]);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md", "/c.md"]);
+    expect(r.documents.find((d) => d.path === "/c.md")!.degree).toBe(2);
+    expect(r.frontier.map((f) => f.path)).toEqual(["/c.md"]);
   });
 
   it("1-hop in — reaches backlinks (docs that link TO the root)", async () => {
     // c → a and d → a link to a.
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "in" });
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "c.md", "d.md"]);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/c.md", "/d.md"]);
     expect(r.queries[0]).toContain("follow distinct doc.in");
   });
 
   it("both directions — unions out and in neighbors", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "both" });
     // out: b ; in: c, d ; plus the root a.
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md", "c.md", "d.md"]);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md", "/c.md", "/d.md"]);
     expect(r.queries).toHaveLength(2);
     expect(r.queries[0]).toContain("doc.out");
     expect(r.queries[1]).toContain("doc.in");
@@ -111,7 +111,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     const byKind = (k: string) => r.edges.filter((e) => e.dst_kind === k);
 
     // a → b appears twice: a depends_on (frontmatter) + a references (link).
-    const toB = r.edges.filter((e) => e.dst_path === "b.md");
+    const toB = r.edges.filter((e) => e.dst_path === "/b.md");
     expect(toB.map((e) => e.predicate).sort()).toEqual(["depends_on", "references"]);
     expect(toB.map((e) => e.provenance).sort()).toEqual(["frontmatter", "link"]);
 
@@ -132,7 +132,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     // degrees 1 out reaches a, b. b → c is NOT traversed (c beyond the boundary),
     // so no edge to c.md is kept (but a's external/phantom stubs remain).
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out" });
-    expect(r.edges.some((e) => e.dst_path === "c.md")).toBe(false);
+    expect(r.edges.some((e) => e.dst_path === "/c.md")).toBe(false);
   });
 
   // `predicate` restricts the NEIGHBORHOOD to predicate-reachable docs (recomputed
@@ -142,18 +142,18 @@ describe("graph — neighborhood macro over OQX follow", () => {
   it("predicate filter — restricts the neighborhood to predicate-reachable docs", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 2, direction: "out", predicate: "depends_on" });
     expect(r.queries[0]).not.toContain("via"); // no via clause is emitted
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md"]);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md"]);
     expect(r.edges).toHaveLength(1);
     expect(r.edges[0]!.predicate).toBe("depends_on");
-    expect(r.edges[0]!.dst_path).toBe("b.md");
+    expect(r.edges[0]!.dst_path).toBe("/b.md");
     // c is reachable only via `references`, so it is NOT in a depends_on neighborhood.
-    expect(r.documents.map((d) => d.path)).not.toContain("c.md");
+    expect(r.documents.map((d) => d.path)).not.toContain("/c.md");
   });
 
   it("select — projects extra document fields", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 1, direction: "out", select: ["$path"] });
-    const a = r.documents.find((d) => d.path === "a.md")!;
-    expect(a.path).toBe("a.md"); // reflected in the projection too
+    const a = r.documents.find((d) => d.path === "/a.md")!;
+    expect(a.path).toBe("/a.md"); // reflected in the projection too
     expect(r.queries[0]).toContain("_u0: $path");
   });
 
@@ -162,7 +162,7 @@ describe("graph — neighborhood macro over OQX follow", () => {
     expect(r.documents).toHaveLength(2);
     expect(r.truncated).toBe(true);
     // roots come first (nearest), so a.md is always kept.
-    expect(r.documents.map((d) => d.path)).toContain("a.md");
+    expect(r.documents.map((d) => d.path)).toContain("/a.md");
     // edges never reference a doc that was capped out of the set.
     const ids = new Set(r.documents.map((d) => d.id));
     for (const e of r.edges) {
@@ -175,15 +175,15 @@ describe("graph — neighborhood macro over OQX follow", () => {
   it("cyclic-safe: a→b→c→a resolves without looping (follow's cycle guard)", async () => {
     const r = await graph({ roots: ["a.md"], degrees: 8, direction: "out" });
     // Distinct nodes only, one entry per document despite the a→b→c→a cycle.
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "b.md", "c.md"]);
-    expect(r.documents.filter((d) => d.path === "a.md")).toHaveLength(1);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/b.md", "/c.md"]);
+    expect(r.documents.filter((d) => d.path === "/a.md")).toHaveLength(1);
   });
 
   it("multiple roots + id refs — both seed the same walk", async () => {
     const aId = store.db.prepare("SELECT doc_id FROM docs WHERE path = 'a.md'").get() as { doc_id: string };
     const r = await graph({ roots: [aId.doc_id, "d.md"], degrees: 0, direction: "out" });
     expect(r.roots).toContain(aId.doc_id);
-    expect(r.documents.map((d) => d.path).sort()).toEqual(["a.md", "d.md"]);
+    expect(r.documents.map((d) => d.path).sort()).toEqual(["/a.md", "/d.md"]);
   });
 
   it("empty roots is a loud error, never a silent empty result", async () => {
