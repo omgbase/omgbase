@@ -46,7 +46,7 @@ use crate::ast::{
     Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec, Query,
     SelectItem, Subquery, UnaryOp, Where,
 };
-use crate::context::{DataContext, DefaultContext};
+use crate::context::DataContext;
 use crate::errors::OqxError;
 use crate::optimize::{
     BlockPlan, Correlation, DEFAULT_RULES, HashIndex, RowIndex, Rule, RuleContext,
@@ -139,11 +139,6 @@ impl<C: DataContext> Engine for InMemoryEngine<C> {
         }
         .run(query)
     }
-}
-
-/// Run a parsed query with bindings over plain-value named roots.
-pub fn run_query(query: &Query, bindings: &[Value], roots: Object) -> Result<OqxResult> {
-    InMemoryEngine::new(DefaultContext::new(roots)).run(query, bindings)
 }
 
 // ---- internal machinery -----------------------------------------------------
@@ -496,6 +491,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
             recv: None,
             name,
             args,
+            ..
         } = e
         {
             if name == "entries" {
@@ -869,11 +865,11 @@ impl<'e, C: DataContext> Exec<'e, C> {
 
     fn eval_where(&self, w: &Where, scope: &Scope<'_>) -> Result<bool> {
         match w {
-            Where::And { parts } => {
+            Where::And { parts, .. } => {
                 let refs: Vec<&Where> = parts.iter().collect();
                 self.eval_conjuncts(&refs, scope)
             }
-            Where::Or { parts } => {
+            Where::Or { parts, .. } => {
                 for p in parts {
                     if self.eval_where(p, scope)? {
                         return Ok(true);
@@ -881,8 +877,8 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 }
                 Ok(false)
             }
-            Where::Not { expr } => Ok(!self.eval_where(expr, scope)?),
-            Where::Scalar { expr } => Ok(self.eval_expr(expr, scope)?.truthy()),
+            Where::Not { expr, .. } => Ok(!self.eval_where(expr, scope)?),
+            Where::Scalar { expr, .. } => Ok(self.eval_expr(expr, scope)?.truthy()),
             Where::Op(op) => self.eval_where_op(op, scope),
         }
     }
@@ -953,7 +949,10 @@ impl<'e, C: DataContext> Exec<'e, C> {
             Consumer::Collect => {
                 let matched = self.op_rows(op, scope, bound, None)?;
                 for item in &op.sub.select {
-                    let SelectItem::Field { name, expr, lift } = item else {
+                    let SelectItem::Field {
+                        name, expr, lift, ..
+                    } = item
+                    else {
                         continue;
                     };
                     // Bind `lift` scopes out: `^` = the collect's own scope, `^^`
@@ -1433,15 +1432,15 @@ impl<'e, C: DataContext> Exec<'e, C> {
     /// (`eval_expr`).
     fn eval_raw(&self, e: &Expr, scope: &Scope<'_>) -> Result<Value> {
         match e {
-            Expr::Lit(v) => Ok(v.clone()),
-            Expr::Binding { index } => self.bindings.get(*index).cloned().ok_or_else(|| {
+            Expr::Lit { value: v, .. } => Ok(v.clone()),
+            Expr::Binding { index, .. } => self.bindings.get(*index).cloned().ok_or_else(|| {
                 OqxError::eval(format!(
                     "binding ${{{index}}} is out of range ({} bound)",
                     self.bindings.len()
                 ))
             }),
-            Expr::Ident { name } => self.resolve_in(name, scope),
-            Expr::Outer { levels, name } => {
+            Expr::Ident { name, .. } => self.resolve_in(name, scope),
+            Expr::Outer { levels, name, .. } => {
                 // `^name` reads from EXACTLY `levels` scopes out — the target
                 // scope is resolved locally, never climbed further. Past the
                 // root it is absent.
@@ -1457,7 +1456,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     None => Ok(Value::Undefined),
                 }
             }
-            Expr::Member { recv, name } => {
+            Expr::Member { recv, name, .. } => {
                 let r = self.eval_expr(recv, scope)?;
                 if r.is_absent() {
                     Ok(Value::Undefined)
@@ -1465,17 +1464,10 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     self.ctx.get(&r, name)
                 }
             }
-            Expr::Index { recv, index } => {
-                let r = self.eval_expr(recv, scope)?;
-                let i = self.eval_expr(index, scope)?;
-                if r.is_absent() {
-                    Ok(Value::Undefined)
-                } else {
-                    self.ctx.get(&r, &i.to_string())
-                }
-            }
-            Expr::Call { recv, name, args } => self.eval_call(recv.as_deref(), name, args, scope),
-            Expr::Unary { op, expr } => {
+            Expr::Call {
+                recv, name, args, ..
+            } => self.eval_call(recv.as_deref(), name, args, scope),
+            Expr::Unary { op, expr, .. } => {
                 let v = self.eval_expr(expr, scope)?;
                 Ok(match op {
                     UnaryOp::Not => Value::Bool(!v.truthy()),
@@ -1484,7 +1476,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     UnaryOp::Neg => Value::Number(-to_number(&v)),
                 })
             }
-            Expr::Binary { op, left, right } => {
+            Expr::Binary {
+                op, left, right, ..
+            } => {
                 let l = self.eval_expr(left, scope)?;
                 let r = self.eval_expr(right, scope)?;
                 if op.is_comparison() {
@@ -1493,7 +1487,9 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     arith(op.as_str(), &l, &r)
                 }
             }
-            Expr::Logical { op, left, right } => {
+            Expr::Logical {
+                op, left, right, ..
+            } => {
                 let l = self.eval_expr(left, scope)?;
                 match op {
                     LogicalOp::And => {
@@ -1512,7 +1508,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                     }
                 }
             }
-            Expr::In { left, right } => {
+            Expr::In { left, right, .. } => {
                 let l = self.eval_expr(left, scope)?;
                 let r = self.eval_expr(right, scope)?;
                 Ok(Value::Bool(membership(&l, &r)))
@@ -1521,6 +1517,7 @@ impl<'e, C: DataContext> Exec<'e, C> {
                 lo,
                 hi,
                 exclusive_end,
+                ..
             } => {
                 let lo = match lo {
                     Some(e) => self.eval_expr(e, scope)?,
@@ -1684,9 +1681,9 @@ fn component_rank(v: &Value) -> u8 {
 
 fn describe_receiver(e: &Expr) -> String {
     match e {
-        Expr::Ident { name } => name.clone(),
-        Expr::Member { recv, name } => format!("{}.{name}", describe_receiver(recv)),
-        Expr::Binding { index } => format!("${{{index}}}"),
+        Expr::Ident { name, .. } => name.clone(),
+        Expr::Member { recv, name, .. } => format!("{}.{name}", describe_receiver(recv)),
+        Expr::Binding { index, .. } => format!("${{{index}}}"),
         _ => "receiver".to_owned(),
     }
 }
@@ -1699,7 +1696,7 @@ fn describe_receiver(e: &Expr) -> String {
 /// predicate over the row.
 fn partition_recur(w: &Where) -> (Vec<&Where>, Vec<&Where>) {
     let parts: Vec<&Where> = match w {
-        Where::And { parts } => parts.iter().collect(),
+        Where::And { parts, .. } => parts.iter().collect(),
         other => vec![other],
     };
     let mut seed = Vec::new();
@@ -1716,29 +1713,28 @@ fn partition_recur(w: &Where) -> (Vec<&Where>, Vec<&Where>) {
 
 fn where_has_recur(w: &Where) -> bool {
     match w {
-        Where::And { parts } | Where::Or { parts } => parts.iter().any(where_has_recur),
-        Where::Not { expr } => where_has_recur(expr),
-        Where::Scalar { expr } => expr_has_recur(expr),
+        Where::And { parts, .. } | Where::Or { parts, .. } => parts.iter().any(where_has_recur),
+        Where::Not { expr, .. } => where_has_recur(expr),
+        Where::Scalar { expr, .. } => expr_has_recur(expr),
         Where::Op(_) => false,
     }
 }
 
 fn expr_has_recur(e: &Expr) -> bool {
     match e {
-        Expr::Ident { name } => RECUR.contains(&name.as_str()),
+        Expr::Ident { name, .. } => RECUR.contains(&name.as_str()),
         Expr::Member { recv, .. } => expr_has_recur(recv),
-        Expr::Index { recv, index } => expr_has_recur(recv) || expr_has_recur(index),
         Expr::Call { recv, args, .. } => {
             recv.as_deref().is_some_and(expr_has_recur) || args.iter().any(expr_has_recur)
         }
         Expr::Unary { expr, .. } => expr_has_recur(expr),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => expr_has_recur(left) || expr_has_recur(right),
+        | Expr::In { left, right, .. } => expr_has_recur(left) || expr_has_recur(right),
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_some_and(expr_has_recur) || hi.as_deref().is_some_and(expr_has_recur)
         }
-        Expr::Lit(_) | Expr::Binding { .. } | Expr::Outer { .. } => false,
+        Expr::Lit { .. } | Expr::Binding { .. } | Expr::Outer { .. } => false,
     }
 }
 
@@ -1826,7 +1822,9 @@ fn json_quote(s: &str, out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::DefaultContext;
     use crate::parser::{parse_string, parse_template};
+    use crate::run_query;
     use serde_json::json;
 
     /// Build a `Value` from a `serde_json::Value` (independent of the `json`

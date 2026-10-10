@@ -24,7 +24,7 @@ pub mod hash_index;
 use std::rc::Rc;
 
 use crate::ast::{
-    BinaryOp, Consumer, Expr, Follow, FollowDestination, OpNode, SelectItem, Subquery, Where,
+    BinaryOp, Consumer, Expr, Follow, FollowDestination, OpNode, SelectItem, Span, Subquery, Where,
 };
 pub use hash_index::{HashIndex, RowIndex, index_key, intersect_positions};
 
@@ -101,14 +101,17 @@ pub fn conjunction(mut parts: Vec<Where>) -> Option<Where> {
     match parts.len() {
         0 => None,
         1 => parts.pop(),
-        _ => Some(Where::And { parts }),
+        _ => Some(Where::And {
+            parts,
+            span: Span::EMPTY,
+        }),
     }
 }
 
 /// The top-level `&&` conjuncts of a where tree (a non-`and` tree is one).
 pub fn conjuncts(w: &Where) -> Vec<&Where> {
     match w {
-        Where::And { parts } => parts.iter().collect(),
+        Where::And { parts, .. } => parts.iter().collect(),
         other => vec![other],
     }
 }
@@ -140,7 +143,7 @@ pub fn lookup_order(plan: &BlockPlan) -> Vec<&Correlation> {
     let (varying, literal): (Vec<&Correlation>, Vec<&Correlation>) = plan
         .correlated
         .iter()
-        .partition(|c| !matches!(c.outer, Expr::Lit(_)));
+        .partition(|c| !matches!(c.outer, Expr::Lit { .. }));
     varying.into_iter().chain(literal).collect()
 }
 
@@ -242,7 +245,9 @@ fn as_correlation(w: &Where, index: usize, ctx: &RuleContext) -> Option<Correlat
                 op: BinaryOp::Eq,
                 left,
                 right,
+                ..
             },
+        ..
     } = w
     else {
         return None;
@@ -359,16 +364,13 @@ pub fn cardinality_only(plan: &BlockPlan, _ctx: &RuleContext) -> Option<BlockPla
 /// than `up_to` (the fragment's own rows) do not count.
 pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
     match e {
-        Expr::Lit(_) | Expr::Binding { .. } => false,
+        Expr::Lit { .. } | Expr::Binding { .. } => false,
         Expr::Ident { .. } => at >= 1 && at <= up_to,
         Expr::Outer { levels, .. } => {
             let d = at.saturating_sub(*levels);
             *levels <= at && d >= 1 && d <= up_to
         }
         Expr::Member { recv, .. } => expr_reads_scope_in(recv, at, up_to),
-        Expr::Index { recv, index } => {
-            expr_reads_scope_in(recv, at, up_to) || expr_reads_scope_in(index, at, up_to)
-        }
         Expr::Call { recv, args, .. } => {
             recv.as_deref()
                 .is_some_and(|r| expr_reads_scope_in(r, at, up_to))
@@ -377,7 +379,7 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
         Expr::Unary { expr, .. } => expr_reads_scope_in(expr, at, up_to),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => {
+        | Expr::In { left, right, .. } => {
             expr_reads_scope_in(left, at, up_to) || expr_reads_scope_in(right, at, up_to)
         }
         Expr::Range { lo, hi, .. } => {
@@ -392,11 +394,11 @@ pub fn expr_reads_scope_in(e: &Expr, at: usize, up_to: usize) -> bool {
 
 pub fn where_reads_scope_in(w: &Where, at: usize, up_to: usize) -> bool {
     match w {
-        Where::And { parts } | Where::Or { parts } => {
+        Where::And { parts, .. } | Where::Or { parts, .. } => {
             parts.iter().any(|p| where_reads_scope_in(p, at, up_to))
         }
-        Where::Not { expr } => where_reads_scope_in(expr, at, up_to),
-        Where::Scalar { expr } => expr_reads_scope_in(expr, at, up_to),
+        Where::Not { expr, .. } => where_reads_scope_in(expr, at, up_to),
+        Where::Scalar { expr, .. } => expr_reads_scope_in(expr, at, up_to),
         Where::Op(op) => op_reads_scope_in(op, at, up_to),
     }
 }
@@ -461,15 +463,14 @@ pub fn expr_reads_current_scope(e: &Expr) -> bool {
 /// does; nothing else in a scalar expression can (§23).
 pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
     match e {
-        Expr::Lit(_) | Expr::Ident { .. } | Expr::Outer { .. } => true,
-        Expr::Binding { index } => *index < ctx.binding_count,
+        Expr::Lit { .. } | Expr::Ident { .. } | Expr::Outer { .. } => true,
+        Expr::Binding { index, .. } => *index < ctx.binding_count,
         Expr::Call { .. } => false,
         Expr::Member { recv, .. } => expr_raise_free(recv, ctx),
-        Expr::Index { recv, index } => expr_raise_free(recv, ctx) && expr_raise_free(index, ctx),
         Expr::Unary { expr, .. } => expr_raise_free(expr, ctx),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => expr_raise_free(left, ctx) && expr_raise_free(right, ctx),
+        | Expr::In { left, right, .. } => expr_raise_free(left, ctx) && expr_raise_free(right, ctx),
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
                 && hi.as_deref().is_none_or(|x| expr_raise_free(x, ctx))
@@ -480,11 +481,11 @@ pub fn expr_raise_free(e: &Expr, ctx: &RuleContext) -> bool {
 /// Can evaluating `w` raise, or bind a lift?
 pub fn where_raise_free(w: &Where, ctx: &RuleContext) -> bool {
     match w {
-        Where::And { parts } | Where::Or { parts } => {
+        Where::And { parts, .. } | Where::Or { parts, .. } => {
             parts.iter().all(|p| where_raise_free(p, ctx))
         }
-        Where::Not { expr } => where_raise_free(expr, ctx),
-        Where::Scalar { expr } => expr_raise_free(expr, ctx),
+        Where::Not { expr, .. } => where_raise_free(expr, ctx),
+        Where::Scalar { expr, .. } => expr_raise_free(expr, ctx),
         Where::Op(op) => op_raise_free(op, ctx),
     }
 }
@@ -533,8 +534,8 @@ fn sub_has_lifts(sub: &Subquery) -> bool {
 /// Does any `^name:` item occur inside a directive of this where tree?
 pub fn where_has_lifts(w: &Where) -> bool {
     match w {
-        Where::And { parts } | Where::Or { parts } => parts.iter().any(where_has_lifts),
-        Where::Not { expr } => where_has_lifts(expr),
+        Where::And { parts, .. } | Where::Or { parts, .. } => parts.iter().any(where_has_lifts),
+        Where::Not { expr, .. } => where_has_lifts(expr),
         Where::Scalar { .. } => false,
         Where::Op(op) => op_has_lifts(op),
     }
@@ -554,10 +555,10 @@ pub const SCOPE_INTRINSICS: &[&str] =
 /// scope intrinsic (`$key`, `$depth`, …).
 pub fn local_path(e: &Expr) -> Option<Vec<String>> {
     match e {
-        Expr::Ident { name } if name == "$it" => Some(Vec::new()),
-        Expr::Ident { name } if SCOPE_INTRINSICS.contains(&name.as_str()) => None,
-        Expr::Ident { name } => Some(vec![name.clone()]),
-        Expr::Member { recv, name } => {
+        Expr::Ident { name, .. } if name == "$it" => Some(Vec::new()),
+        Expr::Ident { name, .. } if SCOPE_INTRINSICS.contains(&name.as_str()) => None,
+        Expr::Ident { name, .. } => Some(vec![name.clone()]),
+        Expr::Member { recv, name, .. } => {
             let mut path = local_path(recv)?;
             path.push(name.clone());
             Some(path)
@@ -600,7 +601,7 @@ mod tests {
         assert!(p.receiver_stable);
         assert!(!p.invariant, "reads ^cid");
         match p.residual {
-            Some(Where::And { parts }) => assert_eq!(parts.len(), 2),
+            Some(Where::And { parts, .. }) => assert_eq!(parts.len(), 2),
             other => panic!("residual should keep two conjuncts: {other:?}"),
         }
     }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { oqx, execute, parse, run, OqxError, LANGUAGE_VERSION } from "../src/index.ts";
+import { oqx, execute, parse, run, OqxError, LANGUAGE_VERSION, stripSpans, resolveAliases } from "../src/index.ts";
 import { parseTemplate } from "../src/parser.ts";
 
 // ---- fixtures ---------------------------------------------------------------
@@ -138,14 +138,22 @@ test("a bare run after `from` is an error; `from people count` gets the consumer
   assert.deepEqual(oqx`select count from ${[{ count: 3 }]}`, [{ count: 3 }]);
 });
 
-test("`where` may reference `select` aliases (inlined at parse time)", () => {
+test("`where` may reference `select` aliases (kept in surface form; resolved before evaluation)", () => {
   assert.deepEqual(oqx`select name, adult: age >= 30 from ${people} where adult`, [
     { name: "Bob", adult: true }, { name: "Alice", adult: true },
   ]);
   assert.deepEqual(oqx`select name, decade: age / 10 from ${people} where decade > 5`, [{ name: "Alice", decade: 5.2 }]);
-  // the rewrite is inline substitution: the where AST is an ordinary scalar tree
+  // the parser keeps the surface form (the alias stays a bare identifier) …
   const q = parse("select adult: age >= 18 from people where adult && name == \"x\"");
-  assert.deepEqual(q.where, {
+  assert.deepEqual(stripSpans(q.where), {
+    kind: "and",
+    parts: [
+      { kind: "scalar", expr: { kind: "ident", name: "adult" } },
+      { kind: "scalar", expr: { kind: "binary", op: "==", left: { kind: "ident", name: "name" }, right: { kind: "lit", value: "x" } } },
+    ],
+  });
+  // … and `resolveAliases` is inline substitution: the where AST becomes an ordinary scalar tree
+  assert.deepEqual(stripSpans(resolveAliases(q).where), {
     kind: "and",
     parts: [
       { kind: "scalar", expr: { kind: "binary", op: ">=", left: { kind: "ident", name: "age" }, right: { kind: "lit", value: 18 } } },
@@ -540,7 +548,7 @@ test("follow AST: destinations are receivers or select-position op nodes, in sou
   assert.equal(block.kind, "op");
   if (block.kind !== "op") throw new Error("unreachable");
   assert.equal(block.op, "collect");
-  assert.deepEqual(block.receiver, { kind: "outer", levels: 1, name: "people" });
+  assert.deepEqual(stripSpans(block.receiver), { kind: "outer", levels: 1, name: "people" });
   assert.ok(block.sub.where);
   assert.equal("receiver" in f, false);
 });
@@ -619,7 +627,7 @@ test("range: date/time membership over ISO-8601 strings", () => {
 
 test("range: parses to a range node with the exclusive-end flag", () => {
   const q = parse("from xs where n in 1...5");
-  assert.deepEqual(q.where, {
+  assert.deepEqual(stripSpans(q.where), {
     kind: "scalar",
     expr: {
       kind: "in",

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 use omgbase_search::EmbeddingProvider;
 use omgbase_store::Store;
+use oqx::ast::{BinaryOp, Consumer, FollowDestination, SelectItem, Where};
+use oqx::{build, print_query};
 use serde_json::{Map, Value as Json, json};
 
 use crate::error::{Result, SurfaceError};
@@ -30,9 +32,30 @@ pub struct GraphArgs {
     pub max_documents: Option<i64>,
 }
 
-const EDGE_COLLECT: &str = "{ id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field }";
+/// The edge fields projected from `doc.out_edges`/`doc.in_edges` — identical
+/// for both directions so a single filter handles either scan (an edge is a
+/// directional src→dst fact regardless of which endpoint the walk reached it
+/// from).
+const EDGE_FIELDS: [(&str, &str); 10] = [
+    ("id", "$id"),
+    ("src", "$src"),
+    ("dst", "$dst"),
+    ("dst_path", "$dst_path"),
+    ("dst_uri", "$dst_uri"),
+    ("dst_kind", "dst_kind"),
+    ("predicate", "predicate"),
+    ("provenance", "provenance"),
+    ("anchor", "anchor"),
+    ("src_field", "src_field"),
+];
 
-fn build_user_select(select: &[String]) -> (String, Vec<Option<String>>) {
+/// The extra `select` items for caller projections. Each expression gets a
+/// stable internal alias (`_u0`, `_u1`, …) so it can never collide with a
+/// reserved word or the macro's own aliases; the clean output name is derived
+/// separately. An expression is parsed as the item of a projection, so it may
+/// be anything a `select` item may be and nothing more; a malformed one is
+/// `filter_invalid`, as it would be in the `query` tool.
+fn build_user_select(select: &[String]) -> Result<(Vec<SelectItem>, Vec<Option<String>>)> {
     let mut items = Vec::new();
     let mut out_names: Vec<Option<String>> = vec![None; select.len()];
     let mut used: Vec<String> = Vec::new();
@@ -57,20 +80,60 @@ fn build_user_select(select: &[String]) -> (String, Vec<Option<String>>) {
         }
         used.push(name.clone());
         out_names[i] = Some(name);
-        items.push(format!("_u{i}: {trimmed}"));
+        let parsed = oqx::parse_string(&format!("select _u{i}: {trimmed} from docs"))?;
+        items.extend(parsed.select);
     }
-    let clause = if items.is_empty() {
-        String::new()
-    } else {
-        format!(", {}", items.join(", "))
-    };
-    (clause, out_names)
+    Ok((items, out_names))
 }
 
-fn build_query(seed: &str, dir: &str, depth: i64, user_select: &str) -> String {
-    format!(
-        "select _depth: $depth, _stop: $stop, _edges: doc.{dir}_edges collect {EDGE_COLLECT}{user_select} from docs where {seed} follow distinct doc.{dir} {{ depth {depth} }}"
-    )
+/// The walk, as an AST (`spec/oqx/AST.md` §7) printed canonically — never
+/// spliced strings: the seed ids are literals, the caller's projections parsed
+/// items.
+///
+/// ```text
+/// select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
+/// from docs where $id == <root> || … follow distinct doc.<dir> { depth <depth> }
+/// ```
+fn build_query(root_ids: &[String], dir: &str, depth: u32, user_select: &[SelectItem]) -> String {
+    let mut edges_body = build::subquery();
+    edges_body.select = EDGE_FIELDS
+        .iter()
+        .map(|(name, expr)| build::field(name, build::ident(expr)))
+        .collect();
+    let edges = build::op(
+        build::path(&["doc", &format!("{dir}_edges")]),
+        Consumer::Collect,
+        edges_body,
+    );
+    let mut seed: Vec<Where> = root_ids
+        .iter()
+        .map(|id| {
+            build::scalar(build::binary(
+                BinaryOp::Eq,
+                build::ident("$id"),
+                build::lit(id.as_str()),
+            ))
+        })
+        .collect();
+    let mut q = build::query(build::ident("docs"));
+    q.select = vec![
+        build::field("_depth", build::ident("$depth")),
+        build::field("_stop", build::ident("$stop")),
+        build::collect("_edges", edges),
+    ];
+    q.select.extend(user_select.iter().cloned());
+    q.r#where = Some(if seed.len() == 1 {
+        seed.pop().expect("one seed")
+    } else {
+        build::or(seed)
+    });
+    let mut walk = build::follow(vec![FollowDestination::Relation(build::path(&[
+        "doc", dir,
+    ]))]);
+    walk.distinct = true;
+    walk.depth = Some(depth);
+    q.follow = Some(walk);
+    print_query(&q).expect("a built query has no bindings")
 }
 
 /// Bytewise order (§9: the reference's `localeCompare` was replaced).
@@ -113,6 +176,7 @@ pub fn graph_neighborhood(
     }
     let degrees = args.degrees.unwrap_or(DEFAULT_DEGREES).max(0);
     let depth = MAX_DEPTH.min(degrees + 1);
+    let walk_depth = u32::try_from(depth).expect("1..=8");
     let effective_degrees = depth - 1;
     let direction = args.direction.clone().unwrap_or_else(|| "both".to_owned());
     let max_documents =
@@ -122,19 +186,14 @@ pub fn graph_neighborhood(
         "in" => vec!["in"],
         _ => vec!["out"],
     };
-    let seed = root_ids
-        .iter()
-        .map(|id| format!("$id == {}", Json::String(id.clone())))
-        .collect::<Vec<_>>()
-        .join(" || ");
-    let (user_select, out_names) = build_user_select(&args.select);
+    let (user_select, out_names) = build_user_select(&args.select)?;
 
     let mut queries = Vec::new();
     let mut docs: Vec<Doc> = Vec::new();
     let mut edges: Vec<Json> = Vec::new();
     let mut query_truncated = false;
     for dir in &dirs {
-        let q = build_query(&seed, dir, depth, &user_select);
+        let q = build_query(&root_ids, dir, walk_depth, &user_select);
         queries.push(q.clone());
         let res = query(
             store,
@@ -322,13 +381,21 @@ mod tests {
 
     #[test]
     fn user_select_aliases() {
-        let (clause, names) = build_user_select(&[
+        let (items, names) = build_user_select(&[
             "layer".into(),
             "$path".into(),
             "a + 1".into(),
             "layer".into(),
-        ]);
-        assert_eq!(clause, ", _u0: layer, _u1: $path, _u2: a + 1, _u3: layer");
+        ])
+        .unwrap();
+        let printed: Vec<String> = items
+            .iter()
+            .map(|it| oqx::print(oqx::Node::Select(it)).unwrap())
+            .collect();
+        assert_eq!(
+            printed,
+            ["_u0: layer", "_u1: $path", "_u2: a + 1", "_u3: layer"]
+        );
         assert_eq!(
             names,
             [
@@ -338,17 +405,26 @@ mod tests {
                 Some("layer_3".into())
             ]
         );
-        assert_eq!(build_user_select(&[]).0, "");
+        assert!(build_user_select(&[]).unwrap().0.is_empty());
+        let e = build_user_select(&["a +".into()]).unwrap_err();
+        assert_eq!(e.code, "filter_invalid");
     }
 
     #[test]
     fn query_shape() {
-        let q = build_query("$id == \"d_0\"", "out", 2, "");
+        let q = build_query(&["d_0".to_owned()], "out", 2, &[]);
         assert!(
             q.starts_with("select _depth: $depth, _stop: $stop, _edges: doc.out_edges collect {")
         );
         assert!(q.ends_with("from docs where $id == \"d_0\" follow distinct doc.out { depth 2 }"));
         assert!(oqx::parse_string(&q).is_ok());
+        // several roots: an `||` seed; the generated text is exactly the macro's
+        // pinned shape (spec/surface `reads.json`)
+        let q = build_query(&["d_14".to_owned(), "d_15".to_owned()], "in", 8, &[]);
+        assert_eq!(
+            q,
+            "select _depth: $depth, _stop: $stop, _edges: doc.in_edges collect { id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field } from docs where $id == \"d_14\" || $id == \"d_15\" follow distinct doc.in { depth 8 }"
+        );
     }
 
     #[test]

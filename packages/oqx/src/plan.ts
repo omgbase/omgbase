@@ -34,14 +34,15 @@ export function partitionPushable(
     if (p.kind === "scalar" && canPush(p.expr)) pushed.push(p.expr);
     else rest.push(p);
   }
-  const residual: Where | null = rest.length === 0 ? null : rest.length === 1 ? rest[0]! : { kind: "and", parts: rest };
+  if (pushed.length === 0) return { pushed, residual: where }; // nothing pushed: the where itself, span and all
+  const residual: Where | null = rest.length === 0 ? null : rest.length === 1 ? rest[0]! : { kind: "and", span: [0, 0], parts: rest };
   return { pushed, residual };
 }
 
 /** Rebuild a query to run in-memory over a plan's produced rows: scan the rows
  * root, drop pushed top-level `from`/predicates, keep projection/order/consumer. */
 export function residualQuery(query: Query, residualWhere: Where | null): Query {
-  return { ...query, source: { kind: "ident", name: ROWS_ROOT }, from: [], where: residualWhere };
+  return { ...query, source: { kind: "ident", span: [0, 0], name: ROWS_ROOT }, from: [], where: residualWhere };
 }
 
 /** A literal or binding — a value known without a row context. */

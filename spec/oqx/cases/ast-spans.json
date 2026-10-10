@@ -1,0 +1,1141 @@
+{
+  "suite": "ast-spans",
+  "cases": [
+    {
+      "name": "a simple query",
+      "query": "name from people",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            16
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              10,
+              16
+            ],
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                4
+              ],
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  4
+                ],
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a multi-line query",
+      "query": "select name,\n  age\nfrom people\nwhere age > 1",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            44
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              24,
+              30
+            ],
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "span": [
+              37,
+              44
+            ],
+            "expr": {
+              "kind": "binary",
+              "span": [
+                37,
+                44
+              ],
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "span": [
+                  37,
+                  40
+                ],
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "span": [
+                  43,
+                  44
+                ],
+                "value": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                7,
+                11
+              ],
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  7,
+                  11
+                ],
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "span": [
+                15,
+                18
+              ],
+              "name": "age",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  15,
+                  18
+                ],
+                "name": "age"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a parenthesized operand spans its parentheses",
+      "query": "from p where (a + 1) > 2",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            24
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              5,
+              6
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "span": [
+              13,
+              24
+            ],
+            "expr": {
+              "kind": "binary",
+              "span": [
+                13,
+                24
+              ],
+              "op": ">",
+              "left": {
+                "kind": "binary",
+                "span": [
+                  13,
+                  20
+                ],
+                "op": "+",
+                "left": {
+                  "kind": "ident",
+                  "span": [
+                    14,
+                    15
+                  ],
+                  "name": "a"
+                },
+                "right": {
+                  "kind": "lit",
+                  "span": [
+                    18,
+                    19
+                  ],
+                  "value": 1
+                }
+              },
+              "right": {
+                "kind": "lit",
+                "span": [
+                  23,
+                  24
+                ],
+                "value": 2
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a where op spans its receiver through its count comparison",
+      "query": "from p where jobs count { where !end } >= 2",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            43
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              5,
+              6
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "span": [
+              13,
+              43
+            ],
+            "receiver": {
+              "kind": "ident",
+              "span": [
+                13,
+                17
+              ],
+              "name": "jobs"
+            },
+            "op": "count",
+            "sub": {
+              "kind": "subquery",
+              "span": [
+                24,
+                38
+              ],
+              "from": [],
+              "where": {
+                "kind": "not",
+                "span": [
+                  32,
+                  36
+                ],
+                "expr": {
+                  "kind": "scalar",
+                  "span": [
+                    33,
+                    36
+                  ],
+                  "expr": {
+                    "kind": "ident",
+                    "span": [
+                      33,
+                      36
+                    ],
+                    "name": "end"
+                  }
+                }
+              },
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": {
+              "op": ">=",
+              "value": 2
+            },
+            "distinct": false
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a template: a binding spans its marker",
+      "template": {
+        "strings": [
+          "name from ",
+          " where id == ",
+          ""
+        ],
+        "values": [
+          [],
+          1
+        ]
+      },
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            31
+          ],
+          "source": {
+            "kind": "binding",
+            "span": [
+              10,
+              14
+            ],
+            "index": 0
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "span": [
+              21,
+              31
+            ],
+            "expr": {
+              "kind": "binary",
+              "span": [
+                21,
+                31
+              ],
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "span": [
+                  21,
+                  23
+                ],
+                "name": "id"
+              },
+              "right": {
+                "kind": "binding",
+                "span": [
+                  27,
+                  31
+                ],
+                "index": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                4
+              ],
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  4
+                ],
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow and order by",
+      "query": "id from t follow distinct kids { depth 2 } order by id desc",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            59
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              8,
+              9
+            ],
+            "name": "t"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                2
+              ],
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  2
+                ],
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": [
+            {
+              "kind": "order",
+              "span": [
+                52,
+                59
+              ],
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  52,
+                  54
+                ],
+                "name": "id"
+              },
+              "desc": true
+            }
+          ],
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "span": [
+              10,
+              42
+            ],
+            "destinations": [
+              {
+                "kind": "ident",
+                "span": [
+                  26,
+                  30
+                ],
+                "name": "kids"
+              }
+            ],
+            "distinct": true,
+            "where": null,
+            "frontier": null,
+            "depth": 2,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "lifts and outer references",
+      "query": "n, e from p where js collect { ^e: x where y == ^n }",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            52
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              10,
+              11
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "span": [
+              18,
+              52
+            ],
+            "receiver": {
+              "kind": "ident",
+              "span": [
+                18,
+                20
+              ],
+              "name": "js"
+            },
+            "op": "collect",
+            "sub": {
+              "kind": "subquery",
+              "span": [
+                29,
+                52
+              ],
+              "from": [],
+              "where": {
+                "kind": "scalar",
+                "span": [
+                  43,
+                  50
+                ],
+                "expr": {
+                  "kind": "binary",
+                  "span": [
+                    43,
+                    50
+                  ],
+                  "op": "==",
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      43,
+                      44
+                    ],
+                    "name": "y"
+                  },
+                  "right": {
+                    "kind": "outer",
+                    "span": [
+                      48,
+                      50
+                    ],
+                    "levels": 1,
+                    "name": "n"
+                  }
+                }
+              },
+              "select": [
+                {
+                  "kind": "field",
+                  "span": [
+                    31,
+                    36
+                  ],
+                  "name": "e",
+                  "expr": {
+                    "kind": "ident",
+                    "span": [
+                      35,
+                      36
+                    ],
+                    "name": "x"
+                  },
+                  "lift": 1
+                }
+              ],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                1
+              ],
+              "name": "n",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  1
+                ],
+                "name": "n"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "span": [
+                3,
+                4
+              ],
+              "name": "e",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  3,
+                  4
+                ],
+                "name": "e"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a string literal spans its quotes",
+      "query": "from p where s == \"a b\" || t == 'c'",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            35
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              5,
+              6
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "or",
+            "span": [
+              13,
+              35
+            ],
+            "parts": [
+              {
+                "kind": "scalar",
+                "span": [
+                  13,
+                  23
+                ],
+                "expr": {
+                  "kind": "binary",
+                  "span": [
+                    13,
+                    23
+                  ],
+                  "op": "==",
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      13,
+                      14
+                    ],
+                    "name": "s"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "span": [
+                      18,
+                      23
+                    ],
+                    "value": "a b"
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "span": [
+                  27,
+                  35
+                ],
+                "expr": {
+                  "kind": "binary",
+                  "span": [
+                    27,
+                    35
+                  ],
+                  "op": "==",
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      27,
+                      28
+                    ],
+                    "name": "t"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "span": [
+                      32,
+                      35
+                    ],
+                    "value": "c"
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "unary and not",
+      "query": "from p where !a && -b < 0",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            25
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              5,
+              6
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "span": [
+              13,
+              25
+            ],
+            "parts": [
+              {
+                "kind": "not",
+                "span": [
+                  13,
+                  15
+                ],
+                "expr": {
+                  "kind": "scalar",
+                  "span": [
+                    14,
+                    15
+                  ],
+                  "expr": {
+                    "kind": "ident",
+                    "span": [
+                      14,
+                      15
+                    ],
+                    "name": "a"
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "span": [
+                  19,
+                  25
+                ],
+                "expr": {
+                  "kind": "binary",
+                  "span": [
+                    19,
+                    25
+                  ],
+                  "op": "<",
+                  "left": {
+                    "kind": "unary",
+                    "span": [
+                      19,
+                      21
+                    ],
+                    "op": "-",
+                    "expr": {
+                      "kind": "ident",
+                      "span": [
+                        20,
+                        21
+                      ],
+                      "name": "b"
+                    }
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "span": [
+                      24,
+                      25
+                    ],
+                    "value": 0
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "a directive form",
+      "query": "people first { name where age > 50 }",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            36
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              0,
+              6
+            ],
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "span": [
+              26,
+              34
+            ],
+            "expr": {
+              "kind": "binary",
+              "span": [
+                26,
+                34
+              ],
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "span": [
+                  26,
+                  29
+                ],
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "span": [
+                  32,
+                  34
+                ],
+                "value": 50
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                15,
+                19
+              ],
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  15,
+                  19
+                ],
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "ranges",
+      "query": "from p where n in 1..5 && m in ..3 && k in 2..",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            46
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              5,
+              6
+            ],
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "span": [
+              13,
+              46
+            ],
+            "parts": [
+              {
+                "kind": "scalar",
+                "span": [
+                  13,
+                  22
+                ],
+                "expr": {
+                  "kind": "in",
+                  "span": [
+                    13,
+                    22
+                  ],
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      13,
+                      14
+                    ],
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "span": [
+                      18,
+                      22
+                    ],
+                    "lo": {
+                      "kind": "lit",
+                      "span": [
+                        18,
+                        19
+                      ],
+                      "value": 1
+                    },
+                    "hi": {
+                      "kind": "lit",
+                      "span": [
+                        21,
+                        22
+                      ],
+                      "value": 5
+                    },
+                    "exclusiveEnd": false
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "span": [
+                  26,
+                  34
+                ],
+                "expr": {
+                  "kind": "in",
+                  "span": [
+                    26,
+                    34
+                  ],
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      26,
+                      27
+                    ],
+                    "name": "m"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "span": [
+                      31,
+                      34
+                    ],
+                    "lo": null,
+                    "hi": {
+                      "kind": "lit",
+                      "span": [
+                        33,
+                        34
+                      ],
+                      "value": 3
+                    },
+                    "exclusiveEnd": false
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "span": [
+                  38,
+                  46
+                ],
+                "expr": {
+                  "kind": "in",
+                  "span": [
+                    38,
+                    46
+                  ],
+                  "left": {
+                    "kind": "ident",
+                    "span": [
+                      38,
+                      39
+                    ],
+                    "name": "k"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "span": [
+                      43,
+                      46
+                    ],
+                    "lo": {
+                      "kind": "lit",
+                      "span": [
+                        43,
+                        44
+                      ],
+                      "value": 2
+                    },
+                    "hi": null,
+                    "exclusiveEnd": false
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "tabs and carriage returns are single code points",
+      "query": "name\tfrom\r\npeople",
+      "spans": true,
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "span": [
+            0,
+            17
+          ],
+          "source": {
+            "kind": "ident",
+            "span": [
+              11,
+              17
+            ],
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "span": [
+                0,
+                4
+              ],
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "span": [
+                  0,
+                  4
+                ],
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    }
+  ]
+}

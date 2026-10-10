@@ -25,9 +25,13 @@
 //! (`name, age from people`); every other clause always carries its keyword, so
 //! a predicate is never implicit — a block filters with `where`. An out-of-order
 //! clause is a parse error naming the order. `where` may reference the same
-//! body's `select` aliases: after a body is parsed, each bare identifier in its
-//! `where` that names an alias is replaced by the alias's expression (a
-//! compile-time rewrite — see `inline_aliases`).
+//! body's `select` aliases: the parser VALIDATES those references (a cycle or a
+//! block alias inside an expression is a parse error) but keeps the surface
+//! form; [`crate::resolve::resolve_aliases`] substitutes them before evaluation.
+//!
+//! Every node carries its [`Span`] — `[start, end)` in code points over the raw
+//! source, from the first token that produced it to the end of the last; a
+//! parenthesized operand's span includes its parentheses (`spec/oqx/AST.md`).
 //!
 //! Principle of least surprise, applied to the grammar: a rule a careful user
 //! would not predict is a bug. Hence `!` binds tighter than comparison in every
@@ -48,14 +52,15 @@
 //! Error messages are the TS messages verbatim (the conformance fixtures and
 //! the reference tests assert on fragments of them).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::ast::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OrderSpec,
-    Query, RelOp, SelectItem, Subquery, UnaryOp, Where,
+    Query, RelOp, SelectItem, Span, Subquery, UnaryOp, Where,
 };
 use crate::errors::{OqxError, Result};
 use crate::lexer::{TokType, Token, lex_string, lex_template};
+use crate::resolve::resolve_where;
 use crate::value::Value;
 
 const CONSUMERS: [&str; 6] = ["collect", "exists", "none", "count", "first", "single"];
@@ -225,9 +230,25 @@ impl Parser {
             self.peek().pos
         )))
     }
+    /// Code-point offset of the next token (the start of a node about to be parsed).
+    fn start(&self) -> usize {
+        self.peek().pos
+    }
+    /// Code-point offset just past the last consumed token (the end of a node just parsed).
+    fn end(&self) -> usize {
+        if self.pos == 0 {
+            0
+        } else {
+            self.tokens[self.pos - 1].end
+        }
+    }
+    fn sp(&self, start: usize) -> Span {
+        Span::new(start, self.end())
+    }
 
     // ---- top level ------------------------------------------------------------
     fn parse_query(&mut self) -> Result<Query> {
+        let start = self.start();
         // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
         if let Some(directive) = self.try_op(false)? {
             if self.at(TokType::Eof) {
@@ -244,6 +265,7 @@ impl Parser {
                     values: sub.values,
                     limit: sub.limit,
                     offset: sub.offset,
+                    span: self.sp(start),
                 });
             }
             return self.fail(format!(
@@ -278,6 +300,7 @@ impl Parser {
             values: body.values,
             limit: body.limit,
             offset: body.offset,
+            span: self.sp(start),
         })
     }
 
@@ -381,7 +404,13 @@ impl Parser {
             }
             return self.fail_unexpected_in_body(stage, ctx);
         }
-        body.r#where = self.inline_aliases(&body.select, body.r#where.take())?;
+        // Validate the alias references of this body's `where` (cycles, a block
+        // alias inside an expression); the surface form is kept.
+        if let Some(w) = &body.r#where {
+            if let Err(msg) = resolve_where(&body.select, w.clone()) {
+                return self.fail(msg);
+            }
+        }
         Ok(body)
     }
 
@@ -498,194 +527,6 @@ impl Parser {
         })
     }
 
-    // ---- alias inlining -------------------------------------------------------
-    // `where` may reference the same body's `select` aliases. This is a
-    // compile-time rewrite, not a second execution pass: every bare identifier in
-    // the where tree that names an alias is replaced by that alias's expression,
-    // so the engine and any pushdown planner see an ordinary where over row
-    // fields. Rules:
-    //   • an alias shadows a same-named row field inside `where`;
-    //   • an alias's own name inside its own expression is the row field
-    //     (`name: name.upper()` is not recursive), but a chain of aliases that
-    //     comes back to one being resolved (`a: b, b: a`) is a cycle → error;
-    //   • an alias whose value is a `collect`/`first`/`single { … }` block may
-    //     stand alone as a where leaf (a collection in predicate position means
-    //     non-empty) but not appear inside an expression;
-    //   • nested blocks (consumer bodies, follow blocks) are their own scopes and
-    //     are not rewritten against this body's select — each body rewrites
-    //     against its own.
-    fn inline_aliases(
-        &self,
-        select: &[SelectItem],
-        r#where: Option<Where>,
-    ) -> Result<Option<Where>> {
-        let Some(w) = r#where else { return Ok(None) };
-        if select.is_empty() {
-            return Ok(Some(w));
-        }
-        let mut aliases: HashMap<&str, &SelectItem> = HashMap::new();
-        for it in select {
-            match it {
-                SelectItem::Collect { name, .. } => {
-                    aliases.insert(name, it);
-                }
-                SelectItem::Field { name, lift: 0, .. } if !name.is_empty() => {
-                    aliases.insert(name, it);
-                }
-                SelectItem::Field { .. } => {}
-            }
-        }
-        if aliases.is_empty() {
-            return Ok(Some(w));
-        }
-        let mut resolving: Vec<String> = Vec::new();
-        self.walk_where(&aliases, &mut resolving, w).map(Some)
-    }
-
-    fn walk_where(
-        &self,
-        aliases: &HashMap<&str, &SelectItem>,
-        resolving: &mut Vec<String>,
-        w: Where,
-    ) -> Result<Where> {
-        Ok(match w {
-            Where::And { parts } => Where::And {
-                parts: parts
-                    .into_iter()
-                    .map(|p| self.walk_where(aliases, resolving, p))
-                    .collect::<Result<_>>()?,
-            },
-            Where::Or { parts } => Where::Or {
-                parts: parts
-                    .into_iter()
-                    .map(|p| self.walk_where(aliases, resolving, p))
-                    .collect::<Result<_>>()?,
-            },
-            Where::Not { expr } => Where::Not {
-                expr: Box::new(self.walk_where(aliases, resolving, *expr)?),
-            },
-            Where::Scalar { expr } => {
-                if let Expr::Ident { name } = &expr {
-                    if let Some(SelectItem::Collect { op, .. }) = aliases.get(name.as_str()) {
-                        // a collection in predicate position: non-empty
-                        return Ok(Where::Op(op.clone()));
-                    }
-                }
-                Where::Scalar {
-                    expr: self.subst(aliases, resolving, expr)?,
-                }
-            }
-            Where::Op(op) => {
-                // the receiver is read in this scope; the block is its own scope
-                let mut op = *op;
-                op.receiver = self.subst(aliases, resolving, op.receiver)?;
-                Where::Op(Box::new(op))
-            }
-        })
-    }
-
-    fn subst(
-        &self,
-        aliases: &HashMap<&str, &SelectItem>,
-        resolving: &mut Vec<String>,
-        e: Expr,
-    ) -> Result<Expr> {
-        let subst_box =
-            |this: &Self, resolving: &mut Vec<String>, b: Box<Expr>| -> Result<Box<Expr>> {
-                this.subst(aliases, resolving, *b).map(Box::new)
-            };
-        Ok(match e {
-            Expr::Ident { name } => {
-                let Some(a) = aliases.get(name.as_str()) else {
-                    return Ok(Expr::Ident { name });
-                };
-                if resolving.last() == Some(&name) {
-                    // its own name inside its own expression: the row field
-                    return Ok(Expr::Ident { name });
-                }
-                if let Some(i) = resolving.iter().position(|r| *r == name) {
-                    let cycle = resolving[i..]
-                        .iter()
-                        .map(String::as_str)
-                        .chain(std::iter::once(name.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(" → ");
-                    return self.fail(format!(
-                        "select aliases form a cycle: {cycle} — an alias used in `where` cannot depend on itself"
-                    ));
-                }
-                match a {
-                    SelectItem::Collect { op, .. } => {
-                        return self.fail(format!(
-                            "select alias '{name}' is a {} {{ … }} block — in `where` it can only stand alone as a non-empty test, not inside an expression",
-                            op.op.as_str()
-                        ));
-                    }
-                    SelectItem::Field { expr, .. } => {
-                        resolving.push(name);
-                        let out = self.subst(aliases, resolving, expr.clone())?;
-                        resolving.pop();
-                        out
-                    }
-                }
-            }
-            Expr::Member { recv, name } => Expr::Member {
-                recv: subst_box(self, resolving, recv)?,
-                name,
-            },
-            Expr::Index { recv, index } => Expr::Index {
-                recv: subst_box(self, resolving, recv)?,
-                index: subst_box(self, resolving, index)?,
-            },
-            Expr::Call { recv, name, args } => Expr::Call {
-                recv: match recv {
-                    Some(r) => Some(subst_box(self, resolving, r)?),
-                    None => None,
-                },
-                name,
-                args: args
-                    .into_iter()
-                    .map(|a| self.subst(aliases, resolving, a))
-                    .collect::<Result<_>>()?,
-            },
-            Expr::Unary { op, expr } => Expr::Unary {
-                op,
-                expr: subst_box(self, resolving, expr)?,
-            },
-            Expr::Binary { op, left, right } => Expr::Binary {
-                op,
-                left: subst_box(self, resolving, left)?,
-                right: subst_box(self, resolving, right)?,
-            },
-            Expr::Logical { op, left, right } => Expr::Logical {
-                op,
-                left: subst_box(self, resolving, left)?,
-                right: subst_box(self, resolving, right)?,
-            },
-            Expr::In { left, right } => Expr::In {
-                left: subst_box(self, resolving, left)?,
-                right: subst_box(self, resolving, right)?,
-            },
-            Expr::Range {
-                lo,
-                hi,
-                exclusive_end,
-            } => Expr::Range {
-                lo: match lo {
-                    Some(b) => Some(subst_box(self, resolving, b)?),
-                    None => None,
-                },
-                hi: match hi {
-                    Some(b) => Some(subst_box(self, resolving, b)?),
-                    None => None,
-                },
-                exclusive_end,
-            },
-            // lit, binding, outer (`^name` reads an enclosing row, never an alias)
-            other @ (Expr::Lit(_) | Expr::Binding { .. } | Expr::Outer { .. }) => other,
-        })
-    }
-
     fn at_order_by(&self) -> bool {
         self.at_word(TokType::Ident, "order")
             && self
@@ -705,6 +546,7 @@ impl Parser {
     // ---- follow ---------------------------------------------------------------
     // `follow [distinct] dest { "," dest } [ "{" options "}" ]`.
     fn parse_follow(&mut self) -> Result<Follow> {
+        let start = self.start();
         self.next(); // `follow`
         let mut distinct = false;
         // After `follow`, `distinct` is a keyword (a relation literally named
@@ -740,6 +582,7 @@ impl Parser {
             frontier: None,
             depth: None,
             by: None,
+            span: self.sp(start),
         };
         if !self.at(TokType::LBrace) {
             return Ok(follow);
@@ -788,6 +631,7 @@ impl Parser {
             return self.fail("expected '}' to close the follow block");
         }
         self.next();
+        follow.span = self.sp(start);
         Ok(follow)
     }
 
@@ -822,10 +666,9 @@ impl Parser {
     // call (`entries(prefs)`), so a computed collection can be consumed directly.
     fn parse_receiver(&mut self) -> Result<Expr> {
         if self.at(TokType::Binding) {
-            return Ok(Expr::Binding {
-                index: binding_index(&self.next()),
-            });
+            return Ok(binding_node(&self.next()));
         }
+        let start = self.start();
         let levels = self.parse_carets();
         if !self.at(TokType::Ident) {
             return self.fail("expected a collection navigation (a property/relation name)");
@@ -837,7 +680,7 @@ impl Parser {
             ));
         }
         let head = self.next();
-        Ok(self.parse_nav_from(head, levels)?.0)
+        Ok(self.parse_nav_from(head, levels, start)?.0)
     }
 
     // Consume a run of `^` and return its length (0 when there is none).
@@ -851,26 +694,36 @@ impl Parser {
     }
 
     // A dotted navigation chain from `head`; `levels` > 0 makes the head an outer
-    // reference read exactly that many scopes out. A bare head followed by `(` is
-    // a free-function call (`entries(x)`), which may then be navigated further.
-    // Returns the expression and the last segment's name.
-    fn parse_nav_from(&mut self, head: Token, levels: usize) -> Result<(Expr, String)> {
+    // reference read exactly that many scopes out (`start` is then the position
+    // of the first caret). A bare head followed by `(` is a free-function call
+    // (`entries(x)`), which may then be navigated further. Returns the
+    // expression and the last segment's name.
+    fn parse_nav_from(
+        &mut self,
+        head: Token,
+        levels: usize,
+        start: usize,
+    ) -> Result<(Expr, String)> {
         let mut expr = if levels > 0 {
             Expr::Outer {
                 levels,
                 name: head.value.clone(),
+                span: Span::new(start, head.end),
             }
         } else {
             Expr::Ident {
                 name: head.value.clone(),
+                span: Span::new(start, head.end),
             }
         };
         let mut name = head.value;
         if levels == 0 && self.at(TokType::LParen) {
+            let args = self.parse_args()?;
             expr = Expr::Call {
                 recv: None,
                 name: name.clone(),
-                args: self.parse_args()?,
+                args,
+                span: self.sp(start),
             };
         }
         while self.at(TokType::Dot) {
@@ -882,6 +735,7 @@ impl Parser {
             expr = Expr::Member {
                 recv: Box::new(expr),
                 name: name.clone(),
+                span: self.sp(start),
             };
         }
         Ok((expr, name))
@@ -941,6 +795,7 @@ impl Parser {
     }
 
     fn parse_select_item(&mut self, ctx: BodyCtx) -> Result<SelectItem> {
+        let start = self.start();
         // Leading `^`s mark a lift; the count is how many scopes out it binds. A
         // lift is bound by a `collect { … }` in where position and nowhere else — at
         // the top level, in a select-position block, or in an exists/none/count
@@ -982,17 +837,28 @@ impl Parser {
                 return Ok(SelectItem::Collect {
                     name,
                     op: Box::new(op),
+                    span: self.sp(start),
                 });
             }
             let expr = self.parse_value_expr()?;
-            return Ok(SelectItem::Field { name, expr, lift });
+            return Ok(SelectItem::Field {
+                name,
+                expr,
+                lift,
+                span: self.sp(start),
+            });
         }
         // Unaliased item: a bare/dotted navigation keys by its last segment; any
         // other expression is unnamed ("") — legal only under `values` (checked by
         // parse_projection, which sees the whole list).
         let expr = self.parse_value_expr()?;
         let name = nav_key(&expr).unwrap_or("").to_string();
-        Ok(SelectItem::Field { name, expr, lift })
+        Ok(SelectItem::Field {
+            name,
+            expr,
+            lift,
+            span: self.sp(start),
+        })
     }
 
     // ---- order by -------------------------------------------------------------
@@ -1006,6 +872,7 @@ impl Parser {
     }
 
     fn parse_order_spec(&mut self) -> Result<OrderSpec> {
+        let start = self.start();
         let expr = self.parse_value_expr()?;
         let mut desc = false;
         if self.at_word(TokType::Ident, "asc") {
@@ -1014,7 +881,11 @@ impl Parser {
             self.next();
             desc = true;
         }
-        Ok(OrderSpec { expr, desc })
+        Ok(OrderSpec {
+            expr,
+            desc,
+            span: self.sp(start),
+        })
     }
 
     // ---- where boolean tree: or → and → primary --------------------------------
@@ -1026,6 +897,7 @@ impl Parser {
     }
 
     fn parse_where_or(&mut self) -> Result<Where> {
+        let start = self.start();
         let left = self.parse_where_and()?;
         if !self.at_op("||") {
             return Ok(left);
@@ -1035,10 +907,14 @@ impl Parser {
             self.next();
             parts.push(self.parse_where_and()?);
         }
-        Ok(Where::Or { parts })
+        Ok(Where::Or {
+            parts,
+            span: self.sp(start),
+        })
     }
 
     fn parse_where_and(&mut self) -> Result<Where> {
+        let start = self.start();
         let left = self.parse_where_primary()?;
         if !self.at_op("&&") {
             return Ok(left);
@@ -1048,7 +924,10 @@ impl Parser {
             self.next();
             parts.push(self.parse_where_primary()?);
         }
-        Ok(Where::And { parts })
+        Ok(Where::And {
+            parts,
+            span: self.sp(start),
+        })
     }
 
     // A where operand: `[!…] ( where )`, `[!…] <receiver> <consumer> { … }`, or a
@@ -1062,35 +941,38 @@ impl Parser {
     // predicate.
     fn parse_where_primary(&mut self) -> Result<Where> {
         let start = self.pos;
-        let mut nots = 0;
+        let mut not_starts: Vec<usize> = Vec::new();
         while self.at_op("!") {
-            self.next();
-            nots += 1;
+            not_starts.push(self.next().pos);
         }
         if self.at(TokType::LParen) {
-            self.next();
+            let lparen = self.next().pos;
             let inner = self.parse_where()?;
             if !self.at(TokType::RParen) {
                 return self.fail("expected ')' to close a grouped where expression");
             }
             self.next();
+            let group = Span::new(lparen, self.end());
             if self.at_scalar_continuation() {
-                let group = self.where_to_expr(inner)?;
-                let mut e = self.parse_postfix(Some(group))?;
-                for _ in 0..nots {
+                let promoted = self.where_to_expr(inner)?.with_span(group);
+                let mut e = self.parse_postfix(Some(promoted))?;
+                for &at in not_starts.iter().rev() {
+                    let span = Span::new(at, e.span().end);
                     e = Expr::Unary {
                         op: UnaryOp::Not,
                         expr: Box::new(e),
+                        span,
                     };
                 }
                 let expr = self.parse_cmp(Some(e))?;
-                return Ok(Where::Scalar { expr });
+                let span = expr.span();
+                return Ok(Where::Scalar { expr, span });
             }
-            return Ok(wrap_not(inner, nots));
+            return Ok(wrap_not(inner.with_span(group), &not_starts));
         }
         if let Some(op) = self.try_op(true)? {
             let op = self.finish_where_op(op)?;
-            return Ok(wrap_not(Where::Op(Box::new(op)), nots));
+            return Ok(wrap_not(Where::Op(Box::new(op)), &not_starts));
         }
         // A scalar leaf, re-read from the first `!` so the scalar grammar gives `!`
         // its one precedence (tighter than comparison). A leaf whose whole value is
@@ -1118,13 +1000,14 @@ impl Parser {
     // expression. A consumer test has no scalar value, so it cannot be operated on.
     fn where_to_expr(&self, w: Where) -> Result<Expr> {
         Ok(match w {
-            Where::Scalar { expr } => expr,
-            Where::Not { expr } => Expr::Unary {
+            Where::Scalar { expr, .. } => expr,
+            Where::Not { expr, span } => Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Box::new(self.where_to_expr(*expr)?),
+                span,
             },
-            Where::And { parts } => self.fold_logical(LogicalOp::And, parts)?,
-            Where::Or { parts } => self.fold_logical(LogicalOp::Or, parts)?,
+            Where::And { parts, .. } => self.fold_logical(LogicalOp::And, parts)?,
+            Where::Or { parts, .. } => self.fold_logical(LogicalOp::Or, parts)?,
             Where::Op(op) => {
                 let hint = if op.op == Consumer::Count {
                     format!(
@@ -1151,10 +1034,13 @@ impl Parser {
             .expect("an And/Or node always has at least one part");
         let mut acc = self.where_to_expr(first)?;
         for p in iter {
+            let right = self.where_to_expr(p)?;
+            let span = Span::new(acc.span().start, right.span().end);
             acc = Expr::Logical {
                 op,
                 left: Box::new(acc),
-                right: Box::new(self.where_to_expr(p)?),
+                right: Box::new(right),
+                span,
             };
         }
         Ok(acc)
@@ -1201,6 +1087,7 @@ impl Parser {
                 op: op_enum,
                 value: v,
             });
+            op.span = Span::new(op.span.start, self.end());
         }
         Ok(op)
     }
@@ -1211,10 +1098,9 @@ impl Parser {
     // bind lifts.
     fn try_op(&mut self, in_where: bool) -> Result<Option<OpNode>> {
         let start = self.pos;
+        let start_pos = self.start();
         let receiver = if self.at(TokType::Binding) {
-            Expr::Binding {
-                index: binding_index(&self.next()),
-            }
+            binding_node(&self.next())
         } else if self.at(TokType::Ident) || self.at(TokType::Caret) {
             let levels = self.parse_carets();
             if !self.at(TokType::Ident) {
@@ -1222,13 +1108,13 @@ impl Parser {
                 return Ok(None);
             }
             let head = self.next();
-            self.parse_nav_from(head, levels)?.0
+            self.parse_nav_from(head, levels, start_pos)?.0
         } else {
             return Ok(None);
         };
 
         if let Some(op) = self.at_consumer_block() {
-            if let Expr::Ident { name } = &receiver
+            if let Expr::Ident { name, .. } = &receiver
                 && LITERAL_WORDS.contains(&name.as_str())
             {
                 return self.fail(format!("`{name}` is a literal, not a collection"));
@@ -1264,18 +1150,19 @@ impl Parser {
         op: Consumer,
         in_where: bool,
     ) -> Result<OpNode> {
+        let start = receiver.span().start;
         self.next(); // the consumer word
         let mut distinct = false;
         if self.at_word(TokType::Ident, "distinct") {
             self.next();
             distinct = true;
         }
-        self.next(); // '{'
+        let lbrace = self.next().pos; // '{'
         let ctx = BodyCtx::Block {
             op,
             lifts_allowed: in_where && op == Consumer::Collect,
         };
-        let (sub, body_distinct) = self.parse_subquery(ctx)?;
+        let body = self.parse_body(ctx)?;
         if !self.at(TokType::RBrace) {
             return self.fail(format!(
                 "expected '}}' to close the {} {{ … }} block",
@@ -1283,30 +1170,25 @@ impl Parser {
             ));
         }
         self.next();
+        let sub = Subquery {
+            from: body.froms,
+            r#where: body.r#where,
+            select: body.select,
+            order_by: body.order_by,
+            follow: body.follow,
+            values: body.values,
+            limit: body.limit,
+            offset: body.offset,
+            span: self.sp(lbrace),
+        };
         Ok(OpNode {
             receiver,
             op,
             sub,
             count_cmp: None,
-            distinct: distinct || body_distinct,
+            distinct: distinct || body.distinct,
+            span: self.sp(start),
         })
-    }
-
-    fn parse_subquery(&mut self, ctx: BodyCtx) -> Result<(Subquery, bool)> {
-        let body = self.parse_body(ctx)?;
-        Ok((
-            Subquery {
-                from: body.froms,
-                r#where: body.r#where,
-                select: body.select,
-                order_by: body.order_by,
-                follow: body.follow,
-                values: body.values,
-                limit: body.limit,
-                offset: body.offset,
-            },
-            body.distinct,
-        ))
     }
 
     // ---- expression Pratt parser ----------------------------------------------
@@ -1320,10 +1202,12 @@ impl Parser {
         while self.at_op("||") {
             self.next();
             let right = self.parse_and()?;
+            let span = Span::new(left.span().start, right.span().end);
             left = Expr::Logical {
                 op: LogicalOp::Or,
                 left: Box::new(left),
                 right: Box::new(right),
+                span,
             };
         }
         Ok(left)
@@ -1334,10 +1218,12 @@ impl Parser {
         while self.at_op("&&") {
             self.next();
             let right = self.parse_cmp(None)?;
+            let span = Span::new(left.span().start, right.span().end);
             left = Expr::Logical {
                 op: LogicalOp::And,
                 left: Box::new(left),
                 right: Box::new(right),
+                span,
             };
         }
         Ok(left)
@@ -1357,16 +1243,19 @@ impl Parser {
         }
         let first = self.next().value;
         let rhs = self.parse_range(None)?;
+        let span = Span::new(lhs.span().start, rhs.span().end);
         let result = if first == "in" {
             Expr::In {
                 left: Box::new(lhs),
                 right: Box::new(rhs),
+                span,
             }
         } else {
             Expr::Binary {
                 op: BinaryOp::from_word(&first).expect("CMP_OPS membership was checked"),
                 left: Box::new(lhs),
                 right: Box::new(rhs),
+                span,
             }
         };
         if self.at_cmp() {
@@ -1392,29 +1281,38 @@ impl Parser {
     // opens the high end. At least one bound is required.
     fn parse_range(&mut self, left: Option<Expr>) -> Result<Expr> {
         if left.is_none() && self.at(TokType::Range) {
-            let exclusive_end = self.next().value == "...";
+            let tok = self.next();
+            let exclusive_end = tok.value == "...";
             if !self.can_start_value() {
                 return self.fail("a range needs at least one bound: `lo..hi`, `lo..`, or `..hi`");
             }
             let hi = self.parse_add(None)?;
+            let span = Span::new(tok.pos, hi.span().end);
             return Ok(Expr::Range {
                 lo: None,
                 hi: Some(Box::new(hi)),
                 exclusive_end,
+                span,
             });
         }
         let lo = self.parse_add(left)?;
         if self.at(TokType::Range) {
-            let exclusive_end = self.next().value == "...";
+            let tok = self.next();
+            let exclusive_end = tok.value == "...";
             let hi = if self.can_start_value() {
                 Some(Box::new(self.parse_add(None)?))
             } else {
                 None
             };
+            let span = Span::new(
+                lo.span().start,
+                hi.as_ref().map_or(tok.end, |h| h.span().end),
+            );
             return Ok(Expr::Range {
                 lo: Some(Box::new(lo)),
                 hi,
                 exclusive_end,
+                span,
             });
         }
         Ok(lo)
@@ -1445,10 +1343,12 @@ impl Parser {
             let op =
                 BinaryOp::from_word(&self.next().value).expect("ADD_OPS membership was checked");
             let right = self.parse_mul(None)?;
+            let span = Span::new(left.span().start, right.span().end);
             left = Expr::Binary {
                 op,
                 left: Box::new(left),
                 right: Box::new(right),
+                span,
             };
         }
         Ok(left)
@@ -1460,10 +1360,12 @@ impl Parser {
             let op =
                 BinaryOp::from_word(&self.next().value).expect("MUL_OPS membership was checked");
             let right = self.parse_unary(None)?;
+            let span = Span::new(left.span().start, right.span().end);
             left = Expr::Binary {
                 op,
                 left: Box::new(left),
                 right: Box::new(right),
+                span,
             };
         }
         Ok(left)
@@ -1473,18 +1375,15 @@ impl Parser {
         if left.is_some() {
             return self.parse_postfix(left);
         }
-        if self.at_op("!") {
-            self.next();
+        if self.at_op("!") || self.at_op("-") {
+            let tok = self.next();
+            let op = UnaryOp::from_word(&tok.value).expect("checked above");
+            let expr = self.parse_unary(None)?;
+            let span = Span::new(tok.pos, expr.span().end);
             return Ok(Expr::Unary {
-                op: UnaryOp::Not,
-                expr: Box::new(self.parse_unary(None)?),
-            });
-        }
-        if self.at_op("-") {
-            self.next();
-            return Ok(Expr::Unary {
-                op: UnaryOp::Neg,
-                expr: Box::new(self.parse_unary(None)?),
+                op,
+                expr: Box::new(expr),
+                span,
             });
         }
         self.parse_postfix(None)
@@ -1499,6 +1398,7 @@ impl Parser {
             Some(e) => e,
             None => self.parse_primary()?,
         };
+        let start = expr.span().start;
         loop {
             if self.at(TokType::Dot) {
                 self.next();
@@ -1512,16 +1412,18 @@ impl Parser {
                         recv: Some(Box::new(expr)),
                         name,
                         args,
+                        span: self.sp(start),
                     };
                 } else {
                     expr = Expr::Member {
                         recv: Box::new(expr),
                         name,
+                        span: self.sp(start),
                     };
                 }
             } else if self.at(TokType::LParen) && bare_head && matches!(expr, Expr::Ident { .. }) {
                 // free function call: name(args)
-                let Expr::Ident { name } = expr else {
+                let Expr::Ident { name, .. } = expr else {
                     unreachable!()
                 };
                 let args = self.parse_args()?;
@@ -1529,6 +1431,7 @@ impl Parser {
                     recv: None,
                     name,
                     args,
+                    span: self.sp(start),
                 };
             } else {
                 // `{` is a consumer block boundary — not part of a value expression;
@@ -1568,24 +1471,30 @@ impl Parser {
                 if !self.at(TokType::Ident) {
                     return self.fail("expected an identifier after '^' (an outer reference)");
                 }
+                let name = self.next();
                 Ok(Expr::Outer {
                     levels,
-                    name: self.next().value,
+                    name: name.value,
+                    span: Span::new(t.pos, name.end),
                 })
             }
             TokType::Number => {
                 self.next();
-                Ok(Expr::Lit(Value::Number(number_value(&t.value))))
+                Ok(Expr::Lit {
+                    value: Value::Number(number_value(&t.value)),
+                    span: Span::new(t.pos, t.end),
+                })
             }
             TokType::Str => {
                 self.next();
-                Ok(Expr::Lit(Value::Str(t.value)))
+                Ok(Expr::Lit {
+                    value: Value::Str(t.value),
+                    span: Span::new(t.pos, t.end),
+                })
             }
             TokType::Binding => {
                 self.next();
-                Ok(Expr::Binding {
-                    index: binding_index(&t),
-                })
+                Ok(binding_node(&t))
             }
             TokType::LParen => {
                 self.next();
@@ -1594,15 +1503,28 @@ impl Parser {
                     return self.fail("expected ')'");
                 }
                 self.next();
-                Ok(e)
+                Ok(e.with_span(Span::new(t.pos, self.end())))
             }
             TokType::Ident => {
                 self.next();
+                let span = Span::new(t.pos, t.end);
                 Ok(match t.value.as_str() {
-                    "true" => Expr::Lit(Value::Bool(true)),
-                    "false" => Expr::Lit(Value::Bool(false)),
-                    "null" => Expr::Lit(Value::Null),
-                    _ => Expr::Ident { name: t.value },
+                    "true" => Expr::Lit {
+                        value: Value::Bool(true),
+                        span,
+                    },
+                    "false" => Expr::Lit {
+                        value: Value::Bool(false),
+                        span,
+                    },
+                    "null" => Expr::Lit {
+                        value: Value::Null,
+                        span,
+                    },
+                    _ => Expr::Ident {
+                        name: t.value,
+                        span,
+                    },
                 })
             }
             _ => self.fail(format!("unexpected {} — expected a value", self.tok_desc())),
@@ -1610,14 +1532,21 @@ impl Parser {
     }
 }
 
-fn binding_index(t: &Token) -> usize {
-    t.index.expect("a binding token always carries its index")
+fn binding_node(t: &Token) -> Expr {
+    Expr::Binding {
+        index: t.index.expect("a binding token always carries its index"),
+        span: Span::new(t.pos, t.end),
+    }
 }
 
-// `!` applied `n` times to a where node.
-fn wrap_not(mut w: Where, n: usize) -> Where {
-    for _ in 0..n {
-        w = Where::Not { expr: Box::new(w) };
+// `!` applied once per recorded `!` position to a where node, innermost first.
+fn wrap_not(mut w: Where, not_starts: &[usize]) -> Where {
+    for &at in not_starts.iter().rev() {
+        let span = Span::new(at, w.span().end);
+        w = Where::Not {
+            expr: Box::new(w),
+            span,
+        };
     }
     w
 }
@@ -1629,10 +1558,15 @@ fn scalar_leaf(e: Expr) -> Where {
         Expr::Unary {
             op: UnaryOp::Not,
             expr,
+            span,
         } => Where::Not {
             expr: Box::new(scalar_leaf(*expr)),
+            span,
         },
-        expr => Where::Scalar { expr },
+        expr => {
+            let span = expr.span();
+            Where::Scalar { expr, span }
+        }
     }
 }
 
@@ -1640,7 +1574,9 @@ fn scalar_leaf(e: Expr) -> Where {
 // dotted / outer navigation (`name`, `meta.slug` → "slug", `^name`), else None.
 fn nav_key(e: &Expr) -> Option<&str> {
     match e {
-        Expr::Ident { name } | Expr::Outer { name, .. } | Expr::Member { name, .. } => Some(name),
+        Expr::Ident { name, .. } | Expr::Outer { name, .. } | Expr::Member { name, .. } => {
+            Some(name)
+        }
         _ => None,
     }
 }

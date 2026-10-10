@@ -2,7 +2,7 @@
   "name": "oqx-syntax",
   "displayName": "OQX Syntax",
   "description": "Syntax highlighting for OQX (omgbase Query eXpressions) files and ```oqx Markdown fences",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "omgbase",
   "license": "MIT",
   "repository": {

@@ -17,17 +17,22 @@ regex = "1"
 # `bundled`: compile SQLite from source so the `sqlite` feature needs no system
 # library (CI runs `--all-features` on a clean machine).
 rusqlite = { version = "0.40", optional = true, features = ["bundled"] }
+serde = { version = "1", optional = true, features = ["derive"] }
 serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 
 [features]
 default = []
-# `json`: From/Into conversions between `oqx::Value` and `serde_json::Value`.
-json = ["dep:serde_json"]
+# `json`: From/Into conversions between `oqx::Value` and `serde_json::Value`,
+# and the AST's `Serialize`/`Deserialize` (`spec/oqx/AST.md`) + `ast_to_json`.
+json = ["dep:serde_json", "dep:serde"]
 # `sqlite`: `adapters::sqlite::SqliteTable`, a `QueryPlanner` pushing the flat
 # query core into SQL over `rusqlite`. Implies `json` for its JSON columns.
 sqlite = ["dep:rusqlite", "json"]
 
 [dev-dependencies]
+# The crate's own tests always see the AST's serde form (`tests/spec.rs` runs the
+# `ast` fixtures through it), whatever features the caller asked for.
+oqx = { path = ".", features = ["json"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
 [lints]

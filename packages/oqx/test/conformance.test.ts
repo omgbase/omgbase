@@ -11,7 +11,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { equals, relate, membership, arith, compareForSort, coerceCollection, makeRange, isRange, rangeCovers, parseRangeString, BUILTIN_FUNCTIONS } from "../src/semantics.ts";
 import { parseString, parseTemplate } from "../src/parser.ts";
-import { DefaultContext, InMemoryEngine, OqxError } from "../src/index.ts";
+import { DefaultContext, InMemoryEngine, OqxError, resolveAliases } from "../src/index.ts";
 import type { OqxResult, Query, TraceEvent } from "../src/index.ts";
 
 test("equality is typed and strict; absence normalizes", () => {
@@ -173,7 +173,7 @@ function outcomeOf(c: SpecCase, optimized: boolean, trace?: (e: TraceEvent) => v
       query = parseString(c.query!);
     }
     const engine = new InMemoryEngine(new DefaultContext(c.roots ?? {}), optimized ? { trace } : { rules: [] });
-    return { ok: true, value: canonical(unwrap(engine.run(query, values))) };
+    return { ok: true, value: canonical(unwrap(engine.run(resolveAliases(query), values))) };
   } catch (e) {
     if (e instanceof OqxError) return { ok: false, stage: e.stage, message: e.message };
     throw e;

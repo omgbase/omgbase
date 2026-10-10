@@ -28,9 +28,13 @@
 // (`name, age from people`); every other clause always carries its keyword, so
 // a predicate is never implicit — a block filters with `where`. An out-of-order
 // clause is a parse error naming the order. `where` may reference the same
-// body's `select` aliases: after a body is parsed, each bare identifier in its
-// `where` that names an alias is replaced by the alias's expression (a
-// compile-time rewrite — see `inlineAliases`).
+// body's `select` aliases: the parser VALIDATES those references (a cycle or a
+// block alias inside an expression is a parse error) but keeps the surface
+// form; `resolveAliases` (resolve.ts) substitutes them before evaluation.
+//
+// Every node carries its `span` — `[start, end)` in code points over the raw
+// source, from the first token that produced it to the end of the last; a
+// parenthesized operand's span includes its parentheses (spec/oqx/AST.md).
 //
 // Principle of least surprise, applied to the grammar: a rule a careful user
 // would not predict is a bug. Hence `!` binds tighter than comparison in every
@@ -46,7 +50,9 @@ import { lexTemplate, lexString } from "./lexer.ts";
 import { OqxError } from "./errors.ts";
 import type {
   Query, Where, Expr, OpNode, Subquery, SelectItem, OrderSpec, Follow, FollowDestination, Consumer, RelOp,
+  BinaryOp, Span,
 } from "./ast.ts";
+import { resolveWhere } from "./resolve.ts";
 
 const CONSUMERS = new Set<string>(["collect", "exists", "none", "count", "first", "single"]);
 // The fixed clause order of a body (ADR-020). Each clause appears at most once.
@@ -100,6 +106,12 @@ interface BodyClauses {
   offset: Expr | null;
 }
 
+// A copy of a node with another span (a parenthesized operand takes the span of
+// its parentheses).
+function withSpan<T extends { span: Span }>(node: T, span: Span): T {
+  return { ...node, span };
+}
+
 class Parser {
   private tokens: Token[];
   private pos = 0;
@@ -123,13 +135,21 @@ class Parser {
   private fail(msg: string): never {
     throw new OqxError(`${msg} (at offset ${this.peek().pos})`, "parse");
   }
+  /** Code-point offset of the next token (the start of a node about to be parsed). */
+  private start(): number { return this.peek().pos; }
+  /** Code-point offset just past the last consumed token (the end of a node just parsed). */
+  private end(): number { return this.pos === 0 ? 0 : this.tokens[this.pos - 1]!.end; }
+  private sp(start: number): Span { return [start, this.end()]; }
 
   // ---- top level ------------------------------------------------------------
   parseQuery(): Query {
+    const start = this.start();
     // Directive form: `<receiver> <consumer> { … }` consuming the whole query.
     const directive = this.tryOp(false);
     if (directive && this.at("eof")) {
       return {
+        kind: "query",
+        span: this.sp(start),
         source: directive.receiver,
         from: directive.sub.from,
         where: directive.sub.where,
@@ -137,9 +157,10 @@ class Parser {
         orderBy: directive.sub.orderBy,
         consumer: directive.op,
         follow: directive.sub.follow,
-        distinct: directive.distinct ?? false,
-        values: directive.sub.values ?? false,
-        ...bounds(directive.sub),
+        distinct: directive.distinct,
+        values: directive.sub.values,
+        limit: directive.sub.limit,
+        offset: directive.sub.offset,
       };
     }
     if (directive) this.fail(`unexpected ${this.tokDesc()} after the top-level directive`);
@@ -151,6 +172,8 @@ class Parser {
       this.fail("a query must name its source with `from <collection>` (or be `<collection> <consumer> { … }`)");
     }
     return {
+      kind: "query",
+      span: this.sp(start),
       source: body.froms[0]!,
       from: body.froms.slice(1),
       where: body.where,
@@ -160,7 +183,8 @@ class Parser {
       follow: body.follow,
       distinct: body.distinct,
       values: body.values,
-      ...bounds(body),
+      limit: body.limit,
+      offset: body.offset,
     };
   }
 
@@ -249,7 +273,9 @@ class Parser {
       }
       this.failUnexpectedInBody(stage, ctx);
     }
-    where = this.inlineAliases(select, where);
+    // Validate the alias references of this body's `where` (cycles, a block
+    // alias inside an expression); the surface form is kept.
+    if (where) resolveWhere(select, where, (msg) => this.fail(msg));
     return { froms, where, select, orderBy, follow, distinct, values, limit, offset };
   }
 
@@ -302,76 +328,6 @@ class Parser {
     return !!nx && (nx.type === "number" || nx.type === "binding" || nx.type === "caret");
   }
 
-  // ---- alias inlining -------------------------------------------------------
-  // `where` may reference the same body's `select` aliases. This is a
-  // compile-time rewrite, not a second execution pass: every bare identifier in
-  // the where tree that names an alias is replaced by that alias's expression,
-  // so the engine and any pushdown planner see an ordinary where over row
-  // fields. Rules:
-  //   • an alias shadows a same-named row field inside `where`;
-  //   • an alias's own name inside its own expression is the row field
-  //     (`name: name.upper()` is not recursive), but a chain of aliases that
-  //     comes back to one being resolved (`a: b, b: a`) is a cycle → error;
-  //   • an alias whose value is a `collect`/`first`/`single { … }` block may
-  //     stand alone as a where leaf (a collection in predicate position means
-  //     non-empty) but not appear inside an expression;
-  //   • nested blocks (consumer bodies, follow blocks) are their own scopes and
-  //     are not rewritten against this body's select — each body rewrites
-  //     against its own.
-  private inlineAliases(select: SelectItem[], where: Where | null): Where | null {
-    if (!where || select.length === 0) return where;
-    const aliases = new Map<string, SelectItem>();
-    for (const it of select) {
-      if (it.kind === "collect") aliases.set(it.name, it);
-      else if (it.lift === 0 && it.name !== "") aliases.set(it.name, it);
-    }
-    if (aliases.size === 0) return where;
-    const resolving: string[] = [];
-    const subst = (e: Expr): Expr => {
-      switch (e.kind) {
-        case "ident": {
-          const a = aliases.get(e.name);
-          if (!a) return e;
-          if (resolving[resolving.length - 1] === e.name) return e; // its own name inside its own expression: the row field
-          if (resolving.includes(e.name)) {
-            const cycle = [...resolving.slice(resolving.indexOf(e.name)), e.name].join(" → ");
-            this.fail(`select aliases form a cycle: ${cycle} — an alias used in \`where\` cannot depend on itself`);
-          }
-          if (a.kind === "collect") {
-            this.fail(`select alias '${e.name}' is a ${a.op.op} { … } block — in \`where\` it can only stand alone as a non-empty test, not inside an expression`);
-          }
-          resolving.push(e.name);
-          const out = subst(a.expr);
-          resolving.pop();
-          return out;
-        }
-        case "member": return { ...e, recv: subst(e.recv) };
-        case "index": return { ...e, recv: subst(e.recv), index: subst(e.index) };
-        case "call": return { ...e, recv: e.recv ? subst(e.recv) : null, args: e.args.map(subst) };
-        case "unary": return { ...e, expr: subst(e.expr) };
-        case "binary": case "logical": case "in": return { ...e, left: subst(e.left), right: subst(e.right) };
-        case "range": return { ...e, lo: e.lo ? subst(e.lo) : null, hi: e.hi ? subst(e.hi) : null };
-        default: return e; // lit, binding, outer (`^name` reads an enclosing row, never an alias)
-      }
-    };
-    const walk = (w: Where): Where => {
-      switch (w.kind) {
-        case "and": return { kind: "and", parts: w.parts.map(walk) };
-        case "or": return { kind: "or", parts: w.parts.map(walk) };
-        case "not": return { kind: "not", expr: walk(w.expr) };
-        case "scalar": {
-          if (w.expr.kind === "ident") {
-            const a = aliases.get(w.expr.name);
-            if (a?.kind === "collect") return a.op; // a collection in predicate position: non-empty
-          }
-          return { kind: "scalar", expr: subst(w.expr) };
-        }
-        case "op": return { ...w, receiver: subst(w.receiver) }; // the receiver is read in this scope; the block is its own scope
-      }
-    };
-    return walk(where);
-  }
-
   private atOrderBy(): boolean {
     const t = this.peek();
     const nx = this.peekAt(1);
@@ -388,6 +344,7 @@ class Parser {
 
   // ---- follow ---------------------------------------------------------------
   private parseFollow(): Follow {
+    const start = this.start();
     this.next(); // `follow`
     let distinct = false;
     // After `follow`, `distinct` is a keyword (a relation literally named
@@ -407,7 +364,7 @@ class Parser {
       }
       destinations.push(this.parseFollowDestination());
     }
-    const follow: Follow = { destinations, distinct, where: null, frontier: null, depth: null, by: null };
+    const follow: Follow = { kind: "follow", span: this.sp(start), destinations, distinct, where: null, frontier: null, depth: null, by: null };
     if (!this.at("lbrace")) return follow;
     this.next(); // '{'
     while (!this.at("eof") && !this.at("rbrace")) {
@@ -436,6 +393,7 @@ class Parser {
     }
     if (!this.at("rbrace")) this.fail("expected '}' to close the follow block");
     this.next();
+    follow.span = this.sp(start);
     return follow;
   }
 
@@ -452,8 +410,9 @@ class Parser {
     let isReceiver = false;
     if (this.at("binding")) { this.next(); isReceiver = true; }
     else if (this.at("ident") || this.at("caret")) {
+      const startPos = this.start();
       this.parseCarets();
-      if (this.at("ident")) { this.parseNavFrom(this.next()); isReceiver = true; }
+      if (this.at("ident")) { this.parseNavFrom(this.next(), 0, startPos); isReceiver = true; }
     }
     if (isReceiver && this.at("ident") && CONSUMERS.has(this.peek().value)) {
       const op = this.peek().value;
@@ -483,11 +442,16 @@ class Parser {
   // named root is only reachable as a receiver through `^` — or a free-function
   // call (`entries(prefs)`), so a computed collection can be consumed directly.
   private parseReceiver(): Expr {
-    if (this.at("binding")) return { kind: "binding", index: this.next().index! };
+    if (this.at("binding")) return this.bindingNode(this.next());
+    const start = this.start();
     const levels = this.parseCarets();
     if (!this.at("ident")) this.fail("expected a collection navigation (a property/relation name)");
     if (LITERAL_WORDS.has(this.peek().value)) this.fail(`\`${this.peek().value}\` is a literal, not a collection`);
-    return this.parseNavFrom(this.next(), levels).expr;
+    return this.parseNavFrom(this.next(), levels, start).expr;
+  }
+
+  private bindingNode(t: Token): Expr {
+    return { kind: "binding", span: [t.pos, t.end], index: t.index! };
   }
 
   // Consume a run of `^` and return its length (0 when there is none).
@@ -498,17 +462,23 @@ class Parser {
   }
 
   // A dotted navigation chain from `head`; `levels` > 0 makes the head an outer
-  // reference read exactly that many scopes out. A bare head followed by `(` is
-  // a free-function call (`entries(x)`), which may then be navigated further.
-  private parseNavFrom(head: Token, levels = 0): { expr: Expr; name: string } {
-    let expr: Expr = levels > 0 ? { kind: "outer", levels, name: head.value } : { kind: "ident", name: head.value };
+  // reference read exactly that many scopes out (`start` is then the position
+  // of the first caret). A bare head followed by `(` is a free-function call
+  // (`entries(x)`), which may then be navigated further.
+  private parseNavFrom(head: Token, levels = 0, start = head.pos): { expr: Expr; name: string } {
+    let expr: Expr = levels > 0
+      ? { kind: "outer", span: [start, head.end], levels, name: head.value }
+      : { kind: "ident", span: [start, head.end], name: head.value };
     let name = head.value;
-    if (levels === 0 && this.at("lparen")) expr = { kind: "call", recv: null, name: head.value, args: this.parseArgs() };
+    if (levels === 0 && this.at("lparen")) {
+      const args = this.parseArgs();
+      expr = { kind: "call", span: this.sp(start), recv: null, name: head.value, args };
+    }
     while (this.at("dot")) {
       this.next();
       if (!this.at("ident")) this.fail("expected a property name after '.'");
       name = this.next().value;
-      expr = { kind: "member", recv: expr, name };
+      expr = { kind: "member", span: this.sp(start), recv: expr, name };
     }
     return { expr, name };
   }
@@ -546,6 +516,7 @@ class Parser {
   }
 
   private parseSelectItem(ctx: BodyCtx): SelectItem {
+    const start = this.start();
     // Leading `^`s mark a lift; the count is how many scopes out it binds. A
     // lift is bound by a `collect { … }` in where position and nowhere else — at
     // the top level, in a select-position block, or in an exists/none/count
@@ -566,16 +537,16 @@ class Parser {
           this.fail(`projection '${name}' must use collect/first/single, not ${op.op} (exists/none/count are where-position tests)`);
         }
         if (lift) this.fail(`a lift (^${name}) value must be a scalar expression, not ${op.op} { … }`);
-        return { kind: "collect", name, op };
+        return { kind: "collect", span: this.sp(start), name, op };
       }
       const expr = this.parseValueExpr();
-      return { kind: "field", name, expr, lift };
+      return { kind: "field", span: this.sp(start), name, expr, lift };
     }
     // Unaliased item: a bare/dotted navigation keys by its last segment; any
     // other expression is unnamed ("") — legal only under `values` (checked by
     // parseProjection, which sees the whole list).
     const expr = this.parseValueExpr();
-    return { kind: "field", name: navKey(expr) ?? "", expr, lift };
+    return { kind: "field", span: this.sp(start), name: navKey(expr) ?? "", expr, lift };
   }
 
   // ---- order by -------------------------------------------------------------
@@ -586,11 +557,12 @@ class Parser {
   }
 
   private parseOrderSpec(): OrderSpec {
+    const start = this.start();
     const expr = this.parseValueExpr();
     let desc = false;
     if (this.at("ident", "asc")) this.next();
     else if (this.at("ident", "desc")) { this.next(); desc = true; }
-    return { expr, desc };
+    return { kind: "order", span: this.sp(start), expr, desc };
   }
 
   // ---- where boolean tree: or → and → primary --------------------------------
@@ -600,19 +572,21 @@ class Parser {
   private parseWhere(): Where { return this.parseWhereOr(); }
 
   private parseWhereOr(): Where {
+    const start = this.start();
     const left = this.parseWhereAnd();
     if (!this.atOp("||")) return left;
     const parts = [left];
     while (this.atOp("||")) { this.next(); parts.push(this.parseWhereAnd()); }
-    return { kind: "or", parts };
+    return { kind: "or", span: this.sp(start), parts };
   }
 
   private parseWhereAnd(): Where {
+    const start = this.start();
     const left = this.parseWherePrimary();
     if (!this.atOp("&&")) return left;
     const parts = [left];
     while (this.atOp("&&")) { this.next(); parts.push(this.parseWherePrimary()); }
-    return { kind: "and", parts };
+    return { kind: "and", span: this.sp(start), parts };
   }
 
   // A where operand: `[!…] ( where )`, `[!…] <receiver> <consumer> { … }`, or a
@@ -626,22 +600,24 @@ class Parser {
   // predicate.
   private parseWherePrimary(): Where {
     const start = this.pos;
-    let nots = 0;
-    while (this.atOp("!")) { this.next(); nots++; }
+    const notStarts: number[] = [];
+    while (this.atOp("!")) { notStarts.push(this.next().pos); }
     if (this.at("lparen")) {
-      this.next();
+      const lparen = this.next().pos;
       const inner = this.parseWhere();
       if (!this.at("rparen")) this.fail("expected ')' to close a grouped where expression");
       this.next();
+      const group: Span = [lparen, this.end()];
       if (this.atScalarContinuation()) {
-        let e = this.parsePostfix(this.whereToExpr(inner));
-        for (let i = 0; i < nots; i++) e = { kind: "unary", op: "!", expr: e };
-        return { kind: "scalar", expr: this.parseCmp(e) };
+        let e = this.parsePostfix(withSpan(this.whereToExpr(inner), group));
+        for (let i = notStarts.length - 1; i >= 0; i--) e = { kind: "unary", span: [notStarts[i]!, e.span[1]], op: "!", expr: e };
+        const expr = this.parseCmp(e);
+        return { kind: "scalar", span: expr.span, expr };
       }
-      return wrapNot(inner, nots);
+      return wrapNot(withSpan(inner, group), notStarts);
     }
     const op = this.tryOp(true);
-    if (op) return wrapNot(this.finishWhereOp(op), nots);
+    if (op) return wrapNot(this.finishWhereOp(op), notStarts);
     // A scalar leaf, re-read from the first `!` so the scalar grammar gives `!`
     // its one precedence (tighter than comparison). A leaf whose whole value is
     // a negation keeps the `not` node shape (`where !active`).
@@ -661,10 +637,10 @@ class Parser {
   private whereToExpr(w: Where): Expr {
     switch (w.kind) {
       case "scalar": return w.expr;
-      case "not": return { kind: "unary", op: "!", expr: this.whereToExpr(w.expr) };
+      case "not": return { kind: "unary", span: w.span, op: "!", expr: this.whereToExpr(w.expr) };
       case "and": case "or": {
         const op = w.kind === "and" ? "&&" : "||";
-        return w.parts.map((p) => this.whereToExpr(p)).reduce((l, r) => ({ kind: "logical", op, left: l, right: r }));
+        return w.parts.map((p) => this.whereToExpr(p)).reduce((l, r) => ({ kind: "logical", span: [l.span[0], r.span[1]], op, left: l, right: r }));
       }
       case "op": {
         const hint = w.op === "count" ? ` — write \`<relation> count { … } ${this.peek().value} N\` without the parentheses` : "";
@@ -689,6 +665,7 @@ class Parser {
       const v = Number(this.next().value);
       if (!Number.isInteger(v)) this.fail("count comparison takes an integer");
       op.countCmp = { op: relop, value: v };
+      op.span = [op.span[0], this.end()];
     }
     return op;
   }
@@ -697,12 +674,13 @@ class Parser {
   // Returns null (rewinding) when the lookahead is not a consumer op.
   private tryOp(inWhere: boolean): OpNode | null {
     const start = this.pos;
+    const startPos = this.start();
     let receiver: Expr;
-    if (this.at("binding")) receiver = { kind: "binding", index: this.next().index! };
+    if (this.at("binding")) receiver = this.bindingNode(this.next());
     else if (this.at("ident") || this.at("caret")) {
       const levels = this.parseCarets();
       if (!this.at("ident")) { this.pos = start; return null; }
-      receiver = this.parseNavFrom(this.next(), levels).expr;
+      receiver = this.parseNavFrom(this.next(), levels, startPos).expr;
     } else return null;
 
     if (this.at("ident") && CONSUMERS.has(this.peek().value)) {
@@ -715,23 +693,27 @@ class Parser {
         const op = this.next().value as Consumer;
         let distinct = false;
         if (this.at("ident", "distinct")) { this.next(); distinct = true; }
-        this.next(); // '{'
-        const { sub, distinct: bodyDistinct } = this.parseSubquery({ top: false, op, liftsAllowed: inWhere && op === "collect" });
+        const lbrace = this.next().pos; // '{'
+        const body = this.parseBody({ top: false, op, liftsAllowed: inWhere && op === "collect" });
         if (!this.at("rbrace")) this.fail(`expected '}' to close the ${op} { … } block`);
         this.next();
-        return { kind: "op", receiver, op, sub, distinct: distinct || bodyDistinct };
+        const sub: Subquery = {
+          kind: "subquery",
+          span: this.sp(lbrace),
+          from: body.froms,
+          where: body.where,
+          select: body.select,
+          orderBy: body.orderBy,
+          follow: body.follow,
+          values: body.values,
+          limit: body.limit,
+          offset: body.offset,
+        };
+        return { kind: "op", span: this.sp(startPos), receiver, op, sub, countCmp: null, distinct: distinct || body.distinct };
       }
     }
     this.pos = start;
     return null;
-  }
-
-  private parseSubquery(ctx: BodyCtx): { sub: Subquery; distinct: boolean } {
-    const body = this.parseBody(ctx);
-    return {
-      sub: { from: body.froms, where: body.where, select: body.select, orderBy: body.orderBy, follow: body.follow, values: body.values, ...bounds(body) },
-      distinct: body.distinct,
-    };
   }
 
   // ---- expression Pratt parser ----------------------------------------------
@@ -740,13 +722,21 @@ class Parser {
 
   private parseOr(): Expr {
     let left = this.parseAnd();
-    while (this.atOp("||")) { this.next(); left = { kind: "logical", op: "||", left, right: this.parseAnd() }; }
+    while (this.atOp("||")) {
+      this.next();
+      const right = this.parseAnd();
+      left = { kind: "logical", span: [left.span[0], right.span[1]], op: "||", left, right };
+    }
     return left;
   }
 
   private parseAnd(): Expr {
     let left = this.parseCmp();
-    while (this.atOp("&&")) { this.next(); left = { kind: "logical", op: "&&", left, right: this.parseCmp() }; }
+    while (this.atOp("&&")) {
+      this.next();
+      const right = this.parseCmp();
+      left = { kind: "logical", span: [left.span[0], right.span[1]], op: "&&", left, right };
+    }
     return left;
   }
 
@@ -764,7 +754,10 @@ class Parser {
     if (!isCmp()) return lhs;
     const op = this.next().value;
     const rhs = this.parseRange();
-    const result: Expr = op === "in" ? { kind: "in", left: lhs, right: rhs } : { kind: "binary", op, left: lhs, right: rhs };
+    const span: Span = [lhs.span[0], rhs.span[1]];
+    const result: Expr = op === "in"
+      ? { kind: "in", span, left: lhs, right: rhs }
+      : { kind: "binary", span, op: op as BinaryOp, left: lhs, right: rhs };
     if (isCmp()) {
       this.fail(`comparisons do not chain: \`a ${t.value} b ${this.peek().value} c\` — write two comparisons joined with \`&&\``);
     }
@@ -778,15 +771,18 @@ class Parser {
   // opens the high end.
   private parseRange(left?: Expr): Expr {
     if (left === undefined && this.at("range")) {
-      const exclusiveEnd = this.next().value === "...";
+      const tok = this.next();
+      const exclusiveEnd = tok.value === "...";
       if (!this.canStartValue()) this.fail("a range needs at least one bound: `lo..hi`, `lo..`, or `..hi`");
-      return { kind: "range", lo: null, hi: this.parseAdd(), exclusiveEnd };
+      const hi = this.parseAdd();
+      return { kind: "range", span: [tok.pos, hi.span[1]], lo: null, hi, exclusiveEnd };
     }
     const lo = this.parseAdd(left);
     if (this.at("range")) {
-      const exclusiveEnd = this.next().value === "...";
+      const tok = this.next();
+      const exclusiveEnd = tok.value === "...";
       const hi = this.canStartValue() ? this.parseAdd() : null;
-      return { kind: "range", lo, hi, exclusiveEnd };
+      return { kind: "range", span: [lo.span[0], hi ? hi.span[1] : tok.end], lo, hi, exclusiveEnd };
     }
     return lo;
   }
@@ -807,8 +803,9 @@ class Parser {
   private parseAdd(left?: Expr): Expr {
     left = this.parseMul(left);
     while (this.peek().type === "op" && ADD_OPS.has(this.peek().value)) {
-      const op = this.next().value;
-      left = { kind: "binary", op, left, right: this.parseMul() };
+      const op = this.next().value as BinaryOp;
+      const right = this.parseMul();
+      left = { kind: "binary", span: [left.span[0], right.span[1]], op, left, right };
     }
     return left;
   }
@@ -816,38 +813,43 @@ class Parser {
   private parseMul(left?: Expr): Expr {
     left = this.parseUnary(left);
     while (this.peek().type === "op" && MUL_OPS.has(this.peek().value)) {
-      const op = this.next().value;
-      left = { kind: "binary", op, left, right: this.parseUnary() };
+      const op = this.next().value as BinaryOp;
+      const right = this.parseUnary();
+      left = { kind: "binary", span: [left.span[0], right.span[1]], op, left, right };
     }
     return left;
   }
 
   private parseUnary(left?: Expr): Expr {
     if (left !== undefined) return this.parsePostfix(left);
-    if (this.atOp("!")) { this.next(); return { kind: "unary", op: "!", expr: this.parseUnary() }; }
-    if (this.atOp("-")) { this.next(); return { kind: "unary", op: "-", expr: this.parseUnary() }; }
+    if (this.atOp("!") || this.atOp("-")) {
+      const tok = this.next();
+      const expr = this.parseUnary();
+      return { kind: "unary", span: [tok.pos, expr.span[1]], op: tok.value as "!" | "-", expr };
+    }
     return this.parsePostfix();
   }
 
   private parsePostfix(left?: Expr): Expr {
     let expr = left ?? this.parsePrimary();
+    const start = expr.span[0];
     for (;;) {
       if (this.at("dot")) {
         this.next();
         if (!this.at("ident")) this.fail("expected a property name after '.'");
         const name = this.next().value;
         if (this.at("lparen")) {
-          expr = { kind: "call", recv: expr, name, args: this.parseArgs() };
+          const args = this.parseArgs();
+          expr = { kind: "call", span: this.sp(start), recv: expr, name, args };
         } else {
-          expr = { kind: "member", recv: expr, name };
+          expr = { kind: "member", span: this.sp(start), recv: expr, name };
         }
       } else if (this.at("lparen") && left === undefined && expr.kind === "ident") {
         // free function call: name(args) — a bare name read here, not `(f)(x)`
-        expr = { kind: "call", recv: null, name: expr.name, args: this.parseArgs() };
-      } else if (this.at("lbrace")) {
-        break; // a consumer block boundary — not part of a value expression
+        const args = this.parseArgs();
+        expr = { kind: "call", span: this.sp(start), recv: null, name: expr.name, args };
       } else {
-        break;
+        break; // `{` is a consumer block boundary — not part of a value expression; anything else ends the chain too
       }
     }
     return expr;
@@ -874,24 +876,26 @@ class Parser {
     if (t.type === "caret") {
       const levels = this.parseCarets();
       if (!this.at("ident")) this.fail("expected an identifier after '^' (an outer reference)");
-      return { kind: "outer", levels, name: this.next().value };
+      const name = this.next();
+      return { kind: "outer", span: [t.pos, name.end], levels, name: name.value };
     }
-    if (t.type === "number") { this.next(); return { kind: "lit", value: Number(t.value) }; }
-    if (t.type === "string") { this.next(); return { kind: "lit", value: t.value }; }
-    if (t.type === "binding") { this.next(); return { kind: "binding", index: t.index! }; }
+    if (t.type === "number") { this.next(); return { kind: "lit", span: [t.pos, t.end], value: Number(t.value) }; }
+    if (t.type === "string") { this.next(); return { kind: "lit", span: [t.pos, t.end], value: t.value }; }
+    if (t.type === "binding") { this.next(); return this.bindingNode(t); }
     if (t.type === "lparen") {
       this.next();
       const e = this.parseValueExpr();
       if (!this.at("rparen")) this.fail("expected ')'");
       this.next();
-      return e;
+      return withSpan(e, [t.pos, this.end()]);
     }
     if (t.type === "ident") {
       this.next();
-      if (t.value === "true") return { kind: "lit", value: true };
-      if (t.value === "false") return { kind: "lit", value: false };
-      if (t.value === "null") return { kind: "lit", value: null };
-      return { kind: "ident", name: t.value };
+      const span: Span = [t.pos, t.end];
+      if (t.value === "true") return { kind: "lit", span, value: true };
+      if (t.value === "false") return { kind: "lit", span, value: false };
+      if (t.value === "null") return { kind: "lit", span, value: null };
+      return { kind: "ident", span, name: t.value };
     }
     this.fail(`unexpected ${this.tokDesc()} — expected a value`);
   }
@@ -908,21 +912,15 @@ function navKey(e: Expr): string | null {
   }
 }
 
-// `!` applied `n` times to a where node.
-function wrapNot(w: Where, n: number): Where {
-  for (let i = 0; i < n; i++) w = { kind: "not", expr: w };
+// `!` applied once per recorded `!` position to a where node, innermost first.
+function wrapNot(w: Where, notStarts: readonly number[]): Where {
+  for (let i = notStarts.length - 1; i >= 0; i--) w = { kind: "not", span: [notStarts[i]!, w.span[1]], expr: w };
   return w;
 }
 
 // A scalar where leaf. A leading `!` on the whole leaf becomes a `not` node (so
 // `where !active` keeps its shape); inside a comparison it stays a unary `!`.
 function scalarLeaf(e: Expr): Where {
-  if (e.kind === "unary" && e.op === "!") return { kind: "not", expr: scalarLeaf(e.expr) };
-  return { kind: "scalar", expr: e };
-}
-
-// The optional `limit`/`offset` fields of a Query/Subquery, present only when set
-// (so a Query built without them is unchanged).
-function bounds(b: { limit?: Expr | null; offset?: Expr | null }): { limit?: Expr; offset?: Expr } {
-  return { ...(b.limit ? { limit: b.limit } : {}), ...(b.offset ? { offset: b.offset } : {}) };
+  if (e.kind === "unary" && e.op === "!") return { kind: "not", span: e.span, expr: scalarLeaf(e.expr) };
+  return { kind: "scalar", span: e.span, expr: e };
 }

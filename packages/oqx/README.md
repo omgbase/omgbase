@@ -16,7 +16,7 @@ JavaScript tagged template.
 > OQX is a language with more than one implementation; the specification is
 > [`spec/oqx`](https://github.com/omgbase/omgbase/tree/main/spec/oqx). The
 > language version is the package version's `major.minor` (`LANGUAGE_VERSION`,
-> `"0.15"`); the patch digit is this implementation's own.
+> `"0.16"`); the patch digit is this implementation's own.
 > Requirements: Node ≥ 22.13 for `@omgbase/oqx/sqlite`; Node ≥ 22.18 to run the
 > test suite (see [Requirements](#requirements)).
 
@@ -259,9 +259,10 @@ against the value of `x`; a string in `x` can't inject operators or identifiers.
 
 **`where` sees the `select` aliases.** A name defined in the same body's
 projection may be used in its `where`; an alias shadows a same-named field
-there. It is a compile-time rewrite — the alias's expression is substituted
-inline — so it costs nothing at run time and a storage planner still sees an
-ordinary predicate:
+there. The alias's expression is substituted inline before evaluation
+(`resolveAliases`, applied once by the run entry points — the parsed tree keeps
+what you wrote), so it costs nothing at run time and a storage planner still
+sees an ordinary predicate:
 
 ```js
 oqx`select name, adult: age >= 18 from ${people} where adult`;        // ≡ where age >= 18
@@ -649,7 +650,7 @@ select … from … where … follow … order by … limit N offset N   the fix
 name, alias: expr, nested: rel collect { … }   projection (`select` may be dropped only here, in first position)
 from ${source}                                  source collection (required at the top level)
 where a == b && rel exists { where … } || !c    predicate tree + nested ops (`where` is never implicit)
-where alias                                      `where` may use this body's select aliases (inlined; an alias shadows a field)
+where alias                                      `where` may use this body's select aliases (resolved before evaluation; an alias shadows a field)
 where rel none { … }                             zero rows (≡ !rel exists { … }; "all" = none over the complement)
 where x in lo..hi / lo...hi / ..hi / lo..        range membership (incl. / excl. / open-ended)
 where x in range(field)                          coerce a string field to a range, then test coverage
@@ -669,6 +670,78 @@ follow ^people collect { where manager == ^id } a destination block: successors 
 ${source} <collect|exists|none|count|first|single> { … }   whole-query consumer
 ```
 
+## The AST: reflecting on a query
+
+`parse(source)` returns the query's abstract syntax tree, and since language
+0.16 that tree is a **public contract** shared by both implementations
+([`spec/oqx/AST.md`](https://github.com/omgbase/omgbase/tree/main/spec/oqx/AST.md)):
+a tool reflects on a query — which relations it names, which clauses it has,
+where in the text each piece sits — without re-parsing. The objects are plain
+data (no parent pointers, no methods) and *are* the JSON shape.
+
+- **Every node has `kind` and `span`.** `span` is `[start, end)` in Unicode
+  **code points** over the raw source (for a template, `rawSource(strings)`,
+  where a binding occupies its `${n}` marker); `toUtf16(span, source)` converts
+  for an editor that counts UTF-16 units. A parenthesized operand spans its
+  parentheses; a block (`subquery`) spans its braces.
+- **Optionals are materialized** — `where: null`, `limit: null`, `countCmp: null`,
+  `distinct: false`, `values: false` — so nothing has to be defaulted.
+- **`where` keeps its surface form.** A `select` alias used in `where` stays an
+  `ident` in the tree; `resolveAliases(query)` is the pure substitution the run
+  entry points (`oqx`, `run`, `execute`, `runQuery`) apply exactly once before
+  evaluation. An `Engine.run` evaluates the query it is given — if you drive an
+  engine yourself, resolve first.
+
+```js
+import { parse, visit, transform, print, printTemplate, toJSON, stripSpans, build } from "@omgbase/oqx";
+
+const q = parse('select name, n: jobs collect { employer } from people where jobs exists { where !end }');
+
+// visit: every node, with its ancestors, the clause it sits in, and the scope depth
+const relations = [];
+visit(q, {
+  enter(node, { clause, depth }) {
+    if (node.kind === "op") relations.push({ relation: print(node.receiver), clause, depth });
+  },
+});
+// → [{ relation: "jobs", clause: "select", depth: 1 }, { relation: "jobs", clause: "where", depth: 1 }]
+
+// transform: rebuild with every expression mapped (children first; untouched nodes keep identity + spans)
+const rewritten = transform(q, (e) => (e.kind === "ident" && e.name === "name" ? build.member(build.ident("person"), "name") : e));
+
+// print: the canonical source — single spaces, `select` written, minimal parentheses
+print(rewritten);
+// 'select name: person.name, n: jobs collect { employer: employer } from people where jobs exists { where !end }'
+
+toJSON(q);        // { oqx: "0.16", kind: "query", span: [0, 93], … } — the shared JSON document
+stripSpans(q);    // the same tree without spans, for shape comparisons
+```
+
+`visit(root, { enter?, leave? })` walks depth-first in canonical source order;
+`enter` may return `false` to skip a subtree. Its context is `{ path, clause,
+depth }` — the ancestors, the clause (`source` · `from` · `where` · `select` ·
+`orderBy` · `limit` · `offset` · `follow` · `follow.destination` · `follow.where`
+· `follow.frontier` · `follow.by`; `null` at the root) and the **scope depth**
+the node is evaluated at (0 = the root scope: a top-level source or bound; 1 =
+a top-level row; a block's body is one deeper than its receiver). Both walks
+are driven by one child-key table, `CHILDREN`, so a future field is added in one
+place.
+
+`print(node)` is canonical, and the law `stripSpans(parse(print(parse(q))))`
+≡ `stripSpans(parse(q))` holds for every spec fixture (both runners check it);
+`print(parse(q)) === q` is *not* a law — spelling is normalized. A binding is a
+value, never source text: `print` throws (`OqxError`, stage `"print"`) on one,
+and `printTemplate(node)` returns `{ strings, count, indices }` — the fragments
+around each binding and the binding each gap stands for (the canonical clause
+order can move one past another), to re-run with `parseTemplate(strings,
+count)` and the values permuted by `indices`.
+
+`build.*` constructs nodes with the empty span `[0, 0]` and the materialized
+defaults (`build.query(source, { select, where, … })`, `build.op(receiver,
+"collect", build.subquery({ … }))`, `build.field`, `build.collect`,
+`build.follow`, `build.ident`, `build.lit`, `build.binary`, `build.and`, …), so
+a tree you assemble prints with `print` and has the shape of a parsed one.
+
 ## Data context: string queries and named roots
 
 When you don't need interpolation, `execute` runs a plain string query against a
@@ -687,7 +760,8 @@ the full discriminated result (`{ consumer, … }`).
 ## Architecture: adapting to other storage & query systems
 
 OQX is layered so it can be the front-end for query systems far beyond in-memory
-objects. The parsed `Query` AST is the host-agnostic IR; execution is pluggable.
+objects. The parsed `Query` AST is the host-agnostic contract (above); execution
+is pluggable.
 
 ```
 Query AST  ─┬─ InMemoryEngine(DataContext)     tier 1/2 — drive any data model
@@ -908,7 +982,8 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   consumer-shaped value: an array for `collect`, a boolean for `exists` / `none`,
   a number for `count`, a record or `null` for `first` / `single`.
 - `parse(source)` — a query string → reusable `Query` AST (an `OqxError` with
-  `stage: "lex" | "parse"` on bad input).
+  `stage: "lex" | "parse"` on bad input); `parseTemplate(strings, count)` the
+  tagged-template form, with `binding` nodes for the `${…}` slots.
 - `execute(source, roots?)` — parse and run a string against named roots
   (`{ people }`), returning the consumer-shaped value.
 - `run(query, opts?)` — run a parsed `Query`, returning the full `OqxResult`.
@@ -1032,11 +1107,30 @@ adapter lives on the `@omgbase/oqx/sqlite` subpath.
   - `map?: (raw) => row` — a custom raw-SQL-row → query-row mapper (overrides
     `jsonColumns`).
 
+**The AST** (see [above](#the-ast-reflecting-on-a-query); `spec/oqx/AST.md` is normative)
+
+- `visit(root, { enter?, leave? })` / `transform(root, f)` — the generic walks
+  (`Visitor`, `VisitContext`, `Clause` are the types); `CHILDREN` — the
+  child-key table per node kind that drives them.
+- `print(node)` / `printTemplate(node)` — the canonical printer (`Template` is
+  `{ strings, count, indices }`).
+- `resolveAliases(query)` — the `select`-alias substitution the entry points
+  apply before evaluation (SEMANTICS §14).
+- `toJSON(query)` — the tree stamped with `oqx: LANGUAGE_VERSION`; `stripSpans(node)`
+  — the tree without spans (`Stripped<T>`); `toUtf16(span, source)` and
+  `codePointLength(s)` — code-point ↔ UTF-16 offsets; `rawSource(strings)` —
+  the display source of a template.
+- `build` — the node builders (`build.query`, `build.op`, `build.subquery`,
+  `build.field`, `build.ident`, …).
+- `LANGUAGE_VERSION` — the `spec/oqx/VERSION` this implementation conforms to (`"0.16"`).
+
 **Types**
 
 - Every AST node type from `src/ast.ts` is re-exported (`Query`, `Subquery`,
-  `Where`, `Expr`, `OpNode`, `SelectItem`, `OrderSpec`, `Follow`, …) for
-  planners that walk the IR.
+  `Where`, `Expr`, `OpNode`, `SelectItem`, `OrderSpec`, `Follow`,
+  `AstNode`, `AstKind`, `Span`, …) for tools that reflect on queries and
+  planners that walk the tree; `isExpr(node)` tells an expression from the
+  structural nodes.
 
 ## Requirements
 

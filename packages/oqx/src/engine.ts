@@ -190,7 +190,7 @@ export class InMemoryEngine implements Engine {
   private boundOf(b: Pick<Subquery, "limit" | "offset">, enclosing: Scope): Bound {
     if (!b.limit && !b.offset) return UNBOUNDED;
     const scope: Scope = enclosing.parent === null ? enclosing : rowless(enclosing);
-    const read = (e: Expr | undefined, word: string): number | null => {
+    const read = (e: Expr | null, word: string): number | null => {
       if (!e) return null;
       const v = this.evalExpr(e, scope);
       if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
@@ -719,11 +719,6 @@ export class InMemoryEngine implements Engine {
         const r = this.evalExpr(e.recv, scope);
         return r == null ? undefined : this.ctx.get(r, e.name);
       }
-      case "index": {
-        const r = this.evalExpr(e.recv, scope);
-        const i = this.evalExpr(e.index, scope);
-        return r == null ? undefined : this.ctx.get(r, String(i));
-      }
       case "call": return this.evalCall(e, scope);
       case "unary": {
         const v = this.evalExpr(e.expr, scope);
@@ -890,7 +885,7 @@ function partitionRecur(w: Where): { seed: Where | null; post: Where | null } {
   const seed: Where[] = [];
   const post: Where[] = [];
   for (const p of parts) (whereHasRecur(p) ? post : seed).push(p);
-  const rebuild = (ps: Where[]): Where | null => (ps.length === 0 ? null : ps.length === 1 ? ps[0]! : { kind: "and", parts: ps });
+  const rebuild = (ps: Where[]): Where | null => (ps.length === 0 ? null : ps.length === 1 ? ps[0]! : { kind: "and", span: [0, 0], parts: ps });
   return { seed: rebuild(seed), post: rebuild(post) };
 }
 
@@ -907,17 +902,10 @@ function exprHasRecur(e: Expr): boolean {
   switch (e.kind) {
     case "ident": return RECUR.has(e.name);
     case "member": return exprHasRecur(e.recv);
-    case "index": return exprHasRecur(e.recv) || exprHasRecur(e.index);
     case "call": return (e.recv ? exprHasRecur(e.recv) : false) || e.args.some(exprHasRecur);
     case "unary": return exprHasRecur(e.expr);
     case "binary": case "logical": case "in": return exprHasRecur(e.left) || exprHasRecur(e.right);
     case "range": return (e.lo != null && exprHasRecur(e.lo)) || (e.hi != null && exprHasRecur(e.hi));
     default: return false;
   }
-}
-
-/** Convenience: run a query with plain-object roots (the default context). */
-export function runQuery(query: Query, bindings: readonly unknown[], roots: unknown): OqxResult {
-  const ctx = new DefaultContext((roots as Record<string, unknown>) ?? {});
-  return new InMemoryEngine(ctx).run(query, bindings);
 }

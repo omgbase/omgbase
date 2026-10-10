@@ -4,7 +4,7 @@
 // empty — only the plan/decline decision is under test here; the differential
 // (corpus/surface, corpus/oqx/conformance) proves the results agree.
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { parse } from "@omgbase/oqx";
+import { parse, build } from "@omgbase/oqx";
 import type { Where } from "@omgbase/oqx";
 import { Store } from "../core/store/store.js";
 import { ensureRepo } from "../core/attach.js";
@@ -47,12 +47,9 @@ describe("planner — decline (c): a residual that could raise sends the whole q
   });
 
   it("a nested block with the `single` consumer (only reachable in select position)", () => {
-    const w: Where = {
-      kind: "op",
-      receiver: { kind: "ident", name: "nodes" },
-      op: "exists",
-      sub: { from: [], where: null, orderBy: null, follow: null, select: [{ kind: "collect", name: "s", op: { kind: "op", receiver: { kind: "ident", name: "blocks" }, op: "single", sub: { from: [], where: null, select: [], orderBy: null, follow: null } } }] },
-    };
+    const w: Where = build.op(build.ident("nodes"), "exists", build.subquery({
+      select: [build.collect("s", build.op(build.ident("blocks"), "single"))],
+    }));
     expect(residualMayRaise(w, "docs")).toBe(true);
     expect(residualMayRaise({ ...w, sub: { ...w.sub, select: [] } }, "docs")).toBe(false);
   });
@@ -101,7 +98,7 @@ describe("planner — typed pushes (1.2): a bool or num literal against a json o
       const query = parse(q);
       const w = query.where;
       if (w?.kind !== "scalar" || w.expr.kind !== "binary") throw new Error("expected one comparison");
-      w.expr.right = { kind: "binding", index: 0 };
+      w.expr.right = build.binding(0);
       return planner.plan(query, [value]) !== null;
     };
     expect(bound("from blocks where checked == false", false)).toBe(true);

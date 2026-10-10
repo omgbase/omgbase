@@ -18,9 +18,30 @@
 //! * [`Value::Range`] never appears in a result, so it has no JSON form; it
 //!   maps to `null` rather than failing, so the conversion stays infallible.
 
+use serde::Deserialize;
 use serde_json::{Map, Value as Json};
 
+use crate::LANGUAGE_VERSION;
+use crate::ast::Query;
 use crate::value::{Object, Value};
+
+/// The parsed query as the JSON document both implementations exchange
+/// (`spec/oqx/AST.md` §4): the tree's serde form stamped with the language
+/// version it was produced under — `{ "oqx": "0.16", "kind": "query", … }`.
+pub fn ast_to_json(q: &Query) -> Json {
+    let mut out = Map::new();
+    out.insert("oqx".to_owned(), Json::String(LANGUAGE_VERSION.to_owned()));
+    if let Ok(Json::Object(fields)) = serde_json::to_value(q) {
+        out.extend(fields);
+    }
+    Json::Object(out)
+}
+
+/// Read a query back from its JSON form (the `oqx` stamp, if present, is not
+/// checked — a document from another minor of the same major still reads).
+pub fn query_from_json(j: &Json) -> Result<Query, serde_json::Error> {
+    Query::deserialize(j)
+}
 
 impl From<Json> for Value {
     fn from(j: Json) -> Self {

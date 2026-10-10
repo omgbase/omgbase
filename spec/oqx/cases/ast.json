@@ -1,0 +1,3895 @@
+{
+  "suite": "ast",
+  "cases": [
+    {
+      "name": "body form: select, from, where",
+      "tags": [
+        "query",
+        "select",
+        "where"
+      ],
+      "query": "select name, id from people where age >= 18",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">=",
+              "left": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 18
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "keyword-less projection is the same tree",
+      "tags": [
+        "select"
+      ],
+      "query": "name, id from people where age >= 18",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">=",
+              "left": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 18
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "bare from projects the row",
+      "tags": [
+        "query"
+      ],
+      "query": "from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: count",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people count { where active }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "active"
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: exists",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people exists { where active }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "active"
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "exists",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: none",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people none { where active }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "active"
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "none",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: first",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people first { name where age > 50 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 50
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "first",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: single",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people single { name where id == 7 }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 7
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "single",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: collect is the body form",
+      "tags": [
+        "consumer"
+      ],
+      "notes": "`xs collect { … }` and `select … from xs …` are one tree",
+      "query": "people collect { name where active }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "active"
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "directive form: distinct",
+      "tags": [
+        "consumer",
+        "distinct"
+      ],
+      "query": "jobs count distinct { employer }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "employer",
+              "expr": {
+                "kind": "ident",
+                "name": "employer"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": true,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "empty block",
+      "tags": [
+        "consumer"
+      ],
+      "query": "people count { }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [],
+          "orderBy": null,
+          "consumer": "count",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "nested collect in select",
+      "tags": [
+        "select",
+        "op"
+      ],
+      "query": "select name, current: jobs collect { employer where !end } from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "current",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "not",
+                    "expr": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "end"
+                      }
+                    }
+                  },
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "nested first and single in select",
+      "tags": [
+        "select",
+        "op"
+      ],
+      "query": "select name, a: jobs first { employer }, b: jobs single { employer where !end } from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "a",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "first",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            },
+            {
+              "kind": "collect",
+              "name": "b",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "single",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "not",
+                    "expr": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "end"
+                      }
+                    }
+                  },
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "where exists",
+      "tags": [
+        "where",
+        "op"
+      ],
+      "query": "from people where jobs exists { where !end }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "exists",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": {
+                "kind": "not",
+                "expr": {
+                  "kind": "scalar",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "end"
+                  }
+                }
+              },
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "where none",
+      "tags": [
+        "where",
+        "op"
+      ],
+      "query": "from people where jobs none { where end }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "none",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "ident",
+                  "name": "end"
+                }
+              },
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "where count with comparison",
+      "tags": [
+        "where",
+        "op"
+      ],
+      "query": "from people where jobs count { } >= 2",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "count",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": null,
+              "select": [],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": {
+              "op": ">=",
+              "value": 2
+            },
+            "distinct": false
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "where collect with a lift",
+      "tags": [
+        "where",
+        "lifts"
+      ],
+      "query": "name, employers from people where jobs collect { ^employers: employer where !end }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "jobs"
+            },
+            "op": "collect",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": {
+                "kind": "not",
+                "expr": {
+                  "kind": "scalar",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "end"
+                  }
+                }
+              },
+              "select": [
+                {
+                  "kind": "field",
+                  "name": "employers",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "employer"
+                  },
+                  "lift": 1
+                }
+              ],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "employers",
+              "expr": {
+                "kind": "ident",
+                "name": "employers"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "multi-level lift",
+      "tags": [
+        "lifts"
+      ],
+      "query": "name, teamIds, allMembers from departments where teams collect { ^teamIds: id where members collect { ^^allMembers: name } }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "departments"
+          },
+          "from": [],
+          "where": {
+            "kind": "op",
+            "receiver": {
+              "kind": "ident",
+              "name": "teams"
+            },
+            "op": "collect",
+            "sub": {
+              "kind": "subquery",
+              "from": [],
+              "where": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "members"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "allMembers",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "name"
+                      },
+                      "lift": 2
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              },
+              "select": [
+                {
+                  "kind": "field",
+                  "name": "teamIds",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "id"
+                  },
+                  "lift": 1
+                }
+              ],
+              "orderBy": null,
+              "follow": null,
+              "values": false,
+              "limit": null,
+              "offset": null
+            },
+            "countCmp": null,
+            "distinct": false
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "teamIds",
+              "expr": {
+                "kind": "ident",
+                "name": "teamIds"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "allMembers",
+              "expr": {
+                "kind": "ident",
+                "name": "allMembers"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "boolean tree: and, or, not, group",
+      "tags": [
+        "where"
+      ],
+      "query": "from p where a && b || !c && (d || e)",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "or",
+            "parts": [
+              {
+                "kind": "and",
+                "parts": [
+                  {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "ident",
+                      "name": "a"
+                    }
+                  },
+                  {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "ident",
+                      "name": "b"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "and",
+                "parts": [
+                  {
+                    "kind": "not",
+                    "expr": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "c"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "or",
+                    "parts": [
+                      {
+                        "kind": "scalar",
+                        "expr": {
+                          "kind": "ident",
+                          "name": "d"
+                        }
+                      },
+                      {
+                        "kind": "scalar",
+                        "expr": {
+                          "kind": "ident",
+                          "name": "e"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "not of a comparison keeps the group",
+      "tags": [
+        "where"
+      ],
+      "query": "from p where !(a == b)",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "not",
+            "expr": {
+              "kind": "scalar",
+              "expr": {
+                "kind": "binary",
+                "op": "==",
+                "left": {
+                  "kind": "ident",
+                  "name": "a"
+                },
+                "right": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "nested not",
+      "tags": [
+        "where"
+      ],
+      "query": "from p where !!active",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "not",
+            "expr": {
+              "kind": "not",
+              "expr": {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "ident",
+                  "name": "active"
+                }
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "parenthesized group promoted to a scalar operand",
+      "tags": [
+        "where"
+      ],
+      "query": "from p where (a + 1) > 2 && (x || y) == 5 && (name).size() > 3",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": ">",
+                  "left": {
+                    "kind": "binary",
+                    "op": "+",
+                    "left": {
+                      "kind": "ident",
+                      "name": "a"
+                    },
+                    "right": {
+                      "kind": "lit",
+                      "value": 1
+                    }
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 2
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "==",
+                  "left": {
+                    "kind": "logical",
+                    "op": "||",
+                    "left": {
+                      "kind": "ident",
+                      "name": "x"
+                    },
+                    "right": {
+                      "kind": "ident",
+                      "name": "y"
+                    }
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 5
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": ">",
+                  "left": {
+                    "kind": "call",
+                    "recv": {
+                      "kind": "ident",
+                      "name": "name"
+                    },
+                    "name": "size",
+                    "args": []
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 3
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "op inside not and or",
+      "tags": [
+        "where",
+        "op"
+      ],
+      "query": "from p where !jobs exists { } || jobs count { } == 0",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "or",
+            "parts": [
+              {
+                "kind": "not",
+                "expr": {
+                  "kind": "op",
+                  "receiver": {
+                    "kind": "ident",
+                    "name": "jobs"
+                  },
+                  "op": "exists",
+                  "sub": {
+                    "kind": "subquery",
+                    "from": [],
+                    "where": null,
+                    "select": [],
+                    "orderBy": null,
+                    "follow": null,
+                    "values": false,
+                    "limit": null,
+                    "offset": null
+                  },
+                  "countCmp": null,
+                  "distinct": false
+                }
+              },
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "count",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": {
+                  "op": "==",
+                  "value": 0
+                },
+                "distinct": false
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "arithmetic precedence",
+      "tags": [
+        "expr"
+      ],
+      "query": "select v: a + b * c - d / e % f from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "binary",
+                "op": "-",
+                "left": {
+                  "kind": "binary",
+                  "op": "+",
+                  "left": {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  "right": {
+                    "kind": "binary",
+                    "op": "*",
+                    "left": {
+                      "kind": "ident",
+                      "name": "b"
+                    },
+                    "right": {
+                      "kind": "ident",
+                      "name": "c"
+                    }
+                  }
+                },
+                "right": {
+                  "kind": "binary",
+                  "op": "%",
+                  "left": {
+                    "kind": "binary",
+                    "op": "/",
+                    "left": {
+                      "kind": "ident",
+                      "name": "d"
+                    },
+                    "right": {
+                      "kind": "ident",
+                      "name": "e"
+                    }
+                  },
+                  "right": {
+                    "kind": "ident",
+                    "name": "f"
+                  }
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "unary operators",
+      "tags": [
+        "expr"
+      ],
+      "query": "select v: -a, w: !b, x: --c from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "v",
+              "expr": {
+                "kind": "unary",
+                "op": "-",
+                "expr": {
+                  "kind": "ident",
+                  "name": "a"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "w",
+              "expr": {
+                "kind": "unary",
+                "op": "!",
+                "expr": {
+                  "kind": "ident",
+                  "name": "b"
+                }
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "unary",
+                "op": "-",
+                "expr": {
+                  "kind": "unary",
+                  "op": "-",
+                  "expr": {
+                    "kind": "ident",
+                    "name": "c"
+                  }
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "comparison operators",
+      "tags": [
+        "expr"
+      ],
+      "query": "from p where a < 1 && b <= 2 && c > 3 && d >= 4 && e != 5 && f == 6",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "<",
+                  "left": {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "<=",
+                  "left": {
+                    "kind": "ident",
+                    "name": "b"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 2
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": ">",
+                  "left": {
+                    "kind": "ident",
+                    "name": "c"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 3
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": ">=",
+                  "left": {
+                    "kind": "ident",
+                    "name": "d"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 4
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "!=",
+                  "left": {
+                    "kind": "ident",
+                    "name": "e"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 5
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "binary",
+                  "op": "==",
+                  "left": {
+                    "kind": "ident",
+                    "name": "f"
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 6
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "membership and ranges",
+      "tags": [
+        "expr",
+        "ranges"
+      ],
+      "query": "from p where n in 1..5 && m in 1...5 && k in ..5 && j in 5..",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "in",
+                  "left": {
+                    "kind": "ident",
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "lo": {
+                      "kind": "lit",
+                      "value": 1
+                    },
+                    "hi": {
+                      "kind": "lit",
+                      "value": 5
+                    },
+                    "exclusiveEnd": false
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "in",
+                  "left": {
+                    "kind": "ident",
+                    "name": "m"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "lo": {
+                      "kind": "lit",
+                      "value": 1
+                    },
+                    "hi": {
+                      "kind": "lit",
+                      "value": 5
+                    },
+                    "exclusiveEnd": true
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "in",
+                  "left": {
+                    "kind": "ident",
+                    "name": "k"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "lo": null,
+                    "hi": {
+                      "kind": "lit",
+                      "value": 5
+                    },
+                    "exclusiveEnd": false
+                  }
+                }
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "in",
+                  "left": {
+                    "kind": "ident",
+                    "name": "j"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "lo": {
+                      "kind": "lit",
+                      "value": 5
+                    },
+                    "hi": null,
+                    "exclusiveEnd": false
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "range bounds are arithmetic",
+      "tags": [
+        "ranges"
+      ],
+      "query": "from p where n in 1 + 1..2 * 3",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "in",
+              "left": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "right": {
+                "kind": "range",
+                "lo": {
+                  "kind": "binary",
+                  "op": "+",
+                  "left": {
+                    "kind": "lit",
+                    "value": 1
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                },
+                "hi": {
+                  "kind": "binary",
+                  "op": "*",
+                  "left": {
+                    "kind": "lit",
+                    "value": 2
+                  },
+                  "right": {
+                    "kind": "lit",
+                    "value": 3
+                  }
+                },
+                "exclusiveEnd": false
+              }
+            }
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "open range before a clause word",
+      "tags": [
+        "ranges"
+      ],
+      "query": "from p where n in 5.. order by n",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "in",
+              "left": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "right": {
+                "kind": "range",
+                "lo": {
+                  "kind": "lit",
+                  "value": 5
+                },
+                "hi": null,
+                "exclusiveEnd": false
+              }
+            }
+          },
+          "select": [],
+          "orderBy": [
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "n"
+              },
+              "desc": false
+            }
+          ],
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "calls and methods",
+      "tags": [
+        "expr",
+        "call"
+      ],
+      "query": "select s: size(xs), l: name.lower(), m: name.matches(\"^a\", \"i\"), e: entries(prefs).size() from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "s",
+              "expr": {
+                "kind": "call",
+                "recv": null,
+                "name": "size",
+                "args": [
+                  {
+                    "kind": "ident",
+                    "name": "xs"
+                  }
+                ]
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "l",
+              "expr": {
+                "kind": "call",
+                "recv": {
+                  "kind": "ident",
+                  "name": "name"
+                },
+                "name": "lower",
+                "args": []
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "m",
+              "expr": {
+                "kind": "call",
+                "recv": {
+                  "kind": "ident",
+                  "name": "name"
+                },
+                "name": "matches",
+                "args": [
+                  {
+                    "kind": "lit",
+                    "value": "^a"
+                  },
+                  {
+                    "kind": "lit",
+                    "value": "i"
+                  }
+                ]
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "e",
+              "expr": {
+                "kind": "call",
+                "recv": {
+                  "kind": "call",
+                  "recv": null,
+                  "name": "entries",
+                  "args": [
+                    {
+                      "kind": "ident",
+                      "name": "prefs"
+                    }
+                  ]
+                },
+                "name": "size",
+                "args": []
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "member chains and default keys",
+      "tags": [
+        "expr",
+        "select"
+      ],
+      "query": "select meta.slug, a.b.c from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "slug",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "ident",
+                  "name": "meta"
+                },
+                "name": "slug"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "c",
+              "expr": {
+                "kind": "member",
+                "recv": {
+                  "kind": "member",
+                  "recv": {
+                    "kind": "ident",
+                    "name": "a"
+                  },
+                  "name": "b"
+                },
+                "name": "c"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "outer references",
+      "tags": [
+        "outer-refs"
+      ],
+      "query": "select name, peers: ^people collect { name where city == ^city && name != ^^root } from people",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "peers",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "people"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "and",
+                    "parts": [
+                      {
+                        "kind": "scalar",
+                        "expr": {
+                          "kind": "binary",
+                          "op": "==",
+                          "left": {
+                            "kind": "ident",
+                            "name": "city"
+                          },
+                          "right": {
+                            "kind": "outer",
+                            "levels": 1,
+                            "name": "city"
+                          }
+                        }
+                      },
+                      {
+                        "kind": "scalar",
+                        "expr": {
+                          "kind": "binary",
+                          "op": "!=",
+                          "left": {
+                            "kind": "ident",
+                            "name": "name"
+                          },
+                          "right": {
+                            "kind": "outer",
+                            "levels": 2,
+                            "name": "root"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "name",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "name"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "$it and values",
+      "tags": [
+        "values"
+      ],
+      "query": "$it values from scores where $it > 50",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "scores"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "$it"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 50
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "$it",
+              "expr": {
+                "kind": "ident",
+                "name": "$it"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": true,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "values keeps an alias",
+      "tags": [
+        "values"
+      ],
+      "query": "select x: name.upper() values from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "x",
+              "expr": {
+                "kind": "call",
+                "recv": {
+                  "kind": "ident",
+                  "name": "name"
+                },
+                "name": "upper",
+                "args": []
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": true,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "top-level distinct",
+      "tags": [
+        "distinct"
+      ],
+      "query": "select distinct employer from jobs",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "jobs"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "employer",
+              "expr": {
+                "kind": "ident",
+                "name": "employer"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": true,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "op distinct: consumer spelling",
+      "tags": [
+        "distinct"
+      ],
+      "query": "select n: jobs collect distinct { employer } from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": true
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "op distinct: select spelling is the same tree",
+      "tags": [
+        "distinct"
+      ],
+      "query": "select n: jobs collect { select distinct employer } from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": true
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "literals",
+      "tags": [
+        "expr",
+        "lit"
+      ],
+      "query": "select a: \"s\", b: 'q', c: 1.5, d: 1e3, e: true, f: false, g: null from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "lit",
+                "value": "s"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "b",
+              "expr": {
+                "kind": "lit",
+                "value": "q"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "c",
+              "expr": {
+                "kind": "lit",
+                "value": 1.5
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "d",
+              "expr": {
+                "kind": "lit",
+                "value": 1000
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "e",
+              "expr": {
+                "kind": "lit",
+                "value": true
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "f",
+              "expr": {
+                "kind": "lit",
+                "value": false
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "g",
+              "expr": {
+                "kind": "lit",
+                "value": null
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "string escapes decode",
+      "tags": [
+        "lit"
+      ],
+      "query": "select a: \"a\\nb\\\"c\\\\d\" from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "a",
+              "expr": {
+                "kind": "lit",
+                "value": "a\nb\"c\\d"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "order by",
+      "tags": [
+        "order"
+      ],
+      "query": "name from p order by age desc, name asc, city",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": [
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "age"
+              },
+              "desc": true
+            },
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "desc": false
+            },
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "city"
+              },
+              "desc": false
+            }
+          ],
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "limit and offset literals",
+      "tags": [
+        "limit-offset"
+      ],
+      "query": "name from p limit 10 offset 20",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": {
+            "kind": "lit",
+            "value": 10
+          },
+          "offset": {
+            "kind": "lit",
+            "value": 20
+          }
+        }
+      }
+    },
+    {
+      "name": "offset alone",
+      "tags": [
+        "limit-offset"
+      ],
+      "query": "name from p offset 2",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": {
+            "kind": "lit",
+            "value": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "limit and offset in a block with an outer reference",
+      "tags": [
+        "limit-offset"
+      ],
+      "query": "select n: jobs collect { employer limit ^k offset 1 } from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": {
+                    "kind": "outer",
+                    "levels": 1,
+                    "name": "k"
+                  },
+                  "offset": {
+                    "kind": "lit",
+                    "value": 1
+                  }
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "order by in a block",
+      "tags": [
+        "order",
+        "op"
+      ],
+      "query": "select j: jobs collect { employer order by start desc limit 1 } from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "j",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": [
+                    {
+                      "kind": "order",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "start"
+                      },
+                      "desc": true
+                    }
+                  ],
+                  "follow": null,
+                  "values": false,
+                  "limit": {
+                    "kind": "lit",
+                    "value": 1
+                  },
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "from re-projection in a block",
+      "tags": [
+        "from"
+      ],
+      "query": "select n: cfg collect { from items where x } from p",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "cfg"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [
+                    {
+                      "kind": "ident",
+                      "name": "items"
+                    }
+                  ],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "ident",
+                      "name": "x"
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "entries and $key",
+      "tags": [
+        "entries"
+      ],
+      "query": "key: $key, value: $it from entries(settings)",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "call",
+            "recv": null,
+            "name": "entries",
+            "args": [
+              {
+                "kind": "ident",
+                "name": "settings"
+              }
+            ]
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "key",
+              "expr": {
+                "kind": "ident",
+                "name": "$key"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "value",
+              "expr": {
+                "kind": "ident",
+                "name": "$it"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: a plain destination",
+      "tags": [
+        "follow"
+      ],
+      "query": "id from tree follow children",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "tree"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "ident",
+                "name": "children"
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: distinct, several destinations, every option",
+      "tags": [
+        "follow"
+      ],
+      "query": "id from tree follow distinct children, parent { where x > 1 frontier leaf depth 3 by id }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "tree"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "ident",
+                "name": "children"
+              },
+              {
+                "kind": "ident",
+                "name": "parent"
+              }
+            ],
+            "distinct": true,
+            "where": {
+              "kind": "binary",
+              "op": ">",
+              "left": {
+                "kind": "ident",
+                "name": "x"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            },
+            "frontier": {
+              "kind": "ident",
+              "name": "leaf"
+            },
+            "depth": 3,
+            "by": {
+              "kind": "ident",
+              "name": "id"
+            }
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: a destination block over a named root",
+      "tags": [
+        "follow"
+      ],
+      "query": "id from people where id == 1 follow ^people collect { where manager == ^id }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "people"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "manager"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "follow: relations and blocks mixed",
+      "tags": [
+        "follow"
+      ],
+      "query": "id from chain where id == \"b\" follow distinct ^chain collect { where id == ^prev }, next, ^chain first { where prev == ^id }",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "chain"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "lit",
+                "value": "b"
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "chain"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "id"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "prev"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              },
+              {
+                "kind": "ident",
+                "name": "next"
+              },
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "outer",
+                  "levels": 1,
+                  "name": "chain"
+                },
+                "op": "first",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "prev"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ],
+            "distinct": true,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "alias-preserving where",
+      "tags": [
+        "aliases"
+      ],
+      "notes": "the alias stays a bare identifier; resolveAliases substitutes it before evaluation",
+      "query": "select name, adult: age >= 18 from people where adult",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "adult"
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "field",
+              "name": "adult",
+              "expr": {
+                "kind": "binary",
+                "op": ">=",
+                "left": {
+                  "kind": "ident",
+                  "name": "age"
+                },
+                "right": {
+                  "kind": "lit",
+                  "value": 18
+                }
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "alias-preserving where: a collect alias standing alone",
+      "tags": [
+        "aliases"
+      ],
+      "query": "select name, cur: jobs collect { employer where !end } from people where cur",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "ident",
+              "name": "cur"
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "cur",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "not",
+                    "expr": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "end"
+                      }
+                    }
+                  },
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "nested blocks two deep",
+      "tags": [
+        "op"
+      ],
+      "query": "select d: teams collect { id, m: members collect { name } } from depts",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "depts"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "collect",
+              "name": "d",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "teams"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "id",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "id"
+                      },
+                      "lift": 0
+                    },
+                    {
+                      "kind": "collect",
+                      "name": "m",
+                      "op": {
+                        "kind": "op",
+                        "receiver": {
+                          "kind": "ident",
+                          "name": "members"
+                        },
+                        "op": "collect",
+                        "sub": {
+                          "kind": "subquery",
+                          "from": [],
+                          "where": null,
+                          "select": [
+                            {
+                              "kind": "field",
+                              "name": "name",
+                              "expr": {
+                                "kind": "ident",
+                                "name": "name"
+                              },
+                              "lift": 0
+                            }
+                          ],
+                          "orderBy": null,
+                          "follow": null,
+                          "values": false,
+                          "limit": null,
+                          "offset": null
+                        },
+                        "countCmp": null,
+                        "distinct": false
+                      }
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "every clause at once",
+      "tags": [
+        "query"
+      ],
+      "query": "select distinct name, n: jobs collect { employer } from people where active && jobs exists { where !end } follow distinct children { depth 2 } order by name limit 5 offset 1",
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "people"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "ident",
+                  "name": "active"
+                }
+              },
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "exists",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "not",
+                    "expr": {
+                      "kind": "scalar",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "end"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            ]
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            },
+            {
+              "kind": "collect",
+              "name": "n",
+              "op": {
+                "kind": "op",
+                "receiver": {
+                  "kind": "ident",
+                  "name": "jobs"
+                },
+                "op": "collect",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": null,
+                  "select": [
+                    {
+                      "kind": "field",
+                      "name": "employer",
+                      "expr": {
+                        "kind": "ident",
+                        "name": "employer"
+                      },
+                      "lift": 0
+                    }
+                  ],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              }
+            }
+          ],
+          "orderBy": [
+            {
+              "kind": "order",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "desc": false
+            }
+          ],
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "ident",
+                "name": "children"
+              }
+            ],
+            "distinct": true,
+            "where": null,
+            "frontier": null,
+            "depth": 2,
+            "by": null
+          },
+          "distinct": true,
+          "values": false,
+          "limit": {
+            "kind": "lit",
+            "value": 5
+          },
+          "offset": {
+            "kind": "lit",
+            "value": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "template: bindings as source and value",
+      "tags": [
+        "bindings"
+      ],
+      "template": {
+        "strings": [
+          "name from ",
+          " where id == ",
+          ""
+        ],
+        "values": [
+          [],
+          1
+        ]
+      },
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "binding",
+            "index": 0
+          },
+          "from": [],
+          "where": {
+            "kind": "scalar",
+            "expr": {
+              "kind": "binary",
+              "op": "==",
+              "left": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "right": {
+                "kind": "binding",
+                "index": 1
+              }
+            }
+          },
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "template: a binding as a bound",
+      "tags": [
+        "bindings",
+        "limit-offset"
+      ],
+      "template": {
+        "strings": [
+          "name from p limit ",
+          " offset ",
+          ""
+        ],
+        "values": [
+          2,
+          1
+        ]
+      },
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "name",
+              "expr": {
+                "kind": "ident",
+                "name": "name"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": {
+            "kind": "binding",
+            "index": 0
+          },
+          "offset": {
+            "kind": "binding",
+            "index": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "template: a binding as a receiver and in a range",
+      "tags": [
+        "bindings"
+      ],
+      "template": {
+        "strings": [
+          "from p where ",
+          " exists { where id == ^id } && n in ",
+          "..",
+          ""
+        ],
+        "values": [
+          [],
+          1,
+          5
+        ]
+      },
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "p"
+          },
+          "from": [],
+          "where": {
+            "kind": "and",
+            "parts": [
+              {
+                "kind": "op",
+                "receiver": {
+                  "kind": "binding",
+                  "index": 0
+                },
+                "op": "exists",
+                "sub": {
+                  "kind": "subquery",
+                  "from": [],
+                  "where": {
+                    "kind": "scalar",
+                    "expr": {
+                      "kind": "binary",
+                      "op": "==",
+                      "left": {
+                        "kind": "ident",
+                        "name": "id"
+                      },
+                      "right": {
+                        "kind": "outer",
+                        "levels": 1,
+                        "name": "id"
+                      }
+                    }
+                  },
+                  "select": [],
+                  "orderBy": null,
+                  "follow": null,
+                  "values": false,
+                  "limit": null,
+                  "offset": null
+                },
+                "countCmp": null,
+                "distinct": false
+              },
+              {
+                "kind": "scalar",
+                "expr": {
+                  "kind": "in",
+                  "left": {
+                    "kind": "ident",
+                    "name": "n"
+                  },
+                  "right": {
+                    "kind": "range",
+                    "lo": {
+                      "kind": "binding",
+                      "index": 1
+                    },
+                    "hi": {
+                      "kind": "binding",
+                      "index": 2
+                    },
+                    "exclusiveEnd": false
+                  }
+                }
+              }
+            ]
+          },
+          "select": [],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": null,
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    },
+    {
+      "name": "template: a binding as a follow destination",
+      "tags": [
+        "bindings",
+        "follow"
+      ],
+      "template": {
+        "strings": [
+          "id from tree follow ",
+          ""
+        ],
+        "values": [
+          "children"
+        ]
+      },
+      "expect": {
+        "ast": {
+          "kind": "query",
+          "source": {
+            "kind": "ident",
+            "name": "tree"
+          },
+          "from": [],
+          "where": null,
+          "select": [
+            {
+              "kind": "field",
+              "name": "id",
+              "expr": {
+                "kind": "ident",
+                "name": "id"
+              },
+              "lift": 0
+            }
+          ],
+          "orderBy": null,
+          "consumer": "collect",
+          "follow": {
+            "kind": "follow",
+            "destinations": [
+              {
+                "kind": "binding",
+                "index": 0
+              }
+            ],
+            "distinct": false,
+            "where": null,
+            "frontier": null,
+            "depth": null,
+            "by": null
+          },
+          "distinct": false,
+          "values": false,
+          "limit": null,
+          "offset": null
+        }
+      }
+    }
+  ]
+}

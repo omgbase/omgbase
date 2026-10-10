@@ -24,9 +24,11 @@ use std::fs;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 
+use oqx::walk::Node;
 use oqx::{
-    DefaultContext, Engine, InMemoryEngine, Object, OqxError, Value, parse_string, parse_template,
-    run_query,
+    DefaultContext, Engine, InMemoryEngine, Object, OqxError, Query, Value, parse_string,
+    parse_template, print_query, print_template, resolve_aliases, run_query, strip_spans,
+    transform,
 };
 use serde_json::Value as Json;
 
@@ -58,6 +60,9 @@ struct SpecError {
 enum Expect {
     Result(Json),
     Error(SpecError),
+    /// The JSON tree of `parse(query)`; compared with spans stripped unless the
+    /// case sets `spans: true`.
+    Ast(Json),
 }
 
 struct Template {
@@ -70,6 +75,7 @@ struct SpecCase {
     roots: Json,
     query: Option<String>,
     template: Option<Template>,
+    spans: bool,
     expect: Expect,
 }
 
@@ -163,12 +169,33 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
         };
         let result = expect.get("result");
         let error = expect.get("error");
-        if result.is_some() == error.is_some() {
+        let ast = expect.get("ast");
+        if [result.is_some(), error.is_some(), ast.is_some()]
+            .iter()
+            .filter(|b| **b)
+            .count()
+            != 1
+        {
             problems.push(format!(
-                "{at}: `expect` needs exactly one of `result` / `error`"
+                "{at}: `expect` needs exactly one of `result` / `error` / `ast`"
             ));
         }
-        let expect = if let Some(e) = error {
+        let spans = match c.get("spans") {
+            None => false,
+            Some(Json::Bool(b)) => {
+                if ast.is_none() {
+                    problems.push(format!("{at}: `spans` needs `expect.ast`"));
+                }
+                *b
+            }
+            Some(_) => {
+                problems.push(format!("{at}: `spans` is a boolean"));
+                false
+            }
+        };
+        let expect = if let Some(a) = ast {
+            Expect::Ast(a.clone())
+        } else if let Some(e) = error {
             let stage = e.get("stage").and_then(Json::as_str);
             let Some(stage) = stage.filter(|s| ["lex", "parse", "eval"].contains(s)) else {
                 problems.push(format!(
@@ -202,6 +229,7 @@ fn validate(file: &str, doc: &Json) -> Result<Vec<SpecCase>, Vec<String>> {
             roots,
             query,
             template,
+            spans,
             expect,
         });
     }
@@ -358,19 +386,24 @@ fn json_eq(a: &Json, b: &Json) -> bool {
 
 // ---- execution ---------------------------------------------------------------
 
+/// The case's query and bindings, parsed by the entry point its form names.
+fn parse_case(c: &SpecCase) -> Result<(Query, Vec<Value>), OqxError> {
+    match (&c.template, &c.query) {
+        (Some(t), _) => {
+            let bindings: Vec<Value> = t.values.iter().map(from_json).collect();
+            Ok((parse_template(&t.strings, bindings.len())?, bindings))
+        }
+        (None, Some(q)) => Ok((parse_string(q)?, Vec::new())),
+        (None, None) => unreachable!("validated: one of query / template"),
+    }
+}
+
 fn execute(c: &SpecCase) -> Result<Value, OqxError> {
     let Some(roots) = from_json(&c.roots).as_object().cloned() else {
         unreachable!("roots validated as an object")
     };
     let roots: Object = roots;
-    let (query, bindings) = match (&c.template, &c.query) {
-        (Some(t), _) => {
-            let bindings: Vec<Value> = t.values.iter().map(from_json).collect();
-            (parse_template(&t.strings, bindings.len())?, bindings)
-        }
-        (None, Some(q)) => (parse_string(q)?, Vec::new()),
-        (None, None) => unreachable!("validated: one of query / template"),
-    };
+    let (query, bindings) = parse_case(c)?;
     Ok(run_query(&query, &bindings, roots)?.into_value())
 }
 
@@ -380,14 +413,10 @@ fn execute_naive(c: &SpecCase) -> Result<Value, OqxError> {
     let Some(roots) = from_json(&c.roots).as_object().cloned() else {
         unreachable!("roots validated as an object")
     };
-    let (query, bindings) = match (&c.template, &c.query) {
-        (Some(t), _) => {
-            let bindings: Vec<Value> = t.values.iter().map(from_json).collect();
-            (parse_template(&t.strings, bindings.len())?, bindings)
-        }
-        (None, Some(q)) => (parse_string(q)?, Vec::new()),
-        (None, None) => unreachable!("validated: one of query / template"),
-    };
+    let (query, bindings) = parse_case(c)?;
+    // An engine evaluates the query as given: resolve the aliases first, as the
+    // entry points do.
+    let query = resolve_aliases(&query)?;
     Ok(InMemoryEngine::new(DefaultContext::new(roots))
         .with_rules(&[])
         .run(&query, &bindings)?
@@ -436,8 +465,84 @@ fn clip(s: impl Into<String>) -> String {
     format!("{cut}…")
 }
 
+/// `expect.ast`: the serde form of the parsed tree equals the fixture's JSON
+/// (spans dropped unless the case compares them) — what proves the two
+/// implementations produce one shape.
+fn check_ast(c: &SpecCase, expected: &Json) -> Result<(), String> {
+    let (query, _) = parse_case(c).map_err(|e| clip(format!("unexpected {e}")))?;
+    let mut actual = serde_json::to_value(&query).map_err(|e| clip(format!("serialize: {e}")))?;
+    if !c.spans {
+        drop_spans(&mut actual);
+    }
+    if json_eq(&actual, expected) {
+        Ok(())
+    } else {
+        Err(clip(format!("expected {expected} got {actual}")))
+    }
+}
+
+fn drop_spans(j: &mut Json) {
+    match j {
+        Json::Object(o) => {
+            o.remove("span");
+            o.values_mut().for_each(drop_spans);
+        }
+        Json::Array(a) => a.iter_mut().for_each(drop_spans),
+        _ => {}
+    }
+}
+
+/// The round-trip law of the canonical printer (`spec/oqx/AST.md` §6), checked
+/// on every fixture query that parses:
+/// `strip(parse(print(parse(q)))) ≡ strip(parse(q))`. A template prints to
+/// fragments whose gaps may reorder the bindings; the original is renumbered
+/// by the printed order before comparing.
+fn check_round_trip(c: &SpecCase) -> Result<(), String> {
+    let (query, _) = match parse_case(c) {
+        Ok(p) => p,
+        Err(e) if matches!(e.stage, oqx::Stage::Lex | oqx::Stage::Parse) => return Ok(()),
+        Err(e) => return Err(clip(format!("unexpected {e}"))),
+    };
+    if c.template.is_some() {
+        let t = print_template(Node::Query(&query));
+        if t.strings.len() != t.count + 1 {
+            return Err(clip(format!("template fragments {:?}", t.strings)));
+        }
+        let position = |idx: usize| t.indices.iter().position(|i| *i == idx).expect("printed");
+        let renumbered = transform(&query, &mut |e, _| match e {
+            oqx::Expr::Binding { index, span } => oqx::Expr::Binding {
+                index: position(index),
+                span,
+            },
+            other => other,
+        });
+        let again = parse_template(&t.strings, t.count)
+            .map_err(|e| clip(format!("reparse of {:?}: {e}", t.strings)))?;
+        return if strip_spans(&again) == strip_spans(&renumbered) {
+            Ok(())
+        } else {
+            Err(clip(format!(
+                "template round trip of {:?} differs",
+                t.strings
+            )))
+        };
+    }
+    let printed = print_query(&query).map_err(|e| clip(format!("print: {e}")))?;
+    let again = parse_string(&printed).map_err(|e| {
+        clip(format!(
+            "print produced an unparseable query {printed:?}: {e}"
+        ))
+    })?;
+    if strip_spans(&again) == strip_spans(&query) {
+        Ok(())
+    } else {
+        Err(clip(format!("round trip of {printed:?} differs")))
+    }
+}
+
 fn check(c: &SpecCase) -> Result<(), String> {
     match &c.expect {
+        Expect::Ast(expected) => check_ast(c, expected),
         Expect::Error(want) => match execute(c) {
             Ok(v) => Err(clip(format!(
                 "expected an OqxError at stage {}, but the query succeeded with {}",
@@ -751,6 +856,37 @@ fn case_names_are_unique_per_file() {
         "{:?}",
         loaded.problems
     );
+}
+
+/// The canonical printer's round-trip law over every fixture query that parses
+/// (`spec/oqx/AST.md` §6). Mirrors the reference's `[print round trip]` tests.
+#[test]
+fn print_round_trips_every_case() {
+    if !spec_available() {
+        return;
+    }
+    let loaded = load();
+    let mut checked = 0usize;
+    let mut failing: Vec<(String, Option<String>)> = Vec::new();
+    for f in &loaded.files {
+        for c in &f.cases {
+            checked += 1;
+            if let Err(reason) = check_round_trip(c) {
+                failing.push((c.id.clone(), Some(reason)));
+            }
+        }
+    }
+    eprintln!(
+        "spec: print round-trips {} of {checked} cases",
+        checked - failing.len()
+    );
+    report("print round trip failed", &failing);
+    assert!(
+        failing.is_empty(),
+        "{} cases failed the round-trip law",
+        failing.len()
+    );
+    assert!(checked > 800, "checked only {checked} cases");
 }
 
 /// The runner's private conversions must agree with the crate's `json`

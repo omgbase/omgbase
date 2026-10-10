@@ -403,8 +403,8 @@ impl Operand {
 /// it is not a plain identifier navigation.
 fn member_segments(e: &Expr) -> Option<Vec<&str>> {
     match e {
-        Expr::Ident { name } => Some(vec![name.as_str()]),
-        Expr::Member { recv, name } => {
+        Expr::Ident { name, .. } => Some(vec![name.as_str()]),
+        Expr::Member { recv, name, .. } => {
             let mut base = member_segments(recv)?;
             base.push(name.as_str());
             Some(base)
@@ -431,11 +431,11 @@ pub fn typed_value(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<(Frag, Ty)> {
 fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
     let (s, d, target) = (ctx.self_alias, ctx.doc_alias, ctx.target);
     match e {
-        Expr::Lit(v) => Operand::constant(v),
-        Expr::Binding { index } => {
+        Expr::Lit { value: v, .. } => Operand::constant(v),
+        Expr::Binding { index, .. } => {
             Operand::constant(ctx.params.get(*index).unwrap_or(&Value::Undefined))
         }
-        Expr::Ident { name } => {
+        Expr::Ident { name, .. } => {
             if name.starts_with('$') {
                 return intrinsic_sql(name, ctx).map(|(sql, ty)| Operand::plain(sql, ty));
             }
@@ -533,6 +533,7 @@ fn operand(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Operand> {
             recv: Some(recv),
             name,
             args,
+            ..
         } if args.is_empty() && (name == "lower" || name == "upper") => {
             let recv = translate_value(recv, ctx)?;
             Some(Operand {
@@ -667,12 +668,15 @@ pub fn translate_predicate(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
             op: LogicalOp::And,
             left,
             right,
+            ..
         } => join2(
             translate_predicate(left, ctx),
             translate_predicate(right, ctx),
             "AND",
         ),
-        Expr::Binary { op, left, right } => {
+        Expr::Binary {
+            op, left, right, ..
+        } => {
             // An arithmetic operator in predicate position → residual.
             let sql_op = is_op(*op)?;
             let l = operand(left, ctx)?;
@@ -703,6 +707,7 @@ pub fn translate_predicate(e: &Expr, ctx: &TranslateCtx<'_>) -> Option<Frag> {
             recv: Some(recv),
             name,
             args,
+            ..
         } if args.len() == 1 => {
             // startsWith / contains / endsWith — CASE-SENSITIVE, via
             // substr/instr (never LIKE). `matches` (regex) is declined.
@@ -775,7 +780,7 @@ mod tests {
     fn pred(src: &str) -> Expr {
         let q = oqx::parse_string(&format!("from docs where {src}")).expect("parses");
         match q.r#where {
-            Some(Where::Scalar { expr }) => expr,
+            Some(Where::Scalar { expr, .. }) => expr,
             other => panic!("expected a single scalar predicate, got {other:?}"),
         }
     }
@@ -783,11 +788,15 @@ mod tests {
     fn ident(name: &str) -> Box<Expr> {
         Box::new(Expr::Ident {
             name: name.to_owned(),
+            span: oqx::Span::EMPTY,
         })
     }
 
     fn lit(s: &str) -> Box<Expr> {
-        Box::new(Expr::Lit(Value::from(s)))
+        Box::new(Expr::Lit {
+            value: Value::from(s),
+            span: oqx::Span::EMPTY,
+        })
     }
 
     fn eq(l: Box<Expr>, r: Box<Expr>) -> Box<Expr> {
@@ -795,6 +804,7 @@ mod tests {
             op: BinaryOp::Eq,
             left: l,
             right: r,
+            span: oqx::Span::EMPTY,
         })
     }
 
@@ -1223,7 +1233,11 @@ mod tests {
         let e = Expr::Binary {
             op: BinaryOp::Ne,
             left: ident("checked"),
-            right: Box::new(Expr::Binding { index: 0 }),
+            right: Box::new(Expr::Binding {
+                index: 0,
+                span: oqx::Span::EMPTY,
+            }),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(
             translate_predicate(
@@ -1383,8 +1397,13 @@ mod tests {
             right: Box::new(Expr::Binary {
                 op: BinaryOp::Eq,
                 left: ident("checked"),
-                right: Box::new(Expr::Lit(Value::Bool(false))),
+                right: Box::new(Expr::Lit {
+                    value: Value::Bool(false),
+                    span: oqx::Span::EMPTY,
+                }),
+                span: oqx::Span::EMPTY,
             }),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(
             translate_predicate(&e, &blocks),
@@ -1433,8 +1452,12 @@ mod tests {
         let against = |i: usize, rhs: &str| {
             let e = Expr::Binary {
                 op: BinaryOp::Eq,
-                left: Box::new(Expr::Binding { index: i }),
+                left: Box::new(Expr::Binding {
+                    index: i,
+                    span: oqx::Span::EMPTY,
+                }),
                 right: Box::new(pred(rhs)),
+                span: oqx::Span::EMPTY,
             };
             translate_predicate(&e, &ctx).is_some()
         };
@@ -1635,6 +1658,7 @@ mod tests {
         let e = Expr::Unary {
             op: oqx::ast::UnaryOp::Not,
             expr: ident("$path"),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
     }
@@ -1645,6 +1669,7 @@ mod tests {
             op: LogicalOp::Or,
             left: eq(ident("$path"), lit("a")),
             right: eq(ident("$path"), lit("b")),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
     }
@@ -1702,7 +1727,9 @@ mod tests {
                 op: BinaryOp::Ne,
                 left: ident("$id"),
                 right: lit("d_2"),
+                span: oqx::Span::EMPTY,
             }),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(
             translate_predicate(&e, &DOCS),
@@ -1720,13 +1747,20 @@ mod tests {
             left: eq(ident("$path"), lit("a")),
             // $body is reconstructed, not a column → the whole && declines.
             right: eq(ident("$body"), lit("x")),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(translate_predicate(&e, &DOCS), None);
     }
 
     #[test]
     fn resolves_a_binding_to_its_param_value() {
-        let e = eq(ident("$path"), Box::new(Expr::Binding { index: 0 }));
+        let e = eq(
+            ident("$path"),
+            Box::new(Expr::Binding {
+                index: 0,
+                span: oqx::Span::EMPTY,
+            }),
+        );
         let params = [Value::from("from-binding.md")];
         let ctx = TranslateCtx {
             params: &params,
@@ -1758,6 +1792,7 @@ mod tests {
             op: LogicalOp::And,
             left: eq(ident("type"), lit("task")),
             right: eq(ident("marker"), lit("x")),
+            span: oqx::Span::EMPTY,
         };
         assert_eq!(
             translate_predicate(&both, &blocks),

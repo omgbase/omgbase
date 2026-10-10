@@ -346,6 +346,7 @@ fn declines_other_sources_re_projections_and_follow() {
     let mut q = parse_string("name from emp where dept == \"eng\"").unwrap();
     q.from.push(oqx::Expr::Ident {
         name: "reports".to_owned(),
+        span: oqx::Span::EMPTY,
     });
     decline(&q);
 

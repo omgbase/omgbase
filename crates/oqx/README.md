@@ -22,7 +22,7 @@ repository, and each reports the spec version it conforms to.
 ## Status
 
 Conformance-first, and conformant: `tests/spec.rs` runs every fixture in
-`spec/oqx/cases` (889 cases in 29 files at language version 0.15) and all of them
+`spec/oqx/cases` (959 cases in 31 files at language version 0.16) and all of them
 pass, so `cargo test -p oqx` requires every case to pass. Published on crates.io
 as `oqx`.
 
@@ -52,7 +52,9 @@ Mirrors the reference so the two can be read side by side:
 
 - `lexer` / `parser` → `ast` — the fixed clause order (`select, from, where,
   follow, order by, limit, offset`; only a leading `select` may drop its
-  keyword) and the expression grammar. `follow` takes a comma-separated list
+  keyword) and the expression grammar. Since 0.16 the tree is a language-level
+  contract (`spec/oqx/AST.md`, below): every node carries a `Span`, every
+  optional field is materialized, and `where` keeps its surface form. `follow` takes a comma-separated list
   of destinations (`Follow.destinations`, since 0.14): a relation of the
   current row, or a destination block — `^people collect { where manager ==
   ^id }`, a select-position directive re-read per frontier row with `^` bound
@@ -66,6 +68,20 @@ Mirrors the reference so the two can be read side by side:
   flags→`(?ims)`), so a pattern means the same here as in the reference;
   `DataContext::regex_dialect()` / `DefaultContext::with_regex_dialect` opt a
   host into the crate's native syntax instead (not portable).
+- `resolve` — `resolve_aliases`: the `select`-alias substitution in `where`
+  (SEMANTICS §14), applied exactly once by the entry points `run_query` /
+  `execute` before the engine sees the query (an `Engine::run` evaluates the
+  query it is given).
+- `walk` — `visit` with a `Visitor` (enter/leave; the context carries the path,
+  the `Clause` and the scope depth), `transform` (rebuild with every expression
+  mapped, children first), `strip_spans`; `Node` is the borrowed any-node enum.
+- `print` — the canonical printer: `print_query` / `print` (a `Node`), and
+  `print_template` for a tree with bindings (`Template { strings, count,
+  indices }`); the round-trip law `strip(parse(print(parse(q)))) ≡
+  strip(parse(q))` is checked over every spec fixture by `tests/spec.rs`.
+- `build` — node builders (`build::query`, `build::op`, `build::subquery`,
+  `build::field`, `build::ident`, `build::lit`, …) producing `Span::EMPTY`
+  nodes that print like parsed ones.
 - `engine` — the in-memory engine over a `DataContext` (the seam that binds the
   language to a data model; the default context is plain `Value`s).
 - `optimize` — the nested-block optimizer (below).
@@ -127,9 +143,44 @@ TypeScript package has the same optional `materialize` hook.
 `tests/spec.rs` proves optimized ≡ naive (result, or error stage and message)
 over every spec fixture, and `tests/optimize.rs` covers the rules.
 
+## The AST as a contract
+
+```rust
+use oqx::walk::{Node, VisitContext, Visitor};
+use oqx::{parse_string, print, print_query, visit};
+
+let q = parse_string("select name, n: jobs collect { employer } from people where jobs exists { where !end }")?;
+
+// every consumer directive, with the clause it sits in and the scope depth it is evaluated at
+struct Relations(Vec<(String, String, usize)>);
+impl Visitor for Relations {
+    fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
+        if let Node::Op(op) = node {
+            let clause = ctx.clause.map_or("", |c| c.as_str()).to_owned();
+            self.0.push((print(Node::Expr(&op.receiver)).unwrap(), clause, ctx.depth));
+        }
+        true
+    }
+}
+let mut rels = Relations(Vec::new());
+visit(Node::Query(&q), &mut rels);
+// [("jobs", "select", 1), ("jobs", "where", 1)]
+
+print_query(&q)?; // the canonical source; `print` fails (stage `Print`) on a binding — use `print_template`
+```
+
+Spans are `[start, end)` in Unicode code points over the raw source (a
+template's `raw_source`, where a binding occupies its `${n}` marker), the unit
+every offset in a lex/parse error uses too. Nodes a tool builds (`build::*`)
+carry `Span::EMPTY`; `strip_spans` normalizes a parsed tree for comparisons.
+
 ## Features
 
-- `json` — `From`/`Into` between `oqx::Value` and `serde_json::Value`.
+- `json` — `From`/`Into` between `oqx::Value` and `serde_json::Value`, plus the
+  AST's `Serialize`/`Deserialize` in the exact JSON shape the reference produces
+  (`kind`-tagged, camelCase, explicit nulls, operators as source words — proven
+  equal by `spec/oqx/cases/ast.json`), `ast_to_json(&query)` (stamped with
+  `"oqx": LANGUAGE_VERSION`) and `query_from_json`.
 - `sqlite` — `adapters::sqlite::SqliteTable`, a `QueryPlanner` that pushes the
   flat query core (scan + translatable conjunctive predicates, `LIMIT` for
   unordered `first`/`single`) into SQL over a bundled SQLite via `rusqlite`,

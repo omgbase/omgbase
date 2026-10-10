@@ -102,7 +102,6 @@ function exprMayRaise(e: Expr, target: Target, root: boolean): boolean {
     case "member":
       if (e.recv.kind === "ident" && e.recv.name === "doc" && RESERVED_DOC_BASENAMES.has(e.name)) return true;
       return exprMayRaise(e.recv, target, root);
-    case "index": return exprMayRaise(e.recv, target, root) || exprMayRaise(e.index, target, root);
     case "unary": return exprMayRaise(e.expr, target, root);
     case "binary": case "logical": case "in":
       return exprMayRaise(e.left, target, root) || exprMayRaise(e.right, target, root);

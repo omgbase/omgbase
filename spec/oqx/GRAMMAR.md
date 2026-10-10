@@ -175,9 +175,11 @@ group    = "(" where ")"                       ; a predicate group …
   parse error (`… is a select-position lookup …`); `collect` is legal only when
   every item it projects is a lift. Only `count { … }` may be followed by a
   comparison, and the right side must be a non-negative **integer literal**.
-- Alias inlining: a bare identifier in `where` that names an alias of the same
-  body's `select` is replaced by that alias's expression at parse time (see
-  SEMANTICS §aliases). Alias cycles are parse errors.
+- Aliases: a bare identifier in `where` may name an alias of the same body's
+  `select` (SEMANTICS §14). The parser validates the reference — an alias
+  cycle, or a block alias inside an expression, is a parse error — but keeps
+  the identifier in the tree (AST.md §2); `resolveAliases` substitutes it
+  before evaluation.
 
 [`where`, `consumers`, `aliases`]
 
@@ -319,6 +321,9 @@ Every failure is an `OqxError` with a `stage`:
 - `eval` — unknown functions/methods, `single` matching several rows, an
   invalid `limit`/`offset` value, `follow` inside a where-position directive.
 
-Messages carry a `(at offset N)` suffix for lex/parse errors. Fixtures assert
-only on stable fragments, never on offsets or whole messages.
+Messages carry a `(at offset N)` suffix for lex/parse errors; `N` counts
+Unicode code points over the raw source, the unit of every AST span (AST.md
+§3). Fixtures assert only on stable fragments, never on offsets or whole
+messages. A fourth stage, `print`, is raised by the canonical printer when a
+tree holds a binding (AST.md §6); no fixture expects it.
 [`errors-lex`, `errors-parse`, `errors-eval`]

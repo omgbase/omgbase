@@ -113,16 +113,17 @@ describe("translate — declines (left residual) return null", () => {
   it("negation (!) as a nested expr is not AND-safe", () => {
     // (`!` at the top where level becomes a `Where.not` node handled by the
     // planner; here we exercise a `unary` Expr leaf directly.)
-    const e: Expr = { kind: "unary", op: "!", expr: { kind: "ident", name: "$path" } };
+    const e: Expr = { kind: "unary", span: [0, 0], op: "!", expr: { kind: "ident", span: [0, 0], name: "$path" } };
     expect(translatePredicate(e, DOCS)).toBeNull();
   });
 
   it("disjunction (||) as a nested expr is declined", () => {
     const e: Expr = {
       kind: "logical",
+      span: [0, 0],
       op: "||",
-      left: { kind: "binary", op: "==", left: { kind: "ident", name: "$path" }, right: { kind: "lit", value: "a" } },
-      right: { kind: "binary", op: "==", left: { kind: "ident", name: "$path" }, right: { kind: "lit", value: "b" } },
+      left: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "lit", span: [0, 0], value: "a" } },
+      right: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "lit", span: [0, 0], value: "b" } },
     };
     expect(translatePredicate(e, DOCS)).toBeNull();
   });
@@ -136,9 +137,10 @@ describe("translate — conjunction and bindings via constructed AST", () => {
   it("&& composes two pushable comparisons", () => {
     const e: Expr = {
       kind: "logical",
+      span: [0, 0],
       op: "&&",
-      left: { kind: "binary", op: "==", left: { kind: "ident", name: "$path" }, right: { kind: "lit", value: "a" } },
-      right: { kind: "binary", op: "!=", left: { kind: "ident", name: "$id" }, right: { kind: "lit", value: "d_2" } },
+      left: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "lit", span: [0, 0], value: "a" } },
+      right: { kind: "binary", span: [0, 0], op: "!=", left: { kind: "ident", span: [0, 0], name: "$id" }, right: { kind: "lit", span: [0, 0], value: "d_2" } },
     };
     expect(translatePredicate(e, DOCS)).toEqual({
       sql: "((d.path IS ?) AND (d.doc_id IS NOT ?))",
@@ -149,16 +151,17 @@ describe("translate — conjunction and bindings via constructed AST", () => {
   it("&& declines wholesale if either side is not pushable", () => {
     const e: Expr = {
       kind: "logical",
+      span: [0, 0],
       op: "&&",
-      left: { kind: "binary", op: "==", left: { kind: "ident", name: "$path" }, right: { kind: "lit", value: "a" } },
+      left: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "lit", span: [0, 0], value: "a" } },
       // $body is not a column (reconstructed) → not pushable, so the whole && declines.
-      right: { kind: "binary", op: "==", left: { kind: "ident", name: "$body" }, right: { kind: "lit", value: "x" } },
+      right: { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$body" }, right: { kind: "lit", span: [0, 0], value: "x" } },
     };
     expect(translatePredicate(e, DOCS)).toBeNull();
   });
 
   it("resolves a ${…} binding to its param value", () => {
-    const e: Expr = { kind: "binary", op: "==", left: { kind: "ident", name: "$path" }, right: { kind: "binding", index: 0 } };
+    const e: Expr = { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "$path" }, right: { kind: "binding", span: [0, 0], index: 0 } };
     expect(translatePredicate(e, { ...DOCS, params: ["from-binding.md"] })).toEqual({
       sql: "(d.path IS ?)",
       params: ["from-binding.md"],
@@ -326,7 +329,7 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
 
   it("the typed forms compose under && like any other conjunct", () => {
     // (a top-level `&&` is a `Where.and` the planner splits; a nested one is a `logical` Expr — build that here)
-    const e: Expr = { kind: "logical", op: "&&", left: predOn("blocks", 'type == "task"'), right: predOn("blocks", "checked == false") };
+    const e: Expr = { kind: "logical", span: [0, 0], op: "&&", left: predOn("blocks", 'type == "task"'), right: predOn("blocks", "checked == false") };
     const f = translatePredicate(e, BLOCKS)!;
     expect(f.sql).toBe(`((b.type IS ?) AND ((${JT} = 'false') IS 1))`);
     expect(f.params).toEqual(["task"]);
@@ -344,16 +347,16 @@ describe("decline (a) — the operand-kind comparison matrix", () => {
   });
 
   it("a boolean or number binding behaves like the literal (typed push); text/null bindings push plainly; a non-scalar binding declines", () => {
-    const e: Expr = { kind: "binary", op: "==", left: { kind: "ident", name: "checked" }, right: { kind: "binding", index: 0 } };
+    const e: Expr = { kind: "binary", span: [0, 0], op: "==", left: { kind: "ident", span: [0, 0], name: "checked" }, right: { kind: "binding", span: [0, 0], index: 0 } };
     expect(translatePredicate(e, { ...BLOCKS, params: [true] })).toEqual({ sql: `((${JT} = 'true') IS 1)`, params: [] });
     expect(translatePredicate(e, { ...BLOCKS, params: [false] })).toEqual({ sql: `((${JT} = 'false') IS 1)`, params: [] });
     expect(translatePredicate(e, { ...BLOCKS, params: [1] })).toEqual({ sql: `((${JT} IN ('integer', 'real') AND json_extract(b.attrs, '$.checked') = ?) IS 1)`, params: [1] });
     expect(translatePredicate(e, { ...BLOCKS, params: ["x"] })).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: ["x"] });
     expect(translatePredicate(e, { ...BLOCKS, params: [null] })).toEqual({ sql: "(json_extract(b.attrs, '$.checked') IS ?)", params: [null] });
     expect(translatePredicate(e, { ...BLOCKS, params: [["not", "scalar"]] })).toBeNull();
-    const p: Expr = { kind: "binary", op: ">=", left: { kind: "ident", name: "era" }, right: { kind: "binding", index: 0 } };
+    const p: Expr = { kind: "binary", span: [0, 0], op: ">=", left: { kind: "ident", span: [0, 0], name: "era" }, right: { kind: "binding", span: [0, 0], index: 0 } };
     expect(translatePredicate(p, { ...DOCS, params: [800] })).toEqual({ sql: `((SELECT p.type = 'number' AND p.val_num >= ? ${scope("era")} IS 1)`, params: [800] });
-    const b: Expr = { kind: "binary", op: "!=", left: { kind: "ident", name: "verified" }, right: { kind: "binding", index: 0 } };
+    const b: Expr = { kind: "binary", span: [0, 0], op: "!=", left: { kind: "ident", span: [0, 0], name: "verified" }, right: { kind: "binding", span: [0, 0], index: 0 } };
     expect(translatePredicate(b, { ...DOCS, params: [false] })).toEqual({ sql: `((SELECT p.type = 'bool' AND p.val_bool = ? ${scope("verified")} IS NOT 1)`, params: [0] });
   });
 

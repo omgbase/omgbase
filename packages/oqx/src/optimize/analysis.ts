@@ -29,7 +29,6 @@ export function exprReadsScopeIn(e: Expr, at: number, upTo: number): boolean {
     case "ident": return at >= 1 && at <= upTo;
     case "outer": { const d = at - e.levels; return d >= 1 && d <= upTo; }
     case "member": return exprReadsScopeIn(e.recv, at, upTo);
-    case "index": return exprReadsScopeIn(e.recv, at, upTo) || exprReadsScopeIn(e.index, at, upTo);
     case "call": return (e.recv !== null && exprReadsScopeIn(e.recv, at, upTo)) || e.args.some((a) => exprReadsScopeIn(a, at, upTo));
     case "unary": return exprReadsScopeIn(e.expr, at, upTo);
     case "binary": case "logical": case "in": return exprReadsScopeIn(e.left, at, upTo) || exprReadsScopeIn(e.right, at, upTo);
@@ -95,7 +94,6 @@ export function exprRaiseFree(e: Expr, ctx: RuleContext): boolean {
     case "binding": return e.index < ctx.bindingCount;
     case "call": return false;
     case "member": return exprRaiseFree(e.recv, ctx);
-    case "index": return exprRaiseFree(e.recv, ctx) && exprRaiseFree(e.index, ctx);
     case "unary": return exprRaiseFree(e.expr, ctx);
     case "binary": case "logical": case "in": return exprRaiseFree(e.left, ctx) && exprRaiseFree(e.right, ctx);
     case "range": return (e.lo === null || exprRaiseFree(e.lo, ctx)) && (e.hi === null || exprRaiseFree(e.hi, ctx));

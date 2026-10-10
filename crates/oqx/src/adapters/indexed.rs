@@ -166,7 +166,7 @@ impl DataContext for IndexedContext {
 impl QueryPlanner for IndexedCollection {
     fn plan(&self, query: &Query, params: &[Value]) -> Option<Plan> {
         match &query.source {
-            crate::ast::Expr::Ident { name } if *name == self.name => {}
+            crate::ast::Expr::Ident { name, .. } if *name == self.name => {}
             _ => return None,
         }
         if !query.from.is_empty() || query.follow.is_some() {
@@ -329,6 +329,7 @@ mod tests {
         let mut q = parse_string("name from emp where dept == \"eng\"").unwrap();
         q.from.push(crate::ast::Expr::Ident {
             name: "reports".to_owned(),
+            span: crate::ast::Span::EMPTY,
         });
         assert!(idx.plan(&q, &[]).is_none(), "re-projection");
         decline("name from emp where dept == \"eng\" follow manager"); // follow

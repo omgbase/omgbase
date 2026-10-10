@@ -1,5 +1,5 @@
-//! A single error type for every OQX failure — lex, parse, and evaluation.
-//! `stage` distinguishes where it came from so callers (and the conformance
+//! A single error type for every OQX failure — lex, parse, evaluation, and
+//! printing (a binding has no source text). `stage` distinguishes where it came from so callers (and the conformance
 //! fixtures, which assert on `stage` plus stable message fragments) can branch
 //! without matching whole messages.
 
@@ -10,15 +10,17 @@ pub enum Stage {
     Lex,
     Parse,
     Eval,
+    Print,
 }
 
 impl Stage {
-    /// The spec's spelling: `"lex" | "parse" | "eval"`.
+    /// The spec's spelling: `"lex" | "parse" | "eval" | "print"`.
     pub fn as_str(self) -> &'static str {
         match self {
             Stage::Lex => "lex",
             Stage::Parse => "parse",
             Stage::Eval => "eval",
+            Stage::Print => "print",
         }
     }
 }
@@ -44,6 +46,9 @@ impl OqxError {
     }
     pub fn eval(message: impl Into<String>) -> Self {
         Self::new(Stage::Eval, message)
+    }
+    pub fn print(message: impl Into<String>) -> Self {
+        Self::new(Stage::Print, message)
     }
 }
 

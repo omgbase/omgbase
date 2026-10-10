@@ -117,9 +117,9 @@ pub(crate) fn guards_by_doc(t: Target) -> &'static str {
 /// or `$repo.<target>` source (else `None` — not a pushable shape).
 fn root_target(source: &Expr) -> Option<Target> {
     match source {
-        Expr::Ident { name } => Target::parse(name),
-        Expr::Member { recv, name } => match &**recv {
-            Expr::Ident { name: r } if r == "$repo" => Target::parse(name),
+        Expr::Ident { name, .. } => Target::parse(name),
+        Expr::Member { recv, name, .. } => match &**recv {
+            Expr::Ident { name: r, .. } if r == "$repo" => Target::parse(name),
             _ => None,
         },
         _ => None,
@@ -153,11 +153,11 @@ fn residual_may_raise(w: &Where, target: Target) -> bool {
 
 fn where_may_raise(w: &Where, target: Target, root: bool) -> bool {
     match w {
-        Where::And { parts } | Where::Or { parts } => {
+        Where::And { parts, .. } | Where::Or { parts, .. } => {
             parts.iter().any(|p| where_may_raise(p, target, root))
         }
-        Where::Not { expr } => where_may_raise(expr, target, root),
-        Where::Scalar { expr } => expr_may_raise(expr, target, root),
+        Where::Not { expr, .. } => where_may_raise(expr, target, root),
+        Where::Scalar { expr, .. } => expr_may_raise(expr, target, root),
         Where::Op(op) => op_may_raise(op, target, root),
     }
 }
@@ -205,20 +205,19 @@ fn is_reserved(name: &str) -> bool {
 fn expr_may_raise(e: &Expr, target: Target, root: bool) -> bool {
     let again = |e: &Expr| expr_may_raise(e, target, root);
     match e {
-        Expr::Lit(_) | Expr::Binding { .. } => false,
-        Expr::Ident { name } => root && target == Target::Docs && is_reserved(name),
+        Expr::Lit { .. } | Expr::Binding { .. } => false,
+        Expr::Ident { name, .. } => root && target == Target::Docs && is_reserved(name),
         Expr::Outer { .. } | Expr::Call { .. } => true,
         // `doc.<reserved>`: the reach-through row is a doc (the row itself on
         // docs), so the guard fires on any target at any depth.
-        Expr::Member { recv, name } => {
-            (is_reserved(name) && matches!(&**recv, Expr::Ident { name } if name == "doc"))
+        Expr::Member { recv, name, .. } => {
+            (is_reserved(name) && matches!(&**recv, Expr::Ident { name, .. } if name == "doc"))
                 || again(recv)
         }
-        Expr::Index { recv, index } => again(recv) || again(index),
         Expr::Unary { expr, .. } => again(expr),
         Expr::Binary { left, right, .. }
         | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => again(left) || again(right),
+        | Expr::In { left, right, .. } => again(left) || again(right),
         Expr::Range { lo, hi, .. } => {
             lo.as_deref().is_some_and(again) || hi.as_deref().is_some_and(again)
         }
@@ -354,7 +353,8 @@ mod tests {
         assert_eq!(
             c.residual.source,
             Expr::Ident {
-                name: ROWS_ROOT.to_owned()
+                name: ROWS_ROOT.to_owned(),
+                span: oqx::Span::EMPTY,
             }
         );
         assert_eq!(c.residual.r#where, None);
@@ -490,6 +490,7 @@ mod tests {
         let mut q = parse("from docs where $path == \"a.md\"");
         q.from.push(Expr::Ident {
             name: "nodes".to_owned(),
+            span: oqx::Span::EMPTY,
         });
         assert!(compile(&q, &[], "r").is_none());
     }

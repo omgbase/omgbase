@@ -9,10 +9,11 @@ owned by neither of them.
 | `@omgbase/oqx` (TypeScript, npm) | `packages/oqx` | **Reference.** Grammar and semantics decisions land here first. |
 | `oqx` (Rust, crates.io) | `crates/oqx` | Conformance-first port. Passes the same fixtures. |
 
-The spec is three artifacts, versioned together by `VERSION`:
+The spec is four artifacts, versioned together by `VERSION`:
 
 - `GRAMMAR.md` — the surface syntax: clause order, keywords, expressions, blocks, `follow`.
 - `SEMANTICS.md` — the scalar and collection rules: equality, ordering, absent handling, truthiness, arithmetic, membership, ranges, builtins (including the regex baseline), `distinct`, `limit`/`offset`, consumers.
+- `AST.md` — the abstract syntax tree as a contract (since 0.16): the node and field tables, spans, the JSON shape both implementations produce, the traversal and canonical-printer laws.
 - `cases/*.json` — the executable fixtures. **When prose and fixtures disagree, the fixtures win**, and the prose gets fixed.
 
 ## Versioning: one number for the language
@@ -79,6 +80,10 @@ Fields:
 - `expect` (required) — exactly one of:
   - `result` — the consumer-shaped result: an array for `collect`, a boolean for `exists`/`none`, a number for `count`, a record or `null` for `first`/`single`.
   - `error` — `{ "stage": "lex" | "parse" | "eval", "includes": ["substring", ...] }`. `stage` must match the implementation's error stage. Every string in `includes` (optional) must appear in the message. Fixtures should assert on stable fragments the spec names (a clause name, an operator, the clause-order sentence), not on full messages.
+  - `ast` — the JSON tree of `parse(query)` (or of the template), in the shape `AST.md` defines. A runner serializes its tree (TypeScript: the objects themselves; Rust: serde under the `json` feature), drops every `span`, and compares after the canonicalization below. A case may set `"spans": true` at the top level to compare spans too; such a case keeps its source ASCII-only so the offsets are plainly countable (`cases/ast-spans.json`).
+- `spans` (optional, with `expect.ast` only) — compare spans verbatim instead of stripping them.
+
+Every case whose query parses (an `ast`/`result`/`eval`-error case) is also run through the canonical printer's round-trip law, `strip(parse(print(parse(q)))) ≡ strip(parse(q))` (`AST.md` §6), by both runners — no fixture field asks for it.
 
 ## Result canonicalization
 

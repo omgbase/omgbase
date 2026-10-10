@@ -13,10 +13,9 @@ use std::collections::HashMap;
 
 use omgbase_search::{EmbeddingProvider, f32_to_blob};
 use omgbase_store::Store;
-use oqx::ast::{
-    Expr, Follow, FollowDestination, OpNode, OrderSpec, Query, SelectItem, Subquery, Where,
-};
-use oqx::{Consumer, Engine, InMemoryEngine, Value};
+use oqx::ast::{Expr, Query, SelectItem};
+use oqx::walk::{Clause, Node, VisitContext, Visitor, transform, visit};
+use oqx::{Consumer, Engine, InMemoryEngine, Value, build, resolve_aliases};
 use serde_json::{Map, Value as Json};
 
 use crate::context::{SemanticVec, StoreContext, render_row_values};
@@ -127,270 +126,49 @@ impl OqxResult {
 
 // ---- the `$self` rewrite -----------------------------------------------------------
 
-fn self_ref() -> Expr {
-    Expr::Ident {
-        name: "$self".to_owned(),
-    }
-}
-
-fn rewrite_expr(e: &Expr) -> Expr {
-    match e {
-        Expr::Member { recv, name } => Expr::Member {
-            recv: Box::new(rewrite_expr(recv)),
-            name: name.clone(),
-        },
-        Expr::Index { recv, index } => Expr::Index {
-            recv: Box::new(rewrite_expr(recv)),
-            index: Box::new(rewrite_expr(index)),
-        },
-        Expr::Unary { op, expr } => Expr::Unary {
-            op: *op,
-            expr: Box::new(rewrite_expr(expr)),
-        },
-        Expr::Binary { op, left, right } => Expr::Binary {
-            op: *op,
-            left: Box::new(rewrite_expr(left)),
-            right: Box::new(rewrite_expr(right)),
-        },
-        Expr::Logical { op, left, right } => Expr::Logical {
-            op: *op,
-            left: Box::new(rewrite_expr(left)),
-            right: Box::new(rewrite_expr(right)),
-        },
-        Expr::In { left, right } => Expr::In {
-            left: Box::new(rewrite_expr(left)),
-            right: Box::new(rewrite_expr(right)),
-        },
-        Expr::Range {
-            lo,
-            hi,
-            exclusive_end,
-        } => Expr::Range {
-            lo: lo.as_ref().map(|x| Box::new(rewrite_expr(x))),
-            hi: hi.as_ref().map(|x| Box::new(rewrite_expr(x))),
-            exclusive_end: *exclusive_end,
-        },
-        Expr::Call { recv, name, args } => {
-            let args = args.iter().map(rewrite_expr).collect();
-            match recv {
-                None if ROW_FNS.contains(&name.as_str()) => Expr::Call {
-                    recv: Some(Box::new(self_ref())),
-                    name: name.clone(),
-                    args,
-                },
-                None => Expr::Call {
-                    recv: None,
-                    name: name.clone(),
-                    args,
-                },
-                Some(r) => Expr::Call {
-                    recv: Some(Box::new(rewrite_expr(r))),
-                    name: name.clone(),
-                    args,
-                },
-            }
-        }
-        Expr::Lit(_) | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => e.clone(),
-    }
-}
-
-fn rewrite_where(w: &Where) -> Where {
-    match w {
-        Where::And { parts } => Where::And {
-            parts: parts.iter().map(rewrite_where).collect(),
-        },
-        Where::Or { parts } => Where::Or {
-            parts: parts.iter().map(rewrite_where).collect(),
-        },
-        Where::Not { expr } => Where::Not {
-            expr: Box::new(rewrite_where(expr)),
-        },
-        Where::Scalar { expr } => Where::Scalar {
-            expr: rewrite_expr(expr),
-        },
-        Where::Op(op) => Where::Op(Box::new(rewrite_op(op))),
-    }
-}
-
-fn rewrite_op(op: &OpNode) -> OpNode {
-    OpNode {
-        receiver: rewrite_expr(&op.receiver),
-        op: op.op,
-        sub: rewrite_sub(&op.sub),
-        count_cmp: op.count_cmp.clone(),
-        distinct: op.distinct,
-    }
-}
-
-fn rewrite_follow(f: &Follow) -> Follow {
-    Follow {
-        destinations: f
-            .destinations
-            .iter()
-            .map(|d| match d {
-                FollowDestination::Relation(e) => FollowDestination::Relation(rewrite_expr(e)),
-                FollowDestination::Block(op) => FollowDestination::Block(Box::new(rewrite_op(op))),
-            })
-            .collect(),
-        distinct: f.distinct,
-        r#where: f.r#where.as_ref().map(rewrite_expr),
-        frontier: f.frontier.as_ref().map(rewrite_expr),
-        depth: f.depth,
-        by: f.by.as_ref().map(rewrite_expr),
-    }
-}
-
-fn rewrite_select(items: &[SelectItem]) -> Vec<SelectItem> {
-    items
-        .iter()
-        .map(|it| match it {
-            SelectItem::Field { name, expr, lift } => SelectItem::Field {
-                name: name.clone(),
-                expr: rewrite_expr(expr),
-                lift: *lift,
-            },
-            SelectItem::Collect { name, op } => SelectItem::Collect {
-                name: name.clone(),
-                op: Box::new(rewrite_op(op)),
-            },
-        })
-        .collect()
-}
-
-fn rewrite_order(o: Option<&Vec<OrderSpec>>) -> Option<Vec<OrderSpec>> {
-    o.map(|specs| {
-        specs
-            .iter()
-            .map(|s| OrderSpec {
-                expr: rewrite_expr(&s.expr),
-                desc: s.desc,
-            })
-            .collect()
-    })
-}
-
-fn rewrite_sub(s: &Subquery) -> Subquery {
-    Subquery {
-        from: s.from.iter().map(rewrite_expr).collect(),
-        r#where: s.r#where.as_ref().map(rewrite_where),
-        select: rewrite_select(&s.select),
-        order_by: rewrite_order(s.order_by.as_ref()),
-        follow: s.follow.as_ref().map(rewrite_follow),
-        values: s.values,
-        limit: s.limit.as_ref().map(rewrite_expr),
-        offset: s.offset.as_ref().map(rewrite_expr),
-    }
-}
-
-/// Rewrite every row function in a parsed query to a `$self` method call.
+/// Rewrite every row function in a parsed query to a `$self` method call — one
+/// `transform` over the AST (`spec/oqx/AST.md` §5), every block included.
 #[must_use]
 pub fn rewrite_query(q: &Query) -> Query {
-    Query {
-        source: rewrite_expr(&q.source),
-        from: q.from.iter().map(rewrite_expr).collect(),
-        r#where: q.r#where.as_ref().map(rewrite_where),
-        select: rewrite_select(&q.select),
-        order_by: rewrite_order(q.order_by.as_ref()),
-        consumer: q.consumer,
-        follow: q.follow.as_ref().map(rewrite_follow),
-        distinct: q.distinct,
-        values: q.values,
-        limit: q.limit.as_ref().map(rewrite_expr),
-        offset: q.offset.as_ref().map(rewrite_expr),
-    }
+    transform(q, &mut |e, _| match e {
+        Expr::Call {
+            recv: None,
+            name,
+            args,
+            span,
+        } if ROW_FNS.contains(&name.as_str()) => Expr::Call {
+            recv: Some(Box::new(build::ident("$self"))),
+            name,
+            args,
+            span,
+        },
+        other => other,
+    })
 }
 
 // ---- semantic phrases -----------------------------------------------------------------
 
-fn visit_expr(e: &Expr, out: &mut Vec<String>) {
-    match e {
-        Expr::Call { recv, name, args } => {
-            if recv.is_none() && name == "semantic" {
-                if let Some(Expr::Lit(Value::Str(s))) = args.first() {
-                    if !out.contains(s) {
-                        out.push(s.clone());
-                    }
-                }
-            }
-            if let Some(r) = recv {
-                visit_expr(r, out);
-            }
-            for a in args {
-                visit_expr(a, out);
-            }
-        }
-        Expr::Member { recv, .. } => visit_expr(recv, out),
-        Expr::Index { recv, index } => {
-            visit_expr(recv, out);
-            visit_expr(index, out);
-        }
-        Expr::Unary { expr, .. } => visit_expr(expr, out),
-        Expr::Binary { left, right, .. }
-        | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => {
-            visit_expr(left, out);
-            visit_expr(right, out);
-        }
-        Expr::Range { lo, hi, .. } => {
-            if let Some(l) = lo {
-                visit_expr(l, out);
-            }
-            if let Some(h) = hi {
-                visit_expr(h, out);
-            }
-        }
-        Expr::Lit(_) | Expr::Ident { .. } | Expr::Outer { .. } | Expr::Binding { .. } => {}
-    }
-}
+/// Collects the distinct `semantic("…")` phrases of a tree.
+struct Phrases(Vec<String>);
 
-fn visit_where(w: &Where, out: &mut Vec<String>) {
-    match w {
-        Where::And { parts } | Where::Or { parts } => {
-            parts.iter().for_each(|p| visit_where(p, out))
+impl Visitor for Phrases {
+    fn enter(&mut self, node: Node<'_>, _ctx: &VisitContext<'_>) -> bool {
+        if let Node::Expr(Expr::Call {
+            recv: None,
+            name,
+            args,
+            ..
+        }) = node
+            && name == "semantic"
+            && let Some(Expr::Lit {
+                value: Value::Str(s),
+                ..
+            }) = args.first()
+            && !self.0.contains(s)
+        {
+            self.0.push(s.clone());
         }
-        Where::Not { expr } => visit_where(expr, out),
-        Where::Scalar { expr } => visit_expr(expr, out),
-        Where::Op(op) => visit_op(op, out),
-    }
-}
-
-fn visit_op(op: &OpNode, out: &mut Vec<String>) {
-    visit_expr(&op.receiver, out);
-    visit_sub(&op.sub, out);
-}
-
-fn visit_select(items: &[SelectItem], out: &mut Vec<String>) {
-    for it in items {
-        match it {
-            SelectItem::Field { expr, .. } => visit_expr(expr, out),
-            SelectItem::Collect { op, .. } => visit_op(op, out),
-        }
-    }
-}
-
-fn visit_follow(f: &Follow, out: &mut Vec<String>) {
-    for d in &f.destinations {
-        match d {
-            FollowDestination::Relation(e) => visit_expr(e, out),
-            FollowDestination::Block(op) => visit_op(op, out),
-        }
-    }
-    for x in [&f.r#where, &f.frontier, &f.by].into_iter().flatten() {
-        visit_expr(x, out);
-    }
-}
-
-fn visit_sub(s: &Subquery, out: &mut Vec<String>) {
-    s.from.iter().for_each(|e| visit_expr(e, out));
-    if let Some(w) = &s.r#where {
-        visit_where(w, out);
-    }
-    visit_select(&s.select, out);
-    if let Some(o) = &s.order_by {
-        o.iter().for_each(|spec| visit_expr(&spec.expr, out));
-    }
-    if let Some(f) = &s.follow {
-        visit_follow(f, out);
+        true
     }
 }
 
@@ -401,104 +179,41 @@ pub fn collect_semantic_phrases(source: &str) -> Vec<String> {
     let Ok(q) = oqx::parse_string(source) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
-    visit_expr(&q.source, &mut out);
-    q.from.iter().for_each(|e| visit_expr(e, &mut out));
-    if let Some(w) = &q.r#where {
-        visit_where(w, &mut out);
-    }
-    visit_select(&q.select, &mut out);
-    if let Some(o) = &q.order_by {
-        o.iter().for_each(|spec| visit_expr(&spec.expr, &mut out));
-    }
-    if let Some(f) = &q.follow {
-        visit_follow(f, &mut out);
-    }
-    out
+    let mut phrases = Phrases(Vec::new());
+    visit(Node::Query(&q), &mut phrases);
+    phrases.0
 }
 
 // ---- name mentions --------------------------------------------------------------------
-
-fn expr_mentions(e: &Expr, name: &str) -> bool {
-    match e {
-        Expr::Ident { name: n } | Expr::Outer { name: n, .. } => n == name,
-        Expr::Member { recv, .. } => expr_mentions(recv, name),
-        Expr::Index { recv, index } => expr_mentions(recv, name) || expr_mentions(index, name),
-        Expr::Unary { expr, .. } => expr_mentions(expr, name),
-        Expr::Binary { left, right, .. }
-        | Expr::Logical { left, right, .. }
-        | Expr::In { left, right } => expr_mentions(left, name) || expr_mentions(right, name),
-        Expr::Range { lo, hi, .. } => [lo, hi]
-            .into_iter()
-            .flatten()
-            .any(|x| expr_mentions(x, name)),
-        Expr::Call { recv, args, .. } => {
-            recv.as_deref().is_some_and(|r| expr_mentions(r, name))
-                || args.iter().any(|a| expr_mentions(a, name))
-        }
-        Expr::Lit(_) | Expr::Binding { .. } => false,
-    }
-}
-
-fn where_mentions(w: &Where, name: &str) -> bool {
-    match w {
-        Where::And { parts } | Where::Or { parts } => parts.iter().any(|p| where_mentions(p, name)),
-        Where::Not { expr } => where_mentions(expr, name),
-        Where::Scalar { expr } => expr_mentions(expr, name),
-        Where::Op(op) => op_mentions(op, name),
-    }
-}
-
-fn op_mentions(op: &OpNode, name: &str) -> bool {
-    expr_mentions(&op.receiver, name) || sub_mentions(&op.sub, name)
-}
-
-fn select_mentions(items: &[SelectItem], name: &str) -> bool {
-    items.iter().any(|it| match it {
-        SelectItem::Field { expr, .. } => expr_mentions(expr, name),
-        SelectItem::Collect { op, .. } => op_mentions(op, name),
-    })
-}
-
-fn follow_mentions(f: &Follow, name: &str) -> bool {
-    f.destinations.iter().any(|d| match d {
-        FollowDestination::Relation(e) => expr_mentions(e, name),
-        FollowDestination::Block(op) => op_mentions(op, name),
-    }) || [&f.r#where, &f.frontier, &f.by]
-        .into_iter()
-        .flatten()
-        .any(|x| expr_mentions(x, name))
-}
-
-fn order_mentions(o: Option<&Vec<OrderSpec>>, name: &str) -> bool {
-    o.is_some_and(|specs| specs.iter().any(|s| expr_mentions(&s.expr, name)))
-}
-
-fn sub_mentions(s: &Subquery, name: &str) -> bool {
-    s.from.iter().any(|e| expr_mentions(e, name))
-        || s.r#where.as_ref().is_some_and(|w| where_mentions(w, name))
-        || select_mentions(&s.select, name)
-        || order_mentions(s.order_by.as_ref(), name)
-        || s.follow.as_ref().is_some_and(|f| follow_mentions(f, name))
-        || [&s.limit, &s.offset]
-            .into_iter()
-            .flatten()
-            .any(|x| expr_mentions(x, name))
-}
 
 /// Whether `name` is read anywhere in `q` other than as its source: a bare
 /// identifier or a `^`-escaped one in the `from` steps, `where`, `select`,
 /// `order by`, `follow`, `limit`/`offset`, or any nested block.
 fn mentions_outside_source(q: &Query, name: &str) -> bool {
-    q.from.iter().any(|e| expr_mentions(e, name))
-        || q.r#where.as_ref().is_some_and(|w| where_mentions(w, name))
-        || select_mentions(&q.select, name)
-        || order_mentions(q.order_by.as_ref(), name)
-        || q.follow.as_ref().is_some_and(|f| follow_mentions(f, name))
-        || [&q.limit, &q.offset]
-            .into_iter()
-            .flatten()
-            .any(|x| expr_mentions(x, name))
+    struct Mentions<'n> {
+        name: &'n str,
+        found: bool,
+    }
+    impl Visitor for Mentions<'_> {
+        fn enter(&mut self, node: Node<'_>, ctx: &VisitContext<'_>) -> bool {
+            if self.found {
+                return false;
+            }
+            // The source itself (the root's `source` slot) is not a mention.
+            if ctx.clause == Some(Clause::Source) && ctx.path.len() == 1 {
+                return false;
+            }
+            if let Node::Expr(Expr::Ident { name, .. } | Expr::Outer { name, .. }) = node
+                && name == self.name
+            {
+                self.found = true;
+            }
+            !self.found
+        }
+    }
+    let mut m = Mentions { name, found: false };
+    visit(Node::Query(q), &mut m);
+    m.found
 }
 
 // ---- hits ----------------------------------------------------------------------------
@@ -584,9 +299,10 @@ fn dedup_hits_by_projection(hits: Vec<Value>) -> Vec<Value> {
 fn const_bound(e: Option<&Expr>, word: &str) -> Result<Option<usize>> {
     match e {
         None => Ok(None),
-        Some(Expr::Lit(Value::Number(n))) if n.fract() == 0.0 && *n >= 0.0 && n.is_finite() => {
-            Ok(Some(*n as usize))
-        }
+        Some(Expr::Lit {
+            value: Value::Number(n),
+            ..
+        }) if n.fract() == 0.0 && *n >= 0.0 && n.is_finite() => Ok(Some(*n as usize)),
         Some(_) => Err(SurfaceError::filter_invalid(
             format!("top-level {word} must be a non-negative integer literal"),
             "OQX",
@@ -702,7 +418,9 @@ impl Runner<'_> {
 }
 
 fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Result<OqxResult> {
-    let parsed = rewrite_query(&oqx::parse_string(source)?);
+    // The query's `select` aliases are resolved HERE, once, before the runner
+    // renames/injects items (an engine evaluates the query it is given).
+    let parsed = rewrite_query(&resolve_aliases(&oqx::parse_string(source)?)?);
     let consumer = parsed.consumer;
 
     match consumer {
@@ -745,14 +463,18 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
             .select
             .first()
             .map(|it| match it {
-                SelectItem::Field { expr, lift, .. } => SelectItem::Field {
+                SelectItem::Field {
+                    expr, lift, span, ..
+                } => SelectItem::Field {
                     name: VALUE_KEY.to_owned(),
                     expr: expr.clone(),
                     lift: *lift,
+                    span: *span,
                 },
-                SelectItem::Collect { op, .. } => SelectItem::Collect {
+                SelectItem::Collect { op, span, .. } => SelectItem::Collect {
                     name: VALUE_KEY.to_owned(),
                     op: op.clone(),
+                    span: *span,
                 },
             })
             .into_iter()
@@ -760,20 +482,8 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
     } else {
         parsed.select.clone()
     };
-    let id_item = SelectItem::Field {
-        name: ID_KEY.to_owned(),
-        expr: Expr::Ident {
-            name: "$id".to_owned(),
-        },
-        lift: 0,
-    };
-    let path_item = SelectItem::Field {
-        name: PATH_KEY.to_owned(),
-        expr: Expr::Ident {
-            name: "$path".to_owned(),
-        },
-        lift: 0,
-    };
+    let id_item = build::field(ID_KEY, build::ident("$id"));
+    let path_item = build::field(PATH_KEY, build::ident("$path"));
     let mut select = vec![id_item, path_item];
     select.extend(user_select);
     // On the collect path the query's own limit/offset is taken out of the
@@ -891,6 +601,7 @@ fn run_inner(engine: &Runner<'_>, source: &str, opts: QueryOptions<'_>) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use oqx::ast::Where;
 
     #[test]
     fn row_functions_become_self_methods() {
@@ -899,16 +610,16 @@ mod tests {
         )
         .unwrap();
         let r = rewrite_query(&q);
-        let Some(Where::And { parts }) = &r.r#where else {
+        let Some(Where::And { parts, .. }) = &r.r#where else {
             panic!("and")
         };
-        let Where::Scalar { expr } = &parts[0] else {
+        let Where::Scalar { expr, .. } = &parts[0] else {
             panic!("scalar")
         };
         assert!(
-            matches!(expr, Expr::Call { recv: Some(r), name, .. } if name == "text" && **r == self_ref())
+            matches!(expr, Expr::Call { recv: Some(r), name, .. } if name == "text" && **r == build::ident("$self"))
         );
-        let Where::Scalar { expr } = &parts[2] else {
+        let Where::Scalar { expr, .. } = &parts[2] else {
             panic!("scalar")
         };
         assert!(
@@ -966,10 +677,24 @@ mod tests {
     fn top_level_bounds_must_be_literals() {
         assert_eq!(const_bound(None, "limit").unwrap(), None);
         assert_eq!(
-            const_bound(Some(&Expr::Lit(Value::Number(3.0))), "limit").unwrap(),
+            const_bound(
+                Some(&Expr::Lit {
+                    value: Value::Number(3.0),
+                    span: oqx::Span::EMPTY
+                }),
+                "limit"
+            )
+            .unwrap(),
             Some(3)
         );
-        let e = const_bound(Some(&Expr::Lit(Value::Number(-1.0))), "offset").unwrap_err();
+        let e = const_bound(
+            Some(&Expr::Lit {
+                value: Value::Number(-1.0),
+                span: oqx::Span::EMPTY,
+            }),
+            "offset",
+        )
+        .unwrap_err();
         assert_eq!(e.code, "filter_invalid");
         assert!(e.message.contains("top-level offset"));
     }

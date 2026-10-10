@@ -10,7 +10,7 @@
 // bound is `follow`'s; nothing here re-implements BFS/DFS.
 //
 // Mapping (args → follow query):
-//   roots      → the seed `where $id == … || …` (refs resolved to doc ids first)
+//   roots      → the seed `where $id == … || …` (refs resolved to doc ids first; literals in the AST, never spliced text)
 //   degrees    → `follow … { depth degrees+1 }` (seed is $depth 1, so N hops = depth N+1)
 //   direction  → `follow doc.out` | `doc.in` | both (two walks, unioned)
 //   predicate  → restricts the neighborhood to docs reachable via that predicate
@@ -24,9 +24,12 @@
 // phantom targets — so external (`x_…`) and phantom endpoints are never dropped,
 // exactly as `from edges` surfaces them.
 
+import { build, parse, print, OqxError } from "@omgbase/oqx";
+import type { Query, SelectItem } from "@omgbase/oqx";
 import type { Store } from "../core/store/store.js";
 import { findDocByRef } from "../core/read/reader.js";
 import { oqxRunAsync, type EmbedQuery } from "../oqx/run.js";
+import { FilterInvalid } from "../search/cel/parser.js";
 import { EngineError } from "./errors.js";
 
 const DEFAULT_DEGREES = 1;
@@ -110,10 +113,10 @@ interface RawEdge {
 // Build the extra `select` items for caller projections. Each expression gets a
 // stable internal alias (_u0, _u1, …) so it can never collide with a reserved
 // word or the macro's own aliases; the clean output name is derived separately.
-function buildUserSelect(select: string[] | undefined): { clause: string; outNames: string[] } {
-  if (!select || select.length === 0) return { clause: "", outNames: [] };
-  const items: string[] = [];
+function buildUserSelect(select: string[] | undefined): { items: SelectItem[]; outNames: string[] } {
+  const items: SelectItem[] = [];
   const outNames: string[] = [];
+  if (!select || select.length === 0) return { items, outNames };
   const used = new Set<string>();
   select.forEach((expr, i) => {
     const trimmed = expr.trim();
@@ -123,25 +126,55 @@ function buildUserSelect(select: string[] | undefined): { clause: string; outNam
     while (used.has(name)) name = `${name}_${i}`;
     used.add(name);
     outNames[i] = name;
-    items.push(`_u${i}: ${trimmed}`);
+    items.push(...userItems(trimmed, `_u${i}`));
   });
-  return { clause: items.length ? `, ${items.join(", ")}` : "", outNames };
+  return { items, outNames };
+}
+
+// A caller's projection expression as AST: parsed as the item of a projection,
+// so it may be anything a `select` item may be (a navigation, an expression, a
+// nested block) and nothing more. A malformed expression is `filter_invalid`,
+// as it would be in the `query` tool.
+function userItems(src: string, alias: string): SelectItem[] {
+  let q: Query;
+  try {
+    q = parse(`select ${alias}: ${src} from docs`);
+  } catch (e) {
+    if (e instanceof OqxError) throw new FilterInvalid(e.message, "OQX");
+    throw e;
+  }
+  return q.select;
 }
 
 // The edge fields projected from doc.out_edges/doc.in_edges — identical for both
 // directions so a single filter handles either scan (an edge is a directional
 // src→dst fact regardless of which endpoint the walk reached it from).
-const EDGE_COLLECT =
-  "{ id: $id, src: $src, dst: $dst, dst_path: $dst_path, dst_uri: $dst_uri, " +
-  "dst_kind: dst_kind, predicate: predicate, provenance: provenance, anchor: anchor, src_field: src_field }";
+const EDGE_FIELDS: [name: string, expr: string][] = [
+  ["id", "$id"], ["src", "$src"], ["dst", "$dst"], ["dst_path", "$dst_path"], ["dst_uri", "$dst_uri"],
+  ["dst_kind", "dst_kind"], ["predicate", "predicate"], ["provenance", "provenance"], ["anchor", "anchor"], ["src_field", "src_field"],
+];
 
-function buildQuery(seed: string, dir: "out" | "in", depth: number, userSelect: string): string {
-  const edgesRel = dir === "out" ? "doc.out_edges" : "doc.in_edges";
-  return (
-    `select _depth: $depth, _stop: $stop, _edges: ${edgesRel} collect ${EDGE_COLLECT}${userSelect} ` +
-    `from docs where ${seed} ` +
-    `follow distinct doc.${dir} { depth ${depth} }`
-  );
+// The walk, as an AST (spec/oqx/AST.md §7) printed canonically — never spliced
+// strings: the seed ids are literals, the caller's projections parsed items.
+//
+//   select _depth: $depth, _stop: $stop, _edges: doc.<dir>_edges collect { <edge fields> } <user items>
+//   from docs where $id == <root> || … follow distinct doc.<dir> { depth <depth> }
+function buildQuery(rootIds: readonly string[], dir: "out" | "in", depth: number, userSelect: SelectItem[]): string {
+  const edges = build.op(build.path("doc", `${dir}_edges`), "collect", build.subquery({
+    select: EDGE_FIELDS.map(([name, expr]) => build.field(name, build.ident(expr))),
+  }));
+  const seed = rootIds.map((id) => build.scalar(build.binary("==", build.ident("$id"), build.lit(id))));
+  const q = build.query(build.ident("docs"), {
+    select: [
+      build.field("_depth", build.ident("$depth")),
+      build.field("_stop", build.ident("$stop")),
+      build.collect("_edges", edges),
+      ...userSelect,
+    ],
+    where: seed.length === 1 ? seed[0]! : build.or(seed),
+    follow: build.follow([build.path("doc", dir)], { distinct: true, depth }),
+  });
+  return print(q);
 }
 
 /**
@@ -176,8 +209,7 @@ export async function graphNeighborhood(
   const maxDocuments = Math.max(1, Math.floor(args.max_documents ?? DEFAULT_MAX_DOCUMENTS));
   const dirs: ("out" | "in")[] = direction === "both" ? ["out", "in"] : [direction];
 
-  const seed = rootIds.map((id) => `$id == ${JSON.stringify(id)}`).join(" || ");
-  const { clause: userSelect, outNames } = buildUserSelect(args.select);
+  const { items: userSelect, outNames } = buildUserSelect(args.select);
 
   const queries: string[] = [];
   const docMap = new Map<string, GraphDoc>();
@@ -185,7 +217,7 @@ export async function graphNeighborhood(
   let queryTruncated = false;
 
   for (const dir of dirs) {
-    const q = buildQuery(seed, dir, depth, userSelect);
+    const q = buildQuery(rootIds, dir, depth, userSelect);
     queries.push(q);
     // Fetch one more than the cap to detect truncation of a single scan; `follow
     // distinct` yields one row per reached node so the row count == node count.

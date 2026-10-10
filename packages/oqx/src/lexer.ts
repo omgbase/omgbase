@@ -11,8 +11,15 @@
 // host-bindings design note calls for. (A consequence: `${x}` inside a string
 // literal does not interpolate — that fragment would be an unterminated string —
 // which is exactly the desired "interpolation is a value, never source text".)
+//
+// Positions (`Token.pos` / `Token.end`, the `span` of every AST node, and the
+// offsets quoted in error messages) count Unicode CODE POINTS over the raw
+// source (`rawSource` for a template, where a binding occupies its `${n}`
+// marker) — not UTF-16 code units — so the two implementations agree on every
+// offset (spec/oqx/AST.md §3). `toUtf16` converts a span for a UTF-16 editor.
 
 import { OqxError } from "./errors.ts";
+import type { Span } from "./ast.ts";
 
 export type TokType =
   | "ident"
@@ -34,8 +41,14 @@ export type TokType =
 
 export interface Token {
   type: TokType;
+  /** The source text of the token, except: a `string` token carries its decoded
+   * value (quotes stripped, escapes resolved); a `binding` carries the display
+   * marker `${N}`; `eof` carries `""`. */
   value: string;
+  /** Code-point offset of the token's first character. */
   pos: number;
+  /** Code-point offset just past the token's last character (`[pos, end)`). */
+  end: number;
   index?: number; // binding tokens only
 }
 
@@ -45,9 +58,16 @@ const KEYWORDS = new Set(["from", "where", "select"]);
 const MULTI_OPS = ["==", "!=", "<=", ">=", "&&", "||"];
 const SINGLE_OPS = new Set(["<", ">", "!", "+", "-", "*", "/", "%"]);
 
-const isIdentStart = (c: string): boolean => /[A-Za-z_$]/.test(c);
-const isIdentPart = (c: string): boolean => /[A-Za-z0-9_$]/.test(c);
-const isDigit = (c: string): boolean => c >= "0" && c <= "9";
+const isIdentStart = (c: string): boolean => /^[A-Za-z_$]$/.test(c);
+const isIdentPart = (c: string): boolean => /^[A-Za-z0-9_$]$/.test(c);
+const isDigit = (c: string): boolean => c.length === 1 && c >= "0" && c <= "9";
+
+/** The length of a string in Unicode code points. */
+export function codePointLength(s: string): number {
+  let n = 0;
+  for (const _ of s) n++;
+  return n;
+}
 
 /** Lex a tagged-template call: the cooked string fragments and the count of
  * interpolated values. Emits a single flat token stream with `binding` tokens
@@ -57,18 +77,18 @@ export function lexTemplate(fragments: readonly string[], values: number): Token
   let base = 0; // running offset across fragments + rendered `${…}` markers
   for (let f = 0; f < fragments.length; f++) {
     lexFragment(fragments[f]!, base, tokens);
-    base += fragments[f]!.length;
+    base += codePointLength(fragments[f]!);
     if (f < fragments.length - 1) {
       // account for the value's rendered width in the display source (see rawSource)
       const marker = `\${${f}}`;
-      tokens.push({ type: "binding", value: marker, pos: base, index: f });
+      tokens.push({ type: "binding", value: marker, pos: base, end: base + marker.length, index: f });
       base += marker.length;
     }
   }
   if (values !== fragments.length - 1) {
     throw new OqxError(`template arity mismatch: ${fragments.length} fragments, ${values} values`, "lex");
   }
-  tokens.push({ type: "eof", value: "", pos: base });
+  tokens.push({ type: "eof", value: "", pos: base, end: base });
   return tokens;
 }
 
@@ -76,36 +96,41 @@ export function lexTemplate(fragments: readonly string[], values: number): Token
 export function lexString(src: string): Token[] {
   const tokens: Token[] = [];
   lexFragment(src, 0, tokens);
-  tokens.push({ type: "eof", value: "", pos: src.length });
+  const n = codePointLength(src);
+  tokens.push({ type: "eof", value: "", pos: n, end: n });
   return tokens;
 }
 
 function lexFragment(src: string, base: number, out: Token[]): void {
+  // One entry per code point, so every index below is a code-point offset.
+  const cps = Array.from(src);
   let i = 0;
-  const n = src.length;
-  const push = (type: TokType, value: string, at: number): void => {
-    out.push({ type, value, pos: base + at });
+  const n = cps.length;
+  const at = (j: number): string => cps[j] ?? "";
+  const text = (from: number, to: number): string => cps.slice(from, to).join("");
+  const push = (type: TokType, value: string, start: number, end: number): void => {
+    out.push({ type, value, pos: base + start, end: base + end });
   };
 
   while (i < n) {
-    const c = src[i]!;
+    const c = cps[i]!;
 
     if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
 
-    if (c === "(") { push("lparen", c, i); i++; continue; }
-    if (c === ")") { push("rparen", c, i); i++; continue; }
-    if (c === "{") { push("lbrace", c, i); i++; continue; }
-    if (c === "}") { push("rbrace", c, i); i++; continue; }
-    if (c === ",") { push("comma", c, i); i++; continue; }
-    if (c === ":") { push("colon", c, i); i++; continue; }
-    if (c === "^") { push("caret", c, i); i++; continue; }
+    if (c === "(") { push("lparen", c, i, i + 1); i++; continue; }
+    if (c === ")") { push("rparen", c, i, i + 1); i++; continue; }
+    if (c === "{") { push("lbrace", c, i, i + 1); i++; continue; }
+    if (c === "}") { push("rbrace", c, i, i + 1); i++; continue; }
+    if (c === ",") { push("comma", c, i, i + 1); i++; continue; }
+    if (c === ":") { push("colon", c, i, i + 1); i++; continue; }
+    if (c === "^") { push("caret", c, i, i + 1); i++; continue; }
 
     // range operator — `...` (exclusive end) or `..` (inclusive), longest first.
     // Scanned before the dot rule so `a..b` never looks like member navigation,
     // and before the number rule so the bounds lex as separate numbers.
-    if (c === "." && src[i + 1] === ".") {
-      if (src[i + 2] === ".") { push("range", "...", i); i += 3; continue; }
-      push("range", "..", i); i += 2; continue;
+    if (c === "." && at(i + 1) === ".") {
+      if (at(i + 2) === ".") { push("range", "...", i, i + 3); i += 3; continue; }
+      push("range", "..", i, i + 2); i += 2; continue;
     }
 
     // `.` followed by a digit is neither navigation (a property name cannot start
@@ -113,12 +138,12 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     // malformed number, reported as such rather than surfacing as a confusing
     // parse error downstream. Any other `.` is member navigation.
     if (c === ".") {
-      if (isDigit(src[i + 1] ?? "")) {
-        const end = scanNumberTail(src, i + 1, base);
-        const lit = src.slice(i, end);
+      if (isDigit(at(i + 1))) {
+        const end = scanNumberTail(cps, i + 1, base);
+        const lit = text(i, end);
         throw new OqxError(`malformed number ${JSON.stringify(lit)} at ${base + i} — a number starts with a digit (write 0${lit}), and a property name cannot be a digit (there is no index access)`, "lex");
       }
-      push("dot", c, i); i++; continue;
+      push("dot", c, i, i + 1); i++; continue;
     }
 
     // string literal — decode into its VALUE (quotes stripped, escapes resolved).
@@ -127,18 +152,18 @@ function lexFragment(src: string, base: number, out: Token[]): void {
       const start = i;
       i++;
       let sval = "";
-      while (i < n && src[i] !== quote) {
-        if (src[i] === "\\") {
+      while (i < n && cps[i] !== quote) {
+        if (cps[i] === "\\") {
           i++;
-          sval += unescape(src[i]);
+          sval += unescape(cps[i]);
         } else {
-          sval += src[i];
+          sval += cps[i]!;
         }
         i++;
       }
       if (i >= n) throw new OqxError(`unterminated string literal at ${base + start}`, "lex");
       i++; // closing quote
-      out.push({ type: "string", value: sval, pos: base + start });
+      push("string", sval, start, i);
       continue;
     }
 
@@ -149,23 +174,23 @@ function lexFragment(src: string, base: number, out: Token[]): void {
     // NaN or a dangling dot.
     if (isDigit(c)) {
       const start = i;
-      i = scanNumberTail(src, i, base);
-      push("number", src.slice(start, i), start);
+      i = scanNumberTail(cps, i, base);
+      push("number", text(start, i), start, i);
       continue;
     }
 
     // operators (multi-char first)
-    const two = src.slice(i, i + 2);
-    if (MULTI_OPS.includes(two)) { push("op", two, i); i += 2; continue; }
-    if (SINGLE_OPS.has(c)) { push("op", c, i); i++; continue; }
+    const two = c + at(i + 1);
+    if (MULTI_OPS.includes(two)) { push("op", two, i, i + 2); i += 2; continue; }
+    if (SINGLE_OPS.has(c)) { push("op", c, i, i + 1); i++; continue; }
 
     // identifier / keyword
     if (isIdentStart(c)) {
       const start = i;
       i++;
-      while (i < n && isIdentPart(src[i]!)) i++;
-      const word = src.slice(start, i);
-      push(KEYWORDS.has(word) ? "kw" : "ident", word, start);
+      while (i < n && isIdentPart(cps[i]!)) i++;
+      const word = text(start, i);
+      push(KEYWORDS.has(word) ? "kw" : "ident", word, start, i);
       continue;
     }
 
@@ -176,24 +201,25 @@ function lexFragment(src: string, base: number, out: Token[]): void {
 // Scan a number whose first digit is at `i`; return the index just past it.
 // Throws the malformed-number lex error for a trailing decimal point or an
 // exponent without digits.
-function scanNumberTail(src: string, i: number, base = 0): number {
+function scanNumberTail(cps: readonly string[], i: number, base = 0): number {
   const start = i;
-  const n = src.length;
+  const n = cps.length;
+  const at = (j: number): string => cps[j] ?? "";
   const fail = (end: number, why: string): never => {
-    throw new OqxError(`malformed number ${JSON.stringify(src.slice(start, end))} at ${base + start} — ${why}`, "lex");
+    throw new OqxError(`malformed number ${JSON.stringify(cps.slice(start, end).join(""))} at ${base + start} — ${why}`, "lex");
   };
-  while (i < n && isDigit(src[i]!)) i++;
-  if (src[i] === "." && src[i + 1] !== ".") {
-    if (!isDigit(src[i + 1] ?? "")) fail(i + 1, "a decimal point needs a digit after it (write 1.0, not 1.)");
+  while (i < n && isDigit(cps[i]!)) i++;
+  if (at(i) === "." && at(i + 1) !== ".") {
+    if (!isDigit(at(i + 1))) fail(i + 1, "a decimal point needs a digit after it (write 1.0, not 1.)");
     i++;
-    while (i < n && isDigit(src[i]!)) i++;
+    while (i < n && isDigit(cps[i]!)) i++;
   }
-  if (src[i] === "e" || src[i] === "E") {
+  if (at(i) === "e" || at(i) === "E") {
     let j = i + 1;
-    if (src[j] === "+" || src[j] === "-") j++;
-    if (!isDigit(src[j] ?? "")) fail(j, "an exponent needs at least one digit (write 1e5)");
+    if (at(j) === "+" || at(j) === "-") j++;
+    if (!isDigit(at(j))) fail(j, "an exponent needs at least one digit (write 1e5)");
     i = j;
-    while (i < n && isDigit(src[i]!)) i++;
+    while (i < n && isDigit(cps[i]!)) i++;
   }
   return i;
 }
@@ -213,4 +239,25 @@ function unescape(c: string | undefined): string {
  * bindings were, for error messages. */
 export function rawSource(fragments: readonly string[]): string {
   return fragments.map((s, i) => (i < fragments.length - 1 ? `${s}\${${i}}` : s)).join("");
+}
+
+/** Convert a code-point span (as every AST node carries) to UTF-16 code-unit
+ * offsets over `source` — the units a JavaScript string, a DOM range or an
+ * editor API counts in. `source` is the raw source the span was measured over
+ * (for a template, `rawSource(strings)`). Offsets past the end clamp. */
+export function toUtf16(span: Span, source: string): Span {
+  const [start, end] = span;
+  let cp = 0;
+  let unit = 0;
+  let startUnit = -1;
+  let endUnit = -1;
+  for (const ch of source) {
+    if (cp === start) startUnit = unit;
+    if (cp === end) endUnit = unit;
+    cp++;
+    unit += ch.length;
+  }
+  if (startUnit < 0) startUnit = unit;
+  if (endUnit < 0) endUnit = unit;
+  return [startUnit, endUnit];
 }

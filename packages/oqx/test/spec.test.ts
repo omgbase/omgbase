@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseString, parseTemplate } from "../src/parser.ts";
-import { run, OqxError } from "../src/index.ts";
+import { run, OqxError, stripSpans, print, printTemplate, transform } from "../src/index.ts";
 import type { OqxResult, Query } from "../src/index.ts";
 
 const CASES_DIR = join(import.meta.dirname, "../../../spec/oqx/cases");
@@ -21,7 +21,9 @@ interface SpecCase {
   roots?: Record<string, unknown>;
   query?: string;
   template?: { strings: string[]; values: unknown[] };
-  expect: { result?: unknown; error?: SpecError };
+  /** With `expect.ast`: compare spans too (the default strips them). */
+  spans?: boolean;
+  expect: { result?: unknown; error?: SpecError; ast?: unknown };
 }
 interface SpecFile { suite: string; cases: SpecCase[] }
 
@@ -53,9 +55,10 @@ function validate(file: string, doc: unknown): string[] {
     }
     if (c.roots !== undefined && !isRecord(c.roots)) problems.push(`${at}: \`roots\` must be an object`);
     if (!isRecord(c.expect)) { problems.push(`${at}: missing \`expect\``); return; }
-    const hasResult = "result" in c.expect;
+    const kinds = ["result", "error", "ast"].filter((k) => k in (c.expect as Record<string, unknown>));
     const hasError = "error" in c.expect;
-    if (hasResult === hasError) problems.push(`${at}: \`expect\` needs exactly one of \`result\` / \`error\``);
+    if (kinds.length !== 1) problems.push(`${at}: \`expect\` needs exactly one of \`result\` / \`error\` / \`ast\``);
+    if (c.spans !== undefined && (typeof c.spans !== "boolean" || !("ast" in c.expect))) problems.push(`${at}: \`spans\` is a boolean and needs \`expect.ast\``);
     if (hasError) {
       const e = c.expect.error;
       if (!isRecord(e) || !["lex", "parse", "eval"].includes(e.stage as string)) problems.push(`${at}: \`expect.error.stage\` must be lex | parse | eval`);
@@ -113,19 +116,50 @@ function unwrap(result: OqxResult): unknown {
 
 // ---- execution ---------------------------------------------------------------
 
-function execute(c: SpecCase): unknown {
-  let query: Query;
-  let values: unknown[] = [];
+function parseCase(c: SpecCase): { query: Query; values: unknown[] } {
   if (c.template) {
-    values = c.template.values;
-    query = parseTemplate(c.template.strings, values.length);
-  } else {
-    query = parseString(c.query!);
+    const values = c.template.values;
+    return { query: parseTemplate(c.template.strings, values.length), values };
   }
+  return { query: parseString(c.query!), values: [] };
+}
+
+function execute(c: SpecCase): unknown {
+  const { query, values } = parseCase(c);
   return unwrap(run(query, { values, roots: c.roots ?? {} }));
 }
 
+// The round-trip law of the canonical printer (spec/oqx/AST.md §6), checked on
+// every fixture query that parses: strip(parse(print(parse(q)))) ≡ strip(parse(q)).
+// A template prints to fragments whose gaps may reorder the bindings; the
+// original is renumbered by the printed order before comparing.
+function checkRoundTrip(c: SpecCase): void {
+  const { query } = parseCase(c);
+  if (c.template) {
+    const t = printTemplate(query);
+    assert.equal(t.strings.length, t.count + 1);
+    const position = new Map(t.indices.map((idx, at) => [idx, at]));
+    const renumbered = transform(query, (e) => (e.kind === "binding" ? { ...e, index: position.get(e.index)! } : e));
+    assert.deepStrictEqual(stripSpans(parseTemplate(t.strings, t.count)), stripSpans(renumbered), `template round trip of ${JSON.stringify(t.strings)}`);
+    return;
+  }
+  const printed = print(query);
+  let again: Query;
+  try {
+    again = parseString(printed);
+  } catch (e) {
+    throw new Error(`print produced an unparseable query ${JSON.stringify(printed)}: ${String(e)}`);
+  }
+  assert.deepStrictEqual(stripSpans(again), stripSpans(query), `round trip of ${JSON.stringify(printed)}`);
+}
+
 function runCase(c: SpecCase): void {
+  if ("ast" in c.expect) {
+    const { query } = parseCase(c);
+    const actual = sortKeys(canonicalize(c.spans ? query : stripSpans(query)));
+    assert.deepStrictEqual(actual, sortKeys(c.expect.ast));
+    return;
+  }
   if (c.expect.error) {
     const want = c.expect.error;
     let thrown: unknown = null;
@@ -168,6 +202,10 @@ for (const file of fileNames) {
   const stem = file.replace(/\.json$/, "");
   for (const c of spec.cases) {
     test(`${stem}::${c.name}`, () => runCase(c));
+    // Every query that parses must survive the canonical printer.
+    if (!(c.expect.error && c.expect.error.stage !== "eval")) {
+      test(`${stem}::${c.name} [print round trip]`, () => checkRoundTrip(c));
+    }
   }
 }
 

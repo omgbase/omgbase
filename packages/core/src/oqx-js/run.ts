@@ -4,9 +4,9 @@
 // keyset pagination, count/exists scalars). Same signature + shape as the former
 // in-tree compiler, so every caller and the corpus are unchanged.
 
-import { parse, PlannedEngine, InMemoryEngine, OqxError } from "@omgbase/oqx";
+import { parse, PlannedEngine, InMemoryEngine, OqxError, resolveAliases, transform, visit, build } from "@omgbase/oqx";
 import type { Engine } from "@omgbase/oqx";
-import type { Query, Expr, Where, OpNode, SelectItem, Subquery, Follow } from "@omgbase/oqx";
+import type { Query, Expr, SelectItem } from "@omgbase/oqx";
 import { makeStoreContext, rowRef, type StoreContextOptions } from "./context.js";
 import { SQLiteQueryPlanner } from "./planner.js";
 import type { Store } from "../core/store/store.js";
@@ -52,150 +52,46 @@ export interface OqxOptions {
 
 // Row-scoped domain functions: authored as free calls (`text("x")`) that
 // implicitly reference the current row. `@omgbase/oqx` free functions receive no
-// row, so we rewrite them to `$self.fn(…)` (a method whose receiver is the row).
+// row, so we rewrite them to `$self.fn(…)` (a method whose receiver is the row)
+// — one `transform` over the AST (spec/oqx/AST.md §5), every block included.
 const ROW_FNS = new Set([
   "text", "semantic", "under", "under_heading", "within", "under_kind",
   "yaml_path", "json_pointer", "has_edge", "has_anchor", "child_count", "parent_type",
 ]);
 
-const selfRef: Expr = { kind: "ident", name: "$self" };
-
-function rewriteExpr(e: Expr): Expr {
-  switch (e.kind) {
-    case "member": return { ...e, recv: rewriteExpr(e.recv) };
-    case "index": return { ...e, recv: rewriteExpr(e.recv), index: rewriteExpr(e.index) };
-    case "unary": return { ...e, expr: rewriteExpr(e.expr) };
-    case "binary": case "logical": case "in":
-      return { ...e, left: rewriteExpr(e.left), right: rewriteExpr(e.right) };
-    case "range":
-      return { ...e, lo: e.lo ? rewriteExpr(e.lo) : null, hi: e.hi ? rewriteExpr(e.hi) : null };
-    case "call": {
-      const recv = e.recv ? rewriteExpr(e.recv) : null;
-      const args = e.args.map(rewriteExpr);
-      if (recv === null && ROW_FNS.has(e.name)) return { kind: "call", recv: selfRef, name: e.name, args };
-      return { kind: "call", recv, name: e.name, args };
-    }
-    default: return e; // lit, ident, outer, binding
-  }
-}
-
-function rewriteWhere(w: Where): Where {
-  switch (w.kind) {
-    case "and": return { kind: "and", parts: w.parts.map(rewriteWhere) };
-    case "or": return { kind: "or", parts: w.parts.map(rewriteWhere) };
-    case "not": return { kind: "not", expr: rewriteWhere(w.expr) };
-    case "scalar": return { kind: "scalar", expr: rewriteExpr(w.expr) };
-    case "op": return rewriteOp(w);
-  }
-}
-
-function rewriteOp(op: OpNode): OpNode {
-  return { ...op, receiver: rewriteExpr(op.receiver), sub: rewriteSub(op.sub) };
-}
-function rewriteFollow(f: Follow): Follow {
-  return {
-    ...f,
-    // each destination is a relation Expr or a destination block (an OpNode)
-    destinations: f.destinations.map((d) => (d.kind === "op" ? rewriteOp(d) : rewriteExpr(d))),
-    where: f.where ? rewriteExpr(f.where) : null,
-    frontier: f.frontier ? rewriteExpr(f.frontier) : null,
-    by: f.by ? rewriteExpr(f.by) : null,
-  };
-}
-function rewriteSelect(items: SelectItem[]): SelectItem[] {
-  return items.map((it) => it.kind === "field" ? { ...it, expr: rewriteExpr(it.expr) } : { ...it, op: rewriteOp(it.op) });
-}
-function rewriteSub(s: Subquery): Subquery {
-  return {
-    from: s.from.map(rewriteExpr),
-    where: s.where ? rewriteWhere(s.where) : null,
-    select: rewriteSelect(s.select),
-    orderBy: s.orderBy ? s.orderBy.map((o) => ({ ...o, expr: rewriteExpr(o.expr) })) : null,
-    follow: s.follow ? rewriteFollow(s.follow) : null,
-    ...(s.values ? { values: true } : {}),
-    ...(s.limit ? { limit: rewriteExpr(s.limit) } : {}),
-    ...(s.offset ? { offset: rewriteExpr(s.offset) } : {}),
-  };
-}
 function rewriteQuery(q: Query): Query {
-  return {
-    source: rewriteExpr(q.source),
-    from: q.from.map(rewriteExpr),
-    where: q.where ? rewriteWhere(q.where) : null,
-    select: rewriteSelect(q.select),
-    orderBy: q.orderBy ? q.orderBy.map((o) => ({ ...o, expr: rewriteExpr(o.expr) })) : null,
-    consumer: q.consumer,
-    follow: q.follow ? rewriteFollow(q.follow) : null,
-    ...(q.distinct ? { distinct: true } : {}),
-    ...(q.values ? { values: true } : {}),
-    ...(q.limit ? { limit: rewriteExpr(q.limit) } : {}),
-    ...(q.offset ? { offset: rewriteExpr(q.offset) } : {}),
-  };
+  return transform(q, (e) => (e.kind === "call" && e.recv === null && ROW_FNS.has(e.name) ? { ...e, recv: build.ident("$self") } : e));
 }
 
 // A top-level `limit`/`offset` on the collect path is applied by the runner (see
 // oqxRunInner), so it must be a plain number literal here — there is no row to
 // evaluate anything else against at the root, and omgbase queries carry no
 // bindings.
-function constBound(e: Expr | undefined, word: string): number | null {
+function constBound(e: Expr | null, word: string): number | null {
   if (!e) return null;
   if (e.kind === "lit" && typeof e.value === "number" && Number.isInteger(e.value) && e.value >= 0) return e.value;
   throw new FilterInvalid(`top-level ${word} must be a non-negative integer literal`, "OQX");
 }
 
-// Distinct phrases referenced by `semantic("…")` (free calls in the raw parse).
+// Distinct phrases referenced by `semantic("…")` (free calls in the raw parse),
+// found by one `visit` over the whole tree.
 export function collectSemanticPhrases(source: string): string[] {
-  const phrases = new Set<string>();
-  const visitExpr = (e: Expr): void => {
-    switch (e.kind) {
-      case "call":
-        if (e.recv === null && e.name === "semantic" && e.args[0]?.kind === "lit" && typeof e.args[0].value === "string") {
-          phrases.add(e.args[0].value);
-        }
-        if (e.recv) visitExpr(e.recv);
-        e.args.forEach(visitExpr);
-        return;
-      case "member": visitExpr(e.recv); return;
-      case "index": visitExpr(e.recv); visitExpr(e.index); return;
-      case "unary": visitExpr(e.expr); return;
-      case "binary": case "logical": case "in": visitExpr(e.left); visitExpr(e.right); return;
-      case "range": if (e.lo) visitExpr(e.lo); if (e.hi) visitExpr(e.hi); return;
-      default: return;
-    }
-  };
-  const visitWhere = (w: Where): void => {
-    switch (w.kind) {
-      case "and": case "or": w.parts.forEach(visitWhere); return;
-      case "not": visitWhere(w.expr); return;
-      case "scalar": visitExpr(w.expr); return;
-      case "op": visitOp(w); return;
-    }
-  };
-  const visitOp = (op: OpNode): void => { visitExpr(op.receiver); visitSub(op.sub); };
-  const visitFollow = (f: Follow): void => {
-    f.destinations.forEach((d) => (d.kind === "op" ? visitOp(d) : visitExpr(d)));
-    [f.where, f.frontier, f.by].forEach((x) => x && visitExpr(x));
-  };
-  const visitSub = (s: Subquery): void => {
-    s.from.forEach(visitExpr);
-    if (s.where) visitWhere(s.where);
-    s.select.forEach((it) => it.kind === "field" ? visitExpr(it.expr) : visitOp(it.op));
-    if (s.orderBy) s.orderBy.forEach((o) => visitExpr(o.expr));
-    if (s.follow) visitFollow(s.follow);
-  };
   let q: Query;
   try { q = parse(source); } catch { return []; }
-  visitExpr(q.source);
-  q.from.forEach(visitExpr);
-  if (q.where) visitWhere(q.where);
-  q.select.forEach((it) => it.kind === "field" ? visitExpr(it.expr) : visitOp(it.op));
-  if (q.orderBy) q.orderBy.forEach((o) => visitExpr(o.expr));
-  if (q.follow) visitFollow(q.follow);
+  const phrases = new Set<string>();
+  visit(q, {
+    enter(node) {
+      if (node.kind === "call" && node.recv === null && node.name === "semantic") {
+        const arg = node.args[0];
+        if (arg?.kind === "lit" && typeof arg.value === "string") phrases.add(arg.value);
+      }
+    },
+  });
   return [...phrases];
 }
 
-const ID_ITEM: SelectItem = { kind: "field", name: "__oqx_id", expr: { kind: "ident", name: "$id" }, lift: 0 };
-const PATH_ITEM: SelectItem = { kind: "field", name: "__oqx_path", expr: { kind: "ident", name: "$path" }, lift: 0 };
+const ID_ITEM: SelectItem = build.field("__oqx_id", build.ident("$id"));
+const PATH_ITEM: SelectItem = build.field("__oqx_path", build.ident("$path"));
 // The reserved key a top-level `values` projection's single item is renamed to,
 // so it rides through id/path injection, keyset paging, and distinct as an
 // ordinary record field and is peeled off at the end.
@@ -256,7 +152,9 @@ export function oqxRun(store: Store, repoId: string, source: string, opts: OqxOp
 }
 
 function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOptions): OqxResult {
-  const parsed = rewriteQuery(parse(source));
+  // The query's `select` aliases are resolved HERE, once, before the runner
+  // renames/injects items (an engine evaluates the query it is given).
+  const parsed = rewriteQuery(resolveAliases(parse(source)));
   const consumer = parsed.consumer as OqxConsumer;
   const ctxOpts: StoreContextOptions = opts.semanticVectors ? { semanticVectors: opts.semanticVectors } : {};
   const ctx = makeStoreContext(store, repoId, ctxOpts);
@@ -284,20 +182,20 @@ function oqxRunInner(store: Store, repoId: string, source: string, opts: OqxOpti
   // id/path are unique per row and would defeat the engine's projection dedup, so
   // we run without engine-distinct and dedup hits by their USER projection below,
   // keeping the first row's id/path.
-  const topDistinct = !!parsed.distinct;
+  const topDistinct = parsed.distinct;
   // A top-level `values` projection runs as a RECORD projection whose single
   // item is renamed to VALUE_KEY (the engine's own values mode is switched off),
   // so pagination and distinct work unchanged; the bare values are peeled off
   // the final page below and returned as `values` with `hits` empty.
-  const topValues = !!parsed.values;
+  const topValues = parsed.values;
   const userSelect = topValues ? [{ ...parsed.select[0]!, name: VALUE_KEY }] : parsed.select;
   // On the collect path a top-level `limit`/`offset` is ALSO taken out of the
   // engine query and applied here, after the runner's own distinct — the engine
   // would otherwise bound the raw rows before dedup (`select distinct type
   // limit 3` must be three distinct types). first/single keep theirs: the
   // engine's offset-aware cap is exactly right for them.
-  const { limit: topLimit, offset: topOffset, ...unbounded } = parsed;
-  const base = consumer === "collect" ? unbounded : parsed;
+  const { limit: topLimit, offset: topOffset } = parsed;
+  const base = consumer === "collect" ? { ...parsed, limit: null, offset: null } : parsed;
   const q: Query = { ...base, distinct: false, values: false, select: [ID_ITEM, PATH_ITEM, ...userSelect] };
   const res = engine.run(q, []);
 

@@ -20,7 +20,7 @@
 //! its columns) — adapters gate idents on their known column set, which never
 //! includes it.
 
-use crate::ast::{BinaryOp, Expr, Query, Where};
+use crate::ast::{BinaryOp, Expr, Query, Span, Where};
 use crate::value::Value;
 
 /// The synthetic root name the residual query scans — the rows a plan produced.
@@ -41,21 +41,28 @@ pub fn partition_pushable(
         return (Vec::new(), None);
     };
     let parts: Vec<&Where> = match clause {
-        Where::And { parts } => parts.iter().collect(),
+        Where::And { parts, .. } => parts.iter().collect(),
         other => vec![other],
     };
     let mut pushed = Vec::new();
     let mut rest: Vec<Where> = Vec::new();
     for part in parts {
         match part {
-            Where::Scalar { expr } if can_push(expr) => pushed.push(expr.clone()),
+            Where::Scalar { expr, .. } if can_push(expr) => pushed.push(expr.clone()),
             _ => rest.push(part.clone()),
         }
+    }
+    if pushed.is_empty() {
+        // Nothing pushed: the residual is the where itself (span and all).
+        return (pushed, Some(clause.clone()));
     }
     let residual = match rest.len() {
         0 => None,
         1 => rest.pop(),
-        _ => Some(Where::And { parts: rest }),
+        _ => Some(Where::And {
+            parts: rest,
+            span: Span::EMPTY,
+        }),
     };
     (pushed, residual)
 }
@@ -66,6 +73,7 @@ pub fn residual_query(query: &Query, residual_where: Option<Where>) -> Query {
     Query {
         source: Expr::Ident {
             name: ROWS_ROOT.to_owned(),
+            span: Span::EMPTY,
         },
         from: Vec::new(),
         r#where: residual_where,
@@ -75,7 +83,7 @@ pub fn residual_query(query: &Query, residual_where: Option<Where>) -> Query {
 
 /// A literal or binding — a value known without a row context.
 pub fn is_const(e: &Expr) -> bool {
-    matches!(e, Expr::Lit(_) | Expr::Binding { .. })
+    matches!(e, Expr::Lit { .. } | Expr::Binding { .. })
 }
 
 /// Evaluate a constant expression against the query bindings. `None` when
@@ -84,8 +92,10 @@ pub fn is_const(e: &Expr) -> bool {
 /// of `params` reads as [`Value::Undefined`], as `params[i]` does in the TS.
 pub fn const_value(e: &Expr, params: &[Value]) -> Option<Value> {
     match e {
-        Expr::Lit(v) => Some(v.clone()),
-        Expr::Binding { index } => Some(params.get(*index).cloned().unwrap_or(Value::Undefined)),
+        Expr::Lit { value: v, .. } => Some(v.clone()),
+        Expr::Binding { index, .. } => {
+            Some(params.get(*index).cloned().unwrap_or(Value::Undefined))
+        }
         _ => None,
     }
 }
@@ -106,11 +116,12 @@ pub fn as_equality(e: &Expr) -> Option<Equality<'_>> {
         op: BinaryOp::Eq,
         left,
         right,
+        ..
     } = e
     else {
         return None;
     };
-    if let Expr::Ident { name } = &**left {
+    if let Expr::Ident { name, .. } = &**left {
         if is_const(right) {
             return Some(Equality {
                 field: name,
@@ -118,7 +129,7 @@ pub fn as_equality(e: &Expr) -> Option<Equality<'_>> {
             });
         }
     }
-    if let Expr::Ident { name } = &**right {
+    if let Expr::Ident { name, .. } = &**right {
         if is_const(left) {
             return Some(Equality {
                 field: name,
@@ -146,7 +157,7 @@ mod tests {
 
     fn scalar_text(w: &Where) -> String {
         match w {
-            Where::Scalar { expr } => format!("{expr:?}"),
+            Where::Scalar { expr, .. } => format!("{expr:?}"),
             other => format!("{other:?}"),
         }
     }
@@ -200,7 +211,7 @@ mod tests {
         let (pushed, residual) = partition_pushable(q.r#where.as_ref(), indexed_on(&["dept"]));
         assert_eq!(pushed.len(), 1);
         match residual {
-            Some(Where::And { parts }) => {
+            Some(Where::And { parts, .. }) => {
                 assert_eq!(parts.len(), 2);
                 assert!(scalar_text(&parts[0]).contains("level"));
                 assert!(scalar_text(&parts[1]).contains("city"));
@@ -231,7 +242,7 @@ mod tests {
     fn outer_refs_and_value_are_not_equalities_a_column_planner_accepts() {
         // `^dept == "eng"` is not `ident == const`: as_equality declines it.
         let q = parse("name from emp where ^dept == \"eng\"");
-        let Some(Where::Scalar { expr }) = &q.r#where else {
+        let Some(Where::Scalar { expr, .. }) = &q.r#where else {
             panic!("scalar where expected: {:?}", q.r#where);
         };
         assert_eq!(as_equality(expr), None);
@@ -239,7 +250,7 @@ mod tests {
         // `$it == "x"` IS syntactically an equality on the ident `$it`;
         // the adapter's column gate is what keeps it residual.
         let q = parse("name from emp where $it == \"x\"");
-        let Some(Where::Scalar { expr }) = &q.r#where else {
+        let Some(Where::Scalar { expr, .. }) = &q.r#where else {
             panic!("scalar where expected: {:?}", q.r#where);
         };
         assert_eq!(as_equality(expr).map(|eq| eq.field), Some("$it"));
@@ -251,15 +262,15 @@ mod tests {
     fn as_equality_recognizes_both_orientations_and_bindings_only() {
         let q = parse_template(&["name from emp where ", " == dept && level == 5 + 1"], 1)
             .expect("template parses");
-        let Some(Where::And { parts }) = &q.r#where else {
+        let Some(Where::And { parts, .. }) = &q.r#where else {
             panic!("and expected: {:?}", q.r#where);
         };
-        let Where::Scalar { expr: first } = &parts[0] else {
+        let Where::Scalar { expr: first, .. } = &parts[0] else {
             panic!("scalar")
         };
         let eq = as_equality(first).expect("binding == ident is an equality");
         assert_eq!(eq.field, "dept");
-        assert!(matches!(eq.value, Expr::Binding { index: 0 }));
+        assert!(matches!(eq.value, Expr::Binding { index: 0, .. }));
         assert_eq!(
             const_value(eq.value, &[Value::from("eng")]),
             Some(Value::from("eng"))
@@ -267,7 +278,7 @@ mod tests {
         assert_eq!(const_value(eq.value, &[]), Some(Value::Undefined));
 
         // `level == 5 + 1`: the RHS is computable but not a constant leaf.
-        let Where::Scalar { expr: second } = &parts[1] else {
+        let Where::Scalar { expr: second, .. } = &parts[1] else {
             panic!("scalar")
         };
         assert_eq!(as_equality(second), None);
@@ -276,7 +287,7 @@ mod tests {
 
         // `!=`, `<`, … are not equalities.
         let q = parse("name from emp where dept != \"eng\"");
-        let Some(Where::Scalar { expr }) = &q.r#where else {
+        let Some(Where::Scalar { expr, .. }) = &q.r#where else {
             panic!("scalar where expected")
         };
         assert_eq!(as_equality(expr), None);
@@ -291,13 +302,15 @@ mod tests {
         // shape, so build it directly.
         q.from.push(Expr::Ident {
             name: "reports".to_owned(),
+            span: Span::EMPTY,
         });
         let (_, residual) = partition_pushable(q.r#where.as_ref(), indexed_on(&["dept"]));
         let r = residual_query(&q, residual.clone());
         assert_eq!(
             r.source,
             Expr::Ident {
-                name: ROWS_ROOT.to_owned()
+                name: ROWS_ROOT.to_owned(),
+                span: Span::EMPTY,
             }
         );
         assert!(

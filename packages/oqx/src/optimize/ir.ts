@@ -43,7 +43,7 @@ export interface BlockPlan {
   readonly projection: { readonly select: readonly SelectItem[]; readonly values: boolean };
   readonly orderBy: readonly OrderSpec[] | null;
   readonly distinct: boolean;
-  readonly bound: { readonly limit: Expr | undefined; readonly offset: Expr | undefined };
+  readonly bound: { readonly limit: Expr | null; readonly offset: Expr | null };
   readonly follow: Follow | null;
   /** Equalities answered by an index probe on the receiver (in conjunct order). */
   readonly correlated: readonly Correlation[];
@@ -85,9 +85,9 @@ export function logicalBlock(node: OpNode, depth: number): BlockPlan {
     receiver: node.receiver,
     from: sub.from,
     where: sub.where,
-    projection: { select: sub.select, values: sub.values ?? false },
+    projection: { select: sub.select, values: sub.values },
     orderBy: sub.orderBy,
-    distinct: node.distinct ?? false,
+    distinct: node.distinct,
     bound: { limit: sub.limit, offset: sub.offset },
     follow: sub.follow,
     correlated: [],
@@ -100,7 +100,7 @@ export function logicalBlock(node: OpNode, depth: number): BlockPlan {
 
 /** Rebuild a conjunction from its remaining parts. */
 export function conjunction(parts: readonly Where[]): Where | null {
-  return parts.length === 0 ? null : parts.length === 1 ? parts[0]! : { kind: "and", parts: [...parts] };
+  return parts.length === 0 ? null : parts.length === 1 ? parts[0]! : { kind: "and", span: [0, 0], parts: [...parts] };
 }
 
 /** The top-level `&&` conjuncts of a where tree (a non-`and` tree is one). */

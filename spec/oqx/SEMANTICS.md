@@ -355,7 +355,12 @@ query may therefore guard an operand by position (`has(s) && s.matches(re)`).
 ## 14. Select aliases in `where`
 
 A bare identifier in a body's `where` that names an alias of the **same body's**
-`select` is replaced at parse time by that alias's expression:
+`select` is replaced by that alias's expression before evaluation. The parser
+keeps the identifier in the tree and only validates the reference (AST.md §2);
+the substitution is the pure function `resolveAliases` / `resolve_aliases`,
+which the run entry points apply exactly once (it is not idempotent:
+`name: name.upper() … where name` resolves to `name.upper()`, whose `name` is
+the row field). An engine evaluates the query it is given. Rules:
 
 - an alias shadows a same-named row field inside `where`;
 - an unaliased dotted item is an alias for its key (`meta.slug` → `slug`);

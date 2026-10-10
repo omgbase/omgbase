@@ -150,7 +150,7 @@ impl<'c> SqliteTable<'c> {
     /// `follow`). Nothing is executed.
     pub fn compile(&self, query: &Query, params: &[Value]) -> Option<Compiled> {
         match &query.source {
-            Expr::Ident { name } if *name == self.table => {}
+            Expr::Ident { name, .. } if *name == self.table => {}
             _ => return None,
         }
         if !query.from.is_empty() || query.follow.is_some() {
@@ -220,9 +220,9 @@ impl<'c> SqliteTable<'c> {
 
     fn translatable(&self, e: &Expr) -> bool {
         match e {
-            Expr::Lit(_) | Expr::Binding { .. } => true,
+            Expr::Lit { .. } | Expr::Binding { .. } => true,
             // A bare name is always the current row's column.
-            Expr::Ident { name } => self.columns.contains(name),
+            Expr::Ident { name, .. } => self.columns.contains(name),
             // Both unary ops (`!`, `-`) translate.
             Expr::Unary { expr, .. } => self.translatable(expr),
             Expr::Logical { left, right, .. } => {
@@ -237,25 +237,29 @@ impl<'c> SqliteTable<'c> {
 
     fn translate(&self, e: &Expr, params: &[Value], out: &mut Vec<SqlValue>) -> String {
         match e {
-            Expr::Lit(v) => {
+            Expr::Lit { value: v, .. } => {
                 out.push(to_sql_param(v));
                 "?".to_owned()
             }
-            Expr::Binding { index } => {
+            Expr::Binding { index, .. } => {
                 out.push(to_sql_param(
                     params.get(*index).unwrap_or(&Value::Undefined),
                 ));
                 "?".to_owned()
             }
-            Expr::Ident { name } => format!("{}.{}", quote_ident(&self.table), quote_ident(name)),
-            Expr::Unary { op, expr } => {
+            Expr::Ident { name, .. } => {
+                format!("{}.{}", quote_ident(&self.table), quote_ident(name))
+            }
+            Expr::Unary { op, expr, .. } => {
                 let inner = self.translate(expr, params, out);
                 match op {
                     UnaryOp::Not => format!("(NOT {inner})"),
                     UnaryOp::Neg => format!("(-{inner})"),
                 }
             }
-            Expr::Logical { op, left, right } => {
+            Expr::Logical {
+                op, left, right, ..
+            } => {
                 let l = self.translate(left, params, out);
                 let r = self.translate(right, params, out);
                 let op = match op {
@@ -264,7 +268,9 @@ impl<'c> SqliteTable<'c> {
                 };
                 format!("({l} {op} {r})")
             }
-            Expr::Binary { op, left, right } => {
+            Expr::Binary {
+                op, left, right, ..
+            } => {
                 let l = self.translate(left, params, out);
                 let r = self.translate(right, params, out);
                 format!("({l} {} {r})", binary_sql(*op))

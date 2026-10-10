@@ -1,9 +1,10 @@
-// A single error type for every OQX failure — lex, parse, and evaluation. `stage`
+// A single error type for every OQX failure — lex, parse, evaluation, and
+// printing (a binding has no source text). `stage`
 // distinguishes where it came from so callers (and tests) can branch without
 // string-matching messages. Mirrors the reference impl's FilterInvalid, but the
 // generic kernel has no SQL/CEL layer to name.
 
-export type OqxStage = "lex" | "parse" | "eval";
+export type OqxStage = "lex" | "parse" | "eval" | "print";
 
 export class OqxError extends Error {
   readonly stage: OqxStage;

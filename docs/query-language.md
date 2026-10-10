@@ -63,8 +63,9 @@ which is an error pointing at `where`), and `from docs count` is an error rather
 than a projection of a field called `count` (write `$repo.docs count { … }`, or
 `select count from docs`). **`where` may reference the same body's `select`
 aliases** (`select $path, old: era < 1000 from docs where old`): the alias's
-expression is inlined at parse time, so the pushdown planner sees an ordinary
-predicate; an alias shadows a same-named field inside `where`; a cycle among
+expression is substituted before evaluation (`resolveAliases`, once, ahead of
+the runner's own rewrites — the parsed tree keeps the alias), so the pushdown
+planner sees an ordinary predicate; an alias shadows a same-named field inside `where`; a cycle among
 aliases is a parse error; each block rewrites only against its own `select`.
 `order by` is not rewritten — it reads row fields.
 
@@ -399,6 +400,23 @@ nested/correlated scopes:
   returns identical results planned vs. pure in-memory.
 - Evaluation is deterministic (no clock/random functions).
 - Errors surface as `filter_invalid` (the library's `OqxError` is normalized).
+
+## 8b. Reflection: the AST
+A parsed query is a first-class tree shared by both engines
+(`spec/oqx/AST.md`, language 0.16): every node carries `kind` and a code-point
+`span`, optionals are materialized, and `where` keeps its surface form (a
+`select` alias stays an identifier; `resolveAliases` substitutes it before
+evaluation — omgbase's runner does this once, before it injects `$id`/`$path`
+and renames a `values` item). `@omgbase/oqx` exports `visit`/`transform` (one
+child-key table drives both), `print`/`printTemplate` (canonical source, with
+the round-trip law both spec runners enforce), `toJSON` (`{ "oqx": "0.16",
+"kind": "query", … }`) and `build.*`; the Rust crate mirrors them (`walk`,
+`print`, `build`, serde under `json`). omgbase uses them where it used to
+hand-roll walks: the runner's `$self` rewrite is a `transform`, the
+`semantic("…")` phrase scan a `visit`, and the `graph` macro assembles its
+`follow` walk with builders and `print`s it (the root ids are literals in the
+tree, never spliced text). A tool that wants to show which relationships a
+query references reads the tree the same way.
 
 ## 9. Not part of the query surface
 The `query` tool takes only an OQX string + `limit`/`cursor`. There is no flat

@@ -6,177 +6,115 @@
 
 use oqx::{
     BinaryOp, Consumer, CountCmp, Expr, Follow, FollowDestination, LogicalOp, OpNode, OqxError,
-    OrderSpec, Query, RelOp, SelectItem, Stage, Subquery, UnaryOp, Value, Where, parse_string,
-    parse_template,
+    OrderSpec, Query, RelOp, SelectItem, Span, Stage, Subquery, UnaryOp, Value, Where,
+    parse_string, parse_template, resolve_aliases, strip_spans,
 };
 
 // ---- AST builders -------------------------------------------------------------
+// Thin names over `oqx::build` (every node carries `Span::EMPTY`); `parse`
+// strips the spans of what it parses so the shapes compare.
+
+use oqx::build;
 
 fn ident(name: &str) -> Expr {
-    Expr::Ident {
-        name: name.to_string(),
-    }
+    build::ident(name)
 }
 fn outer(levels: usize, name: &str) -> Expr {
-    Expr::Outer {
-        levels,
-        name: name.to_string(),
-    }
+    build::outer(levels, name)
 }
 fn binding(index: usize) -> Expr {
-    Expr::Binding { index }
+    build::binding(index)
 }
 fn num(n: f64) -> Expr {
-    Expr::Lit(Value::Number(n))
+    build::lit(n)
 }
 fn str_(s: &str) -> Expr {
-    Expr::Lit(Value::Str(s.to_string()))
+    build::lit(s)
 }
 fn member(recv: Expr, name: &str) -> Expr {
-    Expr::Member {
-        recv: Box::new(recv),
-        name: name.to_string(),
-    }
+    build::member(recv, name)
 }
 fn call(recv: Option<Expr>, name: &str, args: Vec<Expr>) -> Expr {
-    Expr::Call {
-        recv: recv.map(Box::new),
-        name: name.to_string(),
-        args,
-    }
+    build::call(recv, name, args)
 }
 fn bin(op: BinaryOp, l: Expr, r: Expr) -> Expr {
-    Expr::Binary {
-        op,
-        left: Box::new(l),
-        right: Box::new(r),
-    }
+    build::binary(op, l, r)
 }
 fn logical(op: LogicalOp, l: Expr, r: Expr) -> Expr {
-    Expr::Logical {
-        op,
-        left: Box::new(l),
-        right: Box::new(r),
-    }
+    build::logical(op, l, r)
 }
 fn not(e: Expr) -> Expr {
-    Expr::Unary {
-        op: UnaryOp::Not,
-        expr: Box::new(e),
-    }
+    build::unary(UnaryOp::Not, e)
 }
 fn neg(e: Expr) -> Expr {
-    Expr::Unary {
-        op: UnaryOp::Neg,
-        expr: Box::new(e),
-    }
+    build::unary(UnaryOp::Neg, e)
 }
 fn in_(l: Expr, r: Expr) -> Expr {
-    Expr::In {
-        left: Box::new(l),
-        right: Box::new(r),
-    }
+    build::in_op(l, r)
 }
 fn range(lo: Option<Expr>, hi: Option<Expr>, exclusive_end: bool) -> Expr {
-    Expr::Range {
-        lo: lo.map(Box::new),
-        hi: hi.map(Box::new),
-        exclusive_end,
-    }
+    build::range(lo, hi, exclusive_end)
 }
 fn field(name: &str, expr: Expr) -> SelectItem {
-    SelectItem::Field {
-        name: name.to_string(),
-        expr,
-        lift: 0,
-    }
+    build::field(name, expr)
 }
 fn lifted(lift: usize, name: &str, expr: Expr) -> SelectItem {
-    SelectItem::Field {
-        name: name.to_string(),
-        expr,
-        lift,
-    }
+    build::lifted(lift, name, expr)
 }
 fn bare(name: &str) -> SelectItem {
     field(name, ident(name))
 }
 fn scalar(e: Expr) -> Where {
-    Where::Scalar { expr: e }
+    build::scalar(e)
 }
 fn and(parts: Vec<Where>) -> Where {
-    Where::And { parts }
+    build::and(parts)
 }
 fn or(parts: Vec<Where>) -> Where {
-    Where::Or { parts }
+    build::or(parts)
 }
 fn wnot(w: Where) -> Where {
-    Where::Not { expr: Box::new(w) }
+    build::not(w)
 }
 fn asc(e: Expr) -> OrderSpec {
-    OrderSpec {
-        expr: e,
-        desc: false,
-    }
+    build::order(e, false)
 }
 fn desc(e: Expr) -> OrderSpec {
-    OrderSpec {
-        expr: e,
-        desc: true,
-    }
+    build::order(e, true)
 }
 
 /// An empty block body.
 fn sub() -> Subquery {
-    Subquery {
-        from: vec![],
-        r#where: None,
-        select: vec![],
-        order_by: None,
-        follow: None,
-        values: false,
-        limit: None,
-        offset: None,
-    }
+    build::subquery()
 }
 fn op(receiver: Expr, consumer: Consumer, sub: Subquery) -> OpNode {
-    OpNode {
-        receiver,
-        op: consumer,
-        sub,
-        count_cmp: None,
-        distinct: false,
-    }
+    build::op(receiver, consumer, sub)
 }
 fn wop(o: OpNode) -> Where {
-    Where::Op(Box::new(o))
+    build::where_op(o)
 }
 fn collect_item(name: &str, o: OpNode) -> SelectItem {
-    SelectItem::Collect {
-        name: name.to_string(),
-        op: Box::new(o),
-    }
+    build::collect(name, o)
 }
 
 /// A bare `from <source>` collect query with nothing else set.
 fn query(source: Expr) -> Query {
-    Query {
-        source,
-        from: vec![],
-        r#where: None,
-        select: vec![],
-        order_by: None,
-        consumer: Consumer::Collect,
-        follow: None,
-        distinct: false,
-        values: false,
-        limit: None,
-        offset: None,
-    }
+    build::query(source)
 }
 
 fn parse(src: &str) -> Query {
-    parse_string(src).unwrap_or_else(|e| panic!("{src:?} should parse: {e}"))
+    strip_spans(&parse_string(src).unwrap_or_else(|e| panic!("{src:?} should parse: {e}")))
+}
+
+/// `parse` followed by `resolve_aliases` (the entry points' rewrite), spans stripped.
+fn resolved(src: &str) -> Query {
+    let q = parse_string(src).unwrap_or_else(|e| panic!("{src:?} should parse: {e}"));
+    strip_spans(&resolve_aliases(&q).unwrap_or_else(|e| panic!("{src:?} should resolve: {e}")))
+}
+
+/// `parse_template`, spans stripped.
+fn strip_template<S: AsRef<str>>(fragments: &[S], values: usize) -> oqx::Result<Query> {
+    parse_template(fragments, values).map(|q| strip_spans(&q))
 }
 
 fn parse_err(src: &str) -> OqxError {
@@ -221,7 +159,7 @@ fn assert_lex_error(src: &str, fragments: &[&str]) -> OqxError {
 #[test]
 fn acceptance_template_parses_bindings_as_values() {
     // oqx`name, id, title from ${people} where jobs exists { where employer == ${company} && !end_date }`
-    let q = parse_template(
+    let q = strip_template(
         &[
             "name, id, title from ",
             " where jobs exists { where employer == ",
@@ -244,7 +182,7 @@ fn acceptance_template_parses_bindings_as_values() {
 
 #[test]
 fn template_is_whitespace_insensitive() {
-    let a = parse_template(
+    let a = strip_template(
         &[
             "\n    name, id, title\n    from ",
             "\n    where jobs exists { where employer == ",
@@ -253,7 +191,7 @@ fn template_is_whitespace_insensitive() {
         2,
     )
     .unwrap();
-    let b = parse_template(
+    let b = strip_template(
         &[
             "name, id, title from ",
             " where jobs exists { where employer == ",
@@ -275,13 +213,13 @@ fn template_arity_mismatch_is_a_lex_error() {
 #[test]
 fn a_binding_is_a_value_never_source_text() {
     // oqx`name from ${people} where name == ${evil}` with evil = "Bob || true"
-    let q = parse_template(&["name from ", " where name == ", ""], 2).unwrap();
+    let q = strip_template(&["name from ", " where name == ", ""], 2).unwrap();
     assert_eq!(
         q.r#where,
         Some(scalar(bin(BinaryOp::Eq, ident("name"), binding(1))))
     );
     // a binding in `from` is the source; one after `where age >=` is a value
-    let q = parse_template(&["name from ", " where age >= ", ""], 2).unwrap();
+    let q = strip_template(&["name from ", " where age >= ", ""], 2).unwrap();
     assert_eq!(q.source, binding(0));
     assert_eq!(
         q.r#where,
@@ -453,13 +391,13 @@ fn a_bare_run_after_from_is_an_error_with_the_consumer_hint() {
 // ---- alias inlining -----------------------------------------------------------
 
 #[test]
-fn where_may_reference_select_aliases_inlined_at_parse_time() {
-    let q = parse("select name, adult: age >= 30 from people where adult");
+fn where_may_reference_select_aliases_resolved_before_evaluation() {
+    let q = resolved("select name, adult: age >= 30 from people where adult");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(BinaryOp::Ge, ident("age"), num(30.0))))
     );
-    let q = parse("select name, decade: age / 10 from people where decade > 5");
+    let q = resolved("select name, decade: age / 10 from people where decade > 5");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(
@@ -469,7 +407,7 @@ fn where_may_reference_select_aliases_inlined_at_parse_time() {
         )))
     );
     // the rewrite is inline substitution: the where AST is an ordinary scalar tree
-    let q = parse("select adult: age >= 18 from people where adult && name == \"x\"");
+    let q = resolved("select adult: age >= 18 from people where adult && name == \"x\"");
     assert_eq!(
         q.r#where,
         Some(and(vec![
@@ -483,13 +421,13 @@ fn where_may_reference_select_aliases_inlined_at_parse_time() {
         vec![field("adult", bin(BinaryOp::Ge, ident("age"), num(18.0)))]
     );
     // an alias chain resolves through (s → senior's expression)
-    let q = parse("select senior: age > 50, s: senior from people where s");
+    let q = resolved("select senior: age > 50, s: senior from people where s");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(BinaryOp::Gt, ident("age"), num(50.0))))
     );
     // an unaliased dotted item is an alias for its key
-    let q = parse("select meta.slug from data where slug == \"b\"");
+    let q = resolved("select meta.slug from data where slug == \"b\"");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(
@@ -499,7 +437,7 @@ fn where_may_reference_select_aliases_inlined_at_parse_time() {
         )))
     );
     // inside a block, the rewrite is against THAT block's select only
-    let q = parse(
+    let q = resolved(
         "name, cur: jobs collect { e: employer, open: !end_date where open } from people where name == \"Bob\"",
     );
     let SelectItem::Collect { op: cur, .. } = &q.select[1] else {
@@ -511,8 +449,9 @@ fn where_may_reference_select_aliases_inlined_at_parse_time() {
         Some(scalar(bin(BinaryOp::Eq, ident("name"), str_("Bob"))))
     );
     // a collect alias in predicate position means non-empty: the where IS the op node
-    let q =
-        parse("name, current: jobs collect { employer where !end_date } from people where current");
+    let q = resolved(
+        "name, current: jobs collect { employer where !end_date } from people where current",
+    );
     let mut block = sub();
     block.select = vec![bare("employer")];
     block.r#where = Some(wnot(scalar(ident("end_date"))));
@@ -528,13 +467,13 @@ fn where_may_reference_select_aliases_inlined_at_parse_time() {
 
 #[test]
 fn an_alias_shadows_a_same_named_field_inside_where() {
-    let q = parse("select name, active: age > 50 from people where active");
+    let q = resolved("select name, active: age > 50 from people where active");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(BinaryOp::Gt, ident("age"), num(50.0))))
     );
     // `^name` is never an alias — it reads the enclosing ROW
-    let q = parse(
+    let q = resolved(
         "name, peers: xs collect { name values where age > ^age } from people where name == \"Bob\"",
     );
     let SelectItem::Collect { op, .. } = &q.select[1] else {
@@ -546,7 +485,7 @@ fn an_alias_shadows_a_same_named_field_inside_where() {
         Some(scalar(bin(BinaryOp::Gt, ident("age"), outer(1, "age"))))
     );
     // inside its own expression an alias's name is the row field (not recursion)
-    let q = parse("select name: name.upper() from people where name == \"BOB\"");
+    let q = resolved("select name: name.upper() from people where name == \"BOB\"");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(
@@ -555,13 +494,13 @@ fn an_alias_shadows_a_same_named_field_inside_where() {
             str_("BOB")
         )))
     );
-    let q = parse("select name from people where name == \"Bob\"");
+    let q = resolved("select name from people where name == \"Bob\"");
     assert_eq!(
         q.r#where,
         Some(scalar(bin(BinaryOp::Eq, ident("name"), str_("Bob"))))
     );
     // a lifted item is not an alias: a bare `x` in the block's where is the row field
-    let q = parse("from r where xs collect { ^x: a where x == 1 }");
+    let q = resolved("from r where xs collect { ^x: a where x == 1 }");
     let Some(Where::Op(o)) = &q.r#where else {
         panic!("expected an op")
     };
@@ -573,16 +512,16 @@ fn an_alias_shadows_a_same_named_field_inside_where() {
 }
 
 #[test]
-fn alias_inlining_reaches_into_every_expression_shape() {
+fn alias_resolution_reaches_into_every_expression_shape() {
     // the receiver of a where-position op is rewritten; its block is not
-    let q = parse("select j: jobs from people where j exists { where j }");
+    let q = resolved("select j: jobs from people where j exists { where j }");
     let Some(Where::Op(o)) = &q.r#where else {
         panic!("expected an op")
     };
     assert_eq!(o.receiver, ident("jobs"));
     assert_eq!(o.sub.r#where, Some(scalar(ident("j"))));
     // members, calls, unary, logical, in, range, not, or
-    let q = parse("select a: x from t where !(a.b || f(a) in ..a) || -a.c() > 1");
+    let q = resolved("select a: x from t where !(a.b || f(a) in ..a) || -a.c() > 1");
     assert_eq!(
         q.r#where,
         Some(or(vec![
@@ -874,7 +813,7 @@ fn top_level_directives() {
     let q = parse("people collect { }");
     assert_eq!(q.consumer, Consumer::Collect);
     // a binding as the directive receiver
-    let q = parse_template(&["", " count { where active }"], 1).unwrap();
+    let q = strip_template(&["", " count { where active }"], 1).unwrap();
     assert_eq!(q.source, binding(0));
     assert_eq!(q.consumer, Consumer::Count);
 }
@@ -1144,6 +1083,7 @@ fn follow_collects_descendants() {
             frontier: None,
             depth: None,
             by: None,
+            span: Span::EMPTY,
         })
     );
     assert_eq!(
@@ -1167,6 +1107,7 @@ fn follow_block_options() {
             frontier: Some(bin(BinaryOp::Eq, ident("kind"), str_("leaf"))),
             depth: Some(8),
             by: Some(ident("id")),
+            span: Span::EMPTY,
         })
     );
     // options in any order
@@ -1182,7 +1123,7 @@ fn follow_block_options() {
             "children"
         ))]
     );
-    let q = parse_template(&["from tree follow ", " { depth 3 }"], 1).unwrap();
+    let q = strip_template(&["from tree follow ", " { depth 3 }"], 1).unwrap();
     assert_eq!(
         q.follow.unwrap().destinations,
         vec![FollowDestination::Relation(binding(0))]
@@ -1206,7 +1147,7 @@ fn follow_distinct() {
         vec![FollowDestination::Relation(member(ident("rel"), "next"))]
     );
     assert_eq!(f.depth, Some(2));
-    let q = parse_template(&["from xs follow distinct ", ""], 1).unwrap();
+    let q = strip_template(&["from xs follow distinct ", ""], 1).unwrap();
     let f = q.follow.unwrap();
     assert!(f.distinct);
     assert_eq!(
@@ -1467,7 +1408,7 @@ fn an_open_ended_bound_does_not_swallow_a_following_clause() {
 
 #[test]
 fn range_bounds_may_be_bindings_strings_or_arithmetic() {
-    let q = parse_template(&["name from ", " where age in ", "..", ""], 3).unwrap();
+    let q = strip_template(&["name from ", " where age in ", "..", ""], 3).unwrap();
     assert_eq!(
         q.r#where,
         Some(scalar(in_(
@@ -1799,7 +1740,7 @@ fn limit_and_offset_are_value_expressions() {
     let q = parse("name values from people limit 0");
     assert_eq!(q.limit, Some(num(0.0)));
     // the bound may be a binding
-    let q = parse_template(
+    let q = strip_template(
         &[
             "name values from ",
             " where age > 30 order by name limit ",
@@ -1873,7 +1814,7 @@ fn a_field_named_limit_is_still_a_field() {
 
 #[test]
 fn entries_is_a_free_function_call_usable_as_a_source() {
-    let q = parse_template(&["key: $key, value: $it from entries(", ")"], 1).unwrap();
+    let q = strip_template(&["key: $key, value: $it from entries(", ")"], 1).unwrap();
     assert_eq!(q.source, call(None, "entries", vec![binding(0)]));
     assert_eq!(
         q.select,
@@ -2310,7 +2251,7 @@ fn parentheses_in_where_group_a_predicate_or_a_scalar() {
         Some(scalar(bin(
             BinaryOp::Eq,
             not(ident("a")),
-            Expr::Lit(Value::Bool(false))
+            build::lit(Value::Bool(false))
         )))
     );
     let q = parse("from xs where !!(a || b) == c");
@@ -2369,9 +2310,9 @@ fn literals() {
     assert_eq!(
         q.select,
         vec![
-            field("a", Expr::Lit(Value::Bool(true))),
-            field("b", Expr::Lit(Value::Bool(false))),
-            field("c", Expr::Lit(Value::Null)),
+            field("a", build::lit(Value::Bool(true))),
+            field("b", build::lit(Value::Bool(false))),
+            field("c", build::lit(Value::Null)),
             field("d", num(1.5)),
             field("e", num(1000.0)),
             field("f", str_("single")),
@@ -2401,9 +2342,9 @@ fn literals() {
     );
     // `true`/`false`/`null` are literals in every position: values, sources…
     let q = parse("from true");
-    assert_eq!(q.source, Expr::Lit(Value::Bool(true)));
+    assert_eq!(q.source, build::lit(Value::Bool(true)));
     let q = parse("from xs where null");
-    assert_eq!(q.r#where, Some(scalar(Expr::Lit(Value::Null))));
+    assert_eq!(q.r#where, Some(scalar(build::lit(Value::Null))));
 }
 
 #[test]
@@ -2487,7 +2428,7 @@ fn literal_words_are_never_receivers() {
     // a value, though, is fine right next to a consumer word that is a field name
     let q = parse("select count from r where true");
     assert_eq!(q.select, vec![bare("count")]);
-    assert_eq!(q.r#where, Some(scalar(Expr::Lit(Value::Bool(true)))));
+    assert_eq!(q.r#where, Some(scalar(build::lit(Value::Bool(true)))));
 }
 
 #[test]
@@ -2717,18 +2658,20 @@ fn readme_full_query_shape() {
                 frontier: None,
                 depth: Some(4),
                 by: None,
+                span: Span::EMPTY,
             }),
             distinct: false,
             values: false,
             limit: Some(num(10.0)),
             offset: Some(num(20.0)),
+            span: Span::EMPTY,
         }
     );
 }
 
 #[test]
 fn readme_siblings_correlated_subquery() {
-    let q = parse_template(
+    let q = strip_template(
         &[
             "\n  name,\n  siblings: ",
             " collect { name where parent == ^parent && name != ^name }\n  from ",
@@ -2753,7 +2696,7 @@ fn readme_siblings_correlated_subquery() {
 
 #[test]
 fn readme_membership_against_a_binding_and_negation() {
-    let q = parse_template(&["name from ", " where city in ", ""], 2).unwrap();
+    let q = strip_template(&["name from ", " where city in ", ""], 2).unwrap();
     assert_eq!(q.r#where, Some(scalar(in_(ident("city"), binding(1)))));
     let q = parse("name from people where !active");
     assert_eq!(q.r#where, Some(wnot(scalar(ident("active")))));
@@ -2854,7 +2797,7 @@ fn follow_takes_a_comma_separated_list_of_destinations() {
     );
     assert_eq!(f.depth, Some(2));
     // `distinct` applies to the whole list; dotted and binding destinations mix
-    let q = parse_template(&["from g follow distinct rel.a, ", ", c"], 1).unwrap();
+    let q = strip_template(&["from g follow distinct rel.a, ", ", c"], 1).unwrap();
     let f = q.follow.unwrap();
     assert!(f.distinct);
     assert_eq!(

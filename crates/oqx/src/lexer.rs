@@ -12,10 +12,11 @@
 //! literal does not interpolate — that fragment would be an unterminated string —
 //! which is exactly the desired "interpolation is a value, never source text".)
 //!
-//! Positions (`Token::pos`, and the offsets quoted in error messages) count
-//! Unicode scalar values (`char`s), where the TS counts UTF-16 code units. They
-//! agree for everything outside the astral planes; the conformance fixtures
-//! assert on stable message fragments, never on offsets.
+//! Positions (`Token::pos` / `Token::end`, the `span` of every AST node, and
+//! the offsets quoted in error messages) count Unicode code points (`char`s)
+//! over the raw source (`raw_source` for a template, where a binding occupies
+//! its `${n}` marker), as the reference does since language 0.16
+//! (`spec/oqx/AST.md` §3), so the two implementations agree on every offset.
 
 use crate::errors::{OqxError, Result};
 
@@ -78,7 +79,10 @@ pub struct Token {
     /// value (quotes stripped, escapes resolved); a `Binding` carries the
     /// display marker `${N}`; `Eof` carries `""`.
     pub value: String,
+    /// Code-point offset of the token's first character.
     pub pos: usize,
+    /// Code-point offset just past the token's last character (`[pos, end)`).
+    pub end: usize,
     /// Binding tokens only.
     pub index: Option<usize>,
 }
@@ -118,6 +122,7 @@ pub fn lex_template<S: AsRef<str>>(fragments: &[S], values: usize) -> Result<Vec
                 kind: TokType::Binding,
                 value: marker,
                 pos: base,
+                end: base + width,
                 index: Some(f),
             });
             base += width;
@@ -134,6 +139,7 @@ pub fn lex_template<S: AsRef<str>>(fragments: &[S], values: usize) -> Result<Vec
         kind: TokType::Eof,
         value: String::new(),
         pos: base,
+        end: base,
         index: None,
     });
     Ok(tokens)
@@ -143,10 +149,12 @@ pub fn lex_template<S: AsRef<str>>(fragments: &[S], values: usize) -> Result<Vec
 pub fn lex_string(src: &str) -> Result<Vec<Token>> {
     let mut tokens = Vec::new();
     lex_fragment(src, 0, &mut tokens)?;
+    let n = src.chars().count();
     tokens.push(Token {
         kind: TokType::Eof,
         value: String::new(),
-        pos: src.chars().count(),
+        pos: n,
+        end: n,
         index: None,
     });
     Ok(tokens)
@@ -158,11 +166,12 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
     let mut i = 0;
     let at = |i: usize| chars.get(i).copied();
     let digit_at = |i: usize| at(i).is_some_and(is_digit);
-    let mut push = |kind: TokType, value: String, at: usize| {
+    let mut push = |kind: TokType, value: String, start: usize, end: usize| {
         out.push(Token {
             kind,
             value,
-            pos: base + at,
+            pos: base + start,
+            end: base + end,
             index: None,
         });
     };
@@ -186,7 +195,7 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             _ => None,
         };
         if let Some(kind) = single {
-            push(kind, c.to_string(), i);
+            push(kind, c.to_string(), i, i + 1);
             i += 1;
             continue;
         }
@@ -196,11 +205,11 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
         // and before the number rule so the bounds lex as separate numbers.
         if c == '.' && at(i + 1) == Some('.') {
             if at(i + 2) == Some('.') {
-                push(TokType::Range, "...".to_string(), i);
+                push(TokType::Range, "...".to_string(), i, i + 3);
                 i += 3;
                 continue;
             }
-            push(TokType::Range, "..".to_string(), i);
+            push(TokType::Range, "..".to_string(), i, i + 2);
             i += 2;
             continue;
         }
@@ -218,7 +227,7 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
                     base + i
                 )));
             }
-            push(TokType::Dot, c.to_string(), i);
+            push(TokType::Dot, c.to_string(), i, i + 1);
             i += 1;
             continue;
         }
@@ -247,7 +256,7 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
                 )));
             }
             i += 1; // closing quote
-            push(TokType::Str, sval, start);
+            push(TokType::Str, sval, start, i);
             continue;
         }
 
@@ -259,7 +268,7 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
         if is_digit(c) {
             let start = i;
             i = scan_number_tail(&chars, i, base)?;
-            push(TokType::Number, chars[start..i].iter().collect(), start);
+            push(TokType::Number, chars[start..i].iter().collect(), start, i);
             continue;
         }
 
@@ -267,13 +276,13 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
         if let Some(&d) = chars.get(i + 1) {
             let two: String = [c, d].iter().collect();
             if MULTI_OPS.contains(&two.as_str()) {
-                push(TokType::Op, two, i);
+                push(TokType::Op, two, i, i + 2);
                 i += 2;
                 continue;
             }
         }
         if SINGLE_OPS.contains(&c) {
-            push(TokType::Op, c.to_string(), i);
+            push(TokType::Op, c.to_string(), i, i + 1);
             i += 1;
             continue;
         }
@@ -291,7 +300,7 @@ fn lex_fragment(src: &str, base: usize, out: &mut Vec<Token>) -> Result<()> {
             } else {
                 TokType::Ident
             };
-            push(kind, word, start);
+            push(kind, word, start, i);
             continue;
         }
 
