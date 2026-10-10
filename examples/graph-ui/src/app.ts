@@ -4,19 +4,29 @@
 // — plus the MCP settings (three ways to reach omgbase: the local bridge over
 // the sample, the local bridge proxying a remote it signed in to, or the remote
 // directly with the browser as the OAuth client) and a status line.
+//
+// Chrome: Shoelace, imported per component — `<sl-split-panel>` between the side
+// panel and the graph (position persisted; the graph refits itself on resize),
+// `<sl-details>` for the side panel's stacked sections (open state persisted).
+// Shoelace is Lit-built and registers its own `sl-*` tags; its light theme sets
+// the `--sl-*` tokens on `:root`, which shadow roots inherit.
 
 import { LitElement, css, html, nothing } from "lit";
-import { customElement, state } from "lit/decorators.js";
+import { customElement, query, state } from "lit/decorators.js";
 import { Signal, SignalWatcher, computed, signal } from "@lit-labs/signals";
 import type { Query } from "@omgbase/oqx";
+import "@shoelace-style/shoelace/dist/themes/light.css";
+import "@shoelace-style/shoelace/dist/components/details/details.js";
+import "@shoelace-style/shoelace/dist/components/split-panel/split-panel.js";
+import type SlSplitPanel from "@shoelace-style/shoelace/dist/components/split-panel/split-panel.js";
 import "./elements/oqx-query-editor.ts";
 import "./elements/oqx-relationship-picker.ts";
 import "./elements/oqx-projection-picker.ts";
 import "./elements/oqx-graph.ts";
 import type { QueryChangeDetail } from "./elements/oqx-query-editor.ts";
-import type { ArmedChangeDetail, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
+import type { ArmedChangeDetail, OqxRelationshipPicker, ViewChangeDetail } from "./elements/oqx-relationship-picker.ts";
 import type { FieldHoverDetail, ProjectionChangeDetail } from "./elements/oqx-projection-picker.ts";
-import type { EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
+import type { AxisRequestDetail, EdgeToggleDetail, GraphNode, GraphStateDetail, PendingEdge } from "./elements/oqx-graph.ts";
 import { inferCandidates, type Candidate, type Row } from "./lib/candidates.ts";
 import { NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, type ProjectionOverrides, type View } from "./lib/view.ts";
 import { projectionOf, type Projection } from "./lib/projection.ts";
@@ -61,20 +71,41 @@ function loadEditSettings(): EditSettings {
   }
 }
 
-/** The graph area's own settings (persisted under UI_KEY). */
-interface UiSettings {
+/** The side panel's sections, top to bottom. */
+export type SectionId = "query" | "relationships" | "projection" | "settings";
+export const SECTIONS: readonly SectionId[] = ["query", "relationships", "projection", "settings"];
+/** Open by default: everything but the MCP settings (which open themselves on an error or a sign-in). */
+const DEFAULT_SECTIONS: Record<SectionId, boolean> = { query: true, relationships: true, projection: true, settings: false };
+/** The side panel's share of the width, in percent (the split panel's `position`). */
+export const DEFAULT_SPLIT = 40;
+
+/** The page chrome's settings (persisted under UI_KEY). */
+export interface UiSettings {
   /** Keep the previous result drawn when a query matches nothing (default: clear it,
    * so an empty result is never mistaken for a stale graph). */
   keepLastGraph: boolean;
+  /** Which side-panel sections are open. */
+  sections: Record<SectionId, boolean>;
+  /** The side panel's width as a percentage of the main area. */
+  splitPosition: number;
+}
+
+/** Read the persisted UI settings back, filling in defaults for anything missing or malformed. */
+export function parseUiSettings(raw: string | null): UiSettings {
+  const fallback: UiSettings = { keepLastGraph: false, sections: { ...DEFAULT_SECTIONS }, splitPosition: DEFAULT_SPLIT };
+  try {
+    const saved = JSON.parse(raw ?? "{}") as { keepLastGraph?: unknown; sections?: Record<string, unknown>; splitPosition?: unknown };
+    const sections = { ...DEFAULT_SECTIONS };
+    for (const id of SECTIONS) if (typeof saved.sections?.[id] === "boolean") sections[id] = saved.sections[id];
+    const pos = typeof saved.splitPosition === "number" && Number.isFinite(saved.splitPosition) ? Math.min(90, Math.max(10, saved.splitPosition)) : DEFAULT_SPLIT;
+    return { keepLastGraph: saved.keepLastGraph === true, sections, splitPosition: pos };
+  } catch {
+    return fallback;
+  }
 }
 
 function loadUiSettings(): UiSettings {
-  try {
-    const saved = JSON.parse(localStorage.getItem(UI_KEY) ?? "{}") as Partial<UiSettings>;
-    return { keepLastGraph: saved.keepLastGraph === true };
-  } catch {
-    return { keepLastGraph: false };
-  }
+  return parseUiSettings(localStorage.getItem(UI_KEY));
 }
 
 /** The stored query, or the sample default (lib/default-query.ts) in its 1.x
@@ -586,11 +617,24 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     header .conn { font-size: 12px; color: #5a6270; }
     header .conn.error { color: #c62828; }
     header .conn.sign-in { color: #b26a00; }
-    main { display: grid; grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr); gap: 12px; padding: 12px 14px; min-height: 0; }
-    .left { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; }
-    .left h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #5a6270; margin: 0 0 6px; }
-    .graph-area { position: relative; min-height: 420px; display: grid; }
-    oqx-graph { height: 100%; min-height: 420px; }
+    main { display: grid; min-height: 0; padding: 8px 14px 12px; }
+    /* The split: the side panel (start) and the graph (end); both keep a readable minimum. */
+    sl-split-panel { height: 100%; min-height: 0; --min: 360px; --max: calc(100% - 360px); --divider-width: 4px; --divider-hit-area: 16px; }
+    sl-split-panel::part(divider) { background: #e3e6ec; border-radius: 2px; }
+    sl-split-panel::part(divider):hover, sl-split-panel::part(divider):focus-visible { background: #1565c0; }
+    sl-split-panel::part(panel) { min-width: 0; min-height: 0; }
+    /* The side panel scrolls as a whole; every block in it keeps its own height
+       (a flex child with overflow would otherwise be free to shrink to nothing). */
+    .left { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; overflow: auto; padding-right: 10px; box-sizing: border-box; }
+    .left > * { flex: none; }
+    sl-details { --sl-spacing-medium: 10px; }
+    sl-details::part(base) { border: 1px solid #e3e6ec; border-radius: 6px; background: #fff; }
+    sl-details::part(header) { padding: 7px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #5a6270; font-weight: 600; }
+    sl-details::part(summary-icon) { color: #8a94a6; }
+    sl-details::part(content) { padding: 0 10px 10px; }
+    sl-details .sub { font-size: 12px; color: #5a6270; text-transform: none; letter-spacing: 0; font-weight: normal; margin-left: 8px; }
+    .graph-area { position: relative; height: 100%; min-height: 0; display: grid; padding-left: 10px; box-sizing: border-box; }
+    oqx-graph { height: 100%; min-height: 0; }
     .try { font-size: 12px; color: #5a6270; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
     .try pre { margin: 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 4px; padding: 6px 8px; }
     .try button { font: inherit; align-self: flex-start; }
@@ -612,8 +656,6 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     footer { padding: 6px 14px; border-top: 1px solid #e3e6ec; font-size: 12px; color: #5a6270; display: flex; gap: 14px; flex-wrap: wrap; }
     footer .err { color: #c62828; }
     footer .err code { font-family: ui-monospace, monospace; color: #1e2430; background: #f7f8fa; padding: 0 3px; border-radius: 3px; }
-    details.settings { font-size: 13px; }
-    details.settings summary { cursor: pointer; color: #5a6270; }
     .settings form { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; align-items: center; padding: 8px 0; }
     .settings input[type="text"], .settings select, .settings button { font: inherit; padding: 3px 6px; }
     .settings .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -622,8 +664,10 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     .settings .auth, .settings .hint { grid-column: 1 / -1; color: #5a6270; font-size: 12px; }
     .settings .hint.warn { color: #b26a00; }
     .settings code { font-family: ui-monospace, monospace; }
-    .selection { font-size: 12px; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 6px; padding: 8px 10px; max-height: 200px; overflow: auto; }
-    .selection pre { margin: 4px 0 0; white-space: pre-wrap; font: 11px ui-monospace, monospace; }
+    /* The selected row as JSON: at least one line tall, growing with the content, scrolling only past 40vh. */
+    .selection { font-size: 12px; line-height: 1.4; background: #f7f8fa; border: 1px solid #e3e6ec; border-radius: 6px; padding: 8px 10px; }
+    .selection pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font: 11px/1.5 ui-monospace, monospace; min-height: calc(11px * 1.5 + 2px); max-height: 40vh; overflow: auto; }
+    .try pre { line-height: 1.5; min-height: calc(11px * 1.5 + 12px); max-height: 40vh; overflow: auto; }
     .edit { font-size: 12px; color: #5a6270; display: flex; flex-direction: column; gap: 6px; }
     .edit .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
     .edit .opts label { display: inline-flex; gap: 4px; align-items: center; }
@@ -638,6 +682,35 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
   @state() private highlights: [number, number][] = [];
   @state() private selected: GraphNode | null = null;
   @state() private urlDraft: string | null = null;
+  @query("oqx-relationship-picker") private picker!: OqxRelationshipPicker | null;
+
+  /** A section's open state, persisted. */
+  private setSection(id: SectionId, open: boolean): void {
+    const ui = uiSettings.get();
+    if (ui.sections[id] === open) return;
+    uiSettings.set({ ...ui, sections: { ...ui.sections, [id]: open } });
+  }
+
+  /** `<sl-details>` fires `sl-show` / `sl-hide` on the element itself; nested
+   * Shoelace elements would bubble theirs too, so only the section's own count. */
+  private onSectionToggle(id: SectionId, open: boolean) {
+    return (e: Event) => {
+      if (e.target !== e.currentTarget) return;
+      this.setSection(id, open);
+    };
+  }
+
+  private onSplitReposition(e: Event): void {
+    const panel = e.currentTarget as SlSplitPanel;
+    const ui = uiSettings.get();
+    const pos = Math.round(panel.position * 10) / 10;
+    if (Number.isFinite(pos) && pos !== ui.splitPosition) uiSettings.set({ ...ui, splitPosition: pos });
+  }
+
+  /** The graph's empty-axis banner asked for another axis: the picker owns the overrides. */
+  private onAxisRequest(e: CustomEvent<AxisRequestDetail>): void {
+    this.picker?.setAxis(e.detail.axis);
+  }
 
   private onQueryChange(e: CustomEvent<QueryChangeDetail>): void {
     source.set(e.detail.source);
@@ -772,6 +845,7 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
     const disc = discovery.get();
     const info = bridge.get();
     const es = emptyResult.get();
+    const ui = uiSettings.get();
     const shownUrl = s.mode === "direct" ? s.directUrl : s.bridgeUrl;
     const connText = conn === "ok" ? connectionMessage.get() : conn === "error" ? `error: ${connectionMessage.get()}` : conn === "sign-in" ? connectionMessage.get() : conn;
     return html`
@@ -786,34 +860,36 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
         </label>
       </header>
       <main>
-        <div class="left">
-          <section>
-            <h2>query</h2>
+        <sl-split-panel position=${ui.splitPosition} @sl-reposition=${this.onSplitReposition}>
+        <div class="left" slot="start">
+          <sl-details data-section="query" ?open=${ui.sections.query} @sl-show=${this.onSectionToggle("query", true)} @sl-hide=${this.onSectionToggle("query", false)}>
+            <span slot="summary">query<span class="sub">${pe ? "parse error" : qe ? "query error" : `${r.length} row${r.length === 1 ? "" : "s"}`}</span></span>
             <oqx-query-editor .value=${source.get()} .highlights=${this.highlights} .serverSurface=${serverSurface.get()} @query-change=${this.onQueryChange}></oqx-query-editor>
             ${this.renderStarterHint()}
-          </section>
-          <section>
-            <h2>relationships</h2>
+          </sl-details>
+          <sl-details data-section="relationships" ?open=${ui.sections.relationships} @sl-show=${this.onSectionToggle("relationships", true)} @sl-hide=${this.onSectionToggle("relationships", false)}>
+            <span slot="summary">relationships<span class="sub">${v.edges.length ? v.edges.join(", ") : "none drawn"} · ${v.layout.axis ? `along ${v.layout.axis}` : "force"}</span></span>
             <oqx-relationship-picker .candidates=${cands} .editable=${editable.get()} .armed=${armed.get()?.name ?? null}
+              .edgeCounts=${gs?.edgeCounts ?? {}} .nodeCount=${r.length}
               @view-change=${this.onViewChange}
               @armed-change=${(e: CustomEvent<ArmedChangeDetail>) => { armed.set(e.detail.candidate); proposal.set(null); }}
               @candidate-hover=${(e: CustomEvent<{ candidate: Candidate | null }>) => { this.highlights = e.detail.candidate?.spans ?? []; }}>
             </oqx-relationship-picker>
-          </section>
-          <section>
-            <h2>cards</h2>
+          </sl-details>
+          <sl-details data-section="projection" ?open=${ui.sections.projection} @sl-show=${this.onSectionToggle("projection", true)} @sl-hide=${this.onSectionToggle("projection", false)}>
+            <span slot="summary">cards<span class="sub">${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}</span></span>
             <oqx-projection-picker .fields=${proj.fields} .defaults=${proj.defaults} .overrides=${projectionOverrides.get()}
               @projection-change=${this.onProjectionChange}
               @field-hover=${(e: CustomEvent<FieldHoverDetail>) => { this.highlights = e.detail.field?.span ? [e.detail.field.span] : []; }}>
             </oqx-projection-picker>
-          </section>
+          </sl-details>
           ${this.renderEdit()}
-          ${this.selected ? html`<section class="selection">
+          ${this.selected ? html`<section class="selection" data-selection>
             <b>${this.selected.path}</b>
             <pre>${JSON.stringify(this.selected.row, null, 1)}</pre>
           </section>` : nothing}
-          <details class="settings" ?open=${conn === "error" || conn === "sign-in"}>
-            <summary>MCP settings</summary>
+          <sl-details class="settings" data-section="settings" ?open=${ui.sections.settings || conn === "error" || conn === "sign-in"} @sl-show=${this.onSectionToggle("settings", true)} @sl-hide=${this.onSectionToggle("settings", false)}>
+            <span slot="summary">MCP settings<span class="sub">${MODE_LABEL[s.mode]}${conn === "error" ? " · error" : conn === "sign-in" ? " · sign-in" : ""}</span></span>
             <form @submit=${(e: Event) => { e.preventDefault(); this.connect(); }}>
               <label>mode</label>
               <span class="modes">
@@ -834,23 +910,25 @@ export class GraphUiApp extends SignalWatcher(LitElement) {
               ${s.mode === "direct" && disc ? html`<div class="auth">sign-in would use <code>${disc.authorizationServerUrl}</code>${disc.scope ? html` with scopes <code>${disc.scope}</code>` : nothing}${disc.authorizationServer.registration_endpoint ? " (dynamic registration available)" : " (no dynamic registration!)"}</div>` : nothing}
               ${s.mode !== "direct" ? this.renderBridgeHint(info, s.mode) : nothing}
             </form>
-          </details>
+          </sl-details>
         </div>
-        <div class="graph-area">
+        <div class="graph-area" slot="end">
           <oqx-graph .nodes=${nodes.get()} .view=${v} .candidates=${cands} .fetchEdges=${fetchEdges}
             .armed=${armed.get()} .writable=${writable.get()} .pending=${pending.get()}
             @node-select=${(e: CustomEvent<{ node: GraphNode | null }>) => { this.selected = e.detail.node; proposal.set(null); }}
             @edge-toggle=${(e: CustomEvent<EdgeToggleDetail>) => { void proposeToggle(e.detail); }}
+            @axis-request=${this.onAxisRequest}
             @graph-state=${(e: CustomEvent<GraphStateDetail>) => onGraphState(e.detail)}></oqx-graph>
           ${this.renderEmptyState()}
           ${showSpinner.get() ? html`<div class="loading" role="status" data-loading><span class="spinner"></span>${querying.get() ? "running the query…" : "fetching edges and laying out…"}</div>` : nothing}
         </div>
+        </sl-split-panel>
       </main>
       <footer>
         <span class=${es ? "empty" : ""}>${r.length} row${r.length === 1 ? "" : "s"}${truncated.get() ? " (truncated at 200)" : ""}${es && !querying.get() ? ` · ${emptyStateText(es, s.repo).footer}` : ""}</span>
         <span>${cands.length} candidate${cands.length === 1 ? "" : "s"}</span>
         <span>edges: ${v.edges.length ? v.edges.join(", ") : "none"}</span>
-        <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction})` : "force"}</span>
+        <span>layout: ${v.layout.axis ? `${v.layout.axis} (${v.layout.direction}${gs?.axisEdges !== null && gs?.axisEdges !== undefined ? `, ${gs.axisEdges} edge${gs.axisEdges === 1 ? "" : "s"}` : ""})` : "force"}</span>
         <span>cards: ${v.projection.label ?? "path"}${v.projection.shown.filter((f) => f !== v.projection.label).map((f) => ` + ${f}`).join("")}</span>
         ${gs ? html`<span>${gs.busy ? "laying out…" : `${gs.edges} edges drawn${gs.cycles.length ? `, ${gs.cycles.length} cycle(s)` : ""}`}</span>` : nothing}
         ${pe ? html`<span class="err">parse: ${pe.message}</span>` : nothing}

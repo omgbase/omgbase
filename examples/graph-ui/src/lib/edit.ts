@@ -23,7 +23,7 @@
 //      an emptied list is unset (`emptyListBehavior: "unset"`) or kept as `[]`.
 
 import type { Query } from "@omgbase/oqx";
-import type { Candidate, Direction, Row } from "./candidates.ts";
+import type { Candidate, Direction, InversePair, Row } from "./candidates.ts";
 
 /** How a field spells its references. */
 export interface RefForm {
@@ -214,8 +214,10 @@ export type Editability =
 
 /** Rule 1 + rule 3 for one candidate. `serverCanWrite` is false when the server
  * (or the gateway in front of it) does not offer `docs_set_meta`. */
-export function editability(c: Pick<Candidate, "name" | "kind">, rows: readonly Row[], serverCanWrite = true): Editability {
+export function editability(c: Pick<Candidate, "name" | "kind"> & { pair?: Pick<InversePair, "forward" | "backward"> }, rows: readonly Row[], serverCanWrite = true): Editability {
   if (c.kind === "links" || c.kind === "backlinks") return { writable: false, reason: "links live in the body" };
+  // The combined pair is both fields read one way; the edit belongs to a field.
+  if (c.pair) return { writable: false, reason: `edit \`${c.pair.forward}\` or \`${c.pair.backward}\` directly` };
   if (c.kind === "sequence") return { writable: false, reason: `derived from order by ${c.name}` };
   if (c.name.includes(".") || c.name.startsWith("$")) return { writable: false, reason: "not a frontmatter field" };
   if (!serverCanWrite) return { writable: false, reason: "the server offers no docs_set_meta tool (a gateway's tool allowlist must include it)" };

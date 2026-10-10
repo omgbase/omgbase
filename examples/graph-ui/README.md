@@ -9,6 +9,12 @@ roles the user can override:
 - **layout** — lay the graph out along this relationship (a layered DAG layout,
   so `before`/`after` frontmatter reads as a timeline). No axis → force layout.
 
+Two fields that are one sequence read from both ends — `before` and `after` —
+are also offered as one combined **pair** candidate, `before/after`, whose edges
+all point earlier → later whichever end authored them; it is the default axis
+when present, so a repository that writes only `after` still lays out as a
+timeline (see [Inverse pairs](#inverse-pairs-beforeafter-is-one-sequence)).
+
 The fields the query *projects* are read off it the same way and offered in a
 second panel, **cards**, where each projected field can be **shown** on the
 node cards and one of them is the card's **label** — see [Choosing what a card
@@ -375,14 +381,69 @@ fetch — its edges are consecutive result rows.
 | Element | Properties | Events |
 | --- | --- | --- |
 | `<oqx-query-editor>` | `value` (source), `highlights` (`Span[]`, code points), `serverSurface` (`"major.minor" \| "1.x" \| null`, for the path-form hints), `debounce` | `query-change` `{ source, query: Query \| null, error: { message, offset, stage } \| null }` |
-| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`; getter `view`; `reset()`, `arm(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
+| `<oqx-relationship-picker>` | `candidates: Candidate[]`, `overrides: Overrides`, `editable: Record<name, Editability>`, `armed: string \| null`, `edgeCounts: Record<name, number>`, `nodeCount`; getter `view`; `reset()`, `arm(name \| null)`, `setAxis(name \| null)` | `view-change` `{ view: { edges: string[], layout: { axis, direction }, projection }, overrides }`, `candidate-hover` `{ candidate \| null }`, `armed-change` `{ candidate \| null }` |
 | `<oqx-projection-picker>` | `fields: ProjectedField[]`, `defaults: ProjectionChoice`, `overrides: ProjectionOverrides`; getter `projection`; `reset()` | `projection-change` `{ label: string \| null, shown: string[], overrides }`, `field-hover` `{ field \| null }` |
-| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error }` |
+| `<oqx-graph>` | `nodes: GraphNode[]` (`label` = the fallback title line, `row` = the projected row), `view: View` (`edges`, `layout`, `projection`), `candidates`, `fetchEdges: (candidate, paths) => Promise<GraphEdge[]>`, `selected`, `armed: Candidate \| null`, `writable: string[]`, `pending: PendingEdge[]` | `node-select` `{ node \| null }`, `edge-toggle` `{ candidate, from, to, present }`, `graph-state` `{ edges, cycles, layout, busy, error, axisEdges, edgeCounts }`, `axis-request` `{ axis }` |
+
+### The page chrome (Shoelace)
+
+The page is a [Shoelace](https://shoelace.style) `<sl-split-panel>` — the side
+panel on the start side, the graph on the end side, `--min: 320px` / `--max:
+calc(100% - 360px)` so neither pane can be squeezed shut; the divider's
+`position` (percent) is persisted. The side panel is a stack of
+`<sl-details>` sections — **query**, **relationships**, **cards**, **MCP
+settings** — each with a one-line summary of its state (rows, drawn
+relationships and axis, card fields, connection mode) and its `open` state
+persisted; the settings section also opens itself on a connection error or a
+pending sign-in. Shoelace is imported per component
+(`@shoelace-style/shoelace/dist/components/{details,split-panel}/*.js`) plus
+`themes/light.css`; the chevron is a `library="system"` icon inlined in the
+bundle, so no `setBasePath` and no icon assets are needed. Shoelace is Lit-built
+and registers its own `sl-*` tags, so it sits inside our shadow roots without
+collisions; the `--sl-*` tokens are set on `:root` by the theme and inherited
+through every shadow root. `<oqx-graph>` watches its own size with a
+`ResizeObserver`: its `viewBox` is its client size and the picture is fitted by
+the pan/zoom transform (`fitTransform`, `src/lib/viewport.ts`), refitted on
+every pane resize until you pan or zoom (double-click fits again). The persisted
+UI record is `omgbase-graph-ui.ui`: `{ keepLastGraph, sections: { query,
+relationships, projection, settings }, splitPosition }`.
 
 The graph's bottom-left legend lists the drawn relationships by colour (the
 axis marked); while the modifier is held in edit mode a second legend,
 bottom-right, names the three edge styles — *will add* (blue dashed), *will
 remove* (red dashed), *writing…* (the in-flight dashed edge).
+
+**Arrows follow the direction.** An edge is *stored* owner → target (`src` →
+`dst`: `alpha.after ∋ prototype` is `alpha → prototype`) and *drawn* the way its
+relationship's direction says (`orientEdge`, `src/lib/edges.ts`): `forward`
+keeps the stored orientation, `backward` flips it so the arrowhead lands on the
+owner. The axis uses the direction chosen in the picker; every other drawn
+relationship uses its own default (`after` is backward, so beside a `before`
+axis its arrows point earlier → later too). The same oriented edges feed elk,
+so the layout flows left → right the way the arrowheads point: toggling the
+direction select flips the arrows *and* the flow, never one without the other.
+Tooltips and edits still speak the stored orientation (`alpha -[after]->
+prototype` is the file that changes).
+
+**An axis with no edges here.** When the chosen axis has zero edges among the
+shown documents (a field the result does not author between its rows — the
+single `before` of a repository that writes only `after`), the picker and the
+graph both say so — *`before` has no edges here — nothing to order by* — with
+one-click buttons for the relationships that do have edges (the axis's own
+pair first, with the count) and for *no axis (force)*. The counts come from the
+graph (`graph-state.edgeCounts`: edges among the shown nodes per relationship it
+fetched — the drawn ones, the axis, and a pair's members); the graph's banner
+raises `axis-request` and the page hands it to the picker's `setAxis`.
+
+**Force layout** (*no axis — force-directed (nodes repel, edges pull)*,
+`src/lib/layout-force.ts`): d3-force run to quiescence synchronously —
+`forceManyBody` repels, `forceLink` pulls along the drawn edges, `forceCollide`
+keeps cards apart by their covering radius (`cardRadius`, `src/lib/cards.ts`),
+`forceCenter` holds the cloud at the origin and every node is kept inside a box
+sized to the node count, so an edgeless result settles as a compact cloud
+instead of flying apart; the settled box is then fitted to the view. With
+nothing drawn the graph says *no edges drawn — nodes only repel; pick a
+relationship to connect them*.
 
 The editor's status area also carries the hints from `src/lib/hints.ts` (see
 [Inference rules](#inference-rules-srclibcandidatests)).
@@ -532,9 +593,13 @@ back bare (surface 1.x) or rooted (2.0).
 whose sampled values are document references (a `/`-rooted repo path, a bare
 repo path, or a doc id — scalar or list). The rest show *read-only* with a
 reason: `doc.out` / `doc.in` ("links live in the body"), an `order by` key
-("derived from order by …"), a frontmatter field holding something else
-("values are not document references"), or a server that does not offer the
-tool.
+("derived from order by …"), an inverse pair ("edit `before` or `after`
+directly"), a frontmatter field holding something else ("values are not
+document references"), or a server that does not offer the tool. While a
+relationship is armed its row shows `writes /path.md` — the form new references
+take (the field's existing spelling: `/`-rooted or bare, with or without `.md`,
+or doc ids; the tooltip says where the form came from and that a field mixing
+forms is refused).
 
 **Gateway allowlist.** Through a gateway (proxy or direct mode) the gateway's
 tool allowlist must include `docs_set_meta` (and `docs_read`, used when the
@@ -591,15 +656,56 @@ module becomes the fallback.
    that projects no relationship (the starter) still has edges to draw. A
    `follow doc.out` is the follow candidate itself, not a second entry.
 
-Defaults: every `follow` candidate is drawn; inferred fields are drawn only
-when the query has no `follow`; the builtin `doc.out` is drawn only when
-nothing else is (no `follow`, no inferred field); `doc.in` and sequences are
-never drawn by default. The layout axis is the first `follow` candidate, else
-the first sequence key, else the first inferred field (timeline words first),
-else none (force) — a builtin is never the axis. Overrides live beside the
-view (`src/lib/view.ts`), as the projection's do ([Choosing what a card
+5. **Inverse pairs** — see the next section: two frontmatter candidates that are
+   one sequence read from both ends get a combined candidate (`before/after`,
+   kind `sequence`, source `pair`) inserted just before its first member.
+
+Defaults: a pair is drawn and its members are not; otherwise every `follow`
+candidate is drawn; inferred fields are drawn only when the query has no
+`follow`; the builtin `doc.out` is drawn only when nothing else is (no
+`follow`, no inferred field); `doc.in` and sequences are never drawn by
+default. The layout axis is the first pair, else the first `follow` candidate,
+else the first sequence key, else the first inferred field (timeline words
+first), else none (force) — a builtin is never the axis. Overrides live beside
+the view (`src/lib/view.ts`), as the projection's do ([Choosing what a card
 shows](#choosing-what-a-card-shows)); an override naming a vanished candidate
 is dropped.
+
+### Inverse pairs: `before`/`after` is one sequence
+
+`before` and `after` are one relation read from both ends: `kickoff.before ∋
+design-review` and `design-review.after ∋ kickoff` say the same thing. A
+repository usually authors only one of them (Brendan's writes `after` on 8 of
+27 documents and `before` on none), so laying out along `before` there had no
+edges. The picker therefore offers the **pair** as a candidate of its own,
+`before/after`:
+
+- **Detection** (`detectPairs`, `src/lib/candidates.ts`). *By name*: both
+  fields of a sequence pair are frontmatter candidates — `before`/`after`,
+  `prev`/`next`, `previous`/`next`, `predecessor`/`successor` (only sequence
+  vocabulary; `parent`/`children` is a tree, not an order). *By data*
+  (`reciprocal`): for any two frontmatter candidates left over, the rows show
+  `A.x ∋ B` and `B.y ∋ A` at least once and never `A.x ∋ B` together with
+  `A.y ∋ B` (two relations pointing the same way — `owner` and `see_also` — are
+  not inverses). Each field is in at most one pair; a field never pairs with
+  itself; a one-way reference or a target outside the rows proves nothing.
+- **Edges** (`pairEdges`, `src/lib/edges.ts`): the union of both fields' edges
+  normalised to ONE direction, earlier → later. The pair records which member is
+  `forward` (its stored edge owner → target already runs earlier → later:
+  `before`) and which is `backward` (`after`, whose edges are flipped). A fact
+  authored from both ends yields one edge; the pair's own direction toggle then
+  flips every arrow at once.
+- **Defaults.** The pair is drawn and is the layout axis; the member fields stay
+  listed (so you can draw or lay out along one alone) but are not drawn by
+  default and remain the writable ones — the pair is read-only in the editing
+  sense ("edit `before` or `after` directly"). Hovering the pair lights both
+  members in the picker and both their spans in the editor; its row reads
+  `before/after = before ∪ after⁻¹`.
+
+The engine has no field definitions yet; when a repository can declare
+`inverse_of` (and a direction) on a field, that is the source of truth for both
+the pairing and which end is earlier, and this name-and-reciprocity detection
+becomes the fallback — see [Gaps](#gaps-found-in-the-public-api).
 
 **Hints and server errors** (`src/lib/hints.ts`, `src/lib/errors.ts`). The same
 AST reading drives the non-blocking messages. Under the editor: when a `follow`
@@ -658,7 +764,9 @@ engine's own `refs(<field>)` when no bare destination names the field.
   would). There is also no server-side list toggle (`add`/`remove` a member),
   so the client reads the whole value, edits it, and writes it back.
 - **No inverse-field knowledge.** Editing `after` does not maintain `before`;
-  a field definition with `inverse_of` would let the UI (or the engine) keep both.
+  a field definition with `inverse_of` would let the UI (or the engine) keep both
+  — and would replace the pair detection in `candidates.ts` (vocabulary plus
+  reciprocal rows) with a declaration.
 - **An empty projection is not "the row itself".** `from docs where …` with no
   `select` returns hits carrying only `id` and `path`, so the cards panel's
   *from rows* fallback can offer just those two; the frontmatter has to be

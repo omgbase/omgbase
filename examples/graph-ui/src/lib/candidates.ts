@@ -42,10 +42,24 @@
 //        to choose from: `doc.out` (links) and `doc.in` (backlinks), so a query
 //        that projects no relationship (the starter: `select $path, $title …`)
 //        still has edges to draw and relationships in the picker.
-// Edge default: every `follow` candidate is drawn; inferred path fields are drawn
-// only when the query has no `follow`; the builtin `doc.out` is drawn only when
-// nothing else is (no follow, no inferred field); `doc.in` and sequence
-// candidates are never drawn by default. Layout default: the first follow
+//   5. inverse PAIRS — two frontmatter candidates that are one sequence read
+//        from both ends (`before`/`after`, `prev`/`next`, `previous`/`next`,
+//        `predecessor`/`successor` by NAME; any two whose rows reciprocate —
+//        A.x ∋ B and B.y ∋ A, never A.x ∋ B and A.y ∋ B — by DATA) get a
+//        combined candidate named `x/y` (kind `sequence`, source `pair`) whose
+//        edges are the union of both fields' edges normalised to ONE direction,
+//        earlier → later: a `forward` member's edge (owner → target, `before`)
+//        is kept, a `backward` member's (`after`) is flipped (lib/edges.ts
+//        `pairEdges`). A repository that authors only `after` thus lays out
+//        along the pair. The pair is read-only in the editing sense (edit a
+//        member field instead); hovering it highlights both members. When the
+//        repository's field definitions carry `inverse_of`, that is the source
+//        of truth and this detection becomes the fallback.
+// Edge default: a pair is drawn and its members are not; otherwise every
+// `follow` candidate is drawn; inferred path fields are drawn only when the
+// query has no `follow`; the builtin `doc.out` is drawn only when nothing else
+// is (no follow, no inferred field); `doc.in` and sequence candidates are never
+// drawn by default. Layout default: the first pair, else the first follow
 // candidate, else the first sequence key, else the first inferred field
 // (timeline words first), else none (force) — a builtin is never the axis.
 //
@@ -56,15 +70,26 @@
 import type { Expr, Follow, OpNode, Query, Span, Where } from "@omgbase/oqx";
 
 export type Direction = "forward" | "backward";
-export type CandidateSource = "follow" | "order by" | "inferred" | "builtin";
+export type CandidateSource = "follow" | "order by" | "inferred" | "builtin" | "pair";
 export type CandidateKind =
   | "frontmatter" // a frontmatter relation: edges rows with src_field == name
   | "links" // doc.out — authored links
   | "backlinks" // doc.in — authored links, reversed
-  | "sequence"; // an order-by key: consecutive result rows
+  | "sequence"; // an order-by key (consecutive result rows) or an inverse pair (both fields, one direction)
+
+/** The two fields of an inverse pair, by the way their stored edges run along
+ * the sequence: the `forward` field's edge owner → target points earlier →
+ * later (`before`: the owner precedes the target), the `backward` field's
+ * points later → earlier (`after`: the owner follows the target). */
+export interface InversePair {
+  forward: string;
+  backward: string;
+  /** How the pair was recognised: the sequence vocabulary, or reciprocal rows. */
+  by: "name" | "data";
+}
 
 export interface Candidate {
-  /** The relation name as the UI shows it (`before`, `doc.out`, `date`). */
+  /** The relation name as the UI shows it (`before`, `doc.out`, `date`, `before/after`). */
   name: string;
   kind: CandidateKind;
   /** Every place it came from (deduped). */
@@ -72,11 +97,32 @@ export interface Candidate {
   /** Source spans (code points) of the AST mentions, for the editor to highlight. */
   spans: Span[];
   defaults: { edge: boolean; layout: boolean; direction: Direction };
+  /** Set on a combined inverse-pair candidate (rule 5): its two member fields. */
+  pair?: InversePair;
 }
 
 export type Row = Record<string, unknown>;
 
-const BACKWARD_WORDS = /^(after|follows?|succeeds?|prev(ious)?|parent|parents|depends?_?on|requires?|derived_?from|sources?|replaces|supersedes)$/i;
+const BACKWARD_WORDS = /^(after|follows?|succeeds?|prev(ious)?|predecessor|parent|parents|depends?_?on|requires?|derived_?from|sources?|replaces|supersedes)$/i;
+
+/** The sequence vocabulary read from both ends (rule 5, by name): `forward` is
+ * the field whose owner precedes what it names, `backward` the one whose owner
+ * follows it. Only sequence pairs — `parent`/`children` is a tree, not an order. */
+export const SEQUENCE_PAIRS: readonly { forward: string; backward: string }[] = [
+  { forward: "before", backward: "after" },
+  { forward: "next", backward: "prev" },
+  { forward: "next", backward: "previous" },
+  { forward: "successor", backward: "predecessor" },
+];
+
+/** The combined candidate's name: the two fields in the order the vocabulary
+ * lists them (`before/after`, `prev/next`); a data-detected pair reads
+ * forward/backward. */
+export function pairName(pair: Pick<InversePair, "forward" | "backward">): string {
+  const order = PAIR_NAME_ORDER.find((o) => o.includes(pair.forward) && o.includes(pair.backward));
+  return order ? `${order[0]}/${order[1]}` : `${pair.forward}/${pair.backward}`;
+}
+const PAIR_NAME_ORDER: readonly [string, string][] = [["before", "after"], ["prev", "next"], ["previous", "next"], ["predecessor", "successor"]];
 const TIMELINE_WORDS = /^(before|after|next|prev(ious)?|follows?|precedes?|succeeds?|then|parent|child(ren)?)$/i;
 const ROW_META = new Set(["id", "path", "$path", "$depth", "$stop", "$leaf", "$frontier", "$ordinal", "$id", "$doc_id"]);
 
@@ -116,7 +162,96 @@ export function inferCandidates(query: Query | null, rows: readonly Row[] = []):
     mentions.push({ name: "doc.out", kind: "links", source: "builtin", span: [0, 0], direction: "forward" });
     mentions.push({ name: "doc.in", kind: "backlinks", source: "builtin", span: [0, 0], direction: "backward" });
   }
-  return roleDefaults(merge(mentions));
+  return roleDefaults(withPairs(merge(mentions), rows));
+}
+
+// ---- inverse pairs (rule 5) ---------------------------------------------------
+
+/** Rule 5: the inverse pairs among the frontmatter candidates — by the
+ * sequence vocabulary, then by reciprocal rows for the fields left over. Each
+ * field is in at most one pair; a field never pairs with itself. */
+export function detectPairs(candidates: readonly Pick<Candidate, "name" | "kind" | "defaults">[], rows: readonly Row[] = []): InversePair[] {
+  const fields = candidates.filter((c) => c.kind === "frontmatter" && !c.name.includes(".") && !c.name.startsWith("$")).map((c) => c.name);
+  const present = new Set(fields);
+  const taken = new Set<string>();
+  const out: InversePair[] = [];
+  for (const p of SEQUENCE_PAIRS) {
+    if (present.has(p.forward) && present.has(p.backward) && !taken.has(p.forward) && !taken.has(p.backward)) {
+      out.push({ ...p, by: "name" });
+      taken.add(p.forward); taken.add(p.backward);
+    }
+  }
+  if (rows.length === 0) return out;
+  for (let i = 0; i < fields.length; i++) {
+    for (let j = i + 1; j < fields.length; j++) {
+      const a = fields[i]!, b = fields[j]!;
+      if (taken.has(a) || taken.has(b) || !reciprocal(rows, a, b)) continue;
+      // Which end is which: the backward vocabulary decides; else the first field is forward.
+      const [forward, backward] = BACKWARD_WORDS.test(a) && !BACKWARD_WORDS.test(b) ? [b, a] : [a, b];
+      out.push({ forward, backward, by: "data" });
+      taken.add(a); taken.add(b);
+    }
+  }
+  return out;
+}
+
+/** The rows show `a` and `b` as inverses: at least one A.a ∋ B with B.b ∋ A,
+ * and never a row naming the same document under both fields (that is two
+ * relations pointing the same way, not one read from both ends). */
+export function reciprocal(rows: readonly Row[], a: string, b: string): boolean {
+  const byPath = new Map<string, Row>();
+  for (const row of rows) if (typeof row.path === "string") byPath.set(rootedPath(row.path), row);
+  let hits = 0;
+  for (const row of rows) {
+    if (typeof row.path !== "string") continue;
+    const self = rootedPath(row.path);
+    const aRefs = refsOf(row[a]);
+    const bRefs = refsOf(row[b]);
+    if (aRefs.some((r) => bRefs.includes(r))) return false;
+    for (const target of aRefs) {
+      const other = byPath.get(target);
+      if (other && refsOf(other[b]).includes(self)) hits++;
+    }
+    for (const target of bRefs) {
+      const other = byPath.get(target);
+      if (other && refsOf(other[a]).includes(self)) hits++;
+    }
+  }
+  return hits > 0;
+}
+
+function refsOf(v: unknown): string[] {
+  if (looksLikeDocPath(v)) return [rootedPath(v as string)];
+  if (Array.isArray(v)) return v.filter(looksLikeDocPath).map((x) => rootedPath(x as string));
+  return [];
+}
+
+function rootedPath(p: string): string {
+  return p.startsWith("/") ? p : `/${p}`;
+}
+
+/** Insert one combined candidate per detected pair, just before its first
+ * member, with both members' spans so hovering it lights both in the editor. */
+function withPairs(candidates: Candidate[], rows: readonly Row[]): Candidate[] {
+  const pairs = detectPairs(candidates, rows);
+  if (pairs.length === 0) return candidates;
+  const out: Candidate[] = [];
+  const inserted = new Set<string>();
+  for (const c of candidates) {
+    const pair = pairs.find((p) => (p.forward === c.name || p.backward === c.name) && c.kind === "frontmatter");
+    if (pair && !inserted.has(pairName(pair))) {
+      inserted.add(pairName(pair));
+      const members = candidates.filter((m) => m.kind === "frontmatter" && (m.name === pair.forward || m.name === pair.backward));
+      out.push({
+        name: pairName(pair), kind: "sequence", sources: ["pair"],
+        spans: members.flatMap((m) => m.spans),
+        defaults: { edge: false, layout: false, direction: "forward" },
+        pair,
+      });
+    }
+    out.push(c);
+  }
+  return out;
 }
 
 function merge(mentions: Mention[]): Candidate[] {
@@ -141,12 +276,16 @@ function merge(mentions: Mention[]): Candidate[] {
 function roleDefaults(candidates: Candidate[]): Candidate[] {
   const hasFollow = candidates.some((c) => c.sources.includes("follow"));
   const hasInferred = candidates.some((c) => c.sources.includes("inferred"));
+  const paired = new Set(candidates.flatMap((c) => (c.pair ? [c.pair.forward, c.pair.backward] : [])));
   for (const c of candidates) {
-    c.defaults.edge = c.sources.includes("follow")
+    // A pair is drawn in place of its members: the members stay listed, undrawn.
+    c.defaults.edge = c.pair !== undefined
+      || (!(c.kind === "frontmatter" && paired.has(c.name)) && (c.sources.includes("follow")
       || (!hasFollow && c.sources.includes("inferred"))
-      || (!hasFollow && !hasInferred && c.kind === "links" && c.sources.includes("builtin"));
+      || (!hasFollow && !hasInferred && c.kind === "links" && c.sources.includes("builtin"))));
   }
   const axis =
+    candidates.find((c) => c.pair !== undefined) ??
     candidates.find((c) => c.sources.includes("follow")) ??
     candidates.find((c) => c.kind === "sequence") ??
     candidates.find((c) => c.sources.includes("inferred") && TIMELINE_WORDS.test(c.name)) ??

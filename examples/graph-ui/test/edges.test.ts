@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { edgeQueries, edgesFromRows, oqxString, sequenceEdges } from "../src/lib/edges.ts";
+import { edgeQueries, edgesFromRows, oqxString, orientEdge, orientEdges, pairEdges, sequenceEdges, type GraphEdge } from "../src/lib/edges.ts";
 
 describe("edgeQueries", () => {
   it("generates parsable OQX over the edges target, chunked", () => {
@@ -48,6 +48,60 @@ describe("edgesFromRows", () => {
   it("flips backlinks", () => {
     expect(edgesFromRows({ name: "doc.in", kind: "backlinks" }, rows, new Set(["/a.md", "/b.md"])))
       .toEqual([{ src: "/b.md", dst: "/a.md", rel: "doc.in" }]);
+  });
+});
+
+describe("orientEdge — the arrow follows the direction", () => {
+  const e: GraphEdge = { src: "/alpha.md", dst: "/prototype.md", rel: "after" };
+  it("keeps the stored owner → target under forward and flips it under backward", () => {
+    expect(orientEdge(e, "forward")).toEqual(e);
+    expect(orientEdge(e, "backward")).toEqual({ src: "/prototype.md", dst: "/alpha.md", rel: "after" });
+    // Flipping twice is the identity; the input is not mutated.
+    expect(orientEdge(orientEdge(e, "backward"), "backward")).toEqual(e);
+    expect(e).toEqual({ src: "/alpha.md", dst: "/prototype.md", rel: "after" });
+  });
+  it("orients a whole set and keeps extra fields (a pending edge's action)", () => {
+    const pending = [{ ...e, action: "add" as const }, { src: "/x.md", dst: "/y.md", rel: "after", action: "remove" as const }];
+    expect(orientEdges(pending, "backward")).toEqual([
+      { src: "/prototype.md", dst: "/alpha.md", rel: "after", action: "add" },
+      { src: "/y.md", dst: "/x.md", rel: "after", action: "remove" },
+    ]);
+    expect(orientEdges(pending, "forward")).toEqual(pending);
+  });
+});
+
+describe("pairEdges — one sequence from both ends", () => {
+  const pair = { forward: "before", backward: "after" };
+  it("keeps the forward field's edges, flips the backward field's, relabels, dedupes", () => {
+    const edges: GraphEdge[] = [
+      { src: "/kickoff.md", dst: "/design.md", rel: "before" }, // kickoff before design: earlier → later as stored
+      { src: "/alpha.md", dst: "/prototype.md", rel: "after" }, // alpha after prototype: flipped to prototype → alpha
+      { src: "/design.md", dst: "/kickoff.md", rel: "after" }, // the same fact authored from the other end: one edge
+      { src: "/x.md", dst: "/y.md", rel: "owner" }, // not a member
+      { src: "/loop.md", dst: "/loop.md", rel: "before" }, // self loop dropped
+    ];
+    expect(pairEdges("before/after", pair, edges)).toEqual([
+      { src: "/kickoff.md", dst: "/design.md", rel: "before/after" },
+      { src: "/prototype.md", dst: "/alpha.md", rel: "before/after" },
+    ]);
+  });
+  it("is the whole sequence when only one field is authored (a repository with `after` alone)", () => {
+    const onlyAfter: GraphEdge[] = [
+      { src: "/b.md", dst: "/a.md", rel: "after" },
+      { src: "/c.md", dst: "/b.md", rel: "after" },
+    ];
+    expect(pairEdges("before/after", pair, onlyAfter)).toEqual([
+      { src: "/a.md", dst: "/b.md", rel: "before/after" },
+      { src: "/b.md", dst: "/c.md", rel: "before/after" },
+    ]);
+    expect(pairEdges("before/after", pair, [])).toEqual([]);
+  });
+  it("normalises to the same picture whichever end authored it", () => {
+    const viaBefore = pairEdges("p", pair, [{ src: "/a.md", dst: "/b.md", rel: "before" }]);
+    const viaAfter = pairEdges("p", pair, [{ src: "/b.md", dst: "/a.md", rel: "after" }]);
+    expect(viaBefore).toEqual(viaAfter);
+    // …and a backward view of the pair flips every arrow at once.
+    expect(orientEdges(viaBefore, "backward")).toEqual([{ src: "/b.md", dst: "/a.md", rel: "p" }]);
   });
 });
 

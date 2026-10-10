@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { CARD, cardFor, cardHeight, cardTooltip, cardWidth, fitChars, formatFull, formatValue, truncate } from "../src/lib/cards.ts";
+import { CARD, cardFor, cardHeight, cardRadius, cardTooltip, cardWidth, fitChars, formatFull, formatValue, truncate } from "../src/lib/cards.ts";
+
+describe("cardRadius", () => {
+  it("covers the card's diagonal plus a margin", () => {
+    expect(cardRadius(60, 80)).toBe(50 + 12);
+    expect(cardRadius(60, 80, 0)).toBe(50);
+    expect(cardRadius(120, 30)).toBeGreaterThan(60);
+  });
+});
 
 describe("formatValue", () => {
   it("renders scalars as text, absent as a dash", () => {

@@ -55,7 +55,8 @@ follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(afte
     expect(timelineStarter("2.0")).toContain(`where $path == "/path/to/start.md"`);
     for (const surface of ["1.5", "2.0"]) {
       const q = parse(timelineStarter(surface, "a.md"));
-      expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before", "forward"], ["after", "backward"]]);
+      // Both ends of the sequence are named, so the pair comes first (rule 5) and lays out.
+      expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before/after", "forward"], ["before", "forward"], ["after", "backward"]]);
       expect(queryHints(q, surface)).toEqual([]);
     }
   });

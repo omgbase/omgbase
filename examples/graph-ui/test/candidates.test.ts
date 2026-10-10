@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "@omgbase/oqx";
-import { inferCandidates, pathValuedFields, refsField, relationKind } from "../src/lib/candidates.ts";
+import { detectPairs, inferCandidates, pairName, pathValuedFields, reciprocal, refsField, relationKind } from "../src/lib/candidates.ts";
 
 const TIMELINE = `select $path, title, before, after
 from docs
@@ -73,24 +73,28 @@ describe("inferCandidates", () => {
       { id: "d_1", path: "a.md", before: ["/b.md"], owner: "/people/ada.md", title: "A" },
       { id: "d_2", path: "b.md", before: [], after: ["/a.md"] },
     ];
-    const c = inferCandidates(parse(`$path, before, after, owner, title from docs`), rows).filter((x) => !x.sources.includes("builtin"));
+    const c = inferCandidates(parse(`$path, before, after, owner, title from docs`), rows).filter((x) => !x.sources.includes("builtin") && !x.pair);
     expect(c.map((x) => x.name).sort()).toEqual(["after", "before", "owner"]);
     for (const x of c) expect(x.sources).toEqual(["inferred"]);
-    expect(c.find((x) => x.name === "before")!.defaults).toEqual({ edge: true, layout: true, direction: "forward" });
+    // `before` and `after` form a pair (rule 5), which takes the drawn/axis defaults; the fields stay listed.
+    expect(c.find((x) => x.name === "before")!.defaults).toEqual({ edge: false, layout: false, direction: "forward" });
     expect(c.find((x) => x.name === "after")!.defaults.direction).toBe("backward");
     expect(c.find((x) => x.name === "owner")!.defaults.layout).toBe(false);
+    // Without the inverse, the single field is drawn and lays out as before.
+    const single = inferCandidates(parse(`$path, before, owner from docs`), rows.map(({ after: _after, ...r }) => r)).filter((x) => !x.sources.includes("builtin"));
+    expect(single.find((x) => x.name === "before")!.defaults).toEqual({ edge: true, layout: true, direction: "forward" });
   });
 
   it("merges the same name from follow and rows and keeps follow's roles", () => {
-    const rows = [{ id: "d_1", path: "a.md", after: ["/b.md"], before: ["/c.md"] }];
+    const rows = [{ id: "d_1", path: "a.md", after: ["/b.md"], owner: "/c.md" }];
     const c = inferCandidates(parse(TIMELINE), rows);
     const after = c.find((x) => x.name === "after")!;
     expect(after.sources).toEqual(["follow", "inferred"]);
     expect(after.defaults.edge).toBe(true);
-    const before = c.find((x) => x.name === "before")!;
-    expect(before.sources).toEqual(["inferred"]);
-    expect(before.defaults.edge).toBe(false); // the query has a follow; inferred fields are not drawn by default
-    expect(before.defaults.layout).toBe(false);
+    const owner = c.find((x) => x.name === "owner")!;
+    expect(owner.sources).toEqual(["inferred"]);
+    expect(owner.defaults.edge).toBe(false); // the query has a follow; inferred fields are not drawn by default
+    expect(owner.defaults.layout).toBe(false);
   });
 
   it("reads `follow refs(<field>)` as the field, forward — the frontier owns it", () => {
@@ -107,12 +111,18 @@ describe("inferCandidates", () => {
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.sources])).toEqual([["before", "frontmatter", "forward", ["follow"]]]);
   });
 
-  it("walks both ways with refs(before), refs(after): both drawn, the first lays out", () => {
+  it("walks both ways with refs(before), refs(after): the pair is drawn and lays out, the fields stay listed undrawn", () => {
     const c = inferCandidates(parse(`$path from docs follow refs(before), refs(after)`), []);
     expect(c.map((x) => [x.name, x.defaults.edge, x.defaults.layout, x.defaults.direction])).toEqual([
-      ["before", true, true, "forward"],
-      ["after", true, false, "forward"],
+      ["before/after", true, true, "forward"],
+      ["before", false, false, "forward"],
+      ["after", false, false, "forward"],
     ]);
+    // `refs(after)` walks the strings forward, but the pair still flips `after` edges: it is the field's meaning, not the walk's.
+    expect(c[0]!.pair).toEqual({ forward: "before", backward: "after", by: "name" });
+    // Two unrelated walks: no pair, the old rule.
+    const two = inferCandidates(parse(`$path from docs follow refs(owner), refs(see_also)`), []);
+    expect(two.map((x) => [x.name, x.defaults.edge, x.defaults.layout])).toEqual([["owner", true, true], ["see_also", true, false]]);
   });
 
   it("reads a refs() receiver inside a destination block's where: the candidate row's field points backward, an outer one forward", () => {
@@ -130,12 +140,16 @@ follow distinct refs(before), $it.in collect { where ("/" + ^$path) in list(afte
 order by $ordinal`;
     const c = inferCandidates(parse(src), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.defaults.edge, x.defaults.layout])).toEqual([
-      ["before", "frontmatter", "forward", true, true],
-      ["after", "frontmatter", "backward", true, false],
+      ["before/after", "sequence", "forward", true, true],
+      ["before", "frontmatter", "forward", false, false],
+      ["after", "frontmatter", "backward", false, false],
     ]);
-    expect(src.slice(...c[1]!.spans[0]!)).toBe(`("/" + ^$path) in list(after)`);
-    // `$ordinal` is recursion metadata, not a sequence candidate.
-    expect(c.some((x) => x.kind === "sequence")).toBe(false);
+    expect(src.slice(...c[2]!.spans[0]!)).toBe(`("/" + ^$path) in list(after)`);
+    // Hovering the pair lights both fields: its spans are the members'.
+    expect(c[0]!.spans).toEqual([...c[1]!.spans, ...c[2]!.spans]);
+    expect(c[0]!.sources).toEqual(["pair"]);
+    // `$ordinal` is recursion metadata, not a sequence candidate (the pair is the only sequence-kinded one).
+    expect(c.some((x) => x.kind === "sequence" && !x.pair)).toBe(false);
   });
 
   it("reads the bare `^$path` idiom (surface 2.0: $path is rooted) exactly like the slash-prefixed one", () => {
@@ -146,10 +160,11 @@ follow distinct refs(before), $it.in collect { where ^$path in list(after) }
 order by $ordinal`;
     const c = inferCandidates(parse(src), []);
     expect(c.map((x) => [x.name, x.kind, x.defaults.direction, x.defaults.edge, x.defaults.layout])).toEqual([
-      ["before", "frontmatter", "forward", true, true],
-      ["after", "frontmatter", "backward", true, false],
+      ["before/after", "sequence", "forward", true, true],
+      ["before", "frontmatter", "forward", false, false],
+      ["after", "frontmatter", "backward", false, false],
     ]);
-    expect(src.slice(...c[1]!.spans[0]!)).toBe("^$path in list(after)");
+    expect(src.slice(...c[2]!.spans[0]!)).toBe("^$path in list(after)");
     for (const follow of [`^docs collect { where after.contains(^$path) }`, `$it.in collect { where ^$path in list(after) }`, `$repo.docs collect { where $path in ^before }`]) {
       const cands = inferCandidates(parse(`$path from docs where $path == "/a.md" follow ${follow}`), []);
       expect(cands.map((x) => [x.name, x.defaults.direction]), follow).toEqual([[follow.includes("^before") ? "before" : "after", follow.includes("^before") ? "forward" : "backward"]]);
@@ -187,6 +202,86 @@ order by $ordinal`;
   it("works without an AST (unparsable source) from rows alone", () => {
     expect(inferCandidates(null, [{ id: "x", path: "a.md", next: "/b.md" }]).map((c) => c.name)).toEqual(["next", "doc.out", "doc.in"]);
     expect(inferCandidates(null, []).map((c) => c.name)).toEqual(["doc.out", "doc.in"]);
+  });
+});
+
+describe("inverse pairs (rule 5)", () => {
+  const field = (name: string, direction: "forward" | "backward" = "forward") => ({ name, kind: "frontmatter" as const, defaults: { edge: false, layout: false, direction } });
+
+  it("pairs the sequence vocabulary by name — before/after, prev/next, previous/next, predecessor/successor — and nothing else", () => {
+    expect(detectPairs([field("before"), field("after", "backward"), field("owner")])).toEqual([{ forward: "before", backward: "after", by: "name" }]);
+    expect(detectPairs([field("next"), field("prev")])).toEqual([{ forward: "next", backward: "prev", by: "name" }]);
+    expect(detectPairs([field("previous"), field("next")])).toEqual([{ forward: "next", backward: "previous", by: "name" }]);
+    expect(detectPairs([field("successor"), field("predecessor")])).toEqual([{ forward: "successor", backward: "predecessor", by: "name" }]);
+    // A tree is not a sequence; one end alone is not a pair; a field never pairs with itself.
+    expect(detectPairs([field("parent"), field("children")])).toEqual([]);
+    expect(detectPairs([field("before"), field("owner")])).toEqual([]);
+    expect(detectPairs([field("after")])).toEqual([]);
+    // Only frontmatter fields pair: `doc.in`/`doc.out`, sequences and dotted paths never do.
+    expect(detectPairs([{ ...field("before"), kind: "sequence" }, field("after")])).toEqual([]);
+    expect(detectPairs([field("meta.before"), field("after")])).toEqual([]);
+  });
+
+  it("names the pair in the vocabulary's order whichever field is forward", () => {
+    expect(pairName({ forward: "before", backward: "after" })).toBe("before/after");
+    expect(pairName({ forward: "next", backward: "prev" })).toBe("prev/next");
+    expect(pairName({ forward: "successor", backward: "predecessor" })).toBe("predecessor/successor");
+    expect(pairName({ forward: "leads_to", backward: "comes_from" })).toBe("leads_to/comes_from");
+  });
+
+  it("pairs two fields whose rows reciprocate (A.x ∋ B and B.y ∋ A), the backward word as the backward end", () => {
+    const rows = [
+      { id: "1", path: "/a.md", leads_to: ["/b.md"] },
+      { id: "2", path: "/b.md", comes_from: "/a.md", leads_to: ["/c.md"] },
+      { id: "3", path: "/c.md", comes_from: "/b.md" },
+    ];
+    expect(reciprocal(rows, "leads_to", "comes_from")).toBe(true);
+    expect(detectPairs([field("leads_to"), field("comes_from")], rows)).toEqual([{ forward: "leads_to", backward: "comes_from", by: "data" }]);
+    // The vocabulary decides which end is which when it can.
+    expect(detectPairs([field("x"), field("depends_on", "backward")], [{ id: "1", path: "a.md", x: ["/b.md"] }, { id: "2", path: "b.md", depends_on: "/a.md" }]))
+      .toEqual([{ forward: "x", backward: "depends_on", by: "data" }]);
+    // Bare and rooted paths reciprocate alike (1.x rows).
+    expect(reciprocal([{ id: "1", path: "a.md", x: ["/b.md"] }, { id: "2", path: "b.md", y: ["/a.md"] }], "x", "y")).toBe(true);
+  });
+
+  it("finds no false pairs: parallel relations, one-way references, symmetric fields, unknown targets", () => {
+    // `owner` and `see_also` both point from a to b: two relations the same way, not inverses.
+    const parallel = [{ id: "1", path: "/a.md", owner: "/b.md", see_also: ["/b.md"] }, { id: "2", path: "/b.md" }];
+    expect(reciprocal(parallel, "owner", "see_also")).toBe(false);
+    expect(detectPairs([field("owner"), field("see_also")], parallel)).toEqual([]);
+    // One-way: a → b under x, nothing back.
+    expect(reciprocal([{ id: "1", path: "/a.md", x: "/b.md" }, { id: "2", path: "/b.md" }], "x", "y")).toBe(false);
+    // A row naming the same document under both fields is a contradiction even when another row reciprocates.
+    const mixed = [{ id: "1", path: "/a.md", x: ["/b.md"], y: ["/b.md"] }, { id: "2", path: "/b.md", y: ["/a.md"] }];
+    expect(reciprocal(mixed, "x", "y")).toBe(false);
+    // The target is not among the rows: nothing to confirm with.
+    expect(reciprocal([{ id: "1", path: "/a.md", x: "/zz.md" }], "x", "y")).toBe(false);
+    // No rows: only the vocabulary pairs.
+    expect(detectPairs([field("leads_to"), field("comes_from")], [])).toEqual([]);
+    // Each field is in at most one pair: a name pair is not re-paired by data.
+    const rows = [{ id: "1", path: "/a.md", before: ["/b.md"], then: ["/b.md"] }, { id: "2", path: "/b.md", after: ["/a.md"] }];
+    expect(detectPairs([field("before"), field("after", "backward"), field("then")], rows)).toEqual([{ forward: "before", backward: "after", by: "name" }]);
+  });
+
+  it("builds the combined candidate: sequence kind, source pair, inserted before its first member, the axis, undrawn members", () => {
+    const rows = [{ id: "1", path: "/a.md", after: ["/b.md"], owner: "/p.md" }, { id: "2", path: "/b.md", before: ["/a.md"] }];
+    const c = inferCandidates(parse(`$path, owner, after, before from docs`), rows);
+    // Inferred fields come in first-seen row order (`after`, `owner`, `before`); the pair sits just before its first member.
+    expect(c.map((x) => [x.name, x.kind, x.sources, x.defaults.edge, x.defaults.layout])).toEqual([
+      ["before/after", "sequence", ["pair"], true, true],
+      ["after", "frontmatter", ["inferred"], false, false],
+      ["owner", "frontmatter", ["inferred"], true, false],
+      ["before", "frontmatter", ["inferred"], false, false],
+      ["doc.out", "links", ["builtin"], false, false],
+      ["doc.in", "backlinks", ["builtin"], false, false],
+    ]);
+    expect(c[0]!.pair).toEqual({ forward: "before", backward: "after", by: "name" });
+    // A repository authoring only `after` still gets the pair when the query names both ends (the sample starter).
+    const onlyAfter = inferCandidates(parse(`$path, before, after from docs where $path == "/a.md" follow distinct refs(before), $it.in collect { where ^$path in list(after) }`), [{ id: "1", path: "/a.md", after: ["/b.md"] }]);
+    expect(onlyAfter.map((x) => [x.name, x.defaults.layout])).toEqual([["before/after", true], ["before", false], ["after", false]]);
+    // The pair takes the axis even ahead of another follow destination.
+    expect(inferCandidates(parse(`$path from docs follow doc.out, refs(before), refs(after)`), []).map((x) => [x.name, x.defaults.layout, x.defaults.edge]))
+      .toEqual([["doc.out", false, true], ["before/after", true, true], ["before", false, false], ["after", false, false]]);
   });
 });
 

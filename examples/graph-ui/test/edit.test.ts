@@ -219,8 +219,8 @@ describe("editability of refs() candidates", () => {
   ];
 
   it("treats a candidate from `follow refs(before)` exactly like one from `follow before`", () => {
-    const viaRefs = inferCandidates(parse(`$path, before from docs follow refs(before)`), rows)[0]!;
-    const bare = inferCandidates(parse(`$path, before from docs follow before`), rows)[0]!;
+    const viaRefs = inferCandidates(parse(`$path, before from docs follow refs(before)`), rows).find((c) => c.name === "before")!;
+    const bare = inferCandidates(parse(`$path, before from docs follow before`), rows).find((c) => c.name === "before")!;
     expect(viaRefs.name).toBe(bare.name);
     expect(viaRefs.kind).toBe(bare.kind);
     expect(editability(viaRefs, rows)).toEqual(editability(bare, rows));
@@ -228,6 +228,15 @@ describe("editability of refs() candidates", () => {
     // Same owner rules: forward → the selected document's field changes.
     expect(viaRefs.defaults.direction).toBe(bare.defaults.direction);
     expect(ownerFor(viaRefs.defaults.direction, alpha, beta)).toEqual(ownerFor(bare.defaults.direction, alpha, beta));
+  });
+
+  it("an inverse pair is read-only: the edit belongs to one of its fields", () => {
+    const c = inferCandidates(parse(`$path, before, after from docs follow refs(before), refs(after)`), rows);
+    const pair = c.find((x) => x.pair)!;
+    expect(editability(pair, rows)).toEqual({ writable: false, reason: "edit `before` or `after` directly" });
+    // The members stay writable exactly as before.
+    expect(editability(c.find((x) => x.name === "before")!, rows).writable).toBe(true);
+    expect(editability(c.find((x) => x.name === "after")!, rows).writable).toBe(true);
   });
 
   it("the backlink block's `after` is writable too, owned by the clicked (successor) document", () => {

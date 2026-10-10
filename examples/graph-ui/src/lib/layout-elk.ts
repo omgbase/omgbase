@@ -1,10 +1,11 @@
 // Layered (DAG) layout input for elkjs, plus the cycle report. Only the AXIS
 // relationship's edges participate in layering; the other drawn relationships
 // are routed as straight segments between the positioned nodes afterwards, so
-// they cannot bend the timeline. `direction: "backward"` reverses the axis
-// edges before layering (an `after` edge points at the past; the layout still
-// flows left → right). Cycles are not thrown: elk breaks them itself, and the
-// members are reported for a banner.
+// they cannot bend the timeline. The edges arrive already ORIENTED the way they
+// are drawn (lib/edges.ts `orientEdge`), so the layout flows left → right the
+// way the arrowheads point; `direction: "backward"` is still honoured here for a
+// caller that passes stored edges. Cycles are not thrown: elk breaks them
+// itself, and the members are reported for a banner.
 
 import type { ElkExtendedEdge, ElkNode } from "elkjs/lib/elk-api";
 import type { Direction } from "./candidates.ts";

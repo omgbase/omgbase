@@ -76,3 +76,12 @@ export function wheelDeltaPx(e: { deltaY: number; deltaMode: number }, lineHeigh
 export function zoomFactor(deltaPx: number): number {
   return Math.exp(-deltaPx * 0.001);
 }
+
+/** The transform that fits a `cw × ch` content box into a `vw × vh` viewBox
+ * with `pad` units of margin, centred, never enlarged past `maxK` (a lone card
+ * should not fill the screen). Degenerate sizes give the identity. */
+export function fitTransform(cw: number, ch: number, vw: number, vh: number, pad = 16, maxK = 1): Transform {
+  if (!(cw > 0) || !(ch > 0) || !(vw > 0) || !(vh > 0)) return IDENTITY;
+  const k = Math.min(maxK, Math.max(MIN_SCALE, Math.min((vw - 2 * pad) / cw, (vh - 2 * pad) / ch)));
+  return { k, x: (vw - cw * k) / 2, y: (vh - ch * k) / 2 };
+}

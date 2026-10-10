@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate } from "../src/lib/candidates.ts";
-import { NO_OVERRIDES, NO_PROJECTION_OVERRIDES, defaultView, resolveProjection, resolveView, sameProjection, sameView, withAxis, withDirection, withEdge, withLabel, withShown } from "../src/lib/view.ts";
+import { NO_OVERRIDES, NO_PROJECTION_OVERRIDES, axisStatus, defaultView, resolveProjection, resolveView, sameProjection, sameView, withAxis, withDirection, withEdge, withLabel, withShown } from "../src/lib/view.ts";
 import type { ProjectedField } from "../src/lib/projection.ts";
 
 const cand = (name: string, edge: boolean, layout: boolean, direction: "forward" | "backward" = "forward"): Candidate => ({
@@ -37,6 +37,30 @@ describe("view", () => {
   it("sameView compares structurally", () => {
     expect(sameView(defaultView(C), defaultView(C))).toBe(true);
     expect(sameView(defaultView(C), resolveView(C, withAxis(NO_OVERRIDES, null)))).toBe(false);
+  });
+});
+
+describe("axisStatus — an axis with no edges in the result", () => {
+  const pair: Candidate = { name: "before/after", kind: "sequence", sources: ["pair"], spans: [], defaults: { edge: true, layout: true, direction: "forward" }, pair: { forward: "before", backward: "after", by: "name" } };
+  const all = [pair, cand("before", false, false), cand("after", false, false, "backward"), cand("owner", false, false)];
+
+  it("is empty exactly when the axis's known count is zero and there are two or more nodes", () => {
+    expect(axisStatus("before", all, { before: 0, "before/after": 7 }, 12).empty).toBe(true);
+    expect(axisStatus("before", all, { before: 3 }, 12).empty).toBe(false);
+    // No axis (force), a single node, or a count not fetched yet: nothing to say.
+    expect(axisStatus(null, all, { before: 0 }, 12)).toEqual({ empty: false, alternatives: [] });
+    expect(axisStatus("before", all, { before: 0 }, 1).empty).toBe(false);
+    expect(axisStatus("before", all, {}, 12).empty).toBe(false);
+  });
+
+  it("offers the axis's own pair first, then every other relationship with edges, never the empty ones", () => {
+    const counts = { before: 0, "before/after": 7, after: 7, owner: 4, "doc.out": 0 };
+    expect(axisStatus("before", all, counts, 12).alternatives).toEqual([
+      { name: "before/after", edges: 7 }, { name: "after", edges: 7 }, { name: "owner", edges: 4 },
+    ]);
+    // An empty pair is not offered; an axis that is not a member gets the rest in candidate order.
+    expect(axisStatus("owner", all, { owner: 0, "before/after": 7, before: 2 }, 12).alternatives).toEqual([{ name: "before/after", edges: 7 }, { name: "before", edges: 2 }]);
+    expect(axisStatus("before", all, { before: 0, "before/after": 0 }, 12).alternatives).toEqual([]);
   });
 });
 

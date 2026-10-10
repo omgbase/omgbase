@@ -95,6 +95,13 @@ export function cardHeight(lines: number): number {
   return CARD.baseHeight + lines * CARD.lineHeight;
 }
 
+/** The radius of the circle that covers a card of `width × height` plus a
+ * margin — what the force layout's collision keeps apart, so two cards never
+ * overlap whatever their aspect. */
+export function cardRadius(width: number, height: number, margin = 12): number {
+  return Math.hypot(width, height) / 2 + margin;
+}
+
 /** The card for one node under a projection choice: the label field's value
  * (else the fallback) on top, then one line per shown field other than the label. */
 export function cardFor(node: CardInput, choice: ProjectionChoice): Card {

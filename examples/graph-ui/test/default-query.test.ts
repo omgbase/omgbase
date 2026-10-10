@@ -19,10 +19,10 @@ order by $ordinal`);
     expect(defaultQuery(null)).toBe(defaultQuery("1.x"));
   });
 
-  it("parses, yields the same two candidates, and raises no hint on its own server", () => {
+  it("parses, yields the same candidates (the pair and its two fields), and raises no hint on its own server", () => {
     for (const surface of ["1.5", "2.0"]) {
       const q = parse(defaultQuery(surface));
-      expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before", "forward"], ["after", "backward"]]);
+      expect(inferCandidates(q, []).map((c) => [c.name, c.defaults.direction])).toEqual([["before/after", "forward"], ["before", "forward"], ["after", "backward"]]);
       expect(queryHints(q, surface), surface).toEqual([]);
     }
     // …and exactly one on the other server.

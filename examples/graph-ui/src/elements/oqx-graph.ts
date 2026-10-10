@@ -10,11 +10,21 @@
 // sizes the card); the layout runs over the card sizes, so a projection change
 // recomputes the layout and edges keep attaching to the card border.
 //
-// Pan / zoom: one `<g transform="translate(x y) scale(k)">`; the pointer is read
-// in the SVG's own rect and mapped through the viewBox (lib/viewport.ts), so a
-// wheel zooms about the pointer and a drag — pointer-captured, so it survives
-// leaving the element — moves the picture exactly as far as the pointer;
-// double-click resets the view.
+// Arrows: an edge is stored owner → target (`src` → `dst`, what editing reasons
+// about) and DRAWN the way its relationship's direction says (lib/edges.ts
+// `orientEdge`): the axis under the view's chosen direction, every other drawn
+// relationship under its own default. The same oriented edges feed elk, so the
+// layout flows the way the arrowheads point — flipping the direction flips both.
+// An inverse pair (`before/after`) draws the union of its members' edges
+// normalised earlier → later (`pairEdges`).
+//
+// Pan / zoom: one `<g transform="translate(x y) scale(k)">`; the SVG's viewBox is
+// its own client size (a ResizeObserver keeps it current), so the content is
+// fitted by the transform (lib/viewport.ts `fitTransform`) and refitted when the
+// pane resizes until the user pans or zooms; the pointer is read in the SVG's
+// rect and mapped through the viewBox, so a wheel zooms about the pointer and a
+// drag — pointer-captured, so it survives leaving the element — moves the
+// picture exactly as far as the pointer; double-click fits again.
 //
 //   properties: nodes (GraphNode[] — `label` is the fallback title line, `row` the projected row),
 //               view (View — edges, layout, projection), candidates (Candidate[]),
@@ -29,7 +39,10 @@
 //                            `from` is the OWNER (the document whose field stores the edge),
 //                            `to` the document it refers to; `present` says whether the edge
 //                            is drawn right now. The element never writes anything itself.
-//               graph-state  detail: GraphStateDetail (edges drawn, cycles, layout kind, busy, error)
+//               graph-state  detail: GraphStateDetail (edges drawn, cycles, layout kind, busy, error,
+//                            the axis's edge count and the count per fetched relationship)
+//               axis-request detail: { axis: string | null } — the empty-axis banner's one-click
+//                            switch; the page hands it to the picker (the element owns no overrides).
 //
 // Edit mode: while the modifier is held (tracked on window: keydown/keyup, and
 // mousemove's metaKey/ctrlKey so a key pressed before the pointer arrived counts;
@@ -44,16 +57,16 @@
 import { LitElement, css, html, nothing, svg } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import ELK from "elkjs/lib/elk.bundled.js";
-import type { Candidate } from "../lib/candidates.ts";
+import type { Candidate, Direction } from "../lib/candidates.ts";
 import type { GraphEdge } from "../lib/edges.ts";
-import { sequenceEdges } from "../lib/edges.ts";
+import { orientEdge, pairEdges, sequenceEdges } from "../lib/edges.ts";
 import { ownerFor } from "../lib/edit.ts";
 import { buildElkGraph, elkEdgeId, findCycles, readElkLayout, type Point, type Positioned } from "../lib/layout-elk.ts";
 import { forceLayout } from "../lib/layout-force.ts";
 import { isDrawn, midpoint, modified, modifierName, previewFor, type EdgePreview } from "../lib/preview.ts";
-import { NO_PROJECTION, type View } from "../lib/view.ts";
+import { NO_PROJECTION, axisStatus, type EdgeCounts, type View } from "../lib/view.ts";
 import { cardFor, cardTooltip, type Card } from "../lib/cards.ts";
-import { IDENTITY, panBy, toViewBox, viewBoxMapping, wheelDeltaPx, zoomAbout, zoomFactor, type Transform, type ViewBoxMapping } from "../lib/viewport.ts";
+import { IDENTITY, fitTransform, panBy, toViewBox, viewBoxMapping, wheelDeltaPx, zoomAbout, zoomFactor, type Transform, type ViewBoxMapping } from "../lib/viewport.ts";
 import { relationColor } from "./oqx-relationship-picker.ts";
 
 export interface GraphNode {
@@ -73,7 +86,13 @@ export interface GraphStateDetail {
   layout: "elk" | "force" | null;
   busy: boolean;
   error: string | null;
+  /** The axis relationship's edges among the shown nodes (0 = nothing to order by); null without an axis. */
+  axisEdges: number | null;
+  /** Edges among the shown nodes per relationship the graph fetched (the drawn ones, the axis, and a pair's members). */
+  edgeCounts: EdgeCounts;
 }
+
+export interface AxisRequestDetail { axis: string | null }
 
 export interface EdgeToggleDetail {
   candidate: Candidate;
@@ -138,6 +157,9 @@ export class OqxGraph extends LitElement {
     }
     .banner { position: absolute; left: 8px; right: 8px; top: 8px; padding: 6px 10px; border-radius: 4px; background: #fff3e0; color: #7a4a00; border: 1px solid #ffcc80; }
     .banner code { font-family: ui-monospace, monospace; }
+    .banner.axis-empty { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .banner.axis-empty button { font: inherit; font-size: 12px; }
+    .banner.quiet { top: auto; bottom: 40px; background: rgba(255,255,255,0.92); color: #5a6270; border-color: #e3e6ec; }
     .banner.edit { top: auto; bottom: 40px; background: #fff8e1; color: #6d4c00; border-color: #ffe082; }
     .banner.edit.active { background: #e3f2fd; color: #0d47a1; border-color: #64b5f6; font-weight: 500; }
     .banner.edit.active.remove { background: #ffebee; color: #b71c1c; border-color: #ef9a9a; }
@@ -173,6 +195,11 @@ export class OqxGraph extends LitElement {
   @state() private layoutKind: "elk" | "force" | null = null;
   @state() private busy = false;
   @state() private error: string | null = null;
+  /** Edges among the shown nodes per fetched relationship (the last recompute). */
+  @state() private edgeCounts: EdgeCounts = {};
+  @state() private axisEdges: number | null = null;
+  /** The element's own size (client px) — the viewBox; null until observed (tests, detached). */
+  @state() private size: { w: number; h: number } | null = null;
   @state() private hovered: string | null = null;
   @state() private hoveredEdge: GraphEdge | null = null;
   /** The platform modifier (⌘ / Ctrl) is held right now — see `trackModifier`. */
@@ -181,6 +208,9 @@ export class OqxGraph extends LitElement {
 
   private generation = 0;
   private edgeCache = new Map<string, Promise<GraphEdge[]>>();
+  /** The transform is the fitted one (no pan/zoom since): a resize refits. */
+  private fitted = true;
+  private resizeObserver: ResizeObserver | null = null;
   /** A drag in progress: the last pointer position (client px) — deltas accumulate from it. */
   private drag: { pointerId: number; x: number; y: number } | null = null;
   /** `@wheel` with `passive: false`, so `preventDefault` keeps the page from scrolling while zooming. */
@@ -208,6 +238,17 @@ export class OqxGraph extends LitElement {
     window.addEventListener("mousemove", this.trackModifier);
     window.addEventListener("blur", this.resetModifier);
     document.addEventListener("visibilitychange", this.resetModifier);
+    // The viewBox follows the element's size; a pane resize refits the picture.
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver((entries) => {
+        const box = entries[0]?.contentRect;
+        if (!box || !(box.width > 0) || !(box.height > 0)) return;
+        if (this.size && Math.abs(this.size.w - box.width) < 0.5 && Math.abs(this.size.h - box.height) < 0.5) return;
+        this.size = { w: box.width, h: box.height };
+        if (this.fitted) this.transform = this.fit();
+      });
+      this.resizeObserver.observe(this);
+    }
   }
 
   override disconnectedCallback(): void {
@@ -217,7 +258,35 @@ export class OqxGraph extends LitElement {
     window.removeEventListener("mousemove", this.trackModifier);
     window.removeEventListener("blur", this.resetModifier);
     document.removeEventListener("visibilitychange", this.resetModifier);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.modifier = false;
+  }
+
+  /** The viewBox: the element's size when known, else the content's (1:1). */
+  private viewBoxSize(): { w: number; h: number } {
+    if (this.size) return this.size;
+    const pos = this.positioned;
+    return { w: Math.max(pos?.width ?? 0, 10), h: Math.max(pos?.height ?? 0, 10) };
+  }
+
+  /** The transform that fits the laid-out graph into the viewBox (identity when the sizes agree). */
+  private fit(): Transform {
+    const pos = this.positioned;
+    if (!pos || !this.size) return IDENTITY;
+    return fitTransform(pos.width, pos.height, this.size.w, this.size.h);
+  }
+
+  /** The direction a relationship's edges are drawn (and laid out) in: the
+   * axis as the view says, every other one as the candidate's default. */
+  private directionFor(rel: string): Direction {
+    if (rel === this.view.layout.axis) return this.view.layout.direction;
+    return this.candidates.find((c) => c.name === rel)?.defaults.direction ?? "forward";
+  }
+
+  /** The stored edge as drawn. */
+  private drawn(e: GraphEdge): GraphEdge {
+    return orientEdge(e, this.directionFor(e.rel));
   }
 
   protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
@@ -229,9 +298,13 @@ export class OqxGraph extends LitElement {
 
   private emitState(): void {
     this.dispatchEvent(new CustomEvent<GraphStateDetail>("graph-state", {
-      detail: { edges: this.edges.length, cycles: this.cycles, layout: this.layoutKind, busy: this.busy, error: this.error },
+      detail: { edges: this.edges.length, cycles: this.cycles, layout: this.layoutKind, busy: this.busy, error: this.error, axisEdges: this.axisEdges, edgeCounts: this.edgeCounts },
       bubbles: true, composed: true,
     }));
+  }
+
+  private requestAxis(axis: string | null): void {
+    this.dispatchEvent(new CustomEvent<AxisRequestDetail>("axis-request", { detail: { axis }, bubbles: true, composed: true }));
   }
 
   /** Fetch the wanted relationships' edges, lay out, and publish — dropping the
@@ -242,50 +315,76 @@ export class OqxGraph extends LitElement {
     const view = this.view;
     const paths = nodes.map((n) => n.path);
     const shown = new Set(paths);
+    // The relationships whose edges are needed: the drawn ones and the axis,
+    // plus — so the empty-axis note can offer the switch — every inverse pair
+    // and its members whenever one of the family is wanted.
     const wanted = new Set(view.edges);
     if (view.layout.axis) wanted.add(view.layout.axis);
+    for (const c of this.candidates) {
+      if (!c.pair) continue;
+      if (wanted.has(c.name) || wanted.has(c.pair.forward) || wanted.has(c.pair.backward)) {
+        wanted.add(c.name); wanted.add(c.pair.forward); wanted.add(c.pair.backward);
+      }
+    }
     this.busy = true;
     this.error = null;
     this.emitState();
+    // One fetch per frontmatter/link relationship, cached by name + node set.
+    const fetchFor = async (name: string): Promise<GraphEdge[]> => {
+      const candidate = this.candidates.find((c) => c.name === name);
+      if (!candidate || paths.length === 0 || candidate.pair) return [];
+      if (candidate.kind === "sequence") return sequenceEdges(name, paths);
+      if (!this.fetchEdges) return [];
+      const key = `${name} ${paths.join("")}`;
+      let p = this.edgeCache.get(key);
+      if (!p) {
+        p = this.fetchEdges(candidate, paths);
+        this.edgeCache.set(key, p);
+      }
+      return (await p).filter((e) => shown.has(e.src) && shown.has(e.dst));
+    };
     try {
-      const perRel = await Promise.all(
-        [...wanted].map(async (name) => {
-          const candidate = this.candidates.find((c) => c.name === name);
-          if (!candidate || paths.length === 0) return [] as GraphEdge[];
-          if (candidate.kind === "sequence") return sequenceEdges(name, paths);
-          if (!this.fetchEdges) return [];
-          const key = `${name} ${paths.join("")}`;
-          let p = this.edgeCache.get(key);
-          if (!p) {
-            p = this.fetchEdges(candidate, paths);
-            this.edgeCache.set(key, p);
-          }
-          return (await p).filter((e) => shown.has(e.src) && shown.has(e.dst));
-        }),
-      );
+      const names = [...wanted];
+      const perRel = await Promise.all(names.map(async (name) => {
+        const candidate = this.candidates.find((c) => c.name === name);
+        if (candidate?.pair) {
+          const members = await Promise.all([fetchFor(candidate.pair.forward), fetchFor(candidate.pair.backward)]);
+          return pairEdges(name, candidate.pair, members.flat());
+        }
+        return fetchFor(name);
+      }));
       if (gen !== this.generation) return;
       const all = perRel.flat();
+      const counts: Record<string, number> = {};
+      names.forEach((name, i) => { counts[name] = perRel[i]!.length; });
       const cards = new Map(nodes.map((n) => [n.path, cardFor(n, view.projection)] as const));
       const layoutNodes = nodes.map((n) => { const c = cards.get(n.path)!; return { id: n.path, width: c.width, height: c.height }; });
+      // Laid out as drawn: the axis's edges under the chosen direction, the rest under their own.
+      const drawnEdges = all.map((e) => orientEdge(e, e.rel === view.layout.axis ? view.layout.direction : (this.candidates.find((c) => c.name === e.rel)?.defaults.direction ?? "forward")));
       let positioned: Positioned;
       let cycles: string[][] = [];
+      let axisEdges: number | null = null;
       if (view.layout.axis) {
-        const axisEdges = all.filter((e) => e.rel === view.layout.axis);
-        cycles = findCycles(paths, axisEdges);
-        const { graph } = buildElkGraph(layoutNodes, axisEdges, view.layout.direction);
+        const onAxis = drawnEdges.filter((e) => e.rel === view.layout.axis);
+        axisEdges = onAxis.length;
+        cycles = findCycles(paths, onAxis);
+        const { graph } = buildElkGraph(layoutNodes, onAxis, "forward");
         const laid = await elk.layout(graph);
         if (gen !== this.generation) return;
         positioned = readElkLayout(laid);
         this.layoutKind = "elk";
       } else {
-        positioned = forceLayout(layoutNodes, all);
+        positioned = forceLayout(layoutNodes, drawnEdges.filter((e) => view.edges.includes(e.rel)));
         this.layoutKind = "force";
       }
       this.edges = all.filter((e) => view.edges.includes(e.rel));
       this.cycles = cycles;
       this.cards = cards;
       this.positioned = positioned;
-      this.transform = IDENTITY;
+      this.edgeCounts = counts;
+      this.axisEdges = axisEdges;
+      this.fitted = true;
+      this.transform = this.fit();
     } catch (e) {
       if (gen !== this.generation) return;
       this.error = e instanceof Error ? e.message : String(e);
@@ -303,8 +402,8 @@ export class OqxGraph extends LitElement {
   private mapping(): { rect: DOMRect; m: ViewBoxMapping } {
     const svgEl = this.renderRoot.querySelector("svg")!;
     const rect = svgEl.getBoundingClientRect();
-    const pos = this.positioned;
-    return { rect, m: viewBoxMapping(rect.width, rect.height, Math.max(pos?.width ?? 0, 10), Math.max(pos?.height ?? 0, 10)) };
+    const vb = this.viewBoxSize();
+    return { rect, m: viewBoxMapping(rect.width, rect.height, vb.w, vb.h) };
   }
 
   /** Zoom about the pointer: the content under it stays under it. */
@@ -312,6 +411,7 @@ export class OqxGraph extends LitElement {
     e.preventDefault();
     const { rect, m } = this.mapping();
     const p = toViewBox(e.clientX - rect.left, e.clientY - rect.top, m);
+    this.fitted = false;
     this.transform = zoomAbout(this.transform, zoomFactor(wheelDeltaPx(e)), p);
   }
 
@@ -329,6 +429,7 @@ export class OqxGraph extends LitElement {
   private onPointerMove(e: PointerEvent): void {
     if (!this.drag || e.pointerId !== this.drag.pointerId) return;
     const { m } = this.mapping();
+    this.fitted = false;
     this.transform = panBy(this.transform, e.clientX - this.drag.x, e.clientY - this.drag.y, m);
     this.drag = { ...this.drag, x: e.clientX, y: e.clientY };
   }
@@ -344,7 +445,8 @@ export class OqxGraph extends LitElement {
   /** Double-click on the canvas: back to the fitted view. */
   private onDoubleClick(e: MouseEvent): void {
     if ((e.target as Element).closest(".node, .edge-g")) return;
-    this.transform = IDENTITY;
+    this.fitted = true;
+    this.transform = this.fit();
   }
 
   private select(node: GraphNode | null): void {
@@ -441,11 +543,12 @@ export class OqxGraph extends LitElement {
     const preview = this.preview();
     const mod = modifierName();
     const { x, y, k } = this.transform;
+    const vb = this.viewBoxSize();
     return html`
       ${this.nodes.length === 0 ? html`<div class="empty">no rows</div>` : nothing}
       <svg class="${arming ? "arming" : ""} ${this.writable.length ? "editing" : ""} ${editMode ? "editmode" : ""} ${this.modifier ? "modifier" : ""}"
         @wheel=${this.wheelListener} @pointerdown=${this.onPointerDown} @pointermove=${this.onPointerMove} @pointerup=${this.onPointerUp} @pointercancel=${this.onPointerUp} @dblclick=${this.onDoubleClick}
-        viewBox="0 0 ${Math.max(pos?.width ?? 0, 10)} ${Math.max(pos?.height ?? 0, 10)}" preserveAspectRatio="xMidYMid meet">
+        viewBox="0 0 ${vb.w} ${vb.h}" preserveAspectRatio="xMidYMid meet">
         <defs>
           ${rels.map((rel) => svg`<marker id="arrow-${cssId(rel)}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill=${relationColor(this.candidates, rel)}></path></marker>`)}
@@ -454,15 +557,16 @@ export class OqxGraph extends LitElement {
         </defs>
         <g transform="translate(${x} ${y}) scale(${k})">
           ${pos ? this.edges.map((e) => {
-            const id = elkEdgeId(e);
-            const pts = (e.rel === axis ? pos.routes.get(id) : undefined) ?? this.segment(e);
+            // Drawn (and routed by elk) in the relationship's direction; the stored owner → target stays in the tooltip and the edit.
+            const d = this.drawn(e);
+            const pts = (e.rel === axis ? pos.routes.get(elkEdgeId(d)) : undefined) ?? this.segment(d);
             if (!pts) return nothing;
             const lit = focus !== null && (e.src === focus || e.dst === focus);
             const dim = focus !== null && !lit;
             const removing = pendingByKey.get(edgeKey(e)) === "remove";
             const writable = this.writable.includes(e.rel);
             const points = pts.map((p) => `${p.x},${p.y}`).join(" ");
-            return svg`<g class="edge-g ${writable ? "writable" : ""}" @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
+            return svg`<g class="edge-g ${writable ? "writable" : ""}" data-from=${d.src} data-to=${d.dst} data-rel=${e.rel} @click=${(ev: MouseEvent) => this.onEdgeClick(ev, e)}
               @pointerenter=${() => { this.hoveredEdge = e; }} @pointerleave=${() => { if (this.hoveredEdge === e) this.hoveredEdge = null; }}>
               <polyline class="edge ${e.rel === axis ? "axis" : ""} ${lit ? "lit" : ""} ${dim ? "dim" : ""} ${removing ? "removing" : ""}"
                 points=${points} stroke=${relationColor(this.candidates, e.rel)}
@@ -472,7 +576,7 @@ export class OqxGraph extends LitElement {
             </g>`;
           }) : nothing}
           ${pos ? previews.map((e) => {
-            const pts = this.segment(e);
+            const pts = this.segment(this.drawn(e));
             if (!pts) return nothing;
             return svg`<polyline class="edge pending" points=${pts.map((p) => `${p.x},${p.y}`).join(" ")}
               stroke=${relationColor(this.candidates, e.rel)} marker-end="url(#arrow-${cssId(e.rel)})"><title>${e.src} -[${e.rel}]-> ${e.dst} (adding…)</title></polyline>`;
@@ -501,6 +605,7 @@ export class OqxGraph extends LitElement {
         </g>
       </svg>
       ${this.renderBanner(preview, editMode, mod)}
+      ${this.renderAxisNote()}
       ${this.cycles.length > 0 ? html`<div class="banner">
         <b>${axis}</b> is not a strict order among the shown documents — ${this.cycles.length === 1 ? "a cycle" : `${this.cycles.length} cycles`} (elk broke it to lay the rest out):
         ${this.cycles.map((c) => html` <code>${c.join(" -> ")}</code>`)}
@@ -513,15 +618,35 @@ export class OqxGraph extends LitElement {
     `;
   }
 
-  /** The preview edge: for an add, a fresh segment owner → target; for a remove,
-   * the drawn edge's own route overlaid in the danger colour. Labelled at the midpoint. */
+  /** The axis has no edges among the shown documents (nothing to order by) —
+   * say so and offer the relationships that do; or the force layout has no
+   * drawn edges — the nodes only repel. */
+  private renderAxisNote() {
+    const axis = this.view.layout.axis;
+    if (this.busy || this.nodes.length < 2) return nothing;
+    if (axis === null) {
+      if (this.edges.length > 0 || this.layoutKind !== "force") return nothing;
+      return html`<div class="banner quiet" data-banner="no-edges">no edges drawn — nodes only repel; pick a relationship (the picker's <b>edge</b> column) to connect them</div>`;
+    }
+    const status = axisStatus(axis, this.candidates, this.edgeCounts, this.nodes.length);
+    if (!status.empty) return nothing;
+    return html`<div class="banner axis-empty" data-banner="axis-empty" role="status">
+      <span><code>${axis}</code> has no edges here — nothing to order by.</span>
+      ${status.alternatives.map((a) => html`<button type="button" data-switch=${a.name} @click=${() => this.requestAxis(a.name)}>lay out along <code>${a.name}</code> (${a.edges})</button>`)}
+      <button type="button" data-switch="" @click=${() => this.requestAxis(null)}>no axis (force)</button>
+    </div>`;
+  }
+
+  /** The preview edge: for an add, a fresh segment owner → target drawn the
+   * relationship's way round; for a remove, the drawn edge's own route overlaid
+   * in the danger colour. Labelled at the midpoint. */
   private renderPreview(preview: EdgePreview<GraphNode>, pos: Positioned, axis: string | null) {
-    const e: GraphEdge = { src: preview.owner.path, dst: preview.target.path, rel: preview.rel };
+    const e = this.drawn({ src: preview.owner.path, dst: preview.target.path, rel: preview.rel });
     const pts = (preview.kind === "remove" && e.rel === axis ? pos.routes.get(elkEdgeId(e)) : undefined) ?? this.segment(e);
     if (!pts) return nothing;
     const mid = midpoint(pts);
     const label = preview.kind === "add" ? `+ ${preview.rel}` : `remove ${preview.rel}`;
-    return svg`<g class="preview-g" data-preview=${preview.kind} data-owner=${e.src} data-target=${e.dst} data-rel=${e.rel}>
+    return svg`<g class="preview-g" data-preview=${preview.kind} data-owner=${preview.owner.path} data-target=${preview.target.path} data-rel=${e.rel}>
       <polyline class="edge preview ${preview.kind}" points=${pts.map((p) => `${p.x},${p.y}`).join(" ")} marker-end="url(#arrow-preview-${preview.kind})"></polyline>
       ${mid ? svg`<text class="preview-label ${preview.kind}" x=${mid.x} y=${mid.y - 6} text-anchor="middle">${label}</text>` : nothing}
     </g>`;

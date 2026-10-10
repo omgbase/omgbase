@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { IDENTITY, MAX_SCALE, MIN_SCALE, contentToViewBox, panBy, toViewBox, viewBoxMapping, viewBoxToContent, wheelDeltaPx, zoomAbout, zoomFactor } from "../src/lib/viewport.ts";
+import { IDENTITY, MAX_SCALE, MIN_SCALE, contentToViewBox, fitTransform, panBy, toViewBox, viewBoxMapping, viewBoxToContent, wheelDeltaPx, zoomAbout, zoomFactor } from "../src/lib/viewport.ts";
 
 const close = (a: { x: number; y: number }, b: { x: number; y: number }) => {
   expect(a.x).toBeCloseTo(b.x, 9);
@@ -55,6 +55,29 @@ describe("zoomAbout", () => {
     expect(wheelDeltaPx({ deltaY: 3, deltaMode: 1 })).toBe(48);
     expect(wheelDeltaPx({ deltaY: 1, deltaMode: 2 })).toBe(800);
     expect(wheelDeltaPx({ deltaY: -53, deltaMode: 0 })).toBe(-53);
+  });
+});
+
+describe("fitTransform", () => {
+  it("scales the content down to fit the view with the padding and centres it", () => {
+    // 2000×500 content in an 800×600 view, 16 px padding: width-bound, k = 768/2000.
+    const t = fitTransform(2000, 500, 800, 600);
+    expect(t.k).toBeCloseTo(0.384, 9);
+    close(contentToViewBox(t, { x: 1000, y: 250 }), { x: 400, y: 300 }); // the content's centre lands on the view's
+    close(contentToViewBox(t, { x: 0, y: 0 }), { x: 16, y: 300 - 250 * t.k });
+    // Height-bound.
+    expect(fitTransform(100, 2000, 800, 600).k).toBeCloseTo(568 / 2000, 9);
+  });
+  it("never enlarges past 1:1 (a lone card stays card-sized) and never below the zoom floor", () => {
+    const small = fitTransform(120, 40, 800, 600);
+    expect(small.k).toBe(1);
+    close(contentToViewBox(small, { x: 60, y: 20 }), { x: 400, y: 300 });
+    expect(fitTransform(120, 40, 800, 600, 16, 2).k).toBe(2);
+    expect(fitTransform(1e6, 1e6, 800, 600).k).toBe(MIN_SCALE);
+  });
+  it("is the identity for degenerate sizes", () => {
+    expect(fitTransform(0, 0, 800, 600)).toEqual(IDENTITY);
+    expect(fitTransform(100, 100, 0, 600)).toEqual(IDENTITY);
   });
 });
 

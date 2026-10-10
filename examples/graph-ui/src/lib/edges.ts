@@ -16,7 +16,7 @@
 // `$path`/`$dst_path` are rooted before they are compared with the node keys,
 // so the edges come out the same against either server.
 
-import type { Candidate } from "./candidates.ts";
+import type { Candidate, Direction, InversePair } from "./candidates.ts";
 import { rooted, serverPath } from "./paths.ts";
 
 export interface GraphEdge {
@@ -77,6 +77,42 @@ export function edgesFromRows(
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ ...edge, rel: candidate.name });
+  }
+  return out;
+}
+
+/** The edge as DRAWN (and laid out) under a direction: `forward` keeps the
+ * stored orientation (owner → target, the arrowhead on the target); `backward`
+ * flips it so the arrow points at the owner. The same direction feeds elk, so
+ * the layout flows the way the arrows point and the picture cannot disagree
+ * with itself. `src`/`dst` of the stored edge are what editing reasons about;
+ * only the drawing passes through here. */
+export function orientEdge<E extends Pick<GraphEdge, "src" | "dst">>(e: E, direction: Direction): E {
+  return direction === "backward" ? { ...e, src: e.dst, dst: e.src } : e;
+}
+
+export function orientEdges<E extends Pick<GraphEdge, "src" | "dst">>(edges: readonly E[], direction: Direction): E[] {
+  return edges.map((e) => orientEdge(e, direction));
+}
+
+/** An inverse pair's edges: the union of both members' edges normalised to ONE
+ * direction, earlier → later. The `forward` member's edges (`before`: owner
+ * precedes target) are kept; the `backward` member's (`after`: owner follows
+ * target) are flipped. Deduped — a relation authored from both ends yields one
+ * edge — and relabelled with the pair's name. */
+export function pairEdges(name: string, pair: Pick<InversePair, "forward" | "backward">, edges: readonly GraphEdge[]): GraphEdge[] {
+  const seen = new Set<string>();
+  const out: GraphEdge[] = [];
+  for (const e of edges) {
+    let src: string, dst: string;
+    if (e.rel === pair.forward) { src = e.src; dst = e.dst; }
+    else if (e.rel === pair.backward) { src = e.dst; dst = e.src; }
+    else continue;
+    if (src === dst) continue;
+    const key = `${src}→${dst}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ src, dst, rel: name });
   }
   return out;
 }

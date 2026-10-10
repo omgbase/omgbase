@@ -108,3 +108,29 @@ export function sameView(a: View, b: View): boolean {
     && a.layout.axis === b.layout.axis && a.layout.direction === b.layout.direction
     && sameProjection(a.projection, b.projection);
 }
+
+/** Edge counts per relationship as the graph last fetched them (drawn ones and the axis). */
+export type EdgeCounts = Readonly<Record<string, number>>;
+
+export interface AxisStatus {
+  /** The axis has no edges among the shown documents (so there is nothing to order by). */
+  empty: boolean;
+  /** Candidates known to have edges here, the axis's own pair first, then the rest in candidate order. */
+  alternatives: { name: string; edges: number }[];
+}
+
+/** Is the chosen axis empty in the current result, and what could replace it?
+ * Not empty when there is no axis (force), fewer than two nodes, or the axis's
+ * count is not known yet. A pair containing the axis comes first among the
+ * alternatives, since it is the one most likely to have the edges the single
+ * field lacks (a repository authoring only `after`). */
+export function axisStatus(axis: string | null, candidates: readonly Candidate[], counts: EdgeCounts, nodeCount: number): AxisStatus {
+  const none: AxisStatus = { empty: false, alternatives: [] };
+  if (axis === null || nodeCount < 2) return none;
+  const n = counts[axis];
+  if (n === undefined || n > 0) return none;
+  const pair = candidates.find((c) => c.pair && (c.pair.forward === axis || c.pair.backward === axis));
+  const rest = candidates.filter((c) => c.name !== axis && c !== pair && (counts[c.name] ?? 0) > 0);
+  const alternatives = [...(pair && (counts[pair.name] ?? 0) > 0 ? [pair] : []), ...rest].map((c) => ({ name: c.name, edges: counts[c.name]! }));
+  return { empty: true, alternatives };
+}
